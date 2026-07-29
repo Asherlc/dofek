@@ -78,7 +78,7 @@ function AuthGate() {
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
-              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90"
+              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90"
               onClick={() => void retryBootstrap()}
             >
               Try again

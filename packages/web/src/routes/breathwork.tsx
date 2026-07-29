@@ -289,7 +289,7 @@ function BreathworkPage() {
                     type="button"
                     onClick={startSession}
                     disabled={pendingSession !== null}
-                    className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+                    className="px-8 py-3 bg-accent text-on-accent rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
                   >
                     Start Session
                   </button>
@@ -305,7 +305,7 @@ function BreathworkPage() {
                     if (pendingSession) logMutation.mutate(pendingSession);
                   }}
                   disabled={!pendingSession || logMutation.isPending}
-                  className="px-4 py-2 bg-accent text-white rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 bg-accent text-on-accent rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
                 >
                   {logMutation.isPending ? "Saving..." : "Retry Save"}
                 </button>

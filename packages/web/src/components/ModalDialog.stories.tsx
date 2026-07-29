@@ -10,7 +10,7 @@ function DialogStory({ protectedOperation = false }: { protectedOperation?: bool
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded bg-accent px-4 py-2 text-white"
+        className="rounded bg-accent px-4 py-2 text-on-accent"
       >
         Open dialog
       </button>
@@ -37,7 +37,7 @@ function DialogStory({ protectedOperation = false }: { protectedOperation?: bool
           >
             Cancel
           </button>
-          <button type="button" className="rounded bg-accent px-3 py-2 text-sm text-white">
+          <button type="button" className="rounded bg-accent px-3 py-2 text-sm text-on-accent">
             Save
           </button>
         </div>

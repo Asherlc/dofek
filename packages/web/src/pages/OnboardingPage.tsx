@@ -18,7 +18,7 @@ export function OnboardingPage() {
         </p>
       </section>
 
-      <section className="mt-4 rounded-lg border border-border bg-white/80 p-5 shadow-sm sm:p-6">
+      <section className="mt-4 rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6">
         <PrimaryGoalSelector />
       </section>
 
@@ -26,7 +26,7 @@ export function OnboardingPage() {
         {GET_STARTED_STEPS.map((step, stepIndex) => (
           <div
             key={step.id}
-            className="flex min-h-56 flex-col rounded-lg border border-border bg-white/80 p-5 shadow-sm sm:p-6"
+            className="flex min-h-56 flex-col rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6"
           >
             <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-md bg-accent/10 text-sm font-bold text-accent">
               {stepIndex + 1}
@@ -35,13 +35,13 @@ export function OnboardingPage() {
             <p className="mt-3 text-sm leading-6 text-muted">{step.description}</p>
             <Link
               to={step.webPath}
-              className="mt-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90"
+              className="mt-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90"
             >
               {step.actionLabel}
             </Link>
           </div>
         ))}
-        <div className="flex min-h-56 flex-col rounded-lg border border-border bg-white/80 p-5 shadow-sm sm:p-6">
+        <div className="flex min-h-56 flex-col rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6">
           <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-md bg-accent/10 text-sm font-bold text-accent">
             {GET_STARTED_STEPS.length + 1}
           </div>
@@ -51,7 +51,7 @@ export function OnboardingPage() {
             href={IOS_TESTFLIGHT_INVITE.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90"
+            className="mt-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90"
           >
             {IOS_TESTFLIGHT_INVITE.actionLabel}
           </a>

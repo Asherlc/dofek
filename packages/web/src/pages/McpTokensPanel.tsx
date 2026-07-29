@@ -154,7 +154,7 @@ export function McpTokensPanel() {
         </div>
         <div className="space-y-1">
           <p className="text-xs font-medium text-subtle">Remote URL</p>
-          <code className="block overflow-x-auto rounded bg-white/70 px-3 py-2 text-xs text-foreground">
+          <code className="block overflow-x-auto rounded bg-surface px-3 py-2 text-xs text-foreground">
             {mcpEndpoint}
           </code>
         </div>
@@ -174,7 +174,7 @@ export function McpTokensPanel() {
         </div>
         <div className="space-y-1">
           <p className="text-xs font-medium text-subtle">Client settings JSON</p>
-          <pre className="overflow-x-auto rounded bg-white/70 p-3 text-xs text-foreground">
+          <pre className="overflow-x-auto rounded bg-surface p-3 text-xs text-foreground">
             <code>{`{
   "mcpServers": {
     "dofek": {
@@ -200,7 +200,7 @@ export function McpTokensPanel() {
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="w-full rounded border border-border-strong bg-white/70 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
           <label className="space-y-1">
@@ -209,7 +209,7 @@ export function McpTokensPanel() {
               type="date"
               value={expiresAt}
               onChange={(event) => setExpiresAt(event.target.value)}
-              className="w-full rounded border border-border-strong bg-white/70 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
         </div>
@@ -220,7 +220,7 @@ export function McpTokensPanel() {
             {mcpScopeOptions.map((option) => (
               <label
                 key={option.value}
-                className="flex items-center gap-2 rounded border border-border bg-white/50 px-3 py-2 text-sm text-foreground"
+                className="flex items-center gap-2 rounded border border-border bg-surface/70 px-3 py-2 text-sm text-foreground"
               >
                 <input
                   type="checkbox"
@@ -238,7 +238,7 @@ export function McpTokensPanel() {
           type="button"
           disabled={!canCreate}
           onClick={createToken}
-          className="rounded bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-accent px-3 py-2 text-sm font-medium text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {createTokenMutation.isPending ? "Creating..." : "Create Token"}
         </button>
@@ -253,7 +253,7 @@ export function McpTokensPanel() {
             <input
               readOnly
               value={createdToken}
-              className="min-w-0 flex-1 rounded border border-border-strong bg-white/80 px-3 py-2 font-mono text-xs text-foreground"
+              className="min-w-0 flex-1 rounded border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-foreground"
             />
             <button
               type="button"
