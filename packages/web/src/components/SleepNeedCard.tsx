@@ -6,7 +6,7 @@ import {
 } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
-import type { SleepNeedResult } from "dofek-server/types";
+import type { SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import {
   chartThemeColors,
   dofekAxis,
@@ -19,7 +19,7 @@ import { formatSleepProvenance } from "../lib/sleepSource.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepNeedCardProps {
-  data: SleepNeedResult | undefined;
+  data: SleepNeedV2 | undefined;
   loading?: boolean;
 }
 
@@ -33,6 +33,15 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         height={320}
         emptyMessage="No sleep data"
       />
+    );
+  }
+
+  if (data.availability === "missing_previous_night") {
+    return (
+      <div className="card p-6">
+        <h3 className="text-muted text-sm font-medium mb-2">Sleep Need Tonight</h3>
+        <p className="text-lg text-dim">{data.message}</p>
+      </div>
     );
   }
 
@@ -116,18 +125,12 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-muted text-sm font-medium mb-1">Sleep Need Tonight</h3>
-          {data.canRecommend ? (
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold text-blue-400">
-                {formatDurationMinutes(data.totalNeedMinutes)}
-              </span>
-              <span className="text-subtle text-sm">recommended</span>
-            </div>
-          ) : (
-            <div className="flex items-baseline gap-2">
-              <span className="text-lg text-dim">Need last night's sleep data</span>
-            </div>
-          )}
+          <div className="flex items-baseline gap-2">
+            <span className="text-4xl font-bold text-blue-400">
+              {formatDurationMinutes(data.totalNeedMinutes)}
+            </span>
+            <span className="text-subtle text-sm">recommended</span>
+          </div>
         </div>
       </div>
 

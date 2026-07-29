@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { SleepNeedResult } from "dofek-server/types";
+import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { SleepNeedCard } from "./SleepNeedCard";
 
 const emptyProvenance: Pick<
-  SleepNeedResult["recentNights"][number],
+  Extract<SleepNeedV2, { availability: "available" }>["recentNights"][number],
   "providerId" | "sourceName" | "sourceProviders"
 > = {
   providerId: null,
@@ -12,11 +12,12 @@ const emptyProvenance: Pick<
 };
 
 const sampleData = {
+  availability: "available" as const,
   baselineMinutes: 462,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
+  debtRecoveryMinutes: 21,
   totalNeedMinutes: 483,
-  canRecommend: true,
   recentNights: [
     {
       date: "2026-03-27",
@@ -108,8 +109,8 @@ export const HighDebt: Story = {
 export const CannotRecommend: Story = {
   args: {
     data: {
-      ...sampleData,
-      canRecommend: false,
+      availability: "missing_previous_night",
+      message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     },
   },
 };

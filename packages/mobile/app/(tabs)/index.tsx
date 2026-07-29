@@ -45,7 +45,7 @@ export default function TodayScreen() {
   const endDate = useTodayQueryDate();
 
   // Consolidated dashboard data fetch
-  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery(
+  const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
     { endDate },
     { placeholderData: (previousData) => previousData },
   );
@@ -318,7 +318,7 @@ export default function TodayScreen() {
           <Card title="Sleep Coach">
             {sleepNeed == null ? (
               <Text style={styles.noDataText}>No sleep data</Text>
-            ) : sleepNeed.canRecommend ? (
+            ) : sleepNeed.availability === "available" ? (
               <>
                 <Text style={styles.sleepNeedTotal}>
                   {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
@@ -338,17 +338,15 @@ export default function TodayScreen() {
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                    <Text style={styles.sleepNeedLabel}>Debt recovery</Text>
                     <Text style={styles.sleepNeedValue}>
-                      +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                      +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
                     </Text>
                   </View>
                 </View>
               </>
             ) : (
-              <Text style={styles.sleepNeedMissing}>
-                Need last night's sleep for recommendation
-              </Text>
+              <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
             )}
           </Card>
         </Animated.View>

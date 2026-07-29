@@ -3,6 +3,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { sleepNeedV1Schema, sleepNeedV2Schema } from "../contracts/sleep-need-contract.ts";
 import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -17,7 +18,6 @@ import {
   mobileTrainingTabOutputSchema,
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-import type { SleepNeedResult } from "./sleep-need.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -45,25 +45,6 @@ function requireAccessWindow(
   return accessWindow;
 }
 
-const sleepNeedOutputSchema = z.object({
-  baselineMinutes: z.number(),
-  strainDebtMinutes: z.number(),
-  accumulatedDebtMinutes: z.number(),
-  totalNeedMinutes: z.number(),
-  recentNights: z.array(
-    z.object({
-      date: z.string(),
-      actualMinutes: z.number().nullable(),
-      neededMinutes: z.number(),
-      debtMinutes: z.number().nullable(),
-      providerId: z.string().nullable(),
-      sourceName: z.string().nullable(),
-      sourceProviders: z.array(z.string()),
-    }),
-  ),
-  canRecommend: z.boolean(),
-}) satisfies z.ZodType<SleepNeedResult>;
-
 const anomalyCheckOutputSchema = z.object({
   anomalies: z.array(
     z.object({
@@ -79,7 +60,7 @@ const anomalyCheckOutputSchema = z.object({
   checkedMetrics: z.array(z.string()),
 }) satisfies z.ZodType<AnomalyCheckResult>;
 
-const mobileDashboardOutputSchema = z.object({
+const mobileDashboardSharedOutputSchema = z.object({
   readiness: z
     .object({
       score: z.number(),
@@ -120,12 +101,20 @@ const mobileDashboardOutputSchema = z.object({
     workloadRatio: z.number().nullable(),
     date: z.string().nullable(),
   }),
-  sleepNeed: sleepNeedOutputSchema.nullable(),
   anomalies: anomalyCheckOutputSchema.nullable(),
   latestDate: z.string().nullable(),
 });
 
+const mobileDashboardOutputSchema = mobileDashboardSharedOutputSchema.extend({
+  sleepNeed: sleepNeedV1Schema.nullable(),
+});
+
+const mobileDashboardV2OutputSchema = mobileDashboardSharedOutputSchema.extend({
+  sleepNeed: sleepNeedV2Schema,
+});
+
 export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
+export type MobileDashboardV2Result = z.infer<typeof mobileDashboardV2OutputSchema>;
 
 export const mobileDashboardRouter = router({
   dashboard: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
@@ -148,6 +137,31 @@ export const mobileDashboardRouter = router({
         `[mobile-dashboard] dashboard timings userId=${ctx.userId} endDate=${endDate} total=${Math.round(performance.now() - dashboardStart)}ms`,
       );
       return result;
+    }),
+
+  dashboardV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.object({ endDate: endDateSchema }))
+    .output(mobileDashboardV2OutputSchema)
+    .query(async ({ ctx, input }): Promise<MobileDashboardV2Result> => {
+      const { endDate } = input;
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboardV2");
+      const accessWindow = ctx.accessWindow ?? { kind: "full" as const };
+      const dashboardStart = performance.now();
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const result = await loadDashboardOverview({
+        accessWindow,
+        endDate,
+        readinessWeights: getEffectiveParams(storedParams).readinessWeights,
+        sensorStore,
+        userId: ctx.userId,
+      });
+      logger.info(
+        `[mobile-dashboard] dashboardV2 timings userId=${ctx.userId} endDate=${endDate} total=${Math.round(performance.now() - dashboardStart)}ms`,
+      );
+      return {
+        ...result,
+        sleepNeed: result.sleepNeedV2,
+      };
     }),
 
   recovery: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
