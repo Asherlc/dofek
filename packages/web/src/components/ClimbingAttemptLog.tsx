@@ -223,7 +223,7 @@ export function ClimbingAttemptLog({
       ) : null}
       <button
         aria-label="Save climbing session"
-        className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded bg-accent px-4 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
         disabled={submitting}
         type="submit"
       >

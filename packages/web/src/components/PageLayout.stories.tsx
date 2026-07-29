@@ -73,7 +73,7 @@ const meta = {
     headerChildren: (
       <button
         type="button"
-        className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white"
+        className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-on-accent"
       >
         Add activity
       </button>
@@ -103,5 +103,23 @@ export const ContentOnly: Story = {
     title: undefined,
     subtitle: undefined,
     headerChildren: undefined,
+  },
+};
+
+export const SystemAppearance: Story = {
+  args: {
+    tabs: [
+      { to: "/dashboard", label: "Overview", exact: true },
+      { to: "/activities", label: "Activities", exact: false },
+      { to: "/training", label: "Insights", exact: false },
+    ],
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Representative application shell for auditing the browser's light and dark system appearances.",
+      },
+    },
   },
 };

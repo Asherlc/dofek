@@ -111,7 +111,7 @@ function CyclePage() {
               type="button"
               onClick={() => logMutation.mutate({ startDate })}
               disabled={logMutation.isPending}
-              className="px-4 py-2 bg-accent text-white rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-accent text-on-accent rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
               {logMutation.isPending ? "Saving..." : logMutation.error ? "Retry" : "Log Period"}
             </button>

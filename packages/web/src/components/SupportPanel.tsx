@@ -100,7 +100,7 @@ export function SupportPanel() {
       <button
         type="submit"
         disabled={createTicket.isPending}
-        className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm text-on-accent transition-colors hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {createTicket.isPending ? "Sending..." : "Send Message"}
       </button>

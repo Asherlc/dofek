@@ -91,7 +91,7 @@ export function HealthReportShareButton({
       <button
         type="button"
         aria-label={`Share ${reportLabel}`}
-        className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         disabled={disabled || generateReport.isPending}
         onClick={() => {
           setClientError(null);

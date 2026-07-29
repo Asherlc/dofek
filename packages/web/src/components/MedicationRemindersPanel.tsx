@@ -212,7 +212,7 @@ export function MedicationRemindersPanel({
         </label>
         <button
           type="button"
-          className="rounded bg-accent px-3 py-2 text-sm text-white hover:bg-accent/90 disabled:opacity-50"
+          className="rounded bg-accent px-3 py-2 text-sm text-on-accent hover:bg-accent/90 disabled:opacity-50"
           onClick={handleAdd}
           disabled={setSettingMutation.isPending}
         >
