@@ -34,6 +34,7 @@ export const weeklyReportRouter = router({
         );
         return { ...report, recovery };
       } catch (error: unknown) {
+        if (error instanceof TRPCError) throw error;
         captureException(error, {
           tags: { reportType: "weekly" },
           extra: {
@@ -44,6 +45,7 @@ export const weeklyReportRouter = router({
         throw new TRPCError({
           code: "SERVICE_UNAVAILABLE",
           message: reportRefreshErrorMessage("weekly", recovery.range),
+          cause: error,
         });
       }
     }),

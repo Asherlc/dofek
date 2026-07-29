@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
@@ -59,6 +60,10 @@ import { monthlyReportRouter } from "./monthly-report.ts";
 const createCaller = createTestCallerFactory(monthlyReportRouter);
 
 describe("monthlyReportRouter", () => {
+  beforeEach(() => {
+    sentry.captureException.mockClear();
+  });
+
   describe("report", () => {
     it("returns empty result when no data", async () => {
       const caller = createCaller({
@@ -89,6 +94,7 @@ describe("monthlyReportRouter", () => {
 
       await expect(caller.report({ months: 6, endDate: "2026-07-24" })).rejects.toMatchObject({
         code: "SERVICE_UNAVAILABLE",
+        cause: failure,
         message:
           "The monthly report for 2026-02-01 through 2026-07-24 could not be refreshed. Retry now or review processing alerts if the problem continues.",
       });
@@ -96,6 +102,23 @@ describe("monthlyReportRouter", () => {
         tags: { reportType: "monthly" },
         extra: { startDate: "2026-02-01", endDate: "2026-07-24" },
       });
+    });
+
+    it("preserves an authored TRPCError unchanged", async () => {
+      const failure = new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Monthly report prerequisite missing",
+      });
+      const sensorStore = makeSensorStore([]);
+      vi.mocked(sensorStore.query).mockRejectedValue(failure);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        sensorStore,
+      });
+
+      await expect(caller.report({ months: 6, endDate: "2026-07-24" })).rejects.toBe(failure);
+      expect(sentry.captureException).not.toHaveBeenCalled();
     });
 
     it("returns monthly summaries from SQL results", async () => {

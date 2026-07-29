@@ -53,6 +53,7 @@ export const monthlyReportRouter = router({
         const report = await repo.getReport(input.months, input.endDate);
         return { ...report, recovery };
       } catch (error: unknown) {
+        if (error instanceof TRPCError) throw error;
         captureException(error, {
           tags: { reportType: "monthly" },
           extra: {
@@ -63,6 +64,7 @@ export const monthlyReportRouter = router({
         throw new TRPCError({
           code: "SERVICE_UNAVAILABLE",
           message: reportRefreshErrorMessage("monthly", recovery.range),
+          cause: error,
         });
       }
     }),

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
 
@@ -42,6 +43,10 @@ import { weeklyReportRouter } from "./weekly-report.ts";
 describe("weeklyReportRouter", () => {
   const createCaller = createTestCallerFactory(weeklyReportRouter);
 
+  beforeEach(() => {
+    sentry.captureException.mockClear();
+  });
+
   describe("report", () => {
     it("returns empty report when no data", async () => {
       const caller = createCaller({
@@ -73,6 +78,7 @@ describe("weeklyReportRouter", () => {
 
       await expect(caller.report({ weeks: 4, endDate: "2026-03-24" })).rejects.toMatchObject({
         code: "SERVICE_UNAVAILABLE",
+        cause: failure,
         message:
           "The weekly report for 2026-03-01 through 2026-03-24 could not be refreshed. Retry now or review processing alerts if the problem continues.",
       });
@@ -80,6 +86,24 @@ describe("weeklyReportRouter", () => {
         tags: { reportType: "weekly" },
         extra: { startDate: "2026-03-01", endDate: "2026-03-24" },
       });
+    });
+
+    it("preserves an authored TRPCError unchanged", async () => {
+      const failure = new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Weekly report prerequisite missing",
+      });
+      const sensorStore = makeMockSensorStore([]);
+      vi.mocked(sensorStore.query).mockRejectedValue(failure);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await expect(caller.report({ weeks: 4, endDate: "2026-03-24" })).rejects.toBe(failure);
+      expect(sentry.captureException).not.toHaveBeenCalled();
     });
 
     it("asserts correct trainingHours rounding", async () => {
