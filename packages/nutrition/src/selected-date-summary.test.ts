@@ -51,6 +51,49 @@ describe("selectedDateNutritionSummarySchema", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects a fractional macro energy share", () => {
+    expect(() =>
+      selectedDateNutritionSummarySchema.parse({
+        ...summary,
+        macros: {
+          ...summary.macros,
+          protein: { ...summary.macros.protein, energySharePercentage: 21.5 },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects non-zero macro energy shares that do not total 100 percent", () => {
+    expect(() =>
+      selectedDateNutritionSummarySchema.parse({
+        ...summary,
+        macros: {
+          ...summary.macros,
+          protein: { ...summary.macros.protein, energySharePercentage: 21 },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("accepts zero energy shares when all macro calories are zero", () => {
+    const zeroMacro = { grams: 0, calories: 0, energySharePercentage: 0 };
+
+    expect(
+      selectedDateNutritionSummarySchema.parse({
+        ...summary,
+        macros: {
+          protein: zeroMacro,
+          carbs: zeroMacro,
+          fat: zeroMacro,
+        },
+      }).macros,
+    ).toEqual({
+      protein: zeroMacro,
+      carbs: zeroMacro,
+      fat: zeroMacro,
+    });
+  });
 });
 
 describe("nutritionSourceResolutionSchema", () => {
