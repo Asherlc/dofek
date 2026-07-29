@@ -6,7 +6,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createElement, type ReactNode, useMemo } from "react";
 import { captureException } from "./telemetry";
 
-export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 3;
+export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 4;
 
 export function mobileQueryCacheBuster(userId: string) {
   return `${userId}:v${MOBILE_QUERY_CACHE_CONTRACT_VERSION}`;
