@@ -47,9 +47,19 @@ const weekSummarySchema = z.object({
   avgHrv: z.number().nullable(),
 });
 
+const decisionSupportItemSchema = z.string().trim().min(1);
+const reportDecisionSynthesisSchema = z.object({
+  whatChanged: z.array(decisionSupportItemSchema),
+  likelyAssociations: z.array(decisionSupportItemSchema),
+  whatWorked: z.array(decisionSupportItemSchema),
+  whatToTryNext: z.array(decisionSupportItemSchema),
+  confidenceAndMissingData: z.array(decisionSupportItemSchema),
+});
+
 const weeklyReportSchema = z.object({
   current: weekSummarySchema.nullable(),
   history: z.array(weekSummarySchema),
+  decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
 });
 
 const monthSummarySchema = z.object({
@@ -67,6 +77,7 @@ const monthSummarySchema = z.object({
 const monthlyReportSchema = z.object({
   current: monthSummarySchema.nullable(),
   history: z.array(monthSummarySchema),
+  decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
 });
 const REPORT_PAGE_SIZE = 20;
 
@@ -123,7 +134,12 @@ function SharedHealthReport({ token }: { token: string }) {
     if (parsedReport.success) {
       return (
         <SharedReportShell>
-          <WeeklyReportCard data={parsedReport.data} />
+          <WeeklyReportCard
+            data={{
+              ...parsedReport.data,
+              decisionSupport: parsedReport.data.decisionSupport ?? null,
+            }}
+          />
         </SharedReportShell>
       );
     }
@@ -134,7 +150,12 @@ function SharedHealthReport({ token }: { token: string }) {
     if (parsedReport.success) {
       return (
         <SharedReportShell>
-          <MonthlyReportContent data={parsedReport.data} />
+          <MonthlyReportContent
+            data={{
+              ...parsedReport.data,
+              decisionSupport: parsedReport.data.decisionSupport ?? null,
+            }}
+          />
         </SharedReportShell>
       );
     }

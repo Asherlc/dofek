@@ -12,10 +12,12 @@ import { DofekChart } from "./DofekChart.tsx";
 interface Series {
   name: string;
   data: [string, number | null][];
+  accessibilityDescription?: string;
   color?: string;
   areaStyle?: boolean;
   yAxisIndex?: number;
   formatValue?: (value: number) => string;
+  visualization?: "line" | "point";
 }
 
 /** Returns true when every value across all series is null or data is empty. */
@@ -44,8 +46,23 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
   const hasDualAxis = yAxisConfig.length > 1;
 
   const seriesFormatters = new Map(series.map((item) => [item.name, item.formatValue]));
+  const accessibilityDescription = `Time series chart. ${series
+    .map(
+      (item) =>
+        item.accessibilityDescription ??
+        (item.visualization === "point"
+          ? `${item.name} is shown as separate points.`
+          : `${item.name} is shown as a numeric line.`),
+    )
+    .join(" ")}`;
 
   const option = {
+    aria: {
+      enabled: true,
+      label: {
+        description: accessibilityDescription,
+      },
+    },
     tooltip: dofekTooltip({
       formatter: (
         params: {
@@ -74,13 +91,20 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
     yAxis: yAxisConfig,
     grid: dofekGrid(hasDualAxis ? "dualAxis" : "single"),
     legend: dofekLegend(series.length > 1),
-    series: series.map((s) =>
-      dofekSeries.line(s.name, s.data, {
+    series: series.map((s) => {
+      if (s.visualization === "point") {
+        return dofekSeries.scatter(s.name, s.data, {
+          color: s.color,
+          symbolSize: 10,
+          yAxisIndex: s.yAxisIndex,
+        });
+      }
+      return dofekSeries.line(s.name, s.data, {
         color: s.color,
         areaStyle: s.areaStyle,
         yAxisIndex: s.yAxisIndex,
-      }),
-    ),
+      });
+    }),
   };
 
   return (
