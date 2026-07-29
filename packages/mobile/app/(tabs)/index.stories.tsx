@@ -98,16 +98,21 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
         summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
         zone: "Push",
       },
-      supportingFacts: [
-        { label: "Recovery", value: "82/100" },
-        { label: "Sleep performance", value: "88 (Good)" },
-      ],
-      confidence: "high",
+      supportingFacts: sleepDataUnavailable
+        ? [
+            { label: "Recovery", value: "82/100" },
+            { label: "Recent-to-baseline workload ratio", value: "0.91" },
+          ]
+        : [
+            { label: "Recovery", value: "82/100" },
+            { label: "Sleep performance", value: "88 (Good)" },
+          ],
+      confidence: sleepDataUnavailable ? "moderate" : "high",
       freshness: {
         recoveryDate: todayDate,
-        sleepDate: localDateString(-1),
+        sleepDate: sleepDataUnavailable ? null : localDateString(-1),
       },
-      missingInputs: [],
+      missingInputs: sleepDataUnavailable ? ["sleep"] : [],
     },
   );
 
