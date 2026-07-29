@@ -1,3 +1,10 @@
+import {
+  getEmailValidationError,
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
@@ -29,6 +36,8 @@ import { colors } from "../theme";
 
 type AuthMode = "login" | "register" | "reset";
 
+const IOS_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: ${PASSWORD_MAX_LENGTH};`;
+
 export default function LoginScreen() {
   const { serverUrl, onLoginSuccess } = useAuth();
   const router = useRouter();
@@ -38,8 +47,12 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [formError, setFormError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [emailTouched, setEmailTouched] = useState(false);
   const [password, setPassword] = useState("");
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [name, setName] = useState("");
   const { fontScale } = useWindowDimensions();
   const stackModeButtons = fontScale > 1;
@@ -99,8 +112,20 @@ export default function LoginScreen() {
   async function handlePasswordAuth() {
     if (!serverUrl || loggingIn) return;
 
+    const emailError = getEmailValidationError(email);
+    const passwordError =
+      password.length === 0
+        ? "Enter your password."
+        : authMode === "register"
+          ? getNewPasswordValidationError(password)
+          : null;
+    setEmailTouched(true);
+    setPasswordTouched(true);
+    if (emailError || passwordError) return;
+
     setLoggingIn(true);
     setError(null);
+    setFormError(null);
 
     try {
       const result =
@@ -113,7 +138,7 @@ export default function LoginScreen() {
       }
     } catch (err: unknown) {
       captureException(err, { source: "login-screen-password-auth" });
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      setFormError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
       setLoggingIn(false);
     }
@@ -135,6 +160,15 @@ export default function LoginScreen() {
     }
   }
 
+  function changeAuthMode(nextAuthMode: AuthMode) {
+    setAuthMode(nextAuthMode);
+    setError(null);
+    setFormError(null);
+    setEmailTouched(false);
+    setPasswordTouched(false);
+    setPasswordVisible(false);
+  }
+
   const useNativeApple =
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
@@ -151,6 +185,15 @@ export default function LoginScreen() {
   const showOAuthProviders = allProviders.length > 0 || useNativeApple;
   const passwordResetDisabled = loggingIn || !email.trim();
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
+  const emailValidationError =
+    authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
+  const passwordValidationError = passwordTouched
+    ? password.length === 0
+      ? "Enter your password."
+      : authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+    : null;
 
   return (
     <ScrollView
@@ -181,17 +224,21 @@ export default function LoginScreen() {
               <View style={styles.passwordSection}>
                 {authMode === "reset" ? (
                   <>
-                    <TextInput
-                      style={styles.input}
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholder="Email"
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      editable={!loggingIn}
-                    />
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Email</Text>
+                      <TextInput
+                        accessibilityLabel="Email"
+                        style={styles.input}
+                        value={email}
+                        onChangeText={setEmail}
+                        placeholder="Email"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoComplete="email"
+                        editable={!loggingIn}
+                      />
+                    </View>
                     <TouchableOpacity
                       style={[
                         styles.passwordButton,
@@ -211,10 +258,7 @@ export default function LoginScreen() {
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => {
-                        setAuthMode("login");
-                        setError(null);
-                      }}
+                      onPress={() => changeAuthMode("login")}
                       disabled={loggingIn}
                       accessibilityRole="button"
                       accessibilityLabel="Back to sign in"
@@ -232,7 +276,7 @@ export default function LoginScreen() {
                           stackModeButtons && styles.modeButtonStacked,
                           authMode === "login" && styles.modeButtonActive,
                         ]}
-                        onPress={() => setAuthMode("login")}
+                        onPress={() => changeAuthMode("login")}
                         disabled={loggingIn}
                         accessibilityRole="button"
                         accessibilityLabel="Sign in"
@@ -256,7 +300,7 @@ export default function LoginScreen() {
                           stackModeButtons && styles.modeButtonStacked,
                           authMode === "register" && styles.modeButtonActive,
                         ]}
-                        onPress={() => setAuthMode("register")}
+                        onPress={() => changeAuthMode("register")}
                         disabled={loggingIn}
                         accessibilityRole="button"
                         accessibilityLabel="Create account"
@@ -277,44 +321,103 @@ export default function LoginScreen() {
                     </View>
 
                     {authMode === "register" ? (
+                      <View style={styles.fieldGroup}>
+                        <Text style={styles.fieldLabel}>Name</Text>
+                        <TextInput
+                          accessibilityLabel="Name"
+                          style={styles.input}
+                          value={name}
+                          onChangeText={setName}
+                          placeholder="Name"
+                          placeholderTextColor={colors.textSecondary}
+                          autoCapitalize="words"
+                          autoComplete="name"
+                          editable={!loggingIn}
+                        />
+                      </View>
+                    ) : null}
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Email</Text>
                       <TextInput
-                        style={styles.input}
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="Name"
+                        accessibilityLabel="Email"
+                        style={[styles.input, emailValidationError && styles.inputError]}
+                        value={email}
+                        onChangeText={(nextEmail) => {
+                          setEmail(nextEmail);
+                          setFormError(null);
+                        }}
+                        onBlur={() => setEmailTouched(true)}
+                        placeholder="Email"
                         placeholderTextColor={colors.textSecondary}
-                        autoCapitalize="words"
-                        autoComplete="name"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoComplete="email"
                         editable={!loggingIn}
                       />
-                    ) : null}
-                    <TextInput
-                      style={styles.input}
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholder="Email"
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      editable={!loggingIn}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder="Password"
-                      placeholderTextColor={colors.textSecondary}
-                      secureTextEntry
-                      autoComplete={authMode === "register" ? "new-password" : "password"}
-                      editable={!loggingIn}
-                    />
+                      {emailValidationError ? (
+                        <Text
+                          style={styles.fieldError}
+                          accessibilityLiveRegion="polite"
+                          accessibilityRole="alert"
+                        >
+                          {emailValidationError}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Password</Text>
+                      <View
+                        style={[
+                          styles.passwordInputContainer,
+                          (passwordValidationError || formError) && styles.inputError,
+                        ]}
+                      >
+                        <TextInput
+                          accessibilityLabel="Password"
+                          style={styles.passwordInput}
+                          value={password}
+                          onChangeText={(nextPassword) => {
+                            setPassword(nextPassword);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setPasswordTouched(true)}
+                          placeholder="Password"
+                          placeholderTextColor={colors.textSecondary}
+                          secureTextEntry={!passwordVisible}
+                          autoComplete={
+                            authMode === "register" ? "new-password" : "current-password"
+                          }
+                          passwordRules={authMode === "register" ? IOS_PASSWORD_RULES : undefined}
+                          editable={!loggingIn}
+                        />
+                        <TouchableOpacity
+                          onPress={() => setPasswordVisible((isVisible) => !isVisible)}
+                          disabled={loggingIn}
+                          accessibilityRole="button"
+                          accessibilityLabel={passwordVisible ? "Hide password" : "Show password"}
+                          accessibilityState={{ disabled: loggingIn }}
+                          style={styles.passwordVisibilityButton}
+                        >
+                          <Text style={styles.passwordVisibilityText}>
+                            {passwordVisible ? "Hide" : "Show"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {passwordValidationError || formError ? (
+                        <Text
+                          style={styles.fieldError}
+                          accessibilityLiveRegion="polite"
+                          accessibilityRole="alert"
+                        >
+                          {passwordValidationError ?? formError}
+                        </Text>
+                      ) : authMode === "register" ? (
+                        <Text style={styles.fieldHint}>{PASSWORD_REQUIREMENT_TEXT}</Text>
+                      ) : null}
+                    </View>
                     {authMode === "login" ? (
                       <TouchableOpacity
-                        onPress={() => {
-                          setAuthMode("reset");
-                          setError(null);
-                        }}
+                        onPress={() => changeAuthMode("reset")}
                         disabled={loggingIn}
                         accessibilityRole="button"
                         accessibilityLabel="Forgot password?"
@@ -473,6 +576,22 @@ const styles = StyleSheet.create({
   modeButtonTextActive: {
     color: colors.text,
   },
+  fieldGroup: {
+    gap: 6,
+  },
+  fieldLabel: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  fieldHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  fieldError: {
+    color: colors.danger,
+    fontSize: 12,
+  },
   input: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -482,6 +601,35 @@ const styles = StyleSheet.create({
     borderColor: colors.surfaceSecondary,
     color: colors.text,
     fontSize: 15,
+  },
+  inputError: {
+    borderColor: colors.danger,
+  },
+  passwordInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingLeft: 16,
+    paddingRight: 8,
+    color: colors.text,
+    fontSize: 15,
+  },
+  passwordVisibilityButton: {
+    alignSelf: "stretch",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  passwordVisibilityText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "600",
   },
   passwordButton: {
     backgroundColor: colors.accent,

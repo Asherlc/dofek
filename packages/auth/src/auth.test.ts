@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { AuthUserSchema, ConfiguredProvidersSchema, IDENTITY_PROVIDER_NAMES } from "./auth";
+import {
+  AuthUserSchema,
+  ConfiguredProvidersSchema,
+  getEmailValidationError,
+  getNewPasswordValidationError,
+  IDENTITY_PROVIDER_NAMES,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "./auth";
 
 describe("IDENTITY_PROVIDER_NAMES", () => {
   it("contains the expected providers", () => {
@@ -97,5 +106,44 @@ describe("ConfiguredProvidersSchema", () => {
       password: true,
     });
     expect(result.password).toBe(true);
+  });
+});
+
+describe("getEmailValidationError", () => {
+  it("requires an email address", () => {
+    expect(getEmailValidationError("   ")).toBe("Enter your email address.");
+  });
+
+  it("rejects malformed email addresses", () => {
+    expect(getEmailValidationError("not-an-email")).toBe("Enter a valid email address.");
+  });
+
+  it("accepts a trimmed email address", () => {
+    expect(getEmailValidationError("  athlete@example.com ")).toBeNull();
+  });
+});
+
+describe("getNewPasswordValidationError", () => {
+  it("matches the existing server password boundaries", () => {
+    expect(PASSWORD_MIN_LENGTH).toBe(8);
+    expect(PASSWORD_MAX_LENGTH).toBe(128);
+    expect(PASSWORD_REQUIREMENT_TEXT).toBe("Use 8–128 characters.");
+  });
+
+  it("rejects passwords below the minimum length", () => {
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MIN_LENGTH - 1))).toBe(
+      "Use at least 8 characters.",
+    );
+  });
+
+  it("accepts passwords at both length boundaries", () => {
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MIN_LENGTH))).toBeNull();
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MAX_LENGTH))).toBeNull();
+  });
+
+  it("rejects passwords above the maximum length", () => {
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MAX_LENGTH + 1))).toBe(
+      "Use no more than 128 characters.",
+    );
   });
 });

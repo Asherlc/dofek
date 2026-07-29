@@ -1,3 +1,10 @@
+import {
+  getEmailValidationError,
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ProviderLogo, providerLabel } from "../components/ProviderLogo.tsx";
@@ -23,6 +30,9 @@ function LoginPage() {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   useEffect(() => {
     fetchConfiguredProviders()
@@ -45,12 +55,38 @@ function LoginPage() {
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   const showPasswordAuth = providers?.password ?? false;
   const showOAuthProviders = allProviders.length > 0;
+  const emailValidationError =
+    authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
+  const passwordValidationError = passwordTouched
+    ? password
+      ? authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+      : "Enter your password."
+    : null;
+
+  function changeAuthMode(mode: AuthMode) {
+    setAuthMode(mode);
+    setFormError(null);
+    setEmailTouched(false);
+    setPasswordTouched(false);
+    setPasswordVisible(false);
+  }
 
   async function handlePasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
+    setEmailTouched(true);
+    setPasswordTouched(true);
     setFormError(null);
+    const emailError = getEmailValidationError(email);
+    const passwordError = password
+      ? authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+      : "Enter your password.";
+    if (emailError || passwordError) return;
 
+    setSubmitting(true);
     try {
       const result =
         authMode === "register"
@@ -140,10 +176,7 @@ function LoginPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("login")}
                         className="w-full text-xs text-muted hover:text-foreground transition-colors"
                       >
                         Back to sign in
@@ -155,10 +188,7 @@ function LoginPage() {
                     <div className="flex rounded-lg border border-border overflow-hidden mb-4">
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("login")}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           authMode === "login"
                             ? "bg-accent/15 text-foreground"
@@ -169,10 +199,7 @@ function LoginPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("register");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("register")}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           authMode === "register"
                             ? "bg-accent/15 text-foreground"
@@ -183,13 +210,7 @@ function LoginPage() {
                       </button>
                     </div>
 
-                    {formError ? (
-                      <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
-                        {formError}
-                      </div>
-                    ) : null}
-
-                    <form onSubmit={handlePasswordSubmit} className="space-y-3">
+                    <form onSubmit={handlePasswordSubmit} className="space-y-3" noValidate>
                       {authMode === "register" ? (
                         <div>
                           <label htmlFor="register-name" className="block text-xs text-muted mb-1">
@@ -214,37 +235,91 @@ function LoginPage() {
                           id="auth-email"
                           type="email"
                           value={email}
-                          onChange={(event) => setEmail(event.target.value)}
+                          onChange={(event) => {
+                            setEmail(event.target.value);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setEmailTouched(true)}
                           required
                           autoComplete="email"
+                          aria-invalid={emailValidationError ? true : undefined}
+                          aria-describedby={emailValidationError ? "auth-email-error" : undefined}
                           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                           placeholder="you@example.com"
                         />
+                        {emailValidationError ? (
+                          <p
+                            id="auth-email-error"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {emailValidationError}
+                          </p>
+                        ) : null}
                       </div>
                       <div>
                         <label htmlFor="auth-password" className="block text-xs text-muted mb-1">
                           Password
                         </label>
-                        <input
-                          id="auth-password"
-                          type="password"
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
-                          required
-                          minLength={8}
-                          autoComplete={
-                            authMode === "register" ? "new-password" : "current-password"
-                          }
-                          className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-                        />
+                        <div className="relative">
+                          <input
+                            id="auth-password"
+                            type={passwordVisible ? "text" : "password"}
+                            value={password}
+                            onChange={(event) => {
+                              setPassword(event.target.value);
+                              setFormError(null);
+                            }}
+                            onBlur={() => setPasswordTouched(true)}
+                            required
+                            minLength={authMode === "register" ? PASSWORD_MIN_LENGTH : undefined}
+                            maxLength={authMode === "register" ? PASSWORD_MAX_LENGTH : undefined}
+                            autoComplete={
+                              authMode === "register" ? "new-password" : "current-password"
+                            }
+                            aria-invalid={passwordValidationError ? true : undefined}
+                            aria-describedby={
+                              passwordValidationError || authMode === "register" || formError
+                                ? "auth-password-message"
+                                : undefined
+                            }
+                            className="w-full px-3 py-2 pr-16 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setPasswordVisible((visible) => !visible)}
+                            aria-label={passwordVisible ? "Hide password" : "Show password"}
+                            className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-muted hover:text-foreground transition-colors"
+                          >
+                            {passwordVisible ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                        {passwordValidationError ? (
+                          <p
+                            id="auth-password-message"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {passwordValidationError}
+                          </p>
+                        ) : formError ? (
+                          <p
+                            id="auth-password-message"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {formError}
+                          </p>
+                        ) : authMode === "register" ? (
+                          <p id="auth-password-message" className="mt-1 text-xs text-subtle">
+                            {PASSWORD_REQUIREMENT_TEXT}
+                          </p>
+                        ) : null}
                       </div>
                       {authMode === "login" ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            setAuthMode("reset");
-                            setFormError(null);
-                          }}
+                          onClick={() => changeAuthMode("reset")}
                           className="text-xs text-muted hover:text-accent transition-colors"
                         >
                           Forgot password?
