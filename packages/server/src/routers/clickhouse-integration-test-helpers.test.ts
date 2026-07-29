@@ -124,14 +124,18 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".activity_sensor_summary_rows"),
+          command.includes(".activity_sensor_summary_rows") &&
+          command.includes("avg_hr Nullable(Float64)") &&
+          command.includes("climbing_seconds Nullable(Int32)"),
       ),
     ).toBe(true);
     expect(
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".activity_location_summary_rows"),
+          command.includes(".activity_location_summary_rows") &&
+          command.includes("centroid_lat Nullable(Float64)") &&
+          command.includes("centroid_lng Nullable(Float64)"),
       ),
     ).toBe(true);
     expect(

@@ -1,3 +1,5 @@
+import { buildActivitySensorSummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-sensor-summary.ts";
+
 export interface IsolatedClickHouseDatabases {
   analytics: string;
   ingest: string;
@@ -297,12 +299,8 @@ refreshed_at Nullable(DateTime64(6, 'UTC'))`,
     activity_location_summary_rows: `activity_id UUID,
 user_id UUID,
 total_distance Nullable(Float64),
-refresh_version UInt64,
-is_deleted UInt8,
-refreshed_at DateTime64(9)`,
-    activity_sensor_summary_rows: `activity_id UUID,
-user_id UUID,
-elevation_gain_m Nullable(Float64),
+centroid_lat Nullable(Float64),
+centroid_lng Nullable(Float64),
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at DateTime64(9)`,
@@ -524,6 +522,12 @@ refreshed_at DateTime64(9)`,
   const shortViewName = viewName.split(".").at(-1);
   if (!shortViewName) {
     throw new Error(`Missing ClickHouse test analytics table name for ${viewName}`);
+  }
+  if (shortViewName === "activity_sensor_summary_rows") {
+    return buildActivitySensorSummaryRowsTableSql().replace(
+      "analytics.activity_sensor_summary_rows",
+      viewName,
+    );
   }
   const columnDefinitions = columnDefinitionsByViewName[shortViewName];
   if (!columnDefinitions) {

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { backfillActivityOverviewAvailability } from "../../../../src/db/activity-overview-availability-backfill.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -29,6 +30,13 @@ const ACCESS_WINDOW: AccessWindow = {
   startDate: "2026-03-10",
   endDateExclusive: "2026-03-17",
 };
+const preservedBackfillFieldsSchema = z.array(
+  z.object({
+    centroid_lat: z.coerce.number(),
+    centroid_lng: z.coerce.number(),
+    sample_count: z.coerce.number(),
+  }),
+);
 
 describe("activity visibility consistency", () => {
   let testContext: TestContext;
@@ -253,6 +261,8 @@ describe("activity visibility consistency", () => {
       `INSERT INTO analytics.activity_location_summary_rows
 SELECT * REPLACE(
   CAST(0, 'Nullable(Float64)') AS total_distance,
+  CAST(12.34, 'Nullable(Float64)') AS centroid_lat,
+  CAST(56.78, 'Nullable(Float64)') AS centroid_lng,
   refresh_version + 1 AS refresh_version,
   now64(9, 'UTC') AS refreshed_at
 )
@@ -264,6 +274,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       `INSERT INTO analytics.activity_sensor_summary_rows
 SELECT * REPLACE(
   CAST(0, 'Nullable(Float64)') AS elevation_gain_m,
+  CAST(42, 'Nullable(UInt64)') AS sample_count,
   refresh_version + 1 AS refresh_version,
   now64(9, 'UTC') AS refreshed_at
 )
@@ -340,6 +351,25 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       totalDistanceMeters: null,
       totalElevationGainM: null,
     });
+    const preservedFieldsResult = await client.query({
+      query: `SELECT
+  location.centroid_lat AS centroid_lat,
+  location.centroid_lng AS centroid_lng,
+  sensor.sample_count AS sample_count
+FROM analytics.activity_location_summary_rows AS location FINAL
+INNER JOIN analytics.activity_sensor_summary_rows AS sensor FINAL
+  ON sensor.activity_id = location.activity_id
+ AND sensor.user_id = location.user_id
+WHERE location.activity_id = '${AUTHORIZED_WALK_ID}'`,
+      format: "JSONEachRow",
+    });
+    expect(preservedBackfillFieldsSchema.parse(await preservedFieldsResult.json())).toEqual([
+      {
+        centroid_lat: 12.34,
+        centroid_lng: 56.78,
+        sample_count: 42,
+      },
+    ]);
     await expect(
       repository.getActivityOverview({
         weeks: 8,
