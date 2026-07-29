@@ -31,8 +31,10 @@ and [Storybook globals and decorators](https://storybook.js.org/docs/8/essential
   surface and text roles to fixed light-only strings.
 - React Native Web Storybook builds and the on-device story catalog generates
   successfully. A Storybook-enabled iOS export is currently blocked before
-  app code by `react-native-gesture-handler@2.30.1` importing React Native
-  0.86's removed `Libraries/Renderer/shims/ReactNative` file.
+  app code because
+  [`react-native-gesture-handler@2.30.1` imports `ReactNative`](https://github.com/software-mansion/react-native-gesture-handler/blob/v2.30.1/packages/react-native-gesture-handler/src/RNRenderer.ts#L3)
+  from a shim that is absent from the
+  [React Native 0.86 renderer-shim directory](https://github.com/react/react-native/tree/v0.86.0/packages/react-native/Libraries/Renderer/shims).
 
 ## Test Strategy
 

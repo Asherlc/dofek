@@ -335,10 +335,10 @@ export default function StrainScreen() {
                       {
                         backgroundColor:
                           strainTarget.zone === "Push"
-                            ? `${colors.positive}20`
+                            ? colors.positiveSubtle
                             : strainTarget.zone === "Recovery"
-                              ? `${colors.danger}20`
-                              : `${colors.warning}20`,
+                              ? colors.dangerSubtle
+                              : colors.warningSubtle,
                         color:
                           strainTarget.zone === "Push"
                             ? colors.positive

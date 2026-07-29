@@ -43,6 +43,18 @@ describe("mobile semantic color palettes", () => {
 
     expect(contrastRatio(darkColors.textInverse, darkColors.accent)).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("provides translucent semantic colors before native adaptation", () => {
+    const translucentColors = {
+      accentSubtle: "#2d7a5615",
+      positiveSubtle: "#16a34a20",
+      warningSubtle: "#ca8a0420",
+      dangerSubtle: "#dc262620",
+    };
+
+    expect(lightColors).toMatchObject(translucentColors);
+    expect(darkColors).toMatchObject(translucentColors);
+  });
 });
 
 describe("createAdaptiveColors", () => {
@@ -56,6 +68,18 @@ describe("createAdaptiveColors", () => {
     expect(Object.keys(adaptiveColors)).toEqual(Object.keys(lightColors));
     expect(adaptiveColor).toHaveBeenCalledTimes(Object.keys(lightColors).length);
     expect(adaptiveColors.background).toBe(`${lightColors.background}|${darkColors.background}`);
+    expect(adaptiveColors.accentSubtle).toBe(
+      `${lightColors.accentSubtle}|${darkColors.accentSubtle}`,
+    );
+    expect(adaptiveColors.positiveSubtle).toBe(
+      `${lightColors.positiveSubtle}|${darkColors.positiveSubtle}`,
+    );
+    expect(adaptiveColors.warningSubtle).toBe(
+      `${lightColors.warningSubtle}|${darkColors.warningSubtle}`,
+    );
+    expect(adaptiveColors.dangerSubtle).toBe(
+      `${lightColors.dangerSubtle}|${darkColors.dangerSubtle}`,
+    );
     expect(adaptiveColors.text).toBe(`${lightColors.text}|${darkColors.text}`);
     expect(adaptiveColors.textInverse).toBe(`${lightColors.textInverse}|${darkColors.textInverse}`);
   });
