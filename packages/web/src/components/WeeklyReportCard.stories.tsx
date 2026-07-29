@@ -31,6 +31,25 @@ const meta = {
           avgReadiness: 72,
         },
       ],
+      decisionSupport: {
+        whatChanged: [
+          "Training was 8.5 hours, 13.3% more than the previous week.",
+          "Average nightly sleep was 7 hours 30 minutes, 20 minutes more than the previous week.",
+        ],
+        likelyAssociations: [
+          "Higher training coincided with more sleep and higher heart rate variability this week. This is a descriptive association, not evidence that one change caused another.",
+        ],
+        whatWorked: [
+          "You completed 6 activities while sleep and heart rate variability were stable or improved.",
+        ],
+        whatToTryNext: [
+          "Keep one major input steady next week—training volume or sleep schedule—so the following comparison is easier to interpret.",
+        ],
+        confidenceAndMissingData: [
+          "Confidence is limited because only 2 weekly periods are available.",
+          "These period averages can show co-movement, but they cannot establish cause and effect.",
+        ],
+      },
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;

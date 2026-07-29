@@ -52,6 +52,19 @@ const entries = [
     impact_score: 0.8,
   },
   {
+    id: "journal-alcohol-no",
+    date: "2026-07-23",
+    provider_id: "whoop",
+    question_slug: "alcohol",
+    display_name: "Alcohol",
+    category: "substance",
+    data_type: "boolean",
+    unit: null,
+    answer_text: null,
+    answer_numeric: 0,
+    impact_score: -0.2,
+  },
+  {
     id: "journal-note",
     date: "2026-07-23",
     source: { providerId: "apple_health", label: "Apple Health" },
@@ -68,12 +81,20 @@ const entries = [
 
 const questions = [
   {
+    slug: "alcohol",
+    display_name: "Alcohol",
+    category: "substance",
+    data_type: "boolean",
+    unit: null,
+    sort_order: 1,
+  },
+  {
     slug: "energy",
     display_name: "Energy",
     category: "wellness",
     data_type: "numeric",
     unit: "/10",
-    sort_order: 1,
+    sort_order: 2,
   },
 ];
 

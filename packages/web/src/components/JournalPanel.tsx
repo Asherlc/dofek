@@ -378,13 +378,13 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
       .parse(questionsQuery.data);
   }, [questionsQuery.data]);
 
-  // Only chart numeric questions that have data
+  // Chart questions with numeric storage, including exact 0/1 boolean observations.
   const entries = useMemo(() => {
     if (!entriesQuery.data) return [];
     return z.array(entrySchema).parse(entriesQuery.data);
   }, [entriesQuery.data]);
 
-  const numericQuestionSlugs = useMemo(() => {
+  const chartableQuestionSlugs = useMemo(() => {
     const slugs = new Set<string>();
     for (const entry of entries) {
       if (entry.answer_numeric !== null) {
@@ -395,8 +395,8 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
   }, [entries]);
 
   const chartableQuestions = useMemo(
-    () => questions.filter((q) => numericQuestionSlugs.has(q.slug)),
-    [questions, numericQuestionSlugs],
+    () => questions.filter((q) => chartableQuestionSlugs.has(q.slug)),
+    [questions, chartableQuestionSlugs],
   );
 
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
@@ -417,6 +417,15 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
         name: question?.display_name ?? slug,
         data,
         color: TREND_COLORS[index % TREND_COLORS.length],
+        accessibilityDescription:
+          question?.data_type === "boolean"
+            ? `${question.display_name} is shown as separate Yes/No points.`
+            : undefined,
+        visualization: question?.data_type === "boolean" ? ("point" as const) : ("line" as const),
+        formatValue:
+          question?.data_type === "boolean"
+            ? (value: number) => (value === 1 ? "Yes" : value === 0 ? "No" : String(value))
+            : undefined,
       };
     });
   }, [effectiveSlugs, entries, questions]);
