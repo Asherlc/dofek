@@ -452,67 +452,6 @@ describe("canonical nutrition contribution set", () => {
     ]);
   });
 
-  it("preserves entries whose provider is absent from the catalog", async () => {
-    const date = "2026-01-15";
-    await addEntry({
-      providerId: "unknown-nutrition",
-      date,
-      grain: "daily_aggregate",
-      nutrients: { calories: 1900, protein: 95 },
-    });
-
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
-
-    expect(rows).toEqual([
-      {
-        calories: 1900,
-        protein_g: 95,
-        resolution_status: "available",
-        contributing_source_labels: ["unknown-nutrition"],
-        contribution_grain: "daily_aggregate",
-      },
-    ]);
-  });
-
-  it("preserves an honest source path for an uncataloged provider", async () => {
-    const date = "2026-01-17";
-    await addEntry({
-      providerId: "unknown-nutrition",
-      date,
-      grain: "daily_aggregate",
-      sourceName: "Imported total",
-      nutrients: { calories: 1900, protein: 95 },
-    });
-
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
-
-    expect(rows).toEqual([
-      {
-        calories: 1900,
-        protein_g: 95,
-        resolution_status: "available",
-        contributing_source_labels: ["Imported total (via unknown-nutrition)"],
-        contribution_grain: "daily_aggregate",
-      },
-    ]);
-  });
-
   it("rejects aggregate-only totals from multiple sources", async () => {
     const date = "2026-01-06";
     await addEntry({

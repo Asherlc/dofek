@@ -38,7 +38,7 @@ SELECT
   CASE
     WHEN
       NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
-      AND LOWER(BTRIM(fe.source_name)) <> LOWER(COALESCE(provider.name, fe.provider_id))
+      AND LOWER(BTRIM(fe.source_name)) <> LOWER(provider.name)
       THEN fe.provider_id || ':' || BTRIM(fe.source_name)
     ELSE fe.provider_id || ':provider'
   END AS source_key,
@@ -49,12 +49,12 @@ SELECT
       THEN
         BTRIM(fe.source_name)
         || ' (via '
-        || COALESCE(provider.name, fe.provider_id)
+        || provider.name
         || ')'
-    ELSE COALESCE(provider.name, fe.provider_id)
+    ELSE provider.name
   END AS source_label
 FROM fitness.food_entry AS fe
-LEFT JOIN fitness.provider AS provider ON fe.provider_id = provider.id
+INNER JOIN fitness.provider AS provider ON fe.provider_id = provider.id
 LEFT JOIN nutrient_counts AS nc ON fe.id = nc.food_entry_id;
 --> statement-breakpoint
 

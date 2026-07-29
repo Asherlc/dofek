@@ -20362,8 +20362,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - **Status:** Root cause fixed on PR #2315; replacement exact-head CI is
   pending.
-- **Symptoms:** Integration shard 2 failed after the nutrition resolution view
-  migration was added.
+- **Symptoms:** Integration shards 2 and 3 failed after the nutrition resolution
+  view migration and its review-driven coverage were added.
 - **User impact:** No production impact because the migration was not merged.
   If shipped, days containing food and taken supplements would omit the
   supplement provider from daily provenance.
@@ -20373,17 +20373,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `expected { calories: 400, … } to deeply equal ...` in
   `supplement-dose-events.integration.test.ts`; expected
   `source_providers` contained both `dofek` and `supplement-food-fixture`, but
-  the result contained only `supplement-food-fixture`.
+  the result contained only `supplement-food-fixture`. Shard 3's first fatal
+  line was `Key (provider_id)=(unknown-nutrition) is not present in table
+  "provider"` from a new uncataloged-provider fixture.
 - **Root cause:** Migration `0065_nutrition_resolution_labels.sql` recreated
   `fitness.v_nutrition_daily` from the older food-only definition, overwriting
   the supplement-aware steady-state definition introduced by migration 0061.
   PostgreSQL replaces a view's defining query when
   [`CREATE OR REPLACE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)
   is used, so every existing supplement overlay had to be retained explicitly.
+  Separately, the uncataloged-provider review fixture contradicted the
+  `food_entry.provider_id` foreign key and could never represent valid data.
 - **Fix / mitigation:** Base migration 0065 on the current supplement-aware view
   definition, append the new food contribution fields, and preserve the food
   contribution source label separately from combined food-and-supplement
-  provenance. No retry, timeout, fallback, or disabled assertion was added.
+  provenance. Remove the invalid fixture and retain the provider join guaranteed
+  by the schema. No retry, timeout, fallback, or disabled assertion was added.
 - **Validation:** Migration policy, SQL lint, server typecheck, and focused
   repository/router tests pass locally. The existing real-Postgres supplement
   overlay test now also asserts the food contribution grain and label.
