@@ -107,7 +107,18 @@ describe("ios telemetry", () => {
     expect(mocks.mockInit).toHaveBeenCalledWith({
       dsn: "https://key@sentry.example/789",
       debug: true,
+      tracesSampler: expect.any(Function),
     });
+    const options = mocks.mockInit.mock.calls[0]?.[0];
+    const tracesSampler = options?.tracesSampler;
+    expect(tracesSampler?.({ name: "App Start", inheritOrSampleWith: vi.fn() })).toBe(1);
+    expect(tracesSampler?.({ name: "Mobile Startup", inheritOrSampleWith: vi.fn() })).toBe(1);
+    expect(
+      tracesSampler?.({
+        name: "unrelated navigation",
+        inheritOrSampleWith: vi.fn().mockReturnValue(0),
+      }),
+    ).toBe(0);
     expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
   });
 

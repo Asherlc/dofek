@@ -7,6 +7,72 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-29: iOS cold-start delay could not be reproduced with phase telemetry
+
+### Symptoms
+
+The iOS decision-quality audit at source `e4c429ea2` observed a Release cold
+start remaining on the native splash for roughly seven seconds.
+
+### User Impact
+
+The audit experienced a delayed first interactive screen. Production scope and
+frequency remain unknown because the existing mobile telemetry had no startup
+phase spans or logs.
+
+### Evidence
+
+A signed Release Simulator build retained the production Expo Updates policy
+(`checkAutomatically: ON_LOAD`, `fallbackToCacheTimeout: 5000`) and recorded
+Expo's native `Updates.launchDuration` alongside JavaScript, authentication,
+splash-dismissal, and deferred-service phases. Three force-stop launches
+reached the unauthenticated interactive screen in 713, 968, and 660 ms. A clean
+uninstall, reinstall, and launch reached it in 864 ms. Native OTA launch was the
+largest phase at 632–942 ms; JavaScript took 8–11 ms, authentication 6–7 ms,
+splash dismissal 4–5 ms, and the unauthenticated service path was skipped.
+Expo documents `Updates.launchDuration` as the native updates launch duration:
+<https://docs.expo.dev/versions/latest/sdk/updates/#updateslaunchduration>.
+
+One earlier launch did not evaluate JavaScript until 6.85 seconds after process
+start, but the host load exceeded 990 while its virtualization process consumed
+roughly nine CPU cores. That uncontrolled sample is not treated as application
+performance evidence.
+
+### Root Cause
+
+Unresolved. The controlled signed Release launches did not reproduce the
+reported delay, and no measured phase approached the configured five-second
+fallback. Production Axiom queries are blocked because the connected token is
+missing or expired, while the prior seven-day Sentry query contained no mobile
+startup spans.
+
+### Fix or Mitigation
+
+Added a sampled `Mobile Startup` trace with OTA, JavaScript, authentication,
+splash-dismissal, and deferred-service child phases. The app now calls
+`Sentry.appLoaded()` after splash dismissal and emits the same phase durations
+as structured OTLP logs. Sentry documents `appLoaded()` as the marker for the
+end of app-start measurement:
+<https://docs.sentry.io/platforms/react-native/tracing/instrumentation/custom-instrumentation/>.
+No launch policy, timeout, retry, or authenticated bootstrap behavior changed.
+
+### Validation
+
+The signed ad-hoc Release bundle passed strict code-signature verification and
+displayed the login screen on the dedicated iOS 26.5 Simulator. The four
+controlled launch traces completed with a ready outcome and no fatal runtime
+error. Focused mobile tests pass all 37 cases; mobile lint and TypeScript, root
+lint, and root/server/web TypeScript checks also pass.
+
+### Remaining Risk
+
+The original seven-second production-like sample remains unexplained until
+production startup telemetry can be queried with working Axiom access or the
+delay recurs under controlled conditions. The authenticated service-bootstrap
+phase is covered by tests but was not exercised in the signed runtime audit
+because no test account session was available. Do not change the Expo fallback
+without a trace showing that it dominates a slow launch.
+
 ## 2026-07-25: Locked-device workout route queries generated Sentry errors
 
 ### Symptoms
