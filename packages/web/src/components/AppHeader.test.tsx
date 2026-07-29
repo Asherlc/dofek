@@ -232,13 +232,19 @@ describe("AppHeader", () => {
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Reports").length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByRole("navigation", { name: "Sections" }))
+        .getByRole("link", { name: "More" })
+        .getAttribute("href"),
+    ).toBe("/more");
 
     fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
 
-    expect(screen.getAllByRole("link", { name: "More" })).toHaveLength(2);
-    for (const moreLink of screen.getAllByRole("link", { name: "More" })) {
-      expect(moreLink.getAttribute("href")).toBe("/more");
-    }
+    expect(
+      within(screen.getByRole("navigation", { name: "Mobile" }))
+        .getByRole("link", { name: "More" })
+        .getAttribute("href"),
+    ).toBe("/more");
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
   });
 
