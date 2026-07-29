@@ -8,15 +8,20 @@ vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) =
   return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
 });
 
-const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetricStreamRowBatches } =
-  vi.hoisted(() => {
-    const mockPublishedMetricStreamRowBatches: unknown[][] = [];
-    return {
-      mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-      mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
-      mockPublishedMetricStreamRowBatches,
-    };
-  });
+const {
+  mockInvalidateByPrefix,
+  mockMetricStreamPublishRows,
+  mockPublishedMetricStreamRowBatches,
+  mockSentryCaptureException,
+} = vi.hoisted(() => {
+  const mockPublishedMetricStreamRowBatches: unknown[][] = [];
+  return {
+    mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+    mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
+    mockPublishedMetricStreamRowBatches,
+    mockSentryCaptureException: vi.fn(),
+  };
+});
 
 const providerActivitySyncMocks = vi.hoisted(() => ({
   reconcile: vi.fn().mockResolvedValue(undefined),
@@ -39,7 +44,7 @@ vi.mock("dofek/lib/cache", () => ({
 }));
 
 vi.mock("@sentry/node", () => ({
-  captureException: vi.fn(),
+  captureException: mockSentryCaptureException,
 }));
 
 vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
@@ -91,6 +96,9 @@ const WORKOUT_SYNC_WINDOW = {
   windowEnd: "2024-12-31T23:59:59.999Z",
 };
 
+const DELETED_HEART_RATE_UUID = "00000000-0000-4000-8000-000000000101";
+const DELETED_VO2_MAX_UUID = "00000000-0000-4000-8000-000000000102";
+
 function makeSample(overrides: Record<string, unknown> = {}) {
   return {
     type: "HKQuantityTypeIdentifierStepCount",
@@ -120,6 +128,7 @@ describe("healthKitSyncRouter", () => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
     mockInvalidateByPrefix.mockClear();
+    mockSentryCaptureException.mockClear();
     mockMetricStreamPublishRows.mockReset();
     mockPublishedMetricStreamRowBatches.length = 0;
     providerActivitySyncMocks.reconcile.mockClear();
@@ -129,6 +138,161 @@ describe("healthKitSyncRouter", () => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
       return publishedRows;
+    });
+  });
+
+  describe("deleteQuantitySamples", () => {
+    it("publishes provider-scoped tombstones and invalidates the user's cache", async () => {
+      const execute = makeExecute();
+      const replaceRows = vi.fn(async (scope, rows, operationRevision) => ({
+        deleted: {
+          version: 3 as const,
+          eventType: "metric_stream_deleted" as const,
+          eventId: "00000000-0000-4000-8000-000000000001",
+          operationRevision,
+          scope,
+          partitionKey: "test",
+        },
+        rows,
+      }));
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+          replaceRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteQuantitySamples({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        deletedUUIDs: [DELETED_HEART_RATE_UUID],
+      });
+
+      expect(result).toEqual({ deleted: 1 });
+      expect(replaceRows).toHaveBeenCalledWith(
+        {
+          externalId: `hk:${DELETED_HEART_RATE_UUID}`,
+          providerId: "apple_health",
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
+        [],
+        "1000000000000000",
+      );
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001:");
+      expect(healthKitPushTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "deleteQuantitySamples",
+        status: "success",
+      });
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "deleteQuantitySamples",
+        category: "deletedQuantitySample",
+      });
+    });
+
+    it("does not invalidate cached queries when there are no deleted UUIDs", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteQuantitySamples({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        deletedUUIDs: [],
+      });
+
+      expect(result).toEqual({ deleted: 0 });
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    });
+
+    it("returns an actionable precondition error when tombstones are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+          deletedUUIDs: [DELETED_HEART_RATE_UUID],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "HealthKit deletion sync is unavailable because metric deletion publishing is not configured. Please try again later.",
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Metric stream publisher does not support HealthKit deletion tombstones",
+        }),
+        {
+          extra: {
+            userId: "00000000-0000-0000-0000-000000000001",
+          },
+          tags: {
+            endpoint: "deleteQuantitySamples",
+          },
+        },
+      );
+    });
+
+    it("rejects malformed HealthKit deletion identifiers", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+          deletedUUIDs: ["not-a-uuid"],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("preserves unexpected repository failures", async () => {
+      const repositoryError = new Error("database unavailable");
+      const execute = makeExecute();
+      execute.mockResolvedValueOnce([]).mockRejectedValueOnce(repositoryError);
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierVO2Max",
+          deletedUUIDs: [DELETED_VO2_MAX_UUID],
+        }),
+      ).rejects.toMatchObject({
+        cause: repositoryError,
+        code: "INTERNAL_SERVER_ERROR",
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(repositoryError, {
+        extra: {
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
+        tags: {
+          endpoint: "deleteQuantitySamples",
+        },
+      });
     });
   });
 

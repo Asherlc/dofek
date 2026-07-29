@@ -482,20 +482,25 @@ vi.mock("expo-haptics", () => ({
 }));
 
 // ── HealthKit native module mock ─────────────────────────────────────
-vi.mock("./modules/health-kit", () => ({
-  getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
-  hasEverAuthorized: vi.fn(() => false),
-  isAvailable: vi.fn(() => true),
-  isBackgroundDeliveryEnabled: vi.fn(() => false),
-  requestPermissions: vi.fn(() => Promise.resolve(true)),
-  requestAuthorization: vi.fn(() => Promise.resolve(true)),
-  queryDailyStatistics: vi.fn(() => Promise.resolve([])),
-  queryQuantitySamples: vi.fn(() => Promise.resolve([])),
-  queryWorkouts: vi.fn(() => Promise.resolve([])),
-  queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
-  querySleepSamples: vi.fn(() => Promise.resolve([])),
-  queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
-}));
+vi.mock("./modules/health-kit", async () => {
+  const { createEmptyAnchoredQueryResult } = await import("./modules/health-kit/test-helpers");
+  return {
+    completeAnchoredQuery: vi.fn(() => Promise.resolve(true)),
+    getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
+    hasEverAuthorized: vi.fn(() => false),
+    isAvailable: vi.fn(() => true),
+    isBackgroundDeliveryEnabled: vi.fn(() => false),
+    queryAnchoredSamples: vi.fn(() => Promise.resolve(createEmptyAnchoredQueryResult())),
+    requestPermissions: vi.fn(() => Promise.resolve(true)),
+    requestAuthorization: vi.fn(() => Promise.resolve(true)),
+    queryDailyStatistics: vi.fn(() => Promise.resolve([])),
+    queryQuantitySamples: vi.fn(() => Promise.resolve([])),
+    queryWorkouts: vi.fn(() => Promise.resolve([])),
+    queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
+    querySleepSamples: vi.fn(() => Promise.resolve([])),
+    queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
+  };
+});
 
 // ── CoreMotion native module mock ───────────────────────────────────
 vi.mock("./modules/core-motion", () => ({
