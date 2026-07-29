@@ -1,30 +1,14 @@
 import { selectRecentDailyLoad } from "@dofek/training/training";
-import { workloadRatioResultSchema } from "../contracts/mobile-dashboard-contracts.ts";
+import {
+  type WorkloadRatioResult,
+  workloadRatioResultSchema,
+} from "../contracts/mobile-dashboard-contracts.ts";
 
-export interface WorkloadRatioRow {
-  date: string;
-  dailyLoad: number;
-  strain: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
+export type WorkloadRatioRow = WorkloadRatioResult["timeSeries"][number];
 
-export interface WorkloadRatioContext {
-  label: string;
-  description: string;
-  recentDays: number;
-  baselineDays: number;
-}
+export type WorkloadRatioContext = WorkloadRatioResult["context"];
 
-export interface WorkloadRatioResult {
-  context: WorkloadRatioContext;
-  timeSeries: WorkloadRatioRow[];
-  displayedStrain: number;
-  displayedDate: string | null;
-}
-
-export { workloadRatioResultSchema };
+export { type WorkloadRatioResult, workloadRatioResultSchema };
 
 const workloadRatioContext = {
   label: "Recent-to-baseline workload ratio",

@@ -14,7 +14,10 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import { mobileRecoveryTabOutputSchema } from "../contracts/mobile-dashboard-contracts.ts";
+import {
+  type MobileRecoveryTabResult,
+  mobileRecoveryTabOutputSchema,
+} from "../contracts/mobile-dashboard-contracts.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -26,16 +29,12 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import type { StressResult } from "../repositories/stress-repository.ts";
-import { buildHealthspanResult, type HealthspanResult } from "../routers/healthspan.ts";
+import { buildHealthspanResult } from "../routers/healthspan.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
 import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
-import {
-  buildHealthStatusFromValues,
-  buildWeightHealthStatus,
-  type HealthStatusMetric,
-} from "./health-status.ts";
+import { buildHealthStatusFromValues, buildWeightHealthStatus } from "./health-status.ts";
 
-export { mobileRecoveryTabOutputSchema };
+export { type MobileRecoveryTabResult, mobileRecoveryTabOutputSchema };
 
 const recoveryRowSchema = z.object({
   date: dateStringSchema,
@@ -57,23 +56,7 @@ const recoveryRowSchema = z.object({
 
 type RecoveryRow = z.infer<typeof recoveryRowSchema>;
 
-export interface MobileRecoveryTrends {
-  latest_spo2: number | null;
-  latest_skin_temp: number | null;
-}
-
-export interface MobileRecoveryTabResult {
-  hrvVariability: HrvVariabilityRow[];
-  hrvBaseline: Awaited<ReturnType<DailyMetricsRepository["getHrvBaseline"]>>;
-  readinessScore: ReadinessRow[];
-  stress: StressResult;
-  trends: MobileRecoveryTrends | null;
-  dailyMetrics: DailyMetricsViewRow[];
-  weight: Awaited<ReturnType<BodyAnalyticsRepository["getSmoothedWeight"]>>;
-  weightPrediction: Awaited<ReturnType<BodyAnalyticsRepository["getWeightPrediction"]>>;
-  healthStatus: HealthStatusMetric[];
-  healthspan: HealthspanResult;
-}
+export type MobileRecoveryTrends = NonNullable<MobileRecoveryTabResult["trends"]>;
 
 interface MobileRecoveryTabContext {
   db: Pick<Database, "execute" | "transaction">;

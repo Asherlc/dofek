@@ -27,6 +27,8 @@ export const workloadRatioResultSchema = z.object({
   displayedDate: dateSchema.nullable(),
 });
 
+export type WorkloadRatioResult = z.infer<typeof workloadRatioResultSchema>;
+
 export const strainTargetResultSchema = z.object({
   targetStrain: strainScoreSchema,
   currentStrain: strainScoreSchema,
@@ -218,6 +220,8 @@ export const mobileRecoveryTabOutputSchema = z.object({
   }),
 });
 
+export type MobileRecoveryTabResult = z.infer<typeof mobileRecoveryTabOutputSchema>;
+
 const activitySchema = z.object({
   id: z.string(),
   activity_type: z.string(),
@@ -292,6 +296,8 @@ export const mobileTrainingTabOutputSchema = z.object({
     ),
   }),
 });
+
+export type MobileTrainingTabResult = z.infer<typeof mobileTrainingTabOutputSchema>;
 
 const fixtureInputSchema = z.object({
   days: z.number().int().positive(),

@@ -4,46 +4,25 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import { mobileTrainingTabOutputSchema } from "../contracts/mobile-dashboard-contracts.ts";
+import {
+  type MobileTrainingTabResult,
+  mobileTrainingTabOutputSchema,
+} from "../contracts/mobile-dashboard-contracts.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import {
-  type ClimbingGradeProgressionRow,
-  ClimbingRepository,
-  type ClimbingSessionSummaryRow,
-  type ClimbingVolumeByGradeRow,
-} from "../repositories/climbing-repository.ts";
+import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
-import {
-  type ActivityStatsRow,
-  TrainingRepository,
-  type WeeklyVolumeRow,
-} from "../repositories/training-repository.ts";
-import type { VerticalAscentRow } from "../routers/cycling-advanced.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
 import {
   buildStrainTargetResult,
   clickHouseDateAccessWindowClause,
   clickHouseDateAccessWindowParams,
-  type StrainTargetResult,
   strainTargetReadinessRowSchema,
 } from "./strain-target-result.ts";
 import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
 
-export { mobileTrainingTabOutputSchema };
-
-export interface MobileTrainingTabResult {
-  workloadRatio: WorkloadRatioResult;
-  strainTarget?: StrainTargetResult;
-  activities: ActivityStatsRow[];
-  weeklyVolume: WeeklyVolumeRow[];
-  verticalAscent: VerticalAscentRow[];
-  climbing: {
-    gradeProgression: ClimbingGradeProgressionRow[];
-    volumeByGrade: ClimbingVolumeByGradeRow[];
-    sessionSummary: ClimbingSessionSummaryRow[];
-  };
-}
+export { type MobileTrainingTabResult, mobileTrainingTabOutputSchema };
 
 interface MobileTrainingTabContext {
   db: Pick<Database, "execute">;
