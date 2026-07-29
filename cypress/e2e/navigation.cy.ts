@@ -34,14 +34,20 @@ describe("Navigation", () => {
     cy.get("main").then(($main) => {
       const initialMainTop = $main[0].getBoundingClientRect().top;
 
-      cy.get('button[aria-label="Toggle navigation menu"]').click();
-      cy.get('[role="dialog"][aria-modal="true"]')
-        .should("be.visible")
-        .and("have.attr", "aria-labelledby");
-      cy.get('nav[aria-label="Mobile"]').should("be.visible");
-      cy.window().its("scrollY").should("equal", 0);
-      cy.get("main").should(($openedMain) => {
-        expect($openedMain[0].getBoundingClientRect().top).to.be.closeTo(initialMainTop, 1);
+      cy.window().then((window) => {
+        const initialScrollY = window.scrollY;
+
+        cy.get('button[aria-label="Toggle navigation menu"]').click({
+          scrollBehavior: false,
+        });
+        cy.get('[role="dialog"][aria-modal="true"]')
+          .should("be.visible")
+          .and("have.attr", "aria-labelledby");
+        cy.get('nav[aria-label="Mobile"]').should("be.visible");
+        cy.window().its("scrollY").should("equal", initialScrollY);
+        cy.get("main").should(($openedMain) => {
+          expect($openedMain[0].getBoundingClientRect().top).to.be.closeTo(initialMainTop, 1);
+        });
       });
     });
 
