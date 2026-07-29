@@ -20592,3 +20592,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Tear down only the issue-2153 Compose project
   after merge. Treat any hosted SQLFluff failure as a new code signal rather
   than attributing it to this local restart.
+
+## 2026-07-29 — Merged mobile nutrition fixture used the retired macro-share field
+
+- **Status:** Fixture corrected on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** The mobile test job failed the aggregate-only nutrition
+  resolution test after PR #2315 merged the macro energy-share contract from
+  main.
+- **User impact:** No production impact because the migration was not merged.
+  The PR remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project mobile` in
+  [job 90737156661](https://github.com/Asherlc/dofek/actions/runs/30499794800/job/90737156661).
+  Its first fatal test line was
+  `FAIL app/(tabs)/food.test.tsx > FoodScreen AI meal confirmation > explains an aggregate-only contribution without rendering an unnamed meal`.
+  The rendered error showed that `summary.macros.protein.energySharePercentage`
+  was `undefined`.
+- **Root cause:** The aggregate-only fixture added by PR #2315 still used the
+  retired `percentage` field, while merged main PR #2316 made
+  `energySharePercentage` required and required nonzero shares to total 100.
+  The web fixture was reconciled during the merge, but the independently added
+  mobile fixture did not conflict textually and therefore retained the old
+  shape.
+- **Fix / mitigation:** Port the aggregate-only mobile fixture to
+  `energySharePercentage` and use the server's deterministic 20/50/30
+  allocation. Production behavior, retries, timeouts, and workflow
+  configuration are unchanged.
+- **Validation:** The focused mobile food suite, mobile typecheck, formatting,
+  and replacement exact-head mobile job must pass before merge.
+- **Remaining risk / follow-up:** When merging a shared DTO rename, search both
+  platform fixtures for retired field names even when Git reports no textual
+  conflict.

@@ -357,9 +357,9 @@ describe("FoodScreen AI meal confirmation", () => {
           mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 1800 },
           calorieGoal: { target: 2000, remaining: 200, over: 0, progressPercentage: 90 },
           macros: {
-            protein: { grams: 90, calories: 360, percentage: 20 },
-            carbs: { grams: 220, calories: 880, percentage: 49 },
-            fat: { grams: 60, calories: 540, percentage: 30 },
+            protein: { grams: 90, calories: 360, energySharePercentage: 20 },
+            carbs: { grams: 220, calories: 880, energySharePercentage: 50 },
+            fat: { grams: 60, calories: 540, energySharePercentage: 30 },
           },
         },
         resolution: {
