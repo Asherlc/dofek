@@ -1,11 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
 import { mobileRecoveryFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import { createFixtureDates } from "./fixture-dates";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./processing-status-story-fixture";
 import RecoveryScreen from "./recovery";
 
 function createSeededProviders() {
@@ -29,6 +33,11 @@ function createSeededProviders() {
     restingHrDeviation: null,
     sleepEfficiency: 88,
   }));
+  const processingStatus = seedReadyProcessingStatus(queryClient, [
+    "activity",
+    "sleep",
+    "recovery",
+  ]);
   const fixture = mobileRecoveryFixtureSchema.parse({
     input: { days: 30, endDate },
     data: {
@@ -114,14 +123,19 @@ function createSeededProviders() {
     fixture.data,
   );
 
-  return { queryClient };
+  return { processingStatus, queryClient };
 }
 
 function MockProviders({ children }: { children: React.ReactNode }) {
-  const { queryClient } = createSeededProviders();
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
-  });
+  const { queryClient, trpcClient } = useMemo(() => {
+    const seededProviders = createSeededProviders();
+    return {
+      ...seededProviders,
+      trpcClient: trpc.createClient({
+        links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
+      }),
+    };
+  }, []);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
