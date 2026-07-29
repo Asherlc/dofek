@@ -46,6 +46,41 @@ const recoveryBaselineRowSchema = z.object({
 
 type RecoveryBaselineRow = z.infer<typeof recoveryBaselineRowSchema>;
 
+const recoveryBaselineSelect = `SELECT
+  toString(recovery.date) AS date,
+  recovery.hrv AS hrv,
+  recovery.resting_hr AS resting_hr,
+  recovery.respiratory_rate AS respiratory_rate,
+  recovery.efficiency_pct AS efficiency_pct,
+  recovery.hrv_mean_30d AS hrv_mean_30d,
+  recovery.hrv_sd_30d AS hrv_sd_30d,
+  recovery.hrv_z_score AS hrv_z_score,
+  recovery.hrv_baseline_sample_count AS hrv_baseline_sample_count,
+  recovery.hrv_baseline_coverage AS hrv_baseline_coverage,
+  recovery.hrv_mean_7d AS hrv_mean_7d,
+  recovery.hrv_mean_previous_28d AS hrv_mean_previous_28d,
+  recovery.rhr_mean_30d AS rhr_mean_30d,
+  recovery.rhr_sd_30d AS rhr_sd_30d,
+  recovery.resting_hr_z_score AS resting_hr_z_score,
+  recovery.rhr_baseline_sample_count AS rhr_baseline_sample_count,
+  recovery.rhr_baseline_coverage AS rhr_baseline_coverage,
+  recovery.rhr_mean_7d AS rhr_mean_7d,
+  recovery.rhr_mean_previous_28d AS rhr_mean_previous_28d,
+  recovery.rr_mean_30d AS rr_mean_30d,
+  recovery.rr_sd_30d AS rr_sd_30d,
+  recovery.respiratory_rate_z_score AS respiratory_rate_z_score,
+  recovery.rr_baseline_sample_count AS rr_baseline_sample_count,
+  recovery.rr_baseline_coverage AS rr_baseline_coverage,
+  recovery.rr_mean_7d AS rr_mean_7d,
+  recovery.rr_mean_previous_28d AS rr_mean_previous_28d,
+  recovery.efficiency_mean_30d AS efficiency_mean_30d,
+  recovery.efficiency_sd_30d AS efficiency_sd_30d,
+  recovery.efficiency_z_score AS efficiency_z_score,
+  recovery.efficiency_baseline_sample_count AS efficiency_baseline_sample_count,
+  recovery.efficiency_baseline_coverage AS efficiency_baseline_coverage,
+  recovery.efficiency_mean_7d AS efficiency_mean_7d,
+  recovery.efficiency_mean_previous_28d AS efficiency_mean_previous_28d`;
+
 export const dailyRecoveryBaselineSchema = z.object({
   date: dateStringSchema,
   metrics: z.array(baselineRelativeMetricSchema),
@@ -149,40 +184,7 @@ export class RecoveryBaselineRepository {
   ): Promise<DailyRecoveryBaseline[]> {
     const rows = await this.#sensorStore.query(
       recoveryBaselineRowSchema,
-      `SELECT
-        toString(recovery.date) AS date,
-        recovery.hrv AS hrv,
-        recovery.resting_hr AS resting_hr,
-        recovery.respiratory_rate AS respiratory_rate,
-        recovery.efficiency_pct AS efficiency_pct,
-        recovery.hrv_mean_30d AS hrv_mean_30d,
-        recovery.hrv_sd_30d AS hrv_sd_30d,
-        recovery.hrv_z_score AS hrv_z_score,
-        recovery.hrv_baseline_sample_count AS hrv_baseline_sample_count,
-        recovery.hrv_baseline_coverage AS hrv_baseline_coverage,
-        recovery.hrv_mean_7d AS hrv_mean_7d,
-        recovery.hrv_mean_previous_28d AS hrv_mean_previous_28d,
-        recovery.rhr_mean_30d AS rhr_mean_30d,
-        recovery.rhr_sd_30d AS rhr_sd_30d,
-        recovery.resting_hr_z_score AS resting_hr_z_score,
-        recovery.rhr_baseline_sample_count AS rhr_baseline_sample_count,
-        recovery.rhr_baseline_coverage AS rhr_baseline_coverage,
-        recovery.rhr_mean_7d AS rhr_mean_7d,
-        recovery.rhr_mean_previous_28d AS rhr_mean_previous_28d,
-        recovery.rr_mean_30d AS rr_mean_30d,
-        recovery.rr_sd_30d AS rr_sd_30d,
-        recovery.respiratory_rate_z_score AS respiratory_rate_z_score,
-        recovery.rr_baseline_sample_count AS rr_baseline_sample_count,
-        recovery.rr_baseline_coverage AS rr_baseline_coverage,
-        recovery.rr_mean_7d AS rr_mean_7d,
-        recovery.rr_mean_previous_28d AS rr_mean_previous_28d,
-        recovery.efficiency_mean_30d AS efficiency_mean_30d,
-        recovery.efficiency_sd_30d AS efficiency_sd_30d,
-        recovery.efficiency_z_score AS efficiency_z_score,
-        recovery.efficiency_baseline_sample_count AS efficiency_baseline_sample_count,
-        recovery.efficiency_baseline_coverage AS efficiency_baseline_coverage,
-        recovery.efficiency_mean_7d AS efficiency_mean_7d,
-        recovery.efficiency_mean_previous_28d AS efficiency_mean_previous_28d
+      `${recoveryBaselineSelect}
       FROM analytics.daily_recovery AS recovery FINAL
       WHERE recovery.user_id = {userId:UUID}
         AND recovery.is_deleted = 0
@@ -214,6 +216,70 @@ export class RecoveryBaselineRepository {
         date: row.date,
         metrics: buildMetrics(row),
       }),
+    );
+  }
+
+  async latestMetrics(
+    endDate: string,
+    queryOptions?: ActivitySensorQueryOptions,
+  ): Promise<BaselineRelativeMetric[]> {
+    const accessPredicate =
+      this.#accessWindow?.kind === "limited"
+        ? `AND latest.date >= toDate({accessStartDate:String})
+          AND latest.date < toDate({accessEndDateExclusive:String})`
+        : "";
+    const rows = await this.#sensorStore.query(
+      recoveryBaselineRowSchema,
+      `${recoveryBaselineSelect}
+      FROM analytics.daily_recovery AS recovery FINAL
+      WHERE recovery.user_id = {userId:UUID}
+        AND recovery.is_deleted = 0
+        AND recovery.date <= toDate({endDate:String})
+        ${
+          this.#accessWindow?.kind === "limited"
+            ? `AND recovery.date >= toDate({accessStartDate:String})
+        AND recovery.date < toDate({accessEndDateExclusive:String})`
+            : ""
+        }
+        AND recovery.date IN (
+          SELECT arrayJoin(
+            arrayFilter(
+              candidate -> candidate > toDate(0),
+              [
+                maxIf(latest.date, latest.hrv IS NOT NULL),
+                maxIf(latest.date, latest.resting_hr IS NOT NULL),
+                maxIf(latest.date, latest.respiratory_rate IS NOT NULL),
+                maxIf(latest.date, latest.efficiency_pct IS NOT NULL)
+              ]
+            )
+          )
+          FROM analytics.daily_recovery AS latest FINAL
+          WHERE latest.user_id = {userId:UUID}
+            AND latest.is_deleted = 0
+            AND latest.date <= toDate({endDate:String})
+            ${accessPredicate}
+        )
+      ORDER BY recovery.date ASC`,
+      {
+        userId: this.#userId,
+        endDate,
+        ...(this.#accessWindow?.kind === "limited"
+          ? {
+              accessStartDate: this.#accessWindow.startDate,
+              accessEndDateExclusive: this.#accessWindow.endDateExclusive,
+            }
+          : {}),
+      },
+      queryOptions,
+    );
+
+    return latestRecoveryBaselineMetrics(
+      rows.map((row) =>
+        dailyRecoveryBaselineSchema.parse({
+          date: row.date,
+          metrics: buildMetrics(row),
+        }),
+      ),
     );
   }
 }

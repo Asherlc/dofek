@@ -506,6 +506,48 @@ describe("dailyMetricsRouter", () => {
       expect(queryText).not.toContain("base_dates.date >");
     });
 
+    it("uses the bounded latest-metrics query for baseline context when days is null", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          avg_hrv: 60,
+          avg_resting_hr: 54,
+          avg_spo2: null,
+          avg_steps: null,
+          avg_skin_temp: null,
+          stddev_hrv: 6,
+          stddev_resting_hr: 2,
+          stddev_spo2: null,
+          stddev_steps: null,
+          stddev_skin_temp: null,
+          latest_hrv: 72,
+          latest_resting_hr: 48,
+          latest_spo2: null,
+          latest_steps: null,
+          latest_skin_temp: null,
+          latest_date: "2024-01-16",
+          latest_steps_date: null,
+        },
+      ]);
+      const sensorStore = makeMockSensorStore([[{ date: "2024-01-16", resting_hr: 48 }], []]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.trends({ days: null, endDate: "2024-01-16" });
+
+      const baselineQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+      const baselineParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+      expect(baselineQuery).toContain("maxIf(latest.date, latest.hrv IS NOT NULL)");
+      expect(baselineQuery).not.toContain("startDate");
+      expect(baselineParams).toMatchObject({
+        userId: "user-1",
+        endDate: "2024-01-16",
+      });
+    });
+
     it("requires a sensor store for resting heart rate trend aggregation", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },

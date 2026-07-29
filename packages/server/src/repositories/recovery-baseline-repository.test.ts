@@ -116,4 +116,30 @@ describe("RecoveryBaselineRepository", () => {
       accessEndDateExclusive: "2026-07-17",
     });
   });
+
+  it("fetches only the latest non-null row dates for canonical recovery metrics", async () => {
+    const sensorStore = { query: vi.fn().mockResolvedValue([rawRow]) };
+    const repository = new RecoveryBaselineRepository(
+      "00000000-0000-4000-8000-000000000001",
+      sensorStore,
+    );
+
+    const result = await repository.latestMetrics("2026-07-29");
+
+    expect(result.map((metric) => metric.metric)).toEqual([
+      "hrv",
+      "resting_heart_rate",
+      "respiratory_rate",
+      "sleep_efficiency",
+    ]);
+    const query = sensorStore.query.mock.calls[0]?.[1];
+    expect(query).toContain("maxIf(latest.date, latest.hrv IS NOT NULL)");
+    expect(query).toContain("maxIf(latest.date, latest.efficiency_pct IS NOT NULL)");
+    expect(query).toContain("recovery.date IN");
+    expect(query).not.toContain("startDate");
+    expect(sensorStore.query.mock.calls[0]?.[2]).toEqual({
+      userId: "00000000-0000-4000-8000-000000000001",
+      endDate: "2026-07-29",
+    });
+  });
 });

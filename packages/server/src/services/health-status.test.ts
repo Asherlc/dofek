@@ -78,6 +78,48 @@ describe("buildDailyMetricHealthStatuses", () => {
       deviation: 2,
     });
   });
+
+  it("treats a respiratory rate above baseline as moving against the lower intent", () => {
+    const trends = {
+      avg_hrv: null,
+      avg_resting_hr: null,
+      avg_spo2: null,
+      avg_steps: null,
+      avg_skin_temp: null,
+      stddev_hrv: null,
+      stddev_resting_hr: null,
+      stddev_spo2: null,
+      stddev_steps: null,
+      stddev_skin_temp: null,
+      latest_hrv: null,
+      latest_resting_hr: null,
+      latest_spo2: null,
+      latest_steps: null,
+      latest_skin_temp: null,
+      latest_date: "2026-07-25",
+      latest_steps_date: null,
+    };
+    const respiratoryRate = buildBaselineRelativeMetric({
+      metric: "respiratory_rate",
+      label: "Respiratory Rate",
+      value: 16,
+      baselineMean: 14,
+      baselineStandardDeviation: 1,
+      zScore: 2,
+      baselineSampleCount: 30,
+      baselineCoverage: 1,
+      recentMean: 15,
+      comparisonMean: 14,
+    });
+
+    expect(buildDailyMetricHealthStatuses(trends, [respiratoryRate])[0]).toMatchObject({
+      metric: "respiratory_rate",
+      intent: "lower",
+      direction: "above",
+      statusToken: "far_from_baseline",
+      statusColor: "danger",
+    });
+  });
 });
 
 describe("buildHealthStatusFromSummary", () => {

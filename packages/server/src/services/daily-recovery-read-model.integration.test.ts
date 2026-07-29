@@ -4,6 +4,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { RecoveryBaselineRepository } from "../repositories/recovery-baseline-repository.ts";
 import { loadDashboardOverview } from "./dashboard-overview.ts";
 
 const testUserId = "00000000-0000-4000-8000-000000001771";
@@ -72,6 +73,25 @@ describe("daily recovery read-model lifecycle", () => {
     expect(rows[0]?.hrv_z_score).toBeCloseTo(2.4494, 3);
     expect(rows[0]?.efficiency_sd_30d).toBeCloseTo(8.165, 3);
     expect(rows[0]?.efficiency_z_score).toBeCloseTo(2.4494, 3);
+  });
+
+  it("selects only the latest non-null canonical metric rows for all-time consumers", async () => {
+    const activeClient = requireClient(client);
+    await seedBaselineFixture(activeClient, targetSchema);
+    await materializeRecoveryInputs(activeClient, targetSchema, false);
+    await materializeRecovery(activeClient, targetSchema, false);
+
+    const repository = new RecoveryBaselineRepository(
+      testUserId,
+      createIsolatedSensorStore(activeClient, targetSchema),
+    );
+
+    await expect(repository.latestMetrics(recoveryDate)).resolves.toMatchObject([
+      { metric: "hrv", value: 100 },
+      { metric: "resting_heart_rate", value: 48 },
+      { metric: "respiratory_rate", value: 18 },
+      { metric: "sleep_efficiency", value: 100 },
+    ]);
   });
 
   it("tombstones recovery after the final source input is removed and excludes it from the API", async () => {
@@ -395,6 +415,11 @@ async function seedBaselineFixture(client: ClickHouseClient, targetSchema: strin
       ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 80, false),
       ('${testUserId}', toDateTime64('2025-12-31 08:00:00', 6, 'UTC'), 480, 90, false),
       ('${testUserId}', toDateTime64('${recoveryDate} 08:00:00', 6, 'UTC'), 480, 100, false)`,
+    `INSERT INTO ${targetSchema}.resting_heart_rate_sleep_window VALUES
+      ('${testUserId}', toDateTime64('2025-12-02 08:00:00', 6, 'UTC'), 480, 54, 0, 1),
+      ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 52, 0, 1),
+      ('${testUserId}', toDateTime64('2025-12-31 08:00:00', 6, 'UTC'), 480, 50, 0, 1),
+      ('${testUserId}', toDateTime64('${recoveryDate} 08:00:00', 6, 'UTC'), 480, 48, 0, 1)`,
   ]);
 }
 

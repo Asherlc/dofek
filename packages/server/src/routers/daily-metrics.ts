@@ -77,11 +77,7 @@ export const dailyMetricsRouter = router({
         sensorStore,
         ctx.accessWindow,
       );
-      const baselineStartDate =
-        range.days === null
-          ? "1970-01-01"
-          : dateWindowStartString(input.endDate, Math.max(0, range.days - 1));
-      const [restingHeartRateCte, baselineRows] = await Promise.all([
+      const [restingHeartRateCte, baselineRelative] = await Promise.all([
         fetchRestingHeartRateValuesCte({
           sensorStore,
           userId: ctx.userId,
@@ -89,12 +85,17 @@ export const dailyMetricsRouter = router({
           endDate: input.endDate,
           days: range.days,
         }),
-        baselineRepository.listRange(baselineStartDate, input.endDate, {
-          priority: "dashboard",
-        }),
+        range.days === null
+          ? baselineRepository.latestMetrics(input.endDate, { priority: "dashboard" })
+          : baselineRepository
+              .listRange(
+                dateWindowStartString(input.endDate, Math.max(0, range.days - 1)),
+                input.endDate,
+                { priority: "dashboard" },
+              )
+              .then(latestRecoveryBaselineMetrics),
       ]);
       const trends = await repo.getTrends(range.days, input.endDate, restingHeartRateCte);
-      const baselineRelative = latestRecoveryBaselineMetrics(baselineRows);
       return trends
         ? {
             ...trends,

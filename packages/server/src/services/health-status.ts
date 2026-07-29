@@ -200,7 +200,8 @@ export function buildWeightHealthStatus(
 
 function recoveryMetricIntent(metric: BaselineRelativeMetric): HealthMetricIntent {
   if (metric.metric === "hrv" || metric.metric === "sleep_efficiency") return "higher";
-  if (metric.metric === "resting_heart_rate") return "lower";
+  if (metric.metric === "resting_heart_rate" || metric.metric === "respiratory_rate")
+    return "lower";
   return "neutral";
 }
 
