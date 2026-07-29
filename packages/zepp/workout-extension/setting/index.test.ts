@@ -10,7 +10,11 @@ interface SettingState {
   serverUrl: string;
   email: string;
   password: string;
-  connectionStatus: string;
+  connectionStatus: Record<string, unknown>;
+  pairingShortCode: string | null;
+  pairingVerificationUrl: string | null;
+  pairingQrImageUrl: string | null;
+  pairingExpiresAt: string | null;
 }
 
 interface SettingConfiguration {
@@ -67,7 +71,11 @@ function buildWith(values: Readonly<Record<string, string | null>>) {
     serverUrl: DEFAULT_DOFEK_SERVER_URL,
     email: "",
     password: "",
-    connectionStatus: "not connected",
+    connectionStatus: {},
+    pairingShortCode: null,
+    pairingVerificationUrl: null,
+    pairingQrImageUrl: null,
+    pairingExpiresAt: null,
   };
   const settingsStorage = {
     getItem: vi.fn((key: string) => values[key] ?? null),
@@ -93,7 +101,11 @@ describe("workout extension settings", () => {
       serverUrl: "https://dofek.example.test",
       email: "athlete@example.test",
       password: "",
-      connectionStatus: "connected",
+      connectionStatus: { state: "connected" },
+      pairingShortCode: null,
+      pairingVerificationUrl: null,
+      pairingQrImageUrl: null,
+      pairingExpiresAt: null,
     });
     expect(inputConfigurations).toHaveLength(3);
     expect(inputConfigurations[0]).toMatchObject({
@@ -108,29 +120,20 @@ describe("workout extension settings", () => {
       title: "Dofek Password",
       placeholder: "Enter your Dofek password",
     });
-    expect(buttonConfigurations).toHaveLength(1);
+    expect(buttonConfigurations).toHaveLength(4);
     expect(buttonConfigurations[0]).toMatchObject({
-      label: "Connect Dofek",
+      label: "Create QR / short code",
       color: "primary",
       style: { marginTop: "1em" },
     });
-    expect(viewConfigurations).toEqual([
-      {
-        style: { style: { fontSize: "1.4rem", fontWeight: "bold", marginBottom: "1em" } },
-        children: ["Dofek Workout Sync"],
-      },
-      {
-        style: { style: { marginTop: "1em" } },
-        children: ["Connection: connected"],
-      },
-      {
-        style: { style: { marginTop: "1em", color: "#888" } },
-        children: [
-          "Enable Dofek Workout inside the watch Workout app. Live samples are buffered and retried when the phone is unavailable.",
-        ],
-      },
-      expect.objectContaining({ style: { style: { padding: "1em" } } }),
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual([
+      "Create QR / short code",
+      "Log in and connect",
+      "Check connection",
+      "Disconnect Dofek",
     ]);
+    expect(JSON.stringify(viewConfigurations)).toContain("Connection: connected");
+    expect(JSON.stringify(viewConfigurations)).toContain("Motion Extensions");
     expect(rendered).toMatchObject({ style: { style: { padding: "1em" } } });
   });
 
@@ -139,10 +142,13 @@ describe("workout extension settings", () => {
 
     expect(configuration?.state.serverUrl).toBe(DEFAULT_DOFEK_SERVER_URL);
     expect(configuration?.state.email).toBe("");
-    expect(configuration?.state.connectionStatus).toBe("invalid saved status");
+    expect(configuration?.state.connectionStatus).toMatchObject({
+      state: "error",
+      reason: expect.stringContaining("Stored connection status is invalid"),
+    });
 
     buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ other: true }) });
-    expect(configuration?.state.connectionStatus).toBe("not connected");
+    expect(configuration?.state.connectionStatus).toEqual({ other: true });
 
     expect(() =>
       buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify("connected") }),
@@ -150,7 +156,7 @@ describe("workout extension settings", () => {
     expect(() =>
       buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify(null) }),
     ).not.toThrow();
-    expect(configuration?.state.connectionStatus).toBe("not connected");
+    expect(configuration?.state.connectionStatus).toEqual({});
   });
 
   it("persists edits and sends a nonce-bearing login command", () => {
@@ -160,7 +166,7 @@ describe("workout extension settings", () => {
     inputConfigurations[0]?.onChange("https://new.example.test");
     inputConfigurations[1]?.onChange("new@example.test");
     inputConfigurations[2]?.onChange("secret");
-    buttonConfigurations[0]?.onClick();
+    buttonConfigurations[1]?.onClick();
 
     expect(settingsStorage.setItem).toHaveBeenNthCalledWith(
       1,
@@ -182,5 +188,26 @@ describe("workout extension settings", () => {
       }),
     );
     expect(configuration?.state.password).toBe("");
+  });
+
+  it("starts pairing and exposes connection management commands", () => {
+    const { settingsStorage } = buildWith({});
+
+    buttonConfigurations[0]?.onClick();
+    buttonConfigurations[2]?.onClick();
+    buttonConfigurations[3]?.onClick();
+
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+      STORAGE_KEYS.CMD_START_PAIRING,
+      "1",
+    );
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+      STORAGE_KEYS.CMD_CHECK_CONNECTION,
+      "1",
+    );
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+      STORAGE_KEYS.CMD_DISCONNECT,
+      "1",
+    );
   });
 });

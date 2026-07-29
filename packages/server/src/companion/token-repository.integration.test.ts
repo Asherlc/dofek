@@ -5,7 +5,9 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   createOrGetCompanionToken,
+  listActiveCompanionTokens,
   regenerateCompanionToken,
+  revokeCompanionToken,
   validateCompanionToken,
 } from "./token-repository.ts";
 
@@ -91,6 +93,37 @@ describe("companion token repository (integration)", () => {
           WHERE user_id = ${testUserId} AND revoked_at IS NULL`,
     );
     expect(activeTokenRows[0]?.active_count).toBe(1);
+  });
+
+  it("keeps independent normal-app and workout-extension tokens active", async () => {
+    const mainToken = await createOrGetCompanionToken(ctx.db, testUserId, "zepp-main");
+    const workoutToken = await createOrGetCompanionToken(ctx.db, testUserId, "zepp-workout");
+    if (!mainToken.token || !workoutToken.token) {
+      throw new Error("Failed to create typed companion tokens");
+    }
+
+    expect(await validateCompanionToken(ctx.db, mainToken.token)).toBe(testUserId);
+    expect(await validateCompanionToken(ctx.db, workoutToken.token)).toBe(testUserId);
+    await expect(listActiveCompanionTokens(ctx.db, testUserId)).resolves.toEqual([
+      expect.objectContaining({ connectionType: "zepp-main" }),
+      expect.objectContaining({ connectionType: "zepp-workout" }),
+    ]);
+  });
+
+  it("revokes one connection type without invalidating the other", async () => {
+    const mainToken = await createOrGetCompanionToken(ctx.db, testUserId, "zepp-main");
+    const workoutToken = await createOrGetCompanionToken(ctx.db, testUserId, "zepp-workout");
+    if (!mainToken.token || !workoutToken.token) {
+      throw new Error("Failed to create typed companion tokens");
+    }
+
+    await revokeCompanionToken(ctx.db, testUserId, "zepp-main");
+
+    expect(await validateCompanionToken(ctx.db, mainToken.token)).toBeNull();
+    expect(await validateCompanionToken(ctx.db, workoutToken.token)).toBe(testUserId);
+    await expect(listActiveCompanionTokens(ctx.db, testUserId)).resolves.toEqual([
+      expect.objectContaining({ connectionType: "zepp-workout" }),
+    ]);
   });
 
   it("returns a conflict result when regenerations contend", async () => {

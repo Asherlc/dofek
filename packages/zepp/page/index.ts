@@ -122,6 +122,7 @@ const LOGIN_BUTTON_LAYOUT = ROUND_LOGIN_LAYOUT?.button ?? {
 };
 
 let sessionControlButton: ReturnType<typeof createWidget> | null = null;
+let connectionButton: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
 let hintText: ReturnType<typeof createWidget> | null = null;
@@ -274,7 +275,7 @@ Page(
         text: "",
       });
 
-      createWidget(widget.BUTTON, {
+      connectionButton = createWidget(widget.BUTTON, {
         ...LOGIN_BUTTON_LAYOUT,
         text: "Login on watch",
         color: 0xffffff,
@@ -282,7 +283,11 @@ Page(
         normal_color: 0x1976d2,
         press_color: 0x64a8f0,
         click_func: () => {
-          this.loginFromWatch();
+          if (this.state.hasCredentials) {
+            this.disconnectFromWatch();
+          } else {
+            this.loginFromWatch();
+          }
         },
       });
     },
@@ -298,6 +303,10 @@ Page(
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
           }
           this.state.hasCredentials = result?.hasCredentials === true;
+          connectionButton?.setProperty(
+            prop.TEXT,
+            this.state.hasCredentials ? "Disconnect Dofek" : "Login on watch",
+          );
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
           if (!this.state.hasCredentials && !pairing) {
@@ -505,6 +514,7 @@ Page(
               })
                 .then(() => {
                   this.state.hasCredentials = true;
+                  connectionButton?.setProperty(prop.TEXT, "Disconnect Dofek");
                   clearPairingQrWidget();
                   renderHint("Connected");
                 })
@@ -516,6 +526,23 @@ Page(
           });
         },
       });
+    },
+
+    disconnectFromWatch() {
+      this.request({
+        method: "dofek.disconnect",
+        params: {},
+      })
+        .then(() => {
+          this.state.hasCredentials = false;
+          connectionButton?.setProperty(prop.TEXT, "Login on watch");
+          clearPairingQrWidget();
+          renderHint("Not connected\nCreate code in Zepp settings");
+        })
+        .catch((error: unknown) => {
+          logger.error("watch disconnect failed %j", error);
+          renderHint("Disconnect failed\nOpen Zepp settings");
+        });
     },
 
     handleSample(sample: ImuSample) {

@@ -308,3 +308,4 @@ declare function View(style: Record<string, unknown>, children: unknown[]): unkn
 declare function Button(options: Record<string, unknown>): unknown;
 declare function TextInput(options: Record<string, unknown>): unknown;
 declare function ToggleSwitch(options: Record<string, unknown>): unknown;
+declare const DOFEK_COMPANION_CONNECTION_TYPE: "zepp-main" | "zepp-workout";

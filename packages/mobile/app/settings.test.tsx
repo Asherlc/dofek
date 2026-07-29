@@ -103,6 +103,10 @@ const mockUnitSettingQuery: {
   refetch: mockUnitSettingRefetch,
 };
 const mockZeppPairingClaim = vi.fn();
+const mockZeppConnectionRevoke = vi.fn();
+let mockZeppConnections: Array<{
+  connectionType: "zepp-main" | "zepp-workout";
+}> = [];
 type ZeppPairingMutationOptions = {
   onError?: (error: { message: string }) => void;
   onMutate?: () => void;
@@ -221,6 +225,23 @@ vi.mock("../lib/trpc", () => ({
         },
       },
     },
+    companionToken: {
+      list: {
+        useQuery: () => ({
+          data: mockZeppConnections,
+          error: null,
+          isLoading: false,
+          refetch: vi.fn().mockResolvedValue(undefined),
+        }),
+      },
+      revoke: {
+        useMutation: () => ({
+          mutate: mockZeppConnectionRevoke,
+          error: null,
+          isPending: false,
+        }),
+      },
+    },
     medicationDoseEvents: {
       list: {
         useQuery: () => ({ data: { events: [] }, isLoading: false, error: null }),
@@ -268,6 +289,7 @@ beforeEach(() => {
     access: { ...defaultBillingStatus.access },
   };
   mockZeppPairingMutationOptions = null;
+  mockZeppConnections = [];
   mockSetPasswordMutationOptions = null;
   mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
   mockUnitSettingQuery.error = null;
@@ -569,6 +591,20 @@ describe("SettingsScreen Zepp pairing", () => {
     });
 
     expect(screen.queryByText("Old pairing error")).toBeNull();
+  });
+
+  it("shows and disconnects each active Zepp app independently", async () => {
+    mockZeppConnections = [{ connectionType: "zepp-main" }, { connectionType: "zepp-workout" }];
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Zepp app: Connected")).toBeTruthy();
+    expect(screen.getByText("Workout extension: Connected")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Disconnect Workout extension"));
+    expect(mockZeppConnectionRevoke).toHaveBeenCalledWith({
+      connectionType: "zepp-workout",
+    });
   });
 });
 

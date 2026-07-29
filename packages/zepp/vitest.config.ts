@@ -33,7 +33,7 @@ for (const mod of zeppModules) {
 export default defineConfig({
   test: {
     globals: false,
-    include: ["src/*.test.ts", "workout-extension/**/*.test.ts"],
+    include: ["src/*.test.ts", "setting/**/*.test.ts", "workout-extension/**/*.test.ts"],
   },
   resolve: {
     alias,

@@ -12,6 +12,9 @@ await build({
   platform: "neutral",
   target: "es2022",
   format: "esm",
+  define: {
+    DOFEK_COMPANION_CONNECTION_TYPE: JSON.stringify("zepp-main"),
+  },
   external: ["@zos/*", "@zeppos/*"],
   outdir: ".",
   allowOverwrite: true,

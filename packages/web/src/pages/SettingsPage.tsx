@@ -48,6 +48,12 @@ export function SettingsPage() {
   const trpcUtils = trpc.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [zeppPairingCode, setZeppPairingCode] = useState("");
+  const zeppConnections = trpc.companionToken.list.useQuery();
+  const revokeZeppConnection = trpc.companionToken.revoke.useMutation({
+    onSuccess: async () => {
+      await zeppConnections.refetch();
+    },
+  });
   const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
     onSuccess: async () => {
       setShowDeleteConfirm(false);
@@ -66,8 +72,9 @@ export function SettingsPage() {
     },
   });
   const zeppPairingMutation = trpc.companionPairing.claim.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       setZeppPairingCode("");
+      await zeppConnections.refetch();
     },
   });
 
@@ -236,6 +243,44 @@ export function SettingsPage() {
             subtitle="Connect the Zepp watch app to this account"
           >
             <div className="space-y-3">
+              <div className="space-y-2 rounded border border-border bg-surface-solid p-3">
+                <p className="text-xs font-medium text-foreground">Current connections</p>
+                {zeppConnections.isLoading ? (
+                  <p className="text-xs text-subtle">Checking connections…</p>
+                ) : zeppConnections.error ? (
+                  <p className="text-xs text-red-400">{zeppConnections.error.message}</p>
+                ) : zeppConnections.data?.length ? (
+                  zeppConnections.data.map((connection) => (
+                    <div
+                      key={connection.connectionType}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <span className="text-xs text-accent">
+                        {connection.connectionType === "zepp-main"
+                          ? "Zepp app"
+                          : "Workout extension"}
+                        : Connected
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs text-red-400 hover:text-red-300"
+                        onClick={() =>
+                          revokeZeppConnection.mutate({
+                            connectionType: connection.connectionType,
+                          })
+                        }
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-subtle">No Zepp apps connected</p>
+                )}
+                {revokeZeppConnection.error ? (
+                  <p className="text-xs text-red-400">{revokeZeppConnection.error.message}</p>
+                ) : null}
+              </div>
               <label className="block space-y-1">
                 <span className="text-xs text-subtle">Short code</span>
                 <input
@@ -256,7 +301,12 @@ export function SettingsPage() {
                 {zeppPairingMutation.isPending ? "Connecting..." : "Connect Zepp App"}
               </button>
               {zeppPairingMutation.isSuccess ? (
-                <p className="text-xs text-accent">Zepp app connected. Return to Zepp to sync.</p>
+                <p className="text-xs text-accent">
+                  {zeppPairingMutation.data?.connectionType === "zepp-workout"
+                    ? "Workout extension"
+                    : "Zepp app"}{" "}
+                  connected. Return to Zepp to sync.
+                </p>
               ) : null}
               {zeppPairingMutation.error ? (
                 <p className="text-xs text-red-400">{zeppPairingMutation.error.message}</p>

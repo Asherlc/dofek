@@ -4,13 +4,19 @@ import express, { Router } from "express";
 import QRCode from "qrcode";
 import { z } from "zod";
 import {
+  companionConnectionTypeSchema,
+  DEFAULT_COMPANION_CONNECTION_TYPE,
+} from "../companion/connection-type.ts";
+import {
   type CompanionPairingStore,
   getCompanionPairingStore,
 } from "../lib/companion-pairing-store.ts";
 import { getPublicUrlOrigin } from "../lib/public-url.ts";
 import { logger } from "../logger.ts";
 
-const pairingStartSchema = z.object({});
+const pairingStartSchema = z.object({
+  connectionType: companionConnectionTypeSchema.optional(),
+});
 
 function sendJson(res: import("express").Response, status: number, body: unknown): void {
   res.status(status).json(body);
@@ -43,10 +49,12 @@ export function createCompanionPairingRouter(deps: {
     }
 
     try {
-      const challenge = await store.createChallenge();
+      const connectionType = parsed.data.connectionType ?? DEFAULT_COMPANION_CONNECTION_TYPE;
+      const challenge = await store.createChallenge(undefined, connectionType);
       sendJson(res, 200, {
         pairingId: challenge.id,
         shortCode: challenge.shortCode,
+        connectionType: challenge.connectionType,
         verificationUrl: buildVerificationUrl(publicOrigin, challenge.shortCode),
         qrImageUrl: buildQrImageUrl(publicOrigin, challenge.id),
         expiresAt: challenge.expiresAt,
@@ -78,6 +86,7 @@ export function createCompanionPairingRouter(deps: {
       if (challenge.claimedAt && challenge.companionToken) {
         sendJson(res, 200, {
           state: "claimed",
+          connectionType: challenge.connectionType,
           companionToken: challenge.companionToken,
           claimedAt: challenge.claimedAt,
           expiresAt: challenge.expiresAt,
@@ -87,6 +96,7 @@ export function createCompanionPairingRouter(deps: {
 
       sendJson(res, 200, {
         state: "pending",
+        connectionType: challenge.connectionType,
         shortCode: challenge.shortCode,
         expiresAt: challenge.expiresAt,
       });

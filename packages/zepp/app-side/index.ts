@@ -51,6 +51,13 @@ AppSideService(
       if (pairingId && !apiToken) {
         this.schedulePairingPoll(pairingId, getStoredServerUrl());
       }
+      if (apiToken) {
+        this.verifyConnection().catch((error: unknown) => {
+          logger.error("connection verification failed %j", error);
+        });
+      } else if (!pairingId) {
+        this.setConnectionStatus({ state: "not connected" });
+      }
     },
 
     onRun() {
@@ -124,6 +131,18 @@ AppSideService(
         });
       }
 
+      if (key === STORAGE_KEYS.CMD_CHECK_CONNECTION) {
+        this.verifyConnection().catch((error: unknown) => {
+          logger.error("connection verification failed %j", error);
+        });
+      }
+
+      if (key === STORAGE_KEYS.CMD_DISCONNECT) {
+        this.disconnect().catch((error: unknown) => {
+          logger.error("disconnect failed %j", error);
+        });
+      }
+
       if (key === STORAGE_KEYS.CMD_LOGIN_PASSWORD && typeof newValue === "string" && newValue) {
         this.loginWithPassword(newValue).catch((error: unknown) => {
           logger.error("password login failed %j", error);
@@ -179,7 +198,7 @@ AppSideService(
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-pairing/start`,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ connectionType: DOFEK_COMPANION_CONNECTION_TYPE }),
         });
         const summary = summarizeZeppFetchResponse(response);
         if (!summary.ok) {
@@ -260,7 +279,10 @@ AppSideService(
         }
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, companionToken);
         this.clearPairingInfo();
-        this.setConnectionStatus({ state: "connected" });
+        this.setConnectionStatus({
+          state: "connected",
+          connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+        });
         return;
       }
 
@@ -293,7 +315,11 @@ AppSideService(
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/password-login`,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({
+            email,
+            password,
+            connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+          }),
         });
         const summary = summarizeZeppFetchResponse(response);
         if (!summary.ok) {
@@ -307,9 +333,82 @@ AppSideService(
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, email);
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, summary.body.token);
         this.clearPairingInfo();
-        this.setConnectionStatus({ state: "connected" });
+        this.setConnectionStatus({
+          state: "connected",
+          connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
+        this.setConnectionStatus({ state: "error", reason: message });
+        throw error;
+      }
+    },
+
+    async verifyConnection() {
+      const serverUrl = getStoredServerUrl();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+      if (!apiToken) {
+        this.setConnectionStatus({ state: "not connected" });
+        return;
+      }
+
+      this.setConnectionStatus({ state: "checking" });
+      try {
+        const response = await fetch({
+          url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/current`,
+          method: "GET",
+          headers: { Authorization: `Bearer ${apiToken}` },
+        });
+        const summary = summarizeZeppFetchResponse(response);
+        if (!summary.ok) {
+          if (summary.status === 401) {
+            settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          }
+          throw new Error(summary.errorMessage ?? "Dofek connection check failed.");
+        }
+        if (!isRecord(summary.body) || getString(summary.body, "state") !== "connected") {
+          throw new Error("Dofek returned an invalid connection status.");
+        }
+        if (getString(summary.body, "connectionType") !== DOFEK_COMPANION_CONNECTION_TYPE) {
+          settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          throw new Error("Saved credentials belong to a different Zepp app. Connect again.");
+        }
+        this.setConnectionStatus({
+          state: "connected",
+          connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Dofek connection check failed.";
+        this.setConnectionStatus({ state: "error", reason: message });
+        throw error;
+      }
+    },
+
+    async disconnect() {
+      const serverUrl = getStoredServerUrl();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+      if (!apiToken) {
+        this.clearPairingInfo();
+        this.setConnectionStatus({ state: "not connected" });
+        return;
+      }
+
+      this.setConnectionStatus({ state: "disconnecting" });
+      try {
+        const response = await fetch({
+          url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/current`,
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${apiToken}` },
+        });
+        const summary = summarizeZeppFetchResponse(response);
+        if (!summary.ok && summary.status !== 401) {
+          throw new Error(summary.errorMessage ?? "Failed to disconnect Dofek.");
+        }
+        settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+        this.clearPairingInfo();
+        this.setConnectionStatus({ state: "not connected" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to disconnect Dofek.";
         this.setConnectionStatus({ state: "error", reason: message });
         throw error;
       }
@@ -475,6 +574,13 @@ AppSideService(
             password: params.password,
           }),
         )
+          .then(() => res(null, { ok: true }))
+          .catch((error: unknown) => res(error, null));
+        return;
+      }
+
+      if (method === "dofek.disconnect") {
+        this.disconnect()
           .then(() => res(null, { ok: true }))
           .catch((error: unknown) => res(error, null));
         return;

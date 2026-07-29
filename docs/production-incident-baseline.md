@@ -19580,3 +19580,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   unavailable in this worktree.
 - **Remaining risk / follow-up:** Merge only after all exact-head integration
   shards, mutation shards, external checks, and review threads are green.
+
+## 2026-07-27 — Zepp packages invalidated each other's connection
+
+- **Status:** Root cause fixed locally; physical-device validation and
+  production deployment pending.
+- **Symptoms:** The normal Zepp app had no explicit disconnect or authoritative
+  connection check. The independently installed Workout Extension exposed only
+  password login, reported a generic connection error without its reason, and
+  its setup text did not name the watch's Motion Extensions menu.
+- **User impact:** Users could not reliably tell which Zepp package was
+  connected or revoke it. Connecting the Workout Extension invalidated the
+  normal app's credential (and vice versa), so one package subsequently failed
+  uploads with an invalid or revoked connection.
+- **Evidence:** `fitness.companion_token` had a partial unique index on
+  `user_id`, and `regenerateCompanionToken` revoked every active token for that
+  user. The failing real-PostgreSQL regression was
+  `pnpm test:integration -- packages/server/src/companion/token-repository.integration.test.ts`;
+  its first fatal line was `Error: Failed to create typed companion tokens`
+  because the second package could not obtain an independent active token.
+  Recent Swarm logs contained no matching companion-pairing event, confirming
+  that the client-side error reason was not observable from production logs.
+- **Root cause:** Two independently sandboxed Zepp packages were modeled as one
+  user-level companion credential, while their clients trusted local token
+  presence and the Workout Extension discarded the stored error reason.
+- **Fix / mitigation:** Model `zepp-main` and `zepp-workout` as separate active
+  connection types; scope create, rotate, list, verify, and revoke operations
+  to a type; add server-backed status and bearer-token disconnect endpoints;
+  expose QR/short-code pairing, status reasons, verification, and disconnect
+  in both Zepp Settings pages; and correct the Workout Extension instructions
+  to the documented Motion Extensions flow. No retry, timeout, or fallback
+  behavior was added.
+- **Validation:** The real-PostgreSQL regression passes with both connection
+  types active and independent revocation. Focused and changed server, web,
+  mobile, and Zepp suites pass, as do root and Zepp TypeScript, full lint, and
+  production Zeus builds for both `.zab` packages. The normal app and Workout
+  Extension also rebuild and refresh successfully in the connected Amazfit
+  T-Rex 3 simulator profile. Physical-watch pairing remains to be completed
+  before release because Zeus reports no authenticated account/Bridge session.
+- **Remaining risk / follow-up:** Validate both package credentials
+  concurrently on a physical Zepp OS watch and confirm each survives pairing
+  and revocation of the other after the production migration is deployed.

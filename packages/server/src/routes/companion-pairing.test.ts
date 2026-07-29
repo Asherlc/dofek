@@ -94,6 +94,20 @@ describe("createCompanionPairingRouter", () => {
     });
   });
 
+  it("preserves the requested companion connection type", async () => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-workout",
+    });
+
+    expect(response.status).toBe(200);
+    const body = pairingStartResponseSchema
+      .extend({ connectionType: z.literal("zepp-workout") })
+      .parse(await response.json());
+    expect(body.connectionType).toBe("zepp-workout");
+  });
+
   it("starts pairing from an HTTP public app URL", async () => {
     process.env.PUBLIC_URL = "http://app.example.test";
     const app = createTestApp(new InMemoryCompanionPairingStore());

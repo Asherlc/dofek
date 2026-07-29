@@ -505,6 +505,13 @@
       "when": 1785182000000,
       "tag": "0061_supplement_dose_events",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785209400000,
+      "tag": "0062_companion_connection_type",
+      "breakpoints": true
     }
   ]
 }

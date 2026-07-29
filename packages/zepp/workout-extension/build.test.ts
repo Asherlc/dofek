@@ -40,6 +40,9 @@ describe("workout extension build", () => {
     expect(fileMocks.copyFile).toHaveBeenCalledTimes(2);
     expect(buildMock).toHaveBeenCalledWith({
       bundle: true,
+      define: {
+        DOFEK_COMPANION_CONNECTION_TYPE: JSON.stringify("zepp-workout"),
+      },
       platform: "neutral",
       target: "es2022",
       format: "esm",

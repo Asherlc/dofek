@@ -4,13 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockAuthenticatePasswordUser,
   mockCaptureException,
+  mockGetActiveCompanionTokenByToken,
   mockLogger,
   mockRegenerateCompanionToken,
+  mockRevokeCompanionTokenByToken,
 } = vi.hoisted(() => ({
   mockAuthenticatePasswordUser: vi.fn(),
   mockCaptureException: vi.fn(),
+  mockGetActiveCompanionTokenByToken: vi.fn(),
   mockLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
   mockRegenerateCompanionToken: vi.fn(),
+  mockRevokeCompanionTokenByToken: vi.fn(),
 }));
 
 vi.mock("../auth/password-credential.ts", () => ({
@@ -24,7 +28,10 @@ vi.mock("../auth/password-credential.ts", () => ({
 }));
 
 vi.mock("../companion/token-repository.ts", () => ({
+  getActiveCompanionTokenByToken: (...args: unknown[]) =>
+    mockGetActiveCompanionTokenByToken(...args),
   regenerateCompanionToken: (...args: unknown[]) => mockRegenerateCompanionToken(...args),
+  revokeCompanionTokenByToken: (...args: unknown[]) => mockRevokeCompanionTokenByToken(...args),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -75,12 +82,37 @@ async function postJson(
   });
 }
 
+async function requestJson(
+  app: express.Express,
+  path: string,
+  init: RequestInit,
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, async () => {
+      const address = server.address();
+      if (address === null || typeof address !== "object") {
+        reject(new Error("Test server did not bind to a port"));
+        return;
+      }
+      try {
+        const response = await fetch(`http://localhost:${address.port}${path}`, init);
+        resolve({ status: response.status, body: await response.json() });
+      } catch (error) {
+        reject(error);
+      } finally {
+        server.close();
+      }
+    });
+  });
+}
+
 describe("createCompanionTokenHttpRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuthenticatePasswordUser.mockResolvedValue({ userId: "user-1" });
     mockRegenerateCompanionToken.mockResolvedValue({
       id: "token-1",
+      connectionType: "zepp-main",
       token: "dofek_companion_test",
       createdAt: "2026-07-12T00:00:00.000Z",
       revokedAt: null,
@@ -130,11 +162,12 @@ describe("createCompanionTokenHttpRouter", () => {
       "user@example.com",
       "password123",
     );
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(db, "user-1");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(db, "user-1", "zepp-main");
     expect(response).toEqual({
       status: 200,
       body: {
         id: "token-1",
+        connectionType: "zepp-main",
         token: "dofek_companion_test",
         createdAt: "2026-07-12T00:00:00.000Z",
         revokedAt: null,
@@ -145,6 +178,7 @@ describe("createCompanionTokenHttpRouter", () => {
   it("reports unexpected token creation failures", async () => {
     mockRegenerateCompanionToken.mockResolvedValue({
       id: "token-1",
+      connectionType: "zepp-main",
       token: null,
       createdAt: "2026-07-12T00:00:00.000Z",
       revokedAt: null,
@@ -160,6 +194,40 @@ describe("createCompanionTokenHttpRouter", () => {
     expect(response).toEqual({
       status: 500,
       body: { error: "Failed to create Dofek connection." },
+    });
+  });
+
+  it("verifies the current bearer connection against the server", async () => {
+    mockGetActiveCompanionTokenByToken.mockResolvedValue({
+      userId: "user-1",
+      connectionType: "zepp-workout",
+    });
+    const { app, db } = createTestApp();
+
+    const response = await requestJson(app, "/api/companion-token/current", {
+      headers: { Authorization: "Bearer dofek_companion_test" },
+    });
+
+    expect(mockGetActiveCompanionTokenByToken).toHaveBeenCalledWith(db, "dofek_companion_test");
+    expect(response).toEqual({
+      status: 200,
+      body: { state: "connected", connectionType: "zepp-workout" },
+    });
+  });
+
+  it("revokes the current bearer connection", async () => {
+    mockRevokeCompanionTokenByToken.mockResolvedValue(true);
+    const { app, db } = createTestApp();
+
+    const response = await requestJson(app, "/api/companion-token/current", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer dofek_companion_test" },
+    });
+
+    expect(mockRevokeCompanionTokenByToken).toHaveBeenCalledWith(db, "dofek_companion_test");
+    expect(response).toEqual({
+      status: 200,
+      body: { state: "disconnected" },
     });
   });
 });

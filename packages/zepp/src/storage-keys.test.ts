@@ -23,6 +23,8 @@ describe("Zepp storage keys", () => {
       TRANSFER_PROGRESS: "transfer_progress",
       CMD_SYNC_HEALTH: "cmd_sync_health",
       CMD_START_PAIRING: "cmd_start_pairing",
+      CMD_CHECK_CONNECTION: "cmd_check_connection",
+      CMD_DISCONNECT: "cmd_disconnect",
       DOFEK_SERVER_URL: "dofek_server_url",
       DOFEK_EMAIL: "dofek_email",
       DOFEK_API_TOKEN: "dofek_api_token",

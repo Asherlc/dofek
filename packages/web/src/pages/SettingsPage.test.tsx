@@ -24,6 +24,9 @@ const mockMutation = {
   mutate: vi.fn(),
 };
 let mockSearch: SettingsSearch = {};
+let mockZeppConnections: Array<{
+  connectionType: "zepp-main" | "zepp-workout";
+}> = [];
 
 function applySearch(
   navigation: SettingsNavigation | undefined,
@@ -122,11 +125,25 @@ vi.mock("../lib/trpc.ts", () => ({
         useMutation: () => mockMutation,
       },
     },
+    companionToken: {
+      list: {
+        useQuery: () => ({
+          data: mockZeppConnections,
+          error: null,
+          isLoading: false,
+          refetch: vi.fn().mockResolvedValue(undefined),
+        }),
+      },
+      revoke: {
+        useMutation: () => mockMutation,
+      },
+    },
   },
 }));
 
 beforeEach(() => {
   mockSearch = {};
+  mockZeppConnections = [];
   mockBillingStatusQuery.mockReturnValue({
     data: undefined,
     isLoading: false,
@@ -157,6 +174,24 @@ describe("SettingsPage tabs", () => {
     expect(screen.getByText("MCP")).toBeTruthy();
     expect(screen.getByText("Integrations")).toBeTruthy();
     expect(screen.queryByText("Billing")).toBeNull();
+  });
+
+  it("shows and disconnects each active Zepp app independently", async () => {
+    mockSearch = { tab: "connections" };
+    mockZeppConnections = [{ connectionType: "zepp-main" }, { connectionType: "zepp-workout" }];
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("Zepp app: Connected")).toBeTruthy();
+    expect(screen.getByText("Workout extension: Connected")).toBeTruthy();
+    const disconnectButtons = screen.getAllByText("Disconnect");
+    const workoutDisconnectButton = disconnectButtons[1];
+    if (!workoutDisconnectButton) throw new Error("Workout disconnect button was not rendered");
+    fireEvent.click(workoutDisconnectButton);
+    expect(mockMutation.mutate).toHaveBeenCalledWith({
+      connectionType: "zepp-workout",
+    });
   });
 
   it("writes Zepp deep links to route search state without retaining the pairing code", async () => {

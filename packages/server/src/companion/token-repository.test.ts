@@ -47,7 +47,7 @@ describe("token-repository", () => {
   describe("validateCompanionToken", () => {
     it("returns user_id when token is valid and not revoked", async () => {
       const db = createMockDb();
-      db.execute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      db.execute.mockResolvedValueOnce([{ user_id: "user-123", connection_type: "zepp-main" }]);
       const result = await validateCompanionToken(db, "valid-token");
       expect(result).toBe("user-123");
     });
@@ -67,6 +67,7 @@ describe("token-repository", () => {
         {
           id: "token-id",
           user_id: "user-123",
+          connection_type: "zepp-main",
           created_at: "2026-01-01T00:00:00.000Z",
           revoked_at: null,
         },
@@ -86,6 +87,7 @@ describe("token-repository", () => {
           {
             id: "existing-id",
             user_id: "user-123",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
@@ -119,6 +121,7 @@ describe("token-repository", () => {
           {
             id: "new-id",
             user_id: "user-123",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
@@ -152,6 +155,7 @@ describe("token-repository", () => {
           {
             id: "new-id",
             user_id: "user-123",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:01:00.000Z",
             revoked_at: null,
           },
@@ -165,6 +169,7 @@ describe("token-repository", () => {
 
       expect(result).toEqual({
         id: "new-id",
+        connectionType: "zepp-main",
         token: null,
         createdAt: "2026-01-01T00:01:00.000Z",
         revokedAt: null,
