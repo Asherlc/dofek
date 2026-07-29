@@ -151,6 +151,21 @@ export default function LoginScreen() {
   const showOAuthProviders = allProviders.length > 0 || useNativeApple;
   const passwordResetDisabled = loggingIn || !email.trim();
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
+  const headerCopy =
+    authMode === "register"
+      ? {
+          title: "Create your account",
+          subtitle: "Enter your details. Next, you'll connect your health data.",
+        }
+      : authMode === "reset"
+        ? {
+            title: "Reset your password",
+            subtitle: "Enter your email to receive a password reset link.",
+          }
+        : {
+            title: "Sign in to Dofek",
+            subtitle: "View and manage your health data.",
+          };
 
   return (
     <ScrollView
@@ -162,8 +177,8 @@ export default function LoginScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Dofek</Text>
-        <Text style={styles.subtitle}>Sign in to view your health data</Text>
+        <Text style={styles.title}>{headerCopy.title}</Text>
+        <Text style={styles.subtitle}>{headerCopy.subtitle}</Text>
 
         {error ? (
           <View style={styles.errorContainer}>
@@ -206,7 +221,12 @@ export default function LoginScreen() {
                         disabled: passwordResetDisabled,
                       }}
                     >
-                      <Text style={styles.passwordButtonText}>
+                      <Text
+                        style={[
+                          styles.passwordButtonText,
+                          passwordResetDisabled && styles.passwordButtonTextDisabled,
+                        ]}
+                      >
                         {loggingIn ? "Sending..." : "Send reset link"}
                       </Text>
                     </TouchableOpacity>
@@ -332,20 +352,27 @@ export default function LoginScreen() {
                       disabled={passwordAuthDisabled}
                       accessibilityRole="button"
                       accessibilityLabel={
-                        authMode === "register" ? "Create account" : "Sign in with email"
+                        authMode === "register"
+                          ? "Create account and continue"
+                          : "Sign in with email"
                       }
                       accessibilityState={{
                         busy: loggingIn,
                         disabled: passwordAuthDisabled,
                       }}
                     >
-                      <Text style={styles.passwordButtonText}>
+                      <Text
+                        style={[
+                          styles.passwordButtonText,
+                          passwordAuthDisabled && styles.passwordButtonTextDisabled,
+                        ]}
+                      >
                         {loggingIn
                           ? authMode === "register"
                             ? "Creating account..."
                             : "Signing in..."
                           : authMode === "register"
-                            ? "Create account"
+                            ? "Create account and continue"
                             : "Sign in with email"}
                       </Text>
                     </TouchableOpacity>
@@ -490,13 +517,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   passwordButtonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surfaceSecondary,
   },
   passwordButtonText: {
     color: colors.background,
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",
+  },
+  passwordButtonTextDisabled: {
+    color: colors.textSecondary,
   },
   forgotPasswordText: {
     color: colors.textSecondary,

@@ -125,6 +125,23 @@ Expo's local production-build guide is the upstream reference for using
 Release configuration locally:
 <https://docs.expo.dev/guides/local-app-production/>.
 
+### Physical-device release gate
+
+The signed Simulator audit validates production-like UI and software-only
+flows, but it does not exercise Dofek's physical-device acceptance scenarios.
+Apple explicitly requires a device for
+[HealthKit observer background delivery](https://developer.apple.com/documentation/healthkit/executing-observer-queries)
+and a physical iPhone and Watch for its
+[Watch Connectivity transfer sample](https://developer.apple.com/documentation/watchconnectivity/transferring-data-with-watch-connectivity);
+the remaining matrix exercises the real hardware boundaries documented by
+[Core Bluetooth](https://developer.apple.com/documentation/corebluetooth),
+[Core Motion](https://developer.apple.com/documentation/coremotion), and
+[AVFoundation camera authorization](https://developer.apple.com/documentation/avfoundation/requesting-authorization-to-capture-and-save-media).
+Before App Store submission or production approval, run the
+[iOS physical-device release audit](../../docs/ios-physical-device-release-audit.md)
+against the exact TestFlight build using the dedicated synthetic-only account
+and hardware described there.
+
 ## Dependency pins
 
 - `@react-native-async-storage/async-storage@2.2.0` — stay on 2.2.x for Expo SDK 57. AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see [expo/expo#43757](https://github.com/expo/expo/issues/43757).

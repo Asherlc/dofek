@@ -86,6 +86,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
 | `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type or ISO week. |
+| `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols and server-derived effective load inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
 | `get_body_metrics` | `health:read` | Returns weight and body-composition measurements. |
 | `log_food` | `nutrition:write` | Creates a Dofek food entry from text. |

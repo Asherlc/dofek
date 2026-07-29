@@ -23,7 +23,7 @@ describe("Navigation", () => {
       cy.visit(path);
       cy.url().should("include", path);
       // Should not redirect to login
-      cy.contains("Sign in to view your health data").should("not.exist");
+      cy.contains("Sign in to Dofek").should("not.exist");
     });
   }
 });

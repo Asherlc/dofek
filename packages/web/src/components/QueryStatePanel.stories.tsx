@@ -15,6 +15,11 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const ErrorState: Story = {
+  name: "Error",
+  tags: ["review-scenario", "review-scenario-error"],
+};
+
 export const Retryable: Story = {
   args: {
     onRetry: () => {},

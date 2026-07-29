@@ -24,7 +24,7 @@ guessed clock time.
 
 ## Historical activity backfill
 
-Migration `0063_record_local_time_context` is schema-only. Historical activity
+Migration `0064_record_local_time_context` is schema-only. Historical activity
 rows that already contain a provider-supplied IANA `timezone` can be populated
 after deploy with a separate bounded command. Sleep rows and activities without
 retained trusted context remain `unknown`.
