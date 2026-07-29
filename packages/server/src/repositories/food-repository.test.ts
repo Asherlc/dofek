@@ -521,6 +521,49 @@ describe("FoodRepository", () => {
       });
     });
 
+    it.each([
+      {
+        contributionGrain: "itemized",
+        contributionLabel: "Cronometer (via Apple Health) itemized entries",
+      },
+      {
+        contributionGrain: "ambiguous",
+        contributionLabel: "Cronometer (via Apple Health) nutrition data",
+      },
+      {
+        contributionGrain: null,
+        contributionLabel: null,
+      },
+    ])("labels $contributionGrain contribution provenance without changing its grain", async ({
+      contributionGrain,
+      contributionLabel,
+    }) => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1800,
+          protein_g: 90,
+          carbs_g: 220,
+          fat_g: 60,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 1800,
+          source_labels: ["Cronometer (via Apple Health)"],
+          contributing_source_labels: ["Cronometer (via Apple Health)"],
+          contribution_grain: contributionGrain,
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.resolution).toMatchObject({
+        contributionGrain,
+        contributionLabel,
+      });
+    });
+
     it("caps goal progress and reports calories over the target", async () => {
       const { repo } = makeRepository([
         {
