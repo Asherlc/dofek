@@ -80,6 +80,7 @@ export default function TodayScreen() {
 
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
+  const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
   const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
   const isLoading = shouldShowBlockingLoading({
@@ -274,7 +275,19 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep summary */}
-      {!isLoading && (
+      {!isLoading && isSleepDataMissing && (
+        <Animated.View
+          entering={FadeInUp.delay(160)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <Card title="Sleep Data Needed">
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
+          </Card>
+        </Animated.View>
+      )}
+
+      {!isLoading && !isSleepDataMissing && (
         <Animated.View
           entering={FadeInUp.delay(160)
             .duration(duration.slow)
@@ -309,7 +322,7 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep Coach */}
-      {!isLoading && (sleepNeed || !lastNight) && (
+      {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
@@ -345,9 +358,7 @@ export default function TodayScreen() {
                   </View>
                 </View>
               </>
-            ) : (
-              <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
-            )}
+            ) : null}
           </Card>
         </Animated.View>
       )}
