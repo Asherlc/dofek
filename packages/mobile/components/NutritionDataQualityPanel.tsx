@@ -1,3 +1,4 @@
+import { formatNutritionDataQualityMessages } from "@dofek/nutrition/nutrition-data-quality";
 import { StyleSheet, Text, View } from "react-native";
 import type { NutritionAnalyticsDataQuality } from "../../server/src/repositories/nutrition-analytics-repository";
 import { colors } from "../theme";
@@ -25,23 +26,14 @@ export function NutritionDataQualityPanel({
   }
   if (!dataQuality) return null;
 
-  const coverage =
-    dataQuality.selectedWindowDays == null
-      ? `${dataQuality.usableDays} recorded days are usable.`
-      : `${dataQuality.usableDays} of ${dataQuality.selectedWindowDays} selected days are usable (${dataQuality.completenessPercent}% completeness).`;
-  const overlap =
-    dataQuality.overlapDays === 0
-      ? "No overlapping nutrition sources detected."
-      : `${dataQuality.overlapDays} ${dataQuality.overlapDays === 1 ? "day contains" : "days contain"} overlapping sources; ${dataQuality.conflictDays} ${dataQuality.conflictDays === 1 ? "remains" : "remain"} unresolved.`;
+  const messages = formatNutritionDataQualityMessages(dataQuality);
 
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Nutrition data quality</Text>
-      <Text style={styles.body}>
-        Nutrition data exists on {dataQuality.daysWithData} selected days.
-      </Text>
-      <Text style={styles.body}>{coverage}</Text>
-      <Text style={styles.body}>{overlap}</Text>
+      <Text style={styles.body}>{messages.recorded}</Text>
+      <Text style={styles.body}>{messages.coverage}</Text>
+      <Text style={styles.body}>{messages.overlap}</Text>
       {dataQuality.contributingSourceLabels.length > 0 && (
         <Text style={styles.detail}>
           Contributing sources: {dataQuality.contributingSourceLabels.join(", ")}

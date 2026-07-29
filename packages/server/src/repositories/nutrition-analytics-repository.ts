@@ -585,6 +585,35 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               SUM(amount) AS source_amount
             FROM contributions
             GROUP BY date, nutrient_id, provider_id, source_label, intake_type
+          ),
+          source_summary AS (
+            SELECT
+              nutrient_id,
+              provider_id,
+              source_label,
+              intake_type,
+              SUM(source_amount) AS total_amount,
+              COUNT(*)::integer AS days_tracked
+            FROM source_daily
+            GROUP BY nutrient_id, provider_id, source_label, intake_type
+          ),
+          source_breakdowns AS (
+            SELECT
+              source.nutrient_id,
+              JSONB_AGG(
+                JSONB_BUILD_OBJECT(
+                  'providerId', source.provider_id,
+                  'sourceLabel', source.source_label,
+                  'intakeType', source.intake_type,
+                  'dailyAverageContribution',
+                    source.total_amount / NULLIF(summary.days_tracked, 0),
+                  'daysTracked', source.days_tracked
+                )
+                ORDER BY source.intake_type, source.source_label, source.provider_id
+              ) AS sources
+            FROM source_summary AS source
+            JOIN nutrient_summary AS summary ON summary.id = source.nutrient_id
+            GROUP BY source.nutrient_id
           )
           SELECT
             summary.id AS nutrient_id,
@@ -595,34 +624,9 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             summary.avg_provider_daily_total_intake,
             summary.avg_supplement_intake,
             summary.days_tracked,
-            COALESCE(
-              (
-                SELECT JSONB_AGG(
-                  JSONB_BUILD_OBJECT(
-                    'providerId', source.provider_id,
-                    'sourceLabel', source.source_label,
-                    'intakeType', source.intake_type,
-                    'dailyAverageContribution',
-                      source.total_amount / NULLIF(summary.days_tracked, 0),
-                    'daysTracked', source.days_tracked
-                  )
-                  ORDER BY source.intake_type, source.source_label, source.provider_id
-                )
-                FROM (
-                  SELECT
-                    provider_id,
-                    source_label,
-                    intake_type,
-                    SUM(source_amount) AS total_amount,
-                    COUNT(*)::integer AS days_tracked
-                  FROM source_daily
-                  WHERE nutrient_id = summary.id
-                  GROUP BY provider_id, source_label, intake_type
-                ) AS source
-              ),
-              '[]'::jsonb
-            ) AS source_breakdown
+            COALESCE(source_breakdowns.sources, '[]'::jsonb) AS source_breakdown
           FROM nutrient_summary AS summary
+          LEFT JOIN source_breakdowns ON source_breakdowns.nutrient_id = summary.id
           ORDER BY summary.display_name`,
     );
 

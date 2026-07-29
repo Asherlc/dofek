@@ -32,12 +32,13 @@ calendar denominator and therefore returns a null percentage.
 
 Each nutrient separates itemized food, provider daily totals, and explicitly
 taken supplements. Per-source rows report each provider/source's contribution
-to the nutrient's average over all recorded days for that nutrient, so those
-contributions add to the displayed total daily average. These values are
-query-time projections over `fitness.v_nutrition_canonical_nutrient` and
-`fitness.v_nutrition_daily`; they do not introduce another nutrient storage
-path. PostgreSQL documents views as query-defined, non-materialized virtual
-tables in [`CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
+to the nutrient's average over all recorded days for that nutrient. Contributions
+and the total use the same denominator, but independently rounded presentation
+values can differ by the displayed precision. These values are query-time
+projections over `fitness.v_nutrition_canonical_nutrient` and
+`fitness.v_nutrition_daily`; they do not introduce another nutrient storage path.
+PostgreSQL documents views as query-defined, non-materialized virtual tables in
+[`CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
 
 ## Implementation Details
 
