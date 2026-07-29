@@ -56,6 +56,11 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
                   start_utc_offset_minutes: null,
                   end_utc_offset_minutes: null,
                   local_time_source: "unknown",
+                  provider_id: "wahoo",
+                  source_name: null,
+                  source_external_ids: [],
+                  absent_source_external_ids: [],
+                  last_processed_at: null,
                   ...row,
                 }
               : row,
@@ -88,6 +93,16 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
     activity_type: "indoor_cycling",
     started_at: "2026-03-18T07:00:00.000Z",
     ended_at: "2026-03-18T08:00:00.000Z",
+    provider_id: "wahoo",
+    source_name: null,
+    source_external_ids: [
+      {
+        providerId: "wahoo",
+        externalId: "wahoo-activity-1",
+      },
+    ],
+    absent_source_external_ids: [],
+    last_processed_at: "2026-03-18T08:05:00.000Z",
     duration_min: 60,
     avg_hr: null,
     max_hr: null,
@@ -136,6 +151,12 @@ function makeCalendarEntry(
       source: "unknown",
     },
     durationMin: overrides.durationMin ?? 60,
+    source: overrides.source ?? {
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: overrides.lastProcessedAt ?? "2026-03-18T08:05:00.000Z",
     location: overrides.location ?? null,
     tss: overrides.tss ?? null,
     stats: overrides.stats ?? [],
@@ -144,6 +165,48 @@ function makeCalendarEntry(
 }
 
 describe("ActivitiesCalendarRepository", () => {
+  it("returns canonical source attribution and read-model processing freshness", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          provider_id: "wahoo",
+          source_external_ids: [
+            {
+              providerId: "wahoo",
+              externalId: "wahoo-activity-1",
+            },
+            {
+              providerId: "strava",
+              externalId: "strava-activity-1",
+            },
+          ],
+          last_processed_at: "2026-03-18T08:07:00.000Z",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        source: {
+          primarySourceLabel: "Wahoo",
+          sourceCount: 2,
+          overlapSummary: "2 matched source records · Wahoo selected by source priority",
+        },
+        lastProcessedAt: "2026-03-18T08:07:00.000Z",
+      }),
+    );
+    const listQuery = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    expect(normalizeSql(listQuery)).toMatch(
+      /greatest\(\s*activity\.refreshed_at,\s*coalesce\(asum\.refreshed_at, activity\.refreshed_at\)\s*\)/,
+    );
+  });
+
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -1379,6 +1442,12 @@ describe("ActivitiesCalendarRepository", () => {
         source: "unknown",
       },
       durationMin: 60,
+      source: {
+        primarySourceLabel: "Strava",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+      lastProcessedAt: null,
       location: null,
       tss: 100,
       stats: [{ status: "available", label: "Training Stress Score", value: "100" }],

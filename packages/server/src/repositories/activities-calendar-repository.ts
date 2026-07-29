@@ -6,12 +6,17 @@ import {
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
+import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
+import {
+  type ActivityListSourceDetail,
+  buildActivityListSource,
+} from "../models/activity-source-decision.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -47,6 +52,8 @@ export interface CalendarActivityEntry {
   endedAt: string | null;
   localTimeContext: RecordLocalTimeContext;
   durationMin: number;
+  source: ActivityListSourceDetail;
+  lastProcessedAt: string | null;
   location: ActivityLocation | null;
   tss: number | null;
   stats: ActivityStat[];
@@ -79,6 +86,8 @@ const activityRowSchema = z.object({
   activity_type: z.string(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
   timezone: z.string().nullable(),
   start_utc_offset_minutes: z.coerce.number().nullable(),
   end_utc_offset_minutes: z.coerce.number().nullable(),
@@ -92,6 +101,7 @@ const activityRowSchema = z.object({
   centroid_lat: z.coerce.number().nullable(),
   centroid_lng: z.coerce.number().nullable(),
   local_date: dateStringSchema,
+  last_processed_at: timestampStringSchema.nullable(),
   absent_source_external_ids: z
     .array(z.record(z.string(), z.string().nullable()))
     .optional()
@@ -204,6 +214,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.activity_type AS activity_type,
             toString(activity.started_at) AS started_at,
             toString(activity.ended_at) AS ended_at,
+            activity.provider_id AS provider_id,
+            activity.source_name AS source_name,
             activity.timezone AS timezone,
             activity.start_utc_offset_minutes AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -218,6 +230,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.centroid_lng AS centroid_lng,
             activity.absent_source_external_ids AS absent_source_external_ids,
             activity.source_external_ids AS source_external_ids,
+            toString(
+              greatest(
+                activity.refreshed_at,
+                coalesce(asum.refreshed_at, activity.refreshed_at)
+              )
+            ) AS last_processed_at,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
@@ -280,6 +298,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         row.source_external_ids,
         row.absent_source_external_ids,
       );
+      const sourceLinks = sourceAttribution.toSourceLinks(getProvider);
 
       const entry: CalendarActivityEntry = {
         id: row.id,
@@ -289,6 +308,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
+        source: buildActivityListSource(row.provider_id, row.source_name, sourceLinks, getProvider),
+        lastProcessedAt: row.last_processed_at,
         partialAbsentSources: sourceAttribution.hasPartialAbsence
           ? sourceAttribution.partialAbsentSources()
           : undefined,
@@ -335,6 +356,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           activity.activity_type AS activity_type,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
+          activity.provider_id AS provider_id,
+          activity.source_name AS source_name,
           activity.timezone AS timezone,
           activity.start_utc_offset_minutes AS start_utc_offset_minutes,
           activity.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -347,8 +370,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           NULL AS elevation_gain_m,
           NULL AS centroid_lat,
           NULL AS centroid_lng,
+          NULL AS last_processed_at,
           toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
-          activity.provider_id AS provider_id,
           toString(activity.provider_absent_at) AS provider_absent_at
         FROM postgres_fitness.activity AS activity FINAL
         WHERE activity.user_id = {userId:UUID}
@@ -423,6 +446,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
+        source: buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
+        lastProcessedAt: row.last_processed_at,
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {

@@ -147,6 +147,12 @@ function createStoryData() {
             source: "device_timezone",
           },
           durationMin: 90,
+          source: {
+            primarySourceLabel: "Garmin Connect",
+            sourceCount: 2,
+            overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+          },
+          lastProcessedAt: `${today}T09:05:00Z`,
           location: {
             centroidLat: 37.7749,
             centroidLng: -122.4194,
@@ -175,6 +181,12 @@ function createStoryData() {
             source: "unknown",
           },
           durationMin: 45,
+          source: {
+            primarySourceLabel: "Strong (via Apple Health)",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
+          lastProcessedAt: `${yesterday}T17:48:00Z`,
           location: null,
           tss: null,
           stats: [

@@ -16,6 +16,12 @@ const strengthActivity: ActivityCardData = {
     source: "provider_timezone",
   },
   durationMin: 30,
+  source: {
+    primarySourceLabel: "Strong (via Apple Health)",
+    sourceCount: 1,
+    overlapSummary: null,
+  },
+  lastProcessedAt: "2026-07-14T08:50:00-07:00",
   location: null,
   stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
 };
@@ -44,6 +50,12 @@ const mappedActivity: ActivityCardData = {
     source: "device_timezone",
   },
   durationMin: 64,
+  source: {
+    primarySourceLabel: "Garmin Connect",
+    sourceCount: 2,
+    overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+  },
+  lastProcessedAt: "2026-07-14T08:45:00-07:00",
   location: {
     mapPreview: {
       width: 512,

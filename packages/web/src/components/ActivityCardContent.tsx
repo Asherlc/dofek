@@ -1,4 +1,4 @@
-import { formatDurationMinutes } from "@dofek/format/format";
+import { formatDurationMinutes, formatRelativeTime } from "@dofek/format/format";
 import {
   formatRecordLocalTime,
   type RecordLocalTimeContext,
@@ -20,6 +20,12 @@ export interface ActivityCardData {
   startedAt: string;
   localTimeContext: RecordLocalTimeContext;
   durationMin: number;
+  source: {
+    primarySourceLabel: string;
+    sourceCount: number;
+    overlapSummary: string | null;
+  };
+  lastProcessedAt: string | null;
   isProviderAbsent?: boolean;
   providerId?: string;
   providerAbsentAt?: string | null;
@@ -59,6 +65,9 @@ export function ActivityCardContent({
     activity.localTimeContext,
     "start",
   );
+  const processedRelative = activity.lastProcessedAt
+    ? formatRelativeTime(activity.lastProcessedAt)
+    : null;
 
   return (
     <div
@@ -99,6 +108,15 @@ export function ActivityCardContent({
         ) : null}
         {partialAbsenceSummary ? (
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{partialAbsenceSummary}</p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span className="rounded-full border border-border bg-surface-secondary px-2 py-0.5 font-medium text-foreground">
+            {activity.source.primarySourceLabel}
+          </span>
+          {processedRelative ? <span>Processed {processedRelative}</span> : null}
+        </div>
+        {activity.source.overlapSummary ? (
+          <p className="mt-1.5 text-xs text-muted">{activity.source.overlapSummary}</p>
         ) : null}
         <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
           <ActivityMetricGrid activity={activity} units={units} />
