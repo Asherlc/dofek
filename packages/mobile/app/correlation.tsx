@@ -1,9 +1,11 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
 } from "@dofek/stats/correlation-lag";
+import type { AppRouterOutputs } from "dofek-server/router";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -36,6 +38,21 @@ const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
 }));
 
 const DOMAIN_ORDER = ["Recovery", "Sleep", "Nutrition", "Activity", "Body"];
+const METRIC_FAMILY_ROUTES = {
+  recovery: "/recovery",
+  sleep: "/sleep",
+  nutrition: "/food",
+  activity: "/activities",
+  body: "/recovery",
+} as const;
+
+type CorrelationObservationsOutput = AppRouterOutputs["correlation"]["observations"];
+type PairedObservation = CorrelationObservationsOutput["items"][number];
+type ObservationContributor = PairedObservation["x"]["contributors"][number];
+
+function formatObservationValue(value: number): string {
+  return Number.isInteger(value) ? value.toLocaleString() : formatNumber(value);
+}
 
 // ── Selector Components ──
 
@@ -227,6 +244,148 @@ function UncertaintySummary({
   );
 }
 
+function ObservationContributors({
+  contributors,
+  onOpen,
+}: {
+  contributors: ObservationContributor[];
+  onOpen: (contributor: ObservationContributor) => void;
+}) {
+  if (contributors.length === 0) {
+    return <Text style={styles.observationSourceText}>No linked source</Text>;
+  }
+
+  return (
+    <View style={styles.observationSources}>
+      {contributors.map((contributor) => (
+        <View
+          key={`${contributor.kind}:${contributor.label}:${
+            contributor.target.type === "activity"
+              ? contributor.target.activityId
+              : contributor.target.family
+          }`}
+          style={styles.observationSource}
+        >
+          <TouchableOpacity
+            onPress={() => onOpen(contributor)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${contributor.label}`}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.observationSourceLink}>{contributor.label}</Text>
+          </TouchableOpacity>
+          {contributor.kind === "aggregate_inputs" && (
+            <Text style={styles.observationSourceText}>
+              Aggregate inputs
+              {contributor.providerIds.length > 0
+                ? ` · ${contributor.providerIds.map(providerLabel).join(", ")}`
+                : ""}
+            </Text>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function PairedObservationsList({
+  observations,
+  totalCount,
+  xMetric,
+  yMetric,
+  hasPrevious,
+  hasNext,
+  onPrevious,
+  onNext,
+  onOpenContributor,
+}: {
+  observations: PairedObservation[];
+  totalCount: number;
+  xMetric: MetricItem | undefined;
+  yMetric: MetricItem | undefined;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+  onOpenContributor: (contributor: ObservationContributor) => void;
+}) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Paired Observations</Text>
+      <Text style={styles.observationSummary}>
+        {totalCount} complete paired {totalCount === 1 ? "day" : "days"} behind this result
+      </Text>
+
+      {observations.length === 0 ? (
+        <Text style={styles.observationEmpty}>No complete paired observations in this range.</Text>
+      ) : (
+        observations.map((observation) => (
+          <View
+            key={`${observation.x.date}:${observation.y.date}`}
+            style={styles.observationRow}
+            accessible
+            accessibilityLabel={`Paired observation ${observation.x.date} and ${observation.y.date}`}
+          >
+            <Text style={styles.observationDate}>
+              {observation.x.date === observation.y.date
+                ? observation.x.date
+                : `${observation.x.date} → ${observation.y.date}`}
+            </Text>
+            <View style={styles.observationValueRow}>
+              <View style={styles.observationValue}>
+                <Text style={styles.observationValueText}>
+                  {xMetric?.label ?? "X"}: {formatObservationValue(observation.x.value)}{" "}
+                  {xMetric?.unit ?? ""}
+                </Text>
+                <ObservationContributors
+                  contributors={observation.x.contributors}
+                  onOpen={onOpenContributor}
+                />
+              </View>
+              <View style={styles.observationValue}>
+                <Text style={styles.observationValueText}>
+                  {yMetric?.label ?? "Y"}: {formatObservationValue(observation.y.value)}{" "}
+                  {yMetric?.unit ?? ""}
+                </Text>
+                <ObservationContributors
+                  contributors={observation.y.contributors}
+                  onOpen={onOpenContributor}
+                />
+              </View>
+            </View>
+          </View>
+        ))
+      )}
+
+      <View style={styles.observationPagination}>
+        <TouchableOpacity
+          style={[
+            styles.observationPageButton,
+            !hasPrevious && styles.observationPageButtonDisabled,
+          ]}
+          disabled={!hasPrevious}
+          onPress={onPrevious}
+          accessibilityRole="button"
+          accessibilityLabel="Previous observation page"
+          accessibilityState={{ disabled: !hasPrevious }}
+        >
+          <Text style={styles.observationPageButtonText}>Previous</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.observationPageButton, !hasNext && styles.observationPageButtonDisabled]}
+          disabled={!hasNext}
+          onPress={onNext}
+          accessibilityRole="button"
+          accessibilityLabel="Next observation page"
+          accessibilityState={{ disabled: !hasNext }}
+        >
+          <Text style={styles.observationPageButtonText}>Next</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ── Scatter Plot ──
 
 function ScatterPlot({
@@ -333,12 +492,28 @@ export default function CorrelationScreen() {
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [lag, setLag] = useState(0);
+  const [observationCursors, setObservationCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const observationCursor = observationCursors.at(-1);
+  const resetObservationCursor = () => setObservationCursors([undefined]);
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
 
   const metricsQuery = trpc.correlation.metrics.useQuery({});
   const correlationQuery = trpc.correlation.computeV2.useQuery(
     { metricX, metricY, days, lag },
+    { enabled: metricX !== metricY },
+  );
+  const observationsQuery = trpc.correlation.observations.useQuery(
+    {
+      metricX,
+      metricY,
+      days,
+      lag,
+      pageSize: 25,
+      ...(observationCursor === undefined ? {} : { cursor: observationCursor }),
+    },
     { enabled: metricX !== metricY },
   );
 
@@ -365,7 +540,13 @@ export default function CorrelationScreen() {
     >
       {/* Time range */}
       <Text style={styles.sectionLabel}>Time Range</Text>
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector
+        days={days}
+        onChange={(nextDays) => {
+          setDays(nextDays);
+          resetObservationCursor();
+        }}
+      />
 
       {/* Metric pickers */}
       {metrics.length > 0 && (
@@ -374,14 +555,20 @@ export default function CorrelationScreen() {
             label="X Axis"
             selected={metricX}
             metrics={metrics}
-            onSelect={setMetricX}
+            onSelect={(nextMetric) => {
+              setMetricX(nextMetric);
+              resetObservationCursor();
+            }}
             unavailableMetricId={metricY}
           />
           <MetricPicker
             label="Y Axis"
             selected={metricY}
             metrics={metrics}
-            onSelect={setMetricY}
+            onSelect={(nextMetric) => {
+              setMetricY(nextMetric);
+              resetObservationCursor();
+            }}
             unavailableMetricId={metricX}
           />
         </>
@@ -389,7 +576,13 @@ export default function CorrelationScreen() {
 
       {/* Lag selector */}
       <Text style={styles.sectionLabel}>Lag</Text>
-      <LagSelector lag={lag} onChange={setLag} />
+      <LagSelector
+        lag={lag}
+        onChange={(nextLag) => {
+          setLag(nextLag);
+          resetObservationCursor();
+        }}
+      />
       <Text style={styles.lagHint}>
         {formatCorrelationComparison({
           xLabel: xMetric?.label ?? "X",
@@ -445,6 +638,12 @@ export default function CorrelationScreen() {
       {correlationQuery.isLoading && metricX !== metricY && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>Analyzing...</Text>
+        </View>
+      )}
+
+      {observationsQuery.isError && metricX !== metricY && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>{observationsQuery.error.message}</Text>
         </View>
       )}
 
@@ -537,6 +736,35 @@ export default function CorrelationScreen() {
                 width={isWide ? 660 : width - 48}
               />
             </View>
+          )}
+
+          {observationsQuery.data && (
+            <PairedObservationsList
+              observations={observationsQuery.data.items}
+              totalCount={observationsQuery.data.totalCount}
+              xMetric={xMetric}
+              yMetric={yMetric}
+              hasPrevious={observationCursors.length > 1}
+              hasNext={observationsQuery.data.nextCursor !== null}
+              onPrevious={() =>
+                setObservationCursors((cursors) =>
+                  cursors.length > 1 ? cursors.slice(0, -1) : cursors,
+                )
+              }
+              onNext={() => {
+                const nextCursor = observationsQuery.data?.nextCursor;
+                if (nextCursor !== null && nextCursor !== undefined) {
+                  setObservationCursors((cursors) => [...cursors, nextCursor]);
+                }
+              }}
+              onOpenContributor={(contributor) => {
+                if (contributor.target.type === "activity") {
+                  router.push(`/activity/${contributor.target.activityId}`);
+                  return;
+                }
+                router.push(METRIC_FAMILY_ROUTES[contributor.target.family]);
+              }}
+            />
           )}
         </>
       )}
@@ -723,6 +951,73 @@ const styles = StyleSheet.create({
   },
   statsGridValue: {
     fontSize: 13,
+    color: colors.textSecondary,
+  },
+
+  observationSummary: {
+    fontSize: 11,
+    color: colors.textTertiary,
+  },
+  observationEmpty: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  observationRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: 12,
+    gap: 8,
+  },
+  observationDate: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  observationValueRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  observationValue: {
+    flex: 1,
+    minWidth: 220,
+    gap: 5,
+  },
+  observationValueText: {
+    fontSize: 13,
+    color: colors.text,
+  },
+  observationSources: {
+    gap: 4,
+  },
+  observationSource: {
+    gap: 2,
+  },
+  observationSourceLink: {
+    fontSize: 12,
+    color: colors.accent,
+  },
+  observationSourceText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+  },
+  observationPagination: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  observationPageButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  observationPageButtonDisabled: {
+    opacity: 0.4,
+  },
+  observationPageButtonText: {
+    fontSize: 12,
     color: colors.textSecondary,
   },
 

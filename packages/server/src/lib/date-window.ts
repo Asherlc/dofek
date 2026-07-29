@@ -25,6 +25,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "calendar.calendarData": { defaultDays: 365, routerFile: "calendar.ts", input: "days" },
   "correlation.compute": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "correlation.computeV2": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
+  "correlation.observations": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "cyclingAdvanced.activityVariability": {
     defaultDays: 90,
     routerFile: "cycling-advanced.ts",

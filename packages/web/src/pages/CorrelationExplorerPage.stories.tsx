@@ -101,6 +101,47 @@ const insufficientResult = {
   interpretationWarning,
 };
 
+const availableObservations = {
+  items: [
+    {
+      x: {
+        metricId: "protein",
+        date: "2026-07-19",
+        value: 130,
+        contributors: [
+          {
+            kind: "aggregate_inputs",
+            label: "Canonical daily nutrition inputs",
+            providerIds: ["manual"],
+            target: { type: "metric_family", family: "nutrition" },
+          },
+        ],
+      },
+      y: {
+        metricId: "hrv",
+        date: "2026-07-18",
+        value: 63,
+        contributors: [
+          {
+            kind: "aggregate_inputs",
+            label: "Daily recovery aggregate inputs",
+            providerIds: ["apple_health"],
+            target: { type: "metric_family", family: "recovery" },
+          },
+        ],
+      },
+    },
+  ],
+  totalCount: 5,
+  nextCursor: null,
+};
+
+const insufficientObservations = {
+  items: [],
+  totalCount: 0,
+  nextCursor: null,
+};
+
 function createMockLink(scenario: CorrelationScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
@@ -118,6 +159,12 @@ function createMockObservable(
       } else if (path === "correlation.computeV2") {
         observer.next?.({
           result: { data: scenario === "available" ? availableResult : insufficientResult },
+        });
+      } else if (path === "correlation.observations") {
+        observer.next?.({
+          result: {
+            data: scenario === "available" ? availableObservations : insufficientObservations,
+          },
         });
       }
       observer.complete?.();
