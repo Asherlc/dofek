@@ -37,18 +37,20 @@ SELECT
   ) AS effective_grain,
   CASE
     WHEN
-      fe.provider_id = 'apple_health'
-      AND NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
-      AND LOWER(BTRIM(fe.source_name)) <> LOWER(provider.name)
+      NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
+      AND LOWER(BTRIM(fe.source_name)) <> LOWER(COALESCE(provider.name, fe.provider_id))
       THEN fe.provider_id || ':' || BTRIM(fe.source_name)
     ELSE fe.provider_id || ':provider'
   END AS source_key,
   CASE
     WHEN
-      fe.provider_id = 'apple_health'
-      AND NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
-      AND LOWER(BTRIM(fe.source_name)) <> LOWER(provider.name)
-      THEN BTRIM(fe.source_name) || ' (via ' || provider.name || ')'
+      NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
+      AND LOWER(BTRIM(fe.source_name)) <> LOWER(COALESCE(provider.name, fe.provider_id))
+      THEN
+        BTRIM(fe.source_name)
+        || ' (via '
+        || COALESCE(provider.name, fe.provider_id)
+        || ')'
     ELSE COALESCE(provider.name, fe.provider_id)
   END AS source_label
 FROM fitness.food_entry AS fe
