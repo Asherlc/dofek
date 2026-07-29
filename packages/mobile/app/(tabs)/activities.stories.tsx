@@ -161,7 +161,7 @@ function createStoryData() {
             elevationGainM: 412,
           },
           tss: 78.4,
-          stats: [{ label: "Training Stress Score", value: "78.4" }],
+          stats: [{ status: "available", label: "Training Stress Score", value: "78.4" }],
         },
       ],
     },
@@ -188,8 +188,15 @@ function createStoryData() {
           },
           lastProcessedAt: `${yesterday}T17:48:00Z`,
           location: null,
-          tss: 42.1,
-          stats: [{ label: "Training Stress Score", value: "42.1" }],
+          tss: null,
+          stats: [
+            {
+              status: "unavailable",
+              label: "Training Stress Score",
+              reason:
+                "Record average power, or record average heart rate and set maximum heart rate.",
+            },
+          ],
         },
       ],
     },

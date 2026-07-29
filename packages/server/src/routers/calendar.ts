@@ -44,10 +44,18 @@ const activityLocationSchema = z.object({
   elevationGainM: z.number().nullable(),
 });
 
-const activityStatSchema = z.object({
-  label: z.string(),
-  value: z.string(),
-});
+const activityStatSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("available"),
+    label: z.string(),
+    value: z.string(),
+  }),
+  z.object({
+    status: z.literal("unavailable"),
+    label: z.string(),
+    reason: z.string(),
+  }),
+]);
 
 const activityListSourceSchema = z.object({
   primarySourceLabel: z.string(),
