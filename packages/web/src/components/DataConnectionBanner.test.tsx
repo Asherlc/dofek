@@ -74,7 +74,7 @@ describe("DataConnectionBanner", () => {
     expect(queryClient.getQueryData(["dashboard"])).toEqual({ score: 82 });
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Data refresh failed — showing last available data where available.",
+        "Server unavailable — showing last available data where available.",
       );
     });
 
@@ -136,6 +136,53 @@ describe("DataConnectionBanner", () => {
     expect(retryButton).toBeEnabled();
 
     unsubscribeFetching();
+  });
+
+  it("uses the consolidated message when multiple active queries fail", async () => {
+    onlineManager.setOnline(true);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const firstObserver = new QueryObserver(queryClient, {
+      queryKey: ["first-failed"],
+      queryFn: async () => {
+        throw new Error("First server message");
+      },
+    });
+    const secondObserver = new QueryObserver(queryClient, {
+      queryKey: ["second-failed"],
+      queryFn: async () => {
+        throw new Error("Second server message");
+      },
+    });
+    const failures = Promise.all([
+      new Promise<void>((resolve) => {
+        firstObserver.subscribe((result) => {
+          if (result.error) resolve();
+        });
+      }),
+      new Promise<void>((resolve) => {
+        secondObserver.subscribe((result) => {
+          if (result.error) resolve();
+        });
+      }),
+    ]);
+
+    renderBanner(queryClient);
+    await act(async () => {
+      await failures;
+    });
+
+    const banner = screen.getByRole("status");
+    expect(banner).toHaveTextContent(
+      "Data refresh failed — showing last available data where available.",
+    );
+    expect(banner).not.toHaveTextContent("First server message");
+    expect(banner).not.toHaveTextContent("Second server message");
   });
 
   it("starts only one manual retry when the retry control is activated twice rapidly", async () => {

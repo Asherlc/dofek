@@ -9,6 +9,12 @@ function getOnlineStatus(): boolean {
   return onlineManager.isOnline();
 }
 
+function getErrorMessage(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : null;
+  const trimmedMessage = message?.trim();
+  return trimmedMessage ? trimmedMessage : null;
+}
+
 function useActiveQueryFailureCount(): number {
   const queryClient = useQueryClient();
   const queryCache = queryClient.getQueryCache();
@@ -25,10 +31,28 @@ function useActiveQueryFailureCount(): number {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+function useSingleActiveQueryFailureMessage(): string | null {
+  const queryClient = useQueryClient();
+  const queryCache = queryClient.getQueryCache();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => queryCache.subscribe(onStoreChange),
+    [queryCache],
+  );
+  const getSnapshot = useCallback(() => {
+    const failedQueries = queryCache
+      .findAll({ type: "active" })
+      .filter((query) => query.state.error !== null);
+    return failedQueries.length === 1 ? getErrorMessage(failedQueries[0]?.state.error) : null;
+  }, [queryCache]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 export function DataConnectionBanner() {
   const queryClient = useQueryClient();
   const isOnline = useSyncExternalStore(subscribeToOnlineStatus, getOnlineStatus, getOnlineStatus);
   const activeFailureCount = useActiveQueryFailureCount();
+  const activeFailureMessage = useSingleActiveQueryFailureMessage();
   const [isRetrying, setIsRetrying] = useState(false);
   const isRetryingRef = useRef(false);
 
@@ -37,7 +61,9 @@ export function DataConnectionBanner() {
   }
 
   const message = isOnline
-    ? "Data refresh failed — showing last available data where available."
+    ? activeFailureMessage
+      ? `${activeFailureMessage} — showing last available data where available.`
+      : "Data refresh failed — showing last available data where available."
     : "Offline — showing last available data where available. It may be stale until you reconnect.";
   const retryLabel = isOnline
     ? isRetrying

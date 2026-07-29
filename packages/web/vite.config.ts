@@ -102,7 +102,17 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/callback(?:\/|$)/],
+        navigateFallbackDenylist: [
+          /^\/api(?:\/|$)/,
+          /^\/auth(?:\/|$)/,
+          /^\/callback(?:\/|$)/,
+          /^\/authorize(?:\/|$)/,
+          /^\/admin\/queues(?:\/|$)/,
+          /^\/\.well-known(?:\/|$)/,
+          /^\/(?:healthz|readyz|metrics)(?:\/|$)/,
+          /^\/(?:register|token|revoke)(?:\/|$)/,
+          /^\/assets(?:\/|$)/,
+        ],
         ...(cdnAssetPrefix
           ? {
               modifyURLPrefix: {
