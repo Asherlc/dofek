@@ -4,7 +4,7 @@
 
 **Behavior:** Activity overview distance and elevation are nullable server-owned totals. When no activity has an aggregatable measurement, web and mobile show “Distance not recorded” and “Elevation unavailable.” When at least one measurement is present and the aggregate is zero, both clients render the formatted zero.
 
-**Scope:** Issue [#2119](https://github.com/Asherlc/dofek/issues/2119) only. Includes the canonical compact ClickHouse distance/elevation summaries, activity overview repository/API contract, and equivalent web/mobile wording. Excludes the compatibility `activity_summary` model and its other consumers, activity-detail cards, ingestion changes, new fallback calculations, and client-side metric derivation.
+**Scope:** Issue [#2119](https://github.com/Asherlc/dofek/issues/2119) only. Includes the canonical compact ClickHouse distance/elevation summaries, activity overview repository/API contract, equivalent web/mobile wording, and a manual bounded repair for historical legacy-zero compact rows. Excludes the compatibility `activity_summary` model and its other consumers, activity-detail cards, ingestion changes, new fallback calculations, client-side metric derivation, and automatic production backfill execution.
 
 **Docs:** ClickHouse documents that the [`-OrNull` aggregate combinator](https://clickhouse.com/docs/reference/functions/aggregate-functions/combinators#-ornull) returns `NULL` when there is nothing to aggregate.
 
@@ -32,6 +32,8 @@
 - Modify `packages/server/src/routers/calendar.ts` and tests - nullable output contract.
 - Modify `packages/web/src/pages/ActivitiesPage.tsx` and test - web wording.
 - Modify `packages/mobile/app/(tabs)/activities.tsx` and test - mobile wording.
+- Add `packages/format/src/activity-overview.ts` and test - shared availability copy and null-versus-number rendering.
+- Add `src/db/activity-overview-availability-backfill.ts`, its CLI, executable ClickHouse coverage, and an operator runbook - repair bounded historical legacy-zero rows.
 
 ## Tasks
 
@@ -70,3 +72,12 @@
 - [x] Run relevant lint, typecheck, unit, integration, Storybook/build, and diff checks.
 - [x] Review the complete diff against the exact issue base.
 - [ ] Commit, push, and open one PR containing `Fixes #2119`.
+
+### Task 6: Address Review Findings
+
+- [x] Move shared availability wording and null-versus-number rendering into `@dofek/format` while clients retain unit conversion.
+- [x] Add a dry-run-first TypeScript backfill with mandatory UTC bounds and explicit `--execute`.
+- [x] Preserve the full latest compact row and assign a strictly newer replacement version.
+- [x] Rewrite distance and elevation independently only when fewer than two valid samples exist.
+- [x] Prove exclusive bounds, dry-run behavior, execution, idempotency, and measured-zero preservation against real ClickHouse.
+- [x] Document the manual operator workflow without adding it to deploy or request paths.

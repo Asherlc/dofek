@@ -1,10 +1,13 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { backfillActivityOverviewAvailability } from "../../../../src/db/activity-overview-availability-backfill.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import {
   createClickHouseTestActivitySensorStore,
+  executeClickHouseTestCommand,
+  getClickHouseTestClient,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "../routers/clickhouse-integration-test-helpers.ts";
@@ -242,5 +245,110 @@ describe("activity visibility consistency", () => {
     const visibleIds = await repository.listVisibleActivityIdsSince("2026-03-01");
     expect(visibleIds).toContain(BEFORE_LOCAL_END_ID);
     expect(visibleIds).not.toContain(BEFORE_LOCAL_ACCESS_ID);
+  });
+
+  it("backfills legacy unavailable zeros within an explicit range without changing measured zero", async () => {
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.activity_location_summary_rows
+SELECT * REPLACE(
+  CAST(0, 'Nullable(Float64)') AS total_distance,
+  refresh_version + 1 AS refresh_version,
+  now64(9, 'UTC') AS refreshed_at
+)
+FROM analytics.activity_location_summary_rows FINAL
+WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.activity_sensor_summary_rows
+SELECT * REPLACE(
+  CAST(0, 'Nullable(Float64)') AS elevation_gain_m,
+  refresh_version + 1 AS refresh_version,
+  now64(9, 'UTC') AS refreshed_at
+)
+FROM analytics.activity_sensor_summary_rows FINAL
+WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
+    );
+
+    const repository = new ActivitiesCalendarRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      ACCESS_WINDOW,
+    );
+    await expect(
+      repository.getActivityOverview({
+        weeks: 8,
+        endDate: "2026-03-20",
+        activityType: "walking",
+      }),
+    ).resolves.toMatchObject({
+      totalDistanceMeters: 0,
+      totalElevationGainM: 0,
+    });
+
+    const client = getClickHouseTestClient(testContext);
+    await expect(
+      backfillActivityOverviewAvailability(client, {
+        start: new Date("2026-03-15T10:00:00Z"),
+        end: new Date("2026-03-16T10:00:00Z"),
+        execute: false,
+      }),
+    ).resolves.toEqual({ distanceRows: 0, elevationRows: 0 });
+    await expect(
+      backfillActivityOverviewAvailability(client, {
+        start: new Date("2026-03-16T10:00:00Z"),
+        end: new Date("2026-03-17T10:00:00Z"),
+        execute: false,
+      }),
+    ).resolves.toEqual({ distanceRows: 1, elevationRows: 1 });
+
+    await expect(
+      repository.getActivityOverview({
+        weeks: 8,
+        endDate: "2026-03-20",
+        activityType: "walking",
+      }),
+    ).resolves.toMatchObject({
+      totalDistanceMeters: 0,
+      totalElevationGainM: 0,
+    });
+
+    const range = {
+      start: new Date("2026-03-14T00:00:00Z"),
+      end: new Date("2026-03-17T10:00:00Z"),
+      execute: true,
+    };
+    await expect(backfillActivityOverviewAvailability(client, range)).resolves.toEqual({
+      distanceRows: 1,
+      elevationRows: 1,
+    });
+    await expect(backfillActivityOverviewAvailability(client, range)).resolves.toEqual({
+      distanceRows: 0,
+      elevationRows: 0,
+    });
+
+    await expect(
+      repository.getActivityOverview({
+        weeks: 8,
+        endDate: "2026-03-20",
+        activityType: "walking",
+      }),
+    ).resolves.toMatchObject({
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
+    });
+    await expect(
+      repository.getActivityOverview({
+        weeks: 8,
+        endDate: "2026-03-20",
+        activityType: "running",
+      }),
+    ).resolves.toMatchObject({
+      totalDistanceMeters: 0,
+      totalElevationGainM: 0,
+    });
   });
 });
