@@ -141,8 +141,9 @@ export async function readFingerLoadingRange(input: {
           entry.rest_interval_seconds,
           entry.rpe,
           entry.notes
-        FROM fitness.activity AS a
-        JOIN fitness.finger_loading_entry AS entry ON entry.activity_id = a.id
+        FROM fitness.v_activity AS a
+        JOIN fitness.finger_loading_entry AS entry
+          ON entry.activity_id = ANY(a.member_activity_ids)
         WHERE a.user_id = ${input.userId}::uuid
           AND (a.started_at AT TIME ZONE ${input.timezone})::date
             BETWEEN ${input.startDate}::date AND ${input.endDate}::date
@@ -337,8 +338,9 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
             entry.rest_interval_seconds,
             entry.rpe,
             entry.notes
-          FROM fitness.activity AS a
-          JOIN fitness.finger_loading_entry AS entry ON entry.activity_id = a.id
+          FROM fitness.v_activity AS a
+          JOIN fitness.finger_loading_entry AS entry
+            ON entry.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.userId}::uuid
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             ${this.timestampAccessPredicate(sql`a.started_at`)}
@@ -374,10 +376,11 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
             entry.rest_interval_seconds,
             entry.rpe,
             entry.notes
-          FROM fitness.activity AS a
-          JOIN fitness.finger_loading_entry AS entry ON entry.activity_id = a.id
+          FROM fitness.v_activity AS a
+          JOIN fitness.finger_loading_entry AS entry
+            ON entry.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.userId}::uuid
-            AND a.id = ${activityId}::uuid`,
+            AND ${activityId}::uuid = ANY(a.member_activity_ids)`,
     );
     return rows[0] ? toFingerLoadingDetail(rows[0]) : null;
   }

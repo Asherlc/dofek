@@ -34,4 +34,21 @@ describe("ClimbingAttemptLog", () => {
       }),
     );
   });
+
+  it("submits an empty wall angle as null", () => {
+    const onSubmit = vi.fn();
+    render(<ClimbingAttemptLog errorMessage={null} onSubmit={onSubmit} submitting={false} />);
+
+    fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "V5" } });
+    fireEvent.change(screen.getByLabelText("Wall angle (degrees; positive is overhang)"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save climbing session" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climbs: [expect.objectContaining({ wallAngleDegrees: null })],
+      }),
+    );
+  });
 });

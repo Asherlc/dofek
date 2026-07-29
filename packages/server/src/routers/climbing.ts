@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
@@ -107,9 +108,30 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
     return await query();
   } catch (error: unknown) {
     if (error instanceof TRPCError) throw error;
+    captureException(error);
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: error instanceof Error ? error.message : "Failed to load climbing data",
+      cause: error,
+    });
+  }
+}
+
+async function runClimbingMutation<T>(input: {
+  message: string;
+  mutation: () => Promise<T>;
+  procedure: string;
+}): Promise<T> {
+  try {
+    return await input.mutation();
+  } catch (error: unknown) {
+    if (error instanceof TRPCError) throw error;
+    captureException(error, {
+      tags: { procedure: input.procedure },
+    });
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: input.message,
       cause: error,
     });
   }
@@ -125,7 +147,11 @@ export const climbingRouter = router({
         ctx.timezone,
         ctx.accessWindow,
       );
-      const created = await repository.logFingerLoading(input);
+      const created = await runClimbingMutation({
+        message: "Could not save the finger-loading session. Try again.",
+        mutation: () => repository.logFingerLoading(input),
+        procedure: "climbing.logFingerLoading",
+      });
       await invalidateAllUserQueries(ctx.userId);
       return created;
     }),
@@ -151,7 +177,11 @@ export const climbingRouter = router({
         ctx.timezone,
         ctx.accessWindow,
       );
-      const created = await repository.logClimbingSession(input);
+      const created = await runClimbingMutation({
+        message: "Could not save the climbing session. Try again.",
+        mutation: () => repository.logClimbingSession(input),
+        procedure: "climbing.logClimbingSession",
+      });
       await invalidateAllUserQueries(ctx.userId);
       return created;
     }),

@@ -46,7 +46,7 @@ export function ClimbingAttemptLog({
 }) {
   const [climbType, setClimbType] = useState<"boulder" | "route">("boulder");
   const [grade, setGrade] = useState("");
-  const [wallAngleDegrees, setWallAngleDegrees] = useState(0);
+  const [wallAngleDegrees, setWallAngleDegrees] = useState<number | null>(0);
   const [holdType, setHoldType] = useState<HoldType>("crimp");
   const [routeName, setRouteName] = useState("");
   const [locationName, setLocationName] = useState("");
@@ -120,9 +120,12 @@ export function ClimbingAttemptLog({
             className="input"
             max={90}
             min={-90}
-            onChange={(event) => setWallAngleDegrees(event.target.valueAsNumber)}
+            onChange={(event) => {
+              const nextWallAngleDegrees = event.target.valueAsNumber;
+              setWallAngleDegrees(Number.isNaN(nextWallAngleDegrees) ? null : nextWallAngleDegrees);
+            }}
             type="number"
-            value={wallAngleDegrees}
+            value={wallAngleDegrees ?? ""}
           />
         </Field>
         <Field label="Primary hold type">

@@ -295,6 +295,14 @@ describe("climbing router integration", () => {
         notes: "Felt controlled",
       }),
     ]);
+
+    await testContext.db.execute(
+      sql`UPDATE fitness.activity
+          SET deleted_at = NOW()
+          WHERE id = ${logged.activityId}`,
+    );
+
+    await expect(caller.fingerLoadingHistory({ days: 2 })).resolves.toEqual([]);
   });
 
   it("logs individual climbing attempts and derives aggregate entry detail", async () => {
