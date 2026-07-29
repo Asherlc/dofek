@@ -28,6 +28,20 @@ vi.mock("../components/ProviderLogo.tsx", () => ({
   ProviderLogo: () => <div data-testid="provider-logo" />,
 }));
 
+vi.mock("../components/DataSourcesAuthModals.tsx", () => ({
+  CredentialAuthModal: () => <div>Credential reconnect form</div>,
+  GarminAuthModal: () => <div>Garmin reconnect form</div>,
+  TokenAuthModal: () => <div>Token reconnect form</div>,
+  WhoopAuthModal: ({ onSuccess }: { onSuccess: () => void }) => (
+    <div>
+      WHOOP reconnect form
+      <button type="button" onClick={onSuccess}>
+        Complete WHOOP reconnect
+      </button>
+    </div>
+  ),
+}));
+
 const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/FileImportProviderCard.tsx", () => ({
@@ -68,6 +82,9 @@ interface MockProvider {
   authType: string;
   lastSyncedAt: string | null;
   importOnly: boolean;
+  needsReauth?: boolean;
+  pushOnly?: boolean;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
 }
 
 type MockProviderStats = ProviderStats & { providerId: string };
@@ -537,6 +554,101 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
   });
 
+  it("separates connection from expired authorization and promotes reconnect", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: true,
+        authType: "custom:whoop",
+        lastSyncedAt: "2026-06-29T12:00:00Z",
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Connection")).toBeTruthy();
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Authorization")).toBeTruthy();
+    expect(screen.getByText("Reconnect required")).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect WHOOP" }));
+    expect(screen.getByText("WHOOP reconnect form")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Complete WHOOP reconnect" }));
+    expect(mockProcessingStatusInvalidate).toHaveBeenCalledWith({ providerId: "whoop" });
+  });
+
+  it("shows token reconnect errors when expired credentials were removed", async () => {
+    mockUseParams.mockReturnValue({ id: "ultrahuman" });
+    mockProviders.data = [
+      {
+        id: "ultrahuman",
+        name: "Ultrahuman",
+        authorized: false,
+        authType: "token",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+        tokenAuth: null,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
+
+    expect(
+      screen.getByText(
+        "Ultrahuman personal-token authentication is unavailable. Refresh and try again.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("keeps ready provider dataset freshness visible", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-30T14:00:00Z"));
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: "2026-06-30T12:00:00Z",
+        importOnly: false,
+      },
+    ];
+    mockDataHealth.data = {
+      overallStatus: "ready",
+      generatedAt: "2026-06-30T14:00:00Z",
+      scope: { providerId: "wahoo", datasets: ["activity"] },
+      operations: [],
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "ready",
+          currentStage: null,
+          progressPercentage: 100,
+          lastAdvancedAt: "2026-06-30T12:00:00Z",
+          lastReadyAt: "2026-06-30T12:00:00Z",
+        },
+      ],
+    };
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Last ready: 2h ago")).toBeTruthy();
+  });
+
   it("shows single-provider cooldown outcome without polling a fake job", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
@@ -766,7 +878,7 @@ describe("ProviderDetailPage import-only providers", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
-    expect(screen.getByText("Not connected")).toBeTruthy();
+    expect(screen.getAllByText("Not connected")).toHaveLength(2);
     expect(screen.queryByText("Sync Controls")).toBeNull();
     expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
     expect(screen.queryByText("Full Sync")).toBeNull();

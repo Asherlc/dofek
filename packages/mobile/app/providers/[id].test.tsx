@@ -596,8 +596,12 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.getByText("Reconnect")).toBeTruthy();
-      expect(screen.getByText("Re-authorize")).toBeTruthy();
+      expect(screen.getAllByText("Reconnect")).toHaveLength(2);
+      expect(screen.getByRole("button", { name: "Reconnect Wahoo" })).toBeTruthy();
+      expect(screen.getByText("Connection")).toBeTruthy();
+      expect(screen.getByText("Connected")).toBeTruthy();
+      expect(screen.getByText("Authorization")).toBeTruthy();
+      expect(screen.getByText("Reconnect required")).toBeTruthy();
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Full sync")).toBeNull();
     });
@@ -611,7 +615,8 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.getByText("Reconnect")).toBeTruthy();
+      expect(screen.getAllByText("Reconnect")).toHaveLength(2);
+      expect(screen.getByRole("button", { name: "Reconnect Wahoo" })).toBeTruthy();
       expect(screen.queryByText("Connect")).toBeNull();
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Full sync")).toBeNull();
@@ -647,6 +652,35 @@ describe("ProviderDetailScreen", () => {
 
       expect(screen.getByText("Wahoo data status")).toBeTruthy();
       expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
+    });
+
+    it("keeps ready provider dataset freshness visible", async () => {
+      mockDataHealthQuery.mockReturnValue({
+        data: {
+          overallStatus: "ready",
+          generatedAt: "2026-06-30T14:00:00Z",
+          scope: { providerId: "wahoo", datasets: ["activity"] },
+          operations: [],
+          datasets: [
+            {
+              key: "activity",
+              label: "Activities",
+              status: "ready",
+              currentStage: null,
+              progressPercentage: 100,
+              lastAdvancedAt: "2026-06-30T12:00:00Z",
+              lastReadyAt: "2026-06-30T12:00:00Z",
+            },
+          ],
+        },
+        isLoading: false,
+        error: null,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Last ready: 2026-06-30T12:00:00Z ago")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
