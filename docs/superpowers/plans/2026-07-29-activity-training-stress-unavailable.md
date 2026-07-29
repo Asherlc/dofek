@@ -35,8 +35,9 @@
 - Modify: `packages/web/src/components/ActivityCardContent.test.tsx` - cover available and unavailable compact-card rendering.
 - Modify: `packages/web/src/components/ActivityCardContent.tsx` - render the returned metric variant.
 - Modify: `packages/web/src/components/ActivityCardContent.stories.tsx` - show the unavailable state.
-- Modify: `packages/mobile/app/(tabs)/activities.test.tsx` - cover iOS parity and unavailable reason rendering.
-- Modify: `packages/mobile/app/(tabs)/activities.tsx` - render the returned metric variant.
+- Add: `packages/mobile/components/ActivityMetricStrip.test.tsx` - cover iOS parity and unavailable reason rendering.
+- Add: `packages/mobile/components/ActivityMetricStrip.tsx` - render the returned metric variant.
+- Modify: `packages/mobile/app/(tabs)/activities.tsx` - compose the focused metric-strip component.
 - Modify: `packages/mobile/app/(tabs)/activities.stories.tsx` - show the unavailable state.
 
 ## Tasks
@@ -56,11 +57,11 @@
 
 **Files:**
 - Modify: `packages/web/src/components/ActivityCardContent.test.tsx`
-- Modify: `packages/mobile/app/(tabs)/activities.test.tsx`
+- Add: `packages/mobile/components/ActivityMetricStrip.test.tsx`
 
 - [ ] Write failing tests that require the server-authored unavailable label and reason.
 - [ ] Assert the compact cards no longer render the ambiguous em dash for unavailable training stress.
-- [ ] Run `rtk pnpm test -- --run packages/web/src/components/ActivityCardContent.test.tsx 'packages/mobile/app/(tabs)/activities.test.tsx'`.
+- [ ] Run `rtk pnpm test -- --run packages/web/src/components/ActivityCardContent.test.tsx packages/mobile/components/ActivityMetricStrip.test.tsx`.
 - [ ] Confirm the tests fail against the old string-pair contract.
 
 ### Task 3: Implement the Minimal Server Contract
@@ -80,13 +81,14 @@
 **Files:**
 - Modify: `packages/web/src/components/ActivityCardContent.tsx`
 - Modify: `packages/web/src/components/ActivityCardContent.stories.tsx`
+- Add: `packages/mobile/components/ActivityMetricStrip.tsx`
 - Modify: `packages/mobile/app/(tabs)/activities.tsx`
 - Modify: `packages/mobile/app/(tabs)/activities.stories.tsx`
 
 - [ ] Render available values and unavailable server-authored reasons without client-side metric inference.
 - [ ] Preserve map-card distance/elevation behavior.
 - [ ] Add unavailable Storybook states on both platforms.
-- [ ] Run `rtk pnpm test -- --run packages/web/src/components/ActivityCardContent.test.tsx 'packages/mobile/app/(tabs)/activities.test.tsx'`.
+- [ ] Run `rtk pnpm test -- --run packages/web/src/components/ActivityCardContent.test.tsx packages/mobile/components/ActivityMetricStrip.test.tsx`.
 - [ ] Confirm the parity tests pass.
 
 ### Task 5: Document and Verify

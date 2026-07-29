@@ -243,42 +243,6 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
-  it("renders the server-authored unavailable reason instead of a broken dash", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              tss: null,
-              stats: [
-                {
-                  status: "unavailable",
-                  label: "Training Stress Score",
-                  reason:
-                    "Record average power, or record average heart rate and set maximum heart rate.",
-                },
-              ],
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    expect(screen.getByText("Training Stress Score unavailable")).toBeDefined();
-    expect(
-      screen.getByText(
-        "Record average power, or record average heart rate and set maximum heart rate.",
-      ),
-    ).toBeDefined();
-    expect(screen.queryByText("—")).toBeNull();
-  });
-
   it("renders server-authored source overlap and processing freshness", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-18T08:08:00.000Z"));
