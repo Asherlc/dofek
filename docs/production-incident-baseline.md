@@ -20290,3 +20290,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   with the active SDK when React Native changes internal renderer boundaries,
   and do not globally prefer the ESM `import` condition for mixed CommonJS/ESM
   dependency graphs.
+
+## 2026-07-29 — PR refresh cancelled exact-head workflows
+
+- **Status:** Workflow-control cause corrected for PR #2300; final exact-head
+  validation is required before merge.
+- **Symptoms:** After a one-time close/reopen refreshed PR #2300 from stale head
+  `7e58f89d5` to branch head `88edce888`, the newly created
+  [CI run 30481887258](https://github.com/Asherlc/dofek/actions/runs/30481887258),
+  CodeQL, Semgrep, and Mobile Preview OTA runs were cancelled before scheduling
+  jobs.
+- **User impact:** No production impact. PR #2300 remained blocked from merging
+  despite its corrected head association.
+- **Evidence:** The exact CI workflow attempt reported `jobs: []`,
+  `conclusion: cancelled`, and no failing command or fatal log line because no
+  job started. The previous
+  [CI run 30480125800](https://github.com/Asherlc/dofek/actions/runs/30480125800)
+  still occupied the same `ci-refs/pull/2300/merge` concurrency group with 79
+  successful jobs while its close-cancelled iOS build propagated through the
+  mobile and aggregate gates.
+- **Root cause:** The close/reopen refresh overlapped the prior same-PR workflow
+  run. GitHub Actions concurrency arbitration kept the older run active and
+  cancelled the new exact-head workflows before their jobs could start.
+- **Fix / mitigation:** Wait for the stale run to terminate, then rerun each
+  cancelled exact-head workflow exactly once after the concurrency group is
+  free. No actual test failure is rerun, and no retry, timeout, fallback, or
+  workflow change is added.
+- **Validation:** Attempts 2 for CI, CodeQL, Semgrep, and Mobile Preview OTA
+  started with head SHA `88edce888dc48e046d5f056d0d492163a82cee98`
+  after the stale run terminated. Committing this required incident record
+  advances the branch again, so its resulting head still requires the normal
+  exact-head gates.
+- **Remaining risk / follow-up:** Merge only after every exact-head attempt
+  completes successfully. Avoid close/reopen refreshes while a same-PR
+  concurrency group is still active.

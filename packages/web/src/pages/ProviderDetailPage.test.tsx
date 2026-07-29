@@ -517,6 +517,76 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Import only")).toBeNull();
   });
 
+  it("gives WHOOP one exact range and one sync action", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: true,
+        authType: "custom:whoop",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [
+        {
+          providerId: "whoop",
+          status: "skippedCooldown",
+          message: "WHOOP sync is already current",
+        },
+      ],
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByLabelText("From")).toBeTruthy();
+    expect(screen.getByLabelText("To")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Sync" })).toHaveLength(1);
+    expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+    expect(screen.queryByText("Full Sync")).toBeNull();
+    expect(screen.queryByText("Sync Range")).toBeNull();
+    expect(screen.queryByText("Sync Dates")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-15" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    });
+
+    expect(mockSyncMutation.mutateAsync).toHaveBeenCalledWith({
+      providerId: "whoop",
+      sinceDate: "2026-06-01",
+      untilDate: "2026-06-15",
+    });
+  });
+
+  it("does not start a WHOOP sync when its selected range is inverted", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: true,
+        authType: "custom:whoop",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-18" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-17" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+
+    expect(screen.getByText('"From" date must be on or before "To" date')).toBeTruthy();
+    expect(mockSyncMutation.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("shows provider processing progress while read models update", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [

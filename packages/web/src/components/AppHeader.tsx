@@ -14,6 +14,7 @@ const navItems = [
   { to: "/experiments", label: "Experiments" },
   { to: "/tracking", label: "Tracking" },
   { to: "/health-report", label: "Reports" },
+  { to: "/more", label: "More" },
 ] as const;
 
 const adminNavItems = [...navItems, { to: "/admin", label: "Admin" }] as const;
