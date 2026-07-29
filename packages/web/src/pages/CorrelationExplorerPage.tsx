@@ -48,11 +48,13 @@ function MetricSelect({
   onChange,
   grouped,
   label,
+  unavailableValue,
 }: {
   value: string;
   onChange: (v: string) => void;
   grouped: MetricsByDomain;
   label: string;
+  unavailableValue: string;
 }) {
   return (
     <label className="flex-1 min-w-0 block">
@@ -65,7 +67,7 @@ function MetricSelect({
         {Object.entries(grouped).map(([domain, metrics]) => (
           <optgroup key={domain} label={domain}>
             {metrics.map((m) => (
-              <option key={m.id} value={m.id}>
+              <option key={m.id} value={m.id} disabled={m.id === unavailableValue}>
                 {m.label} ({m.unit})
               </option>
             ))}
@@ -117,6 +119,7 @@ export function CorrelationExplorerPage() {
                 onChange={setMetricX}
                 grouped={grouped}
                 label="X axis"
+                unavailableValue={metricY}
               />
               <span className="text-dim text-sm pb-2">vs</span>
               <MetricSelect
@@ -124,6 +127,7 @@ export function CorrelationExplorerPage() {
                 onChange={setMetricY}
                 grouped={grouped}
                 label="Y axis"
+                unavailableValue={metricX}
               />
             </div>
 
@@ -241,6 +245,7 @@ export function CorrelationExplorerPage() {
               <div className="card p-4 space-y-3">
                 <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
                 <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
+                <p className="text-[11px] text-dim leading-relaxed">{data.interpretationWarning}</p>
 
                 {data.availability === "available" && hasMetricMetadata && (
                   <div className="grid grid-cols-2 gap-3 pt-1">

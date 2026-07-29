@@ -620,6 +620,30 @@ describe("correlationRouter", () => {
   });
 
   describe("compute", () => {
+    it("rejects same-series comparisons before loading correlation data", async () => {
+      const compute = vi.spyOn(CorrelationRepository.prototype, "compute");
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.compute({
+          metricX: "hrv",
+          metricY: "hrv",
+          days: 90,
+          lag: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Choose two different metrics to compare.",
+      });
+      expect(compute).not.toHaveBeenCalled();
+      compute.mockRestore();
+    });
+
     it("validates and strips unknown repository output fields", async () => {
       const repositoryResult = {
         availability: "insufficient",
@@ -720,6 +744,30 @@ describe("correlationRouter", () => {
   });
 
   describe("computeV2", () => {
+    it("rejects same-series comparisons before loading correlation data", async () => {
+      const computeV2 = vi.spyOn(CorrelationRepository.prototype, "computeV2");
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.computeV2({
+          metricX: "hrv",
+          metricY: "hrv",
+          days: 90,
+          lag: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Choose two different metrics to compare.",
+      });
+      expect(computeV2).not.toHaveBeenCalled();
+      computeV2.mockRestore();
+    });
+
     it("returns the versioned evidence contract without legacy iid fields", async () => {
       const repositoryResult = {
         analysisVersion: 2,
@@ -747,6 +795,8 @@ describe("correlationRouter", () => {
           reason: "insufficient_pairs",
         },
         unexpected: "not part of the API contract",
+        interpretationWarning:
+          "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
       } as const;
       const compute = vi
         .spyOn(CorrelationRepository.prototype, "computeV2")
@@ -768,6 +818,8 @@ describe("correlationRouter", () => {
       expect(result).toMatchObject({
         analysisVersion: 2,
         availability: "insufficient",
+        interpretationWarning:
+          "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
         coverage: {
           selectedDayCount: 90,
           pairedDayCount: 0,

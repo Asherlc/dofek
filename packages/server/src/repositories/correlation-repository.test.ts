@@ -659,6 +659,8 @@ describe("CorrelationRepository", () => {
       expect(result).toMatchObject({
         availability: "available",
         sampleCount: 5,
+        interpretationWarning:
+          "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
       });
       expect(result.spearmanRho).toBeCloseTo(-1, 12);
       const activityQuery = sensorStore.query.mock.calls.find(([, query]) =>
@@ -671,6 +673,19 @@ describe("CorrelationRepository", () => {
           days: 5,
         }),
       );
+    });
+
+    it("includes the interpretation warning when paired data is insufficient", async () => {
+      const db = makeDb();
+      const repo = new CorrelationRepository(db, "user-1", "UTC", makeSensorStore());
+
+      const result = await repo.computeV2("resting_hr", "hrv", 90, 0, "2024-06-01");
+
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        interpretationWarning:
+          "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      });
     });
   });
 });
