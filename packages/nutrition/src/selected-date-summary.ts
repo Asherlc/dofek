@@ -11,24 +11,42 @@ export const nutritionMealCaloriesSchema = z.object({
 export const macroNutritionSummarySchema = z.object({
   grams: z.number().nonnegative(),
   calories: z.number().nonnegative(),
-  percentage: z.number().nonnegative(),
+  energySharePercentage: z.number().int().min(0).max(100),
 });
 
-export const selectedDateNutritionSummarySchema = z.object({
-  calories: z.number().nonnegative(),
-  mealCalories: nutritionMealCaloriesSchema,
-  calorieGoal: z.object({
-    target: z.number().positive(),
-    remaining: z.number().nonnegative(),
-    over: z.number().nonnegative(),
-    progressPercentage: z.number().min(0).max(100),
-  }),
-  macros: z.object({
-    protein: macroNutritionSummarySchema,
-    carbs: macroNutritionSummarySchema,
-    fat: macroNutritionSummarySchema,
-  }),
-});
+export const selectedDateNutritionSummarySchema = z
+  .object({
+    calories: z.number().nonnegative(),
+    mealCalories: nutritionMealCaloriesSchema,
+    calorieGoal: z.object({
+      target: z.number().positive(),
+      remaining: z.number().nonnegative(),
+      over: z.number().nonnegative(),
+      progressPercentage: z.number().min(0).max(100),
+    }),
+    macros: z.object({
+      protein: macroNutritionSummarySchema,
+      carbs: macroNutritionSummarySchema,
+      fat: macroNutritionSummarySchema,
+    }),
+  })
+  .superRefine(({ macros }, context) => {
+    const totalMacroCalories =
+      macros.protein.calories + macros.carbs.calories + macros.fat.calories;
+    const totalEnergySharePercentage =
+      macros.protein.energySharePercentage +
+      macros.carbs.energySharePercentage +
+      macros.fat.energySharePercentage;
+    const expectedEnergySharePercentage = totalMacroCalories > 0 ? 100 : 0;
+
+    if (totalEnergySharePercentage !== expectedEnergySharePercentage) {
+      context.addIssue({
+        code: "custom",
+        message: `Macro energy shares must total ${expectedEnergySharePercentage} percent`,
+        path: ["macros"],
+      });
+    }
+  });
 
 export const nutritionSourceResolutionSchema = z.object({
   status: z.enum(["available", "source_conflict"]),

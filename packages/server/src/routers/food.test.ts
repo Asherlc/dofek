@@ -208,9 +208,9 @@ describe("foodRouter", () => {
             progressPercentage: 62.5,
           },
           macros: {
-            protein: { grams: 55, calories: 220, percentage: 22 },
-            carbs: { grams: 105, calories: 420, percentage: 42 },
-            fat: { grams: 40, calories: 360, percentage: 36 },
+            protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+            carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+            fat: { grams: 40, calories: 360, energySharePercentage: 36 },
           },
         },
       });

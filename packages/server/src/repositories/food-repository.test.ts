@@ -432,9 +432,9 @@ describe("FoodRepository", () => {
             progressPercentage: 0,
           },
           macros: {
-            protein: { grams: 0, calories: 0, percentage: 0 },
-            carbs: { grams: 0, calories: 0, percentage: 0 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+            carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
         resolution: {
@@ -486,9 +486,9 @@ describe("FoodRepository", () => {
           progressPercentage: 62.5,
         },
         macros: {
-          protein: { grams: 55, calories: 220, percentage: 22 },
-          carbs: { grams: 105, calories: 420, percentage: 42 },
-          fat: { grams: 40, calories: 360, percentage: 36 },
+          protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+          carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+          fat: { grams: 40, calories: 360, energySharePercentage: 36 },
         },
       });
     });
