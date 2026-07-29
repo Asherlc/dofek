@@ -20350,8 +20350,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   removed. Each owning workspace's next Compose up can recreate its default
   network, but the prior subnet and labels were not preserved. No speculative
   reconstruction was attempted.
-- **Validation:** Compose subsequently created this workspace's network and the
-  focused suite passed all 10 tests against real Postgres.
+- **Validation:** Compose subsequently created this workspace's network. The
+  exact command above completed locally on 2026-07-29 at 14:46 PDT with
+  `Test Files 1 passed (1)` and `Tests 10 passed (10)` against real Postgres.
 - **Remaining risk / follow-up:** Only remove resources belonging to the
   current issue or crew. If other stale networks block validation, stop and
   request user direction. Add this boundary and the subnet-exhaustion

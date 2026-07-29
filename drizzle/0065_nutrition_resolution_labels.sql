@@ -35,17 +35,24 @@ SELECT
       ELSE 'ambiguous'
     END
   ) AS effective_grain,
-  fe.provider_id || ':' || COALESCE(NULLIF(BTRIM(fe.source_name), ''), 'provider') AS source_key,
+  CASE
+    WHEN
+      fe.provider_id = 'apple_health'
+      AND NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
+      AND LOWER(BTRIM(fe.source_name)) <> LOWER(provider.name)
+      THEN fe.provider_id || ':' || BTRIM(fe.source_name)
+    ELSE fe.provider_id || ':provider'
+  END AS source_key,
   CASE
     WHEN
       fe.provider_id = 'apple_health'
       AND NULLIF(BTRIM(fe.source_name), '') IS NOT NULL
       AND LOWER(BTRIM(fe.source_name)) <> LOWER(provider.name)
       THEN BTRIM(fe.source_name) || ' (via ' || provider.name || ')'
-    ELSE provider.name
+    ELSE COALESCE(provider.name, fe.provider_id)
   END AS source_label
 FROM fitness.food_entry AS fe
-INNER JOIN fitness.provider AS provider ON fe.provider_id = provider.id
+LEFT JOIN fitness.provider AS provider ON fe.provider_id = provider.id
 LEFT JOIN nutrient_counts AS nc ON fe.id = nc.food_entry_id;
 --> statement-breakpoint
 
