@@ -648,10 +648,51 @@ export function buildTestRecoveryReadModelSelectSql(
   efficiency_pct,
   hrv_mean_30d,
   hrv_sd_30d,
+  if(
+    hrv IS NOT NULL AND hrv_mean_30d IS NOT NULL AND hrv_sd_30d IS NOT NULL AND hrv_sd_30d > 0,
+    (hrv - hrv_mean_30d) / hrv_sd_30d,
+    CAST(NULL, 'Nullable(Float64)')
+  ) AS hrv_z_score,
+  hrv_baseline_sample_count,
+  hrv_baseline_coverage,
+  hrv_mean_7d,
+  hrv_mean_previous_28d,
   rhr_mean_30d,
   rhr_sd_30d,
+  if(
+    resting_hr IS NOT NULL AND rhr_mean_30d IS NOT NULL AND rhr_sd_30d IS NOT NULL AND rhr_sd_30d > 0,
+    (resting_hr - rhr_mean_30d) / rhr_sd_30d,
+    CAST(NULL, 'Nullable(Float64)')
+  ) AS resting_hr_z_score,
+  rhr_baseline_sample_count,
+  rhr_baseline_coverage,
+  rhr_mean_7d,
+  rhr_mean_previous_28d,
   rr_mean_30d,
   rr_sd_30d,
+  if(
+    respiratory_rate IS NOT NULL AND rr_mean_30d IS NOT NULL AND rr_sd_30d IS NOT NULL AND rr_sd_30d > 0,
+    (respiratory_rate - rr_mean_30d) / rr_sd_30d,
+    CAST(NULL, 'Nullable(Float64)')
+  ) AS respiratory_rate_z_score,
+  rr_baseline_sample_count,
+  rr_baseline_coverage,
+  rr_mean_7d,
+  rr_mean_previous_28d,
+  efficiency_mean_30d,
+  efficiency_sd_30d,
+  if(
+    efficiency_pct IS NOT NULL
+      AND efficiency_mean_30d IS NOT NULL
+      AND efficiency_sd_30d IS NOT NULL
+      AND efficiency_sd_30d > 0,
+    (efficiency_pct - efficiency_mean_30d) / efficiency_sd_30d,
+    CAST(NULL, 'Nullable(Float64)')
+  ) AS efficiency_z_score,
+  efficiency_baseline_sample_count,
+  efficiency_baseline_coverage,
+  efficiency_mean_7d,
+  efficiency_mean_previous_28d,
   hrv_mean_60d,
   hrv_sd_60d,
   rhr_mean_60d,
