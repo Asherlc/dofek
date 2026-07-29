@@ -1,3 +1,4 @@
+import { formatBaselineContext } from "@dofek/format/baseline-context";
 import {
   formatBodyCompositionNumber,
   formatDateShort,
@@ -187,14 +188,21 @@ export default function RecoveryScreen() {
 
   const hrvData = recoveryData?.hrvVariability ?? [];
   const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
-  const latestHrv = hrvData[hrvData.length - 1];
-  const latestRestingHeartRate = hrvBaselineData[hrvBaselineData.length - 1];
+  const baselineRelative = recoveryData?.baselineRelative ?? [];
+  const hrvContext = baselineRelative.find((metric) => metric.metric === "hrv");
+  const restingHeartRateContext = baselineRelative.find(
+    (metric) => metric.metric === "resting_heart_rate",
+  );
+  const respiratoryRateContext = baselineRelative.find(
+    (metric) => metric.metric === "respiratory_rate",
+  );
+  const sleepEfficiencyContext = baselineRelative.find(
+    (metric) => metric.metric === "sleep_efficiency",
+  );
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
   const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
     d.resting_hr != null ? [d.resting_hr] : [],
   );
-  const hrvBaseline = latestHrv?.rollingMean;
-  const restingHeartRateBaseline = latestRestingHeartRate?.resting_hr_mean_7d;
 
   const readinessData = recoveryData?.readinessScore ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
@@ -280,6 +288,12 @@ export default function RecoveryScreen() {
             }
             if (metric.metric === "hrv") return formatHRV(metric.value);
             if (metric.metric === "spo2") return formatSpO2(metric.value);
+            if (metric.metric === "respiratory_rate") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)} breaths/min`;
+            }
+            if (metric.metric === "sleep_efficiency") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)}%`;
+            }
             if (metric.value == null) return "—";
             if (metric.metric === "steps") return Math.round(metric.value).toLocaleString();
             if (metric.metric === "body_fat_percentage") {
@@ -354,10 +368,10 @@ export default function RecoveryScreen() {
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
-            value={formatHRV(latestHrv?.hrv)}
+            value={formatHRV(hrvContext?.value)}
             trend={hrvValues.slice(-14)}
             color={colors.positive}
-            subtitle={hrvBaseline != null ? `7-day baseline: ${formatHRV(hrvBaseline)}` : undefined}
+            subtitle={hrvContext ? formatBaselineContext(hrvContext, { unit: "ms" }) : undefined}
             trendDirection={
               hrvValues.length >= 2
                 ? computeTrend(
@@ -371,16 +385,16 @@ export default function RecoveryScreen() {
           <MetricCard
             title="Resting Heart Rate"
             value={
-              latestRestingHeartRate?.resting_hr != null
-                ? formatNumber(latestRestingHeartRate.resting_hr, 0)
+              restingHeartRateContext?.value != null
+                ? formatNumber(restingHeartRateContext.value, 0)
                 : "--"
             }
             unit="bpm"
             trend={restingHeartRateValues.slice(-14)}
             color={colors.warning}
             subtitle={
-              restingHeartRateBaseline != null
-                ? `7-day baseline: ${formatNumber(restingHeartRateBaseline, 0)} bpm`
+              restingHeartRateContext
+                ? formatBaselineContext(restingHeartRateContext, { unit: "bpm" })
                 : undefined
             }
             trendDirection={
@@ -392,6 +406,34 @@ export default function RecoveryScreen() {
                 : undefined
             }
           />
+
+          {respiratoryRateContext ? (
+            <MetricCard
+              title="Respiratory Rate"
+              value={
+                respiratoryRateContext.value != null
+                  ? formatNumber(respiratoryRateContext.value)
+                  : "--"
+              }
+              unit="breaths/min"
+              color={colors.blue}
+              subtitle={formatBaselineContext(respiratoryRateContext, { unit: "breaths/min" })}
+            />
+          ) : null}
+
+          {sleepEfficiencyContext ? (
+            <MetricCard
+              title="Sleep Efficiency"
+              value={
+                sleepEfficiencyContext.value != null
+                  ? formatNumber(sleepEfficiencyContext.value)
+                  : "--"
+              }
+              unit="%"
+              color={colors.teal}
+              subtitle={formatBaselineContext(sleepEfficiencyContext, { unit: "%" })}
+            />
+          ) : null}
 
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (

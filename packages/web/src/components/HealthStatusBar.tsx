@@ -1,13 +1,16 @@
+import { formatBaselineContext } from "@dofek/format/baseline-context";
 import {
   type FormattedMeasurement,
   type FormattedMeasurementFormatter,
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
+import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import type { HealthMetricKey, HealthStatusMetric } from "../lib/healthStatus.ts";
 
 interface HealthStatusBarProps {
+  baselineRelative?: BaselineRelativeMetric[];
   metrics: HealthStatusMetric[];
   loading?: boolean;
   formatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
@@ -94,6 +97,7 @@ function formatBaseline(
 }
 
 export function HealthStatusBar({
+  baselineRelative = [],
   metrics,
   loading,
   formatters = {},
@@ -121,6 +125,9 @@ export function HealthStatusBar({
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {
         const formatter = formatters[metric.metric];
+        const baselineContext = baselineRelative.find(
+          (candidate) => candidate.metric === metric.metric,
+        );
         return (
           <div
             key={metric.metric}
@@ -140,6 +147,14 @@ export function HealthStatusBar({
                 ? `baseline ${formatBaseline(metric, formatter)} · ${metric.statusLabel}`
                 : metric.statusLabel}
             </div>
+            {baselineContext ? (
+              <div className="mt-1 text-[10px] text-subtle">
+                {formatBaselineContext(baselineContext, {
+                  formatter,
+                  unit: units[metric.metric],
+                })}
+              </div>
+            ) : null}
           </div>
         );
       })}

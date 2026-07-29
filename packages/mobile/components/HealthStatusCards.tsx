@@ -4,6 +4,8 @@ import { colors, radius, spacing } from "../theme";
 type HealthMetricKey =
   | "hrv"
   | "resting_heart_rate"
+  | "respiratory_rate"
+  | "sleep_efficiency"
   | "spo2"
   | "steps"
   | "skin_temperature"

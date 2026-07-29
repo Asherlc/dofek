@@ -199,6 +199,45 @@ export function zScoreToRecoveryScore(zScore: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+export const DEFAULT_READINESS_COMPONENT_SCORE = 62;
+
+export interface BaselineReadinessInputs {
+  hrvZScore: number | null;
+  respiratoryRateZScore: number | null;
+  restingHeartRateZScore: number | null;
+  sleepEfficiency: number | null;
+}
+
+export interface BaselineReadinessComponents {
+  hrvScore: number;
+  respiratoryRateScore: number;
+  restingHrScore: number;
+  sleepScore: number;
+}
+
+export function baselineReadinessComponents(
+  inputs: BaselineReadinessInputs,
+): BaselineReadinessComponents {
+  return {
+    hrvScore:
+      inputs.hrvZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(inputs.hrvZScore),
+    restingHrScore:
+      inputs.restingHeartRateZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(-inputs.restingHeartRateZScore),
+    sleepScore:
+      inputs.sleepEfficiency == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : Math.max(0, Math.min(100, Math.round(inputs.sleepEfficiency))),
+    respiratoryRateScore:
+      inputs.respiratoryRateZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(-inputs.respiratoryRateZScore),
+  };
+}
+
 /** Get the color for a sleep performance tier */
 export function sleepTierColor(tier: "Excellent" | "Good" | "Fair" | "Poor"): string {
   if (tier === "Excellent") return statusColors.positive;

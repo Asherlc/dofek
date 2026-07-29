@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
 
 const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
@@ -104,6 +105,8 @@ const dailyMetricsOutputSchema = z.object({
 export const healthMetricKeySchema = z.enum([
   "hrv",
   "resting_heart_rate",
+  "respiratory_rate",
+  "sleep_efficiency",
   "spo2",
   "steps",
   "skin_temperature",
@@ -196,6 +199,7 @@ export const mobileRecoveryTabOutputSchema = z.object({
       }),
     ),
   }),
+  baselineRelative: z.array(baselineRelativeMetricSchema),
   healthStatus: z.array(healthStatusMetricSchema),
   healthspan: z.object({
     healthspanScore: score100Schema.nullable(),

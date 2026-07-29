@@ -455,6 +455,7 @@ describe("recoveryRouter", () => {
           rhr_sd_30d: null,
           rr_mean_30d: 15,
           rr_sd_30d: 1,
+          respiratory_rate_z_score: -1,
           efficiency_pct: null,
         },
       ];

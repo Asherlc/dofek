@@ -1,5 +1,6 @@
 import { formatHRVMeasurement, formatSpO2Measurement } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { baselineRelativeMetricSchema } from "dofek-server/baseline-relative-metrics";
 import { useMemo } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
@@ -35,6 +36,7 @@ const trendRowSchema = z.object({
   latest_steps: z.number().nullable(),
   latest_skin_temp: z.number().nullable(),
   latest_date: z.string().nullable(),
+  baselineRelative: z.array(baselineRelativeMetricSchema),
   healthStatus: z.array(healthStatusMetricSchema),
 });
 type TrendRow = z.infer<typeof trendRowSchema>;
@@ -187,6 +189,7 @@ export function Dashboard() {
     ) : (
       <>
         <HealthStatusBar
+          baselineRelative={trendData?.baselineRelative}
           metrics={healthMetrics}
           loading={trends.isLoading}
           formatters={{
@@ -194,7 +197,11 @@ export function Dashboard() {
             spo2: formatSpO2Measurement,
             skin_temperature: (value) => units.formatTemperature(value),
           }}
-          units={{ resting_heart_rate: "bpm" }}
+          units={{
+            respiratory_rate: "breaths/min",
+            resting_heart_rate: "bpm",
+            sleep_efficiency: "%",
+          }}
         />
         {trends.error ? <QueryStatePanel error={trends.error} height={72} /> : null}
       </>

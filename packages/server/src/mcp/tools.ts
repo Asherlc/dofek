@@ -14,9 +14,13 @@ import { readFingerLoadingRange } from "../repositories/climbing-training-log-re
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import {
+  type DailyRecoveryBaseline,
+  latestRecoveryBaselineMetrics,
+  RecoveryBaselineRepository,
+} from "../repositories/recovery-baseline-repository.ts";
+import {
   fetchRestingHeartRateValuesCte,
   localDateString,
-  restingHeartRateValuesCte,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
@@ -51,6 +55,7 @@ const healthMetricSchema = z.enum([
   "resting_hr",
   "spo2",
   "respiratory_rate",
+  "sleep_efficiency",
   "skin_temp",
   "steps",
   "distance_km",
@@ -60,16 +65,26 @@ const healthMetricSchema = z.enum([
 
 type HealthMetric = z.infer<typeof healthMetricSchema>;
 
-const healthMetricColumns: Record<HealthMetric, string> = {
+const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
   hrv: "hrv",
   resting_hr: "resting_hr",
   spo2: "spo2_avg",
   respiratory_rate: "respiratory_rate_avg",
+  sleep_efficiency: undefined,
   skin_temp: "skin_temp_c",
   steps: "steps",
   distance_km: "distance_km",
   exercise_minutes: "exercise_minutes",
   flights_climbed: "flights_climbed",
+};
+
+const recoveryMetricKeys: Partial<
+  Record<HealthMetric, DailyRecoveryBaseline["metrics"][number]["metric"]>
+> = {
+  hrv: "hrv",
+  resting_hr: "resting_heart_rate",
+  respiratory_rate: "respiratory_rate",
+  sleep_efficiency: "sleep_efficiency",
 };
 
 const activityMcpRowSchema = z.object({
@@ -123,6 +138,7 @@ function aggregateNumbers(values: Array<number | null | undefined>) {
 
 function healthTrends(
   rows: Array<Record<string, unknown>>,
+  baselineRows: DailyRecoveryBaseline[],
   metrics: HealthMetric[],
   granularity: "daily" | "weekly",
 ) {
@@ -132,25 +148,60 @@ function healthTrends(
     const key = granularity === "weekly" ? isoWeek(date) : date;
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
-  return [...grouped.entries()].map(([key, groupRows]) => {
-    const metricValues = Object.fromEntries(
-      metrics.flatMap((metric) => {
-        const column = healthMetricColumns[metric];
-        const aggregate = aggregateNumbers(
-          groupRows.map((row) =>
-            z.coerce
-              .number()
-              .nullable()
-              .parse(row[column] ?? null),
-          ),
-        );
-        return aggregate ? [[metric, aggregate]] : [];
-      }),
-    );
-    return granularity === "weekly"
-      ? { week: key, metrics: metricValues }
-      : { date: key, metrics: metricValues };
-  });
+  const groupedBaselines = new Map<string, DailyRecoveryBaseline[]>();
+  for (const baselineRow of baselineRows) {
+    const key = granularity === "weekly" ? isoWeek(baselineRow.date) : baselineRow.date;
+    groupedBaselines.set(key, [...(groupedBaselines.get(key) ?? []), baselineRow]);
+    if (!grouped.has(key)) grouped.set(key, [{ date: baselineRow.date }]);
+  }
+
+  return [...grouped.entries()]
+    .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey))
+    .map(([key, groupRows]) => {
+      const baselineGroup = groupedBaselines.get(key) ?? [];
+      const latestBaselines = latestRecoveryBaselineMetrics(baselineGroup);
+      const metricValues = Object.fromEntries(
+        metrics.flatMap((metric) => {
+          const column = healthMetricColumns[metric];
+          const recoveryMetricKey = recoveryMetricKeys[metric];
+          const baselineMetric = recoveryMetricKey
+            ? latestBaselines.find((candidate) => candidate.metric === recoveryMetricKey)
+            : undefined;
+          const baselineValues = recoveryMetricKey
+            ? baselineGroup.flatMap((row) => {
+                const matchingMetric = row.metrics.find(
+                  (candidate) => candidate.metric === recoveryMetricKey,
+                );
+                return matchingMetric?.value == null ? [] : [matchingMetric.value];
+              })
+            : [];
+          const aggregate = aggregateNumbers(
+            baselineValues.length > 0
+              ? baselineValues
+              : groupRows.map((row) =>
+                  z.coerce
+                    .number()
+                    .nullable()
+                    .parse(column ? (row[column] ?? null) : null),
+                ),
+          );
+          return aggregate
+            ? [
+                [
+                  metric,
+                  {
+                    ...aggregate,
+                    ...(baselineMetric ? { baseline_relative: baselineMetric } : {}),
+                  },
+                ],
+              ]
+            : [];
+        }),
+      );
+      return granularity === "weekly"
+        ? { week: key, metrics: metricValues }
+        : { date: key, metrics: metricValues };
+    });
 }
 
 function localTime(timestamp: string | null, timezone: string): string | null {
@@ -254,7 +305,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "get_health_trends",
     {
       title: "Get Health Trends",
-      description: "Return daily or weekly health metric aggregates for an exact date range.",
+      description:
+        "Return daily or weekly health metric aggregates with baseline-relative recovery context for an exact date range.",
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -268,18 +320,30 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       assertDateRange(start_date, end_date);
       const requestedTimezone = timezone ?? context.timezone;
       const repository = new DailyMetricsRepository(context.db, context.userId, requestedTimezone);
-      const restingHeartRateCte = context.sensorStore
-        ? await fetchRestingHeartRateValuesCte({
-            sensorStore: context.sensorStore,
-            userId: context.userId,
-            timezone: requestedTimezone,
-            endDate: end_date,
-            days: daysBetween(start_date, end_date) + 1,
-          })
-        : restingHeartRateValuesCte([]);
+      if (!context.sensorStore) {
+        throw new Error("get_health_trends requires the ClickHouse analytics store");
+      }
+      const [restingHeartRateCte, baselineRows] = await Promise.all([
+        fetchRestingHeartRateValuesCte({
+          sensorStore: context.sensorStore,
+          userId: context.userId,
+          timezone: requestedTimezone,
+          endDate: end_date,
+          days: daysBetween(start_date, end_date) + 1,
+        }),
+        new RecoveryBaselineRepository(context.userId, context.sensorStore).listRange(
+          start_date,
+          end_date,
+        ),
+      ]);
       const rows = await repository.listRange(start_date, end_date, restingHeartRateCte);
       return jsonContent(
-        healthTrends(rows, metrics ?? healthMetricSchema.options, granularity ?? "daily"),
+        healthTrends(
+          rows,
+          baselineRows,
+          metrics ?? healthMetricSchema.options,
+          granularity ?? "daily",
+        ),
       );
     },
   );

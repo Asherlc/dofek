@@ -26,6 +26,29 @@ const meta = {
   component: HealthStatusBar,
   tags: ["autodocs"],
   args: {
+    baselineRelative: [
+      {
+        metric: "hrv",
+        label: "Heart Rate Variability (HRV)",
+        value: 65,
+        baseline: {
+          windowDays: 30,
+          mean: 60,
+          standardDeviation: 8,
+          zScore: 0.625,
+          sampleCount: 27,
+          coverage: 0.9,
+        },
+        comparison: {
+          recentDays: 7,
+          baselineDays: 28,
+          recentMean: 64,
+          baselineMean: 60,
+          delta: 4,
+          direction: "increasing",
+        },
+      },
+    ],
     metrics: [hrvMetric()],
     formatters: { hrv: formatHRVMeasurement },
   },

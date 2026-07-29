@@ -4,7 +4,7 @@ import {
   type ReadinessWeights,
 } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
-import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { baselineReadinessComponents, StrainScore } from "@dofek/scoring/scoring";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -435,15 +435,9 @@ export const recoveryRouter = router({
       // Fetch HRV + resting HR + respiratory rate baselines and sleep efficiency
       const readinessRowSchema = z.object({
         date: dateStringSchema,
-        hrv: z.coerce.number().nullable(),
-        resting_hr: z.coerce.number().nullable(),
-        respiratory_rate: z.coerce.number().nullable(),
-        hrv_mean_30d: z.coerce.number().nullable(),
-        hrv_sd_30d: z.coerce.number().nullable(),
-        rhr_mean_30d: z.coerce.number().nullable(),
-        rhr_sd_30d: z.coerce.number().nullable(),
-        rr_mean_30d: z.coerce.number().nullable(),
-        rr_sd_30d: z.coerce.number().nullable(),
+        hrv_z_score: z.coerce.number().nullable(),
+        resting_hr_z_score: z.coerce.number().nullable(),
+        respiratory_rate_z_score: z.coerce.number().nullable(),
         efficiency_pct: z.coerce.number().nullable(),
       });
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.readinessScore");
@@ -458,15 +452,9 @@ export const recoveryRouter = router({
         readinessRowSchema,
         `SELECT
           toString(recovery_inputs.date) AS date,
-          hrv,
-          resting_hr,
-          respiratory_rate,
-          hrv_mean_30d,
-          hrv_sd_30d,
-          rhr_mean_30d,
-          rhr_sd_30d,
-          rr_mean_30d,
-          rr_sd_30d,
+          hrv_z_score,
+          resting_hr_z_score,
+          respiratory_rate_z_score,
           efficiency_pct
         FROM analytics.daily_recovery AS recovery_inputs FINAL
         WHERE recovery_inputs.user_id = {userId:UUID}
@@ -500,58 +488,12 @@ export const recoveryRouter = router({
         if (cutoffDate !== undefined && metrics.date <= cutoffDate) continue;
         if (metrics.date > input.endDate) continue;
 
-        // HRV score: higher HRV = better recovery (positive z = good)
-        let hrvScore = 62;
-        if (
-          metrics.hrv != null &&
-          metrics.hrv_mean_30d != null &&
-          metrics.hrv_sd_30d != null &&
-          Number(metrics.hrv_sd_30d) > 0
-        ) {
-          const zHrv =
-            (Number(metrics.hrv) - Number(metrics.hrv_mean_30d)) / Number(metrics.hrv_sd_30d);
-          hrvScore = zScoreToRecoveryScore(zHrv);
-        }
-
-        // Resting HR score: lower HR = better (invert z)
-        let restingHrScore = 62;
-        if (
-          metrics.resting_hr != null &&
-          metrics.rhr_mean_30d != null &&
-          metrics.rhr_sd_30d != null &&
-          Number(metrics.rhr_sd_30d) > 0
-        ) {
-          const zRhr =
-            (Number(metrics.resting_hr) - Number(metrics.rhr_mean_30d)) /
-            Number(metrics.rhr_sd_30d);
-          restingHrScore = zScoreToRecoveryScore(-zRhr);
-        }
-
-        // Sleep efficiency score: direct mapping (0-100 already)
-        const efficiency = metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null;
-        const sleepScore =
-          efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 62;
-
-        // Respiratory rate score: lower is better (invert z, like RHR)
-        let respiratoryRateScore = 62;
-        if (
-          metrics.respiratory_rate != null &&
-          metrics.rr_mean_30d != null &&
-          metrics.rr_sd_30d != null &&
-          Number(metrics.rr_sd_30d) > 0
-        ) {
-          const zRr =
-            (Number(metrics.respiratory_rate) - Number(metrics.rr_mean_30d)) /
-            Number(metrics.rr_sd_30d);
-          respiratoryRateScore = zScoreToRecoveryScore(-zRr);
-        }
-
-        const components: ReadinessComponents = {
-          hrvScore: Math.round(hrvScore),
-          restingHrScore: Math.round(restingHrScore),
-          sleepScore,
-          respiratoryRateScore: Math.round(respiratoryRateScore),
-        };
+        const components: ReadinessComponents = baselineReadinessComponents({
+          hrvZScore: metrics.hrv_z_score,
+          restingHeartRateZScore: metrics.resting_hr_z_score,
+          respiratoryRateZScore: metrics.respiratory_rate_z_score,
+          sleepEfficiency: metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null,
+        });
 
         const readiness = new ReadinessScore(components, weights);
 

@@ -129,7 +129,7 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("GROUP BY user_id, provider_id, id"),
       ]),
     });
-    expect(migrations.at(-2)).toMatchObject({
+    expect(migrations.at(-3)).toMatchObject({
       id: "0060_heart_rate_day_change",
       statements: expect.arrayContaining([
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.heart_rate_day_change"),
@@ -139,7 +139,8 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window"),
       ]),
     });
-    expect(migrations.at(-1)?.id).toBe("0061_provider_current_state_projection");
+    expect(migrations.at(-2)?.id).toBe("0061_provider_current_state_projection");
+    expect(migrations.at(-1)?.id).toBe("0062_daily_recovery_baseline_context");
   });
 
   it("rejects duplicate migration ids", async () => {
