@@ -16,6 +16,7 @@ const toolTestMocks = vi.hoisted(() => {
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
+    fingerLoadingRange: vi.fn(),
     foodCreate: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
     getAllProviders: vi.fn(),
@@ -69,6 +70,10 @@ vi.mock("../repositories/sleep-repository.ts", () => ({
 
 vi.mock("../repositories/body-repository.ts", () => ({
   BodyRepository: vi.fn(() => ({ listRange: toolTestMocks.bodyListRange })),
+}));
+
+vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
+  readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
 }));
 
 vi.mock("../repositories/sync-repository.ts", () => ({
@@ -279,6 +284,7 @@ describe("createMcpRouter", () => {
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodCreate.mockResolvedValue(null);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
+    toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
@@ -473,6 +479,15 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_finger_loading").inputSchema).toMatchObject({
+      properties: {
+        end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        timezone: { type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -528,6 +543,52 @@ describe("createMcpRouter", () => {
       "America/Los_Angeles",
     );
     expect(toolTestMocks.dailyMetricsList).toHaveBeenCalledWith(1, "2026-05-20");
+  });
+
+  it("returns structured finger loading with server-computed effective load", async () => {
+    authorizeMcpToken();
+    toolTestMocks.fingerLoadingRange.mockResolvedValue([
+      {
+        activityId: "activity-1",
+        bodyweightKg: 72,
+        edgeSizeMm: 20,
+        effectiveLoadKg: 90,
+        exercise: "max_hang",
+        externalLoadKg: 18,
+        gripPosition: "half_crimp",
+        holdDurationSeconds: 10,
+        laterality: "both",
+        notes: null,
+        restIntervalSeconds: 180,
+        rpe: 8,
+        setCount: 5,
+        startedAt: "2026-07-29T18:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_finger_loading", {
+        end_date: "2026-07-29",
+        start_date: "2026-07-29",
+        timezone: "America/Los_Angeles",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        activity_id: "activity-1",
+        effective_load_kg: 90,
+        exercise: "max_hang",
+      }),
+    ]);
+    expect(toolTestMocks.fingerLoadingRange).toHaveBeenCalledWith({
+      database: expect.anything(),
+      endDate: "2026-07-29",
+      startDate: "2026-07-29",
+      timezone: "America/Los_Angeles",
+      userId: "user-id",
+    });
   });
 
   it("searches activities and applies the query filter", async () => {

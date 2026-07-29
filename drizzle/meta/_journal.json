@@ -512,6 +512,13 @@
       "when": 1785209400000,
       "tag": "0062_companion_connection_type",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785333000000,
+      "tag": "0063_structured_finger_loading",
+      "breakpoints": true
     }
   ]
 }
