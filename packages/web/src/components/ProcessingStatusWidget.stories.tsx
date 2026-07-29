@@ -46,6 +46,10 @@ const activeSnapshot: ProcessingStatusSnapshot = {
 };
 const activeDataset = activeSnapshot.datasets.at(0);
 if (!activeDataset) throw new Error("Expected the processing story to include a dataset");
+const activeOperation = activeSnapshot.operations.at(0);
+if (!activeOperation) throw new Error("Expected the processing story to include an operation");
+const activeTimelineEvent = activeOperation.timeline.at(0);
+if (!activeTimelineEvent) throw new Error("Expected the processing story to include an event");
 const longRecomputeDatasetLabels = [
   ["activity", "Activities"],
   ["sleep", "Sleep"],
@@ -117,9 +121,50 @@ export const LongRecompute: Story = {
 };
 export const Delayed: Story = { args: { data: { ...activeSnapshot, overallStatus: "delayed" } } };
 export const Partial: Story = { args: { data: { ...activeSnapshot, overallStatus: "partial" } } };
-export const Failed: Story = { args: { data: { ...activeSnapshot, overallStatus: "failed" } } };
+export const Failed: Story = {
+  args: {
+    data: {
+      ...activeSnapshot,
+      overallStatus: "failed",
+      datasets: [
+        {
+          ...activeDataset,
+          status: "failed",
+          progressPercentage: null,
+        },
+      ],
+      operations: [
+        {
+          ...activeOperation,
+          status: "failed",
+          timeline: [
+            {
+              ...activeTimelineEvent,
+              status: "failed",
+              errorMessage: "Reconnect Garmin, then start the sync again.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
 export const Ready: Story = {
-  args: { data: { ...activeSnapshot, overallStatus: "ready" }, alwaysVisible: true },
+  args: {
+    data: {
+      ...activeSnapshot,
+      overallStatus: "ready",
+      datasets: [
+        {
+          ...activeDataset,
+          status: "ready",
+          progressPercentage: 100,
+          lastReadyAt: "2026-07-22T12:00:00.000Z",
+        },
+      ],
+    },
+    alwaysVisible: true,
+  },
 };
 export const EmptyHistory: Story = {
   args: { data: { ...activeSnapshot, operations: [] }, alwaysVisible: true },

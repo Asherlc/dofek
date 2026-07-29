@@ -14,6 +14,7 @@ import type {
   AdaptiveTdeeResult,
   MacroRatioRow,
   MicronutrientAdequacyRow,
+  MicronutrientSafetyReviewResult,
 } from "./nutrition-analytics.ts";
 
 /**
@@ -418,6 +419,28 @@ describe("Nutrition analytics data coverage", () => {
   // micronutrientAdequacy — RDA percentage calculations
   // ══════════════════════════════════════════════════════════════
   describe("micronutrientAdequacy", () => {
+    it("V2 distinguishes food and taken-supplement averages on recorded days", async () => {
+      await queryCache.invalidateAll();
+      const result = await query<MicronutrientSafetyReviewResult>(
+        "nutritionAnalytics.micronutrientAdequacyV2",
+        { days: 30 },
+      );
+
+      const vitaminC = result.nutrients.find((row) => row.nutrientId === "vitamin_c");
+      expect(vitaminC).toBeDefined();
+      expect(vitaminC?.intake.foodDailyAverage).toBe(vitaminC?.intake.totalDailyAverage);
+      expect(vitaminC?.intake.supplementDailyAverage).toBe(0);
+      expect(vitaminC?.intake.daysTracked).toBeGreaterThanOrEqual(10);
+      expect(vitaminC?.adequacy).toMatchObject({
+        reference: {
+          type: "daily_value",
+          amount: 90,
+          population: "Adults and children age 4+",
+        },
+      });
+      expect(result.professionalReview.status).toBe("no_supplements");
+    });
+
     it("returns RDA comparisons for tracked micronutrients", async () => {
       await queryCache.invalidateAll();
       const result = await query<MicronutrientAdequacyRow[]>(

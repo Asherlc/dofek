@@ -1,39 +1,13 @@
 import { mean, sampleStandardDeviation } from "simple-statistics";
-import { z } from "zod";
+import type { z } from "zod";
+import {
+  healthMetricIntentSchema,
+  healthMetricKeySchema,
+  healthStatusMetricSchema,
+} from "../contracts/mobile-dashboard-contracts.ts";
 import type { TrendsRow } from "../repositories/daily-metrics-repository.ts";
 
-export const healthMetricKeySchema = z.enum([
-  "hrv",
-  "resting_heart_rate",
-  "spo2",
-  "steps",
-  "skin_temperature",
-  "trend_weight",
-  "body_fat_percentage",
-]);
-
-export const healthMetricIntentSchema = z.enum(["higher", "lower", "maintain", "neutral"]);
-
-export const healthStatusMetricSchema = z.object({
-  metric: healthMetricKeySchema,
-  label: z.string(),
-  value: z.number().nullable(),
-  baseline: z.number().nullable(),
-  sampleDeviation: z.number().nullable(),
-  deviation: z.number().nullable(),
-  direction: z.enum(["above", "below", "aligned", "unknown"]),
-  intent: healthMetricIntentSchema,
-  statusToken: z.enum([
-    "insufficient_data",
-    "near_baseline",
-    "moving_as_intended",
-    "notable_deviation",
-    "far_from_baseline",
-  ]),
-  statusColor: z.enum(["positive", "warning", "danger", "muted"]),
-  statusLabel: z.string(),
-  explanation: z.string(),
-});
+export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSchema };
 
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
 export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;

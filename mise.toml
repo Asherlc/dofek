@@ -38,6 +38,14 @@ run = [
   { task = "cloud:start" },
 ]
 
+[tasks."test:sandbox"]
+description = "Run the checks that need no Docker-backed services"
+run = [
+  "pnpm --recursive --include-workspace-root --if-present typecheck",
+  "pnpm lint:sandbox",
+  "pnpm test",
+]
+
 [tasks.doctor]
 description = "Verify the complete development environment"
 run = "pnpm tsx scripts/dev-environment.ts doctor"

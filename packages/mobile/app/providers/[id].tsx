@@ -1,9 +1,5 @@
-import {
-  formatDurationSeconds,
-  formatRelativeTime,
-  formatTableCellValue,
-  formatTime,
-} from "@dofek/format/format";
+import { formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
+import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import { statusColors } from "@dofek/scoring/colors";
@@ -12,8 +8,6 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -36,6 +30,12 @@ import { ProviderDataDeleteControl } from "./provider-data-delete-control";
 import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
 import { ProviderDetailExtras } from "./provider-detail-extras";
 import {
+  formatCellValue,
+  formatColumnName,
+  recordAccessibilityLabel,
+} from "./provider-detail-record-format";
+import { ProviderRecordDetailModal } from "./provider-record-detail-modal";
+import {
   type ProviderDetailActionsResult,
   useProviderDetailActions,
 } from "./use-provider-detail-actions";
@@ -48,264 +48,6 @@ function formatProviderName(id: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 }
-
-function formatColumnName(col: string): string {
-  return col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatCellValue(value: unknown): string {
-  return formatTableCellValue(value);
-}
-
-function recordAccessibilityLabel(
-  row: Record<string, unknown>,
-  visibleColumns: string[],
-  fallbackIndex: number,
-): string {
-  const identifyingValue = [row.name, row.id, ...visibleColumns.map((column) => row[column])].find(
-    (value) => value !== null && value !== undefined && String(value).trim().length > 0,
-  );
-  return `Open record ${formatCellValue(identifyingValue ?? fallbackIndex)}`;
-}
-
-// ── Record Detail Modal ──
-
-function RecordDetailModal({
-  record,
-  onClose,
-  activityId,
-}: {
-  record: Record<string, unknown>;
-  onClose: () => void;
-  activityId?: string;
-}) {
-  const router = useRouter();
-  const rawValue = record.raw;
-  const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
-
-  const fields = Object.entries(record).filter(([key]) => key !== "raw" && key !== "user_id");
-  const populatedFields = fields.filter(([, value]) => value !== null && value !== undefined);
-  const nullFields = fields.filter(([, value]) => value === null || value === undefined);
-
-  const [showNullFields, setShowNullFields] = useState(false);
-  const [showRawData, setShowRawData] = useState(true);
-
-  return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={modalStyles.container}>
-        <View style={modalStyles.header}>
-          <Text style={modalStyles.title}>Record Detail</Text>
-          <TouchableOpacity
-            onPress={onClose}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Close record detail"
-          >
-            <Text style={modalStyles.closeButton}>{"\u00d7"}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={modalStyles.scrollView}
-          contentContainerStyle={modalStyles.scrollContent}
-        >
-          {activityId && (
-            <TouchableOpacity
-              onPress={() => {
-                onClose();
-                router.push(`/activity/${activityId}`);
-              }}
-              style={modalStyles.activityLink}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Open activity"
-            >
-              <Text style={modalStyles.activityLinkText}>Open activity</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Populated fields */}
-          <Text style={modalStyles.sectionTitle}>Fields</Text>
-          <View style={modalStyles.fieldsCard}>
-            {populatedFields.map(([key, value], index) => (
-              <View
-                key={key}
-                style={[
-                  modalStyles.fieldRow,
-                  index < populatedFields.length - 1 && modalStyles.fieldRowBorder,
-                ]}
-              >
-                <Text style={modalStyles.fieldLabel}>{formatColumnName(key)}</Text>
-                <Text style={modalStyles.fieldValue}>{formatCellValue(value)}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Null fields — collapsed by default */}
-          {nullFields.length > 0 && (
-            <View style={modalStyles.collapsibleSection}>
-              <TouchableOpacity
-                onPress={() => setShowNullFields(!showNullFields)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`${showNullFields ? "Hide" : "Show"} empty fields`}
-                accessibilityState={{ expanded: showNullFields }}
-              >
-                <Text style={modalStyles.collapsibleTitle}>
-                  {showNullFields ? "\u25bc" : "\u25b6"} Empty Fields ({nullFields.length})
-                </Text>
-              </TouchableOpacity>
-              {showNullFields && (
-                <View style={modalStyles.nullFieldsContainer}>
-                  {nullFields.map(([key]) => (
-                    <Text key={key} style={modalStyles.nullFieldName}>
-                      {formatColumnName(key)}
-                    </Text>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Raw provider data */}
-          {raw && (
-            <View style={modalStyles.collapsibleSection}>
-              <TouchableOpacity
-                onPress={() => setShowRawData(!showRawData)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`${showRawData ? "Hide" : "Show"} raw provider data`}
-                accessibilityState={{ expanded: showRawData }}
-              >
-                <Text style={modalStyles.sectionTitle}>
-                  {showRawData ? "\u25bc" : "\u25b6"} Raw Provider Data
-                </Text>
-              </TouchableOpacity>
-              {showRawData && (
-                <ScrollView
-                  horizontal
-                  style={modalStyles.rawDataScroll}
-                  contentContainerStyle={modalStyles.rawDataContent}
-                >
-                  <Text style={modalStyles.rawDataText}>{JSON.stringify(raw, null, 2)}</Text>
-                </ScrollView>
-              )}
-            </View>
-          )}
-        </ScrollView>
-      </View>
-    </Modal>
-  );
-}
-
-const modalStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  closeButton: {
-    fontSize: 24,
-    color: colors.textSecondary,
-    paddingHorizontal: 8,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  activityLink: {
-    alignSelf: "flex-start",
-  },
-  activityLinkText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  fieldsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  fieldRow: {
-    flexDirection: "row",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  fieldRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    width: 140,
-    flexShrink: 0,
-  },
-  fieldValue: {
-    fontSize: 13,
-    color: colors.text,
-    flex: 1,
-    flexWrap: "wrap",
-  },
-  collapsibleSection: {
-    marginBottom: 16,
-  },
-  collapsibleTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textTertiary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  nullFieldsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  nullFieldName: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-  rawDataScroll: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    maxHeight: 400,
-  },
-  rawDataContent: {
-    padding: 12,
-  },
-  rawDataText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontFamily: "Menlo",
-  },
-});
 
 // ── Records Table ──
 
@@ -431,7 +173,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
       </View>
 
       {selectedRecord && (
-        <RecordDetailModal
+        <ProviderRecordDetailModal
           record={selectedRecord}
           onClose={() => setSelectedRecord(null)}
           activityId={
@@ -833,7 +575,13 @@ export default function ProviderDetailScreen() {
     );
   }
 
-  return <ProviderDetailContent providerId={providerId} providerActions={providerActions} />;
+  return (
+    <ProviderDetailContent
+      providerId={providerId}
+      providerActions={providerActions}
+      displayProvider={providerActions.displayProvider}
+    />
+  );
 }
 
 function ProviderRouteError({
@@ -864,9 +612,11 @@ function ProviderRouteError({
 function ProviderDetailContent({
   providerId,
   providerActions,
+  displayProvider,
 }: {
   providerId: string;
   providerActions: ProviderDetailActionsResult;
+  displayProvider: NonNullable<ProviderDetailActionsResult["displayProvider"]>;
 }) {
   const { serverUrl } = useAuth();
   const router = useRouter();
@@ -880,7 +630,6 @@ function ProviderDetailContent({
   );
   const {
     provider,
-    displayProvider,
     isConnected,
     primaryActionLabel,
     isSyncing,
@@ -893,6 +642,11 @@ function ProviderDetailContent({
     handleFullSync,
     modals,
   } = providerActions;
+  const health = providerHealth({
+    authorized: isConnected,
+    needsReauth: Boolean(provider?.needsReauth),
+    requiresAuthorization: displayProvider.authType !== "none",
+  });
 
   const handleDisconnect = useCallback(() => {
     if (!providerId) return;
@@ -919,11 +673,6 @@ function ProviderDetailContent({
       ],
     );
   }, [providerId, disconnectMutation, trpcUtils, router]);
-
-  const handleReauthorize = useCallback(() => {
-    if (!providerId) return;
-    Linking.openURL(`${serverUrl}/auth/provider/${providerId}`);
-  }, [providerId, serverUrl]);
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -960,12 +709,33 @@ function ProviderDetailContent({
               </Text>
             </View>
             {displayProvider && (
-              <View style={styles.statusRow}>
-                {isConnected ? (
-                  <Text style={styles.statusConnected}>Connected</Text>
-                ) : (
-                  <Text style={styles.statusDisconnected}>Not connected</Text>
-                )}
+              <View style={styles.statusColumn}>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Connection</Text>
+                  <Text
+                    style={
+                      health.connection.status === "healthy"
+                        ? styles.statusConnected
+                        : styles.statusDisconnected
+                    }
+                  >
+                    {health.connection.label}
+                  </Text>
+                </View>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Authorization</Text>
+                  <Text
+                    style={
+                      health.authorization.status === "warning"
+                        ? styles.statusWarning
+                        : health.authorization.status === "healthy"
+                          ? styles.statusConnected
+                          : styles.statusDisconnected
+                    }
+                  >
+                    {health.authorization.label}
+                  </Text>
+                </View>
                 {displayProvider.lastSyncedAt &&
                   formatRelativeTime(displayProvider.lastSyncedAt) && (
                     <Text style={styles.lastSync}>
@@ -975,15 +745,15 @@ function ProviderDetailContent({
               </View>
             )}
           </View>
-          {provider?.needsReauth && provider.authorized && (
+          {health.requiresReconnect && (
             <TouchableOpacity
               style={styles.reauthorizeButton}
-              onPress={handleReauthorize}
+              onPress={() => void handlePrimaryAction()}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Re-authorize provider"
+              accessibilityLabel={`Reconnect ${displayProvider.name}`}
             >
-              <Text style={styles.reauthorizeButtonText}>Re-authorize</Text>
+              <Text style={styles.reauthorizeButtonText}>Reconnect</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -994,6 +764,7 @@ function ProviderDetailContent({
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
+        alwaysVisible
       />
 
       {providerActions.inventoryError ? (
@@ -1151,8 +922,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginTop: 4,
   },
+  statusColumn: { gap: 4, marginTop: 6 },
+  statusLabel: { color: colors.textTertiary, fontSize: 12 },
   statusConnected: {
     fontSize: 13,
     color: colors.positive,
@@ -1161,6 +933,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textTertiary,
   },
+  statusWarning: { color: colors.warning, fontSize: 13 },
   lastSync: {
     fontSize: 13,
     color: colors.textTertiary,

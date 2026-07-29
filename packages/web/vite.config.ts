@@ -4,6 +4,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { VitePWA } from "vite-plugin-pwa";
 
 function getCommitHash(): string {
   if (process.env.COMMIT_HASH) return process.env.COMMIT_HASH;
@@ -15,6 +16,11 @@ function getCommitHash(): string {
 }
 
 const commitHash = getCommitHash();
+const assetBase = process.env.VITE_ASSET_BASE_URL || "/";
+const normalizedAssetBase = assetBase.endsWith("/") ? assetBase : `${assetBase}/`;
+const cdnAssetPrefix = URL.canParse(normalizedAssetBase)
+  ? new URL("assets/", normalizedAssetBase).href
+  : null;
 
 if (process.env.REQUIRE_SENTRY_AUTH_TOKEN === "true" && !process.env.SENTRY_AUTH_TOKEN) {
   throw new Error("SENTRY_AUTH_TOKEN is required when REQUIRE_SENTRY_AUTH_TOKEN is true.");
@@ -60,7 +66,7 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  base: process.env.VITE_ASSET_BASE_URL || "/",
+  base: assetBase,
   define: {
     __COMMIT_HASH__: JSON.stringify(commitHash),
   },
@@ -68,6 +74,54 @@ export default defineConfig({
     tanstackRouter(),
     react(),
     tailwindcss(),
+    VitePWA({
+      base: "/",
+      buildBase: "/",
+      registerType: "prompt",
+      scope: "/",
+      manifest: {
+        name: "Dofek",
+        short_name: "Dofek",
+        description: "Health, training, nutrition, body, and recovery data in one dashboard.",
+        start_url: "/",
+        theme_color: "#eef3ed",
+        background_color: "#eef3ed",
+        display: "standalone",
+        icons: [
+          {
+            src: "/favicon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/logo-512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+        ],
+      },
+      workbox: {
+        navigateFallback: "index.html",
+        navigateFallbackDenylist: [
+          /^\/api(?:\/|$)/,
+          /^\/auth(?:\/|$)/,
+          /^\/callback(?:\/|$)/,
+          /^\/authorize(?:\/|$)/,
+          /^\/admin\/queues(?:\/|$)/,
+          /^\/\.well-known(?:\/|$)/,
+          /^\/(?:healthz|readyz|metrics)(?:\/|$)/,
+          /^\/(?:register|token|revoke)(?:\/|$)/,
+          /^\/assets(?:\/|$)/,
+        ],
+        ...(cdnAssetPrefix
+          ? {
+              modifyURLPrefix: {
+                "assets/": cdnAssetPrefix,
+              },
+            }
+          : {}),
+      },
+    }),
     sentryVitePlugin({
       org: "east-bay-software",
       project: "dofek-web",

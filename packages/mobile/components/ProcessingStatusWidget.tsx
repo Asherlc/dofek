@@ -1,11 +1,16 @@
+import { formatRelativeTime } from "@dofek/format/format";
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
   processingAggregateProgress,
+  processingDatasetErrorMessage,
+  processingDatasetStatusLabel,
   processingHeading,
   processingStatusMessage,
   processingTarget,
 } from "@dofek/providers/processing-status";
+import { StyleSheet, Text, View } from "react-native";
+import { colors, spacing } from "../theme";
 import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator";
 import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard";
 
@@ -69,12 +74,7 @@ export function ProcessingStatusWidget({
       />
     );
   }
-  if (
-    !data ||
-    data.overallStatus === "failed" ||
-    data.overallStatus === "blocked" ||
-    (data.overallStatus === "ready" && !alwaysVisible)
-  ) {
+  if (!data || (data.overallStatus === "ready" && !alwaysVisible)) {
     return null;
   }
 
@@ -89,8 +89,42 @@ export function ProcessingStatusWidget({
     errorMessage: null,
   });
   const heading = processingHeading(data.overallStatus, target);
+  const problemDatasets = data.datasets.filter(
+    (dataset) => dataset.status === "failed" || dataset.status === "blocked",
+  );
+  const datasetsWithHistory = data.datasets.filter(
+    (dataset) =>
+      dataset.status !== "ready" || dataset.lastAdvancedAt !== null || dataset.lastReadyAt !== null,
+  );
+  const visibleDatasets = alwaysVisible ? datasetsWithHistory : problemDatasets;
+  const datasetDetails =
+    visibleDatasets.length > 0 ? (
+      <View style={styles.datasetList}>
+        {visibleDatasets.map((dataset) => {
+          const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
+          const datasetError =
+            dataset.status === "failed" || dataset.status === "blocked"
+              ? processingDatasetErrorMessage(data.operations, dataset.key)
+              : null;
+          return (
+            <View key={dataset.key} style={styles.datasetRow}>
+              <View style={styles.datasetHeading}>
+                <Text style={styles.datasetLabel}>{dataset.label}</Text>
+                <Text style={styles.datasetStatus}>
+                  {processingDatasetStatusLabel(dataset.status)}
+                </Text>
+              </View>
+              <Text style={styles.datasetFreshness}>
+                {lastReady ? `Last ready: ${lastReady}` : "No completed update recorded"}
+              </Text>
+              {datasetError ? <Text style={styles.datasetError}>{datasetError}</Text> : null}
+            </View>
+          );
+        })}
+      </View>
+    ) : null;
 
-  if (target.action === "recompute") {
+  if (target.action === "recompute" && visibleDatasets.length === 0) {
     return (
       <RecomputeStatusIndicator label={heading} progress={progress} status={data.overallStatus} />
     );
@@ -103,6 +137,32 @@ export function ProcessingStatusWidget({
       message={statusMessage}
       progress={progress}
       status={data.overallStatus}
-    />
+    >
+      {datasetDetails}
+    </SourceProcessingStatusCard>
   );
 }
+
+const styles = StyleSheet.create({
+  datasetList: {
+    borderTopColor: colors.surfaceSecondary,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing.xs,
+  },
+  datasetRow: {
+    borderBottomColor: colors.surfaceSecondary,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 2,
+    paddingVertical: spacing.sm,
+  },
+  datasetHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  datasetLabel: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  datasetStatus: { color: colors.textSecondary, fontSize: 12 },
+  datasetFreshness: { color: colors.textTertiary, fontSize: 12 },
+  datasetError: { color: colors.danger, fontSize: 12, lineHeight: 17, marginTop: 2 },
+});

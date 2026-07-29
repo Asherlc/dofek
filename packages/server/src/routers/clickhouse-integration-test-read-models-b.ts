@@ -314,15 +314,20 @@ export function buildTestDailyActivityLoadSelectSql(
 ): string {
   return `WITH activity_load AS (
   SELECT
-    activity_id,
-    user_id,
-    started_at,
-    assumeNotNull(ended_at) AS ended_at,
-    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0
-      * avg_hr / nullIf(toFloat64(max_hr), 0) AS daily_load
-  FROM ${databases.analytics}.activity_summary
-  WHERE ended_at IS NOT NULL
-    AND avg_hr IS NOT NULL
+    activity_summary.activity_id AS activity_id,
+    activity_summary.user_id AS user_id,
+    activity_summary.started_at AS started_at,
+    assumeNotNull(activity_summary.ended_at) AS ended_at,
+    dateDiff(
+      'second',
+      activity_summary.started_at,
+      assumeNotNull(activity_summary.ended_at)
+    ) / 60.0
+      * activity_summary.avg_hr
+      / nullIf(toFloat64(activity_summary.max_hr), 0) AS daily_load
+  FROM ${databases.analytics}.activity_summary AS activity_summary
+  WHERE activity_summary.ended_at IS NOT NULL
+    AND activity_summary.avg_hr IS NOT NULL
 ),
 refresh_clock AS (
   SELECT

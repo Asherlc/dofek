@@ -163,6 +163,8 @@ COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/sr
 COPY --from=source --chown=node:node /app/packages/stats/package.json ./packages/stats/
 COPY --from=source --chown=node:node /app/packages/scoring/src ./packages/scoring/src
 COPY --from=source --chown=node:node /app/packages/scoring/package.json ./packages/scoring/
+COPY --from=source --chown=node:node /app/packages/nutrition/src ./packages/nutrition/src
+COPY --from=source --chown=node:node /app/packages/nutrition/package.json ./packages/nutrition/
 COPY --from=source --chown=node:node /app/packages/onboarding/src ./packages/onboarding/src
 COPY --from=source --chown=node:node /app/packages/onboarding/package.json ./packages/onboarding/
 COPY --from=source --chown=node:node /app/packages/auth/src ./packages/auth/src
@@ -196,6 +198,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/filter-columns node_modules/@dofek/filter-columns && \
     ln -sfn /app/packages/stats node_modules/@dofek/stats && \
     ln -sfn /app/packages/scoring node_modules/@dofek/scoring && \
+    ln -sfn /app/packages/nutrition node_modules/@dofek/nutrition && \
     ln -sfn /app/packages/onboarding node_modules/@dofek/onboarding && \
     ln -sfn /app/packages/training node_modules/@dofek/training && \
     ln -sfn /app/packages/auth node_modules/@dofek/auth && \

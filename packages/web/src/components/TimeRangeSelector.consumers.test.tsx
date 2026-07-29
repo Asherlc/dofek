@@ -161,7 +161,10 @@ vi.mock("../lib/trpc.ts", () => {
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),
         macroRatios: recordQuery("nutritionAnalytics.macroRatios"),
-        micronutrientAdequacy: recordQuery("nutritionAnalytics.micronutrientAdequacy"),
+        micronutrientAdequacyV2: recordQuery("nutritionAnalytics.micronutrientAdequacyV2", {
+          nutrients: [],
+          professionalReview: null,
+        }),
       },
       sleep: {
         latestStages: recordQuery("sleep.latestStages"),
@@ -290,7 +293,7 @@ describe("TimeRangeSelector consumers", () => {
     fireEvent.click(screen.getByRole("button", { name: "7d" }));
 
     expectCallsContaining([
-      { name: "nutritionAnalytics.micronutrientAdequacy", input: { days: 7 } },
+      { name: "nutritionAnalytics.micronutrientAdequacyV2", input: { days: 7 } },
       { name: "nutritionAnalytics.macroRatios", input: { days: 7 } },
       { name: "nutritionAnalytics.adaptiveTdee", input: { days: 90 } },
     ]);
@@ -300,12 +303,14 @@ describe("TimeRangeSelector consumers", () => {
     fireEvent.click(screen.getByRole("button", { name: "All" }));
 
     expectCallsContaining([
-      { name: "nutritionAnalytics.micronutrientAdequacy", input: { days: null } },
+      { name: "nutritionAnalytics.micronutrientAdequacyV2", input: { days: null } },
       { name: "nutritionAnalytics.macroRatios", input: { days: null } },
       { name: "nutritionAnalytics.adaptiveTdee", input: { days: null } },
     ]);
     expectRegistryCovered("nutritionAnalytics");
-    expect(screen.getByText(/Recommended Dietary Allowance \(RDA\) \(All\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/U\.S\. Food and Drug Administration \(FDA\) Daily Value \(All\)/),
+    ).toBeTruthy();
     expect(screen.queryByText(/null days/)).toBeNull();
   });
 

@@ -98,6 +98,7 @@ vi.mock("react-native", () => {
       accessibilityLabel,
       accessibilityRole,
       accessible: _accessible,
+      automaticallyAdjustKeyboardInsets,
       children,
       style,
       testID,
@@ -109,6 +110,7 @@ vi.mock("react-native", () => {
           ...props,
           "aria-description": accessibilityHint,
           "aria-label": accessibilityLabel,
+          "data-automatically-adjust-keyboard-insets": automaticallyAdjustKeyboardInsets,
           "data-testid": testID,
           role: accessibilityRole,
           style: flattenStyle(style),
@@ -320,7 +322,12 @@ vi.mock("react-native", () => {
     AppState,
     LayoutAnimation,
     UIManager,
-    useWindowDimensions: () => ({ width: 390, height: 844 }),
+    useWindowDimensions: vi.fn(() => ({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    })),
   };
 });
 
@@ -475,20 +482,25 @@ vi.mock("expo-haptics", () => ({
 }));
 
 // ── HealthKit native module mock ─────────────────────────────────────
-vi.mock("./modules/health-kit", () => ({
-  getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
-  hasEverAuthorized: vi.fn(() => false),
-  isAvailable: vi.fn(() => true),
-  isBackgroundDeliveryEnabled: vi.fn(() => false),
-  requestPermissions: vi.fn(() => Promise.resolve(true)),
-  requestAuthorization: vi.fn(() => Promise.resolve(true)),
-  queryDailyStatistics: vi.fn(() => Promise.resolve([])),
-  queryQuantitySamples: vi.fn(() => Promise.resolve([])),
-  queryWorkouts: vi.fn(() => Promise.resolve([])),
-  queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
-  querySleepSamples: vi.fn(() => Promise.resolve([])),
-  queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
-}));
+vi.mock("./modules/health-kit", async () => {
+  const { createEmptyAnchoredQueryResult } = await import("./modules/health-kit/test-helpers");
+  return {
+    completeAnchoredQuery: vi.fn(() => Promise.resolve(true)),
+    getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
+    hasEverAuthorized: vi.fn(() => false),
+    isAvailable: vi.fn(() => true),
+    isBackgroundDeliveryEnabled: vi.fn(() => false),
+    queryAnchoredSamples: vi.fn(() => Promise.resolve(createEmptyAnchoredQueryResult())),
+    requestPermissions: vi.fn(() => Promise.resolve(true)),
+    requestAuthorization: vi.fn(() => Promise.resolve(true)),
+    queryDailyStatistics: vi.fn(() => Promise.resolve([])),
+    queryQuantitySamples: vi.fn(() => Promise.resolve([])),
+    queryWorkouts: vi.fn(() => Promise.resolve([])),
+    queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
+    querySleepSamples: vi.fn(() => Promise.resolve([])),
+    queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
+  };
+});
 
 // ── CoreMotion native module mock ───────────────────────────────────
 vi.mock("./modules/core-motion", () => ({

@@ -6,25 +6,13 @@ import {
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { strainTargetResultSchema } from "../contracts/mobile-dashboard-contracts.ts";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
-export const strainTargetResultSchema = z.object({
-  targetStrain: z.number(),
-  currentStrain: z.number(),
-  currentStrainSource: z.enum(["activity", "none"]).optional(),
-  currentPhysiologyLoad: z.number().nullable().optional(),
-  progressPercent: z.number(),
-  zone: z.enum(["Push", "Maintain", "Recovery"]),
-  explanation: z.string(),
-  dailyLoad: z.number().optional(),
-  acuteLoad: z.number().optional(),
-  chronicLoad: z.number().optional(),
-  workloadRatio: z.number().nullable().optional(),
-  readinessScore: z.number().optional(),
-});
+export { strainTargetResultSchema };
 
 export type StrainTargetResult = z.infer<typeof strainTargetResultSchema>;
 
