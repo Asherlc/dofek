@@ -364,6 +364,7 @@ describe("refitAllParams", () => {
     try {
       vi.resetModules();
       const { refitAllParams: refitWithAcceptedFits } = await import("./refit.ts");
+      const { personalizedParamsSchema } = await import("./params.ts");
       const result = await refitWithAcceptedFits(
         createMockDb([[], [], [], [], []]),
         "user-1",
@@ -371,13 +372,15 @@ describe("refitAllParams", () => {
       );
 
       expect(result).toMatchObject(accepted);
-      expect(result.successfulFitAt).toEqual({
+      const successfulFitAt = {
         exponentialMovingAverage: result.fittedAt,
         readinessWeights: result.fittedAt,
         sleepTarget: result.fittedAt,
         stressThresholds: result.fittedAt,
         trainingImpulseConstants: result.fittedAt,
-      });
+      };
+      expect(result.successfulFitAt).toEqual(successfulFitAt);
+      expect(personalizedParamsSchema.parse(result).successfulFitAt).toEqual(successfulFitAt);
     } finally {
       vi.doUnmock("./fit-ewma.ts");
       vi.doUnmock("./fit-readiness-weights.ts");

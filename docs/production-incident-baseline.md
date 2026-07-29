@@ -20393,3 +20393,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ownership, or expand the Docker daemon's configured address pools, before a
   future local real-engine run. Do not prune active or unowned workspace
   networks.
+
+## 2026-07-29 — Successful-fit schema object survived mutation testing
+
+- **Status:** Root cause fixed for PR #2303; fresh exact-head CI validation
+  pending.
+- **Symptoms:** Mutation shard 2 failed even though the changed unit suite and
+  parameter-schema tests passed.
+- **User impact:** No production impact. PR #2303 remained blocked because its
+  new successful-fit timestamp contract was not proved against a schema that
+  silently discarded every model timestamp.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "src/personalization/params.ts:58-77,src/personalization/params.ts:81-81"`.
+  Its first fatal mutation result was `[Survived] ObjectLiteral` at
+  `src/personalization/params.ts:68:40`, replacing the five-field
+  `successfulFitAtSchema` with `z.object({})`; the final mutation score was
+  0%, below the 75% breaking threshold.
+- **Root cause:** Per-test mutation coverage associated the schema-object
+  construction with the dynamic all-fitters refit test. That test asserted the
+  pre-validation refit result but did not prove that the complete timestamp map
+  survived the canonical Zod parsing boundary, so Stryker selected no
+  timestamp-schema assertion for the mutant.
+- **Fix / mitigation:** The all-fitters refit regression now parses the
+  generated parameters through `personalizedParamsSchema` and asserts that all
+  five successful-fit timestamps remain intact. No mutation exclusion,
+  threshold change, or test-only production export was added.
+- **Validation:** The focused refit test passes, and the exact failing Stryker
+  shard now kills its only mutant with a 100% mutation score.
+- **Remaining risk / follow-up:** Keep mutation assertions at the production
+  serialization or validation boundary when module-initialization coverage can
+  cause Stryker to select a different test than a nearby schema-only test.
