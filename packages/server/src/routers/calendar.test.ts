@@ -83,6 +83,12 @@ describe("calendarRouter", () => {
             activityType: "indoor_cycling",
             startedAt: new Date("2026-03-18T07:00:00.000Z"),
             endedAt: "2026-03-18 08:00:00+00",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
             durationMin: 60,
             location: null,
             tss: null,
@@ -122,6 +128,12 @@ describe("calendarRouter", () => {
             activityType: "running",
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
             durationMin: 60,
             location: {
               centroidLat: 37.7749,

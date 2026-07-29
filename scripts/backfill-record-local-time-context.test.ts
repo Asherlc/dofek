@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 import { main } from "./backfill-record-local-time-context.ts";
 
 vi.mock("@sentry/node", () => ({

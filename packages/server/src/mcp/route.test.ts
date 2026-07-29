@@ -666,6 +666,10 @@ describe("createMcpRouter", () => {
         duration_minutes: 420,
         efficiency_pct: 90,
         ended_at: "2026-05-19T14:00:00.000Z",
+        timezone: null,
+        start_utc_offset_minutes: -420,
+        end_utc_offset_minutes: -420,
+        local_time_source: "provider_offset",
         light_minutes: 240,
         provider_id: "whoop",
         rem_minutes: 100,
@@ -685,7 +689,7 @@ describe("createMcpRouter", () => {
     expect(parseToolCallText(response.text)).toEqual([
       {
         date: "2026-05-18",
-        onset_time: "23:00",
+        onset_time: "11:00 PM",
         respiratory_rate_avg: 14.2,
         sleep_consistency_pct: null,
         source_provider: "whoop",
@@ -693,7 +697,13 @@ describe("createMcpRouter", () => {
         sleep_efficiency_pct: 90,
         time_in_bed_minutes: 450,
         total_duration_minutes: 420,
-        wake_time: "07:00",
+        wake_time: "7:00 AM",
+        local_time_context: {
+          timezone: null,
+          startUtcOffsetMinutes: -420,
+          endUtcOffsetMinutes: -420,
+          source: "provider_offset",
+        },
       },
     ]);
   });

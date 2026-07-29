@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
-import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 
 function positiveIntegerOption(args: string[], name: string, defaultValue: number): number {
   const prefix = `--${name}=`;
