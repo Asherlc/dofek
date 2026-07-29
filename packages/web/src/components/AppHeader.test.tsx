@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { surfaceColors, textColors } from "@dofek/scoring/colors";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { MouseEventHandler, ReactNode, Ref } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
 
 function relativeLuminance(hexColor: string): number {
@@ -35,21 +35,48 @@ vi.mock("@tanstack/react-router", () => ({
     className,
     to,
     "aria-label": ariaLabel,
+    onClick,
+    ref,
   }: {
     children: ReactNode;
     className?: string;
     to: string;
     "aria-label"?: string;
+    onClick?: MouseEventHandler<HTMLAnchorElement>;
+    ref?: Ref<HTMLAnchorElement>;
   }) => (
-    <a href={to} className={className} aria-label={ariaLabel}>
+    <a
+      href={to}
+      className={className}
+      aria-label={ariaLabel}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick?.(event);
+      }}
+      ref={ref}
+    >
       {children}
     </a>
   ),
 }));
 
 describe("AppHeader", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        addEventListener: vi.fn(),
+        matches: false,
+        media: "(min-width: 64rem)",
+        onchange: null,
+        removeEventListener: vi.fn(),
+      })),
+    );
+  });
+
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   it("renders desktop navigation as a sidebar evidence desk", () => {
@@ -93,7 +120,101 @@ describe("AppHeader", () => {
     fireEvent.click(menuButton);
 
     expect(menuButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeTruthy();
     expect(screen.getByLabelText("Mobile").getAttribute("id")).toBe("app-mobile-navigation");
+  });
+
+  it("opens mobile navigation as a fixed, scroll-bounded portal with an explicit close action", () => {
+    render(<AppHeader />);
+
+    const mobileHeader = screen.getByRole("banner");
+    fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
+
+    const dialog = screen.getByRole("dialog", { name: "Navigation" });
+    expect(mobileHeader.contains(dialog)).toBe(false);
+    expect(dialog.className).toContain("!top-0");
+    expect(dialog.className).toContain("max-h-dvh");
+    expect(dialog.className).toContain("overflow-y-auto");
+    expect(dialog.className).toContain("overscroll-contain");
+    expect(within(dialog).getByRole("button", { name: "Close navigation menu" })).toBeTruthy();
+  });
+
+  it("moves focus to the first destination, contains Tab focus, and restores the trigger on Escape", async () => {
+    render(
+      <div>
+        <AppHeader />
+        <button type="button">Page action</button>
+      </div>,
+    );
+
+    const menuButton = screen.getByLabelText("Toggle navigation menu");
+    menuButton.focus();
+    fireEvent.click(menuButton);
+
+    const dialog = screen.getByRole("dialog", { name: "Navigation" });
+    const destinations = within(dialog).getAllByRole("link");
+    await waitFor(() => expect(document.activeElement).toBe(destinations[0]));
+
+    destinations.at(-1)?.focus();
+    fireEvent.keyDown(destinations.at(-1) ?? dialog, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(
+      screen.getByRole("button", { name: "Page action", hidden: true }),
+    );
+
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
+    expect(document.activeElement).toBe(menuButton);
+  });
+
+  it("closes mobile navigation from the visible action, an outside pointer, or a destination", () => {
+    render(<AppHeader />);
+    const menuButton = screen.getByLabelText("Toggle navigation menu");
+
+    fireEvent.click(menuButton);
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation menu" }));
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+
+    fireEvent.click(menuButton);
+    const overlay = document.querySelector("[data-state='open'][aria-hidden='true']");
+    if (!(overlay instanceof HTMLElement)) throw new Error("Expected the navigation overlay");
+    fireEvent.click(overlay);
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+
+    fireEvent.click(menuButton);
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Navigation" })).getByText("Training"),
+    );
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+  });
+
+  it("closes an open mobile sheet when the viewport crosses the desktop breakpoint", async () => {
+    let desktopMatches = false;
+    let desktopChangeListener: (() => void) | undefined;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        addEventListener: (_type: string, listener: () => void) => {
+          desktopChangeListener = listener;
+        },
+        get matches() {
+          return desktopMatches;
+        },
+        media: "(min-width: 64rem)",
+        onchange: null,
+        removeEventListener: vi.fn(),
+      })),
+    );
+
+    render(<AppHeader />);
+    fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeTruthy();
+
+    if (!desktopChangeListener) throw new Error("Expected a desktop media-query listener");
+    desktopMatches = true;
+    desktopChangeListener();
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
   });
 
   it("renders primary app destinations and the signed-in user", () => {

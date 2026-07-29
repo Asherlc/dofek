@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { within } from "storybook/test";
 import { AppHeader } from "./AppHeader";
 
 const storyPaths = [
@@ -67,6 +68,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const MobileNavigationOpen: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Toggle navigation menu" }),
+    );
+  },
+};
 
 export const EmptyNoUser: Story = {
   name: "No user",

@@ -26,4 +26,35 @@ describe("Navigation", () => {
       cy.contains("Sign in to Dofek").should("not.exist");
     });
   }
+
+  it("keeps small-screen navigation bounded without displacing page content", () => {
+    cy.viewport(390, 844);
+    cy.visit("/dashboard");
+
+    cy.get("main").then(($main) => {
+      const initialMainTop = $main[0].getBoundingClientRect().top;
+
+      cy.get('button[aria-label="Toggle navigation menu"]').click();
+      cy.get('[role="dialog"][aria-modal="true"]')
+        .should("be.visible")
+        .and("have.attr", "aria-labelledby");
+      cy.get('nav[aria-label="Mobile"]').should("be.visible");
+      cy.get("main").should(($openedMain) => {
+        expect($openedMain[0].getBoundingClientRect().top).to.equal(initialMainTop);
+      });
+    });
+
+    cy.focused().should("have.attr", "href", "/dashboard");
+    cy.get("body").type("{esc}");
+    cy.get('[role="dialog"]').should("not.exist");
+    cy.get('button[aria-label="Toggle navigation menu"]').should("be.focused");
+
+    cy.viewport(768, 1024);
+    cy.get('button[aria-label="Toggle navigation menu"]').click();
+    cy.get('[role="dialog"]').should("be.visible");
+
+    cy.viewport(1024, 768);
+    cy.get('[role="dialog"]').should("not.exist");
+    cy.get('aside[aria-label="Primary navigation"]').should("be.visible");
+  });
 });
