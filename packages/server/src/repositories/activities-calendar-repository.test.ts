@@ -456,6 +456,32 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves unavailable overview measurements as null", async () => {
+    const database = makeDatabase([[{ id: "activity-without-measurements" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: "1",
+          total_minutes: "60",
+          total_distance_meters: null,
+          total_elevation_gain_m: null,
+        },
+      ],
+      [{ activity_type: "walking" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toEqual({
+      activityCount: 1,
+      totalMinutes: 60,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
+      activityTypes: ["walking"],
+    });
+  });
+
   it("returns an empty overview without querying ClickHouse when no activities are visible", async () => {
     const database = makeDatabase([[]]);
     const sensorStore = makeSensorStore([]);
@@ -466,8 +492,8 @@ describe("ActivitiesCalendarRepository", () => {
     ).resolves.toEqual({
       activityCount: 0,
       totalMinutes: 0,
-      totalDistanceMeters: 0,
-      totalElevationGainM: 0,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
       activityTypes: [],
     });
     expect(sensorStore.query).not.toHaveBeenCalled();
@@ -490,8 +516,8 @@ describe("ActivitiesCalendarRepository", () => {
         {
           activity_count: 0,
           total_minutes: 0,
-          total_distance_meters: 0,
-          total_elevation_gain_m: 0,
+          total_distance_meters: null,
+          total_elevation_gain_m: null,
         },
       ],
       [{ activity_type: "running" }],
@@ -521,8 +547,8 @@ describe("ActivitiesCalendarRepository", () => {
     ).resolves.toEqual({
       activityCount: 0,
       totalMinutes: 0,
-      totalDistanceMeters: 0,
-      totalElevationGainM: 0,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
       activityTypes: ["running"],
     });
     for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {
@@ -533,7 +559,7 @@ describe("ActivitiesCalendarRepository", () => {
     }
   });
 
-  it("computes overview totals and type filters from canonical deduped activity summaries", async () => {
+  it("computes overview totals from canonical one-row-per-activity summaries", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
@@ -551,14 +577,26 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getActivityOverview({ weeks: 1, endDate: "2026-03-20" });
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
-    expect(normalizeSql(overviewQueryText)).not.toContain("analytics.v_activity");
-    expect(normalizeSql(overviewQueryText)).toContain(
+    const normalizedOverviewQuery = normalizeSql(overviewQueryText);
+    expect(normalizedOverviewQuery).toContain(
+      "FROM analytics.deduped_activities AS activity FINAL",
+    );
+    expect(normalizedOverviewQuery).not.toContain("analytics.v_activity");
+    expect(normalizedOverviewQuery).not.toContain("analytics.activity_summary");
+    expect(normalizedOverviewQuery).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
-    expect(normalizeSql(overviewQueryText)).toContain(
-      "activity.activity_id IN {activityIds:Array(UUID)}",
+    expect(normalizedOverviewQuery).toContain("sumOrNull(location.total_distance)");
+    expect(normalizedOverviewQuery).toContain("sumOrNull(sensor.elevation_gain_m)");
+    expect(normalizedOverviewQuery).toContain(
+      "LEFT JOIN analytics.activity_location_summary_rows AS location FINAL",
     );
+    expect(normalizedOverviewQuery).toContain(
+      "LEFT JOIN analytics.activity_sensor_summary_rows AS sensor FINAL",
+    );
+    expect(normalizedOverviewQuery).toContain("location.is_deleted = 0");
+    expect(normalizedOverviewQuery).toContain("sensor.is_deleted = 0");
+    expect(normalizedOverviewQuery).toContain("activity.activity_id IN {activityIds:Array(UUID)}");
   });
 
   it("uses deduped activities as the activity overview identity source", async () => {
@@ -579,11 +617,12 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getActivityOverview({ weeks: 1, endDate: "2026-03-20" });
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
-    expect(normalizeSql(overviewQueryText)).not.toContain("analytics.v_activity");
-    expect(normalizeSql(overviewQueryText)).toContain(
-      "activity.activity_id IN {activityIds:Array(UUID)}",
+    const normalizedOverviewQuery = normalizeSql(overviewQueryText);
+    expect(normalizedOverviewQuery).toContain(
+      "FROM analytics.deduped_activities AS activity FINAL",
     );
+    expect(normalizedOverviewQuery).not.toContain("analytics.v_activity");
+    expect(normalizedOverviewQuery).toContain("activity.activity_id IN {activityIds:Array(UUID)}");
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {

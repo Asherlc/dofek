@@ -18,8 +18,8 @@ let mockOverviewQuery: {
     | {
         activityCount: number;
         totalMinutes: number;
-        totalDistanceMeters: number;
-        totalElevationGainM: number;
+        totalDistanceMeters: number | null;
+        totalElevationGainM: number | null;
         activityTypes: string[];
       }
     | undefined;
@@ -263,6 +263,40 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("10h 15m")).toBeDefined();
     expect(screen.getByText("42.3 km")).toBeDefined();
     expect(screen.getByText("520 m")).toBeDefined();
+  });
+
+  it("distinguishes unavailable overview measurements from measured zero", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 2,
+        totalMinutes: 90,
+        totalDistanceMeters: null,
+        totalElevationGainM: null,
+        activityTypes: ["running"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    const { rerender } = render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.queryByText("0.0 km")).toBeNull();
+    expect(screen.queryByText("0 m")).toBeNull();
+
+    mockOverviewQuery.data = {
+      activityCount: 2,
+      totalMinutes: 90,
+      totalDistanceMeters: 0,
+      totalElevationGainM: 0,
+      activityTypes: ["running"],
+    };
+    rerender(<ActivitiesScreen />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.getByText("0 m")).toBeDefined();
   });
 
   it("passes selected activity type to the activity list query", () => {

@@ -51,8 +51,8 @@ export interface CalendarDayActivities {
 export interface ActivityOverview {
   activityCount: number;
   totalMinutes: number;
-  totalDistanceMeters: number;
-  totalElevationGainM: number;
+  totalDistanceMeters: number | null;
+  totalElevationGainM: number | null;
   activityTypes: string[];
 }
 
@@ -91,8 +91,8 @@ const baselineRowSchema = z.object({
 const overviewRowSchema = z.object({
   activity_count: z.coerce.number(),
   total_minutes: z.coerce.number(),
-  total_distance_meters: z.coerce.number(),
-  total_elevation_gain_m: z.coerce.number(),
+  total_distance_meters: z.coerce.number().nullable(),
+  total_elevation_gain_m: z.coerce.number().nullable(),
 });
 
 const activityTypeRowSchema = z.object({
@@ -428,8 +428,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       return {
         activityCount: 0,
         totalMinutes: 0,
-        totalDistanceMeters: 0,
-        totalElevationGainM: 0,
+        totalDistanceMeters: null,
+        totalElevationGainM: null,
         activityTypes: [],
       };
     }
@@ -449,12 +449,17 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT
             count() AS activity_count,
             coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
-            coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
-            coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
+            sumOrNull(location.total_distance) AS total_distance_meters,
+            sumOrNull(sensor.elevation_gain_m) AS total_elevation_gain_m
           FROM analytics.deduped_activities AS activity FINAL
-          LEFT JOIN analytics.activity_summary asum
-            ON asum.user_id = activity.user_id
-           AND asum.activity_id = activity.activity_id
+          LEFT JOIN analytics.activity_location_summary_rows AS location FINAL
+            ON location.user_id = activity.user_id
+           AND location.activity_id = activity.activity_id
+           AND location.is_deleted = 0
+          LEFT JOIN analytics.activity_sensor_summary_rows AS sensor FINAL
+            ON sensor.user_id = activity.user_id
+           AND sensor.activity_id = activity.activity_id
+           AND sensor.is_deleted = 0
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
@@ -481,15 +486,21 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const overview = overviewRows[0] ?? {
       activity_count: 0,
       total_minutes: 0,
-      total_distance_meters: 0,
-      total_elevation_gain_m: 0,
+      total_distance_meters: null,
+      total_elevation_gain_m: null,
     };
 
     return {
       activityCount: Math.round(overview.activity_count),
       totalMinutes: Math.round(overview.total_minutes * 10) / 10,
-      totalDistanceMeters: Math.round(overview.total_distance_meters * 10) / 10,
-      totalElevationGainM: Math.round(overview.total_elevation_gain_m * 10) / 10,
+      totalDistanceMeters:
+        overview.total_distance_meters == null
+          ? null
+          : Math.round(overview.total_distance_meters * 10) / 10,
+      totalElevationGainM:
+        overview.total_elevation_gain_m == null
+          ? null
+          : Math.round(overview.total_elevation_gain_m * 10) / 10,
       activityTypes: activityTypeRows.map((row) => row.activity_type),
     };
   }

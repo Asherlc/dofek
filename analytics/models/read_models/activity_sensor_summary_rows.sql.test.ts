@@ -24,6 +24,15 @@ describe("activity_sensor_summary_rows model", () => {
     expect(modelSql).not.toContain("append_new_columns");
   });
 
+  it("preserves unavailable elevation separately from measured zero", () => {
+    expect(modelSql).toContain(
+      "elevation_per_activity.elevation_gain_m AS elevation_gain_m",
+    );
+    expect(modelSql).not.toContain(
+      "coalesce(elevation_per_activity.elevation_gain_m, CAST(0, 'Nullable(Float64)'))",
+    );
+  });
+
   it("materializes only the reused dirty, sample, and power stages", () => {
     expect(modelSql).toContain("'enable_materialized_cte': 1");
     expect(modelSql).toContain("dirty_keys AS materialized (");

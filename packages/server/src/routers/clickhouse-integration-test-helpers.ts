@@ -26,7 +26,9 @@ import {
 import {
   buildTestActivityHeartRateZonesSelectSql,
   buildTestActivityLocationSampleSelectSql,
+  buildTestActivityLocationSummarySelectSql,
   buildTestActivitySensorSampleSelectSql,
+  buildTestActivitySensorSummarySelectSql,
   buildTestActivityStreamPointsSelectSql,
   buildTestActivitySummarySelectSql,
   buildTestDailyRecoveryInputsSelectSql,
@@ -629,6 +631,16 @@ ${buildTestActivitySensorSampleSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_sample
 AS
 ${buildTestActivityLocationSampleSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_summary_rows
+AS
+${buildTestActivityLocationSummarySelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_summary_rows
+AS
+${buildTestActivitySensorSummarySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_stream_points
