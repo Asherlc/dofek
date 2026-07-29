@@ -54,7 +54,7 @@ export function SyncAllControls({
       </TouchableOpacity>
       <Text style={styles.description}>{SYNC_ALL_ACTIONS.recent.description}</Text>
       <TouchableOpacity
-        style={styles.fullButton}
+        style={[styles.fullButton, busy && styles.disabled]}
         onPress={() => setConfirmationOpen(true)}
         disabled={busy}
         activeOpacity={0.7}

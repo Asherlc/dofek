@@ -21,12 +21,15 @@ vi.mock("react-native", () => {
         children,
         disabled,
         onPress,
-        style: _style,
+        style,
         ...props
       }: Record<string, unknown>,
       ref: React.Ref<HTMLButtonElement>,
-    ) =>
-      ReactModule.createElement(
+    ) => {
+      const resolvedStyle = Array.isArray(style)
+        ? Object.assign({}, ...style.filter(Boolean))
+        : style;
+      return ReactModule.createElement(
         "button",
         {
           ...props,
@@ -47,10 +50,12 @@ vi.mock("react-native", () => {
           disabled,
           onClick: onPress,
           role: accessibilityRole,
+          style: resolvedStyle,
           type: "button",
         },
         children,
-      ),
+      );
+    },
   );
   const Modal = ({
     children,
@@ -170,6 +175,9 @@ describe("SyncAllControls", () => {
         .getByRole("button", { name: "Sync all providers for the last 7 days" })
         .hasAttribute("disabled"),
     ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Sync full history for all providers" }).style.opacity,
+    ).toBe("0.5");
     expect(
       screen
         .getByRole("button", { name: "Sync full history for all providers" })
