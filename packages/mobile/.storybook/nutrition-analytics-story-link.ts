@@ -26,9 +26,19 @@ export const nutritionAnalyticsStoryData = {
         intake: {
           totalDailyAverage: 15,
           foodDailyAverage: 15,
+          providerDailyTotalAverage: 0,
           supplementDailyAverage: 0,
           daysTracked: 30,
         },
+        sourceBreakdown: [
+          {
+            providerId: "manual",
+            sourceLabel: "Manual",
+            intakeType: "itemized_food",
+            dailyAverageContribution: 15,
+            daysTracked: 30,
+          },
+        ],
         adequacy: {
           status: "below_daily_value",
           percentDailyValue: 83,
@@ -49,9 +59,26 @@ export const nutritionAnalyticsStoryData = {
         intake: {
           totalDailyAverage: 102,
           foodDailyAverage: 72,
+          providerDailyTotalAverage: 0,
           supplementDailyAverage: 30,
           daysTracked: 30,
         },
+        sourceBreakdown: [
+          {
+            providerId: "manual",
+            sourceLabel: "Manual",
+            intakeType: "itemized_food",
+            dailyAverageContribution: 72,
+            daysTracked: 30,
+          },
+          {
+            providerId: "dofek",
+            sourceLabel: "Dofek supplements",
+            intakeType: "supplement",
+            dailyAverageContribution: 30,
+            daysTracked: 30,
+          },
+        ],
         adequacy: {
           status: "at_or_above_daily_value",
           percentDailyValue: 113,
@@ -66,6 +93,17 @@ export const nutritionAnalyticsStoryData = {
         safetyStatus: "within_upper_limit",
       },
     ],
+    dataQuality: {
+      selectedWindowDays: 90,
+      daysWithData: 60,
+      usableDays: 58,
+      overlapDays: 4,
+      conflictDays: 2,
+      completenessPercent: 64.4,
+      sourceLabels: ["Cronometer", "Dofek supplements", "Manual"],
+      contributingSourceLabels: ["Dofek supplements", "Manual"],
+      excludedSourceLabels: ["Cronometer"],
+    },
   },
 } as const;
 

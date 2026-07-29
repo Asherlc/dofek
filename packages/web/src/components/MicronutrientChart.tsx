@@ -31,8 +31,24 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
         if (adequacy == null || adequacy.status === "not_evaluable") return "";
         const nutrient = escapeTooltipHtml(row.nutrient);
         const unit = escapeTooltipHtml(row.unit);
+        const sourceBreakdown = row.sourceBreakdown
+          .map((source) => {
+            const sourceLabel = escapeTooltipHtml(source.sourceLabel);
+            const intakeType =
+              source.intakeType === "itemized_food"
+                ? "Itemized food"
+                : source.intakeType === "provider_daily_total"
+                  ? "Provider daily total"
+                  : "Supplement";
+            return `${sourceLabel} · ${intakeType}: ${source.dailyAverageContribution} ${unit}/day`;
+          })
+          .join("<br/>");
         return `<b>${nutrient}</b><br/>
           ${row.intake.totalDailyAverage} ${unit} / ${adequacy.reference.amount} ${unit}<br/>
+          Itemized food: ${row.intake.foodDailyAverage} ${unit}/day<br/>
+          Provider daily totals: ${row.intake.providerDailyTotalAverage} ${unit}/day<br/>
+          Supplements: ${row.intake.supplementDailyAverage} ${unit}/day<br/>
+          ${sourceBreakdown ? `<br/><b>Sources</b><br/>${sourceBreakdown}<br/>` : ""}
           <b>${adequacy.percentDailyValue}% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)</b><br/>
           <span style="color:${chartThemeColors.axisLabel}">(average over ${row.intake.daysTracked} recorded days)</span>`;
       },

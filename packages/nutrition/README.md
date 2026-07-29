@@ -20,6 +20,25 @@ The database creates these values as query-time projections over raw entries,
 consistent with PostgreSQL views being virtual tables defined by a query:
 [PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
 
+## Nutrition Analytics Source Contract
+
+`nutritionAnalytics.micronutrientAdequacyV2` keeps source quality visible before
+adequacy interpretation. For the selected window, it reports dates with any
+nutrition data, dates with an available canonical contribution set, resolved or
+unresolved overlap dates, unresolved conflicts, and contributing or excluded
+source labels. Completeness is the percentage of selected calendar days with an
+available canonical contribution set; the All-history range has no invented
+calendar denominator and therefore returns a null percentage.
+
+Each nutrient separates itemized food, provider daily totals, and explicitly
+taken supplements. Per-source rows report each provider/source's contribution
+to the nutrient's average over all recorded days for that nutrient, so those
+contributions add to the displayed total daily average. These values are
+query-time projections over `fitness.v_nutrition_canonical_nutrient` and
+`fitness.v_nutrition_daily`; they do not introduce another nutrient storage
+path. PostgreSQL documents views as query-defined, non-materialized virtual
+tables in [`CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
+
 ## Implementation Details
 
 ### Nutrient Catalog (`nutrients.ts`)

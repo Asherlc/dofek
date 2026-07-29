@@ -255,7 +255,16 @@ describe("NutritionAnalyticsRepository", () => {
     rows: Record<string, unknown>[] = [],
     bodyRows: Record<string, unknown>[] = [],
   ) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const normalizedRows = rows.map((row) =>
+      typeof row.nutrient_id === "string"
+        ? {
+            avg_provider_daily_total_intake: 0,
+            source_breakdown: [],
+            ...row,
+          }
+        : row,
+    );
+    const execute = vi.fn().mockResolvedValue(normalizedRows);
     const query = vi.fn().mockResolvedValue(bodyRows);
     const db = { execute };
     const repo = new NutritionAnalyticsRepository(db, "user-1", "UTC", undefined, { query });
@@ -304,6 +313,65 @@ describe("NutritionAnalyticsRepository", () => {
   });
 
   describe("getMicronutrientSafetyReview", () => {
+    it("separates itemized food, provider daily totals, and supplements by source", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "vitamin_c",
+          nutrient: "Vitamin C",
+          unit: "mg",
+          avg_total_intake: 90,
+          avg_food_intake: 40,
+          avg_provider_daily_total_intake: 0,
+          avg_supplement_intake: 50,
+          days_tracked: 10,
+          source_breakdown: [
+            {
+              providerId: "manual",
+              sourceLabel: "manual",
+              intakeType: "itemized_food",
+              dailyAverageContribution: 40,
+              daysTracked: 10,
+            },
+            {
+              providerId: "dofek",
+              sourceLabel: "dofek",
+              intakeType: "supplement",
+              dailyAverageContribution: 50,
+              daysTracked: 5,
+            },
+          ],
+        },
+      ]);
+
+      const result = await repo.getMicronutrientSafetyReview(30);
+
+      expect(result[0]?.toDetail()).toMatchObject({
+        intake: {
+          totalDailyAverage: 90,
+          foodDailyAverage: 40,
+          providerDailyTotalAverage: 0,
+          supplementDailyAverage: 50,
+          daysTracked: 10,
+        },
+        sourceBreakdown: [
+          {
+            providerId: "manual",
+            sourceLabel: "manual",
+            intakeType: "itemized_food",
+            dailyAverageContribution: 40,
+            daysTracked: 10,
+          },
+          {
+            providerId: "dofek",
+            sourceLabel: "dofek",
+            intakeType: "supplement",
+            dailyAverageContribution: 50,
+            daysTracked: 5,
+          },
+        ],
+      });
+    });
+
     it("returns server-owned FDA adequacy and NIH upper-limit statuses", async () => {
       const { repo } = makeRepository([
         {
@@ -562,8 +630,42 @@ describe("NutritionAnalyticsRepository", () => {
 
       const query = JSON.stringify(execute.mock.calls[0]?.[0]);
       expect(query).toContain("fitness.v_nutrition_canonical_nutrient");
-      expect(query).toContain("food_entry_id IS NOT NULL");
+      expect(query).toContain("fitness.v_nutrition_entry_classification");
+      expect(query).toContain("itemized_food");
+      expect(query).toContain("provider_daily_total");
       expect(query).toContain("supplement_dose_event_id IS NOT NULL");
+    });
+  });
+
+  describe("getMicronutrientDataQuality", () => {
+    it("computes selected-window completeness and overlap on the server", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2026-07-28",
+          resolution_status: "available",
+          source_labels: ["manual"],
+          contributing_source_labels: ["manual"],
+          excluded_source_labels: [],
+        },
+        {
+          date: "2026-07-29",
+          resolution_status: "source_conflict",
+          source_labels: ["cronometer", "myfitnesspal"],
+          contributing_source_labels: [],
+          excluded_source_labels: ["cronometer", "myfitnesspal"],
+        },
+      ]);
+      await expect(repo.getMicronutrientDataQuality(30)).resolves.toEqual({
+        selectedWindowDays: 30,
+        daysWithData: 2,
+        usableDays: 1,
+        overlapDays: 1,
+        conflictDays: 1,
+        completenessPercent: 3.3,
+        sourceLabels: ["cronometer", "manual", "myfitnesspal"],
+        contributingSourceLabels: ["manual"],
+        excludedSourceLabels: ["cronometer", "myfitnesspal"],
+      });
     });
   });
 
