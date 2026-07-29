@@ -12,32 +12,32 @@ const emptyProvenance: Pick<
 };
 
 const sampleData = {
-  availability: "available" as const,
+  availability: "available",
   baselineMinutes: 462,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
   debtRecoveryMinutes: 21,
   totalNeedMinutes: 483,
   estimateMetadata: {
-    basis: "personalized_high_hrv_average" as const,
+    basis: "personalized_high_hrv_average",
     baselineQualifyingNightCount: 12,
     debtObservedNightCount: 11,
-    methodVersion: "sleep-need-heuristic-v1" as const,
-    uncertainty: "not_established" as const,
-    valueQualifier: "About" as const,
-    summaryLabel: "Heuristic estimate" as const,
+    methodVersion: "sleep-need-heuristic-v1",
+    uncertainty: "not_established",
+    valueQualifier: "About",
+    summaryLabel: "Heuristic estimate",
     componentLabels: {
-      baseline: "Baseline estimate" as const,
-      strainDebt: "Previous-day load adjustment" as const,
-      debtRecovery: "Debt recovery" as const,
+      baseline: "Baseline estimate",
+      strainDebt: "Previous-day load adjustment",
+      debtRecovery: "Debt recovery",
     },
     basisLabel:
       "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
     coverageLabel: "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
-    methodLabel: "Method: sleep-need-heuristic-v1" as const,
-    uncertaintyLabel: "Uncertainty: not established" as const,
+    methodLabel: "Method: sleep-need-heuristic-v1",
+    uncertaintyLabel: "Uncertainty: not established",
     limitationLabel:
-      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established." as const,
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
   },
   recentNights: [
     {
@@ -90,7 +90,7 @@ const sampleData = {
       ...emptyProvenance,
     },
   ],
-};
+} satisfies SleepNeedV2;
 
 const meta = {
   title: "Sleep/SleepNeedCard",

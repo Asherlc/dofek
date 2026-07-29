@@ -25,32 +25,32 @@ const emptyProvenance: Pick<
 };
 
 const mockData = {
-  availability: "available" as const,
+  availability: "available",
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 90,
   debtRecoveryMinutes: 23,
   totalNeedMinutes: 515,
   estimateMetadata: {
-    basis: "generic_eight_hour_default" as const,
+    basis: "generic_eight_hour_default",
     baselineQualifyingNightCount: 1,
     debtObservedNightCount: 1,
-    methodVersion: "sleep-need-heuristic-v1" as const,
-    uncertainty: "not_established" as const,
-    valueQualifier: "About" as const,
-    summaryLabel: "Heuristic estimate" as const,
+    methodVersion: "sleep-need-heuristic-v1",
+    uncertainty: "not_established",
+    valueQualifier: "About",
+    summaryLabel: "Heuristic estimate",
     componentLabels: {
-      baseline: "Baseline estimate" as const,
-      strainDebt: "Previous-day load adjustment" as const,
-      debtRecovery: "Debt recovery" as const,
+      baseline: "Baseline estimate",
+      strainDebt: "Previous-day load adjustment",
+      debtRecovery: "Debt recovery",
     },
     basisLabel:
       "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
     coverageLabel: "Sleep-debt input uses 1 observed night from the model's recent-night window.",
-    methodLabel: "Method: sleep-need-heuristic-v1" as const,
-    uncertaintyLabel: "Uncertainty: not established" as const,
+    methodLabel: "Method: sleep-need-heuristic-v1",
+    uncertaintyLabel: "Uncertainty: not established",
     limitationLabel:
-      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established." as const,
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
   },
   recentNights: [
     {
@@ -75,7 +75,7 @@ const mockData = {
       ...emptyProvenance,
     },
   ],
-};
+} satisfies SleepNeedV2;
 
 const barItemSchema = z.object({
   value: z.number(),

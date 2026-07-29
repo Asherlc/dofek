@@ -5,6 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import {
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
@@ -139,6 +140,35 @@ describe("sleep-need router integration", () => {
     });
     expect(result).not.toHaveProperty("totalNeedMinutes");
     expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 bypasses the legacy contract cache key and hits the versioned key", async () => {
+    await queryCache.invalidateAll();
+    const input = { endDate: "2026-03-15" };
+    const legacyKey = requestCacheKey(TEST_USER_ID, "sleepNeed.calculateV2", input, "UTC");
+    const versionedKey = requestCacheKey(
+      TEST_USER_ID,
+      "sleepNeed.calculateV2",
+      input,
+      "UTC",
+      "sleep-need-metadata-v1",
+    );
+    await queryCache.set(legacyKey, { availability: "legacy-contract" }, CacheTTL.SHORT);
+    await queryCache.set(
+      versionedKey,
+      {
+        availability: "missing_previous_night",
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
+      CacheTTL.SHORT,
+    );
+
+    const result = await query<SleepNeedV2>("sleepNeed.calculateV2", input);
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
   });
 
   it("calculateV2 returns no recommendation fields when prior-night duration is null", async () => {

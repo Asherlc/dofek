@@ -305,7 +305,10 @@ export const sleepNeedRouter = router({
   /**
    * Availability-aware Sleep Need Calculator for current clients.
    */
-  calculateV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  calculateV2: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "sleep-need-metadata-v1",
+  })
     .input(z.object({ endDate: endDateSchema }))
     .output(sleepNeedV2Schema)
     .query(async ({ ctx, input }): Promise<SleepNeedV2> => {
