@@ -104,6 +104,8 @@ export const Loading: Story = {
 };
 
 export const Empty: Story = {
+  name: "Empty data",
+  tags: ["review-scenario", "review-scenario-empty-data"],
   args: {
     topInsight: undefined,
     trend: {
