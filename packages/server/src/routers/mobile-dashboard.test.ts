@@ -25,6 +25,14 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../services/dashboard-overview.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../services/dashboard-overview.ts")>();
+  return {
+    ...original,
+    loadDashboardOverview: vi.fn(original.loadDashboardOverview),
+  };
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -147,7 +155,7 @@ vi.mock("../logger.ts", () => ({
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { logger } from "../logger.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
-import { isRecent } from "../services/dashboard-overview.ts";
+import { isRecent, loadDashboardOverview } from "../services/dashboard-overview.ts";
 import * as mobileRecoveryTab from "../services/mobile-recovery-tab.ts";
 import * as mobileTrainingTab from "../services/mobile-training-tab.ts";
 import { mobileDashboardRouter } from "./mobile-dashboard.ts";
@@ -189,6 +197,48 @@ describe("mobileDashboard.dashboardV2", () => {
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
     expect(result.sleepNeed).not.toHaveProperty("recentNights");
+  });
+
+  it("uses full access when the context has no access window", async () => {
+    vi.mocked(loadDashboardOverview).mockClear();
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.dashboardV2({ endDate: "2026-03-28" });
+
+    expect(loadDashboardOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accessWindow: { kind: "full" },
+      }),
+    );
+  });
+
+  it("logs the elapsed dashboardV2 time", async () => {
+    vi.mocked(logger.info).mockClear();
+    const performanceNow = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1246);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    try {
+      await caller.dashboardV2({ endDate: "2026-03-28" });
+
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        "[mobile-dashboard] dashboardV2 timings userId=user-1 endDate=2026-03-28 total=246ms",
+      );
+    } finally {
+      performanceNow.mockRestore();
+    }
   });
 
   it("returns the available projection with server-computed debt recovery", async () => {
