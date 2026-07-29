@@ -169,11 +169,14 @@ interface ProcessingErrorEvent {
 }
 
 export function processingDatasetErrorMessage(
-  operations: readonly { timeline: readonly ProcessingErrorEvent[] }[],
+  operations: readonly {
+    datasets: readonly string[];
+    timeline: readonly ProcessingErrorEvent[];
+  }[],
   datasetKey: string,
 ): string | null {
-  const failedEvent = operations
-    .flatMap((operation) => operation.timeline)
+  const currentOperation = operations.find((operation) => operation.datasets.includes(datasetKey));
+  const failedEvent = currentOperation?.timeline
     .filter(
       (event) =>
         event.status === "failed" && (event.datasetKey === null || event.datasetKey === datasetKey),

@@ -1,13 +1,7 @@
-import {
-  formatDateYmd,
-  formatDurationSeconds,
-  formatRelativeTime,
-  formatTime,
-} from "@dofek/format/format";
+import { formatDateYmd, formatRelativeTime } from "@dofek/format/format";
 import { providerHealth } from "@dofek/providers/provider-health";
-import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import { Link, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
   CredentialAuthModal,
@@ -26,19 +20,11 @@ import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
-import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
-import {
-  pruneEmptyFilters,
-  RecordFiltersGrid,
-  TableFilterRow,
-  useDebouncedFilters,
-} from "./ProviderDetailFilters.tsx";
-import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
-import { RecordDetailModal } from "./RecordDetailModal.tsx";
+import { RecordsBrowser, SyncHistory } from "./provider-detail-data.tsx";
 import { WhoopWearLocationPicker } from "./WhoopWearLocationPicker.tsx";
 
 const oauthBroadcastMessage = z.object({
@@ -50,8 +36,6 @@ const oauthPostMessage = z.object({
   type: z.literal("oauth-complete"),
   providerId: z.string().optional(),
 });
-
-type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
 function formatProviderName(id: string): string {
   return id
@@ -240,11 +224,13 @@ export function ProviderDetailPage() {
   const [reconnectModal, setReconnectModal] = useState<
     "credential" | "garmin" | "token" | "whoop" | null
   >(null);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
 
   const handleReauthorize = useCallback(() => {
     window.open(`/auth/provider/${providerId}`, "_blank");
   }, [providerId]);
   const handleReconnect = useCallback(() => {
+    setReconnectError(null);
     switch (provider?.authType) {
       case "oauth":
       case "oauth1":
@@ -265,8 +251,7 @@ export function ProviderDetailPage() {
           operation: "reconnect-provider",
           providerId: provider.id,
         });
-        setSyncStatus("error");
-        setSyncMessage(error.message);
+        setReconnectError(error.message);
         return;
       }
       case "custom:garmin":
@@ -279,9 +264,10 @@ export function ProviderDetailPage() {
   }, [handleReauthorize, provider]);
   const handleReconnectSuccess = useCallback(() => {
     setReconnectModal(null);
+    setReconnectError(null);
     trpcUtils.sync.providers.invalidate();
-    trpcUtils.processing.status.invalidate();
-  }, [trpcUtils]);
+    trpcUtils.processing.status.invalidate({ providerId });
+  }, [providerId, trpcUtils]);
 
   // Listen for OAuth completion (re-authorize flow)
   const lastOAuthHandledAt = useRef(0);
@@ -430,14 +416,21 @@ export function ProviderDetailPage() {
           </div>
         </div>
         {provider && health?.requiresReconnect && !provider.importOnly && !provider.pushOnly ? (
-          <button
-            type="button"
-            onClick={handleReconnect}
-            className="rounded bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400"
-            aria-label={`Reconnect ${provider.name}`}
-          >
-            Reconnect {provider.name}
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={handleReconnect}
+              className="rounded bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400"
+              aria-label={`Reconnect ${provider.name}`}
+            >
+              Reconnect {provider.name}
+            </button>
+            {reconnectError ? (
+              <p role="alert" className="max-w-sm text-right text-xs text-red-400">
+                {reconnectError}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -665,433 +658,5 @@ export function ProviderDetailPage() {
         }
       />
     </PageLayout>
-  );
-}
-
-// ── Sync History ──
-
-const SYNC_HISTORY_FILTER_COLUMNS = [
-  { key: "syncedAt", label: "Time" },
-  { key: "dataType", label: "Type" },
-  { key: "status", label: "Status" },
-  { key: "recordCount", label: "Records" },
-  { key: "durationMs", label: "Duration" },
-  { key: "errorMessage", label: "Error" },
-  { key: "authFailureReason", label: "Auth Failure" },
-  { key: "id", label: "Id" },
-] as const;
-
-function SyncHistory({ providerId }: { providerId: string }) {
-  const [page, setPage] = useState(0);
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const debouncedFilters = useDebouncedFilters(filters);
-  const activeFilters = useMemo(() => pruneEmptyFilters(debouncedFilters), [debouncedFilters]);
-  const pageSize = 20;
-  const filterOptionsQuery = trpc.providerDetail.logFilterOptions.useQuery({ providerId });
-
-  const logs = trpc.providerDetail.logs.useQuery({
-    providerId,
-    limit: pageSize,
-    offset: page * pageSize,
-    filters: activeFilters,
-  });
-
-  const rows = logs.data ?? [];
-
-  const handleFilterChange = useCallback((key: string, value: string) => {
-    setFilters((current) => ({ ...current, [key]: value }));
-    setPage(0);
-  }, []);
-
-  const getFilterOptions = useCallback(
-    (columnKey: string) => toFilterOptions(columnKey, filterOptionsQuery.data?.[columnKey]),
-    [filterOptionsQuery.data],
-  );
-
-  return (
-    <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
-
-      {logs.isError ? <QueryStatePanel error={logs.error} height={80} /> : null}
-
-      {logs.isLoading && logs.data === undefined ? (
-        <QueryStatePanel variant="loading" height={80} />
-      ) : logs.isError && logs.data === undefined ? null : rows.length === 0 &&
-        Object.keys(activeFilters).length === 0 ? (
-        <div className="text-xs text-subtle">No sync history yet.</div>
-      ) : (
-        <>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-subtle">
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Time
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Type
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="text-right px-4 py-2 font-medium">
-                    Records
-                  </th>
-                  <th scope="col" className="text-right px-4 py-2 font-medium">
-                    Duration
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Error
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Auth Failure
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Id
-                  </th>
-                </tr>
-                <TableFilterRow
-                  columns={SYNC_HISTORY_FILTER_COLUMNS}
-                  filters={filters}
-                  onFilterChange={handleFilterChange}
-                  getOptions={getFilterOptions}
-                />
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={SYNC_HISTORY_FILTER_COLUMNS.length}
-                      className="px-4 py-6 text-subtle"
-                    >
-                      No sync history matches the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-b border-border/50 hover:bg-surface-hover transition-colors"
-                    >
-                      <td className="px-4 py-2 text-muted whitespace-nowrap">
-                        {formatTime(row.syncedAt)}
-                      </td>
-                      <td className="px-4 py-2 text-muted">{row.dataType}</td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 ${
-                            row.status === "success" ? "text-emerald-400" : "text-red-400"
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              row.status === "success" ? "bg-emerald-400" : "bg-red-400"
-                            }`}
-                          />
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-right text-foreground tabular-nums">
-                        {row.recordCount ?? "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right text-muted tabular-nums">
-                        {row.durationMs != null
-                          ? formatDurationSeconds(row.durationMs / 1000)
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                        {row.errorMessage ?? ""}
-                      </td>
-                      <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                        {row.authFailureReason ?? ""}
-                      </td>
-                      <td className="px-4 py-2 text-muted max-w-xs truncate">{row.id}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between mt-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-            >
-              Previous
-            </button>
-            <span className="text-xs text-subtle">Page {page + 1}</span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={rows.length < pageSize}
-              className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-            >
-              Next
-            </button>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-// ── Records Browser ──
-
-function getStatCount(stats: ProviderStats, key: DataType): number {
-  return stats[key];
-}
-
-function RecordsBrowser({
-  providerId,
-  stats,
-}: {
-  providerId: string;
-  stats: ProviderStats | undefined;
-}) {
-  const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
-  const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
-    availability.data?.includes(dataType.key),
-  );
-
-  const [selectedTab, setSelectedTab] = useState<DataType>("activities");
-  const activeTab = useMemo(() => {
-    if (availableTypes.some((dt) => dt.key === selectedTab)) {
-      return selectedTab;
-    }
-    return availableTypes[0]?.key ?? "activities";
-  }, [availableTypes, selectedTab]);
-
-  if (availability.isLoading) {
-    return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-        <div className="text-xs text-subtle">Loading records...</div>
-      </section>
-    );
-  }
-
-  if (availability.isError) {
-    return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-        <QueryStatePanel error={availability.error} height={80} />
-      </section>
-    );
-  }
-
-  if (availableTypes.length === 0) {
-    return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-        <div className="text-xs text-subtle">No records yet for this provider.</div>
-      </section>
-    );
-  }
-
-  return (
-    <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1 mb-3">
-        {availableTypes.map((dt) => (
-          <button
-            key={dt.key}
-            type="button"
-            onClick={() => setSelectedTab(dt.key)}
-            className={`px-3 py-1.5 text-xs rounded transition-colors ${
-              activeTab === dt.key
-                ? "bg-accent/15 text-foreground"
-                : "bg-accent/10 text-subtle hover:text-foreground"
-            }`}
-          >
-            {dt.label}
-            {stats && getStatCount(stats, dt.key) > 0 && (
-              <span className="ml-1 text-dim">
-                ({getStatCount(stats, dt.key).toLocaleString()})
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <RecordsTable
-        key={`${providerId}:${activeTab}`}
-        providerId={providerId}
-        dataType={activeTab}
-      />
-    </section>
-  );
-}
-
-// ── Records Table ──
-
-function RecordsTable({ providerId, dataType }: { providerId: string; dataType: DataType }) {
-  const [page, setPage] = useState(0);
-  const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const debouncedFilters = useDebouncedFilters(filters);
-  const activeFilters = useMemo(() => pruneEmptyFilters(debouncedFilters), [debouncedFilters]);
-  const pageSize = 25;
-  const filterOptionsQuery = trpc.providerDetail.recordFilterOptions.useQuery({
-    providerId,
-    dataType,
-  });
-
-  const records = trpc.providerDetail.records.useQuery({
-    providerId,
-    dataType,
-    limit: pageSize,
-    offset: page * pageSize,
-    filters: activeFilters,
-  });
-
-  const rows = records.isError ? [] : (records.data?.rows ?? []);
-  const visibleColumns = records.data?.columns ?? [];
-  const filterColumnNames = records.data?.filterColumns ?? visibleColumns;
-
-  const handleFilterChange = useCallback((key: string, value: string) => {
-    setFilters((current) => ({ ...current, [key]: value }));
-    setPage(0);
-  }, []);
-
-  const filterColumns = useMemo(
-    () => filterColumnNames.map((column) => ({ key: column, label: formatColumnName(column) })),
-    [filterColumnNames],
-  );
-
-  const getFilterOptions = useCallback(
-    (columnKey: string) => toFilterOptions(columnKey, filterOptionsQuery.data?.[columnKey]),
-    [filterOptionsQuery.data],
-  );
-
-  const hasRaw = rows.some((row) => Object.hasOwn(row, "raw"));
-
-  if (records.isLoading) {
-    return <QueryStatePanel variant="loading" height={80} />;
-  }
-
-  if (records.isError) {
-    return <QueryStatePanel error={records.error} height={80} />;
-  }
-
-  const emptyMessage =
-    Object.keys(activeFilters).length === 0
-      ? "No records found."
-      : "No records match the current filters.";
-
-  return (
-    <>
-      <RecordFiltersGrid
-        columns={filterColumns}
-        filters={filters}
-        onFilterChange={handleFilterChange}
-        getOptions={getFilterOptions}
-      />
-
-      <div className="card overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border text-subtle">
-              {visibleColumns.map((col) => (
-                <th
-                  key={col}
-                  scope="col"
-                  className="text-left px-3 py-2 font-medium whitespace-nowrap"
-                >
-                  {formatColumnName(col)}
-                </th>
-              ))}
-              {hasRaw && (
-                <th scope="col" className="text-left px-3 py-2 font-medium">
-                  Data
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={Math.max(visibleColumns.length + (hasRaw ? 1 : 0), 1)}
-                  className="px-3 py-6 text-subtle"
-                >
-                  {records.isLoading ? "Loading records..." : emptyMessage}
-                </td>
-              </tr>
-            ) : (
-              rows.map((row, idx) => (
-                <tr
-                  key={String(row.id ?? row.date ?? idx)}
-                  className="border-b border-border/50 hover:bg-surface-hover transition-colors cursor-pointer"
-                  onClick={() => setSelectedRecord(row)}
-                >
-                  {visibleColumns.map((col) => (
-                    <td
-                      key={col}
-                      className="px-3 py-2 text-foreground whitespace-nowrap max-w-xs truncate"
-                    >
-                      {formatCellValue(row[col])}
-                    </td>
-                  ))}
-                  {hasRaw && (
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedRecord(row);
-                        }}
-                        className="text-xs text-dim hover:text-muted transition-colors"
-                      >
-                        View
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between mt-2">
-        <button
-          type="button"
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-          disabled={page === 0}
-          className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-        >
-          Previous
-        </button>
-        <span className="text-xs text-subtle">Page {page + 1}</span>
-        <button
-          type="button"
-          onClick={() => setPage((p) => p + 1)}
-          disabled={rows.length < pageSize}
-          className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-        >
-          Next
-        </button>
-      </div>
-
-      {/* Record detail modal */}
-      {selectedRecord && (
-        <RecordDetailModal
-          record={selectedRecord}
-          onClose={() => setSelectedRecord(null)}
-          activityId={
-            dataType === "activities" && typeof selectedRecord.id === "string"
-              ? selectedRecord.id
-              : undefined
-          }
-        />
-      )}
-    </>
   );
 }

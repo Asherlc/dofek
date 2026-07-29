@@ -32,7 +32,14 @@ vi.mock("../components/DataSourcesAuthModals.tsx", () => ({
   CredentialAuthModal: () => <div>Credential reconnect form</div>,
   GarminAuthModal: () => <div>Garmin reconnect form</div>,
   TokenAuthModal: () => <div>Token reconnect form</div>,
-  WhoopAuthModal: () => <div>WHOOP reconnect form</div>,
+  WhoopAuthModal: ({ onSuccess }: { onSuccess: () => void }) => (
+    <div>
+      WHOOP reconnect form
+      <button type="button" onClick={onSuccess}>
+        Complete WHOOP reconnect
+      </button>
+    </div>
+  ),
 }));
 
 const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
@@ -572,6 +579,36 @@ describe("ProviderDetailPage import-only providers", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reconnect WHOOP" }));
     expect(screen.getByText("WHOOP reconnect form")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Complete WHOOP reconnect" }));
+    expect(mockProcessingStatusInvalidate).toHaveBeenCalledWith({ providerId: "whoop" });
+  });
+
+  it("shows token reconnect errors when expired credentials were removed", async () => {
+    mockUseParams.mockReturnValue({ id: "ultrahuman" });
+    mockProviders.data = [
+      {
+        id: "ultrahuman",
+        name: "Ultrahuman",
+        authorized: false,
+        authType: "token",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+        tokenAuth: null,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
+
+    expect(
+      screen.getByText(
+        "Ultrahuman personal-token authentication is unavailable. Refresh and try again.",
+      ),
+    ).toBeTruthy();
   });
 
   it("keeps ready provider dataset freshness visible", async () => {

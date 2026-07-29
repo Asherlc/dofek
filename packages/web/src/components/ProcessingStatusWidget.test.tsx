@@ -209,6 +209,41 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText("Last ready: 2h ago")).toBeTruthy();
   });
 
+  it("does not show a resolved failure beneath a ready dataset", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: "ready",
+          datasets: [
+            {
+              ...activityDataset,
+              status: "ready",
+              progressPercentage: 100,
+            },
+          ],
+          operations: [
+            {
+              ...operation,
+              status: "ready",
+              timeline: [
+                {
+                  ...timelineEvent,
+                  status: "failed",
+                  errorMessage: "Resolved activity failure",
+                },
+              ],
+            },
+          ],
+        }}
+        alwaysVisible
+      />,
+    );
+
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.queryByText("Resolved activity failure")).toBeNull();
+  });
+
   it("surfaces a failed dataset on downstream metric pages", () => {
     render(
       <ProcessingStatusWidget

@@ -171,6 +171,7 @@ describe("processing status presentation", () => {
       processingDatasetErrorMessage(
         [
           {
+            datasets: ["activity"],
             timeline: [
               {
                 datasetKey: "sleep",
@@ -206,6 +207,7 @@ describe("processing status presentation", () => {
       processingDatasetErrorMessage(
         [
           {
+            datasets: ["activity", "sleep"],
             timeline: [
               {
                 datasetKey: "sleep",
@@ -227,6 +229,60 @@ describe("processing status presentation", () => {
         "activity",
       ),
     ).toBe("Try the activity sync again.");
+  });
+
+  it("ignores failures from older and unrelated operations", () => {
+    expect(
+      processingDatasetErrorMessage(
+        [
+          {
+            datasets: ["activity"],
+            timeline: [
+              {
+                datasetKey: "activity",
+                status: "succeeded",
+                occurredAt: "2026-07-22T12:00:00.000Z",
+                message: "Activity ready",
+                errorMessage: null,
+              },
+            ],
+          },
+          {
+            datasets: ["activity"],
+            timeline: [
+              {
+                datasetKey: "activity",
+                status: "failed",
+                occurredAt: "2026-07-22T11:00:00.000Z",
+                message: null,
+                errorMessage: "Old activity failure",
+              },
+            ],
+          },
+        ],
+        "activity",
+      ),
+    ).toBeNull();
+
+    expect(
+      processingDatasetErrorMessage(
+        [
+          {
+            datasets: ["sleep"],
+            timeline: [
+              {
+                datasetKey: null,
+                status: "failed",
+                occurredAt: "2026-07-22T12:00:00.000Z",
+                message: null,
+                errorMessage: "Sleep operation failed",
+              },
+            ],
+          },
+        ],
+        "activity",
+      ),
+    ).toBeNull();
   });
 
   it.each([

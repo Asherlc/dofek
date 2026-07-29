@@ -111,7 +111,10 @@ export function ProcessingStatusWidget({
       <ul className="mt-2 divide-y divide-slate-200 border-t border-slate-200">
         {visibleDatasets.map((dataset) => {
           const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
-          const datasetError = processingDatasetErrorMessage(data.operations, dataset.key);
+          const datasetError =
+            dataset.status === "failed" || dataset.status === "blocked"
+              ? processingDatasetErrorMessage(data.operations, dataset.key)
+              : null;
           return (
             <li key={dataset.key} className="py-2 text-xs">
               <div className="flex items-center justify-between gap-3">

@@ -102,7 +102,10 @@ export function ProcessingStatusWidget({
       <View style={styles.datasetList}>
         {visibleDatasets.map((dataset) => {
           const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
-          const datasetError = processingDatasetErrorMessage(data.operations, dataset.key);
+          const datasetError =
+            dataset.status === "failed" || dataset.status === "blocked"
+              ? processingDatasetErrorMessage(data.operations, dataset.key)
+              : null;
           return (
             <View key={dataset.key} style={styles.datasetRow}>
               <View style={styles.datasetHeading}>
