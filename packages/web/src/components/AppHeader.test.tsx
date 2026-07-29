@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { surfaceColors, textColors } from "@dofek/scoring/colors";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { MouseEventHandler, ReactNode, Ref } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
@@ -212,7 +212,7 @@ describe("AppHeader", () => {
 
     if (!desktopChangeListener) throw new Error("Expected a desktop media-query listener");
     desktopMatches = true;
-    desktopChangeListener();
+    act(() => desktopChangeListener?.());
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
   });
