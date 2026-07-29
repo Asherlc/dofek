@@ -17,7 +17,7 @@
     "storybook:ios": "EXPO_PUBLIC_STORYBOOK_ENABLED=true expo run:ios",
     "storybook:web": "storybook dev -p 6007 --config-dir .storybook",
     "build-storybook": "storybook build --config-dir .storybook",
-    "app-store:screenshots": "node ./scripts/capture-app-store-screenshots.mjs",
+    "app-store:screenshots": "pnpm tsx ./scripts/capture-app-store-screenshots.ts",
     "app-store:assets": "pnpm build-storybook && pnpm app-store:screenshots",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",

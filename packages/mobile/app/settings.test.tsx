@@ -281,11 +281,23 @@ describe("SettingsScreen tabs", () => {
 
     expect(screen.getByText("Units")).toBeTruthy();
     expect(screen.queryByText("Data Sources")).toBeNull();
+    expect(screen.getByRole("button", { name: "General" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Connections" }).getAttribute("aria-selected")).toBe(
+      "false",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Connections" }));
 
     expect(screen.getByText("Data Sources")).toBeTruthy();
     expect(screen.queryByText("Units")).toBeNull();
+    expect(screen.getByRole("button", { name: "General" }).getAttribute("aria-selected")).toBe(
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Connections" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "connections" });
   });
 

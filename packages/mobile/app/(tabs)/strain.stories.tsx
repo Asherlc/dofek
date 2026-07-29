@@ -1,11 +1,48 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
 import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { createFixtureDates, type FixtureDates } from "./fixture-dates";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./processing-status-story-fixture";
 import StrainScreen from "./strain";
+
+const STRAIN_COMPANION_RESPONSES = {
+  "training.hrZones": {
+    maxHr: 190,
+    weeks: [],
+    intensityDistribution: {
+      model: "karvonen-five-zone",
+      activityScope: "endurance",
+      totalSeconds: 0,
+      zones: [],
+      explanation: "No intensity samples in this fixture.",
+    },
+  },
+  "efficiency.polarizationTrend": {
+    model: "treff-three-zone",
+    activityScope: "cycling",
+    threshold: 2,
+    maxHr: 190,
+    weeks: [],
+    explanation: "No cycling polarization samples in this fixture.",
+    method: {
+      formula: "Fixture formula.",
+      zoneBasis: "Fixture zones.",
+      calculationChoice: "Fixture calculation.",
+      interpretation: "Fixture interpretation.",
+      source: {
+        title: "Treff source",
+        url: "https://doi.org/10.3389/fphys.2019.00707",
+      },
+    },
+  },
+  "cyclingAdvanced.trainingMonotony": [],
+} satisfies Parameters<typeof createProcessingStatusStoryLink>[1];
 
 function createMockWorkloadData(dates: FixtureDates) {
   const timeSeries = Array.from({ length: 7 }, (_, index) => {
@@ -131,7 +168,13 @@ function createSeededProviders(hasActivities: boolean) {
     fixture.data,
   );
 
-  return { queryClient };
+  const processingStatus = seedReadyProcessingStatus(queryClient, [
+    "activity",
+    "recovery",
+    "training",
+  ]);
+
+  return { processingStatus, queryClient };
 }
 
 function MockProviders({
@@ -141,10 +184,20 @@ function MockProviders({
   children: React.ReactNode;
   withActivities?: boolean;
 }) {
-  const { queryClient } = createSeededProviders(withActivities);
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
-  });
+  const { queryClient, trpcClient } = useMemo(() => {
+    const seededProviders = createSeededProviders(withActivities);
+    return {
+      queryClient: seededProviders.queryClient,
+      trpcClient: trpc.createClient({
+        links: [
+          createProcessingStatusStoryLink(
+            seededProviders.processingStatus,
+            STRAIN_COMPANION_RESPONSES,
+          ),
+        ],
+      }),
+    };
+  }, [withActivities]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
