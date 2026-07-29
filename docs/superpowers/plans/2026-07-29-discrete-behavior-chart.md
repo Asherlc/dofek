@@ -53,25 +53,27 @@ accessibility.
 
 ### Task 1: Add Failing Tests
 
-- [ ] Add a mixed point/line option test to `TimeSeriesChart.test.ts`.
-- [ ] Add a mixed boolean/numeric classification test to `JournalPanel.test.tsx`.
-- [ ] Run
+- [x] Add a mixed point/line option test to `TimeSeriesChart.test.ts`.
+- [x] Add a mixed boolean/numeric classification test to `JournalPanel.test.tsx`.
+- [x] Run
   `rtk pnpm test -- --run packages/web/src/components/TimeSeriesChart.test.ts packages/web/src/components/JournalPanel.test.tsx`.
-- [ ] Confirm failure because explicit point-series semantics do not exist yet.
+- [x] Confirm failure because explicit point-series semantics do not exist yet.
 
 ### Task 2: Implement Minimal Fix
 
-- [ ] Add explicit line/point series mapping and an accessibility description to
+- [x] Add explicit line/point series mapping and an accessibility description to
   `TimeSeriesChart`.
-- [ ] Map server-provided boolean questions to points with Yes/No formatting in `JournalPanel`.
-- [ ] Keep numeric questions as line observations and update the Storybook fixture.
-- [ ] Re-run the focused tests and confirm they pass.
+- [x] Map server-provided boolean questions to points with Yes/No formatting in `JournalPanel`.
+- [x] Keep numeric questions as line observations and update the Storybook fixture.
+- [x] Re-run the focused tests and confirm they pass.
 
 ### Task 3: Final Verification
 
-- [ ] Run `rtk pnpm lint`.
-- [ ] Run root, server, web, and mobile typechecks.
-- [ ] Run `rtk pnpm test`.
-- [ ] Run the web Storybook build and the mobile behavior-association screen test.
+- [x] Run `rtk pnpm lint`. Code and policy checks passed; local analytics SQL lint reached
+  SQLFluff but could not start ClickHouse because Docker exhausted its predefined network pools, so
+  the isolated CI analytics check is the remaining environment-backed validation.
+- [x] Run root, server, web, and mobile typechecks.
+- [x] Run `rtk pnpm test`.
+- [x] Run the web Storybook build and the mobile behavior-association screen test.
 - [ ] Push the linked branch, open a PR with `Fixes #2156`, monitor CI and reviews, and merge only
   after all required checks pass.
