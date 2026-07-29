@@ -20,7 +20,7 @@ export function buildTestDedupedActivitiesSelectSql(
   timezone,
   start_utc_offset_minutes,
   end_utc_offset_minutes,
-  local_time_source,
+  coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
   raw,
   now64(9, 'UTC') AS source_synced_at,
   source_providers,

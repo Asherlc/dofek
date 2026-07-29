@@ -308,7 +308,11 @@ describe("clickhouse integration test helpers", () => {
             command.includes(`.${tableName}`) &&
             command.includes("start_utc_offset_minutes") &&
             command.includes("end_utc_offset_minutes") &&
-            command.includes("local_time_source"),
+            command.includes("local_time_source") &&
+            (tableName !== "deduped_activities" ||
+              command.includes(
+                "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
+              )),
         ),
       ).toBe(true);
     }

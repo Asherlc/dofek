@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "./schema/core.ts";
@@ -17,7 +18,7 @@ describe("record-local time context schema", () => {
   }, 120_000);
 
   it("stores independently resolved activity offsets and projects them through v_activity", async () => {
-    const externalId = "dst-crossing-activity";
+    const externalId = `dst-crossing-activity-${randomUUID()}`;
     await context.db.execute(sql`
       INSERT INTO fitness.activity (
         provider_id,
@@ -34,7 +35,7 @@ describe("record-local time context schema", () => {
       VALUES (
         'local-time-test',
         ${TEST_USER_ID}::uuid,
-        ${externalId},
+        ${externalId}::text,
         'running',
         '2026-03-08T09:30:00Z'::timestamptz,
         '2026-03-08T10:30:00Z'::timestamptz,
@@ -53,13 +54,18 @@ describe("record-local time context schema", () => {
     }>(sql`
       SELECT
         timezone,
-        start_utc_offset_minutes,
-        end_utc_offset_minutes,
+        start_utc_offset_minutes::integer AS start_utc_offset_minutes,
+        end_utc_offset_minutes::integer AS end_utc_offset_minutes,
         local_time_source
       FROM fitness.v_activity
       WHERE user_id = ${TEST_USER_ID}::uuid
         AND source_external_ids @> jsonb_build_array(
-          jsonb_build_object('providerId', 'local-time-test', 'externalId', ${externalId})
+          jsonb_build_object(
+            'providerId',
+            'local-time-test',
+            'externalId',
+            ${externalId}::text
+          )
         )
     `);
 
@@ -74,6 +80,7 @@ describe("record-local time context schema", () => {
   });
 
   it("stores offset-only sleep context without inventing a timezone", async () => {
+    const externalId = `offset-only-sleep-${randomUUID()}`;
     const rows = await context.db.execute<{
       timezone: string | null;
       start_utc_offset_minutes: number;
@@ -94,7 +101,7 @@ describe("record-local time context schema", () => {
       VALUES (
         'local-time-test',
         ${TEST_USER_ID}::uuid,
-        'offset-only-sleep',
+        ${externalId}::text,
         '2026-10-24T15:00:00Z'::timestamptz,
         '2026-10-24T17:00:00Z'::timestamptz,
         NULL,
@@ -104,8 +111,8 @@ describe("record-local time context schema", () => {
       )
       RETURNING
         timezone,
-        start_utc_offset_minutes,
-        end_utc_offset_minutes,
+        start_utc_offset_minutes::integer AS start_utc_offset_minutes,
+        end_utc_offset_minutes::integer AS end_utc_offset_minutes,
         local_time_source
     `);
 
@@ -120,6 +127,7 @@ describe("record-local time context schema", () => {
   });
 
   it("defaults records without trusted context to unknown with null offsets", async () => {
+    const externalId = `unknown-sleep-${randomUUID()}`;
     const rows = await context.db.execute<{
       start_utc_offset_minutes: number | null;
       end_utc_offset_minutes: number | null;
@@ -135,13 +143,13 @@ describe("record-local time context schema", () => {
       VALUES (
         'local-time-test',
         ${TEST_USER_ID}::uuid,
-        'unknown-sleep',
+        ${externalId}::text,
         '2026-01-01T00:00:00Z'::timestamptz,
         '2026-01-01T08:00:00Z'::timestamptz
       )
       RETURNING
-        start_utc_offset_minutes,
-        end_utc_offset_minutes,
+        start_utc_offset_minutes::integer AS start_utc_offset_minutes,
+        end_utc_offset_minutes::integer AS end_utc_offset_minutes,
         local_time_source
     `);
 
@@ -155,6 +163,7 @@ describe("record-local time context schema", () => {
   });
 
   it("rejects an authoritative offset attached to the unknown source", async () => {
+    const externalId = `invalid-unknown-sleep-${randomUUID()}`;
     await expect(
       context.db.execute(sql`
         INSERT INTO fitness.sleep_session (
@@ -168,12 +177,17 @@ describe("record-local time context schema", () => {
         VALUES (
           'local-time-test',
           ${TEST_USER_ID}::uuid,
-          'invalid-unknown-sleep',
+          ${externalId}::text,
           '2026-01-01T00:00:00Z'::timestamptz,
           60,
           'unknown'
         )
       `),
-    ).rejects.toThrow(/sleep_session_local_time_context_check/);
+    ).rejects.toMatchObject({
+      cause: {
+        code: "23514",
+        constraint: "sleep_session_local_time_context_check",
+      },
+    });
   });
 });

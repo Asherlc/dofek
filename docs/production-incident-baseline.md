@@ -20186,6 +20186,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [90646130994](https://github.com/Asherlc/dofek/actions/runs/30472135802/job/90646130994);
   the E2E failure is job
   [90645036251](https://github.com/Asherlc/dofek/actions/runs/30472135802/job/90645036251).
+  After those setup failures were fixed, exact-head run
+  [30474385635](https://github.com/Asherlc/dofek/actions/runs/30474385635)
+  passed integration shards 3 and 4 but exposed fixture-contract failures in
+  shards [1](https://github.com/Asherlc/dofek/actions/runs/30474385635/job/90652772062)
+  and [2](https://github.com/Asherlc/dofek/actions/runs/30474385635/job/90652772034).
 - **User impact:** No production impact. PR #2290 was blocked from merging.
 - **Evidence:** The integration command was
   `pnpm exec vitest run --project integration --coverage --shard=1/4`;
@@ -20198,18 +20203,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The isolated activity and sleep analytics fixtures retained
   their old schemas after three record-local-time columns were added, while
   migration 0062 unconditionally altered dbt-owned serving tables that do not
-  exist until after migrations during a fresh bootstrap.
+  exist until after migrations during a fresh bootstrap. The follow-up
+  failures came from retry-unsafe fixed external IDs and uncast Postgres
+  `bigint` fixture assertions, legacy ClickHouse `argMinIf(String, ...)`
+  producing an empty string rather than `NULL` when no trusted local-time
+  source exists, and seeded sleep-consistency rows omitting the trusted
+  local-time context required by the production query.
 - **Fix / mitigation:** Keep fixture schemas, raw-copy projections, and stored
   analytics selects aligned with the production activity and sleep models.
   Migration 0062 now always upgrades the raw mirrors and explicitly queries
   `system.tables` before upgrading each dbt-owned table, so existing production
   tables are altered while the supported fresh-bootstrap absence is handled
-  without swallowing query or migration errors. No retry, timeout, fallback,
-  or warn-and-continue behavior was added.
+  without swallowing query or migration errors. Retryable fixtures now use
+  unique external IDs and explicit integer projections, activity read models
+  normalize ClickHouse's empty-string aggregate default to `unknown`, and the
+  sleep-consistency fixture supplies explicit UTC context. No retry, timeout,
+  fallback, or warn-and-continue behavior was added.
 - **Validation:** Focused fixture and migration tests and root typecheck pass
-  locally. The real ClickHouse-backed integration run was inconclusive because
-  the workspace container restarted and reset the socket before any tests ran;
-  fresh exact-head CI remains the real-engine, full-suite, and clean-bootstrap
+  locally. A second real ClickHouse-backed integration attempt was
+  inconclusive because the shared Docker control plane hung while resolving
+  Compose service state; only that attempt's exact processes were stopped.
+  Fresh exact-head CI remains the real-engine, full-suite, and clean-bootstrap
   gate.
 - **Remaining risk / follow-up:** Merge only after all four integration shards
   and web E2E prove both the stored fixture rebuild and fresh migration order

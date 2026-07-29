@@ -383,7 +383,7 @@ SELECT
   timezone,
   start_utc_offset_minutes,
   end_utc_offset_minutes,
-  coalesce(local_time_source, 'unknown') AS local_time_source,
+  coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
   raw,
   source_providers,
   source_external_ids,
