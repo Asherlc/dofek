@@ -40,8 +40,10 @@ describe("Responsive decision controls", () => {
   for (const viewportWidth of VIEWPORT_WIDTHS) {
     for (const rootFontSize of ROOT_FONT_SIZES) {
       it(`keeps Correlation controls visible at ${viewportWidth}px with ${rootFontSize}px root text`, () => {
+        cy.intercept("POST", /\/api\/trpc\/.*correlation\.metrics/).as("correlationMetrics");
         cy.viewport(viewportWidth, 1200);
         cy.visit("/correlation");
+        cy.wait("@correlationMetrics");
         cy.contains("Correlation Explorer").should("be.visible");
         setRootFontSize(rootFontSize);
 
@@ -64,6 +66,8 @@ describe("Responsive decision controls", () => {
       });
 
       it(`keeps selected life-event controls visible at ${viewportWidth}px with ${rootFontSize}px root text`, () => {
+        cy.intercept("POST", /\/api\/trpc\/.*lifeEvents\.list/).as("lifeEvents");
+        cy.intercept("POST", /\/api\/trpc\/.*lifeEvents\.analyze/).as("lifeEventAnalysis");
         cy.task("runQuery", {
           query: `
             INSERT INTO fitness.life_events (
@@ -79,12 +83,22 @@ describe("Responsive decision controls", () => {
               false,
               'Large text'
             )
+            ON CONFLICT (id) DO UPDATE SET
+              label = EXCLUDED.label,
+              user_id = EXCLUDED.user_id,
+              started_at = EXCLUDED.started_at,
+              ended_at = EXCLUDED.ended_at,
+              category = EXCLUDED.category,
+              ongoing = EXCLUDED.ongoing,
+              notes = EXCLUDED.notes
           `,
         });
 
         cy.viewport(viewportWidth, 1200);
         cy.visit("/tracking");
+        cy.wait("@lifeEvents");
         cy.contains("button", "Responsive control check").click();
+        cy.wait("@lifeEventAnalysis");
         cy.contains("button", "Delete").should("be.visible");
         setRootFontSize(rootFontSize);
 
