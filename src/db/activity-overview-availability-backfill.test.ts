@@ -51,6 +51,23 @@ describe("backfillActivityOverviewAvailability", () => {
         end: "2026-04-01T00:00:00.000Z",
       },
     });
+    expect(query.mock.calls[0]?.[0].query).toContain("FROM analytics.deduped_activities FINAL");
+    expect(query.mock.calls[0]?.[0].query).toContain(
+      "FROM analytics.activity_location_summary_rows AS summary FINAL",
+    );
+    expect(query.mock.calls[0]?.[0].query).toContain(
+      "FROM analytics.activity_location_sample AS sample FINAL",
+    );
+    expect(query.mock.calls[0]?.[0].query).toContain(
+      "coalesce(valid_sample_counts.valid_sample_count, 0) < 2",
+    );
+    expect(query.mock.calls[1]?.[0].query).toContain(
+      "FROM analytics.activity_sensor_summary_rows AS summary FINAL",
+    );
+    expect(query.mock.calls[1]?.[0].query).toContain(
+      "FROM analytics.activity_sensor_sample AS sample FINAL",
+    );
+    expect(query.mock.calls[1]?.[0].query).toContain("sample.channel = 'altitude'");
     expect(command).not.toHaveBeenCalled();
   });
 
@@ -78,6 +95,19 @@ describe("backfillActivityOverviewAvailability", () => {
     const first = createClient([1, 1]);
     await backfillActivityOverviewAvailability(first.client, { ...RANGE, execute: true });
     expect(first.command).toHaveBeenCalledTimes(2);
+    expect(first.command.mock.calls[1]?.[0]).toMatchObject({
+      clickhouse_settings: { wait_end_of_query: 1 },
+      query_params: {
+        start: "2026-03-01T00:00:00.000Z",
+        end: "2026-04-01T00:00:00.000Z",
+      },
+    });
+    expect(first.command.mock.calls[1]?.[0].query).toContain(
+      "INSERT INTO analytics.activity_sensor_summary_rows",
+    );
+    expect(first.command.mock.calls[1]?.[0].query).toContain(
+      "CAST(NULL, 'Nullable(Float64)') AS elevation_gain_m",
+    );
 
     const second = createClient([]);
     await expect(
