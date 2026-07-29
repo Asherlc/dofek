@@ -28,7 +28,7 @@ export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-const RUNNING_ACTIVITY_TYPES = ["running", "trail_running"] as const;
+const RUNNING_ACTIVITY_TYPES = ["running"] as const;
 
 export function RunningTab() {
   const { days } = useTrainingDays();

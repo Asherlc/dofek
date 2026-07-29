@@ -1,4 +1,3 @@
-import { formatActivityTypeLabel, STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { createLazyFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
@@ -16,16 +15,8 @@ export const Route = createLazyFileRoute("/training/strength")({
   component: StrengthTab,
 });
 
-const strengthScopeLabel = new Intl.ListFormat("en", {
-  style: "long",
-  type: "conjunction",
-}).format(
-  STRENGTH_ACTIVITY_TYPES.map((activityType) =>
-    formatActivityTypeLabel(activityType).toLowerCase(),
-  ),
-);
-const STRENGTH_SCOPE_LABEL =
-  strengthScopeLabel.charAt(0).toUpperCase() + strengthScopeLabel.slice(1);
+const STRENGTH_ACTIVITY_TYPES = ["strength"] as const;
+const STRENGTH_SCOPE_LABEL = "Strength";
 
 function StrengthTab() {
   const { days } = useTrainingDays();

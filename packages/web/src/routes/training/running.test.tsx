@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
+const recentActivitiesSection = vi.hoisted(() => vi.fn());
 const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;
   selectedDays: number | null;
@@ -21,6 +22,13 @@ vi.mock("echarts-for-react", () => ({
   default: (props: { option: Record<string, unknown> }) => {
     capturedOptions.push(props.option);
     return <div data-testid="echarts" />;
+  },
+}));
+
+vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
+  RecentActivitiesSection: (props: { activityTypes?: readonly string[] }) => {
+    recentActivitiesSection(props);
+    return <div />;
   },
 }));
 
@@ -190,6 +198,7 @@ async function importRunningTab() {
 describe("RunningTab", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    recentActivitiesSection.mockReset();
     state.queryCalls.length = 0;
     state.selectedDays = 90;
     paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: null };
@@ -227,6 +236,13 @@ describe("RunningTab", () => {
         { name: "dynamicsV2", input: { days: null } },
       ]);
     });
+  });
+
+  it("requests recent activities by canonical running type", async () => {
+    const RunningTab = await importRunningTab();
+    renderWithUnits(<RunningTab />);
+
+    expect(recentActivitiesSection).toHaveBeenCalledWith({ activityTypes: ["running"] });
   });
 
   describe("RunningDynamicsTable unit display", () => {

@@ -280,7 +280,7 @@ ALTER TABLE fitness.activity
   DROP COLUMN activity_type;
 
 DROP TYPE fitness.activity_type;
-+-- Git merge conflicts here force developers to reconcile concurrent changes.
+-- Git merge conflicts here force developers to reconcile concurrent changes.
 
 CREATE OR REPLACE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
@@ -605,4 +605,3 @@ SELECT
   m.absent_source_external_ids
 FROM merged m
 ORDER BY m.started_at DESC;
-

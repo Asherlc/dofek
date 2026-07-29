@@ -1068,6 +1068,19 @@ describe("ActivityDetailPage", () => {
       Object.assign(mockActivity, originalData);
     });
 
+    it("does not treat a raw provider type synonym as a canonical strength activity", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "strength_training" });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(false);
+
+      Object.assign(mockActivity, originalData);
+    });
+
     it("enables strength exercises query for strength activities", async () => {
       const originalData = { ...mockActivity };
       Object.assign(mockActivity, { activityType: "strength" });
