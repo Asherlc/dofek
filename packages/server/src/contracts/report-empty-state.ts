@@ -12,12 +12,12 @@ interface ReportEmptyStateBase {
 
 export interface WeeklyReportEmptyState extends ReportEmptyStateBase {
   reportKind: "weekly";
-  title: "Your weekly report will appear here";
+  title: string;
 }
 
 export interface MonthlyReportEmptyState extends ReportEmptyStateBase {
   reportKind: "monthly";
-  title: "Your monthly report will appear here";
+  title: string;
 }
 
 export type ReportEmptyState = WeeklyReportEmptyState | MonthlyReportEmptyState;

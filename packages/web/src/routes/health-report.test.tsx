@@ -232,6 +232,25 @@ describe("health report route", () => {
     expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
   });
 
+  it.each(["weekly", "monthly"] as const)(
+    "rejects an empty %s persisted report",
+    (reportType) => {
+      mockGetShared.mockReturnValue({
+        data: {
+          ...weeklyReport,
+          reportType,
+          reportData: { current: null, history: [] },
+        },
+        error: null,
+        isLoading: false,
+      });
+
+      renderRoute("shared-token");
+
+      expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
+    },
+  );
+
   it("keeps owner management without a token on the authenticated query", () => {
     mockMyReports.mockReturnValue({
       data: [],

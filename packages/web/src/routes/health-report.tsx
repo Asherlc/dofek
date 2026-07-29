@@ -48,7 +48,7 @@ const weekSummarySchema = z.object({
 });
 
 const weeklyReportSchema = z.object({
-  current: weekSummarySchema.nullable(),
+  current: weekSummarySchema,
   history: z.array(weekSummarySchema),
 });
 
@@ -65,7 +65,7 @@ const monthSummarySchema = z.object({
 });
 
 const monthlyReportSchema = z.object({
-  current: monthSummarySchema.nullable(),
+  current: monthSummarySchema,
   history: z.array(monthSummarySchema),
 });
 const REPORT_PAGE_SIZE = 20;
