@@ -1,8 +1,12 @@
 import { formatNumber } from "@dofek/format/format";
+import { chartColors } from "@dofek/scoring/colors";
+import {
+  formatCorrelationComparison,
+  formatCorrelationLagOption,
+} from "@dofek/stats/correlation-lag";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
-import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -17,31 +21,10 @@ import {
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
-const LAG_OPTIONS = [
-  { label: "Same day", value: 0 },
-  { label: "+1 day", value: 1 },
-  { label: "+2 days", value: 2 },
-  { label: "+3 days", value: 3 },
-];
-
-const confidenceBadge = {
-  strong: {
-    label: "Strong",
-    className: "bg-emerald-900/50 text-emerald-400 border-emerald-800",
-  },
-  emerging: {
-    label: "Emerging",
-    className: "bg-amber-900/50 text-amber-400 border-amber-800",
-  },
-  early: {
-    label: "Early signal",
-    className: "bg-accent/10 text-muted border-border-strong",
-  },
-  insufficient: {
-    label: "Insufficient data",
-    className: "bg-accent/10 text-dim border-border-strong",
-  },
-};
+const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
+  label: formatCorrelationLagOption(value),
+  value,
+}));
 
 type MetricsByDomain = Record<
   string,
@@ -105,7 +88,7 @@ export function CorrelationExplorerPage() {
   const [lag, setLag] = useState(0);
 
   const metricsQuery = trpc.correlation.metrics.useQuery({});
-  const correlationQuery = trpc.correlation.compute.useQuery(
+  const correlationQuery = trpc.correlation.computeV2.useQuery(
     { metricX, metricY, ...selectedRangeQueryInput(days), lag },
     { enabled: metricX !== metricY },
   );
@@ -116,6 +99,7 @@ export function CorrelationExplorerPage() {
 
   const xMetric = metricsQuery.data?.find((m) => m.id === metricX);
   const yMetric = metricsQuery.data?.find((m) => m.id === metricY);
+  const hasMetricMetadata = xMetric !== undefined && yMetric !== undefined;
 
   return (
     <ChartRangeProvider days={days}>
@@ -163,9 +147,11 @@ export function CorrelationExplorerPage() {
                 ))}
               </div>
               <span className="text-[10px] text-dim ml-1">
-                {lag > 0
-                  ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-                  : "Same-day comparison"}
+                {formatCorrelationComparison({
+                  xLabel: xMetric?.label ?? "X",
+                  yLabel: yMetric?.label ?? "Y",
+                  lag,
+                })}
               </span>
             </div>
 
@@ -211,52 +197,44 @@ export function CorrelationExplorerPage() {
           <div className="space-y-4">
             {/* Summary row */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Correlation stats card */}
+              {/* Correlation evidence card */}
               <div className="card p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs text-subtle uppercase tracking-wider">
-                    Correlation Strength
-                  </h3>
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full border ${confidenceBadge[data.confidenceLevel].className}`}
-                  >
-                    {confidenceBadge[data.confidenceLevel].label}
-                  </span>
-                </div>
+                <h3 className="text-xs text-subtle uppercase tracking-wider">
+                  Correlation Evidence
+                </h3>
 
                 {data.availability === "available" ? (
                   <>
-                    <div className="space-y-2">
-                      <div>
-                        <p className="text-[10px] text-dim mb-0.5">Spearman (rank)</p>
-                        <CorrelationStrengthBar rho={data.spearmanRho} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-dim mb-0.5">Pearson (linear)</p>
-                        <CorrelationStrengthBar rho={data.pearsonR} />
-                      </div>
-                    </div>
-
-                    <div className="flex gap-4 text-[11px] text-dim pt-1">
-                      <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
-                      <span>n = {data.sampleCount}</span>
-                      <span>
-                        p ={" "}
-                        {data.spearmanPValue < 0.001
-                          ? "< 0.001"
-                          : formatNumber(data.spearmanPValue, 3)}
-                      </span>
+                    <p className="text-lg text-foreground">
+                      {data.spearmanRho === null
+                        ? "Spearman rho not estimable"
+                        : `Spearman rho = ${formatNumber(data.spearmanRho, 2)}`}
+                    </p>
+                    <UncertaintySummary uncertainty={data.uncertainty} />
+                    <div className="flex flex-wrap gap-4 text-[11px] text-dim pt-1">
+                      {hasMetricMetadata && data.regression.slope !== null && (
+                        <span>
+                          Slope = {formatNumber(data.regression.slope, 3)} {yMetric.unit} per{" "}
+                          {xMetric.unit}
+                        </span>
+                      )}
+                      {data.regression.rSquared !== null && (
+                        <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
+                      )}
                     </div>
                   </>
                 ) : (
                   <div className="flex flex-wrap gap-4 text-[11px] text-dim pt-1">
                     <span>n = {data.sampleCount}</span>
                     <span>
-                      {data.additionalSamplesRequired} more overlapping{" "}
-                      {data.additionalSamplesRequired === 1 ? "sample" : "samples"} needed
+                      {data.additionalSamplesRequired} more paired calendar{" "}
+                      {data.additionalSamplesRequired === 1 ? "day" : "days"} needed
                     </span>
+                    <UncertaintySummary uncertainty={data.uncertainty} />
                   </div>
                 )}
+
+                <CoverageSummary coverage={data.coverage} />
               </div>
 
               {/* Insight card */}
@@ -264,20 +242,20 @@ export function CorrelationExplorerPage() {
                 <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
                 <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
 
-                {data.availability === "available" && (
+                {data.availability === "available" && hasMetricMetadata && (
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
-                      <p className="text-[10px] text-dim">{xMetric?.label ?? metricX}</p>
+                      <p className="text-[10px] text-dim">{xMetric.label}</p>
                       <p className="text-sm text-foreground">
                         {formatValue(data.xStats.mean)} ± {formatValue(data.xStats.stddev)}{" "}
-                        <span className="text-dim">{xMetric?.unit}</span>
+                        <span className="text-dim">{xMetric.unit}</span>
                       </p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-dim">{yMetric?.label ?? metricY}</p>
+                      <p className="text-[10px] text-dim">{yMetric.label}</p>
                       <p className="text-sm text-foreground">
                         {formatValue(data.yStats.mean)} ± {formatValue(data.yStats.stddev)}{" "}
-                        <span className="text-dim">{yMetric?.unit}</span>
+                        <span className="text-dim">{yMetric.unit}</span>
                       </p>
                     </div>
                   </div>
@@ -286,7 +264,7 @@ export function CorrelationExplorerPage() {
             </div>
 
             {/* Scatter plot */}
-            {data.availability === "available" && dataPoints.length > 0 && (
+            {data.availability === "available" && dataPoints.length > 0 && hasMetricMetadata && (
               <div
                 className="card p-4"
                 title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
@@ -298,9 +276,8 @@ export function CorrelationExplorerPage() {
                 <ScatterPlot
                   dataPoints={dataPoints}
                   regression={data.regression}
-                  rho={data.spearmanRho}
-                  xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
-                  yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
+                  xLabel={`${xMetric.label} (${xMetric.unit})`}
+                  yLabel={`${yMetric.label} (${yMetric.unit})`}
                 />
               </div>
             )}
@@ -311,24 +288,100 @@ export function CorrelationExplorerPage() {
   );
 }
 
+function CoverageSummary({
+  coverage,
+}: {
+  coverage: {
+    selectedDayCount: number;
+    eligiblePairDayCount: number;
+    observedXDayCount: number;
+    observedYDayCount: number;
+    pairedDayCount: number;
+    missingPairDayCount: number;
+  };
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 border-t border-border pt-3 text-[11px] text-dim">
+      <span>{coverage.selectedDayCount} selected</span>
+      <span>{coverage.eligiblePairDayCount} lag-eligible</span>
+      <span>{coverage.observedXDayCount} X observed</span>
+      <span>{coverage.observedYDayCount} Y observed</span>
+      <span>{coverage.pairedDayCount} paired</span>
+      <span>{coverage.missingPairDayCount} missing pairs</span>
+    </div>
+  );
+}
+
+function UncertaintySummary({
+  uncertainty,
+}: {
+  uncertainty:
+    | { availability: "available"; level: 0.95; lower: number; upper: number }
+    | {
+        availability: "unavailable";
+        reason:
+          | "empty_input"
+          | "degenerate_input"
+          | "insufficient_pairs"
+          | "insufficient_valid_replicates";
+      };
+}) {
+  if (uncertainty.availability === "available") {
+    return (
+      <p className="text-[11px] text-dim">
+        95% block-bootstrap interval: {formatNumber(uncertainty.lower, 2)} to{" "}
+        {formatNumber(uncertainty.upper, 2)}
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] text-dim">
+      95% block-bootstrap interval unavailable (
+      {uncertainty.reason === "degenerate_input"
+        ? "one metric did not vary"
+        : uncertainty.reason === "insufficient_pairs"
+          ? "fewer than five paired days"
+          : uncertainty.reason === "empty_input"
+            ? "no eligible calendar days"
+            : "not enough valid resamples"}
+      ).
+    </p>
+  );
+}
+
 function ScatterPlot({
   dataPoints,
   regression,
-  rho,
   xLabel,
   yLabel,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
-  regression: { slope: number; intercept: number; rSquared: number };
-  rho: number;
+  regression: {
+    slope: number | null;
+    intercept: number | null;
+    rSquared: number | null;
+  };
   xLabel: string;
   yLabel: string;
 }) {
   const xs = dataPoints.map((p) => p.x);
   const xMin = Math.min(...xs);
   const xMax = Math.max(...xs);
-  const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
-
+  const trendSeries =
+    regression.slope === null || regression.intercept === null
+      ? []
+      : [
+          {
+            type: "line",
+            data: [
+              [xMin, regression.slope * xMin + regression.intercept],
+              [xMax, regression.slope * xMax + regression.intercept],
+            ],
+            lineStyle: { color: chartColors.blue, width: 2, type: "dashed" },
+            symbol: "none",
+            silent: true,
+          },
+        ];
   const option = {
     grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 32, containLabel: true }),
     xAxis: dofekAxis.value({
@@ -352,16 +405,7 @@ function ScatterPlot({
         symbolSize: 5,
         itemStyle: { color: chartThemeColors.legendText, opacity: 0.5 },
       },
-      {
-        type: "line",
-        data: [
-          [xMin, regression.slope * xMin + regression.intercept],
-          [xMax, regression.slope * xMax + regression.intercept],
-        ],
-        lineStyle: { color: trendColor, width: 2, type: "dashed" },
-        symbol: "none",
-        silent: true,
-      },
+      ...trendSeries,
     ],
     tooltip: dofekTooltip({
       trigger: "item",

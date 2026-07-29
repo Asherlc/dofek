@@ -9,7 +9,10 @@ import {
   type FoodEntryNutrientDetail,
   foodEntryNutrientDetailsFromLegacyColumns,
 } from "@dofek/nutrition/food-entry-nutrition";
-import { selectedDateNutritionSummarySchema } from "@dofek/nutrition/selected-date-summary";
+import {
+  nutritionSourceResolutionSchema,
+  selectedDateNutritionSummarySchema,
+} from "@dofek/nutrition/selected-date-summary";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -51,6 +54,12 @@ export const selectedDateFoodSchema = z.object({
   summary: selectedDateNutritionSummarySchema,
 });
 
+export const selectedDateFoodV2Schema = z.object({
+  entries: z.array(foodEntrySchema),
+  summary: selectedDateNutritionSummarySchema.nullable(),
+  resolution: nutritionSourceResolutionSchema,
+});
+
 export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrientDetail[] {
   return foodEntryNutrientDetailsFromLegacyColumns(entry);
 }
@@ -65,7 +74,7 @@ export function NutritionPage() {
 
   const dateString = formatDateForQuery(selectedDate);
 
-  const foodQuery = trpc.food.byDate.useQuery(
+  const foodQuery = trpc.food.byDateV2.useQuery(
     { date: dateString },
     { placeholderData: (previousData) => previousData },
   );
@@ -90,7 +99,7 @@ export function NutritionPage() {
   const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
   const selectedDateFood =
-    foodQuery.data === undefined ? undefined : selectedDateFoodSchema.parse(foodQuery.data);
+    foodQuery.data === undefined ? undefined : selectedDateFoodV2Schema.parse(foodQuery.data);
   const entries = selectedDateFood?.entries ?? [];
   const isFoodBlockingLoading = shouldShowBlockingLoading({
     data: entries,
@@ -345,69 +354,84 @@ export function NutritionPage() {
 
         {selectedDateFood && (
           <>
+            {selectedDateFood.resolution.status === "source_conflict" && (
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground"
+              >
+                <p className="font-medium">Nutrition source conflict</p>
+                <p className="mt-1 text-muted">{selectedDateFood.resolution.message}</p>
+                <p className="mt-2 text-xs text-subtle">
+                  Sources: {selectedDateFood.resolution.sourceLabels.join(", ")}
+                </p>
+              </div>
+            )}
+
             {/* Daily summary */}
-            <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-medium text-muted">Calories</span>
-                  <span className="text-sm text-muted tabular-nums">
-                    <span className="text-xl font-semibold text-foreground">
-                      {formatCalories(selectedDateFood.summary.calories)}
+            {selectedDateFood.summary && (
+              <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-medium text-muted">Calories</span>
+                    <span className="text-sm text-muted tabular-nums">
+                      <span className="text-xl font-semibold text-foreground">
+                        {formatCalories(selectedDateFood.summary.calories)}
+                      </span>
+                      <span className="ml-1">
+                        / {formatCalories(selectedDateFood.summary.calorieGoal.target)}
+                      </span>
                     </span>
-                    <span className="ml-1">
-                      / {formatCalories(selectedDateFood.summary.calorieGoal.target)}
-                    </span>
-                  </span>
+                  </div>
+                  <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        selectedDateFood.summary.calorieGoal.over > 0
+                          ? "bg-red-500"
+                          : "bg-emerald-500"
+                      } transition-all duration-300`}
+                      style={{
+                        width: `${selectedDateFood.summary.calorieGoal.progressPercentage}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="text-xs text-subtle tabular-nums">
+                    {selectedDateFood.summary.calorieGoal.remaining > 0
+                      ? `${formatCalories(selectedDateFood.summary.calorieGoal.remaining)} remaining`
+                      : selectedDateFood.summary.calorieGoal.over > 0
+                        ? `${formatCalories(selectedDateFood.summary.calorieGoal.over)} over goal`
+                        : "Calorie goal reached"}
+                  </div>
                 </div>
-                <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${
-                      selectedDateFood.summary.calorieGoal.over > 0
-                        ? "bg-red-500"
-                        : "bg-emerald-500"
-                    } transition-all duration-300`}
-                    style={{
-                      width: `${selectedDateFood.summary.calorieGoal.progressPercentage}%`,
-                    }}
+
+                {/* Macro bars */}
+                <div className="space-y-3">
+                  <MacroBar
+                    label="Protein"
+                    grams={formatGrams(selectedDateFood.summary.macros.protein.grams)}
+                    percentage={selectedDateFood.summary.macros.protein.percentage}
+                    color="blue"
+                  />
+                  <MacroBar
+                    label="Carbs"
+                    grams={formatGrams(selectedDateFood.summary.macros.carbs.grams)}
+                    percentage={selectedDateFood.summary.macros.carbs.percentage}
+                    color="purple"
+                  />
+                  <MacroBar
+                    label="Fat"
+                    grams={formatGrams(selectedDateFood.summary.macros.fat.grams)}
+                    percentage={selectedDateFood.summary.macros.fat.percentage}
+                    color="teal"
                   />
                 </div>
-                <div className="text-xs text-subtle tabular-nums">
-                  {selectedDateFood.summary.calorieGoal.remaining > 0
-                    ? `${formatCalories(selectedDateFood.summary.calorieGoal.remaining)} remaining`
-                    : selectedDateFood.summary.calorieGoal.over > 0
-                      ? `${formatCalories(selectedDateFood.summary.calorieGoal.over)} over goal`
-                      : "Calorie goal reached"}
-                </div>
               </div>
-
-              {/* Macro bars */}
-              <div className="space-y-3">
-                <MacroBar
-                  label="Protein"
-                  grams={formatGrams(selectedDateFood.summary.macros.protein.grams)}
-                  percentage={selectedDateFood.summary.macros.protein.percentage}
-                  color="blue"
-                />
-                <MacroBar
-                  label="Carbs"
-                  grams={formatGrams(selectedDateFood.summary.macros.carbs.grams)}
-                  percentage={selectedDateFood.summary.macros.carbs.percentage}
-                  color="amber"
-                />
-                <MacroBar
-                  label="Fat"
-                  grams={formatGrams(selectedDateFood.summary.macros.fat.grams)}
-                  percentage={selectedDateFood.summary.macros.fat.percentage}
-                  color="red"
-                />
-              </div>
-            </div>
+            )}
 
             {/* Meal sections */}
             {!isFoodBlockingLoading &&
               MEAL_ORDER.map((mealType) => {
                 const mealEntries = mealGroups.get(mealType) ?? [];
-                const mealCalories = selectedDateFood.summary.mealCalories[mealType];
+                const mealCalories = selectedDateFood.summary?.mealCalories[mealType] ?? null;
                 const isCollapsed = collapsedMeals.has(mealType);
 
                 return (
@@ -445,7 +469,9 @@ export function NutritionPage() {
                         )}
                       </div>
                       <span className="text-sm text-muted tabular-nums">
-                        {mealCalories > 0 ? formatCalories(mealCalories) : ""}
+                        {mealCalories != null && mealCalories > 0
+                          ? formatCalories(mealCalories)
+                          : ""}
                       </span>
                     </button>
 

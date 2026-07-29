@@ -66,7 +66,11 @@ export function tableInfo(dataType: DataType): {
         idColumn: "id",
       };
     case "nutritionDaily":
-      return { table: "fitness.v_nutrition_daily", orderColumn: "date", idColumn: "date" };
+      return {
+        table: "fitness.v_nutrition_provider_daily",
+        orderColumn: "date",
+        idColumn: "date",
+      };
     case "labPanels":
       return { table: "fitness.lab_panel", orderColumn: "recorded_at", idColumn: "id" };
     case "labResults":
@@ -336,6 +340,7 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.medication",
   "fitness.condition",
   "fitness.allergy_intolerance",
+  "fitness.supplement_dose_event",
   "fitness.medication_dose_event",
   "fitness.health_event",
   "fitness.journal_entry",
@@ -483,7 +488,7 @@ export class ProviderDetailRepository {
               WHERE EXISTS (SELECT 1 FROM fitness.health_event WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
               UNION ALL
               SELECT 'nutritionDaily'::text
-              WHERE EXISTS (SELECT 1 FROM fitness.v_nutrition_daily WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              WHERE EXISTS (SELECT 1 FROM fitness.v_nutrition_provider_daily WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
               UNION ALL
               SELECT 'labPanels'::text
               WHERE EXISTS (SELECT 1 FROM fitness.lab_panel WHERE user_id = ${this.#userId} AND provider_id = ${providerId})

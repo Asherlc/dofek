@@ -23,10 +23,19 @@ export interface SavedFoodSummaryItem {
   calories: number;
 }
 
-export interface DailyCalorieProgress {
+type AvailableDailyCalorieProgress = {
+  status?: "available";
   calorieGoal: number;
   caloriesConsumed: number;
-}
+};
+
+export type DailyCalorieProgress =
+  | AvailableDailyCalorieProgress
+  | {
+      status: "source_conflict";
+      message: string;
+      sourceLabels: string[];
+    };
 
 type MicroKey = keyof NutritionItemWithMeal & string;
 
@@ -86,7 +95,7 @@ function formatMacroLine(item: NutritionItemWithMeal): string {
   return `*${formatCalories(item.calories)}* | P: ${formatGrams(item.proteinG)} | C: ${formatGrams(item.carbsG)} | F: ${formatGrams(item.fatG)}`;
 }
 
-function formatCalorieProgressBar(progress: DailyCalorieProgress): string {
+function formatCalorieProgressBar(progress: AvailableDailyCalorieProgress): string {
   const rawPercentage =
     progress.calorieGoal > 0 ? (progress.caloriesConsumed / progress.calorieGoal) * 100 : 0;
   const percentage =
@@ -97,12 +106,15 @@ function formatCalorieProgressBar(progress: DailyCalorieProgress): string {
 }
 
 function formatDailyCalorieProgress(progress: DailyCalorieProgress): string {
+  if (progress.status === "source_conflict") {
+    return `${progress.message}\nSources: ${progress.sourceLabels.join(", ")}`;
+  }
   const calorieLine = `Calories: ${formatCalories(progress.caloriesConsumed)} / ${formatCalories(progress.calorieGoal)}`;
   const progressBar = formatCalorieProgressBar(progress);
   return `${calorieLine}\n${progressBar}\n${formatDailyCalorieStatus(progress)}`;
 }
 
-function formatDailyCalorieStatus(progress: DailyCalorieProgress): string {
+function formatDailyCalorieStatus(progress: AvailableDailyCalorieProgress): string {
   const caloriesRemaining = Math.round(progress.calorieGoal - progress.caloriesConsumed);
   if (caloriesRemaining > 0) {
     return `${formatCalories(caloriesRemaining)} remaining today`;
@@ -254,7 +266,9 @@ export function formatSavedMessage(
     ? formatDailyCalorieProgress(dailyCalorieProgress)
     : null;
   const dailyCalorieStatusText = dailyCalorieProgress
-    ? formatDailyCalorieStatus(dailyCalorieProgress)
+    ? dailyCalorieProgress.status === "source_conflict"
+      ? dailyCalorieProgress.message
+      : formatDailyCalorieStatus(dailyCalorieProgress)
     : null;
   if (dailyCalorieProgressText) {
     blocks.push({

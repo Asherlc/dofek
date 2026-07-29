@@ -37,12 +37,23 @@ import { styles } from "./settings.styles";
 import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
+type SettingsTab = "general" | "health" | "connections" | "account";
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
 ];
+const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "health", label: "Health" },
+  { id: "connections", label: "Connections" },
+  { id: "account", label: "Account" },
+];
 const reportedUnitReadErrors = new WeakSet<object>();
+
+function isSettingsTab(value: unknown): value is SettingsTab {
+  return SETTINGS_TABS.some((tab) => tab.id === value);
+}
 
 function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
@@ -60,9 +71,19 @@ function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: strin
 export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
-  const searchParams = useLocalSearchParams<{ focus?: string; reminderId?: string }>();
+  const searchParams = useLocalSearchParams<{
+    focus?: string;
+    reminderId?: string;
+    tab?: string;
+  }>();
   const focusedReminderId =
     typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
+  const requestedTab: SettingsTab = isSettingsTab(searchParams.tab)
+    ? searchParams.tab
+    : searchParams.focus === "medicationReminders"
+      ? "health"
+      : "general";
+  const [activeTab, setActiveTab] = useState<SettingsTab>(requestedTab);
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
@@ -129,6 +150,10 @@ export default function SettingsScreen() {
   }
 
   useEffect(() => {
+    setActiveTab(requestedTab);
+  }, [requestedTab]);
+
+  useEffect(() => {
     if (
       unitSetting.error &&
       lastUnitReadError.current !== unitSetting.error &&
@@ -180,6 +205,11 @@ export default function SettingsScreen() {
     ]);
   }
 
+  function handleTabChange(tab: SettingsTab) {
+    setActiveTab(tab);
+    router.setParams({ tab });
+  }
+
   const { refreshing, onRefresh } = useRefresh();
   return (
     <ScrollView
@@ -193,443 +223,505 @@ export default function SettingsScreen() {
         />
       }
     >
-      {/* ── Data Sources ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Data Sources</Text>
-        <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push("/providers")}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Data Sources"
-          accessibilityState={{ busy: providers.isLoading }}
-        >
-          <View style={styles.dataSourcesRow}>
-            <View style={styles.dataSourcesInfo}>
-              {providers.isLoading ? (
-                <ActivityIndicator color={colors.accent} size="small" />
-              ) : providers.error && providers.data === undefined ? (
-                <QueryStatePanel
-                  variant="error"
-                  title="Could not load data sources"
-                  message={getQueryErrorMessage(providers.error)}
-                  minHeight={96}
-                />
-              ) : (
-                <>
-                  <View style={styles.providerLogos}>
-                    {(providers.data ?? [])
-                      .filter((provider) => provider.authorized)
-                      .slice(0, 5)
-                      .map((provider) => (
-                        <ProviderLogo
-                          key={provider.id}
-                          provider={provider.id}
-                          serverUrl={auth.serverUrl}
-                          size={20}
-                        />
-                      ))}
-                  </View>
-                  <Text style={styles.dataSourcesCount}>
-                    {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
-                    connected
-                  </Text>
-                </>
-              )}
-            </View>
-            <Text style={styles.devToolChevron}>›</Text>
-          </View>
-        </TouchableOpacity>
-        {providers.error && providers.data !== undefined ? (
-          <QueryStatePanel
-            variant="error"
-            title="Could not refresh data sources"
-            message={getQueryErrorMessage(providers.error)}
-            minHeight={96}
-          />
-        ) : null}
-      </View>
-
-      {/* ── Health Tracking ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Health Tracking</Text>
-        <Text style={styles.sectionDescription}>Log and review personal health events</Text>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push("/cycle")}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Cycle Tracking"
-        >
-          <View style={styles.dataSourcesRow}>
-            <Text style={styles.devToolLabel}>Cycle Tracking</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Health Reports ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Health Reports</Text>
-        <Text style={styles.sectionDescription}>
-          Review and share weekly or monthly health snapshots
-        </Text>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push("/reports")}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Health Reports"
-        >
-          <View style={styles.dataSourcesRow}>
-            <Text style={styles.devToolLabel}>Open Health Reports</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Password ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Password</Text>
-        <Text style={styles.sectionDescription}>Set or change your email login password</Text>
-        {passwordStatus.isLoading ? (
-          <ActivityIndicator color={colors.accent} size="small" />
-        ) : passwordStatus.error ? (
-          <Text style={styles.passwordErrorText}>{passwordStatus.error.message}</Text>
-        ) : (
-          <View style={styles.card}>
-            {passwordStatus.data?.hasPassword ? (
-              <TextInput
-                style={styles.passwordInput}
-                value={currentPassword}
-                onChangeText={setCurrentPassword}
-                placeholder="Current password"
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry
-                autoComplete="password"
-              />
-            ) : null}
-            <TextInput
-              style={styles.passwordInput}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="New password"
-              placeholderTextColor={colors.textSecondary}
-              secureTextEntry
-              autoComplete="new-password"
-            />
-            <TextInput
-              style={styles.passwordInput}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Confirm password"
-              placeholderTextColor={colors.textSecondary}
-              secureTextEntry
-              autoComplete="new-password"
-            />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScrollView}
+        contentContainerStyle={styles.tabs}
+      >
+        {SETTINGS_TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
             <TouchableOpacity
-              style={[
-                styles.passwordButton,
-                setPasswordMutation.isPending && styles.buttonDisabled,
-              ]}
-              onPress={handleSetPassword}
-              disabled={setPasswordMutation.isPending}
+              key={tab.id}
+              style={[styles.tab, isActive && styles.tabSelected]}
+              onPress={() => handleTabChange(tab.id)}
+              activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel={
-                passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"
-              }
-              accessibilityState={{
-                busy: setPasswordMutation.isPending,
-                disabled: setPasswordMutation.isPending,
-              }}
+              accessibilityLabel={tab.label}
+              accessibilityState={{ selected: isActive }}
             >
-              <Text style={styles.passwordButtonText}>
-                {passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"}
-              </Text>
+              <Text style={[styles.tabText, isActive && styles.tabTextSelected]}>{tab.label}</Text>
             </TouchableOpacity>
-          </View>
-        )}
-      </View>
+          );
+        })}
+      </ScrollView>
 
-      <ZeppPairingCard />
-
-      {/* ── Primary Goal ── */}
-      <View style={styles.section}>
-        <PrimaryGoalSelector />
-      </View>
-
-      {/* ── Units ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Units</Text>
-        <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
-        {unitSetting.error && <Text style={styles.unitErrorText}>{unitSetting.error.message}</Text>}
-        <View style={styles.unitRow}>
-          {UNIT_OPTIONS.map((option) => {
-            const isSelected = currentUnitSystem === option.value;
-            return (
-              <TouchableOpacity
-                key={option.value}
-                style={[styles.unitButton, isSelected && styles.unitButtonSelected]}
-                onPress={() => handleUnitChange(option.value)}
-                activeOpacity={0.7}
-                disabled={setSettingMutation.isPending}
-                accessibilityRole="button"
-                accessibilityLabel={option.label}
-                accessibilityState={{
-                  busy: setSettingMutation.isPending,
-                  disabled: setSettingMutation.isPending,
-                  selected: isSelected,
-                }}
-              >
-                <Text style={[styles.unitLabel, isSelected && styles.unitLabelSelected]}>
-                  {option.label}
-                </Text>
-                <Text style={styles.unitDescription}>{option.description}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Medication Reminders</Text>
-        <Text style={styles.sectionDescription}>
-          Optional daily reminders with imported logging state
-        </Text>
-        <View style={styles.card}>
-          <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Medication Doses</Text>
-        <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
-        <View style={styles.card}>
-          <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
-        </View>
-      </View>
-
-      {/* ── Billing ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Billing</Text>
-        <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
-        <View style={styles.card}>
-          {billingStatus.isLoading ? (
-            <ActivityIndicator color={colors.accent} size="small" />
-          ) : billingStatus.error ? (
-            <Text style={styles.billingErrorText}>{billingStatus.error.message}</Text>
-          ) : billingStatus.data ? (
-            <>
-              <Text style={styles.billingStatusText}>
-                {billingStatus.data.access.kind === "limited"
-                  ? `Access limited to your signup week (${formatDateRangeForSignupWeek(
-                      billingStatus.data.access.startDate,
-                      billingStatus.data.access.endDateExclusive,
-                    )}).`
-                  : "Full access is enabled for this account."}
-              </Text>
-              {billingStatus.data.access.kind === "full" &&
-              billingStatus.data.access.reason === "paid_grant" ? (
-                <Text style={styles.billingDetailText}>
-                  Existing account access is already granted.
-                </Text>
-              ) : null}
-              {billingStatus.data.access.kind === "full" &&
-              billingStatus.data.access.reason === "stripe_subscription" &&
-              billingStatus.data.stripeSubscriptionStatus ? (
-                <Text style={styles.billingDetailText}>
-                  Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
-                </Text>
-              ) : null}
-              {checkoutSessionMutation.error ? (
-                <Text style={styles.billingErrorText}>{checkoutSessionMutation.error.message}</Text>
-              ) : null}
-              {checkoutClientError ? (
-                <Text style={styles.billingErrorText}>{checkoutClientError}</Text>
-              ) : null}
-              {portalSessionMutation.error ? (
-                <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
-              ) : null}
-              <View style={styles.billingActionRow}>
-                {!billingStatus.data.hasFullAccess && (
-                  <TouchableOpacity
-                    style={[
-                      styles.billingPrimaryButton,
-                      checkoutSessionMutation.isPending && styles.buttonDisabled,
-                    ]}
-                    onPress={() => void startCheckout()}
-                    activeOpacity={0.7}
-                    disabled={checkoutSessionMutation.isPending}
-                    accessibilityRole="button"
-                    accessibilityLabel="Upgrade to Full Access"
-                    accessibilityState={{
-                      busy: checkoutSessionMutation.isPending,
-                      disabled: checkoutSessionMutation.isPending,
-                    }}
-                  >
-                    <Text style={styles.billingButtonText}>
-                      {checkoutSessionMutation.isPending
-                        ? "Opening checkout..."
-                        : "Upgrade to Full Access"}
+      {/* ── Data Sources ── */}
+      {activeTab === "connections" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data Sources</Text>
+          <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/providers")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Data Sources"
+            accessibilityState={{ busy: providers.isLoading }}
+          >
+            <View style={styles.dataSourcesRow}>
+              <View style={styles.dataSourcesInfo}>
+                {providers.isLoading ? (
+                  <ActivityIndicator color={colors.accent} size="small" />
+                ) : providers.error && providers.data === undefined ? (
+                  <QueryStatePanel
+                    variant="error"
+                    title="Could not load data sources"
+                    message={getQueryErrorMessage(providers.error)}
+                    minHeight={96}
+                  />
+                ) : (
+                  <>
+                    <View style={styles.providerLogos}>
+                      {(providers.data ?? [])
+                        .filter((provider) => provider.authorized)
+                        .slice(0, 5)
+                        .map((provider) => (
+                          <ProviderLogo
+                            key={provider.id}
+                            provider={provider.id}
+                            serverUrl={auth.serverUrl}
+                            size={20}
+                          />
+                        ))}
+                    </View>
+                    <Text style={styles.dataSourcesCount}>
+                      {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                      connected
                     </Text>
-                  </TouchableOpacity>
-                )}
-                {billingStatus.data.canManageBilling && (
-                  <TouchableOpacity
-                    style={[
-                      styles.billingSecondaryButton,
-                      portalSessionMutation.isPending && styles.buttonDisabled,
-                    ]}
-                    onPress={() => portalSessionMutation.mutate()}
-                    activeOpacity={0.7}
-                    disabled={portalSessionMutation.isPending}
-                    accessibilityRole="button"
-                    accessibilityLabel="Manage Billing"
-                    accessibilityState={{
-                      busy: portalSessionMutation.isPending,
-                      disabled: portalSessionMutation.isPending,
-                    }}
-                  >
-                    <Text style={styles.billingButtonText}>
-                      {portalSessionMutation.isPending
-                        ? "Opening billing portal..."
-                        : "Manage Billing"}
-                    </Text>
-                  </TouchableOpacity>
+                  </>
                 )}
               </View>
-            </>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+          {providers.error && providers.data !== undefined ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not refresh data sources"
+              message={getQueryErrorMessage(providers.error)}
+              minHeight={96}
+            />
           ) : null}
         </View>
-      </View>
+      ) : null}
 
-      <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
+      {/* ── Health Tracking ── */}
+      {activeTab === "health" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Tracking</Text>
+          <Text style={styles.sectionDescription}>Log and review personal health events</Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/cycle")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Cycle Tracking"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.devToolLabel}>Cycle Tracking</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* ── Health Reports ── */}
+      {activeTab === "health" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Reports</Text>
+          <Text style={styles.sectionDescription}>
+            Review and share weekly or monthly health snapshots
+          </Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/reports")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Health Reports"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.devToolLabel}>Open Health Reports</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* ── Password ── */}
+      {activeTab === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Password</Text>
+          <Text style={styles.sectionDescription}>Set or change your email login password</Text>
+          {passwordStatus.isLoading ? (
+            <ActivityIndicator color={colors.accent} size="small" />
+          ) : passwordStatus.error ? (
+            <Text style={styles.passwordErrorText}>{passwordStatus.error.message}</Text>
+          ) : (
+            <View style={styles.card}>
+              {passwordStatus.data?.hasPassword ? (
+                <TextInput
+                  style={styles.passwordInput}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Current password"
+                  placeholderTextColor={colors.textSecondary}
+                  secureTextEntry
+                  autoComplete="password"
+                />
+              ) : null}
+              <TextInput
+                style={styles.passwordInput}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="New password"
+                placeholderTextColor={colors.textSecondary}
+                secureTextEntry
+                autoComplete="new-password"
+              />
+              <TextInput
+                style={styles.passwordInput}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm password"
+                placeholderTextColor={colors.textSecondary}
+                secureTextEntry
+                autoComplete="new-password"
+              />
+              <TouchableOpacity
+                style={[
+                  styles.passwordButton,
+                  setPasswordMutation.isPending && styles.buttonDisabled,
+                ]}
+                onPress={handleSetPassword}
+                disabled={setPasswordMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"
+                }
+                accessibilityState={{
+                  busy: setPasswordMutation.isPending,
+                  disabled: setPasswordMutation.isPending,
+                }}
+              >
+                <Text style={styles.passwordButtonText}>
+                  {passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      ) : null}
+
+      {activeTab === "connections" ? <ZeppPairingCard /> : null}
+
+      {/* ── Primary Goal ── */}
+      {activeTab === "general" ? (
+        <View style={styles.section}>
+          <PrimaryGoalSelector />
+        </View>
+      ) : null}
+
+      {/* ── Units ── */}
+      {activeTab === "general" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Units</Text>
+          <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
+          {unitSetting.error && (
+            <Text style={styles.unitErrorText}>{unitSetting.error.message}</Text>
+          )}
+          <View style={styles.unitRow}>
+            {UNIT_OPTIONS.map((option) => {
+              const isSelected = currentUnitSystem === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.unitButton, isSelected && styles.unitButtonSelected]}
+                  onPress={() => handleUnitChange(option.value)}
+                  activeOpacity={0.7}
+                  disabled={setSettingMutation.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel={option.label}
+                  accessibilityState={{
+                    busy: setSettingMutation.isPending,
+                    disabled: setSettingMutation.isPending,
+                    selected: isSelected,
+                  }}
+                >
+                  <Text style={[styles.unitLabel, isSelected && styles.unitLabelSelected]}>
+                    {option.label}
+                  </Text>
+                  <Text style={styles.unitDescription}>{option.description}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {activeTab === "health" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Medication Reminders</Text>
+          <Text style={styles.sectionDescription}>
+            Optional daily reminders with imported logging state
+          </Text>
+          <View style={styles.card}>
+            <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
+          </View>
+        </View>
+      ) : null}
+
+      {activeTab === "health" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Medication Doses</Text>
+          <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
+          <View style={styles.card}>
+            <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
+          </View>
+        </View>
+      ) : null}
+
+      {/* ── Billing ── */}
+      {activeTab === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Billing</Text>
+          <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
+          <View style={styles.card}>
+            {billingStatus.isLoading ? (
+              <ActivityIndicator color={colors.accent} size="small" />
+            ) : billingStatus.error ? (
+              <Text style={styles.billingErrorText}>{billingStatus.error.message}</Text>
+            ) : billingStatus.data ? (
+              <>
+                <Text style={styles.billingStatusText}>
+                  {billingStatus.data.access.kind === "limited"
+                    ? `Access limited to your signup week (${formatDateRangeForSignupWeek(
+                        billingStatus.data.access.startDate,
+                        billingStatus.data.access.endDateExclusive,
+                      )}).`
+                    : "Full access is enabled for this account."}
+                </Text>
+                {billingStatus.data.access.kind === "full" &&
+                billingStatus.data.access.reason === "paid_grant" ? (
+                  <Text style={styles.billingDetailText}>
+                    Existing account access is already granted.
+                  </Text>
+                ) : null}
+                {billingStatus.data.access.kind === "full" &&
+                billingStatus.data.access.reason === "stripe_subscription" &&
+                billingStatus.data.stripeSubscriptionStatus ? (
+                  <Text style={styles.billingDetailText}>
+                    Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
+                  </Text>
+                ) : null}
+                {checkoutSessionMutation.error ? (
+                  <Text style={styles.billingErrorText}>
+                    {checkoutSessionMutation.error.message}
+                  </Text>
+                ) : null}
+                {checkoutClientError ? (
+                  <Text style={styles.billingErrorText}>{checkoutClientError}</Text>
+                ) : null}
+                {portalSessionMutation.error ? (
+                  <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
+                ) : null}
+                <View style={styles.billingActionRow}>
+                  {!billingStatus.data.hasFullAccess && (
+                    <TouchableOpacity
+                      style={[
+                        styles.billingPrimaryButton,
+                        checkoutSessionMutation.isPending && styles.buttonDisabled,
+                      ]}
+                      onPress={() => void startCheckout()}
+                      activeOpacity={0.7}
+                      disabled={checkoutSessionMutation.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="Upgrade to Full Access"
+                      accessibilityState={{
+                        busy: checkoutSessionMutation.isPending,
+                        disabled: checkoutSessionMutation.isPending,
+                      }}
+                    >
+                      <Text style={styles.billingButtonText}>
+                        {checkoutSessionMutation.isPending
+                          ? "Opening checkout..."
+                          : "Upgrade to Full Access"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {billingStatus.data.canManageBilling && (
+                    <TouchableOpacity
+                      style={[
+                        styles.billingSecondaryButton,
+                        portalSessionMutation.isPending && styles.buttonDisabled,
+                      ]}
+                      onPress={() => portalSessionMutation.mutate()}
+                      activeOpacity={0.7}
+                      disabled={portalSessionMutation.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="Manage Billing"
+                      accessibilityState={{
+                        busy: portalSessionMutation.isPending,
+                        disabled: portalSessionMutation.isPending,
+                      }}
+                    >
+                      <Text style={styles.billingButtonText}>
+                        {portalSessionMutation.isPending
+                          ? "Opening billing portal..."
+                          : "Manage Billing"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {activeTab === "general" ? (
+        <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
+      ) : null}
 
       {/* ── Algorithm Personalization ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
-        <Text style={styles.sectionDescription}>
-          Parameters are automatically learned from your data
-        </Text>
-        <View style={styles.card}>
-          <PersonalizationPanel />
+      {activeTab === "general" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
+          <Text style={styles.sectionDescription}>
+            Parameters are automatically learned from your data
+          </Text>
+          <View style={styles.card}>
+            <PersonalizationPanel />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Integrations ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Integrations</Text>
-        <Text style={styles.sectionDescription}>Connect external services</Text>
-        <View style={styles.card}>
-          <SlackIntegrationPanel />
+      {activeTab === "connections" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Integrations</Text>
+          <Text style={styles.sectionDescription}>Connect external services</Text>
+          <View style={styles.card}>
+            <SlackIntegrationPanel />
+          </View>
         </View>
-      </View>
+      ) : null}
 
-      <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+      {activeTab === "account" ? (
+        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+      ) : null}
 
       {/* ── Help & Support ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Help & Support</Text>
-        <Text style={styles.sectionDescription}>Get help from our team</Text>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push("/support")}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Contact Support"
-        >
-          <View style={styles.dataSourcesRow}>
-            <Text style={styles.devToolLabel}>Contact Support</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
+      {activeTab === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Help & Support</Text>
+          <Text style={styles.sectionDescription}>Get help from our team</Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/support")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Contact Support"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.devToolLabel}>Contact Support</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* ── Developer Tools ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Developer Tools</Text>
-        <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/ble-probe");
-            }}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Bluetooth Low Energy probe"
-          >
-            <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/imu-visualization");
-            }}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Inertial measurement unit visualization"
-          >
-            <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/heart-rate-visualization");
-            }}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Heart Rate Visualization"
-          >
-            <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <View style={[styles.devToolRow, styles.devToolRowLast]}>
-            <View>
-              <Text style={styles.devToolLabel}>OTA Update</Text>
-              <Text style={styles.devToolDetail}>
-                {Updates.updateId ?? "embedded bundle"}
-                {"\n"}
-                Channel: {Updates.channel ?? "none"}
-                {"\n"}
-                Runtime: {Updates.runtimeVersion ?? "unknown"}
-                {"\n"}
-                Created: {formatLocalizedDateTime(Updates.createdAt)}
-              </Text>
+      {activeTab === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Developer Tools</Text>
+          <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.devToolRow}
+              onPress={() => {
+                const { router } = require("expo-router");
+                router.push("/ble-probe");
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Bluetooth Low Energy probe"
+            >
+              <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.devToolRow}
+              onPress={() => {
+                const { router } = require("expo-router");
+                router.push("/imu-visualization");
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Inertial measurement unit visualization"
+            >
+              <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.devToolRow}
+              onPress={() => {
+                const { router } = require("expo-router");
+                router.push("/heart-rate-visualization");
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Heart Rate Visualization"
+            >
+              <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </TouchableOpacity>
+            <View style={[styles.devToolRow, styles.devToolRowLast]}>
+              <View>
+                <Text style={styles.devToolLabel}>OTA Update</Text>
+                <Text style={styles.devToolDetail}>
+                  {Updates.updateId ?? "embedded bundle"}
+                  {"\n"}
+                  Channel: {Updates.channel ?? "none"}
+                  {"\n"}
+                  Runtime: {Updates.runtimeVersion ?? "unknown"}
+                  {"\n"}
+                  Created: {formatLocalizedDateTime(Updates.createdAt)}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Danger Zone ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Danger Zone</Text>
-        <Text style={styles.sectionDescription}>
-          Permanently close your account and delete Dofek-held account and health data
-        </Text>
-        <View style={styles.dangerCard}>
-          <AccountErasurePanel />
+      {activeTab === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Danger Zone</Text>
+          <Text style={styles.sectionDescription}>
+            Permanently close your account and delete Dofek-held account and health data
+          </Text>
+          <View style={styles.dangerCard}>
+            <AccountErasurePanel />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Logout ── */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={handleLogout}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Log Out"
-        >
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
-      </View>
+      {activeTab === "account" ? (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Log Out"
+          >
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  completeAnchoredQuery,
   getRequestStatus,
   hasEverAuthorized,
   isAvailable,
+  queryAnchoredSamples,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -16,6 +18,7 @@ import {
   type SyncOptions,
   type SyncResult,
   type SyncTrpcClient,
+  syncHealthKitObserverChanges,
   syncHealthKitToServer,
 } from "./health-kit-sync";
 import { captureException } from "./telemetry";
@@ -161,6 +164,20 @@ export class AppleHealthSyncService {
       syncRangeDays: options.syncRangeDays,
       minimumSampleDate,
       onProgress: options.onProgress,
+      onStage: options.onStage,
+    });
+  }
+
+  async syncObserverChanges(options: {
+    typeIdentifiers: readonly string[];
+    onStage?: SyncOptions["onStage"];
+  }): Promise<SyncResult> {
+    const minimumSampleDate = await this.#loadDeviceErasureCutoff();
+    return syncHealthKitObserverChanges({
+      trpcClient: this.#trpcClient,
+      healthKit: this.#healthKit,
+      minimumSampleDate,
+      typeIdentifiers: options.typeIdentifiers,
       onStage: options.onStage,
     });
   }
@@ -330,6 +347,8 @@ export const defaultAppleHealthAuthorizationNative: AppleHealthAuthorizationNati
 };
 
 export const defaultAppleHealthAdapter: HealthKitAdapter = {
+  completeAnchoredQuery,
+  queryAnchoredSamples,
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,

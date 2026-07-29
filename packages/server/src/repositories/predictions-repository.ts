@@ -434,13 +434,14 @@ export class PredictionsRepository {
       sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
           FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
+            AND resolution_status = 'available'
             AND date > CURRENT_DATE - ${days}::int
           ORDER BY date ASC`,
     );
   }
 
   async #fetchBodyComp(days: number): Promise<BodyCompRow[]> {
-    return fetchBodyCompRows(this.#sensorStore, this.#userId, "now", days);
+    return fetchBodyCompRows(this.#sensorStore, this.#userId, this.#timezone, "now", days);
   }
 
   async #fetchExerciseMinutes(days: number): Promise<ExerciseMinutesRow[]> {

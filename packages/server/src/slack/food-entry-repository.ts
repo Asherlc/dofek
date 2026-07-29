@@ -58,12 +58,24 @@ export interface SlackEntryContext {
   slackUserId: string;
 }
 
-export interface DailyCalorieProgress {
-  calorieGoal: number;
-  caloriesConsumed: number;
-}
+export type DailyCalorieProgress =
+  | {
+      status?: "available";
+      calorieGoal: number;
+      caloriesConsumed: number;
+    }
+  | {
+      status: "source_conflict";
+      message: string;
+      sourceLabels: string[];
+    };
 
-const dailyCaloriesRowSchema = z.object({ calories_consumed: z.coerce.number() });
+const dailyCaloriesRowSchema = z.object({
+  calories_consumed: z.coerce.number().nullable(),
+  resolution_status: z.enum(["available", "source_conflict"]),
+  resolution_message: z.string(),
+  source_labels: z.array(z.string()),
+});
 const confirmedSummaryRowSchema = z.object({
   food_name: z.string(),
   calories: z.coerce.number().nullable(),
@@ -496,11 +508,11 @@ export class FoodEntryRepository {
         sql`WITH new_entry AS (
             INSERT INTO fitness.food_entry (
               id, user_id, provider_id, date, meal, food_name, food_description,
-              category, confirmed
+              category, nutrition_grain, confirmed
             ) VALUES (
               ${pendingEntry.id}, ${pendingEntry.userId}, ${DOFEK_PROVIDER_ID}, ${pendingEntry.date}::date,
               ${item.meal}, ${item.foodName}, ${item.foodDescription},
-              ${item.category}, true
+              ${item.category}, 'itemized', true
             ) RETURNING id
           ),
           new_nutrition AS (
@@ -553,16 +565,31 @@ export class FoodEntryRepository {
     const dailyCaloriesRows = await executeWithSchema(
       this.#db,
       dailyCaloriesRowSchema,
-      sql`SELECT COALESCE(SUM(calories), 0)::integer AS calories_consumed
-          FROM fitness.v_food_entry_with_nutrition
+      sql`SELECT
+            calories AS calories_consumed,
+            resolution_status,
+            resolution_message,
+            source_labels
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${userId}
-            AND confirmed = true
             AND date = ${date}::date`,
     );
 
+    const dailyCalories = dailyCaloriesRows[0];
+    if (!dailyCalories) {
+      return { status: "available", calorieGoal, caloriesConsumed: 0 };
+    }
+    if (dailyCalories.resolution_status === "source_conflict") {
+      return {
+        status: "source_conflict",
+        message: dailyCalories.resolution_message,
+        sourceLabels: dailyCalories.source_labels,
+      };
+    }
     return {
+      status: "available",
       calorieGoal,
-      caloriesConsumed: Math.round(dailyCaloriesRows[0]?.calories_consumed ?? 0),
+      caloriesConsumed: Math.round(dailyCalories.calories_consumed ?? 0),
     };
   }
 

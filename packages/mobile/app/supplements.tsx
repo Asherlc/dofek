@@ -3,6 +3,7 @@ import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
 import { useState } from "react";
 import {
   Alert,
+  Linking,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { SupplementDoseEventsPanel } from "../components/SupplementDoseEventsPanel";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
@@ -76,8 +78,14 @@ export default function SupplementsScreen() {
 
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
+  const safetyReview = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days: 30 });
   const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
+    onSuccess: async () => {
+      await Promise.all([
+        utils.supplements.list.invalidate(),
+        utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
+      ]);
+    },
     onError: (error) => {
       captureException(error, { operation: "supplements.save" });
       Alert.alert("Error", error.message);
@@ -161,7 +169,7 @@ export default function SupplementsScreen() {
 
       {supplements.length === 0 && !stack.isLoading && !stack.error && (
         <Text style={styles.emptyText}>
-          No supplements configured. Add your daily stack and it will be synced as nutrition data.
+          No supplements configured. Add your daily plan, then record each dose as taken or skipped.
         </Text>
       )}
 
@@ -217,6 +225,93 @@ export default function SupplementsScreen() {
       {saveMutation.isError && (
         <Text style={styles.errorText}>Failed to save: {saveMutation.error.message}</Text>
       )}
+
+      <View style={styles.safetySection}>
+        <Text style={styles.sectionTitle}>Safety Context</Text>
+        <Text style={styles.sectionSubtitle}>
+          U.S. Food and Drug Administration (FDA) label references, bounded National Institutes of
+          Health (NIH) adult upper limits, and medication-review guidance
+        </Text>
+        {safetyReview.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
+        {safetyReview.error && <Text style={styles.errorText}>{safetyReview.error.message}</Text>}
+        {safetyReview.data && (
+          <>
+            <View
+              style={[
+                styles.safetyCard,
+                safetyReview.data.professionalReview.status === "professional_review_recommended" &&
+                  styles.safetyWarning,
+              ]}
+            >
+              <Text style={styles.safetyTitle}>Medication and supplement review</Text>
+              <Text style={styles.safetyText}>{safetyReview.data.professionalReview.message}</Text>
+              <Text style={styles.safetyLimitation}>
+                {safetyReview.data.professionalReview.limitation}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  void Linking.openURL(safetyReview.data.professionalReview.source.url).catch(
+                    (error: unknown) =>
+                      captureException(error, { operation: "supplements.openFdaSource" }),
+                  );
+                }}
+                accessibilityRole="link"
+                accessibilityLabel="Open FDA source"
+              >
+                <Text style={styles.sourceLink}>FDA source</Text>
+              </TouchableOpacity>
+            </View>
+            {safetyReview.data.nutrients
+              .filter((nutrient) => nutrient.intake.supplementDailyAverage > 0)
+              .map((nutrient) => {
+                const sourceUrl =
+                  nutrient.upperLimit.status === "not_in_ruleset"
+                    ? null
+                    : nutrient.upperLimit.source.url;
+                return (
+                  <View
+                    key={nutrient.nutrientId}
+                    style={[
+                      styles.safetyCard,
+                      nutrient.safetyStatus === "at_or_above_upper_limit" && styles.safetyDanger,
+                      nutrient.safetyStatus === "upper_limit_not_evaluable" && styles.safetyWarning,
+                    ]}
+                  >
+                    <Text style={styles.safetyTitle}>{nutrient.nutrient}</Text>
+                    <Text style={styles.safetyMeta}>
+                      {nutrient.intake.supplementDailyAverage} {nutrient.unit} average from
+                      supplements over {nutrient.intake.daysTracked} recorded days
+                    </Text>
+                    <Text style={styles.safetyText}>{nutrient.upperLimit.message}</Text>
+                    {sourceUrl != null && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          void Linking.openURL(sourceUrl).catch((error: unknown) =>
+                            captureException(error, {
+                              operation: "supplements.openNihSource",
+                            }),
+                          );
+                        }}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open NIH ODS source for ${nutrient.nutrient}`}
+                      >
+                        <Text style={styles.sourceLink}>NIH ODS source</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+          </>
+        )}
+      </View>
+
+      <View style={styles.doseSection}>
+        <Text style={styles.sectionTitle}>Recent Doses</Text>
+        <Text style={styles.sectionSubtitle}>
+          Nutrients count only when you record a dose as taken.
+        </Text>
+        <SupplementDoseEventsPanel />
+      </View>
     </ScrollView>
   );
 }
@@ -333,6 +428,29 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
+  sectionSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  safetySection: { marginTop: 28 },
+  safetyCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.textTertiary,
+    padding: 14,
+    marginBottom: 8,
+  },
+  safetyWarning: { borderColor: colors.warning },
+  safetyDanger: { borderColor: colors.danger },
+  safetyTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
+  safetyText: { fontSize: 13, color: colors.text, marginTop: 6 },
+  safetyMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  safetyLimitation: { fontSize: 12, color: colors.textSecondary, marginTop: 8 },
+  sourceLink: { fontSize: 12, color: colors.accent, textDecorationLine: "underline", marginTop: 8 },
+  doseSection: { marginTop: 28 },
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
   cardRow: { flexDirection: "row", alignItems: "center" },
   cardContent: { flex: 1, marginRight: 8 },

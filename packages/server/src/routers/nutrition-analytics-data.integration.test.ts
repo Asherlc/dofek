@@ -14,6 +14,7 @@ import type {
   AdaptiveTdeeResult,
   MacroRatioRow,
   MicronutrientAdequacyRow,
+  MicronutrientSafetyReviewResult,
 } from "./nutrition-analytics.ts";
 
 /**
@@ -65,11 +66,12 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+                user_id, provider_id, date, external_id, nutrition_grain, food_name, source_name,
+                confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+                ${`daily-nutrition-${i}`}, 'daily_aggregate', NULL, 'Fixture', true
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -109,11 +111,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'breakfast', 'Fortified Oatmeal', true
+                'itemized', 'breakfast', 'Fortified Oatmeal', true
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -144,11 +146,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'lunch', 'Chicken Salad Bowl', true
+                'itemized', 'lunch', 'Chicken Salad Bowl', true
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -179,11 +181,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'dinner', 'Salmon with Vegetables', true
+                'itemized', 'dinner', 'Salmon with Vegetables', true
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -215,11 +217,11 @@ describe("Nutrition analytics data coverage", () => {
         await testCtx.db.execute(
           sql`WITH new_entry AS (
                 INSERT INTO fitness.food_entry (
-                  user_id, provider_id, date, meal, food_name, confirmed
+                  user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
                 ) VALUES (
                   ${TEST_USER_ID}, 'dofek',
                   CURRENT_DATE - ${i}::int,
-                  'snack', 'Unconfirmed Snack', false
+                  'itemized', 'snack', 'Unconfirmed Snack', false
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -417,6 +419,28 @@ describe("Nutrition analytics data coverage", () => {
   // micronutrientAdequacy — RDA percentage calculations
   // ══════════════════════════════════════════════════════════════
   describe("micronutrientAdequacy", () => {
+    it("V2 distinguishes food and taken-supplement averages on recorded days", async () => {
+      await queryCache.invalidateAll();
+      const result = await query<MicronutrientSafetyReviewResult>(
+        "nutritionAnalytics.micronutrientAdequacyV2",
+        { days: 30 },
+      );
+
+      const vitaminC = result.nutrients.find((row) => row.nutrientId === "vitamin_c");
+      expect(vitaminC).toBeDefined();
+      expect(vitaminC?.intake.foodDailyAverage).toBe(vitaminC?.intake.totalDailyAverage);
+      expect(vitaminC?.intake.supplementDailyAverage).toBe(0);
+      expect(vitaminC?.intake.daysTracked).toBeGreaterThanOrEqual(10);
+      expect(vitaminC?.adequacy).toMatchObject({
+        reference: {
+          type: "daily_value",
+          amount: 90,
+          population: "Adults and children age 4+",
+        },
+      });
+      expect(result.professionalReview.status).toBe("no_supplements");
+    });
+
     it("returns RDA comparisons for tracked micronutrients", async () => {
       await queryCache.invalidateAll();
       const result = await query<MicronutrientAdequacyRow[]>(

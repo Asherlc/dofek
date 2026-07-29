@@ -289,7 +289,7 @@ describe("providerDetailRouter", () => {
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
       ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
-      ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
+      ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
       ["journalEntries", "fitness.journal_entry", "date", "id"],
@@ -338,8 +338,8 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 17 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
+    it("contains 18 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(18);
     });
 
     it("includes all required child tables", () => {
@@ -353,6 +353,7 @@ describe("providerDetailRouter", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.medication_dose_event");
+      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.supplement_dose_event");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.dexa_scan");

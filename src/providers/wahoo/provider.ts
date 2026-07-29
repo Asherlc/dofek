@@ -43,7 +43,6 @@ export function wahooOAuthConfig(host?: string): OAuthConfig | null {
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: ["email", "user_read", "workouts_read", "offline_data"],
-    revokeUrl: `${WAHOO_API_BASE}/oauth/revoke`,
   };
 }
 
@@ -202,25 +201,21 @@ export class WahooProvider implements WebhookProvider {
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
-      reconnectStrategy: "revoke-then-replace",
+      reconnectStrategy: "deauthorize-on-token-limit",
       revokeExistingTokens: async (tokens) => {
-        // Try revoking with the stored access token first.
+        // Wahoo's documented DELETE endpoint removes every permission for this app and user.
         try {
           const client = new WahooClient(tokens.accessToken, this.#fetchFn);
           await client.revokeAuthorization();
           return;
         } catch (revokeError) {
-          // Only fall through when Wahoo confirms the stored access token expired.
-          // Rethrow on other failures (429, 5xx, network) so they're visible.
+          // Refresh only when Wahoo confirms the stored access token expired.
           if (!(revokeError instanceof AccessTokenExpiredError)) {
             throw revokeError;
           }
         }
 
-        // Refresh the access token, then use it to revoke ALL tokens.
-        // DELETE /v1/permissions revokes every token for this app+user,
-        // including orphaned tokens from previous sessions that we don't
-        // have stored. POST /oauth/revoke can only revoke known tokens.
+        // A refreshed bearer token is needed to call the all-permissions DELETE endpoint.
         if (tokens.refreshToken) {
           logger.info("[wahoo] Access token expired, refreshing to revoke all tokens...");
           const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.#fetchFn);

@@ -1,5 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
-import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
+import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -41,21 +41,29 @@ function CyclePage() {
             Current Phase
           </h3>
           {currentPhase.data !== undefined ? (
-            currentPhase.data.phase ? (
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                  style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
-                >
-                  {currentPhase.data.dayOfCycle}
+            currentPhase.data.phase && currentPhase.data.estimate ? (
+              <div>
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                    style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
+                  >
+                    {currentPhase.data.dayOfCycle}
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold">
+                      {currentPhase.data.estimate.phaseLabel}
+                    </div>
+                    <div className="text-xs text-dim">
+                      {currentPhase.data.estimate.cycleDayLabel}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-lg font-semibold">
-                    {PHASE_DISPLAY[currentPhase.data.phase].label}
-                  </div>
-                  <div className="text-xs text-dim">
-                    Day {currentPhase.data.dayOfCycle} of {currentPhase.data.cycleLength}-day cycle
-                  </div>
+                <div className="mt-4 space-y-1 text-sm text-muted">
+                  <p>{currentPhase.data.estimate.dayBasisLabel}</p>
+                  <p>{currentPhase.data.estimate.methodLabel}</p>
+                  <p>{currentPhase.data.estimate.uncertaintyLabel}</p>
+                  <p>{currentPhase.data.estimate.limitationLabel}</p>
                 </div>
               </div>
             ) : (
@@ -77,6 +85,14 @@ function CyclePage() {
           {currentPhase.data !== undefined && currentPhase.error ? (
             <QueryStatePanel error={currentPhase.error} height={72} />
           ) : null}
+          <aside
+            aria-label="Cycle tracking safety notice"
+            className="mt-4 rounded-lg border border-border bg-surface-hover p-3"
+            role="note"
+          >
+            <p className="text-sm font-medium text-foreground">Tracking limitation</p>
+            <p className="mt-1 text-sm text-muted">{CYCLE_TRACKING_SAFETY_NOTICE}</p>
+          </aside>
         </div>
 
         <div className="card p-6">

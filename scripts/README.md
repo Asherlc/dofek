@@ -28,6 +28,19 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 ## Environment & Secrets
 
+- `dev-environment.ts`: Idempotent bootstrap and verification for the
+  mise-managed local/cloud development environment.
+  - `cloud:prebuild` installs frozen pnpm dependencies before the script
+    initializes CodeGraph when needed and verifies RTK.
+  - `start` fails fast without Docker, starts the workspace Compose stack,
+    applies database migrations, and runs the doctor.
+  - `doctor` verifies every required CLI, the CodeGraph index, Docker Compose,
+    and vcpkg. The `cloud:init` mise task sequences the prebuild and start
+    phases.
+  - Usage: `mise run cloud:prebuild`, `mise run cloud:start`,
+    `mise run cloud:init`, or `mise run doctor`.
+  - mise documents that tasks receive the tools and environment declared in
+    [`mise.toml`](https://mise.jdx.dev/tasks/).
 - `with-env.ts`: Wrapper script that loads `.env` defaults, fetches **Infisical**
   secrets as JSON, and then applies `.env.local` as the highest-precedence local
   override. Infisical documents JSON as a supported export format in the

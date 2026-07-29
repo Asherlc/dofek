@@ -15,7 +15,6 @@ import {
   pickCardioFocus,
   pickStrengthSplit,
   shouldDoStrengthToday,
-  shouldPreferRest,
 } from "../repositories/training-recommendation.ts";
 import {
   type TrainingHrZonesResult,
@@ -79,7 +78,6 @@ export {
   pickCardioFocus,
   pickStrengthSplit,
   shouldDoStrengthToday,
-  shouldPreferRest,
 };
 
 export function clamp(value: number, min: number, max: number): number {

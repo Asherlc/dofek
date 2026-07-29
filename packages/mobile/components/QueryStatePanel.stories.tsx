@@ -36,3 +36,12 @@ export const ErrorState: Story = {
     message: "The API returned a provider timeout.",
   },
 };
+
+export const Retryable: Story = {
+  args: {
+    variant: "error",
+    message: "The API returned a provider timeout.",
+    onRetry: () => {},
+    retryLabel: "Retry provider",
+  },
+};

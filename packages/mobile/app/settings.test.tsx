@@ -66,6 +66,8 @@ vi.mock("../components/ProviderLogo", () => ({
 }));
 
 const mockRouterPush = vi.fn();
+const mockRouterSetParams = vi.fn();
+let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {};
 const mockLogout = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
@@ -89,8 +91,8 @@ let mockBillingStatus = {
 };
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush }),
-  useLocalSearchParams: () => ({}),
+  useRouter: () => ({ push: mockRouterPush, setParams: mockRouterSetParams }),
+  useLocalSearchParams: () => mockSearchParams,
 }));
 
 vi.mock("expo-crypto", () => ({
@@ -277,6 +279,7 @@ vi.mock("../lib/telemetry", () => ({
 }));
 
 beforeEach(() => {
+  mockSearchParams = {};
   mockProvidersQuery.data = mockProvidersData;
   mockProvidersQuery.error = null;
   mockProvidersQuery.isLoading = false;
@@ -290,6 +293,53 @@ beforeEach(() => {
   mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
   mockUnitSettingQuery.error = null;
   vi.clearAllMocks();
+});
+
+describe("SettingsScreen tabs", () => {
+  it("shows general settings by default and switches to connections", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Units")).toBeTruthy();
+    expect(screen.queryByText("Data Sources")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+
+    expect(screen.getByText("Data Sources")).toBeTruthy();
+    expect(screen.queryByText("Units")).toBeNull();
+    expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "connections" });
+  });
+
+  it("opens the health tab for medication reminder deep links", async () => {
+    mockSearchParams = {
+      focus: "medicationReminders",
+      reminderId: "11111111-1111-4111-8111-111111111111",
+    };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Medication Reminders")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Health" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    expect(screen.getByText("Billing")).toBeTruthy();
+  });
+
+  it("respects an account tab deep link", async () => {
+    mockSearchParams = { tab: "account" };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Billing")).toBeTruthy();
+    expect(screen.queryByText("Units")).toBeNull();
+    expect(screen.getByRole("button", { name: "Account" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
 });
 
 describe("SettingsScreen unit system", () => {
@@ -336,6 +386,10 @@ describe("SettingsScreen unit system", () => {
 });
 
 describe("SettingsScreen data sources", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "connections" };
+  });
+
   it("renders Data Sources section with connected count", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -395,6 +449,7 @@ describe("SettingsScreen data sources", () => {
   });
 
   it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
+    mockSearchParams = { tab: "account" };
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
@@ -416,6 +471,7 @@ describe("SettingsScreen data sources", () => {
   });
 
   it("navigates to cycle tracking from the health tracking section", async () => {
+    mockSearchParams = { tab: "health" };
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
@@ -427,6 +483,10 @@ describe("SettingsScreen data sources", () => {
 });
 
 describe("SettingsScreen reports", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "health" };
+  });
+
   it("opens the health reports screen", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -438,6 +498,10 @@ describe("SettingsScreen reports", () => {
 });
 
 describe("SettingsScreen password", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
   it("renders set password controls when no password credential exists", async () => {
     mockPasswordCredentialStatusQuery.mockReturnValue({
       data: { hasPassword: false },
@@ -495,6 +559,10 @@ describe("SettingsScreen password", () => {
 });
 
 describe("SettingsScreen Zepp pairing", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "connections" };
+  });
+
   it("claims a short code from settings", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -526,6 +594,10 @@ describe("SettingsScreen Zepp pairing", () => {
 });
 
 describe("SettingsScreen medication doses", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "health" };
+  });
+
   it("shows medication dose empty state when no imported dose events exist", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -541,6 +613,10 @@ describe("SettingsScreen medication doses", () => {
 });
 
 describe("SettingsScreen billing", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
   it("renders signup-week limited access notice", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -589,6 +665,10 @@ describe("SettingsScreen billing", () => {
 });
 
 describe("SettingsScreen export UI rendering", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
   it("renders the Start Export button", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -626,6 +706,10 @@ describe("SettingsScreen export UI rendering", () => {
 });
 
 describe("SettingsScreen OTA debug details", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
   it("renders OTA created time in the local timezone format", async () => {
     const updatesModule = await import("expo-updates");
     const otaCreatedAt = new Date("2026-03-31T18:22:00.000Z");
@@ -645,6 +729,10 @@ describe("SettingsScreen OTA debug details", () => {
 });
 
 describe("SettingsScreen account erasure", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
   it("uses the durable account-erasure flow in the danger zone", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
@@ -656,6 +744,10 @@ describe("SettingsScreen account erasure", () => {
 });
 
 describe("SettingsScreen export flow", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });

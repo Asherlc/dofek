@@ -27,7 +27,7 @@ describe("tableInfo", () => {
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
     ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
-    ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
+    ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
     ["journalEntries", "fitness.journal_entry", "date", "id"],
@@ -80,8 +80,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 17 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
+  it("contains 18 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(18);
   });
 
   it("includes all required child tables", () => {
@@ -94,6 +94,7 @@ describe("DISCONNECT_CHILD_TABLES", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.food_entry");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
+    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.supplement_dose_event");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.medication_dose_event");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
@@ -586,7 +587,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "id",
       });
       expect(tableInfo("nutritionDaily")).toStrictEqual({
-        table: "fitness.v_nutrition_daily",
+        table: "fitness.v_nutrition_provider_daily",
         orderColumn: "date",
         idColumn: "date",
       });
@@ -704,13 +705,13 @@ describe("ProviderDetailRepository", () => {
 
       await repo.deleteProviderData("test-provider");
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(17);
+      expect(txExecute).toHaveBeenCalledTimes(18);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(17);
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(18);
       expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(DISCONNECT_CHILD_TABLES[16]).toBe("fitness.provider_connection");
+      expect(DISCONNECT_CHILD_TABLES[17]).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {

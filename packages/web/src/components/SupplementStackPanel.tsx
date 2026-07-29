@@ -120,7 +120,12 @@ export function SupplementStackPanel() {
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
+    onSuccess: async () => {
+      await Promise.all([
+        utils.supplements.list.invalidate(),
+        utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
+      ]);
+    },
     onError: (error) => {
       captureException(error, { operation: "supplements.save" });
     },
@@ -176,7 +181,7 @@ export function SupplementStackPanel() {
       {supplements.length === 0 && !showAdd && (
         <QueryStatePanel
           variant="empty"
-          message="No supplements configured. Add your daily stack and it will be synced as nutrition data."
+          message="No supplements configured. Add your daily plan, then record each dose as taken or skipped."
           height={72}
         />
       )}

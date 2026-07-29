@@ -400,7 +400,6 @@ describe("recoveryRouter", () => {
           rhr_mean_60d: 55,
           rhr_sd_60d: 3,
           efficiency_pct: 90,
-          acwr: 1.0,
         },
       ];
       const caller = makeCaller(rows);
@@ -426,7 +425,6 @@ describe("recoveryRouter", () => {
           rhr_mean_60d: null,
           rhr_sd_60d: null,
           efficiency_pct: null,
-          acwr: null,
         },
       ];
       const caller = makeCaller(rows);

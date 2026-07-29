@@ -24,6 +24,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   },
   "calendar.calendarData": { defaultDays: 365, routerFile: "calendar.ts", input: "days" },
   "correlation.compute": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
+  "correlation.computeV2": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "cyclingAdvanced.activityVariability": {
     defaultDays: 90,
     routerFile: "cycling-advanced.ts",
@@ -100,6 +101,11 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     input: "days",
   },
   "nutritionAnalytics.micronutrientAdequacy": {
+    defaultDays: 30,
+    routerFile: "nutrition-analytics.ts",
+    input: "days",
+  },
+  "nutritionAnalytics.micronutrientAdequacyV2": {
     defaultDays: 30,
     routerFile: "nutrition-analytics.ts",
     input: "days",

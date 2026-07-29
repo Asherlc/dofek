@@ -81,10 +81,40 @@ describe("cyclingAdvancedRouter", () => {
   describe("trainingMonotony", () => {
     it("maps repo rows into the wire shape", async () => {
       const caller = makeCaller([
-        [{ week: "2024-01-15", monotony: 1.5, strain: 300, weekly_load: 200 }],
+        [
+          {
+            week: "2024-01-15",
+            monotony: 1.5,
+            strain: 300,
+            weekly_load: 200,
+            daily_mean_load: 28.57,
+            daily_load_standard_deviation: 19.05,
+          },
+        ],
       ]);
       const result = await caller.trainingMonotony({ days: 90 });
-      expect(result).toEqual([{ week: "2024-01-15", monotony: 1.5, strain: 300, weeklyLoad: 200 }]);
+      expect(result).toEqual([
+        {
+          week: "2024-01-15",
+          monotony: 1.5,
+          strain: 300,
+          weeklyLoad: 200,
+          dailyMeanLoad: 28.57,
+          dailyLoadStandardDeviation: 19.05,
+          method: {
+            formula:
+              "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+            calendar: "Monday–Sunday calendar weeks include zero-load days.",
+            activityScope: "Cycling activities with computed endurance training load.",
+            interpretation:
+              "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+            source: {
+              title: "Foster (1998), Monitoring training in athletes",
+              url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+            },
+          },
+        },
+      ]);
     });
 
     it("returns empty array when no data", async () => {

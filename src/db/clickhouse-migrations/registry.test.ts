@@ -131,8 +131,18 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0061_provider_current_state_projection"),
+    ).toMatchObject({
+      id: "0061_provider_current_state_projection",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_current_state"),
+        expect.stringContaining("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted"),
+        expect.stringContaining("GROUP BY user_id, provider_id, id"),
+      ]),
+    });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0061_account_erasure_fence",
+      id: "0062_account_erasure_fence",
       statements: [
         expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.account_erasure_fence"),
         expect.stringContaining(

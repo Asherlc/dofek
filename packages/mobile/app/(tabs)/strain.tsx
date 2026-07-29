@@ -6,7 +6,7 @@ import {
   formatTrainingLoad,
 } from "@dofek/format/format";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
+import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -102,6 +102,14 @@ const emptyClimbingData: MobileClimbingData = {
 
 const reportedTrainingErrors = new WeakSet<object>();
 
+function useReportQueryError(query: { isError: boolean; error: object | null }) {
+  useEffect(() => {
+    if (!query.isError || !query.error || reportedTrainingErrors.has(query.error)) return;
+    reportedTrainingErrors.add(query.error);
+    captureException(query.error);
+  }, [query.isError, query.error]);
+}
+
 function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
   if (value == null) {
     return { data: emptyClimbingData, error: null };
@@ -192,36 +200,27 @@ export default function StrainScreen() {
     { days },
     { placeholderData: (previousData) => previousData },
   );
+  const monotonyQuery = trpc.cyclingAdvanced.trainingMonotony.useQuery(
+    { days },
+    { placeholderData: (previousData) => previousData },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
-  useEffect(() => {
-    if (trainingQuery.isError && trainingQuery.error) {
-      if (reportedTrainingErrors.has(trainingQuery.error)) return;
-      reportedTrainingErrors.add(trainingQuery.error);
-      captureException(trainingQuery.error);
-    }
-  }, [trainingQuery.isError, trainingQuery.error]);
-
-  useEffect(() => {
-    if (hrZonesQuery.isError && hrZonesQuery.error) {
-      if (reportedTrainingErrors.has(hrZonesQuery.error)) return;
-      reportedTrainingErrors.add(hrZonesQuery.error);
-      captureException(hrZonesQuery.error);
-    }
-  }, [hrZonesQuery.isError, hrZonesQuery.error]);
-
-  useEffect(() => {
-    if (polarizationQuery.isError && polarizationQuery.error) {
-      if (reportedTrainingErrors.has(polarizationQuery.error)) return;
-      reportedTrainingErrors.add(polarizationQuery.error);
-      captureException(polarizationQuery.error);
-    }
-  }, [polarizationQuery.isError, polarizationQuery.error]);
+  useReportQueryError(trainingQuery);
+  useReportQueryError(hrZonesQuery);
+  useReportQueryError(polarizationQuery);
+  useReportQueryError(monotonyQuery);
 
   const trainingData = trainingQuery.data;
 
   const workloadResult = trainingData?.workloadRatio;
   const workloadData = workloadResult?.timeSeries ?? [];
+  const recentLoadLabel =
+    workloadResult == null ? "Recent load" : `Recent ${workloadResult.context.recentDays}-day load`;
+  const baselineLoadLabel =
+    workloadResult == null
+      ? "Baseline load"
+      : `${workloadResult.context.baselineDays}-day baseline load`;
   const todayWorkload = workloadData[workloadData.length - 1];
   const strainTarget = trainingData?.strainTarget;
 
@@ -267,7 +266,6 @@ export default function StrainScreen() {
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
-  const workloadRatioScore = new WorkloadRatio(workloadRatio ?? null);
   const displayedDate = workloadResult?.displayedDate;
   const strainDateLabel =
     displayedDate == null
@@ -289,6 +287,7 @@ export default function StrainScreen() {
         utils.mobileDashboard.training.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
+        utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -368,22 +367,6 @@ export default function StrainScreen() {
                 />
               </View>
               <Text style={styles.targetExplanation}>{strainTarget.explanation}</Text>
-              <View style={styles.loadGrid}>
-                <View style={styles.loadItem}>
-                  <Text style={styles.loadValue}>
-                    {formatNumber(strainTarget.currentStrain, 1)}
-                  </Text>
-                  <Text style={styles.loadLabel}>Today</Text>
-                </View>
-                <View style={styles.loadItem}>
-                  <Text style={styles.loadValue}>
-                    {strainTarget.workloadRatio != null
-                      ? formatNumber(strainTarget.workloadRatio, 2)
-                      : "--"}
-                  </Text>
-                  <Text style={styles.loadLabel}>Training Load Ratio</Text>
-                </View>
-              </View>
             </View>
           )}
 
@@ -393,28 +376,23 @@ export default function StrainScreen() {
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
-                <Text style={styles.loadLabel}>Acute (7 day)</Text>
+                <Text style={styles.loadLabel}>{recentLoadLabel}</Text>
               </View>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(chronicLoad)}</Text>
-                <Text style={styles.loadLabel}>Chronic (28 day)</Text>
+                <Text style={styles.loadLabel}>{baselineLoadLabel}</Text>
               </View>
               <View style={styles.loadItem}>
-                <Text
-                  style={[
-                    styles.loadValue,
-                    {
-                      color: workloadRatioScore.color,
-                    },
-                  ]}
-                >
+                <Text style={styles.loadValue}>
                   {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
                 </Text>
-                <Text style={styles.loadLabel}>Workload Ratio</Text>
+                <Text style={styles.loadLabel}>
+                  {workloadResult == null ? "Ratio" : workloadResult.context.label}
+                </Text>
               </View>
             </View>
-            {workloadRatio != null && (
-              <Text style={styles.ratioHint}>{workloadRatioScore.hint}</Text>
+            {workloadResult == null ? null : (
+              <Text style={styles.ratioHint}>{workloadResult.context.description}</Text>
             )}
           </View>
 
@@ -530,9 +508,20 @@ export default function StrainScreen() {
             <QueryStatePanel variant="loading" minHeight={120} />
           ) : null}
 
+          {monotonyQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not load training monotony"
+              message={monotonyQuery.error.message}
+            />
+          ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (
+            <QueryStatePanel variant="loading" minHeight={120} />
+          ) : null}
+
           <TrainingDistributionCards
             intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
             polarization={polarizationQuery.data ?? null}
+            monotony={monotonyQuery.data ?? null}
           />
 
           {/* Recent activities */}

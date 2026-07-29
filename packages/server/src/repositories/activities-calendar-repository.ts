@@ -418,10 +418,31 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
-    const activityTypeFilter = activityTypeFilterSql(input);
-    const queryParams = activitySummaryQueryParams(this.userId, this.timezone, windowStart, input);
-    const typeQueryParams = activitySummaryQueryParams(this.userId, this.timezone, windowStart, {});
+    const visibleActivityIds = await activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).listVisibleActivityIdsSince(windowStart);
+    if (visibleActivityIds.length === 0) {
+      return {
+        activityCount: 0,
+        totalMinutes: 0,
+        totalDistanceMeters: 0,
+        totalElevationGainM: 0,
+        activityTypes: [],
+      };
+    }
 
+    const activityTypeFilter = activityTypeFilterSql(input);
+    const queryParams = {
+      ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, input),
+      activityIds: visibleActivityIds,
+    };
+    const typeQueryParams = {
+      ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, {}),
+      activityIds: visibleActivityIds,
+    };
     const [overviewRows, activityTypeRows] = await Promise.all([
       this.#sensorStore.query(
         overviewRowSchema,
@@ -435,6 +456,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
+            AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
             AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
@@ -447,6 +469,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.activity_type AS activity_type
           FROM analytics.deduped_activities AS activity FINAL
           WHERE activity.user_id = {userId:UUID}
+            AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
             AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})

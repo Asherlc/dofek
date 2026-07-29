@@ -444,8 +444,13 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           fat_g: row.fatGrams,
           fiber_g: row.fiberGrams,
           meal_count: row.mealCount,
-          source_provider: row.sourceProviders.length === 1 ? row.sourceProviders[0] : null,
+          resolution_status: row.resolutionStatus,
+          resolution_message: row.resolutionMessage,
+          source_provider:
+            row.contributingProviders.length === 1 ? row.contributingProviders[0] : null,
           source_providers: row.sourceProviders,
+          contributing_providers: row.contributingProviders,
+          excluded_providers: row.excludedProviders,
         })),
       );
     },

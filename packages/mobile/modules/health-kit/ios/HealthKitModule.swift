@@ -656,7 +656,7 @@ public class HealthKitModule: Module {
             }
         }
 
-        AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, promise: Promise) in
+        AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, initialStartDateStr: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 self.rejectPromise(
                     promise,
@@ -665,19 +665,38 @@ public class HealthKitModule: Module {
                 )
                 return
             }
+            guard let initialStartDate = HealthKitQueries.parseDate(initialStartDateStr) else {
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 initial start date"
+                )
+                return
+            }
 
             Task {
                 do {
-                    let objects: HealthKitAnchoredObjects = try await self.anchoredQueryCoordinator.run(
+                    let queryResult: HealthKitPendingAnchoredQuery<HealthKitAnchoredObjects> =
+                        try await self.anchoredQueryCoordinator.run(
                         typeIdentifier: typeIdentifier
                     ) { anchor in
                         try await withCheckedThrowingContinuation { continuation in
-                            let predicate = self.accountStateStore.deviceErasureCutoff.map {
-                                HKQuery.predicateForSamples(
-                                    withStart: $0,
-                                    end: nil,
-                                    options: .strictStartDate
+                            let erasureCutoff = self.accountStateStore.deviceErasureCutoff
+                            let predicate: NSPredicate?
+                            if anchor == nil {
+                                let startDate = max(initialStartDate, erasureCutoff ?? initialStartDate)
+                                predicate = HealthKitQueries.datePredicate(
+                                    start: startDate,
+                                    end: Date()
                                 )
+                            } else {
+                                predicate = erasureCutoff.map {
+                                    HKQuery.predicateForSamples(
+                                        withStart: $0,
+                                        end: nil,
+                                        options: .strictStartDate
+                                    )
+                                }
                             }
                             let query = HKAnchoredObjectQuery(
                                 type: sampleType,
@@ -702,6 +721,7 @@ public class HealthKitModule: Module {
                             self.healthStore.execute(query)
                         }
                     }
+                    let objects: HealthKitAnchoredObjects = queryResult.result
 
                     let samples = (objects.added as? [HKQuantitySample])?
                         .filter {
@@ -726,6 +746,7 @@ public class HealthKitModule: Module {
                     promise.resolve([
                         "samples": samples,
                         "deletedUUIDs": deletedUUIDs,
+                        "queryId": queryResult.queryId ?? NSNull(),
                     ] as [String: Any])
                 } catch let error as HealthKitAnchorStoreError {
                     promise.reject(
@@ -743,6 +764,25 @@ public class HealthKitModule: Module {
                         error: error
                     )
                 }
+            }
+        }
+
+        AsyncFunction("completeAnchoredQuery") { (typeIdentifier: String, queryId: String, succeeded: Bool, promise: Promise) in
+            do {
+                try self.anchoredQueryCoordinator.complete(
+                    typeIdentifier: typeIdentifier,
+                    queryId: queryId,
+                    succeeded: succeeded
+                )
+                promise.resolve(true)
+            } catch {
+                promise.reject(
+                    HealthKitModuleException(
+                        code: "ANCHOR_STATE_ERROR",
+                        reason: error.localizedDescription,
+                        cause: error
+                    )
+                )
             }
         }
 
@@ -875,10 +915,8 @@ public class HealthKitModule: Module {
             // Re-registration must settle every callback owned by the old queries.
             self.stopBackgroundObservers()
 
-            // Set up an observer for each read type
-            for objectType in readTypes {
-                guard let sampleType = objectType as? HKSampleType else { continue }
-
+            // Observe only types consumed by the background sync pipeline.
+            for sampleType in backgroundDeliveryTypes {
                 let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
                     guard let self else {
                         completionHandler()

@@ -36,7 +36,12 @@ User enters meal text (web/iOS)
 
 - Entries are saved as standard `fitness.food_entry` + `fitness.food_entry_nutrient` rows via existing food create flow.
 - Detailed micronutrients, caffeine, hydration, and macronutrients are all stored as nutrient rows, not wide columns.
-- Daily nutrition totals are derived through `fitness.v_nutrition_daily`; the AI parser does not write separate daily nutrient rows.
+- Raw provider totals remain derived through
+  `fitness.v_nutrition_provider_daily`. Application totals use the resolved
+  `fitness.v_nutrition_daily`/`fitness.v_nutrition_canonical_nutrient` views;
+  the AI parser writes itemized raw entries and does not write separate daily
+  nutrient rows. PostgreSQL documents views as query-defined virtual tables:
+  <https://www.postgresql.org/docs/current/sql-createview.html>.
 - No AI-specific columns are added to nutrition tables.
 - Parsed items participate in existing nutrition totals/analytics automatically.
 

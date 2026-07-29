@@ -363,6 +363,79 @@ describe("FoodEntryRepository", () => {
     });
   });
 
+  describe("loadDailyCalorieProgress", () => {
+    it("returns zero progress when no canonical daily row exists", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2100 }])
+        .mockResolvedValueOnce([]);
+      const repo = new FoodEntryRepository(
+        asMock({ execute: mockExecute }),
+        new InMemoryPendingEntryStore(),
+      );
+
+      const result = await repo.loadDailyCalorieProgress("user-1", "2024-06-15");
+
+      expect(result).toEqual({
+        status: "available",
+        calorieGoal: 2100,
+        caloriesConsumed: 0,
+      });
+    });
+
+    it("returns explicit provenance when canonical totals have a source conflict", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2100 }])
+        .mockResolvedValueOnce([
+          {
+            calories_consumed: null,
+            resolution_status: "source_conflict",
+            resolution_message: "Nutrition sources overlap.",
+            source_labels: ["Apple Health", "Cronometer"],
+          },
+        ]);
+      const repo = new FoodEntryRepository(
+        asMock({ execute: mockExecute }),
+        new InMemoryPendingEntryStore(),
+      );
+
+      const result = await repo.loadDailyCalorieProgress("user-1", "2024-06-15");
+
+      expect(result).toEqual({
+        status: "source_conflict",
+        message: "Nutrition sources overlap.",
+        sourceLabels: ["Apple Health", "Cronometer"],
+      });
+    });
+
+    it("rounds available canonical calories", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2100 }])
+        .mockResolvedValueOnce([
+          {
+            calories_consumed: 1800.6,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_labels: ["Cronometer"],
+          },
+        ]);
+      const repo = new FoodEntryRepository(
+        asMock({ execute: mockExecute }),
+        new InMemoryPendingEntryStore(),
+      );
+
+      const result = await repo.loadDailyCalorieProgress("user-1", "2024-06-15");
+
+      expect(result).toEqual({
+        status: "available",
+        calorieGoal: 2100,
+        caloriesConsumed: 1801,
+      });
+    });
+  });
+
   describe("deleteUnconfirmed", () => {
     it("does not call deleteByIds when given an empty list", async () => {
       const mockDeleteByIds = vi.fn();

@@ -1,5 +1,9 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
+import { chartColors } from "@dofek/scoring/colors";
+import {
+  formatCorrelationComparison,
+  formatCorrelationLagOption,
+} from "@dofek/stats/correlation-lag";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -25,21 +29,12 @@ const DAY_OPTIONS = [
   { label: "1y", value: 365 },
 ];
 
-const LAG_OPTIONS = [
-  { label: "Same day", value: 0 },
-  { label: "+1 day", value: 1 },
-  { label: "+2 days", value: 2 },
-  { label: "+3 days", value: 3 },
-];
+const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
+  label: formatCorrelationLagOption(value),
+  value,
+}));
 
 const DOMAIN_ORDER = ["Recovery", "Sleep", "Nutrition", "Activity", "Body"];
-
-const CONFIDENCE_COLORS: Record<string, string> = {
-  strong: statusColors.positive,
-  emerging: statusColors.warning,
-  early: "#636366",
-  insufficient: "#636366",
-};
 
 // ── Selector Components ──
 
@@ -151,32 +146,64 @@ function MetricPicker({
   );
 }
 
-// ── Correlation Bar ──
-
-function CorrelationBar({ rho, label }: { rho: number; label: string }) {
-  const clamped = Math.max(-1, Math.min(1, rho));
-  const fillPct = Math.abs(clamped) * 50;
-  const isPositive = clamped >= 0;
-  const barColor = isPositive ? statusColors.positive : statusColors.danger;
-
+function CoverageSummary({
+  coverage,
+}: {
+  coverage: {
+    selectedDayCount: number;
+    eligiblePairDayCount: number;
+    observedXDayCount: number;
+    observedYDayCount: number;
+    pairedDayCount: number;
+    missingPairDayCount: number;
+  };
+}) {
   return (
-    <View style={styles.corrBarContainer}>
-      <Text style={styles.corrBarLabel}>{label}</Text>
-      <View style={styles.corrBarTrack}>
-        <View style={styles.corrBarCenter} />
-        <View
-          style={[
-            styles.corrBarFill,
-            {
-              backgroundColor: barColor,
-              width: `${fillPct}%`,
-              ...(isPositive ? { left: "50%" } : { right: "50%" }),
-            },
-          ]}
-        />
-      </View>
-      <Text style={[styles.corrBarValue, { color: barColor }]}>{formatSigned(clamped, 2)}</Text>
+    <View style={styles.statsGrid}>
+      <Text style={styles.statText}>{coverage.selectedDayCount} selected</Text>
+      <Text style={styles.statText}>{coverage.eligiblePairDayCount} lag-eligible</Text>
+      <Text style={styles.statText}>{coverage.observedXDayCount} X observed</Text>
+      <Text style={styles.statText}>{coverage.observedYDayCount} Y observed</Text>
+      <Text style={styles.statText}>{coverage.pairedDayCount} paired</Text>
+      <Text style={styles.statText}>{coverage.missingPairDayCount} missing pairs</Text>
     </View>
+  );
+}
+
+function UncertaintySummary({
+  uncertainty,
+}: {
+  uncertainty:
+    | { availability: "available"; level: 0.95; lower: number; upper: number }
+    | {
+        availability: "unavailable";
+        reason:
+          | "empty_input"
+          | "degenerate_input"
+          | "insufficient_pairs"
+          | "insufficient_valid_replicates";
+      };
+}) {
+  if (uncertainty.availability === "available") {
+    return (
+      <Text style={styles.statText}>
+        95% block-bootstrap interval: {formatSigned(uncertainty.lower, 2)} to{" "}
+        {formatSigned(uncertainty.upper, 2)}
+      </Text>
+    );
+  }
+  return (
+    <Text style={styles.statText}>
+      95% block-bootstrap interval unavailable (
+      {uncertainty.reason === "degenerate_input"
+        ? "one metric did not vary"
+        : uncertainty.reason === "insufficient_pairs"
+          ? "fewer than five paired days"
+          : uncertainty.reason === "empty_input"
+            ? "no eligible calendar days"
+            : "not enough valid resamples"}
+      ).
+    </Text>
   );
 }
 
@@ -185,14 +212,16 @@ function CorrelationBar({ rho, label }: { rho: number; label: string }) {
 function ScatterPlot({
   dataPoints,
   regression,
-  rho,
   xLabel,
   yLabel: _yLabel,
   width: chartWidth,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
-  regression: { slope: number; intercept: number; rSquared: number };
-  rho: number;
+  regression: {
+    slope: number | null;
+    intercept: number | null;
+    rSquared: number | null;
+  };
   xLabel: string;
   yLabel: string;
   width: number;
@@ -213,9 +242,14 @@ function ScatterPlot({
   const scaleX = (v: number) => padding.left + ((v - xMin) / xRange) * plotWidth;
   const scaleY = (v: number) => padding.top + plotHeight - ((v - yMin) / yRange) * plotHeight;
 
-  const trendColor = rho >= 0 ? statusColors.positive : statusColors.danger;
-  const lineY1 = regression.slope * xMin + regression.intercept;
-  const lineY2 = regression.slope * xMax + regression.intercept;
+  const lineY1 =
+    regression.slope === null || regression.intercept === null
+      ? null
+      : regression.slope * xMin + regression.intercept;
+  const lineY2 =
+    regression.slope === null || regression.intercept === null
+      ? null
+      : regression.slope * xMax + regression.intercept;
 
   return (
     <View style={styles.chartContainer}>
@@ -239,16 +273,19 @@ function ScatterPlot({
         />
 
         {/* Regression line */}
-        <Line
-          x1={scaleX(xMin)}
-          y1={scaleY(lineY1)}
-          x2={scaleX(xMax)}
-          y2={scaleY(lineY2)}
-          stroke={trendColor}
-          strokeWidth={2}
-          strokeDasharray="6,4"
-          opacity={0.7}
-        />
+        {lineY1 !== null && lineY2 !== null && (
+          <Line
+            testID="correlation-trend-line"
+            x1={scaleX(xMin)}
+            y1={scaleY(lineY1)}
+            x2={scaleX(xMax)}
+            y2={scaleY(lineY2)}
+            stroke={chartColors.blue}
+            strokeWidth={2}
+            strokeDasharray="6,4"
+            opacity={0.7}
+          />
+        )}
 
         {/* Data points */}
         {dataPoints.map((p) => (
@@ -280,7 +317,7 @@ export default function CorrelationScreen() {
   const isWide = width >= 600;
 
   const metricsQuery = trpc.correlation.metrics.useQuery({});
-  const correlationQuery = trpc.correlation.compute.useQuery(
+  const correlationQuery = trpc.correlation.computeV2.useQuery(
     { metricX, metricY, days, lag },
     { enabled: metricX !== metricY },
   );
@@ -289,6 +326,7 @@ export default function CorrelationScreen() {
   const metrics = metricsQuery.data ?? [];
   const xMetric = metrics.find((m) => m.id === metricX);
   const yMetric = metrics.find((m) => m.id === metricY);
+  const hasMetricMetadata = xMetric !== undefined && yMetric !== undefined;
   const router = useRouter();
 
   const { refreshing, onRefresh } = useRefresh();
@@ -321,9 +359,11 @@ export default function CorrelationScreen() {
       <Text style={styles.sectionLabel}>Lag</Text>
       <LagSelector lag={lag} onChange={setLag} />
       <Text style={styles.lagHint}>
-        {lag > 0
-          ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-          : "Same-day comparison"}
+        {formatCorrelationComparison({
+          xLabel: xMetric?.label ?? "X",
+          yLabel: yMetric?.label ?? "Y",
+          lag,
+        })}
       </Text>
 
       <TouchableOpacity
@@ -363,56 +403,48 @@ export default function CorrelationScreen() {
       {/* Results */}
       {data && metricX !== metricY && (
         <>
-          {/* Correlation strength card */}
+          {/* Correlation evidence card */}
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <ChartTitleWithTooltip
-                title="Correlation Strength"
-                description="These bars show how strongly the two selected metrics move together."
-                textStyle={styles.cardTitle}
-              />
-              <View
-                style={[
-                  styles.confidenceBadge,
-                  { backgroundColor: `${CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366"}22` },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.confidenceBadgeText,
-                    { color: CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366" },
-                  ]}
-                >
-                  {data.confidenceLevel}
-                </Text>
-              </View>
-            </View>
+            <ChartTitleWithTooltip
+              title="Correlation Evidence"
+              description="The rank correlation, dependence-aware interval, and calendar-day coverage for the selected metrics."
+              textStyle={styles.cardTitle}
+            />
 
             {data.availability === "available" ? (
               <>
-                <CorrelationBar rho={data.spearmanRho} label="Spearman" />
-                <CorrelationBar rho={data.pearsonR} label="Pearson" />
+                <Text style={styles.insightText}>
+                  {data.spearmanRho === null
+                    ? "Spearman rho not estimable"
+                    : `Spearman rho = ${formatSigned(data.spearmanRho, 2)}`}
+                </Text>
+                <UncertaintySummary uncertainty={data.uncertainty} />
 
                 <View style={styles.statsRow}>
-                  <Text style={styles.statText}>
-                    R² = {formatNumber(data.regression.rSquared, 3)}
-                  </Text>
-                  <Text style={styles.statText}>n = {data.sampleCount}</Text>
-                  <Text style={styles.statText}>
-                    p ={" "}
-                    {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
-                  </Text>
+                  {hasMetricMetadata && data.regression.slope !== null && (
+                    <Text style={styles.statText}>
+                      Slope = {formatNumber(data.regression.slope, 3)} {yMetric.unit} per{" "}
+                      {xMetric.unit}
+                    </Text>
+                  )}
+                  {data.regression.rSquared !== null && (
+                    <Text style={styles.statText}>
+                      R² = {formatNumber(data.regression.rSquared, 3)}
+                    </Text>
+                  )}
                 </View>
               </>
             ) : (
               <View style={styles.statsRow}>
                 <Text style={styles.statText}>n = {data.sampleCount}</Text>
                 <Text style={styles.statText}>
-                  {data.additionalSamplesRequired} more overlapping{" "}
-                  {data.additionalSamplesRequired === 1 ? "sample" : "samples"} needed
+                  {data.additionalSamplesRequired} more paired calendar{" "}
+                  {data.additionalSamplesRequired === 1 ? "day" : "days"} needed
                 </Text>
+                <UncertaintySummary uncertainty={data.uncertainty} />
               </View>
             )}
+            <CoverageSummary coverage={data.coverage} />
           </View>
 
           {/* Insight card */}
@@ -420,20 +452,20 @@ export default function CorrelationScreen() {
             <Text style={styles.cardTitle}>Finding</Text>
             <Text style={styles.insightText}>{data.insight}</Text>
 
-            {data.availability === "available" && (
+            {data.availability === "available" && hasMetricMetadata && (
               <View style={styles.statsGrid}>
                 <View style={styles.statsGridItem}>
-                  <Text style={styles.statsGridLabel}>{xMetric?.label ?? metricX}</Text>
+                  <Text style={styles.statsGridLabel}>{xMetric.label}</Text>
                   <Text style={styles.statsGridValue}>
                     {formatNumber(data.xStats.mean)} ± {formatNumber(data.xStats.stddev)}{" "}
-                    {xMetric?.unit}
+                    {xMetric.unit}
                   </Text>
                 </View>
                 <View style={styles.statsGridItem}>
-                  <Text style={styles.statsGridLabel}>{yMetric?.label ?? metricY}</Text>
+                  <Text style={styles.statsGridLabel}>{yMetric.label}</Text>
                   <Text style={styles.statsGridValue}>
                     {formatNumber(data.yStats.mean)} ± {formatNumber(data.yStats.stddev)}{" "}
-                    {yMetric?.unit}
+                    {yMetric.unit}
                   </Text>
                 </View>
               </View>
@@ -441,7 +473,7 @@ export default function CorrelationScreen() {
           </View>
 
           {/* Scatter plot */}
-          {data.availability === "available" && data.dataPoints.length > 0 && (
+          {data.availability === "available" && data.dataPoints.length > 0 && hasMetricMetadata && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Scatter Plot"
@@ -451,9 +483,8 @@ export default function CorrelationScreen() {
               <ScatterPlot
                 dataPoints={data.dataPoints}
                 regression={data.regression}
-                rho={data.spearmanRho}
-                xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
-                yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
+                xLabel={`${xMetric.label} (${xMetric.unit})`}
+                yLabel={`${yMetric.label} (${yMetric.unit})`}
                 width={isWide ? 660 : width - 48}
               />
             </View>
@@ -589,11 +620,6 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
   cardTitle: {
     fontSize: 11,
     fontWeight: "600",
@@ -602,63 +628,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Confidence badge
-  confidenceBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  confidenceBadgeText: {
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "capitalize",
-  },
-
-  // Correlation bars
-  corrBarContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  corrBarLabel: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    width: 60,
-  },
-  corrBarTrack: {
-    flex: 1,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#27272a",
-    overflow: "hidden",
-    position: "relative",
-  },
-  corrBarCenter: {
-    position: "absolute",
-    left: "50%",
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: "#52525b",
-  },
-  corrBarFill: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    borderRadius: 5,
-    opacity: 0.7,
-  },
-  corrBarValue: {
-    fontSize: 12,
-    fontFamily: "Courier",
-    fontWeight: "600",
-    width: 50,
-    textAlign: "right",
-  },
-
   // Stats
   statsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 16,
     paddingTop: 4,
   },
@@ -676,6 +649,7 @@ const styles = StyleSheet.create({
 
   statsGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 16,
     paddingTop: 4,
   },

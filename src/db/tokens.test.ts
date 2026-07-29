@@ -5,8 +5,10 @@ import {
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
+import { oauthToken, providerConnection, webhookSubscription } from "./schema/reference.ts";
 import {
   connectProviderWithTokens,
+  deleteProviderAuthorization,
   deleteTokens,
   ensureProvider,
   loadTokens,
@@ -210,6 +212,34 @@ describe("deleteTokens", () => {
 
     expect(mock.spies.deleteFn).toHaveBeenCalled();
     expect(mock.spies.deleteWhere).toHaveBeenCalled();
+  });
+});
+
+describe("deleteProviderAuthorization", () => {
+  let mock: ReturnType<typeof createMockDatabase>;
+
+  beforeEach(() => {
+    mock = createMockDatabase();
+  });
+
+  it("atomically deletes dependent authorization state before the provider connection", async () => {
+    let transactionCalls = 0;
+    async function transaction<T>(
+      callback: (transactionDatabase: typeof mock.db) => Promise<T>,
+    ): Promise<T> {
+      transactionCalls++;
+      return callback(mock.db);
+    }
+
+    await deleteProviderAuthorization({ transaction }, "wahoo", TEST_USER_ID);
+
+    expect(transactionCalls).toBe(1);
+    expect(mock.spies.deleteFn.mock.calls).toEqual([
+      [webhookSubscription],
+      [oauthToken],
+      [providerConnection],
+    ]);
+    expect(mock.spies.deleteWhere).toHaveBeenCalledTimes(3);
   });
 });
 

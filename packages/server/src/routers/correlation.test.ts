@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JoinedDay } from "../insights/data-join.ts";
 import {
   computeCorrelation,
+  computeCorrelationV2,
   computeStats,
   downsample,
   emptyStats,
@@ -124,7 +125,7 @@ describe("computeCorrelation", () => {
     });
 
     expect(result.sampleCount).toBe(29); // one less due to lag
-    expect(result.insight).toMatch(/next.day|1.day later/i);
+    expect(result.insight).toContain("1 calendar day later");
   });
 
   it("downsamples data points when too many", () => {
@@ -304,6 +305,162 @@ describe("computeCorrelation", () => {
     // Verify labels are used (not raw IDs)
     expect(result.insight).toContain("protein");
     expect(result.insight).not.toContain("protein_g");
+  });
+});
+
+describe("computeCorrelationV2", () => {
+  it("reports exact selected, observed, paired, and missing calendar-day coverage", () => {
+    const days = Array.from({ length: 10 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+        protein_g: index === 2 ? null : 100 + index * 2,
+        hrv: index === 4 ? null : 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 10,
+      lag: 1,
+      endDate: "2025-01-10",
+    });
+
+    expect(result.coverage).toEqual({
+      selectedDayCount: 10,
+      eligiblePairDayCount: 9,
+      observedXDayCount: 8,
+      observedYDayCount: 8,
+      pairedDayCount: 7,
+      missingPairDayCount: 2,
+    });
+    expect(result.sampleCount).toBe(7);
+  });
+
+  it("returns dependence-aware uncertainty and server-computed slope without iid claims", () => {
+    const days = Array.from({ length: 16 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+        protein_g: 100 + index * 2,
+        hrv: 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 16,
+      lag: 0,
+      endDate: "2025-01-16",
+    });
+
+    expect(result.availability).toBe("available");
+    if (result.availability === "available") {
+      expect(result.spearmanRho).toBeCloseTo(1, 12);
+      expect(result.regression.slope).toBeCloseTo(0.5, 12);
+      expect(result.uncertainty).toMatchObject({
+        availability: "available",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 2_000,
+        validReplicateCount: 2_000,
+      });
+      if (result.uncertainty.availability !== "available") {
+        throw new Error("Expected an available uncertainty interval");
+      }
+      expect(result.uncertainty.lower).toBeCloseTo(1);
+      expect(result.uncertainty.upper).toBeCloseTo(1);
+    }
+    expect(result.insight).not.toMatch(/\bp\s*[=<]/i);
+    expect(result).not.toHaveProperty("spearmanPValue");
+    expect(result).not.toHaveProperty("pearsonPValue");
+    expect(result).not.toHaveProperty("confidenceLevel");
+    expect(result).not.toHaveProperty("correlationColor");
+  });
+
+  it("keeps uncertainty explicitly unavailable when the effect is not estimable", () => {
+    const days = Array.from({ length: 10 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+        protein_g: 100,
+        hrv: 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 10,
+      lag: 0,
+      endDate: "2025-01-10",
+    });
+
+    expect(result.availability).toBe("available");
+    if (result.availability === "available") {
+      expect(result.spearmanRho).toBeNull();
+      expect(result.regression.slope).toBeNull();
+      expect(result.uncertainty).toMatchObject({
+        availability: "unavailable",
+        reason: "degenerate_input",
+        attemptedReplicateCount: 0,
+        validReplicateCount: 0,
+      });
+    }
+  });
+
+  it("does not bootstrap when fewer than five paired days are available", () => {
+    const result = computeCorrelationV2(
+      Array.from({ length: 4 }, (_, index) =>
+        makeDay({
+          date: `2024-01-0${index + 1}`,
+          protein_g: 100 + index,
+          hrv: 50 + index,
+        }),
+      ),
+      {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 4,
+        lag: 0,
+        endDate: "2024-01-04",
+      },
+    );
+
+    expect(result.availability).toBe("insufficient");
+    expect(result.uncertainty).toMatchObject({
+      availability: "unavailable",
+      reason: "insufficient_pairs",
+      attemptedReplicateCount: 0,
+      validReplicateCount: 0,
+    });
+  });
+
+  it("bounds an all-time selected spine from the earliest fetched date through endDate", () => {
+    const days = Array.from({ length: 3 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 4).padStart(2, "0")}`,
+        protein_g: 100 + index,
+        hrv: 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: null,
+      lag: 1,
+      endDate: "2025-01-10",
+    });
+
+    expect(result.coverage).toEqual({
+      selectedDayCount: 7,
+      eligiblePairDayCount: 6,
+      observedXDayCount: 3,
+      observedYDayCount: 2,
+      pairedDayCount: 2,
+      missingPairDayCount: 4,
+    });
   });
 });
 
@@ -558,6 +715,89 @@ describe("correlationRouter", () => {
       });
       await expect(
         caller.compute({ metricX: "resting_hr", metricY: "hrv", lag: 8 }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("computeV2", () => {
+    it("returns the versioned evidence contract without legacy iid fields", async () => {
+      const repositoryResult = {
+        analysisVersion: 2,
+        availability: "insufficient",
+        dataPoints: [],
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        insight: "No paired observations are available.",
+        coverage: {
+          selectedDayCount: 90,
+          eligiblePairDayCount: 90,
+          observedXDayCount: 0,
+          observedYDayCount: 0,
+          pairedDayCount: 0,
+          missingPairDayCount: 90,
+        },
+        uncertainty: {
+          availability: "unavailable",
+          method: "circular_moving_block_bootstrap",
+          level: 0.95,
+          blockLength: 5,
+          requestedReplicateCount: 2_000,
+          attemptedReplicateCount: 0,
+          validReplicateCount: 0,
+          reason: "insufficient_pairs",
+        },
+        unexpected: "not part of the API contract",
+      } as const;
+      const compute = vi
+        .spyOn(CorrelationRepository.prototype, "computeV2")
+        .mockResolvedValue(repositoryResult);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const result = await caller.computeV2({
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 90,
+        lag: 0,
+      });
+
+      expect(result).toMatchObject({
+        analysisVersion: 2,
+        availability: "insufficient",
+        coverage: {
+          selectedDayCount: 90,
+          pairedDayCount: 0,
+          missingPairDayCount: 90,
+        },
+        uncertainty: {
+          availability: "unavailable",
+          reason: "insufficient_pairs",
+        },
+      });
+      expect(result).not.toHaveProperty("unexpected");
+      expect(result).not.toHaveProperty("spearmanPValue");
+      expect(result).not.toHaveProperty("confidenceLevel");
+      expect(result).not.toHaveProperty("correlationColor");
+      compute.mockRestore();
+    });
+
+    it("rejects lags outside the supported range", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.computeV2({ metricX: "resting_hr", metricY: "hrv", lag: -1 }),
+      ).rejects.toThrow();
+      await expect(
+        caller.computeV2({ metricX: "resting_hr", metricY: "hrv", lag: 8 }),
       ).rejects.toThrow();
     });
   });

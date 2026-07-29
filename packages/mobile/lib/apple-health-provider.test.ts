@@ -3,9 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { SyncResult } from "./health-kit-sync";
 
 vi.mock("../modules/health-kit", () => ({
+  completeAnchoredQuery: vi.fn(async () => true),
   getRequestStatus: vi.fn(async () => "shouldRequest"),
   hasEverAuthorized: vi.fn(() => false),
   isAvailable: vi.fn(() => true),
+  queryAnchoredSamples: vi.fn(async () => ({
+    queryId: null,
+    samples: [],
+    deletedUUIDs: [],
+  })),
   queryDailyStatistics: vi.fn(async () => []),
   queryQuantitySamples: vi.fn(async () => []),
   querySleepSamples: vi.fn(async () => []),
@@ -44,6 +50,9 @@ function createNative(overrides: Partial<AppleHealthAuthorizationNative> = {}) {
 function createTrpcClient(): AppleHealthTrpcClient {
   return {
     healthKitSync: {
+      deleteQuantitySamples: {
+        mutate: vi.fn(async () => ({ deleted: 0 })),
+      },
       pushQuantitySamples: {
         mutate: vi.fn(async () => ({ inserted: 0, errors: [] })),
       },
@@ -152,7 +161,7 @@ describe("AppleHealthAuthorizationService", () => {
 describe("AppleHealthSyncService", () => {
   it("delegates sync with shared native adapter and tRPC client shape", async () => {
     const trpcClient = createTrpcClient();
-    const syncResult: SyncResult = { inserted: 2, errors: [] };
+    const syncResult: SyncResult = { deleted: 0, inserted: 2, errors: [] };
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => syncResult);
     const service = new AppleHealthSyncService({
       loadDeviceErasureCutoff: vi.fn(async () => "2026-07-26T12:00:00.000Z"),

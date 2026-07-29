@@ -9,6 +9,7 @@ let mockRecoveryFetching = false;
 let sparkLinePropsCalls: Record<string, unknown>[];
 const mockRecoveryInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
 vi.mock("../../lib/trpc", () => ({
@@ -46,7 +47,7 @@ vi.mock("../../components/charts/SparkLine", () => ({
 }));
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mockRouterPush }),
 }));
 
 vi.mock("../../lib/units", async () => {
@@ -96,6 +97,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     sparkLinePropsCalls = [];
     mockRecoveryInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockRouterPush.mockReset();
     mockRecoveryInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
@@ -110,6 +112,15 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("opens breathwork from recovery tools", async () => {
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Breathwork" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/breathwork");
   });
 
   it("keeps day selector visible while recovery data is loading", async () => {
@@ -319,6 +330,40 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(
       screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
     ).toBeTruthy();
+  });
+
+  it("uses neutral text for weight-rate direction", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [
+        {
+          date: "2026-04-06",
+          rawWeight: 80,
+          smoothedWeight: 79.8,
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      weightPrediction: {
+        ratePerWeek: -0.3,
+        rateConfidence: 0.92,
+        impliedDailyCalories: -330,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      },
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("-0.3 kg/wk").style.color).toBe("rgb(153, 153, 153)");
   });
 
   it("expands recovery breakdown when recovery card is tapped", async () => {

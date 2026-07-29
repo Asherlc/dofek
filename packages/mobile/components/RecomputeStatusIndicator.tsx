@@ -1,4 +1,5 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { colors, spacing } from "../theme";
@@ -10,11 +11,13 @@ interface RecomputeStatusIndicatorProps {
 }
 
 function ringColor(status: ProcessingDisplayStatus): string {
-  if (status === "ready") return colors.positive;
-  if (status === "delayed") return colors.warning;
-  if (status === "failed" || status === "blocked") return colors.negative;
-  if (status === "cancelled") return colors.textTertiary;
-  return colors.accent;
+  if (status === "ready") return operationalStatusColors.success.indicator;
+  if (status === "delayed") return operationalStatusColors.warning.indicator;
+  if (status === "failed" || status === "blocked") {
+    return operationalStatusColors.danger.indicator;
+  }
+  if (status === "cancelled") return operationalStatusColors.neutral.indicator;
+  return operationalStatusColors.info.indicator;
 }
 
 export function RecomputeStatusIndicator({

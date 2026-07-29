@@ -155,7 +155,7 @@ services:
         condition: service_started
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.0
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.1
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -163,7 +163,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.1
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.2
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog

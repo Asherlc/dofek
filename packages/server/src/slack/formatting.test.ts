@@ -189,6 +189,20 @@ describe("formatSavedMessage", () => {
     expect(result.text).toContain("150 kcal over goal today");
   });
 
+  it("shows source provenance instead of a calorie total when sources conflict", () => {
+    const result = formatSavedMessage([sampleItem], {
+      status: "source_conflict",
+      message: "Totals are unavailable because nutrition sources overlap.",
+      sourceLabels: ["Apple Health", "Cronometer"],
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Totals are unavailable because nutrition sources overlap.");
+    expect(text).toContain("Sources: Apple Health, Cronometer");
+    expect(text).not.toContain("Calories:");
+    expect(result.text).toContain("Totals are unavailable");
+  });
+
   it("does not divide by zero when calorie goal is unavailable", () => {
     const result = formatSavedMessage([sampleItem], {
       calorieGoal: 0,

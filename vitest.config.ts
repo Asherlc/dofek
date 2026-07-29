@@ -81,9 +81,11 @@ export default defineConfig({
           name: "unit",
           setupFiles: ["packages/web/test-setup.ts"],
           include: [
+            ".github/workflows/**/*.test.ts",
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",
             "src/**/*.test.ts",
+            "packages/web/vite.config.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/zepp/src/**/*.test.ts",
             "packages/zepp/workout-extension/**/*.test.ts",

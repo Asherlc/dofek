@@ -59,11 +59,13 @@ export interface ProviderAuthSetup {
    */
   revokeTokensForAccountErasure?: (tokens: TokenSet) => Promise<void>;
   /**
-   * Revoke the current authorization before exchanging a replacement code.
-   * Use only when the provider will reject the exchange while its old grant exists.
-   * The default exchanges and persists the replacement before revoking old tokens.
+   * Provider-specific reconnect lifecycle.
+   * `revoke-then-replace` revokes before exchange.
+   * `deauthorize-on-token-limit` exchanges first and deauthorizes only after
+   * the provider explicitly rejects the exchange for too many active tokens.
+   * The default exchanges and persists the replacement before cleaning up old tokens.
    */
-  reconnectStrategy?: "revoke-then-replace";
+  reconnectStrategy?: "deauthorize-on-token-limit" | "revoke-then-replace";
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;

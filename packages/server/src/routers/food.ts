@@ -1,10 +1,10 @@
 import { formatWeekdayTime } from "@dofek/format/format";
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
+import type { Database } from "dofek/db";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
-import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
+import { invalidateNutritionCaches } from "../lib/nutrition-cache.ts";
 import { logger } from "../logger.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
@@ -39,20 +39,6 @@ function isAiStructuredOutputError(error: unknown): boolean {
     error.message.includes("No object generated") ||
     error.message.includes("Bad JSON character")
   );
-}
-
-async function invalidateFoodCaches(userId: string): Promise<void> {
-  const results = await Promise.allSettled([
-    queryCache.invalidateByPrefix(`${userId}:food.`),
-    queryCache.invalidateByPrefix(`${userId}:nutrition.`),
-  ]);
-
-  for (const result of results) {
-    if (result.status === "rejected") {
-      logger.warn(`[food] Failed to invalidate food cache for userId=${userId}: ${result.reason}`);
-      Sentry.captureException(result.reason);
-    }
-  }
 }
 
 const foodCategoryValues = [
@@ -109,6 +95,27 @@ const updateFoodEntrySchema = z
   })
   .merge(nutrientFieldsSchema.partial());
 
+const foodByDateInputSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+async function loadFoodByDate(db: Database, userId: string, timezone: string, date: string) {
+  const repo = new FoodRepository(db, userId, timezone);
+  const settingsRepo = new SettingsRepository(db, userId);
+  const calorieGoal = await settingsRepo.getCalorieGoal();
+  const [entries, nutrition] = await Promise.all([
+    repo.byDate(date),
+    repo.nutritionByDate(date, calorieGoal),
+  ]);
+  if (entries.length === 0 && nutrition.resolution.sourceProviders.length === 0) {
+    logger.info(`[food] byDate returned 0 rows for userId=${userId} date=${date}`);
+  }
+  return {
+    entries: entries.map((entry) => entry.toDetail()),
+    ...nutrition,
+  };
+}
+
 export const foodRouter = router({
   /** List food entries for a date range, optionally filtered by meal */
   list: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
@@ -127,23 +134,25 @@ export const foodRouter = router({
 
   /** Get all food entries for a specific date, ordered by meal */
   byDate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
-    .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+    .input(foodByDateInputSchema)
     .query(async ({ ctx, input }) => {
-      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-      const settingsRepo = new SettingsRepository(ctx.db, ctx.userId);
-      const calorieGoal = await settingsRepo.getCalorieGoal();
-      const [entries, summary] = await Promise.all([
-        repo.byDate(input.date),
-        repo.nutritionSummaryByDate(input.date, calorieGoal),
-      ]);
-      if (entries.length === 0) {
-        logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
+      const result = await loadFoodByDate(ctx.db, ctx.userId, ctx.timezone, input.date);
+      if (result.summary === null) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `${result.resolution.message} Review the overlapping nutrition sources and keep one contribution set for this date, then try again.`,
+        });
       }
       return {
-        entries: entries.map((entry) => entry.toDetail()),
-        summary,
+        entries: result.entries,
+        summary: result.summary,
       };
     }),
+
+  /** Get food entries and conflict-aware nutrition resolution metadata for a date. */
+  byDateV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(foodByDateInputSchema)
+    .query(({ ctx, input }) => loadFoodByDate(ctx.db, ctx.userId, ctx.timezone, input.date)),
 
   /** Get daily calorie/macro totals aggregated by day */
   dailyTotals: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
@@ -185,7 +194,7 @@ export const foodRouter = router({
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
     const result = await repo.create(input);
-    await invalidateFoodCaches(ctx.userId);
+    await invalidateNutritionCaches(ctx.userId);
     return result;
   }),
 
@@ -193,7 +202,7 @@ export const foodRouter = router({
   update: protectedProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
     const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
     const result = await repo.update(input);
-    await invalidateFoodCaches(ctx.userId);
+    await invalidateNutritionCaches(ctx.userId);
     return result;
   }),
 
@@ -201,7 +210,7 @@ export const foodRouter = router({
   delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
     const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
     const result = await repo.delete(input.id);
-    await invalidateFoodCaches(ctx.userId);
+    await invalidateNutritionCaches(ctx.userId);
     return result;
   }),
 
@@ -257,7 +266,7 @@ export const foodRouter = router({
     .mutation(async ({ ctx, input }) => {
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
       const result = await repo.quickAdd(input);
-      await invalidateFoodCaches(ctx.userId);
+      await invalidateNutritionCaches(ctx.userId);
       return result;
     }),
 });

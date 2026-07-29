@@ -14,17 +14,20 @@ interface QueryState {
 interface SaveOptions {
   meta?: unknown;
   onError?: (error: Error) => void;
+  onSuccess?: () => void;
 }
 
 const mocks = vi.hoisted<{
   captureException: ReturnType<typeof vi.fn>;
-  invalidate: ReturnType<typeof vi.fn>;
+  safetyInvalidate: ReturnType<typeof vi.fn>;
+  stackInvalidate: ReturnType<typeof vi.fn>;
   mutate: ReturnType<typeof vi.fn>;
   query: QueryState;
   saveOptions: SaveOptions | undefined;
 }>(() => ({
   captureException: vi.fn(),
-  invalidate: vi.fn(),
+  safetyInvalidate: vi.fn(),
+  stackInvalidate: vi.fn(),
   mutate: vi.fn(),
   query: {
     data: [{ name: "Creatine", amount: 5, unit: "g" }],
@@ -41,7 +44,10 @@ vi.mock("../lib/telemetry.ts", () => ({
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
-      supplements: { list: { invalidate: mocks.invalidate } },
+      nutritionAnalytics: {
+        micronutrientAdequacyV2: { invalidate: mocks.safetyInvalidate },
+      },
+      supplements: { list: { invalidate: mocks.stackInvalidate } },
     }),
     supplements: {
       list: { useQuery: () => mocks.query },
@@ -124,5 +130,14 @@ describe("SupplementStackPanel", () => {
     expect(mocks.captureException).toHaveBeenCalledWith(saveError, {
       operation: "supplements.save",
     });
+  });
+
+  it("invalidates the stack and safety review after replacement succeeds", async () => {
+    render(<SupplementStackPanel />);
+
+    await mocks.saveOptions?.onSuccess?.();
+
+    expect(mocks.stackInvalidate).toHaveBeenCalledOnce();
+    expect(mocks.safetyInvalidate).toHaveBeenCalledWith({ days: 30 });
   });
 });

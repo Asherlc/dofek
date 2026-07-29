@@ -1,5 +1,6 @@
 import { formatCalories, formatDateMedium } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { textColors } from "@dofek/scoring/colors";
 import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -53,22 +54,13 @@ export function WeightPredictionSummary({
     );
   }
 
-  const rateColor =
-    prediction.ratePerWeek == null
-      ? "text-muted"
-      : Math.abs(prediction.ratePerWeek) < 0.05
-        ? "text-muted"
-        : prediction.ratePerWeek > 0
-          ? "text-green-400"
-          : "text-red-400";
-
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
       {/* Rate */}
       {prediction.ratePerWeek != null && (
         <div>
           <div className="text-subtle text-xs uppercase">Rate</div>
-          <div className={`font-semibold ${rateColor}`}>
+          <div className="font-semibold" style={{ color: textColors.secondary }}>
             {prediction.ratePerWeek > 0 ? "+" : ""}
             {formatMeasurementText(units.formatWeight(prediction.ratePerWeek))}/wk
           </div>

@@ -117,6 +117,50 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Journal refresh failed")).toBeDefined();
   });
 
+  it("shows journal answers without presenting provider impact scores as per-entry effects", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: [
+        {
+          ...entry,
+          id: "alcohol",
+          provider_id: "whoop",
+          question_slug: "alcohol",
+          display_name: "Alcohol",
+          data_type: "boolean",
+          answer_numeric: 1,
+          answer_text: null,
+          impact_score: 0.4,
+        },
+        {
+          ...entry,
+          id: "late-meal",
+          provider_id: "whoop",
+          question_slug: "late_meal",
+          display_name: "Late meal",
+          data_type: "boolean",
+          answer_numeric: 0,
+          answer_text: null,
+          impact_score: -0.3,
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+
+    const alcoholRow = screen.getByText("Alcohol").parentElement?.parentElement;
+    const lateMealRow = screen.getByText("Late meal").parentElement?.parentElement;
+    expect(alcoholRow?.textContent).toMatch(/^Alcohol\s*Yes\s*whoop$/);
+    expect(lateMealRow?.textContent).toMatch(/^Late meal\s*No\s*whoop$/);
+    const yesAnswer = screen.getByText("Yes");
+    const noAnswer = screen.getByText("No");
+    expect(yesAnswer.classList.contains("bg-surface-hover")).toBe(true);
+    expect(yesAnswer.classList.contains("text-muted")).toBe(true);
+    expect(noAnswer.classList.contains("bg-surface-hover")).toBe(true);
+    expect(noAnswer.classList.contains("text-muted")).toBe(true);
+  });
+
   it("paginates journal entries", () => {
     mocks.entriesQuery.mockReturnValue({
       data: Array.from({ length: 21 }, (_, index) => ({

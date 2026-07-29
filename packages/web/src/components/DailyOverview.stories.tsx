@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { workloadDisplayFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
 import { DailyOverview } from "./DailyOverview";
 
 const today = formatDateYmd();
@@ -13,7 +14,14 @@ const mockReadiness = [
   },
 ];
 
-const mockWorkloadRatio = {
+const mockWorkloadRatioData = {
+  context: {
+    label: "Recent-to-baseline workload ratio",
+    description:
+      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+    recentDays: 7,
+    baselineDays: 28,
+  },
   displayedStrain: 13.2,
   displayedDate: today,
   timeSeries: [
@@ -41,7 +49,7 @@ const mockSleepPerformance = {
   sourceProviders: ["whoop"],
 };
 
-const mockStrainTarget = {
+const mockStrainTargetData = {
   targetStrain: 15,
   currentStrain: 13.2,
   progressPercent: 88,
@@ -52,6 +60,12 @@ const mockStrainTarget = {
   chronicLoad: 80,
   workloadRatio: 1.19,
 };
+
+const { workloadRatio: mockWorkloadRatio, strainTarget: mockStrainTarget } =
+  workloadDisplayFixtureSchema.parse({
+    workloadRatio: mockWorkloadRatioData,
+    strainTarget: mockStrainTargetData,
+  });
 
 const meta = {
   title: "Dashboard/DailyOverview",
@@ -110,7 +124,18 @@ export const StrainTargetLoading: Story = {
 export const NoData: Story = {
   args: {
     readiness: [],
-    workloadRatio: { displayedStrain: 0, displayedDate: null, timeSeries: [] },
+    workloadRatio: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
+      displayedStrain: 0,
+      displayedDate: null,
+      timeSeries: [],
+    },
     sleepPerformance: null,
   },
 };
@@ -139,6 +164,13 @@ export const LowRecovery: Story = {
       },
     ],
     workloadRatio: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
       displayedStrain: 5.2,
       displayedDate: today,
       timeSeries: [

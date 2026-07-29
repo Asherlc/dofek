@@ -581,6 +581,7 @@ export async function upsertNutritionBatch(
           providerId,
           externalId,
           date: dateKey,
+          nutritionGrain: "daily_aggregate",
           foodName: null,
           sourceName: r.sourceName,
           loggedAt: r.creationDate ?? r.startDate,
@@ -594,6 +595,7 @@ export async function upsertNutritionBatch(
         target: [foodEntry.userId, foodEntry.providerId, foodEntry.externalId],
         set: {
           date: dateKey,
+          nutritionGrain: "daily_aggregate",
           foodName: null,
           sourceName: r.sourceName,
           loggedAt: r.creationDate ?? r.startDate,

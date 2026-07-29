@@ -14,6 +14,8 @@ the exact section.
 ## Start Here
 
 - [../README.md](../README.md): repository overview, local development, and the high-level architecture.
+- [development-environment.md](development-environment.md): reproducible local
+  and cloud tools, Dev Containers, CodeGraph, RTK, and initialization commands.
 - [../deploy/README.md](../deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
 - [clickhouse-metric-stream.md](clickhouse-metric-stream.md): Redpanda-fed
   ClickHouse sensor storage and deduped analytics models.

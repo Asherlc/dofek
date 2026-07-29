@@ -52,7 +52,6 @@ describe("healthReportRouter", () => {
         avg_sleep_min: 480,
         avg_resting_hr: 58.67,
         avg_hrv: 45.33,
-        chronic_avg_load: 3,
         prev_3wk_avg_sleep: 400,
       };
       const generate = vi.spyOn(HealthReportRepository.prototype, "generate").mockResolvedValue(
@@ -84,7 +83,6 @@ describe("healthReportRouter", () => {
             weekStart: "2026-03-22",
             trainingHours: 5.6,
             activityCount: 4,
-            strainZone: "optimal",
             avgDailyLoad: 3.1,
             avgSleepMinutes: 480,
             sleepPerformancePct: 120,

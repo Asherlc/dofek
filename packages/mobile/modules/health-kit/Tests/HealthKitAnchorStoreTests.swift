@@ -21,7 +21,7 @@ final class HealthKitAnchorStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    func testSecondQueryUsesAnchorReturnedByFirst() async throws {
+    func testCommittedQueryAnchorIsUsedByTheNextQuery() async throws {
         let firstAnchor = HKQueryAnchor(fromValue: 7)
         let coordinator = HealthKitAnchoredQueryCoordinator(
             anchorStore: HealthKitAnchorStore(userDefaults: defaults)
@@ -32,15 +32,26 @@ final class HealthKitAnchorStoreTests: XCTestCase {
             receivedAnchors.append(anchor)
             return ("first", firstAnchor)
         }
+        let uncommittedResult = try await coordinator.run(typeIdentifier: "heart-rate") { anchor in
+            receivedAnchors.append(anchor)
+            return ("uncommitted", nil)
+        }
+        try coordinator.complete(
+            typeIdentifier: "heart-rate",
+            queryId: try XCTUnwrap(firstResult.queryId),
+            succeeded: true
+        )
         let secondResult = try await coordinator.run(typeIdentifier: "heart-rate") { anchor in
             receivedAnchors.append(anchor)
             return ("second", nil)
         }
 
-        XCTAssertEqual(firstResult, "first")
-        XCTAssertEqual(secondResult, "second")
+        XCTAssertEqual(firstResult.result, "first")
+        XCTAssertEqual(uncommittedResult.result, "uncommitted")
+        XCTAssertEqual(secondResult.result, "second")
         XCTAssertNil(receivedAnchors[0])
-        try assertEquivalent(receivedAnchors[1], firstAnchor)
+        XCTAssertNil(receivedAnchors[1])
+        try assertEquivalent(receivedAnchors[2], firstAnchor)
     }
 
     func testPersistedAnchorSurvivesCoordinatorRecreation() async throws {
@@ -48,9 +59,14 @@ final class HealthKitAnchorStoreTests: XCTestCase {
         let firstCoordinator = HealthKitAnchoredQueryCoordinator(
             anchorStore: HealthKitAnchorStore(userDefaults: defaults)
         )
-        _ = try await firstCoordinator.run(typeIdentifier: "step-count") { _ in
+        let firstResult = try await firstCoordinator.run(typeIdentifier: "step-count") { _ in
             return ((), returnedAnchor)
         }
+        try firstCoordinator.complete(
+            typeIdentifier: "step-count",
+            queryId: try XCTUnwrap(firstResult.queryId),
+            succeeded: true
+        )
 
         let recreatedDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         let recreatedCoordinator = HealthKitAnchoredQueryCoordinator(
@@ -65,15 +81,88 @@ final class HealthKitAnchorStoreTests: XCTestCase {
         try assertEquivalent(restoredAnchor, returnedAnchor)
     }
 
+    func testFailedCompletionDoesNotPersistAnchor() async throws {
+        let returnedAnchor = HKQueryAnchor(fromValue: 13)
+        let coordinator = HealthKitAnchoredQueryCoordinator(
+            anchorStore: HealthKitAnchorStore(userDefaults: defaults)
+        )
+        let result = try await coordinator.run(typeIdentifier: "respiratory-rate") { _ in
+            return ((), returnedAnchor)
+        }
+
+        try coordinator.complete(
+            typeIdentifier: "respiratory-rate",
+            queryId: try XCTUnwrap(result.queryId),
+            succeeded: false
+        )
+
+        XCTAssertNil(
+            defaults.object(
+                forKey: HealthKitAnchorStore.key(for: "respiratory-rate")
+            )
+        )
+    }
+
+    func testCompleteWithUnknownQueryIdThrows() {
+        let coordinator = HealthKitAnchoredQueryCoordinator(
+            anchorStore: HealthKitAnchorStore(userDefaults: defaults)
+        )
+
+        XCTAssertThrowsError(
+            try coordinator.complete(
+                typeIdentifier: "heart-rate",
+                queryId: "not-a-real-id",
+                succeeded: true
+            )
+        ) { error in
+            guard case HealthKitAnchoredQueryCoordinatorError.unknownQuery = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+        }
+    }
+
+    func testCompleteWithMismatchedTypeDoesNotDiscardPendingAnchor() async throws {
+        let returnedAnchor = HKQueryAnchor(fromValue: 17)
+        let coordinator = HealthKitAnchoredQueryCoordinator(
+            anchorStore: HealthKitAnchorStore(userDefaults: defaults)
+        )
+        let result = try await coordinator.run(typeIdentifier: "heart-rate") { _ in
+            return ((), returnedAnchor)
+        }
+        let queryId = try XCTUnwrap(result.queryId)
+
+        XCTAssertThrowsError(
+            try coordinator.complete(
+                typeIdentifier: "step-count",
+                queryId: queryId,
+                succeeded: true
+            )
+        ) { error in
+            guard case HealthKitAnchoredQueryCoordinatorError.mismatchedType = error else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+        }
+
+        try coordinator.complete(
+            typeIdentifier: "heart-rate",
+            queryId: queryId,
+            succeeded: true
+        )
+    }
+
     func testFailedQueryDoesNotPersistAnAnchor() async {
         let coordinator = HealthKitAnchoredQueryCoordinator(
             anchorStore: HealthKitAnchorStore(userDefaults: defaults)
         )
 
         do {
-            _ = try await coordinator.run(typeIdentifier: "body-mass") { _ in
+            let _: HealthKitPendingAnchoredQuery<Void> = try await coordinator.run(
+                typeIdentifier: "body-mass"
+            ) { _ -> (result: Void, newAnchor: HKQueryAnchor?) in
                 throw TestError.queryFailed
-            } as Void
+            }
             XCTFail("Expected the query failure to propagate")
         } catch {
             XCTAssertEqual(error as? TestError, .queryFailed)

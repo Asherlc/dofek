@@ -189,7 +189,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 440,
           avg_resting_hr: 55,
           avg_hrv: 62,
-          chronic_avg_load: 45,
           prev_3wk_avg_sleep: 430,
         },
         {
@@ -200,7 +199,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 450,
           avg_resting_hr: 54,
           avg_hrv: 65,
-          chronic_avg_load: 48,
           prev_3wk_avg_sleep: 440,
         },
       ];
@@ -215,7 +213,6 @@ describe("weeklyReportRouter", () => {
       expect(result.current).not.toBeNull();
       expect(result.current?.weekStart).toBe("2024-01-15");
       expect(result.history).toHaveLength(1);
-      expect(result.current?.strainZone).toBeDefined();
       expect(result.current?.sleepPerformancePct).toBeGreaterThan(0);
     });
   });

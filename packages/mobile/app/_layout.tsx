@@ -314,6 +314,9 @@ function AuthGate() {
       return;
     const syncClient: SyncTrpcClient = {
       healthKitSync: {
+        deleteQuantitySamples: {
+          mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
+        },
         pushQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
         },
@@ -592,6 +595,12 @@ function AuthGate() {
             name="sleep"
             options={{
               title: "Sleep",
+            }}
+          />
+          <Stack.Screen
+            name="breathwork"
+            options={{
+              title: "Breathwork",
             }}
           />
           <Stack.Screen

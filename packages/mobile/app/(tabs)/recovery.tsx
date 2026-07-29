@@ -534,19 +534,7 @@ export default function RecoveryScreen() {
                     Moves 10% toward each day's scale weight; gaps are interpolated.
                   </Text>
                   {weightPrediction?.ratePerWeek != null && (
-                    <Text
-                      style={[
-                        styles.weightRate,
-                        {
-                          color:
-                            Math.abs(weightPrediction.ratePerWeek) < 0.05
-                              ? colors.textSecondary
-                              : weightPrediction.ratePerWeek > 0
-                                ? colors.positive
-                                : colors.danger,
-                        },
-                      ]}
-                    >
+                    <Text style={[styles.weightRate, { color: colors.textSecondary }]}>
                       {weightPrediction.ratePerWeek > 0 ? "+" : ""}
                       {formatMeasurementText(units.formatWeight(weightPrediction.ratePerWeek))}
                       /wk
@@ -592,6 +580,16 @@ export default function RecoveryScreen() {
           )}
 
           {/* Navigation links */}
+          <TouchableOpacity
+            style={styles.navLink}
+            onPress={() => router.push("/breathwork")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Breathwork"
+          >
+            <Text style={styles.navLinkText}>Breathwork</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.navLink}
             onPress={() => router.push("/sleep")}

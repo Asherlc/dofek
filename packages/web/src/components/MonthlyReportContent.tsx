@@ -1,4 +1,5 @@
 import { formatDurationMinutes, formatHRV, formatMonthYear } from "@dofek/format/format";
+import { textColors } from "@dofek/scoring/colors";
 import type { MonthlyReportResult, MonthSummary } from "dofek-server/types";
 
 export function MonthlyReportContent({ data }: { data: MonthlyReportResult | undefined }) {
@@ -35,10 +36,9 @@ export function MonthlyReportContent({ data }: { data: MonthlyReportResult | und
 function TrendBadge({ value }: { value: number | null }) {
   if (value == null) return null;
   const isPositive = value > 0;
-  const color = isPositive ? "text-emerald-400" : value < 0 ? "text-red-400" : "text-dim";
   const sign = isPositive ? "+" : "";
   return (
-    <span className={`text-xs tabular-nums ${color}`}>
+    <span className="text-xs tabular-nums" style={{ color: textColors.secondary }}>
       {sign}
       {value.toFixed(1)}%
     </span>

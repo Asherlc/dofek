@@ -17,6 +17,34 @@ export const styles = StyleSheet.create({
     width: "100%",
   },
 
+  // ── Tabs ──
+  tabsScrollView: {
+    marginBottom: 24,
+  },
+  tabs: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  tab: {
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  tabSelected: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  tabText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  tabTextSelected: {
+    color: colors.text,
+    fontWeight: "600",
+  },
+
   // ── Sections ──
   section: {
     marginBottom: 24,

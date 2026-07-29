@@ -249,6 +249,64 @@ describe("DataSourcesPanel", () => {
     mockCaptureException.mockReset();
   });
 
+  it("reserves one stable provider region while inventory loads", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
+
+    const { rerender } = render(<DataSourcesPanel />);
+    const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
+
+    expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
+    expect(loadingRegion.className).toContain("h-80");
+    expect(loadingRegion.className).toContain("sm:h-96");
+    expect(loadingRegion.className).toContain("lg:h-[28rem]");
+    expect(loadingRegion.className).toContain("overflow-y-auto");
+    expect(within(loadingRegion).getByText("Loading processing status…")).toBeTruthy();
+
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    rerender(<DataSourcesPanel />);
+
+    const processingRegion = screen.getByRole("region", { name: "Available data sources" });
+    expect(processingRegion).toBe(loadingRegion);
+    expect(processingRegion.getAttribute("aria-busy")).toBe("true");
+    expect(within(processingRegion).getByText("Loading processing status…")).toBeTruthy();
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    });
+    rerender(<DataSourcesPanel />);
+
+    const resolvedRegion = screen.getByRole("region", { name: "Available data sources" });
+    expect(resolvedRegion).toBe(loadingRegion);
+    expect(resolvedRegion.getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+  });
+
   it("shows active processing progress above provider cards", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {

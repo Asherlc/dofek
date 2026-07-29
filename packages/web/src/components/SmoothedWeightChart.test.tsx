@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+
+import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -148,6 +150,26 @@ describe("SmoothedWeightChart", () => {
     );
     expect(screen.getByText("-0.3 kg/week")).toBeDefined();
     expect(screen.queryByText("-0.15 kg/week")).toBeNull();
+  });
+
+  it("uses neutral text for weight-rate direction", () => {
+    render(
+      <SmoothedWeightChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.3,
+          rateConfidence: 0.92,
+          impliedDailyCalories: -330,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("-0.3 kg/week").style.color).toBe(
+      `rgb(${Number.parseInt(textColors.secondary.slice(1, 3), 16)}, ${Number.parseInt(textColors.secondary.slice(3, 5), 16)}, ${Number.parseInt(textColors.secondary.slice(5, 7), 16)})`,
+    );
   });
 
   it("does not show headline rate when prediction is missing", () => {

@@ -164,11 +164,25 @@ export async function deleteDietarySamples(syncIdentifiers: string[]): Promise<n
 
 /** Query samples added/deleted since the last successful query.
  * The native module persists HealthKit's opaque query anchor per type. */
-export async function queryAnchoredSamples(typeIdentifier: string): Promise<{
+export async function queryAnchoredSamples(
+  typeIdentifier: string,
+  initialStartDate: string,
+): Promise<{
+  queryId: string | null;
   samples: HealthKitSample[];
   deletedUUIDs: string[];
 }> {
-  return HealthKitModule.queryAnchoredSamples(typeIdentifier);
+  return HealthKitModule.queryAnchoredSamples(typeIdentifier, initialStartDate);
+}
+
+/** Persist or discard the anchor returned by an incremental query.
+ * Anchors are committed only after the corresponding server mutation succeeds. */
+export async function completeAnchoredQuery(
+  typeIdentifier: string,
+  queryId: string,
+  succeeded: boolean,
+): Promise<boolean> {
+  return HealthKitModule.completeAnchoredQuery(typeIdentifier, queryId, succeeded);
 }
 
 /** Check if background delivery was previously enabled on this device */

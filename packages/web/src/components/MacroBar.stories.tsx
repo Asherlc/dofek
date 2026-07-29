@@ -25,7 +25,7 @@ export const Carbs: Story = {
     label: "Carbs",
     grams: formatGrams(250),
     percentage: 50,
-    color: "amber",
+    color: "purple",
   },
 };
 
@@ -34,6 +34,6 @@ export const Fat: Story = {
     label: "Fat",
     grams: formatGrams(44),
     percentage: 20,
-    color: "red",
+    color: "teal",
   },
 };

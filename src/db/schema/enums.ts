@@ -6,6 +6,18 @@ import { fitness } from "./core.ts";
 
 export const mealEnum = fitness.enum("meal", ["breakfast", "lunch", "dinner", "snack", "other"]);
 
+export const nutritionEntryGrainEnum = fitness.enum("nutrition_entry_grain", [
+  "itemized",
+  "daily_aggregate",
+]);
+
+export const supplementDoseStatusEnum = fitness.enum("supplement_dose_status", [
+  "planned",
+  "taken",
+  "skipped",
+  "unknown",
+]);
+
 export const foodCategoryEnum = fitness.enum("food_category", [
   // FatSecret standard categories
   "beans_and_legumes",

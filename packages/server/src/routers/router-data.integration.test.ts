@@ -375,12 +375,13 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, food_description, confirmed
+                user_id, provider_id, date, meal, food_name, food_description, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
                 'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-                true
+                true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -403,11 +404,11 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, meal, food_name, confirmed, nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
-                'lunch', ${`Chicken Salad ${i}`}, true
+                'lunch', ${`Chicken Salad ${i}`}, true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -430,11 +431,12 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true, 'daily_aggregate'
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -463,9 +465,9 @@ describe("Router data coverage", () => {
       userId: TEST_USER_ID,
       startedAt: polarizationActivity.startedAt,
       maxHr: 190,
-      z1Seconds: 600,
+      z1Seconds: 900,
       z2Seconds: 300,
-      z3Seconds: 900,
+      z3Seconds: 600,
     });
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
@@ -629,9 +631,9 @@ describe("Router data coverage", () => {
       expect(result.maxHr).toBe(190);
       expect(result.weeks).toHaveLength(1);
       expect(result.weeks[0]).toMatchObject({
-        z1Seconds: 600,
+        z1Seconds: 900,
         z2Seconds: 300,
-        z3Seconds: 900,
+        z3Seconds: 600,
       });
       expect(result.weeks[0]?.week).toBeTruthy();
       expect(result.weeks[0]?.polarizationIndex).not.toBeNull();
@@ -811,9 +813,12 @@ describe("Router data coverage", () => {
 
       const nutritionRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_nutrient sn
-            JOIN fitness.supplement s ON s.id = sn.supplement_id
-            WHERE s.user_id = ${TEST_USER_ID}`,
+            FROM fitness.supplement_definition_nutrient AS nutrient
+            JOIN fitness.supplement_definition AS definition
+              ON definition.id = nutrient.definition_id
+            JOIN fitness.supplement AS supplement
+              ON supplement.id = definition.supplement_id
+            WHERE supplement.user_id = ${TEST_USER_ID}`,
       );
       expect(nutritionRows[0]?.count).toBe("2");
     });
@@ -1488,7 +1493,7 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
@@ -1498,6 +1503,12 @@ describe("Router data coverage", () => {
           chronicLoad: number;
           workloadRatio: number | null;
         }[];
+        context: {
+          label: "Recent-to-baseline workload ratio";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          recentDays: 7;
+          baselineDays: 28;
+        };
         displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });

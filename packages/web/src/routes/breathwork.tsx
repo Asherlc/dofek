@@ -180,7 +180,7 @@ function BreathworkPage() {
   return (
     <PageLayout
       title="Breathwork"
-      subtitle="Guided breathing exercises for stress relief and recovery"
+      subtitle="Guided breathing exercises with pre-session safety guidance"
     >
       <div className="space-y-6">
         {/* Technique selector */}
@@ -261,16 +261,39 @@ function BreathworkPage() {
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center py-8">
-                <div className="text-sm text-dim mb-4">{selectedTechnique.name}</div>
-                <button
-                  type="button"
-                  onClick={startSession}
-                  disabled={pendingSession !== null}
-                  className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-                >
-                  Start Session
-                </button>
+              <div className="space-y-5 py-4">
+                <div className="text-center">
+                  <div className="text-sm font-medium text-foreground">
+                    {selectedTechnique.name}
+                  </div>
+                  <p className="mt-1 text-sm text-dim">{selectedTechnique.description}</p>
+                  {selectedTechnique.possibleBenefit ? (
+                    <p className="mt-2 text-sm text-muted">{selectedTechnique.possibleBenefit}</p>
+                  ) : null}
+                </div>
+                <section className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+                  <h3 className="text-sm font-semibold text-foreground">Safety before you start</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
+                    {selectedTechnique.safety.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 space-y-1 text-sm text-dim">
+                    <p>{selectedTechnique.safety.position}</p>
+                    <p>{selectedTechnique.safety.stopCriteria}</p>
+                    <p>{selectedTechnique.safety.emergency}</p>
+                  </div>
+                </section>
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={startSession}
+                    disabled={pendingSession !== null}
+                    className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+                  >
+                    Start Session
+                  </button>
+                </div>
               </div>
             )}
             {logMutation.error ? (

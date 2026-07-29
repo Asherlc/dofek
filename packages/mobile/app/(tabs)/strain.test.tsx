@@ -7,6 +7,7 @@ const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
 const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
+const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
@@ -43,9 +44,24 @@ const mockPolarizationState: MockTrainingState = {
   error: null,
 };
 
+const mockMonotonyState: MockTrainingState = {
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  error: null,
+};
+
 function defaultMockTrainingData(): MockTrainingData {
   return {
     workloadRatio: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
       displayedStrain: 16,
       displayedDate: "2026-03-28",
       timeSeries: [
@@ -76,7 +92,7 @@ function resetMockTrainingState() {
   mockTrainingState.isFetching = false;
   mockTrainingState.isError = false;
   mockTrainingState.error = null;
-  for (const state of [mockHrZonesState, mockPolarizationState]) {
+  for (const state of [mockHrZonesState, mockPolarizationState, mockMonotonyState]) {
     state.data = undefined;
     state.isLoading = false;
     state.isFetching = false;
@@ -112,6 +128,11 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: () => ({ ...mockPolarizationState }),
       },
     },
+    cyclingAdvanced: {
+      trainingMonotony: {
+        useQuery: () => ({ ...mockMonotonyState }),
+      },
+    },
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
@@ -126,6 +147,9 @@ vi.mock("../../lib/trpc", () => ({
       },
       efficiency: {
         polarizationTrend: { invalidate: mockPolarizationInvalidate },
+      },
+      cyclingAdvanced: {
+        trainingMonotony: { invalidate: mockMonotonyInvalidate },
       },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
@@ -168,15 +192,17 @@ describe("StrainScreen recent activity navigation", () => {
     mockProcessingStatusInvalidate.mockReset();
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
+    mockMonotonyInvalidate.mockReset();
     mockTrainingInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockHrZonesInvalidate.mockResolvedValue(undefined);
     mockPolarizationInvalidate.mockResolvedValue(undefined);
+    mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
     resetMockTrainingState();
   });
 
-  it("refreshes training, intensity, polarization, and processing status together", async () => {
+  it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
@@ -186,6 +212,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
+    expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
@@ -207,6 +234,16 @@ describe("StrainScreen recent activity navigation", () => {
       threshold: 2,
       maxHr: 190,
       explanation: "Mobile cycling polarization explanation.",
+      method: {
+        formula: "Mobile Treff formula.",
+        zoneBasis: "Mobile Treff zones.",
+        calculationChoice: "Mobile calculation choice.",
+        interpretation: "Mobile descriptive PI interpretation.",
+        source: {
+          title: "Treff source",
+          url: "https://doi.org/10.3389/fphys.2019.00707",
+        },
+      },
       weeks: [
         {
           week: "2026-07-20",
@@ -222,6 +259,26 @@ describe("StrainScreen recent activity navigation", () => {
         },
       ],
     };
+    mockMonotonyState.data = [
+      {
+        week: "2026-07-20",
+        monotony: 1.5,
+        strain: 300,
+        weeklyLoad: 200,
+        dailyMeanLoad: 28.57,
+        dailyLoadStandardDeviation: 19.05,
+        method: {
+          formula: "Mobile Foster formula.",
+          calendar: "Mobile calendar choice.",
+          activityScope: "Mobile activity scope.",
+          interpretation: "Mobile descriptive monotony interpretation.",
+          source: {
+            title: "Foster source",
+            url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+          },
+        },
+      },
+    ];
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
@@ -230,21 +287,27 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Mobile descriptive intensity explanation.")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
     expect(screen.getByText("Server says exactly 2.00 is not polarized.")).toBeTruthy();
+    expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
+    expect(screen.getByText("Mobile Foster formula.")).toBeTruthy();
   });
 
-  it("renders intensity and polarization query failures separately", async () => {
+  it("renders intensity, polarization, and monotony query failures separately", async () => {
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity distribution failed");
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Cycling polarization failed");
+    mockMonotonyState.isError = true;
+    mockMonotonyState.error = new Error("Training monotony failed");
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
     expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
+    expect(screen.getByText("Training monotony failed")).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
     expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
+    expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
   });
 
   it("keeps cached server models visible with background query failures", async () => {
@@ -267,6 +330,16 @@ describe("StrainScreen recent activity navigation", () => {
       threshold: 2,
       maxHr: 190,
       explanation: "Cached mobile polarization.",
+      method: {
+        formula: "Cached Treff formula.",
+        zoneBasis: "Cached Treff zones.",
+        calculationChoice: "Cached calculation choice.",
+        interpretation: "Cached descriptive interpretation.",
+        source: {
+          title: "Treff source",
+          url: "https://doi.org/10.3389/fphys.2019.00707",
+        },
+      },
       weeks: [],
     };
     mockPolarizationState.isError = true;
@@ -399,15 +472,14 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("71% reached")).toBeTruthy();
   });
 
-  it("shows today's load separately from the rolling training load ratio", async () => {
+  it("shows the neutral server-owned workload comparison", async () => {
     mockTrainingState.data = {
       strainTarget: {
         targetStrain: 12,
         currentStrain: 0,
         progressPercent: 0,
         zone: "Maintain",
-        explanation:
-          "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+        explanation: "Moderate recovery (50). Aim for a steady training day.",
         dailyLoad: 0,
         acuteLoad: 133,
         chronicLoad: 33,
@@ -415,6 +487,13 @@ describe("StrainScreen recent activity navigation", () => {
         readinessScore: 50,
       },
       workloadRatio: {
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 5,
+          baselineDays: 20,
+        },
         displayedStrain: 0,
         displayedDate: "2026-03-28",
         timeSeries: [
@@ -436,15 +515,28 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
-    expect(screen.getAllByText("Today").length).toBeGreaterThan(0);
-    expect(screen.getByText("Training Load Ratio")).toBeTruthy();
-    expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(screen.getByText("Recent 5-day load")).toBeTruthy();
+    expect(screen.getByText("20-day baseline load")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("4.00")).toBeTruthy();
   });
 
   it("does not use a prior displayed strain as today's strain fallback", async () => {
     mockTrainingState.data = {
       strainTarget: undefined,
       workloadRatio: {
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 7,
+          baselineDays: 28,
+        },
         displayedStrain: 13,
         displayedDate: "2026-03-27",
         timeSeries: [

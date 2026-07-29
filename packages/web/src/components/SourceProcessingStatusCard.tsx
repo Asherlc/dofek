@@ -1,4 +1,6 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
+import { operationalStatusColors } from "@dofek/scoring/colors";
+import type { ReactNode } from "react";
 
 interface SourceProcessingStatusCardProps {
   contextLabel?: string;
@@ -6,17 +8,18 @@ interface SourceProcessingStatusCardProps {
   message: string | null;
   progress: number | null;
   status: ProcessingDisplayStatus;
+  children?: ReactNode;
 }
 
-const borderClassByStatus: Record<ProcessingDisplayStatus, string> = {
-  ready: "border-l-emerald-500",
-  waiting: "border-l-blue-500",
-  active: "border-l-blue-500",
-  partial: "border-l-blue-500",
-  delayed: "border-l-amber-500",
-  blocked: "border-l-red-500",
-  failed: "border-l-red-500",
-  cancelled: "border-l-slate-400",
+const indicatorColorByStatus: Record<ProcessingDisplayStatus, string> = {
+  ready: operationalStatusColors.success.indicator,
+  waiting: operationalStatusColors.info.indicator,
+  active: operationalStatusColors.info.indicator,
+  partial: operationalStatusColors.info.indicator,
+  delayed: operationalStatusColors.warning.indicator,
+  blocked: operationalStatusColors.danger.indicator,
+  failed: operationalStatusColors.danger.indicator,
+  cancelled: operationalStatusColors.neutral.indicator,
 };
 
 export function SourceProcessingStatusCard({
@@ -25,10 +28,12 @@ export function SourceProcessingStatusCard({
   message,
   progress,
   status,
+  children,
 }: SourceProcessingStatusCardProps) {
   return (
     <section
-      className={`w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm ${borderClassByStatus[status]}`}
+      className="w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
+      style={{ borderLeftColor: indicatorColorByStatus[status] }}
       aria-live="polite"
     >
       {contextLabel ? (
@@ -38,6 +43,7 @@ export function SourceProcessingStatusCard({
       ) : null}
       <h2 className="text-sm font-semibold">{heading}</h2>
       {message ? <p className="mt-0.5 text-xs text-slate-600">{message}</p> : null}
+      {children}
       {progress !== null && status !== "ready" ? (
         <div
           className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"
@@ -47,7 +53,13 @@ export function SourceProcessingStatusCard({
           aria-valuemax={100}
           aria-valuenow={progress}
         >
-          <div className="h-full bg-blue-500" style={{ width: `${progress}%` }} />
+          <div
+            className="h-full"
+            style={{
+              backgroundColor: operationalStatusColors.info.indicator,
+              width: `${progress}%`,
+            }}
+          />
         </div>
       ) : null}
     </section>

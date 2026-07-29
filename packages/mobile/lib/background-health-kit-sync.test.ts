@@ -8,6 +8,12 @@ const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockIsAvailable = vi.fn().mockReturnValue(true);
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
+const mockQueryAnchoredSamples = vi.fn().mockResolvedValue({
+  queryId: "query-1",
+  samples: [],
+  deletedUUIDs: [],
+});
+const mockCompleteAnchoredQuery = vi.fn().mockResolvedValue(true);
 const mockCaptureException = vi.fn();
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
@@ -19,6 +25,8 @@ vi.mock("../modules/health-kit", () => ({
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+  queryAnchoredSamples: (...args: unknown[]) => mockQueryAnchoredSamples(...args),
+  completeAnchoredQuery: (...args: unknown[]) => mockCompleteAnchoredQuery(...args),
   setupBackgroundObservers: (...args: unknown[]) => mockSetupBackgroundObservers(...args),
   addSampleUpdateListener: (...args: unknown[]) => mockAddSampleUpdateListener(...args),
   completeObserverUpdates: (...args: unknown[]) => mockCompleteObserverUpdates(...args),
@@ -47,7 +55,12 @@ vi.mock("./device-erasure-cutoff", async (importOriginal) => {
   };
 });
 
-import { queryDailyStatistics, queryWorkoutRoutes, queryWorkouts } from "../modules/health-kit";
+import {
+  type HealthKitSample,
+  queryDailyStatistics,
+  queryWorkoutRoutes,
+  queryWorkouts,
+} from "../modules/health-kit";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -58,6 +71,9 @@ function createMockClient() {
     healthKitSync: {
       pushQuantitySamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }),
+      },
+      deleteQuantitySamples: {
+        mutate: vi.fn().mockResolvedValue({ deleted: 0 }),
       },
       pushWorkouts: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
@@ -87,6 +103,7 @@ describe("initBackgroundHealthKitSync", () => {
   beforeEach(() => {
     teardownBackgroundHealthKitSync();
     vi.clearAllMocks();
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -208,20 +225,13 @@ describe("initBackgroundHealthKitSync", () => {
 
   it("does not call onSyncComplete on sync failure", async () => {
     vi.useFakeTimers();
-    // Return workout data so pushWorkouts.mutate gets called
-    vi.mocked(queryWorkouts).mockResolvedValueOnce([
-      {
-        activityType: 1,
-        startDate: "2026-03-22T10:00:00Z",
-        endDate: "2026-03-22T11:00:00Z",
-        duration: 3600,
-        totalDistance: 10000,
-      },
-    ]);
     const client = createMockClient();
-    client.healthKitSync.pushWorkouts.mutate.mockRejectedValue(new Error("network"));
     const onSyncComplete = vi.fn();
     await initBackgroundHealthKitSync(client, onSyncComplete);
+    await vi.runAllTimersAsync();
+    onSyncComplete.mockClear();
+    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1_000 }]);
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(new Error("network"));
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
@@ -251,23 +261,27 @@ describe("initBackgroundHealthKitSync", () => {
 
   it("reports sync failures to Sentry", async () => {
     vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
     vi.mocked(queryWorkouts).mockResolvedValueOnce([
       {
+        uuid: "workout-1",
         activityType: 1,
         startDate: "2026-03-22T10:00:00Z",
         endDate: "2026-03-22T11:00:00Z",
         duration: 3600,
         totalDistance: 10000,
+        sourceName: "Apple Watch",
       },
     ]);
-    const client = createMockClient();
     const networkError = new Error("network timeout");
-    client.healthKitSync.pushWorkouts.mutate.mockRejectedValue(networkError);
-    await initBackgroundHealthKitSync(client);
+    client.healthKitSync.pushWorkouts.mutate.mockRejectedValueOnce(networkError);
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
 
@@ -305,7 +319,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
 
@@ -347,7 +361,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
 
@@ -366,9 +380,13 @@ describe("initBackgroundHealthKitSync", () => {
   it("reports partial sync errors without labeling completed stages as succeeded", async () => {
     vi.useFakeTimers();
     const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
+    const onSyncComplete = vi.fn();
+    await initBackgroundHealthKitSync(client, onSyncComplete);
     await vi.runAllTimersAsync();
     mockLoggerInfo.mockClear();
+    mockCaptureException.mockClear();
+    mockCompleteObserverUpdates.mockClear();
+    onSyncComplete.mockClear();
     vi.mocked(queryWorkouts).mockResolvedValueOnce([
       {
         uuid: "workout-1",
@@ -384,7 +402,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
 
@@ -396,15 +414,12 @@ describe("initBackgroundHealthKitSync", () => {
       "Sync stage completed",
       expect.objectContaining({
         operation: "queryWorkoutRoutes",
-        outcome: "completed",
+        outcome: "failed",
       }),
     );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
       "bg-healthkit-sync",
-      expect.stringContaining("1 errors"),
-      expect.objectContaining({
-        errorCount: 1,
-      }),
+      expect.stringContaining("HealthKit observer sync completed with 1 error"),
     );
     expect(mockLoggerInfo).not.toHaveBeenCalledWith(
       "bg-healthkit-sync",
@@ -412,6 +427,17 @@ describe("initBackgroundHealthKitSync", () => {
       expect.objectContaining({
         outcome: "succeeded",
       }),
+    );
+    expect(onSyncComplete).not.toHaveBeenCalled();
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("HealthKit observer sync completed with 1 error"),
+      }),
+      {
+        errorCount: 1,
+        source: "bg-healthkit-sync",
+      },
     );
     vi.useRealTimers();
   });
@@ -467,6 +493,9 @@ describe("initBackgroundHealthKitSync", () => {
     ]);
     const firstOnSyncComplete = vi.fn();
     await initBackgroundHealthKitSync(firstClient, firstOnSyncComplete);
+    await vi.waitFor(() => {
+      expect(firstClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
 
     const secondClient = createMockClient();
     const secondOnSyncComplete = vi.fn();
@@ -480,13 +509,13 @@ describe("initBackgroundHealthKitSync", () => {
 
     firstSync.resolve({ inserted: 1 });
     await vi.waitFor(() => {
-      expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
+      expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+      expect(secondOnSyncComplete).toHaveBeenCalledTimes(2);
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["second-context-update"], true);
     });
 
     expect(firstClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
     expect(firstOnSyncComplete).not.toHaveBeenCalled();
-    expect(secondOnSyncComplete).toHaveBeenCalledTimes(2);
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["second-context-update"], true);
   });
 
   it("tears down and reports an observer registration failure", async () => {
@@ -523,7 +552,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
     await vi.advanceTimersByTimeAsync(500);
@@ -576,7 +605,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
     await vi.advanceTimersByTimeAsync(5000);
@@ -641,7 +670,16 @@ describe("initBackgroundHealthKitSync", () => {
     expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
     expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(1, ["update-1"], true);
     expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(2, ["update-2"], true);
-    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(3);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(queryDailyStatistics)).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(mockQueryAnchoredSamples).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      expect.any(String),
+    );
     vi.useRealTimers();
   });
 
@@ -652,39 +690,29 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.runAllTimersAsync();
     mockCompleteObserverUpdates.mockClear();
 
-    const firstSync = createDeferred<{ inserted: number }>();
-    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(firstSync.promise);
-    vi.mocked(queryWorkouts)
-      .mockResolvedValueOnce([
-        {
-          activityType: 1,
-          startDate: "2026-03-22T10:00:00Z",
-          endDate: "2026-03-22T11:00:00Z",
-          duration: 3600,
-          totalDistance: 10000,
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          activityType: 1,
-          startDate: "2026-03-22T12:00:00Z",
-          endDate: "2026-03-22T13:00:00Z",
-          duration: 3600,
-          totalDistance: 10000,
-        },
-      ]);
+    const firstSync = createDeferred<{
+      queryId: string | null;
+      samples: HealthKitSample[];
+      deletedUUIDs: string[];
+    }>();
+    mockQueryAnchoredSamples.mockReturnValueOnce(firstSync.promise);
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
       updateId: "update-1",
     });
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
       updateId: "update-2",
     });
 
-    firstSync.resolve({ inserted: 1 });
+    expect(mockCompleteObserverUpdates).not.toHaveBeenCalled();
+    firstSync.resolve({
+      queryId: "queued-query",
+      samples: [],
+      deletedUUIDs: [],
+    });
     await vi.waitFor(() => {
       expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
     });
@@ -715,7 +743,7 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      typeIdentifier: "HKWorkoutTypeIdentifier",
       updateId: "update-1",
     });
     await vi.advanceTimersByTimeAsync(5000);

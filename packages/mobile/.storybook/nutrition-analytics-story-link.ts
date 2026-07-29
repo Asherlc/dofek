@@ -22,25 +22,58 @@ function createStoryObservable(path: string): OperationResultObservable<AppRoute
             proteinPerKg: 1.7,
           },
         ];
-      } else if (path === "nutritionAnalytics.micronutrientAdequacy") {
-        data = [
-          {
-            nutrient: "Iron",
-            unit: "mg",
-            rda: 18,
-            avgIntake: 15,
-            percentRda: 83,
-            daysTracked: 30,
-          },
-          {
-            nutrient: "Vitamin C",
-            unit: "mg",
-            rda: 90,
-            avgIntake: 102,
-            percentRda: 113,
-            daysTracked: 30,
-          },
-        ];
+      } else if (path === "nutritionAnalytics.micronutrientAdequacyV2") {
+        data = {
+          nutrients: [
+            {
+              nutrientId: "iron",
+              nutrient: "Iron",
+              unit: "mg",
+              intake: {
+                totalDailyAverage: 15,
+                foodDailyAverage: 15,
+                supplementDailyAverage: 0,
+                daysTracked: 30,
+              },
+              adequacy: {
+                status: "below_daily_value",
+                percentDailyValue: 83,
+                message:
+                  "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+                reference: { amount: 18 },
+              },
+              upperLimit: {
+                status: "not_in_ruleset",
+                message: "No upper-limit rule is included in this bounded ruleset.",
+              },
+              safetyStatus: "no_upper_limit_in_ruleset",
+            },
+            {
+              nutrientId: "vitamin_c",
+              nutrient: "Vitamin C",
+              unit: "mg",
+              intake: {
+                totalDailyAverage: 102,
+                foodDailyAverage: 72,
+                supplementDailyAverage: 30,
+                daysTracked: 30,
+              },
+              adequacy: {
+                status: "at_or_above_daily_value",
+                percentDailyValue: 113,
+                message:
+                  "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment.",
+                reference: { amount: 90 },
+              },
+              upperLimit: {
+                status: "within_limit",
+                message:
+                  "Average intake over recorded days is below the included NIH adult upper limit.",
+              },
+              safetyStatus: "within_upper_limit",
+            },
+          ],
+        };
       } else {
         observer.error?.(
           TRPCClientError.from<AppRouter>(new Error(`Unhandled Storybook tRPC path: ${path}`)),

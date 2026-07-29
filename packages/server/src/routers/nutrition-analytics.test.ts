@@ -39,7 +39,12 @@ import { nutritionAnalyticsRouter } from "./nutrition-analytics.ts";
 const createCaller = createTestCallerFactory(nutritionAnalyticsRouter);
 
 function makeCaller() {
-  const execute = vi.fn().mockResolvedValue([]);
+  const execute = vi.fn().mockImplementation(async (query: unknown) => {
+    if (collectSqlText(query).includes("has_medication_records")) {
+      return [{ has_medication_records: false, has_supplements: false }];
+    }
+    return [];
+  });
   const sensorStore = makeMockSensorStore([]);
   return {
     caller: createCaller({
@@ -59,7 +64,7 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
 
     await caller.micronutrientAdequacy({ days: 30 });
 
-    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND fe.date > CURRENT_DATE -");
+    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND fen.date > CURRENT_DATE -");
   });
 
   it("micronutrientAdequacy omits the lower date bound when days is null", async () => {
@@ -68,9 +73,24 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
     await caller.micronutrientAdequacy({ days: null });
 
     const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
-    expect(queryText).toContain("WHERE fe.user_id =");
-    expect(queryText).toContain("AND fe.confirmed = true");
+    expect(queryText).toContain("WHERE fen.user_id =");
+    expect(queryText).toContain("fitness.v_nutrition_canonical_nutrient");
     expect(queryText).not.toContain("CURRENT_DATE -");
+  });
+
+  it("micronutrientAdequacyV2 applies the selected range to canonical contributions", async () => {
+    const { caller, execute } = makeCaller();
+
+    const result = await caller.micronutrientAdequacyV2({ days: 30 });
+
+    expect(result).toMatchObject({
+      nutrients: [],
+      professionalReview: { status: "no_supplements" },
+    });
+    const queryText = execute.mock.calls
+      .map((call) => collectSqlText(call[0]))
+      .find((text) => text.includes("fitness.v_nutrition_canonical_nutrient"));
+    expect(queryText).toContain("AND fen.date > CURRENT_DATE -");
   });
 
   it("adaptiveTdee uses lower date bounds for finite ranges", async () => {

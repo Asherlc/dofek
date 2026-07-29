@@ -103,6 +103,7 @@ describe("Router SQL validity", () => {
     it("list", () =>
       expectValidSql("food.list", { startDate: "2025-01-01", endDate: "2025-01-31" }));
     it("byDate", () => expectValidSql("food.byDate", { date: "2025-01-15" }));
+    it("byDateV2", () => expectValidSql("food.byDateV2", { date: "2025-01-15" }));
     it("dailyTotals", () => expectValidSql("food.dailyTotals", { days: 30 }));
     it("search", () => expectValidSql("food.search", { query: "test" }));
   });
@@ -176,6 +177,8 @@ describe("Router SQL validity", () => {
   describe("nutritionAnalytics", () => {
     it("micronutrientAdequacy", () =>
       expectValidSql("nutritionAnalytics.micronutrientAdequacy", { days: 30 }));
+    it("micronutrientAdequacyV2", () =>
+      expectValidSql("nutritionAnalytics.micronutrientAdequacyV2", { days: 30 }));
     it("adaptiveTdee", () => expectValidSql("nutritionAnalytics.adaptiveTdee", { days: 90 }));
     it("macroRatios", () => expectValidSql("nutritionAnalytics.macroRatios", { days: 30 }));
   });
@@ -244,6 +247,13 @@ describe("Router SQL validity", () => {
     it("metrics", () => expectValidSql("correlation.metrics"));
     it("compute", () =>
       expectValidSql("correlation.compute", {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 30,
+        lag: 0,
+      }));
+    it("computeV2", () =>
+      expectValidSql("correlation.computeV2", {
         metricX: "protein",
         metricY: "hrv",
         days: 30,

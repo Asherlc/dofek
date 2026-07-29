@@ -1,10 +1,13 @@
+import { providerConnection } from "dofek/db/schema/reference";
 import { ensureProvider, loadTokens, saveTokens } from "dofek/db/tokens";
+import { and, eq } from "drizzle-orm";
 import express from "express";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../../src/db/test-helpers.ts";
 import { failOnUnhandledExternalRequest } from "../../../../../src/test/msw.ts";
+import { SyncRepository } from "../../repositories/sync-repository.ts";
 import { createAuthRouter } from "./index.ts";
 import { getOAuthStateStoreRef } from "./shared.ts";
 
@@ -104,19 +107,18 @@ describe("data provider OAuth reconnect", () => {
     expect(revocationRequests).toBe(0);
   });
 
-  it("clears locally stored Wahoo tokens after confirmed revocation if exchange fails", async () => {
+  it("removes the Wahoo connection after token-limit deauthorization", async () => {
     await seedConnection("wahoo", "Wahoo");
-    let revocationRequests = 0;
-    let tokenRequests = 0;
     mswServer.use(
       http.delete("https://api.wahooligan.com/v1/permissions", () => {
-        revocationRequests++;
         return new HttpResponse(null, { status: 204 });
       }),
-      http.post("https://api.wahooligan.com/oauth/token", () => {
-        tokenRequests++;
-        return HttpResponse.text("temporary outage", { status: 503 });
-      }),
+      http.post("https://api.wahooligan.com/oauth/token", () =>
+        HttpResponse.json(
+          { error: "Too many unrevoked access tokens exist for this app and user." },
+          { status: 400 },
+        ),
+      ),
     );
 
     const response = await callback("wahoo");
@@ -124,10 +126,26 @@ describe("data provider OAuth reconnect", () => {
     expect(response.status).toBe(400);
     const body = await response.text();
     expect(body).toContain("previous Wahoo authorization was removed");
-    expect(body).toContain("connect Wahoo again");
+    expect(body).toContain("/auth/provider/wahoo");
+    expect(body).not.toContain("Authorized Apps");
     await expect(loadTokens(testCtx.db, "wahoo", TEST_USER_ID)).resolves.toBeNull();
-    expect(revocationRequests).toBe(1);
-    expect(tokenRequests).toBe(1);
+    const connections = await testCtx.db
+      .select()
+      .from(providerConnection)
+      .where(
+        and(
+          eq(providerConnection.userId, TEST_USER_ID),
+          eq(providerConnection.providerId, "wahoo"),
+        ),
+      );
+    expect(connections).toEqual([]);
+    const connectedProviderIds = await new SyncRepository(
+      testCtx.db,
+      TEST_USER_ID,
+    ).getConnectedProviderIds();
+    expect(connectedProviderIds).not.toContainEqual(
+      expect.objectContaining({ providerId: "wahoo" }),
+    );
   });
 
   it("preserves stored Wahoo tokens when provider revocation fails", async () => {
@@ -139,12 +157,10 @@ describe("data provider OAuth reconnect", () => {
       ),
       http.post("https://api.wahooligan.com/oauth/token", () => {
         tokenRequests++;
-        return HttpResponse.json({
-          access_token: "replacement-access-token",
-          refresh_token: "replacement-refresh-token",
-          expires_in: 3600,
-          scope: "user_read",
-        });
+        return HttpResponse.json(
+          { error: "Too many unrevoked access tokens exist for this app and user." },
+          { status: 400 },
+        );
       }),
     );
 
@@ -153,10 +169,10 @@ describe("data provider OAuth reconnect", () => {
     expect(response.status).toBe(400);
     await expect(response.text()).resolves.toContain("existing connection is still active");
     await expect(loadTokens(testCtx.db, "wahoo", TEST_USER_ID)).resolves.toEqual(EXISTING_TOKENS);
-    expect(tokenRequests).toBe(0);
+    expect(tokenRequests).toBe(1);
   });
 
-  it("replaces Wahoo tokens after revoking the provider-limited authorization", async () => {
+  it("replaces Wahoo tokens without deauthorization when exchange succeeds", async () => {
     await seedConnection("wahoo", "Wahoo");
     let revocationRequests = 0;
     mswServer.use(
@@ -184,7 +200,7 @@ describe("data provider OAuth reconnect", () => {
     const response = await callback("wahoo");
 
     expect(response.status).toBe(200);
-    expect(revocationRequests).toBe(1);
+    expect(revocationRequests).toBe(0);
     const stored = await loadTokens(testCtx.db, "wahoo", TEST_USER_ID);
     expect(stored).toMatchObject({
       accessToken: "replacement-access-token",

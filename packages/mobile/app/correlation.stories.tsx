@@ -28,11 +28,9 @@ const metrics = [
 ];
 
 const availableResult = {
+  analysisVersion: 2,
   availability: "available",
   spearmanRho: 0.72,
-  spearmanPValue: 0.018,
-  pearsonR: 0.68,
-  pearsonPValue: 0.026,
   regression: { slope: 0.42, intercept: 8, rSquared: 0.46 },
   dataPoints: [
     { x: 90, y: 46, date: "2026-07-15" },
@@ -42,22 +40,56 @@ const availableResult = {
     { x: 130, y: 63, date: "2026-07-19" },
   ],
   sampleCount: 5,
+  coverage: {
+    selectedDayCount: 90,
+    eligiblePairDayCount: 90,
+    observedXDayCount: 65,
+    observedYDayCount: 61,
+    pairedDayCount: 5,
+    missingPairDayCount: 85,
+  },
+  uncertainty: {
+    availability: "available",
+    method: "circular_moving_block_bootstrap",
+    level: 0.95,
+    blockLength: 5,
+    requestedReplicateCount: 2_000,
+    attemptedReplicateCount: 2_000,
+    validReplicateCount: 2_000,
+    lower: 0.24,
+    upper: 0.91,
+  },
   xStats: { mean: 110, median: 110, stddev: 15.81, min: 90, max: 130, n: 5 },
   yStats: { mean: 54, median: 55, stddev: 6.52, min: 46, max: 63, n: 5 },
   insight: "Higher protein intake tended to coincide with higher heart rate variability.",
-  confidenceLevel: "early",
-  correlationColor: "#34d399",
 };
 
 const insufficientResult = {
+  analysisVersion: 2,
   availability: "insufficient",
   dataPoints: [],
   sampleCount: 0,
   additionalSamplesRequired: 5,
+  coverage: {
+    selectedDayCount: 90,
+    eligiblePairDayCount: 90,
+    observedXDayCount: 0,
+    observedYDayCount: 0,
+    pairedDayCount: 0,
+    missingPairDayCount: 90,
+  },
+  uncertainty: {
+    availability: "unavailable",
+    method: "circular_moving_block_bootstrap",
+    level: 0.95,
+    blockLength: 5,
+    requestedReplicateCount: 2_000,
+    attemptedReplicateCount: 0,
+    validReplicateCount: 0,
+    reason: "insufficient_pairs",
+  },
   insight:
-    "Insufficient data to analyze the relationship between Protein and Heart Rate Variability.",
-  confidenceLevel: "insufficient",
-  correlationColor: "#71717a",
+    "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
 };
 
 function createMockLink(scenario: CorrelationScenario): TRPCLink<AppRouter> {
@@ -74,7 +106,7 @@ function createMockObservable(
     subscribe(observer) {
       if (path === "correlation.metrics") {
         observer.next?.({ result: { data: metrics } });
-      } else if (path === "correlation.compute") {
+      } else if (path === "correlation.computeV2") {
         observer.next?.({
           result: { data: scenario === "available" ? availableResult : insufficientResult },
         });

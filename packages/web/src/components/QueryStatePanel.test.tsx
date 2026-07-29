@@ -1,7 +1,24 @@
 /** @vitest-environment jsdom */
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
+
+function relativeLuminance(hexColor: string): number {
+  const linearChannel = (start: number) => {
+    const channel = Number.parseInt(hexColor.slice(start, start + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linearChannel(1) + 0.7152 * linearChannel(3) + 0.0722 * linearChannel(5);
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
 
 describe("QueryStatePanel", () => {
   it("does not use error styling for loading state", () => {
@@ -12,6 +29,45 @@ describe("QueryStatePanel", () => {
   it("renders the error message", () => {
     render(<QueryStatePanel error={new Error("Provider query failed")} />);
     expect(screen.getByText("Provider query failed")).toBeDefined();
+  });
+
+  it("renders an announced, visibly identified error with AA contrast", () => {
+    render(<QueryStatePanel error={new Error("Provider query failed")} />);
+
+    const panel = screen.getByRole("alert");
+    const title = screen.getByRole("heading", { name: "Could not load this section" });
+    const message = screen.getByText("Provider query failed");
+
+    expect(screen.getByTestId("query-state-error-icon").textContent).toBe("!");
+    expect(panel).toHaveStyle({
+      backgroundColor: operationalStatusColors.danger.surface,
+      borderColor: operationalStatusColors.danger.border,
+    });
+    expect(title).toHaveStyle({ color: operationalStatusColors.danger.foreground });
+    expect(message).toHaveStyle({ color: operationalStatusColors.danger.foreground });
+    expect(
+      contrastRatio(
+        operationalStatusColors.danger.foreground,
+        operationalStatusColors.danger.surface,
+      ),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(operationalStatusColors.danger.border, operationalStatusColors.danger.surface),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("names and visibly identifies a contextual error without nesting alerts", () => {
+    render(
+      <QueryStatePanel contextLabel="Sleep" error={new Error("Sleep performance unavailable")} />,
+    );
+
+    const heading = screen.getByRole("heading", {
+      name: "Sleep: Could not load this section",
+    });
+    const alert = heading.closest('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveTextContent("Sleep: Could not load this section");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("falls back when the error has no usable message", () => {

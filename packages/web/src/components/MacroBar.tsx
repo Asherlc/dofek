@@ -1,26 +1,26 @@
 import { formatNutritionNumber } from "@dofek/format/format";
+import { chartColors } from "@dofek/scoring/colors";
 
 interface MacroBarProps {
   label: string;
   grams: string;
   percentage: number;
-  color: "blue" | "amber" | "red";
+  color: "blue" | "purple" | "teal";
 }
 
 const colorMap = {
-  blue: { bar: "bg-blue-500", text: "text-blue-400" },
-  amber: { bar: "bg-amber-500", text: "text-amber-400" },
-  red: { bar: "bg-red-500", text: "text-red-400" },
+  blue: chartColors.blue,
+  purple: chartColors.purple,
+  teal: chartColors.teal,
 } as const;
 
 export function MacroBar({ label, grams, percentage, color }: MacroBarProps) {
-  const { bar, text } = colorMap[color];
   const visualPercentage = Math.min(100, Math.max(0, percentage));
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
-        <span className={`font-medium ${text}`}>{label}</span>
+        <span className="font-medium text-muted">{label}</span>
         <span className="text-muted tabular-nums">
           {grams}
           <span className="ml-1.5 text-subtle">({formatNutritionNumber(percentage)}%)</span>
@@ -28,8 +28,9 @@ export function MacroBar({ label, grams, percentage, color }: MacroBarProps) {
       </div>
       <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
         <div
-          className={`h-full rounded-full ${bar} transition-all duration-300`}
-          style={{ width: `${visualPercentage}%` }}
+          className="h-full rounded-full transition-all duration-300"
+          data-testid="macro-bar-fill"
+          style={{ backgroundColor: colorMap[color], width: `${visualPercentage}%` }}
         />
       </div>
     </div>
