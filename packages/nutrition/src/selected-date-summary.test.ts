@@ -65,12 +65,34 @@ describe("selectedDateNutritionSummarySchema", () => {
   });
 
   it("rejects non-zero macro energy shares that do not total 100 percent", () => {
+    const result = selectedDateNutritionSummarySchema.safeParse({
+      ...summary,
+      macros: {
+        ...summary.macros,
+        protein: { ...summary.macros.protein, energySharePercentage: 21 },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual({
+        code: "custom",
+        message: "Macro energy shares must total 100 percent",
+        path: ["macros"],
+      });
+    }
+  });
+
+  it("rejects zero shares when carbs and fat contain energy", () => {
+    const zeroShare = { grams: 0, calories: 0, energySharePercentage: 0 };
+
     expect(() =>
       selectedDateNutritionSummarySchema.parse({
         ...summary,
         macros: {
-          ...summary.macros,
-          protein: { ...summary.macros.protein, energySharePercentage: 21 },
+          protein: zeroShare,
+          carbs: { ...zeroShare, calories: 1 },
+          fat: { ...zeroShare, calories: 1 },
         },
       }),
     ).toThrow();
