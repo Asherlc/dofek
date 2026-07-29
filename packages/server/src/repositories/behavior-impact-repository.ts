@@ -24,7 +24,7 @@ export interface BehaviorImpactRow {
   noCount: number;
 }
 
-/** A boolean journal behavior and its measured impact on next-day readiness. */
+/** A descriptive association between a boolean journal behavior and next-day readiness. */
 export class BehaviorImpact {
   readonly #row: BehaviorImpactRow;
 
@@ -52,7 +52,7 @@ export class BehaviorImpact {
     return this.#row.noCount;
   }
 
-  /** Percentage change in next-day readiness when behavior=yes vs no. */
+  /** Relative difference in mean next-day readiness when behavior=yes versus no. */
   get impactPercent(): number {
     if (this.#row.avgReadinessNo === 0) return 0;
     return (
@@ -92,7 +92,7 @@ const impactDbSchema = z.object({
 // Repository
 // ---------------------------------------------------------------------------
 
-/** Data access for behavior-impact-on-readiness analytics. */
+/** Data access for descriptive behavior/readiness associations. */
 export class BehaviorImpactRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
@@ -111,7 +111,7 @@ export class BehaviorImpactRepository {
     this.#sensorStore = sensorStore;
   }
 
-  /** Impact of boolean journal behaviors on next-day readiness. */
+  /** Descriptive associations between boolean journal behaviors and next-day readiness. */
   async getImpactSummary(days: RangeDays): Promise<BehaviorImpact[]> {
     const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
