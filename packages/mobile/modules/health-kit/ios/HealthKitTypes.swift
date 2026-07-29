@@ -112,13 +112,36 @@ let readTypes: Set<HKObjectType> = {
 let backgroundDeliveryTypes: Set<HKSampleType> = {
     var types = Set<HKSampleType>()
 
-    for type in readTypes {
-        guard let sampleType = type as? HKSampleType else { continue }
-        #if os(iOS)
-        if sampleType is HKClinicalType { continue }
-        #endif
-        types.insert(sampleType)
+    let quantityTypes: [HKQuantityTypeIdentifier] = [
+        .stepCount,
+        .distanceWalkingRunning,
+        .flightsClimbed,
+        .appleExerciseTime,
+        .bodyMass,
+        .bodyFatPercentage,
+        .heartRate,
+        .restingHeartRate,
+        .heartRateVariabilitySDNN,
+        .vo2Max,
+        .oxygenSaturation,
+        .respiratoryRate,
+        .appleSleepingWristTemperature,
+        .walkingSpeed,
+        .walkingStepLength,
+        .walkingDoubleSupportPercentage,
+        .walkingAsymmetryPercentage,
+        .appleWalkingSteadiness,
+    ]
+    for identifier in quantityTypes {
+        if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
+            types.insert(type)
+        }
     }
+    if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+        types.insert(sleepType)
+    }
+    types.insert(HKWorkoutType.workoutType())
+    types.insert(HKSeriesType.workoutRoute())
 
     return types
 }()

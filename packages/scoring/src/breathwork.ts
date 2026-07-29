@@ -9,6 +9,10 @@ export interface BreathworkTechnique {
   id: string;
   name: string;
   description: string;
+  /** Possible benefit supported by technique-specific evidence, never a guarantee */
+  possibleBenefit?: string;
+  /** Material guidance that clients must show before a session starts */
+  safety: BreathworkSafetyGuidance;
   /** Inhale duration in seconds */
   inhaleSeconds: number;
   /** Hold after inhale in seconds (optional) */
@@ -21,12 +25,48 @@ export interface BreathworkTechnique {
   defaultRounds: number;
 }
 
+export interface BreathworkSafetyGuidance {
+  position: string;
+  warnings: string[];
+  stopCriteria: string;
+  emergency: string;
+}
+
+/**
+ * Safety wording follows NHS breathing/fainting guidance:
+ * https://www.asph.nhs.uk/nervous-system-regulation
+ * https://www.nhs.uk/symptoms/fainting/
+ */
+const STANDARD_SAFETY: BreathworkSafetyGuidance = {
+  position: "Practice seated or lying down in a comfortable, safe place.",
+  warnings: ["Do not force or strain your breath."],
+  stopCriteria: "Stop and return to normal breathing if you feel dizzy or lightheaded.",
+  emergency:
+    "Call emergency services if someone faints and is not breathing, cannot be woken within 1 minute, or has not fully recovered.",
+};
+
+/**
+ * Safety guidance for intense breathing rounds:
+ * https://www.wimhofmethod.com/breathing-exercises
+ */
+const POWER_BREATHING_SAFETY: BreathworkSafetyGuidance = {
+  position: "Practice only while seated or lying down in a safe place.",
+  warnings: [
+    "Intense rounds can, in rare cases, cause loss of consciousness.",
+    "Never practice in or near water, while driving, or anywhere fainting could cause injury.",
+  ],
+  stopCriteria: STANDARD_SAFETY.stopCriteria,
+  emergency: STANDARD_SAFETY.emergency,
+};
+
 export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "box-breathing",
     name: "Box Breathing",
-    description:
-      "Equal parts inhale, hold, exhale, hold. Used by Navy SEALs to reduce stress and improve focus.",
+    description: "Equal-length inhale, hold, exhale, and hold phases.",
+    // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
+    possibleBenefit: "Regular practice may support a more positive mood.",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 4,
     holdInSeconds: 4,
     exhaleSeconds: 4,
@@ -36,8 +76,8 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "4-7-8",
     name: "4-7-8 Breathing",
-    description:
-      "Relaxing breath technique. Inhale 4s, hold 7s, exhale 8s. Promotes deep relaxation and sleep.",
+    description: "Inhale for 4 seconds, hold for 7 seconds, and exhale for 8 seconds.",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 4,
     holdInSeconds: 7,
     exhaleSeconds: 8,
@@ -46,8 +86,8 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "coherent",
     name: "Coherent Breathing",
-    description:
-      "Slow, rhythmic breathing at 5 breaths per minute. Balances the autonomic nervous system and optimizes HRV.",
+    description: "Slow, rhythmic breathing at 5 breaths per minute.",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 6,
     exhaleSeconds: 6,
     defaultRounds: 10,
@@ -55,8 +95,11 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "physiological-sigh",
     name: "Physiological Sigh",
-    description:
-      "Double inhale through the nose followed by a long exhale. Rapidly reduces stress and anxiety.",
+    description: "Double inhale through the nose followed by a longer exhale.",
+    // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
+    possibleBenefit:
+      "Regular practice may support a more positive mood and slower resting breathing.",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 3,
     holdInSeconds: 1,
     exhaleSeconds: 6,
@@ -64,9 +107,9 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   },
   {
     id: "wim-hof",
-    name: "Wim Hof Method",
-    description:
-      "Power breathing with deep inhales and passive exhales. Increases energy, focus, and cold tolerance.",
+    name: "Power Breathing",
+    description: "30 rounds of 2-second inhales followed by 2-second exhales.",
+    safety: POWER_BREATHING_SAFETY,
     inhaleSeconds: 2,
     exhaleSeconds: 2,
     defaultRounds: 30,

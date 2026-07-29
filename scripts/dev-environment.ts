@@ -159,6 +159,11 @@ function doctor(): void {
 }
 
 function start(): void {
+  if (process.env.SANDBOX === "1") {
+    process.stdout.write("SANDBOX=1: skipping Docker-backed services.\n");
+    return;
+  }
+
   runCommand("docker", ["info"]);
   runCommand("pnpm", ["compose:up"]);
   runCommand("pnpm", ["setup-db"]);
