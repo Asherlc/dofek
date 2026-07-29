@@ -20108,3 +20108,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep package-script-only TypeScript entry
   points in the owning workspace's Knip entry graph when adding or renaming
   repository automation.
+
+## 2026-07-29 — Shared Docker VM OOM-killed unbounded review ClickHouse
+
+- **Status:** Unresolved. The root cause is confirmed, but the first bounded
+  resource profile failed the complete analytics build and was reverted
+  pending approval for a different limit.
+- **Symptoms:** The exact failing audit step was
+  `pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml exec -T server ./entrypoint.sh analytics-e2e`.
+  Its first fatal line was
+  `NameResolutionError("HTTPConnection(host='clickhouse', port=8123): Failed to resolve 'clickhouse' ([Errno -2] Name does not resolve)")`
+  while dbt built `daily_recovery_inputs`.
+- **User impact:** The review UI could not complete its ClickHouse analytics
+  seed, so analytics-backed UI states could not be audited.
+- **Evidence:** Immediately after the name-resolution failure, the E2E
+  ClickHouse container was `Exited (137)` with `OOMKilled=true` and
+  `ExitCode=137`. Both default and E2E Compose stacks rendered no container
+  memory limit, and runtime inspection reported `HostConfig.Memory=0`. The
+  default stack configured up to 3,221,225,472 bytes of tracked ClickHouse
+  memory on a shared Docker VM with 8,216,862,720 bytes total; the E2E stack
+  did not mount the tracked-server memory configuration. The current unbounded
+  pipeline completed with one dbt thread and approximately 900 MiB ClickHouse
+  RSS.
+- **Root cause:** Concurrent workspaces could consume the shared Docker VM
+  without ClickHouse cgroup isolation. The E2E ClickHouse process also lacked
+  the repository's tracked-server cap, so host memory pressure killed the
+  container and dbt subsequently failed to resolve its vanished service.
+- **Fix / mitigation:** No fix has been merged. A 1,536 MiB container limit
+  with a 1,024 MiB tracked-server limit was validated at the Compose and
+  runtime layers, but the full `pnpm analytics:build` failed
+  `activity_vo2max_estimate` with ClickHouse error 241: the query would use
+  913.97 MiB while process RSS was 1.07 GiB against the 1.00 GiB server
+  maximum. That profile was reverted. No retry, timeout, fallback, or
+  warn-and-continue behavior was added. Docker documents `mem_limit` as the
+  Compose service memory ceiling in its
+  [service reference](https://docs.docker.com/reference/compose-file/services/#mem_limit),
+  while ClickHouse documents `max_server_memory_usage` in its
+  [server settings reference](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#max_server_memory_usage).
+- **Remaining risk / follow-up:** External direction is required before
+  testing the proposed 1,280 MiB tracked-server limit beneath the unchanged
+  1,536 MiB container ceiling, or selecting another bounded strategy. The full
+  default and E2E review pipelines must pass from recreated services before
+  any resource profile can ship.
