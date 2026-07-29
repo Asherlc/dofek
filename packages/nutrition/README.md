@@ -10,6 +10,13 @@ calories, macros, goal progress, or source selection. An available day includes
 the contributing and excluded providers/sources; an overlapping-source conflict
 has a null summary plus an actionable message and provenance.
 
+Available days also expose a server-authored `contributionGrain` and
+`contributionLabel`. The label combines the canonical provider display name with
+the source path when one exists, such as `Cronometer (via Apple Health) daily
+total`. Web and mobile show this metadata as an informational resolution panel
+and preserve the server's exact resolution message and excluded-source labels.
+Provider daily aggregates remain excluded from editable meal cards.
+
 The `food.byDate` v1 procedure retains its installed-client contract of
 `{ entries, summary }` with a non-null summary and fails with an actionable
 precondition error when sources conflict. New web and mobile clients use

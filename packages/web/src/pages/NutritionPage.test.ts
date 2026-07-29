@@ -88,6 +88,8 @@ describe("selectedDateFoodV2Schema", () => {
         sourceLabels: ["Cronometer", "FatSecret"],
         contributingSourceLabels: [],
         excludedSourceLabels: ["Cronometer", "FatSecret"],
+        contributionGrain: null,
+        contributionLabel: null,
       },
     });
 

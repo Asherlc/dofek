@@ -32,6 +32,8 @@ const availableResolution = {
   sourceLabels: ["dofek"],
   contributingSourceLabels: ["dofek"],
   excludedSourceLabels: [],
+  contributionGrain: "itemized",
+  contributionLabel: "Dofek itemized entries",
 };
 
 vi.mock("../../lib/open-external-url", () => ({
@@ -326,6 +328,8 @@ describe("FoodScreen AI meal confirmation", () => {
           sourceLabels: ["Apple Health", "Cronometer"],
           contributingSourceLabels: [],
           excludedSourceLabels: ["Apple Health", "Cronometer"],
+          contributionGrain: null,
+          contributionLabel: null,
         },
       },
       isError: false,
@@ -339,6 +343,45 @@ describe("FoodScreen AI meal confirmation", () => {
     expect(screen.getByRole("alert").textContent).toContain("Apple Health, Cronometer");
     expect(screen.queryByText(/kcal remaining/)).toBeNull();
     expect(screen.getByText("Named itemized meal")).toBeTruthy();
+  });
+
+  it("explains an aggregate-only contribution without rendering an unnamed meal", async () => {
+    foodByDateQuery = {
+      data: {
+        entries: [],
+        summary: {
+          calories: 1800,
+          mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 1800 },
+          calorieGoal: { target: 2000, remaining: 200, over: 0, progressPercentage: 90 },
+          macros: {
+            protein: { grams: 90, calories: 360, percentage: 20 },
+            carbs: { grams: 220, calories: 880, percentage: 49 },
+            fat: { grams: 60, calories: 540, percentage: 30 },
+          },
+        },
+        resolution: {
+          status: "available",
+          message: "Totals use the only available nutrition source.",
+          sourceProviders: ["apple_health"],
+          contributingProviders: ["apple_health"],
+          excludedProviders: [],
+          sourceLabels: ["Cronometer (via Apple Health)"],
+          contributingSourceLabels: ["Cronometer (via Apple Health)"],
+          excludedSourceLabels: [],
+          contributionGrain: "daily_aggregate",
+          contributionLabel: "Cronometer (via Apple Health) daily total",
+        },
+      },
+      isError: false,
+      isLoading: false,
+    };
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(screen.getByText("Cronometer (via Apple Health) daily total")).toBeTruthy();
+    expect(screen.getByText("Totals use the only available nutrition source.")).toBeTruthy();
+    expect(screen.queryByText("Unnamed nutrition entry")).toBeNull();
   });
 
   it("does not report missing food data while the first request is loading", async () => {

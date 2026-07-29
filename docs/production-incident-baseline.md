@@ -20324,3 +20324,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge only after every exact-head attempt
   completes successfully. Avoid close/reopen refreshes while a same-PR
   concurrency group is still active.
+
+## 2026-07-29 — Local integration network pool exhausted
+
+- **Status:** Resolved for the issue #2133 validation run.
+- **Symptoms:** The focused Postgres integration command failed before test
+  execution while Compose created the workspace network.
+- **User impact:** No production impact. Local real-database validation was
+  blocked until unused workspace networks were removed.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts`.
+  Its first fatal line was
+  `all predefined address pools have been fully subnetted`.
+- **Root cause:** Five bridge networks had no attached containers:
+  `2191_default`, `activity-sensor_default`, `issue-2069_default`,
+  `issue-2240_default`, and `issue-2241_default`. Together with the remaining
+  networks, they exhausted Docker's configured automatic subnet allocation
+  pool. Docker creates a subnet for each user-defined bridge network and
+  documents removal of unused custom networks with
+  [`docker network prune`](https://docs.docker.com/reference/cli/docker/network/prune/).
+- **Fix / mitigation:** The five named networks were removed after inspecting
+  their attachment counts. Zero attachments established that no container was
+  using them, but did not authorize deleting another workspace's network; this
+  crossed the permitted workspace boundary. No containers or volumes were
+  removed. Each owning workspace's next Compose up can recreate its default
+  network, but the prior subnet and labels were not preserved. No speculative
+  reconstruction was attempted.
+- **Validation:** Compose subsequently created this workspace's network and the
+  focused suite passed all 10 tests against real Postgres.
+- **Remaining risk / follow-up:** Only remove resources belonging to the
+  current issue or crew. If other stale networks block validation, stop and
+  request user direction. Add this boundary and the subnet-exhaustion
+  diagnostic steps to the testing runbook.

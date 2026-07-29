@@ -84,6 +84,7 @@ const availableResolutionRow = {
   source_labels: ["dofek"],
   contributing_source_labels: ["dofek"],
   excluded_source_labels: [],
+  contribution_grain: "itemized",
 };
 
 function makeDailyTotalsRow(overrides: Record<string, unknown> = {}) {
@@ -444,6 +445,8 @@ describe("FoodRepository", () => {
           sourceLabels: [],
           contributingSourceLabels: [],
           excludedSourceLabels: [],
+          contributionGrain: null,
+          contributionLabel: null,
         },
       });
     });
@@ -489,6 +492,35 @@ describe("FoodRepository", () => {
       });
     });
 
+    it("labels a provider daily aggregate from server-owned provenance", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1800,
+          protein_g: 90,
+          carbs_g: 220,
+          fat_g: 60,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 1800,
+          source_providers: ["apple_health"],
+          contributing_providers: ["apple_health"],
+          source_labels: ["Cronometer (via Apple Health)"],
+          contributing_source_labels: ["Cronometer (via Apple Health)"],
+          contribution_grain: "daily_aggregate",
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.resolution).toMatchObject({
+        contributionGrain: "daily_aggregate",
+        contributionLabel: "Cronometer (via Apple Health) daily total",
+      });
+    });
+
     it("caps goal progress and reports calories over the target", async () => {
       const { repo } = makeRepository([
         {
@@ -525,6 +557,7 @@ describe("FoodRepository", () => {
         source_labels: ["Apple Health", "Cronometer"],
         contributing_source_labels: [],
         excluded_source_labels: ["Apple Health", "Cronometer"],
+        contribution_grain: null,
       };
       const { repo } = makeRepository([
         {
@@ -553,6 +586,8 @@ describe("FoodRepository", () => {
         sourceLabels: conflictResolution.source_labels,
         contributingSourceLabels: [],
         excludedSourceLabels: conflictResolution.excluded_source_labels,
+        contributionGrain: null,
+        contributionLabel: null,
       });
     });
   });

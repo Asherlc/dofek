@@ -354,6 +354,27 @@ export function NutritionPage() {
 
         {selectedDateFood && (
           <>
+            {selectedDateFood.resolution.sourceProviders.length > 0 &&
+              selectedDateFood.resolution.status === "available" && (
+                <section
+                  className="rounded-xl border border-border bg-surface-solid px-4 py-3"
+                  aria-label="Nutrition source resolution"
+                >
+                  {selectedDateFood.resolution.contributionLabel && (
+                    <p className="font-medium text-foreground">
+                      {selectedDateFood.resolution.contributionLabel}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm text-muted">{selectedDateFood.resolution.message}</p>
+                  {selectedDateFood.resolution.excludedSourceLabels.length > 0 && (
+                    <p className="mt-1 text-xs text-subtle">
+                      Excluded overlapping sources:{" "}
+                      {selectedDateFood.resolution.excludedSourceLabels.join(", ")}
+                    </p>
+                  )}
+                </section>
+              )}
+
             {selectedDateFood.resolution.status === "source_conflict" && (
               <div
                 role="alert"
