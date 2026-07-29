@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   addButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 14,
     fontWeight: "700",
   },

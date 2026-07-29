@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   passwordButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",

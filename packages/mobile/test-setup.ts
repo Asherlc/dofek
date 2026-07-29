@@ -300,6 +300,8 @@ vi.mock("react-native", () => {
     setLayoutAnimationEnabledExperimental: vi.fn(),
   };
 
+  const DynamicColorIOS = vi.fn((variants: { light: string; dark: string }) => variants);
+
   return {
     __esModule: true,
     View,
@@ -322,6 +324,7 @@ vi.mock("react-native", () => {
     AppState,
     LayoutAnimation,
     UIManager,
+    DynamicColorIOS,
     useWindowDimensions: vi.fn(() => ({
       width: 390,
       height: 844,

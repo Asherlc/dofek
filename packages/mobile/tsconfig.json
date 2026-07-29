@@ -16,7 +16,9 @@
     "modules/**/*.tsx",
     "types/**/*.ts",
     "types/**/*.tsx",
-    "theme.ts"
+    "theme.ts",
+    "theme.ios.ts",
+    "theme-palette.ts"
   ],
   "exclude": [
     ".rnstorybook",

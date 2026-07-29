@@ -1,14 +1,35 @@
 import type { Preview } from "@storybook/react-native";
-import { View } from "react-native";
+import { Appearance, View } from "react-native";
+import { colors } from "../theme";
 
 const preview: Preview = {
   decorators: [
-    (Story) => (
-      <View style={{ flex: 1, backgroundColor: "#eef3ed", padding: 16 }}>
-        <Story />
-      </View>
-    ),
+    (Story, context) => {
+      const appearance = context.globals.appearance === "dark" ? "dark" : "light";
+      Appearance.setColorScheme(appearance);
+      return (
+        <View style={{ flex: 1, backgroundColor: colors.background, padding: 16 }}>
+          <Story />
+        </View>
+      );
+    },
   ],
+  globalTypes: {
+    appearance: {
+      description: "iOS system appearance",
+      toolbar: {
+        icon: "mirror",
+        items: [
+          { value: "light", title: "Light" },
+          { value: "dark", title: "Dark" },
+        ],
+        dynamicTitle: true,
+      },
+    },
+  },
+  initialGlobals: {
+    appearance: "light",
+  },
   parameters: {
     controls: {
       expanded: true,

@@ -879,7 +879,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   backToProvidersButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 14,
     fontWeight: "600",
   },
