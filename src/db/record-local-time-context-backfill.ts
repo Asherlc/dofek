@@ -85,7 +85,7 @@ export async function backfillRecordLocalTimeContext(
     const values = sql.join(
       contexts.map(
         (context) =>
-          sql`(${context.id}::uuid, ${context.startUtcOffsetMinutes}::smallint, ${context.endUtcOffsetMinutes}::smallint, ${context.source}::text)`,
+          sql`(${context.id}::uuid, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text)`,
       ),
       sql`, `,
     );

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -128,8 +129,8 @@ export const activity = fitness.table(
     perceivedExertion: real("perceived_exertion"),
     sourceName: text("source_name"),
     timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
-    startUtcOffsetMinutes: smallint("start_utc_offset_minutes"),
-    endUtcOffsetMinutes: smallint("end_utc_offset_minutes"),
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
     localTimeSource: text("local_time_source").notNull().default("unknown"),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
@@ -331,8 +332,8 @@ export const sleepSession = fitness.table(
     sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
     timezone: text("timezone"),
-    startUtcOffsetMinutes: smallint("start_utc_offset_minutes"),
-    endUtcOffsetMinutes: smallint("end_utc_offset_minutes"),
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
     localTimeSource: text("local_time_source").notNull().default("unknown"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
