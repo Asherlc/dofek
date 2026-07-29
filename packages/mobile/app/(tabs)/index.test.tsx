@@ -8,6 +8,7 @@ const mockDashboardRefetch = vi.fn(() => Promise.resolve());
 const mockTodayPlanRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockDashboardUseQuery = vi.fn();
+const mockDashboardV2UseQuery = vi.fn();
 const mockTodayPlanUseQuery = vi.fn();
 const mockAnomalyUseQuery = vi.fn();
 const mockDataHealthUseQuery = vi.fn();
@@ -38,6 +39,19 @@ vi.mock("../../lib/trpc", () => ({
       dashboard: {
         useQuery: (...parameters: unknown[]) => {
           mockDashboardUseQuery(...parameters);
+          return {
+            data: mockDashboardData,
+            isLoading: mockDashboardLoading,
+            isFetching: mockDashboardFetching,
+            isError: !!mockDashboardError,
+            error: mockDashboardError,
+            refetch: mockDashboardRefetch,
+          };
+        },
+      },
+      dashboardV2: {
+        useQuery: (...parameters: unknown[]) => {
+          mockDashboardV2UseQuery(...parameters);
           return {
             data: mockDashboardData,
             isLoading: mockDashboardLoading,
@@ -161,6 +175,7 @@ describe("TodayScreen independent loading states", () => {
     mockTodayPlanRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
     mockDashboardUseQuery.mockClear();
+    mockDashboardV2UseQuery.mockClear();
     mockTodayPlanUseQuery.mockClear();
     mockAnomalyUseQuery.mockClear();
     mockTodayPlanLoading = false;
@@ -208,12 +223,13 @@ describe("TodayScreen independent loading states", () => {
         date: "2026-03-21",
       },
       sleepNeed: {
+        availability: "available",
         baselineMinutes: 480,
         strainDebtMinutes: 20,
         accumulatedDebtMinutes: 10,
-        totalNeedMinutes: 510,
+        debtRecoveryMinutes: 17,
+        totalNeedMinutes: 517,
         recentNights: [],
-        canRecommend: true,
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: "2026-03-21",
@@ -353,21 +369,40 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
-  it("shows sleep no-data states without default numbers when previous night sleep is missing", async () => {
+  it("shows the server availability message without recommendation values when prior sleep is missing", async () => {
     mockDashboardData = {
       ...mockDashboardData,
       sleep: {
         lastNight: null,
         sleepDebt: 0,
       },
-      sleepNeed: null,
+      sleepNeed: {
+        availability: "missing_previous_night",
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
     };
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getAllByText("No sleep data")).toHaveLength(2);
+    expect(screen.getByText("No sleep data")).toBeTruthy();
+    expect(
+      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Baseline need")).toBeNull();
+    expect(screen.queryByText("Strain debt")).toBeNull();
+    expect(screen.queryByText("Debt recovery")).toBeNull();
+    expect(screen.queryByText("8h 37m")).toBeNull();
+  });
+
+  it("uses the V2 dashboard and renders server-computed debt recovery", async () => {
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(mockDashboardV2UseQuery).toHaveBeenCalled();
+    expect(screen.getByText("8h 37m")).toBeTruthy();
+    expect(screen.getByText("+17m")).toBeTruthy();
   });
 
   it("renders all rings when no queries are loading", async () => {

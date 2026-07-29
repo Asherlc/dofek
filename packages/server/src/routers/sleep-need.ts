@@ -8,6 +8,17 @@ import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateAccessPredicate } from "../billing/entitlement.ts";
+import {
+  buildSleepNeedComputation,
+  type SleepNeedComputation,
+  type SleepNeedResult,
+  type SleepNeedV2,
+  type SleepNight,
+  sleepNeedV1Schema,
+  sleepNeedV2Schema,
+  toSleepNeedV1,
+  toSleepNeedV2,
+} from "../contracts/sleep-need-contract.ts";
 import { dateWindowEnd, dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -17,7 +28,7 @@ import {
   fetchSleepNights,
 } from "../repositories/clickhouse-sleep-repository.ts";
 import { StressRepository } from "../repositories/stress-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { type AuthenticatedContext, CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -121,32 +132,7 @@ export interface SleepPerformanceInfo extends SleepPerformanceResult {
   sourceProviders: string[];
 }
 
-export interface SleepNeedResult {
-  /** Personalized baseline sleep need in minutes (derived from historical optimum) */
-  baselineMinutes: number;
-  /** Additional sleep needed due to recent strain */
-  strainDebtMinutes: number;
-  /** Accumulated sleep debt from recent nights (minutes below need) */
-  accumulatedDebtMinutes: number;
-  /** Total recommended sleep tonight (minutes) */
-  totalNeedMinutes: number;
-  /** Last 7 calendar nights: actual vs needed (null = no data for that night) */
-  recentNights: SleepNight[];
-  /** Whether yesterday's sleep data is available (required for tonight's recommendation) */
-  canRecommend: boolean;
-}
-
-export interface SleepNight {
-  date: string;
-  /** Actual sleep minutes, or null if no data for this night */
-  actualMinutes: number | null;
-  neededMinutes: number;
-  /** Sleep debt for this night, or null if no data */
-  debtMinutes: number | null;
-  providerId: string | null;
-  sourceName: string | null;
-  sourceProviders: string[];
-}
+export type { SleepNeedResult, SleepNeedV2, SleepNight };
 
 /**
  * Whoop's sleep need formula:
@@ -156,22 +142,17 @@ export interface SleepNight {
  * Strain debt: extra sleep proportional to yesterday's training load.
  * Debt recovery: 25% of accumulated debt paid back per night.
  */
+async function calculateSleepNeed(
+  ctx: AuthenticatedContext,
+  endDate: string,
+): Promise<SleepNeedComputation> {
+  const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.calculate");
 
-export const sleepNeedRouter = router({
-  /**
-   * Sleep Need Calculator — like Whoop's Sleep Coach.
-   * Computes personalized sleep need and accumulated debt.
-   */
-  calculate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
-    .input(z.object({ endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.calculate");
-
-      // Yesterday's training load comes from the compact ClickHouse activity-load read model.
-      // The sleep + HRV part of the query stays in PG; we inject the load value as a parameter.
-      const loadRows = await sensorStore.query(
-        z.object({ load: z.coerce.number() }),
-        `SELECT
+  // Yesterday's training load comes from the compact ClickHouse activity-load read model.
+  // The sleep + HRV part of the query stays in PG; we inject the load value as a parameter.
+  const loadRows = await sensorStore.query(
+    z.object({ load: z.coerce.number() }),
+    `SELECT
           coalesce(sum(daily_load), 0) AS load
         FROM analytics.daily_strain FINAL
         WHERE user_id = {userId:UUID}
@@ -179,135 +160,153 @@ export const sleepNeedRouter = router({
           AND toDate(toTimeZone(toDateTime(date), {timezone:String})) =
             toDate({endDate:String}) - INTERVAL 1 DAY
         `,
-        { userId: ctx.userId, timezone: ctx.timezone, endDate: input.endDate },
-      );
-      const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
+    { userId: ctx.userId, timezone: ctx.timezone, endDate },
+  );
+  const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
 
-      const sleepRows = await fetchSleepNights({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        endDate: input.endDate,
-        days: 90,
-        accessWindow: ctx.accessWindow,
-        order: "asc",
-      });
+  const sleepRows = await fetchSleepNights({
+    sensorStore,
+    userId: ctx.userId,
+    timezone: ctx.timezone,
+    endDate,
+    days: 90,
+    accessWindow: ctx.accessWindow,
+    order: "asc",
+  });
 
-      const hrvRows = await executeWithSchema(
-        ctx.db,
-        z.object({ date: dateStringSchema, hrv: z.coerce.number().nullable() }),
-        sql`
+  const hrvRows = await executeWithSchema(
+    ctx.db,
+    z.object({ date: dateStringSchema, hrv: z.coerce.number().nullable() }),
+    sql`
             SELECT
               date::text AS date,
               hrv
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
-              AND date > ${dateWindowStart(input.endDate, 90)}
-              AND date <= ${dateWindowEnd(input.endDate)}
+              AND date > ${dateWindowStart(endDate, 90)}
+              AND date <= ${dateWindowEnd(endDate)}
               AND hrv IS NOT NULL
               ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
             ORDER BY date ASC`,
-      );
+  );
 
-      const hrvByDate = new Map(hrvRows.map((row) => [row.date, row.hrv]));
-      const nextDayHrvValues = sleepRows
-        .map((sleepRow) => hrvByDate.get(addDays(sleepRow.date, 1)) ?? null)
-        .filter((value): value is number => value != null);
-      const medianHrv = median(nextDayHrvValues);
+  const hrvByDate = new Map(hrvRows.map((row) => [row.date, row.hrv]));
+  const nextDayHrvValues = sleepRows
+    .map((sleepRow) => hrvByDate.get(addDays(sleepRow.date, 1)) ?? null)
+    .filter((value): value is number => value != null);
+  const medianHrv = median(nextDayHrvValues);
 
-      const nights = sleepRows.map((sleepRow) => {
-        const nextDayHrv = hrvByDate.get(addDays(sleepRow.date, 1)) ?? null;
-        return {
-          date: sleepRow.date,
-          duration_minutes: sleepRow.duration_minutes ?? 0,
-          next_day_hrv: nextDayHrv,
-          median_hrv: medianHrv,
-          good_recovery: medianHrv != null && nextDayHrv != null && nextDayHrv >= medianHrv,
-          yesterday_load: yesterdayLoadFromCh,
-        };
-      });
+  const nights = sleepRows.map((sleepRow) => {
+    const nextDayHrv = hrvByDate.get(addDays(sleepRow.date, 1)) ?? null;
+    return {
+      date: sleepRow.date,
+      duration_minutes: sleepRow.duration_minutes,
+      next_day_hrv: nextDayHrv,
+      median_hrv: medianHrv,
+      good_recovery: medianHrv != null && nextDayHrv != null && nextDayHrv >= medianHrv,
+      yesterday_load: yesterdayLoadFromCh,
+    };
+  });
 
-      // Calculate personalized baseline from nights that preceded good recovery
-      const goodNights = nights.filter((n) => n.good_recovery && n.duration_minutes > 0);
-      const baselineMinutes =
-        goodNights.length >= 7
-          ? Math.round(
-              goodNights.reduce((sum, n) => sum + Number(n.duration_minutes), 0) /
-                goodNights.length,
-            )
-          : 480; // default to 8 hours if insufficient data
+  // Calculate personalized baseline from nights that preceded good recovery
+  const goodNightDurations = nights
+    .filter((night) => night.good_recovery)
+    .map((night) => night.duration_minutes)
+    .filter((duration): duration is number => duration != null && duration > 0);
+  const baselineMinutes =
+    goodNightDurations.length >= 7
+      ? Math.round(
+          goodNightDurations.reduce((sum, duration) => sum + duration, 0) /
+            goodNightDurations.length,
+        )
+      : 480; // default to 8 hours if insufficient data
 
-      const yesterdayLoad = Number(yesterdayLoadFromCh);
+  const yesterdayLoad = Number(yesterdayLoadFromCh);
 
-      // Strain debt: ~1 minute extra sleep per 5 units of load, capped at 60 min
-      const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
+  // Strain debt: ~1 minute extra sleep per 5 units of load, capped at 60 min
+  const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
 
-      // Accumulated sleep debt over last 14 nights
-      const last14 = nights.slice(-14);
-      let accumulatedDebt = 0;
-      for (const night of last14) {
-        const deficit = baselineMinutes - Number(night.duration_minutes);
-        if (deficit > 0) accumulatedDebt += deficit;
-      }
+  // Accumulated sleep debt over last 14 nights
+  const last14 = nights.slice(-14);
+  let accumulatedDebt = 0;
+  for (const night of last14) {
+    if (night.duration_minutes == null) continue;
+    const deficit = baselineMinutes - night.duration_minutes;
+    if (deficit > 0) accumulatedDebt += deficit;
+  }
 
-      // Whoop recovers 25% of accumulated debt per night
-      const debtRecoveryMinutes = Math.round(accumulatedDebt * 0.25);
+  // Build calendar of last 7 completed nights (endDate-7 through endDate-1).
+  // Today is excluded because tonight's sleep hasn't happened yet.
+  // Use UTC noon to avoid any timezone-related date shifts with toISOString()
+  const nightsByDate = new Map(nights.map((n) => [n.date, n]));
+  const calendarDates: string[] = [];
+  const anchorDate = new Date(`${endDate}T12:00:00Z`);
+  for (let i = 7; i >= 1; i--) {
+    const calendarDay = new Date(anchorDate);
+    calendarDay.setUTCDate(calendarDay.getUTCDate() - i);
+    calendarDates.push(calendarDay.toISOString().slice(0, 10));
+  }
 
-      const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
-
-      // Build calendar of last 7 completed nights (endDate-7 through endDate-1).
-      // Today is excluded because tonight's sleep hasn't happened yet.
-      // Use UTC noon to avoid any timezone-related date shifts with toISOString()
-      const nightsByDate = new Map(nights.map((n) => [n.date, n]));
-      const calendarDates: string[] = [];
-      const anchorDate = new Date(`${input.endDate}T12:00:00Z`);
-      for (let i = 7; i >= 1; i--) {
-        const calendarDay = new Date(anchorDate);
-        calendarDay.setUTCDate(calendarDay.getUTCDate() - i);
-        calendarDates.push(calendarDay.toISOString().slice(0, 10));
-      }
-
-      // Map all 7 calendar dates to nights (null for missing)
-      const recentNights: SleepNight[] = calendarDates.map((date) => {
-        const night = nightsByDate.get(date);
-        if (night) {
-          const actual = Number(night.duration_minutes);
-          const sleepRow = sleepRows.find((row) => row.date === date);
-          return {
-            date,
-            actualMinutes: Math.round(actual),
-            neededMinutes: baselineMinutes,
-            debtMinutes: Math.max(0, Math.round(baselineMinutes - actual)),
-            providerId: sleepRow?.provider_id ?? null,
-            sourceName: sleepRow?.source_name ?? null,
-            sourceProviders: sleepRow?.source_providers ?? [],
-          };
-        }
-        return {
-          date,
-          actualMinutes: null,
-          neededMinutes: baselineMinutes,
-          debtMinutes: null,
-          providerId: null,
-          sourceName: null,
-          sourceProviders: [],
-        };
-      });
-
-      // canRecommend: yesterday's sleep must be present for tonight's recommendation
-      const yesterdayDate = new Date(`${input.endDate}T12:00:00Z`);
-      yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
-      const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
-      const canRecommend = nightsByDate.has(yesterdayStr);
-
+  // Map all 7 calendar dates to nights (null for missing)
+  const recentNights: SleepNight[] = calendarDates.map((date) => {
+    const night = nightsByDate.get(date);
+    if (night?.duration_minutes != null) {
+      const actual = night.duration_minutes;
+      const sleepRow = sleepRows.find((row) => row.date === date);
       return {
-        baselineMinutes,
-        strainDebtMinutes,
-        accumulatedDebtMinutes: Math.round(accumulatedDebt),
-        totalNeedMinutes,
-        recentNights,
-        canRecommend,
+        date,
+        actualMinutes: Math.round(actual),
+        neededMinutes: baselineMinutes,
+        debtMinutes: Math.max(0, Math.round(baselineMinutes - actual)),
+        providerId: sleepRow?.provider_id ?? null,
+        sourceName: sleepRow?.source_name ?? null,
+        sourceProviders: sleepRow?.source_providers ?? [],
       };
+    }
+    return {
+      date,
+      actualMinutes: null,
+      neededMinutes: baselineMinutes,
+      debtMinutes: null,
+      providerId: null,
+      sourceName: null,
+      sourceProviders: [],
+    };
+  });
+
+  const yesterdayDate = new Date(`${endDate}T12:00:00Z`);
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+  const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+  return buildSleepNeedComputation({
+    baselineMinutes,
+    strainDebtMinutes,
+    accumulatedDebtMinutes: Math.round(accumulatedDebt),
+    recentNights,
+    hasPreviousNight: sleepRows.some(
+      (sleepRow) => sleepRow.date === yesterdayStr && sleepRow.duration_minutes != null,
+    ),
+  });
+}
+
+export const sleepNeedRouter = router({
+  /**
+   * Legacy Sleep Need Calculator. Kept for installed clients.
+   */
+  calculate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.object({ endDate: endDateSchema }))
+    .output(sleepNeedV1Schema)
+    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
+      return toSleepNeedV1(await calculateSleepNeed(ctx, input.endDate));
+    }),
+
+  /**
+   * Availability-aware Sleep Need Calculator for current clients.
+   */
+  calculateV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.object({ endDate: endDateSchema }))
+    .output(sleepNeedV2Schema)
+    .query(async ({ ctx, input }): Promise<SleepNeedV2> => {
+      return toSleepNeedV2(await calculateSleepNeed(ctx, input.endDate));
     }),
 
   /**

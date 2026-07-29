@@ -184,6 +184,7 @@ function AuthGate() {
             condition: (operation) =>
               operation.type === "query" &&
               (operation.path === "mobileDashboard.dashboard" ||
+                operation.path === "mobileDashboard.dashboardV2" ||
                 operation.path === "mobileDashboard.recovery" ||
                 operation.path === "mobileDashboard.training"),
             true: dashboardQueryLink,

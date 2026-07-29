@@ -34,7 +34,7 @@ function createSeededProviders() {
   ]);
 
   queryClient.setQueryData(
-    [["mobileDashboard", "dashboard"], { input: { endDate: todayDate }, type: "query" }],
+    [["mobileDashboard", "dashboardV2"], { input: { endDate: todayDate }, type: "query" }],
     {
       readiness: {
         score: 82,
@@ -66,12 +66,13 @@ function createSeededProviders() {
         date: todayDate,
       },
       sleepNeed: {
+        availability: "available",
         baselineMinutes: 480,
         strainDebtMinutes: 16,
         accumulatedDebtMinutes: 28,
+        debtRecoveryMinutes: 7,
         totalNeedMinutes: 503,
         recentNights: [],
-        canRecommend: true,
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: todayDate,

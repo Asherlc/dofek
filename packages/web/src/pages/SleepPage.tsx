@@ -51,7 +51,7 @@ export function SleepPage() {
 
   const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const latestStages = trpc.sleep.latestStages.useQuery();
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery({ endDate });
+  const sleepNeed = trpc.sleepNeed.calculateV2.useQuery({ endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
