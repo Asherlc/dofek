@@ -34,3 +34,12 @@ authorization as not required.
 
 Processing-status presentation helpers, including dataset-scoped failure messages, live in
 [`processing-status.ts`](src/processing-status.ts).
+
+### Disconnect and Data Deletion
+
+Use [`providerDangerZoneCopy`](src/provider-disconnect.ts) for the shared web/mobile impact
+wording. Disconnect removes saved authorization and stops future syncs while retaining imported
+records. **Delete All Data** is a separate operation that permanently removes imported
+provider records without changing connection state. The server enforces those semantics through
+[`deleteProviderAuthorization`](../../src/db/tokens.ts) and
+[`requestProviderDataDeletion`](../server/src/repositories/provider-detail-repository.ts).

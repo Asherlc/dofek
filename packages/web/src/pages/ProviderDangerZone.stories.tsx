@@ -5,7 +5,7 @@ import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
-import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
+import { ProviderDangerZone } from "./ProviderDangerZone.tsx";
 
 function createMockLink(): TRPCLink<AppRouter> {
   return () => () =>
@@ -34,7 +34,7 @@ function StoryFrame() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <div className="w-[640px] p-6">
-          <ProviderDataDeleteControl providerId="garmin" />
+          <ProviderDangerZone canDisconnect providerId="garmin" providerName="Garmin" />
         </div>
       </QueryClientProvider>
     </trpc.Provider>
@@ -42,16 +42,24 @@ function StoryFrame() {
 }
 
 const meta = {
-  title: "Providers/ProviderDataDeleteControl",
-  component: ProviderDataDeleteControl,
-} satisfies Meta<typeof ProviderDataDeleteControl>;
+  title: "Providers/ProviderDangerZone",
+  component: ProviderDangerZone,
+} satisfies Meta<typeof ProviderDangerZone>;
 
 export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Confirmation: Story = {
-  args: { providerId: "garmin" },
+export const DisconnectConfirmation: Story = {
+  args: { canDisconnect: true, providerId: "garmin", providerName: "Garmin" },
+  render: () => <StoryFrame />,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Disconnect Garmin" }));
+  },
+};
+
+export const DeletionConfirmation: Story = {
+  args: { canDisconnect: true, providerId: "garmin", providerName: "Garmin" },
   render: () => <StoryFrame />,
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete all data" }));

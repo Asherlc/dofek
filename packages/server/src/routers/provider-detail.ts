@@ -246,8 +246,8 @@ export const providerDetailRouter = router({
         });
       }
 
-      // Revoke tokens remotely before deleting local data — prevents orphaned
-      // tokens on the provider side (e.g. Wahoo's active token limit).
+      // Revoke tokens remotely before deleting local authorization — prevents
+      // orphaned tokens on the provider side (e.g. Wahoo's active token limit).
       await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
 
       await deleteProviderAuthorization(ctx.db, input.providerId, ctx.userId);
