@@ -19869,6 +19869,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement SQLFluff job and the
   complete exact-head CI matrix pass before merge.
 
+## 2026-07-28 — Companion migration violated online lock-safety gates
+
+- **Status:** Root cause fixed locally on PR #2271; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30417671182](https://github.com/Asherlc/dofek/actions/runs/30417671182)
+  failed `Test / Migration Lint` in job
+  [90467927539](https://github.com/Asherlc/dofek/actions/runs/30417671182/job/90467927539).
+- **User impact:** No production impact. PR #2271 could not merge while its
+  migration safety gate was red.
+- **Evidence:** The exact failing command was
+  `echo "$NEW_MIGRATIONS" | xargs squawk`. Its first fatal finding was
+  `constraint-missing-not-valid` for the new connection-type check. Squawk also
+  reported `require-concurrent-index-deletion` for replacing the existing
+  active-token index.
+- **Root cause:** The migration altered the live token table in place. Adding
+  the validated check scanned existing rows, while dropping the existing
+  partial unique index required an exclusive table lock. Squawk recommends
+  `DROP INDEX CONCURRENTLY`, but PostgreSQL forbids concurrent index DDL inside
+  a transaction and the repository's Drizzle migrator intentionally runs all
+  migrations transactionally. See Squawk's
+  [constraint guidance](https://squawkhq.com/docs/constraint-missing-not-valid),
+  [index-deletion guidance](https://squawkhq.com/docs/require-concurrent-index-deletion),
+  and PostgreSQL's
+  [`DROP INDEX` restrictions](https://www.postgresql.org/docs/current/sql-dropindex.html).
+- **Fix / mitigation:** Replace the small companion-token relation
+  structurally in the existing migration transaction: rename the source,
+  create the canonical relation with the final constraint and index shape,
+  copy every token while assigning existing connections to `zepp-main`, drop
+  the legacy source, and restore canonical constraint names. This follows the
+  repository's established transaction-bound normalization pattern and adds no
+  waiver, retry, timeout, or migration-runner exception.
+- **Validation:** Direct Squawk 2.61.0, migration-policy, and SQLFluff checks
+  pass with zero findings. The real-PostgreSQL companion-token integration
+  suite passes all five tests on the rebuilt relation. Fresh exact-head CI
+  remains the merge gate.
+- **Remaining risk / follow-up:** The table replacement takes transactional
+  DDL locks while copying the relation. The companion-token relation is
+  intentionally small (at most one active token per user before this change);
+  deploy only after the exact-head safety and integration gates pass.
+
 ## 2026-07-28 — Knip setup downloaded an unused Cypress binary
 
 - **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
