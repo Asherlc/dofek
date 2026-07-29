@@ -61,11 +61,17 @@ vi.mock("./PageLayout.tsx", () => ({
   PageLayout: ({
     headerChildren,
     children,
+    title,
+    subtitle,
   }: {
     headerChildren?: ReactNode;
     children: ReactNode;
+    title?: string;
+    subtitle?: string;
   }) => (
     <div>
+      {title && <h1>{title}</h1>}
+      {subtitle && <p>{subtitle}</p>}
       {headerChildren}
       {children}
     </div>
@@ -346,6 +352,11 @@ describe("TimeRangeSelector consumers", () => {
     const BehaviorImpactPage = state.routeComponents["/behavior-impact"];
     if (!BehaviorImpactPage) throw new Error("Behavior Impact route component was not captured");
     render(<BehaviorImpactPage />);
+
+    expect(screen.getAllByText("Behavior Associations")).toHaveLength(2);
+    expect(
+      screen.getByText("How your daily behaviors are associated with next-day readiness"),
+    ).toBeDefined();
 
     clearQueryCalls();
     fireEvent.click(screen.getByRole("button", { name: "7d" }));

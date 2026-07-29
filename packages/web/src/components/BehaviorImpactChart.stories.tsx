@@ -14,7 +14,7 @@ const impacts = [
     questionSlug: "meditation",
     displayName: "Meditation",
     category: "mindfulness",
-    impactPercent: 18.6,
+    readinessDifferencePercent: 18.6,
     yesCount: 18,
     noCount: 24,
   },
@@ -22,7 +22,7 @@ const impacts = [
     questionSlug: "late-meal",
     displayName: "Late meal",
     category: "nutrition",
-    impactPercent: -12.4,
+    readinessDifferencePercent: -12.4,
     yesCount: 14,
     noCount: 28,
   },
@@ -30,7 +30,7 @@ const impacts = [
     questionSlug: "morning-sunlight",
     displayName: "Morning sunlight",
     category: "routine",
-    impactPercent: 9.8,
+    readinessDifferencePercent: 9.8,
     yesCount: 21,
     noCount: 17,
   },
@@ -38,7 +38,7 @@ const impacts = [
     questionSlug: "alcohol",
     displayName: "Alcohol",
     category: "substance",
-    impactPercent: -24.1,
+    readinessDifferencePercent: -24.1,
     yesCount: 9,
     noCount: 33,
   },
@@ -58,7 +58,9 @@ function createMockObservable(
     subscribe(observer) {
       if (scenario === "loading") return { unsubscribe: () => {} };
       if (scenario === "error") {
-        observer.error?.(TRPCClientError.from(new Error("Behavior impact data is unavailable.")));
+        observer.error?.(
+          TRPCClientError.from(new Error("Behavior association data is unavailable.")),
+        );
         return { unsubscribe: () => {} };
       }
       observer.next?.({
@@ -95,7 +97,7 @@ function BehaviorImpactStoryFrame({
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <div className="w-[760px] p-4">
+        <div className="w-full max-w-[760px] p-4">
           <BehaviorImpactChart days={days} />
         </div>
       </QueryClientProvider>
@@ -124,4 +126,11 @@ export const Empty: Story = {
 };
 export const ErrorState: Story = {
   render: (args) => <BehaviorImpactStoryFrame scenario="error" days={args.days} />,
+};
+
+export const NarrowViewport: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  render: (args) => <BehaviorImpactStoryFrame scenario="default" days={args.days} />,
 };

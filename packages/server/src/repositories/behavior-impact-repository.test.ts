@@ -19,30 +19,30 @@ describe("BehaviorImpact", () => {
     };
   }
 
-  it("computes negative impact when yes readiness < no readiness", () => {
+  it("computes a negative readiness difference when yes readiness < no readiness", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 55, avgReadinessNo: 70 }));
-    expect(impact.impactPercent).toBeCloseTo(-21.4, 1);
+    expect(impact.readinessDifferencePercent).toBeCloseTo(-21.4, 1);
   });
 
-  it("computes positive impact when yes readiness > no readiness", () => {
+  it("computes a positive readiness difference when yes readiness > no readiness", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 75, avgReadinessNo: 60 }));
-    expect(impact.impactPercent).toBeCloseTo(25.0, 1);
+    expect(impact.readinessDifferencePercent).toBeCloseTo(25.0, 1);
   });
 
   it("returns 0 when avgReadinessNo is 0", () => {
-    expect(new BehaviorImpact(makeRow({ avgReadinessNo: 0 })).impactPercent).toBe(0);
+    expect(new BehaviorImpact(makeRow({ avgReadinessNo: 0 })).readinessDifferencePercent).toBe(0);
   });
 
   it("rounds to one decimal place", () => {
     // (65-60)/60 * 100 = 8.333... → 8.3
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 65, avgReadinessNo: 60 }));
-    expect(impact.impactPercent).toBe(8.3);
+    expect(impact.readinessDifferencePercent).toBe(8.3);
   });
 
-  it("computes impactPercent with exact formula: round((yes-no)/no * 1000) / 10", () => {
+  it("computes readinessDifferencePercent with exact relative-difference formula", () => {
     // (72 - 68) / 68 * 1000 = 58.8235... → round = 59 → /10 = 5.9
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 72, avgReadinessNo: 68 }));
-    expect(impact.impactPercent).toBe(5.9);
+    expect(impact.readinessDifferencePercent).toBe(5.9);
   });
 
   it("exposes all getters correctly", () => {
@@ -70,7 +70,7 @@ describe("BehaviorImpact", () => {
       questionSlug: "alcohol",
       displayName: "Alcohol",
       category: "substance",
-      impactPercent: 25.0,
+      readinessDifferencePercent: 25.0,
       yesCount: 15,
       noCount: 12,
     });
@@ -107,7 +107,7 @@ describe("BehaviorImpactRepository", () => {
     const result = await repo.getImpactSummary(90);
     expect(result).toHaveLength(1);
     expect(result[0]).toBeInstanceOf(BehaviorImpact);
-    expect(result[0]?.impactPercent).toBeCloseTo(25.0, 1);
+    expect(result[0]?.readinessDifferencePercent).toBeCloseTo(25.0, 1);
   });
 
   it("maps all DB row fields to correct BehaviorImpact properties", async () => {
@@ -145,9 +145,9 @@ describe("BehaviorImpactRepository", () => {
     ]);
     const result = await repo.getImpactSummary(90);
     const detail = result[0]?.toDetail();
-    // impactPercent = round((72.5 - 68.3) / 68.3 * 1000) / 10
+    // readinessDifferencePercent = round((72.5 - 68.3) / 68.3 * 1000) / 10
     // = round(4.2 / 68.3 * 1000) / 10 = round(61.493...) / 10 = 61 / 10 = 6.1
-    expect(detail?.impactPercent).toBe(6.1);
+    expect(detail?.readinessDifferencePercent).toBe(6.1);
     expect(detail?.yesCount).toBe(10);
     expect(detail?.noCount).toBe(12);
   });

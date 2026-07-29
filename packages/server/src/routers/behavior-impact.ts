@@ -6,7 +6,7 @@ export interface BehaviorImpact {
   questionSlug: string;
   displayName: string;
   category: string;
-  impactPercent: number;
+  readinessDifferencePercent: number;
   yesCount: number;
   noCount: number;
 }
