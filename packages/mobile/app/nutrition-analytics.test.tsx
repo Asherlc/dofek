@@ -110,9 +110,19 @@ describe("NutritionAnalyticsScreen", () => {
               intake: {
                 totalDailyAverage: 12,
                 foodDailyAverage: 12,
+                providerDailyTotalAverage: 0,
                 supplementDailyAverage: 0,
                 daysTracked: 7,
               },
+              sourceBreakdown: [
+                {
+                  providerId: "manual",
+                  sourceLabel: "Manual",
+                  intakeType: "itemized_food",
+                  dailyAverageContribution: 12,
+                  daysTracked: 7,
+                },
+              ],
               adequacy: {
                 status: "below_daily_value",
                 percentDailyValue: 67,
@@ -127,6 +137,17 @@ describe("NutritionAnalyticsScreen", () => {
               safetyStatus: "no_upper_limit_in_ruleset",
             },
           ],
+          dataQuality: {
+            selectedWindowDays: 90,
+            daysWithData: 30,
+            usableDays: 28,
+            overlapDays: 3,
+            conflictDays: 2,
+            completenessPercent: 31.1,
+            sourceLabels: ["Cronometer", "Manual"],
+            contributingSourceLabels: ["Manual"],
+            excludedSourceLabels: ["Cronometer"],
+          },
         },
       }),
     );
@@ -148,6 +169,12 @@ describe("NutritionAnalyticsScreen", () => {
         "Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value; not a personalized deficiency or safety assessment",
       ),
     ).toBeTruthy();
+    expect(screen.getByText("Nutrition data quality")).toBeTruthy();
+    expect(
+      screen.getByText("28 of 90 selected days are usable (31.1% completeness)."),
+    ).toBeTruthy();
+    expect(screen.getByText("Itemized food: 12 mg/day")).toBeTruthy();
+    expect(screen.getByText("Manual · Itemized food · 12 mg/day · 7 days")).toBeTruthy();
   });
 
   it("consolidates query failures into one exact root error and one recovery action", async () => {
@@ -223,9 +250,19 @@ describe("NutritionAnalyticsScreen", () => {
               intake: {
                 totalDailyAverage: 12,
                 foodDailyAverage: 12,
+                providerDailyTotalAverage: 0,
                 supplementDailyAverage: 0,
                 daysTracked: 7,
               },
+              sourceBreakdown: [
+                {
+                  providerId: "manual",
+                  sourceLabel: "Manual",
+                  intakeType: "itemized_food",
+                  dailyAverageContribution: 12,
+                  daysTracked: 7,
+                },
+              ],
               adequacy: {
                 status: "below_daily_value",
                 percentDailyValue: 67,
@@ -239,6 +276,17 @@ describe("NutritionAnalyticsScreen", () => {
               safetyStatus: "no_upper_limit_in_ruleset",
             },
           ],
+          dataQuality: {
+            selectedWindowDays: 90,
+            daysWithData: 30,
+            usableDays: 28,
+            overlapDays: 3,
+            conflictDays: 2,
+            completenessPercent: 31.1,
+            sourceLabels: ["Cronometer", "Manual"],
+            contributingSourceLabels: ["Manual"],
+            excludedSourceLabels: ["Cronometer"],
+          },
         },
         error: new Error("Micronutrient refresh failed."),
         isError: true,

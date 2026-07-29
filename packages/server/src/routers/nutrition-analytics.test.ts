@@ -86,6 +86,17 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
     expect(result).toMatchObject({
       nutrients: [],
       professionalReview: { status: "no_supplements" },
+      dataQuality: {
+        selectedWindowDays: 30,
+        daysWithData: 0,
+        usableDays: 0,
+        overlapDays: 0,
+        conflictDays: 0,
+        completenessPercent: 0,
+        sourceLabels: [],
+        contributingSourceLabels: [],
+        excludedSourceLabels: [],
+      },
     });
     const queryText = execute.mock.calls
       .map((call) => collectSqlText(call[0]))

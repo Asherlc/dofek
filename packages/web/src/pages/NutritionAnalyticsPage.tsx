@@ -4,6 +4,7 @@ import { AdaptiveTdeeChart } from "../components/AdaptiveTdeeChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { MicronutrientChart } from "../components/MicronutrientChart.tsx";
+import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import {
@@ -72,6 +73,12 @@ export function NutritionAnalyticsPage() {
 
         {!blockingError ? (
           <>
+            {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
+              <NutritionDataQualityPanel
+                dataQuality={micronutrients.data?.dataQuality}
+                loading={micronutrients.isLoading && micronutrients.data === undefined}
+              />
+            ) : null}
             {/* Adaptive TDEE */}
             {adaptiveTdee.error == null || adaptiveTdeeHasSuccessfulData ? (
               <Section

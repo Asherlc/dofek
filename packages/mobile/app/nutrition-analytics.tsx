@@ -17,6 +17,7 @@ import type {
   MicronutrientSafetyReviewResult,
 } from "../../server/src/routers/nutrition-analytics";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
@@ -149,6 +150,12 @@ export default function NutritionAnalyticsScreen() {
 
       {!blockingError ? (
         <>
+          {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
+            <NutritionDataQualityPanel
+              dataQuality={micronutrients.data?.dataQuality}
+              loading={micronutrients.isLoading && micronutrients.data === undefined}
+            />
+          ) : null}
           {adaptiveTdee.error == null || adaptiveTdeeHasSuccessfulData ? (
             <AdaptiveTdeeSection
               data={adaptiveTdee.data}
@@ -294,35 +301,74 @@ function MicronutrientAdequacySection({
         const barColor = nutrientBarColor(nutrient.safetyStatus);
 
         return (
-          <View key={nutrient.nutrient} style={styles.nutrientRow}>
-            <View style={styles.nutrientLabelContainer}>
-              <Text style={styles.nutrientLabel} numberOfLines={1}>
-                {nutrient.nutrient}
-              </Text>
-            </View>
-            <View style={styles.nutrientBarContainer}>
-              <View style={[styles.nutrientBarTrack, { width: barMaxWidth }]}>
-                <View
-                  style={[
-                    styles.nutrientBarFill,
-                    {
-                      width: `${barFraction * 100}%`,
-                      backgroundColor: barColor,
-                    },
-                  ]}
-                />
-                {/* 100% marker */}
-                <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
+          <View key={nutrient.nutrient} style={styles.nutrientGroup}>
+            <View style={styles.nutrientRow}>
+              <View style={styles.nutrientLabelContainer}>
+                <Text style={styles.nutrientLabel} numberOfLines={1}>
+                  {nutrient.nutrient}
+                </Text>
               </View>
-              <Text style={[styles.nutrientPct, { color: barColor }]}>
-                {formatNutritionNumber(percentDailyValue)}%
+              <View style={styles.nutrientBarContainer}>
+                <View style={[styles.nutrientBarTrack, { width: barMaxWidth }]}>
+                  <View
+                    style={[
+                      styles.nutrientBarFill,
+                      {
+                        width: `${barFraction * 100}%`,
+                        backgroundColor: barColor,
+                      },
+                    ]}
+                  />
+                  <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
+                </View>
+                <Text style={[styles.nutrientPct, { color: barColor }]}>
+                  {formatNutritionNumber(percentDailyValue)}%
+                </Text>
+              </View>
+            </View>
+            <View style={styles.nutrientSourceDetails}>
+              <Text style={styles.nutrientSourceText}>
+                Itemized food: {formatNutritionNumber(nutrient.intake.foodDailyAverage)}{" "}
+                {nutrient.unit}/day
               </Text>
+              <Text style={styles.nutrientSourceText}>
+                Provider daily totals:{" "}
+                {formatNutritionNumber(nutrient.intake.providerDailyTotalAverage)} {nutrient.unit}
+                /day
+              </Text>
+              <Text style={styles.nutrientSourceText}>
+                Supplements: {formatNutritionNumber(nutrient.intake.supplementDailyAverage)}{" "}
+                {nutrient.unit}/day
+              </Text>
+              {nutrient.sourceBreakdown.map((source) => (
+                <Text
+                  key={`${source.providerId}:${source.sourceLabel}:${source.intakeType}`}
+                  style={styles.nutrientSourceText}
+                >
+                  {source.sourceLabel} · {intakeTypeLabel(source.intakeType)} ·{" "}
+                  {formatNutritionNumber(source.dailyAverageContribution)} {nutrient.unit}/day ·{" "}
+                  {source.daysTracked} {source.daysTracked === 1 ? "day" : "days"}
+                </Text>
+              ))}
             </View>
           </View>
         );
       })}
     </View>
   );
+}
+
+function intakeTypeLabel(
+  intakeType: "itemized_food" | "provider_daily_total" | "supplement",
+): string {
+  switch (intakeType) {
+    case "itemized_food":
+      return "Itemized food";
+    case "provider_daily_total":
+      return "Provider daily total";
+    case "supplement":
+      return "Supplement";
+  }
 }
 
 // ── Styles ──
@@ -421,10 +467,12 @@ const styles = StyleSheet.create({
   },
 
   // ── Nutrient bars ──
+  nutrientGroup: {
+    marginBottom: 14,
+  },
   nutrientRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
   },
   nutrientLabelContainer: {
     width: 90,
@@ -463,6 +511,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     width: 40,
     textAlign: "right",
+  },
+  nutrientSourceDetails: {
+    gap: 2,
+    marginLeft: 90,
+    marginTop: 4,
+  },
+  nutrientSourceText: {
+    color: colors.textSecondary,
+    fontSize: 11,
   },
 
   // ── Status text ──
