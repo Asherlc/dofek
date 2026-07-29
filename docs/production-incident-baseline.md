@@ -19910,6 +19910,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   intentionally small (at most one active token per user before this change);
   deploy only after the exact-head safety and integration gates pass.
 
+## 2026-07-28 — Companion connection mutation coverage missed negative branches
+
+- **Status:** Root cause fixed on PR #2271; fresh exact-head CI validation
+  pending.
+- **Symptoms:** Exact-head CI run
+  [30418854427](https://github.com/Asherlc/dofek/actions/runs/30418854427)
+  failed Stryker shards
+  [1](https://github.com/Asherlc/dofek/actions/runs/30418854427/job/90471488988)
+  and
+  [5](https://github.com/Asherlc/dofek/actions/runs/30418854427/job/90471488996).
+- **User impact:** No production impact. PR #2271 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal lines reported mutation scores `58.82` and `71.43`, both
+  below the configured breaking threshold of `75`. The mutation artifacts
+  identified surviving branches in `revokeCompanionToken` and the legacy
+  pairing-body classifier.
+- **Root cause:** Unit tests covered successful typed revocation and a missing
+  connection type, but did not assert the no-active-token result or distinguish
+  malformed arrays and invalid typed objects. Those gaps allowed false-result
+  and request-shape mutants to survive.
+- **Fix / mitigation:** Add true and false revocation-result tests, add malformed
+  pairing-body cases, and express the request classifier through
+  `Array.isArray` and `Object.hasOwn` so it models the actual JSON body
+  contract without redundant unreachable type guards. No mutation threshold,
+  exclusion, or CI behavior changed. Stryker documents surviving mutants and
+  thresholds in its
+  [mutation testing guide](https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/).
+- **Validation:** Both exact changed-line Stryker runs now score `100.00`, and
+  the focused 29 unit tests pass. Fresh exact-head CI remains the merge gate.
+- **Remaining risk / follow-up:** Confirm the replacement mutation shards and
+  the full required-check aggregate before merging.
+
 ## 2026-07-28 — PWA worker masked a web layout regression
 
 - **Status:** Root cause fixed on PR #2269; fresh exact-head E2E validation

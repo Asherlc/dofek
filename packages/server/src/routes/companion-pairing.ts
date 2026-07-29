@@ -42,10 +42,7 @@ export function createCompanionPairingRouter(deps: {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       const missingConnectionType =
-        typeof req.body === "object" &&
-        req.body !== null &&
-        !Array.isArray(req.body) &&
-        !("connectionType" in req.body);
+        !Array.isArray(req.body) && !Object.hasOwn(req.body ?? {}, "connectionType");
       sendJson(res, 400, {
         error: missingConnectionType
           ? "Update the Zepp package before connecting to Dofek."

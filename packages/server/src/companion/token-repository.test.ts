@@ -4,6 +4,7 @@ import {
   generateCompanionToken,
   hashCompanionToken,
   regenerateCompanionToken,
+  revokeCompanionToken,
   validateCompanionToken,
 } from "./token-repository.ts";
 
@@ -175,6 +176,30 @@ describe("token-repository", () => {
         revokedAt: null,
       });
       expect(transaction.execute).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("revokeCompanionToken", () => {
+    it("returns true when an active connection is revoked", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([
+        {
+          id: "token-id",
+          user_id: "user-123",
+          connection_type: "zepp-main",
+          created_at: "2026-01-01T00:00:00.000Z",
+          revoked_at: "2026-01-02T00:00:00.000Z",
+        },
+      ]);
+
+      await expect(revokeCompanionToken(db, "user-123", "zepp-main")).resolves.toBe(true);
+    });
+
+    it("returns false when no active connection exists", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(revokeCompanionToken(db, "user-123", "zepp-main")).resolves.toBe(false);
     });
   });
 });
