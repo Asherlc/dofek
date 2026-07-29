@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function DialogHarness({ onClose = () => {} }: { onClose?: () => void }) {
   const [open, setOpen] = useState(false);
+  const firstActionRef = useRef<HTMLButtonElement | null>(null);
 
   return (
     <div>
@@ -22,9 +26,12 @@ function DialogHarness({ onClose = () => {} }: { onClose?: () => void }) {
           setOpen(false);
         }}
         contentClassName="w-full max-w-sm"
+        initialFocusRef={firstActionRef}
       >
         <ModalDialogTitle>Account settings</ModalDialogTitle>
-        <button type="button">First action</button>
+        <button ref={firstActionRef} type="button">
+          First action
+        </button>
         <button type="button">Last action</button>
       </ModalDialog>
     </div>
@@ -53,6 +60,7 @@ describe("ModalDialog", () => {
   it("moves focus inside, traps Tab in both directions, and restores trigger focus", async () => {
     render(<DialogHarness />);
     const trigger = screen.getByRole("button", { name: "Open settings" });
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
 
     trigger.focus();
     fireEvent.click(trigger);
@@ -60,6 +68,11 @@ describe("ModalDialog", () => {
     const first = screen.getByRole("button", { name: "First action" });
     const last = screen.getByRole("button", { name: "Last action" });
     await waitFor(() => expect(first).toHaveFocus());
+    const firstFocusCalls = focusSpy.mock.calls.filter(
+      (_call, index) => focusSpy.mock.contexts[index] === first,
+    );
+    expect(firstFocusCalls.length).toBeGreaterThan(0);
+    expect(firstFocusCalls.every(([options]) => options?.preventScroll === true)).toBe(true);
 
     last.focus();
     fireEvent.keyDown(last, { key: "Tab" });

@@ -25,12 +25,16 @@ export function ModalDialog({
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   function restoreFocus() {
-    if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+    if (returnFocusRef.current?.isConnected) {
+      returnFocusRef.current.focus({ preventScroll: true });
+    }
   }
 
   useEffect(
     () => () => {
-      if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+      if (returnFocusRef.current?.isConnected) {
+        returnFocusRef.current.focus({ preventScroll: true });
+      }
     },
     [],
   );
@@ -67,7 +71,7 @@ export function ModalDialog({
             }
             if (!initialFocusRef?.current) return;
             event.preventDefault();
-            initialFocusRef.current.focus();
+            initialFocusRef.current.focus({ preventScroll: true });
           }}
           onPointerDownOutside={(event) => {
             if (!closeOnInteractOutside) event.preventDefault();

@@ -39,6 +39,7 @@ describe("Navigation", () => {
         .should("be.visible")
         .and("have.attr", "aria-labelledby");
       cy.get('nav[aria-label="Mobile"]').should("be.visible");
+      cy.window().its("scrollY").should("equal", 0);
       cy.get("main").should(($openedMain) => {
         expect($openedMain[0].getBoundingClientRect().top).to.be.closeTo(initialMainTop, 1);
       });
