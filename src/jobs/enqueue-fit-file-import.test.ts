@@ -1,3 +1,4 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 
@@ -59,7 +60,7 @@ describe("enqueueFitFileImportAndWait", () => {
     };
     const activitySummary = {
       externalId: "workout-42",
-      activityType: "cycling" as const,
+      activityType: resolveProviderActivityType("cycling", "cycling"),
       startedAtIso: "2026-07-01T12:00:00.000Z",
       endedAtIso: "2026-07-01T13:00:00.000Z",
       name: "Morning ride",
@@ -109,7 +110,7 @@ describe("enqueueFitFileImportAndWait", () => {
       userId: "user-1",
       activitySummary: {
         externalId: "workout-42",
-        activityType: "cycling",
+        activityType: resolveProviderActivityType("cycling", "cycling"),
         startedAtIso: "2026-07-01T12:00:00.000Z",
         endedAtIso: "2026-07-01T13:00:00.000Z",
         name: "Morning ride",
@@ -143,7 +144,7 @@ describe("enqueueFitFileImportAndWait", () => {
   it("stages a downloaded FIT file and waits for the canonical import job", async () => {
     const activitySummary = {
       externalId: "workout-42",
-      activityType: "cycling" as const,
+      activityType: resolveProviderActivityType("cycling", "cycling"),
       startedAtIso: "2026-07-01T12:00:00.000Z",
       endedAtIso: "2026-07-01T13:00:00.000Z",
       name: "Morning ride",
@@ -199,7 +200,7 @@ describe("enqueueFitFileImportAndWait", () => {
         userId: "user-1",
         activitySummary: {
           externalId: "workout-7",
-          activityType: "running",
+          activityType: resolveProviderActivityType("running", "running"),
           startedAtIso: "2026-07-01T12:00:00.000Z",
           endedAtIso: "2026-07-01T13:00:00.000Z",
           name: "Run",

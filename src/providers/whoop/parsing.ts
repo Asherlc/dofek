@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type NormalizedActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import { mapSportId, mapV2ActivityType } from "@dofek/whoop/sports";
 import type {
   WhoopCycle,
@@ -273,7 +277,7 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;
@@ -307,16 +311,16 @@ export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): strin
 export function resolveActivityType(
   sportId: number,
   v2ActivityTypeName?: string,
-): CanonicalActivityType {
+): ProviderActivityType {
   const fromSportId = mapSportId(sportId);
-  if (fromSportId !== "other") return fromSportId;
-
-  if (v2ActivityTypeName) {
-    const fromTypeName = mapV2ActivityType(v2ActivityTypeName);
-    if (fromTypeName) return fromTypeName;
+  let normalizedType: NormalizedActivityType = fromSportId;
+  if (fromSportId === "other" && v2ActivityTypeName) {
+    normalizedType = mapV2ActivityType(v2ActivityTypeName) ?? "other";
   }
-
-  return "other";
+  return resolveProviderActivityType(
+    v2ActivityTypeName ?? sportId,
+    normalizedType,
+  );
 }
 
 export function parseWorkout(

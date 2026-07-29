@@ -199,12 +199,12 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "1001");
     if (!ride) throw new Error("expected activity 1001");
-    expect(ride.activityType).toBe("road_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Morning Ride");
 
     const run = rows.find((r) => r.externalId === "1002");
     if (!run) throw new Error("expected activity 1002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify metric stream events
     const metrics = metricStreamCapture.publishedMetricStreamRows.filter(

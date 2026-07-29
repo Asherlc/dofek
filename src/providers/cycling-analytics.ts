@@ -1,4 +1,7 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -61,7 +64,7 @@ const cyclingAnalyticsRidesResponseSchema = z.object({
 
 export interface ParsedCyclingAnalyticsRide {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -78,7 +81,7 @@ export function parseCyclingAnalyticsRide(ride: CyclingAnalyticsRide): ParsedCyc
 
   return {
     externalId: String(ride.id),
-    activityType: "cycling",
+    activityType: resolveProviderActivityType("cycling", "cycling"),
     name: ride.title,
     startedAt,
     endedAt,

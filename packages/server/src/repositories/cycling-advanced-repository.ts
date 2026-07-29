@@ -1,4 +1,4 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
@@ -65,7 +65,8 @@ const variabilityCountSchema = z.object({ total: z.coerce.number() });
 const vamRowSchema = z.object({
   date: dateStringSchema,
   name: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
+  modality: z.string().nullable(),
   elevation_gain: z.coerce.number(),
   elapsed_seconds: z.coerce.number(),
 });
@@ -121,7 +122,7 @@ export class CyclingAdvancedRepository {
           AND load.is_deleted = 0
           AND load.date IS NOT NULL
           ${loadRangeFilter}
-          AND has({activityTypes:Array(String)}, activity.activity_type)
+          AND has({activityTypes:Array(String)}, activity.canonical_type)
         GROUP BY
           load.user_id,
           load_date
@@ -253,7 +254,7 @@ export class CyclingAdvancedRepository {
         WHERE load.user_id = {userId:UUID}
           AND load.is_deleted = 0
           AND load.date IS NOT NULL
-          AND has({activityTypes:Array(String)}, activity.activity_type)
+          AND has({activityTypes:Array(String)}, activity.canonical_type)
         GROUP BY
           load.user_id,
           load_date
@@ -350,7 +351,7 @@ export class CyclingAdvancedRepository {
         round(max(asum.best_twenty_minute_power) * 0.95, 1) AS ftp
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
         ${rangeFilter}
         AND asum.best_twenty_minute_power IS NOT NULL`,
       {
@@ -391,7 +392,7 @@ export class CyclingAdvancedRepository {
         toInt32(count() OVER ()) AS total_count
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
         ${rangeFilter}
         AND asum.normalized_power IS NOT NULL
       ORDER BY asum.started_at DESC
@@ -420,7 +421,7 @@ export class CyclingAdvancedRepository {
         `SELECT count() AS total
         FROM analytics.activity_summary asum
         WHERE asum.user_id = {userId:UUID}
-          AND has({activityTypes:Array(String)}, asum.activity_type)
+          AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${rangeFilter}
           AND asum.normalized_power IS NOT NULL`,
         {
@@ -463,13 +464,14 @@ export class CyclingAdvancedRepository {
       vamRowSchema,
       `SELECT
         toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-        coalesce(nullIf(asum.name, ''), asum.activity_type) AS name,
-        asum.activity_type AS activity_type,
+        coalesce(nullIf(asum.name, ''), asum.canonical_type) AS name,
+        asum.canonical_type AS canonical_type,
+        asum.modality AS modality,
         round(asum.elevation_gain_m, 1) AS elevation_gain,
         greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS elapsed_seconds
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
         ${rangeFilter}
         AND asum.elevation_gain_m > 0
       ORDER BY asum.started_at`,
@@ -482,13 +484,13 @@ export class CyclingAdvancedRepository {
     );
 
     return rows
-      .filter((row) => !isIndoorCycling(row.activity_type))
+      .filter((row) => !isIndoorCyclingModality(row.modality))
       .map(
         (row) =>
           new VerticalAscentModel({
             date: row.date,
             activityName: row.name,
-            activityType: row.activity_type,
+            activityType: row.canonical_type,
             elevationGainMeters: row.elevation_gain,
             elapsedSeconds: row.elapsed_seconds,
           }),
@@ -511,7 +513,7 @@ export class CyclingAdvancedRepository {
         ON va.id = asum.activity_id
        AND va.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
         ${rangeFilter}
         AND asum.avg_left_balance IS NOT NULL
       ORDER BY asum.started_at`,

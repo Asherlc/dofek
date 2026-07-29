@@ -1,5 +1,5 @@
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import {
-  type CanonicalActivityType,
   createActivityTypeMapper,
   WAHOO_WORKOUT_TYPE_MAP,
 } from "@dofek/training/training";
@@ -11,7 +11,7 @@ import type { WahooWorkout, WahooWorkoutListResponse } from "./client.ts";
 
 const mapWahooWorkoutType = createActivityTypeMapper(WAHOO_WORKOUT_TYPE_MAP);
 
-function mapWorkoutType(typeId: number): CanonicalActivityType {
+function mapWorkoutType(typeId: number): ProviderActivityType {
   return mapWahooWorkoutType(typeId);
 }
 
@@ -21,7 +21,7 @@ function mapWorkoutType(typeId: number): CanonicalActivityType {
 
 export interface ParsedCardioActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name?: string;
   startedAt: Date;
   endedAt?: Date;

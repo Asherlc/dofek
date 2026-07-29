@@ -212,59 +212,59 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
 describe("Peloton Provider", () => {
   describe("mapFitnessDiscipline", () => {
     it("maps cycling", () => {
-      expect(mapFitnessDiscipline("cycling")).toBe("indoor_cycling");
+      expect(mapFitnessDiscipline("cycling").canonicalType).toBe("cycling");
     });
 
     it("maps running", () => {
-      expect(mapFitnessDiscipline("running")).toBe("running");
+      expect(mapFitnessDiscipline("running").canonicalType).toBe("running");
     });
 
     it("maps walking", () => {
-      expect(mapFitnessDiscipline("walking")).toBe("walking");
+      expect(mapFitnessDiscipline("walking").canonicalType).toBe("walking");
     });
 
     it("maps rowing", () => {
-      expect(mapFitnessDiscipline("rowing")).toBe("rowing");
+      expect(mapFitnessDiscipline("rowing").canonicalType).toBe("rowing");
     });
 
     it("maps strength", () => {
-      expect(mapFitnessDiscipline("strength")).toBe("strength");
+      expect(mapFitnessDiscipline("strength").canonicalType).toBe("strength");
     });
 
     it("maps yoga", () => {
-      expect(mapFitnessDiscipline("yoga")).toBe("yoga");
+      expect(mapFitnessDiscipline("yoga").canonicalType).toBe("yoga");
     });
 
     it("maps meditation", () => {
-      expect(mapFitnessDiscipline("meditation")).toBe("meditation");
+      expect(mapFitnessDiscipline("meditation").canonicalType).toBe("meditation");
     });
 
     it("maps stretching", () => {
-      expect(mapFitnessDiscipline("stretching")).toBe("stretching");
+      expect(mapFitnessDiscipline("stretching").canonicalType).toBe("stretching");
     });
 
     it("maps bike_bootcamp to bootcamp", () => {
-      expect(mapFitnessDiscipline("bike_bootcamp")).toBe("bootcamp");
+      expect(mapFitnessDiscipline("bike_bootcamp").canonicalType).toBe("bootcamp");
     });
 
     it("maps tread_bootcamp to bootcamp", () => {
-      expect(mapFitnessDiscipline("tread_bootcamp")).toBe("bootcamp");
+      expect(mapFitnessDiscipline("tread_bootcamp").canonicalType).toBe("bootcamp");
     });
 
     it("maps caesar (rowing) to rowing", () => {
-      expect(mapFitnessDiscipline("caesar")).toBe("rowing");
+      expect(mapFitnessDiscipline("caesar").canonicalType).toBe("rowing");
     });
 
     it("maps cardio", () => {
-      expect(mapFitnessDiscipline("cardio")).toBe("cardio");
+      expect(mapFitnessDiscipline("cardio").canonicalType).toBe("cardio");
     });
 
     it("maps outdoor to running", () => {
-      expect(mapFitnessDiscipline("outdoor")).toBe("running");
+      expect(mapFitnessDiscipline("outdoor").canonicalType).toBe("running");
     });
 
     it("maps unknown disciplines to other", () => {
-      expect(mapFitnessDiscipline("some_future_class")).toBe("other");
+      expect(mapFitnessDiscipline("some_future_class").canonicalType).toBe("other");
     });
   });
 
@@ -273,7 +273,7 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleCyclingWorkout);
 
       expect(result.externalId).toBe("abc123def456");
-      expect(result.activityType).toBe("indoor_cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.startedAt).toEqual(new Date(1709280000 * 1000));
       expect(result.endedAt).toEqual(new Date(1709281800 * 1000));
       expect(result.name).toBe("30 min Power Zone Ride");
@@ -326,14 +326,14 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleStrengthWorkout);
 
       expect(result.externalId).toBe("str-789");
-      expect(result.activityType).toBe("strength");
+      expect(result.activityType.canonicalType).toBe("strength");
     });
 
     it("parses a running workout", () => {
       const result = parseWorkout(sampleRunningWorkout);
 
       expect(result.externalId).toBe("run-456");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.raw?.instructor).toBe("Becs Gentry");
     });
 
@@ -451,7 +451,7 @@ describe("Peloton Provider", () => {
       };
       const parsed = parseWorkout(workout);
       expect(parsed.raw.fitnessDiscipline).toBe("yoga");
-      expect(parsed.activityType).toBe("yoga");
+      expect(parsed.activityType.canonicalType).toBe("yoga");
     });
 
     it("stores peloton ride ID in raw", () => {

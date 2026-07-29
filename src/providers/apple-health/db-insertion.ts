@@ -1,5 +1,5 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -699,7 +699,7 @@ export async function upsertWorkoutBatch(
         activityType: workout.activityType,
         startedAt: workout.startDate,
         endedAt: workout.endDate,
-        name: workout.activityType,
+        name: workout.activityType.canonicalType,
         sourceName: workout.sourceName,
         raw,
       };
@@ -731,7 +731,9 @@ export async function upsertWorkoutBatch(
           lat: loc.lat,
           lng: loc.lng,
           altitude: loc.altitude,
-          speed: isIndoorCycling(workout.activityType) ? undefined : loc.speed,
+          speed: isIndoorCyclingModality(workout.activityType.modality)
+            ? undefined
+            : loc.speed,
           horizontalAccuracy: loc.horizontalAccuracy,
           sourceName: workout.sourceName,
         });

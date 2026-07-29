@@ -1,9 +1,12 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import type { TrainerRoadActivity } from "./types.ts";
 
 export interface ParsedTrainerRoadActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -13,14 +16,21 @@ export interface ParsedTrainerRoadActivity {
 export function mapTrainerRoadActivityType(
   activityType: string,
   isOutside: boolean,
-): CanonicalActivityType {
+): ProviderActivityType {
   const type = activityType.toLowerCase();
   if (type.includes("ride") || type.includes("cycling")) {
-    return isOutside ? "cycling" : "virtual_cycling";
+    return resolveProviderActivityType(
+      activityType,
+      isOutside ? "cycling" : "virtual_cycling",
+    );
   }
-  if (type.includes("run")) return "running";
-  if (type.includes("swim")) return "swimming";
-  return "other";
+  if (type.includes("run")) {
+    return resolveProviderActivityType(activityType, "running");
+  }
+  if (type.includes("swim")) {
+    return resolveProviderActivityType(activityType, "swimming");
+  }
+  return resolveProviderActivityType(activityType, "other");
 }
 
 export function parseTrainerRoadActivity(act: TrainerRoadActivity): ParsedTrainerRoadActivity {

@@ -213,7 +213,7 @@ the old enum did not contain it.
   canonical type plus modality without reconstructing old compound strings.
 - Modify `src/db/schema/enums.ts`, `src/db/schema/activity.ts`,
   `drizzle/_views/01_v_activity.sql`, and add forward migration
-  `drizzle/0063_canonical_activity_types.sql`.
+  `drizzle/0064_canonical_activity_types.sql`.
 - Modify all root/package provider parsers and persistence paths so the actual
   upstream type reaches `provider_type`.
 - Modify affected ClickHouse bootstrap schemas and dbt models under
@@ -277,7 +277,7 @@ the old enum did not contain it.
 - Modify: `src/db/schema/enums.ts`
 - Modify: `src/db/schema/activity.ts`
 - Modify: `drizzle/_views/01_v_activity.sql`
-- Create: `drizzle/0063_canonical_activity_types.sql`
+- Create: `drizzle/0064_canonical_activity_types.sql`
 - Modify: `drizzle/meta/_journal.json`
 - Modify: all activity insert/upsert paths found by `rg`
 

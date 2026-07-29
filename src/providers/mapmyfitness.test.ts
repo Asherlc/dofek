@@ -23,23 +23,23 @@ import {
 
 describe("mapMapMyFitnessActivityType", () => {
   it("maps all known activity types", () => {
-    expect(mapMapMyFitnessActivityType("Running")).toBe("running");
-    expect(mapMapMyFitnessActivityType("Trail Run")).toBe("running");
-    expect(mapMapMyFitnessActivityType("Road Ride")).toBe("cycling");
-    expect(mapMapMyFitnessActivityType("Mountain Biking")).toBe("cycling");
-    expect(mapMapMyFitnessActivityType("Cycling")).toBe("cycling");
-    expect(mapMapMyFitnessActivityType("Walking")).toBe("walking");
-    expect(mapMapMyFitnessActivityType("Swimming")).toBe("swimming");
-    expect(mapMapMyFitnessActivityType("Hiking")).toBe("hiking");
-    expect(mapMapMyFitnessActivityType("Yoga Class")).toBe("yoga");
-    expect(mapMapMyFitnessActivityType("Weight Training")).toBe("strength");
-    expect(mapMapMyFitnessActivityType("Strength Training")).toBe("strength");
-    expect(mapMapMyFitnessActivityType("Rowing Machine")).toBe("rowing");
+    expect(mapMapMyFitnessActivityType("Running").canonicalType).toBe("running");
+    expect(mapMapMyFitnessActivityType("Trail Run").canonicalType).toBe("running");
+    expect(mapMapMyFitnessActivityType("Road Ride").canonicalType).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Mountain Biking").canonicalType).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Cycling").canonicalType).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Walking").canonicalType).toBe("walking");
+    expect(mapMapMyFitnessActivityType("Swimming").canonicalType).toBe("swimming");
+    expect(mapMapMyFitnessActivityType("Hiking").canonicalType).toBe("hiking");
+    expect(mapMapMyFitnessActivityType("Yoga Class").canonicalType).toBe("yoga");
+    expect(mapMapMyFitnessActivityType("Weight Training").canonicalType).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Strength Training").canonicalType).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Rowing Machine").canonicalType).toBe("rowing");
   });
 
   it("returns other for unknown types", () => {
-    expect(mapMapMyFitnessActivityType("Juggling")).toBe("other");
-    expect(mapMapMyFitnessActivityType("")).toBe("other");
+    expect(mapMapMyFitnessActivityType("Juggling").canonicalType).toBe("other");
+    expect(mapMapMyFitnessActivityType("").canonicalType).toBe("other");
   });
 });
 
@@ -67,7 +67,7 @@ describe("parseMapMyFitnessWorkout", () => {
 
     const parsed = parseMapMyFitnessWorkout(workout);
     expect(parsed.externalId).toBe("w-123");
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
     expect(parsed.name).toBe("Morning Run");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
     expect(parsed.endedAt).toEqual(
@@ -93,7 +93,7 @@ describe("parseMapMyFitnessWorkout", () => {
 
     const parsed = parseMapMyFitnessWorkout(workout);
     expect(parsed.externalId).toBe("w-min");
-    expect(parsed.activityType).toBe("walking");
+    expect(parsed.activityType.canonicalType).toBe("walking");
     expect(parsed.raw.distanceMeters).toBeUndefined();
   });
 
@@ -122,9 +122,11 @@ describe("parseMapMyFitnessWorkout", () => {
     };
 
     const parsed = parseMapMyFitnessWorkout(workout);
-    // Falls through to the name since activity_type is empty/falsy
-    // but the function uses activity_type ?? name, and "" is not nullish
-    expect(parsed.activityType).toBe("other");
+    expect(parsed.activityType).toEqual({
+      canonicalType: "cycling",
+      providerType: "Cycling Session",
+      modality: null,
+    });
   });
 });
 

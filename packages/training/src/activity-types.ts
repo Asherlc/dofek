@@ -259,6 +259,7 @@ export const LEGACY_ACTIVITY_TYPES = [
 ] as const;
 
 export type LegacyActivityType = (typeof LEGACY_ACTIVITY_TYPES)[number];
+export type NormalizedActivityType = LegacyActivityType | CanonicalActivityType;
 
 const LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS = {
   cycling: { canonicalType: "cycling", modality: null },
@@ -401,7 +402,7 @@ export function classifyLegacyActivityType(legacyType: LegacyActivityType): Acti
 
 export function resolveProviderActivityType(
   providerType: string | number,
-  normalizedType: LegacyActivityType | CanonicalActivityType = "other",
+  normalizedType: NormalizedActivityType = "other",
 ): ProviderActivityType {
   const rawProviderType = String(providerType);
   if (rawProviderType.trim().length === 0) {

@@ -1,4 +1,4 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
   type CriticalPowerModel,
   DURATION_LABELS,
@@ -48,7 +48,8 @@ const cyclingActivityRowSchema = z.object({
   id: z.string(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
+  modality: z.string().nullable(),
   activity_name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),
@@ -513,7 +514,8 @@ export class CyclingAnalyticsRepository {
         toString(activity_id) AS id,
         started_at AS started_at,
         ended_at AS ended_at,
-        activity_type AS activity_type,
+        canonical_type AS canonical_type,
+        modality AS modality,
         activity_name AS activity_name,
         provider_id AS provider_id,
         source_providers AS source_providers,
@@ -566,7 +568,7 @@ export class CyclingAnalyticsRepository {
           {
             activityId: row.id,
             date: row.date,
-            activityName: row.activity_name ?? row.activity_type,
+            activityName: row.activity_name ?? row.canonical_type,
             normalizedPower: row.normalized_power,
             averagePower: row.average_power,
           },
@@ -576,15 +578,15 @@ export class CyclingAnalyticsRepository {
     const verticalAscent = rows
       .filter(
         (row) =>
-          !isIndoorCycling(row.activity_type) &&
+          !isIndoorCyclingModality(row.modality) &&
           row.elevation_gain_meters != null &&
           row.elapsed_seconds > 0,
       )
       .map((row) =>
         new VerticalAscentModel({
           date: row.date,
-          activityName: row.activity_name ?? row.activity_type,
-          activityType: row.activity_type,
+          activityName: row.activity_name ?? row.canonical_type,
+          activityType: row.canonical_type,
           elevationGainMeters: row.elevation_gain_meters ?? 0,
           elapsedSeconds: row.elapsed_seconds,
         }).toDetail(),
@@ -603,8 +605,8 @@ export class CyclingAnalyticsRepository {
       )
       .map((row) => ({
         date: row.date,
-        activityType: row.activity_type,
-        name: row.activity_name ?? row.activity_type,
+        activityType: row.canonical_type,
+        name: row.activity_name ?? row.canonical_type,
         avgPowerZ2: row.avg_power_z2 ?? 0,
         avgHrZ2: row.avg_hr_z2 ?? 0,
         efficiencyFactor: row.efficiency_factor ?? 0,
@@ -617,7 +619,7 @@ export class CyclingAnalyticsRepository {
         id: row.id,
         started_at: row.started_at,
         ended_at: row.ended_at,
-        activity_type: row.activity_type,
+        activity_type: row.canonical_type,
         name: row.activity_name,
         provider_id: row.provider_id,
         source_providers: row.source_providers,

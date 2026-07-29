@@ -55,7 +55,7 @@ describe("Wahoo Provider", () => {
       const result = parseWorkoutSummary(sampleWorkout);
 
       expect(result.externalId).toBe("42");
-      expect(result.activityType).toBe("cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.startedAt).toEqual(new Date("2025-03-01T08:00:00.000Z"));
     });
 
@@ -68,7 +68,7 @@ describe("Wahoo Provider", () => {
       const result = parseWorkoutSummary(workoutNoSummary);
 
       expect(result.externalId).toBe("42");
-      expect(result.activityType).toBe("cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.endedAt).toBeUndefined();
     });
 
@@ -86,19 +86,19 @@ describe("Wahoo Provider", () => {
     });
 
     it("maps workout_type_id to activity type", () => {
-      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 0 }).activityType).toBe(
+      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 0 }).activityType.canonicalType).toBe(
         "cycling",
       );
-      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 1 }).activityType).toBe(
+      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 1 }).activityType.canonicalType).toBe(
         "running",
       );
-      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 2 }).activityType).toBe(
+      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 2 }).activityType.canonicalType).toBe(
         "running",
       );
-      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 8 }).activityType).toBe(
+      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 8 }).activityType.canonicalType).toBe(
         "walking",
       );
-      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 99 }).activityType).toBe(
+      expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 99 }).activityType.canonicalType).toBe(
         "other",
       );
     });
@@ -229,7 +229,7 @@ describe("Wahoo Provider", () => {
         fakeRecords,
         "wahoo",
         "activity-uuid-123",
-        "indoor_cycling",
+        "indoor",
       );
       expect(rows[0]?.speed).toBeUndefined();
       expect(rows[1]?.speed).toBeUndefined();
@@ -243,7 +243,7 @@ describe("Wahoo Provider", () => {
         fakeRecords,
         "wahoo",
         "activity-uuid-123",
-        "virtual_cycling",
+        "virtual",
       );
       expect(rows[0]?.speed).toBeUndefined();
     });
@@ -253,7 +253,7 @@ describe("Wahoo Provider", () => {
         fakeRecords,
         "wahoo",
         "activity-uuid-123",
-        "road_cycling",
+        "road",
       );
       expect(rows[0]?.speed).toBe(8.5);
     });
@@ -598,39 +598,39 @@ describe("parseWorkoutSummary — additional type mappings", () => {
   };
 
   it("maps swimming type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 6 }).activityType).toBe(
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 6 }).activityType.canonicalType).toBe(
       "swimming",
     );
   });
 
   it("maps yoga type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 7 }).activityType).toBe("yoga");
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 7 }).activityType.canonicalType).toBe("yoga");
   });
 
   it("maps hiking type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 9 }).activityType).toBe("hiking");
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 9 }).activityType.canonicalType).toBe("hiking");
   });
 
   it("maps rowing type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 10 }).activityType).toBe(
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 10 }).activityType.canonicalType).toBe(
       "rowing",
     );
   });
 
   it("maps strength type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 11 }).activityType).toBe(
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 11 }).activityType.canonicalType).toBe(
       "strength",
     );
   });
 
   it("maps elliptical type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 12 }).activityType).toBe(
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 12 }).activityType.canonicalType).toBe(
       "elliptical",
     );
   });
 
   it("maps skiing type", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 13 }).activityType).toBe(
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 13 }).activityType.canonicalType).toBe(
       "skiing",
     );
   });
@@ -675,20 +675,29 @@ describe("parseWorkoutSummary — additional type mappings", () => {
   });
 
   it("handles indoor cycling type (3)", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 3 }).activityType).toBe(
-      "indoor_cycling",
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 3 }).activityType.canonicalType).toBe(
+      "cycling",
+    );
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 3 }).activityType.modality).toBe(
+      "indoor",
     );
   });
 
   it("handles mountain biking type (4)", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 4 }).activityType).toBe(
-      "mountain_biking",
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 4 }).activityType.canonicalType).toBe(
+      "cycling",
+    );
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 4 }).activityType.modality).toBe(
+      "mountain",
     );
   });
 
   it("handles gravel cycling type (5)", () => {
-    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 5 }).activityType).toBe(
-      "gravel_cycling",
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 5 }).activityType.canonicalType).toBe(
+      "cycling",
+    );
+    expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 5 }).activityType.modality).toBe(
+      "gravel",
     );
   });
 });
@@ -1049,7 +1058,11 @@ describe("WahooProvider.syncWebhookEvent", () => {
       sourceName: "Wahoo",
       activitySummary: {
         externalId: "42",
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "0",
+          modality: null,
+        },
         startedAtIso: "2026-03-01T08:00:00.000Z",
         name: "Wahoo cycling",
       },
@@ -1219,7 +1232,11 @@ describe("WahooProvider.sync", () => {
       metricStreamPublisher,
       activitySummary: {
         externalId: "42",
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "0",
+          modality: null,
+        },
         startedAtIso: "2026-03-01T08:00:00.000Z",
         name: "Wahoo cycling",
       },
@@ -1414,7 +1431,7 @@ describe("WahooProvider — precise webhook assertions", () => {
     const result = parseWorkoutSummary(workout);
     expect(result.name).toBeUndefined();
     expect(result.externalId).toBe("10");
-    expect(result.activityType).toBe("cycling");
+    expect(result.activityType.canonicalType).toBe("cycling");
     expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(result.endedAt).toBeUndefined();
     expect(result.fitFileUrl).toBeUndefined();
@@ -2461,7 +2478,7 @@ describe("parseWorkoutSummary — unknown type", () => {
       updated_at: "2026-03-01T10:00:00Z",
     };
     const result = parseWorkoutSummary(workout);
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("maps walking type (8)", () => {
@@ -2472,7 +2489,7 @@ describe("parseWorkoutSummary — unknown type", () => {
       created_at: "2026-03-01T10:00:00Z",
       updated_at: "2026-03-01T10:00:00Z",
     };
-    expect(parseWorkoutSummary(workout).activityType).toBe("walking");
+    expect(parseWorkoutSummary(workout).activityType.canonicalType).toBe("walking");
   });
 
   it("maps treadmill running type (2)", () => {
@@ -2483,7 +2500,7 @@ describe("parseWorkoutSummary — unknown type", () => {
       created_at: "2026-03-01T10:00:00Z",
       updated_at: "2026-03-01T10:00:00Z",
     };
-    expect(parseWorkoutSummary(workout).activityType).toBe("running");
+    expect(parseWorkoutSummary(workout).activityType.canonicalType).toBe("running");
   });
 
   it("sets endedAt to undefined when no duration", () => {

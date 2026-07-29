@@ -8,7 +8,10 @@ export function garminSyncStepToApiQuery(step: GarminSyncStep): SyncApiQuery | n
     case "activity_detail":
       return {
         path: "connectapi/activity",
-        filters: { activityId: step.activityId, activityType: step.activityType },
+        filters: {
+          activityId: step.activityId,
+          activityModality: step.activityModality,
+        },
       };
     case "activity_reconcile":
       return null;

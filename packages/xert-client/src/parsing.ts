@@ -1,16 +1,20 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import type { XertActivity } from "./types.ts";
 
 export interface ParsedXertActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
   raw: Record<string, unknown>;
 }
 
-export const XERT_SPORT_MAP: Readonly<Record<string, CanonicalActivityType>> = {
+export const XERT_SPORT_MAP: Readonly<Record<string, LegacyActivityType>> = {
   Cycling: "cycling",
   Running: "running",
   Swimming: "swimming",
@@ -24,8 +28,8 @@ export const XERT_SPORT_MAP: Readonly<Record<string, CanonicalActivityType>> = {
   "Cross Country Skiing": "cross_country_skiing",
 };
 
-export function mapXertSport(sport: string): CanonicalActivityType {
-  return XERT_SPORT_MAP[sport] ?? "other";
+export function mapXertSport(sport: string): ProviderActivityType {
+  return resolveProviderActivityType(sport, XERT_SPORT_MAP[sport] ?? "other");
 }
 
 export function parseXertActivity(activity: XertActivity): ParsedXertActivity {

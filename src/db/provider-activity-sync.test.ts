@@ -48,7 +48,7 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
       findUniqueProviderActivityByExactIdentity(makeMockDb(), {
         providerId: "garmin-dump",
         userId: "00000000-0000-0000-0000-000000000001",
-        activityType: "hiking",
+        canonicalType: "hiking",
         startedAt: new Date("2022-05-17T17:23:08.000Z"),
         endedAt: new Date("2022-05-17T19:03:19.201Z"),
       }),
@@ -59,7 +59,7 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
     const identity: ProviderActivityExactIdentity = {
       providerId: "garmin-dump",
       userId: "00000000-0000-0000-0000-000000000001",
-      activityType: "hiking",
+      canonicalType: "hiking",
       startedAt: new Date("2022-05-17T17:23:08.000Z"),
       endedAt: new Date("2022-05-17T19:03:19.201Z"),
     };
@@ -91,19 +91,21 @@ describe("upsertProviderActivity", () => {
       {
         providerId: "apple_health",
         externalId: "hk:workout:abc",
-        activityType: "running",
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
         startedAt: new Date("2026-06-20T21:49:00Z"),
         endedAt: new Date("2026-06-20T22:17:59Z"),
       },
       {
-        activityType: "running",
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
       },
     );
 
     expect(onConflictDoUpdate).toHaveBeenCalledWith({
       target: [activity.userId, activity.providerId, activity.externalId],
       set: {
-        activityType: "running",
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
       },
     });
   });
@@ -116,10 +118,18 @@ describe("upsertProviderActivity", () => {
           {
             providerId: "apple_health",
             externalId,
-            activityType: "running",
+            activityType: resolveProviderActivityType(
+              "HKWorkoutActivityTypeRunning",
+              "running",
+            ),
             startedAt: new Date("2026-06-20T21:49:00Z"),
           },
-          { activityType: "running" },
+          {
+            activityType: resolveProviderActivityType(
+              "HKWorkoutActivityTypeRunning",
+              "running",
+            ),
+          },
         ),
       ).rejects.toThrow("Provider activity upsert requires externalId");
     }
@@ -133,10 +143,15 @@ describe("upsertProviderActivity", () => {
       {
         providerId: "apple_health",
         externalId: " hk:workout:abc ",
-        activityType: "running",
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
         startedAt: new Date("2026-06-20T21:49:00Z"),
       },
-      { activityType: "running" },
+      {
+        activityType: resolveProviderActivityType(
+          "HKWorkoutActivityTypeRunning",
+          "running",
+        ),
+      },
     );
 
     expect(vi.mocked(db.insert)).toHaveBeenCalledWith(activity);
@@ -312,10 +327,15 @@ describe("ProviderActivityListSync", () => {
       {
         providerId: "apple_health",
         externalId: "hk:workout:present",
-        activityType: "running",
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
         startedAt: new Date("2026-06-20T21:49:00Z"),
       },
-      { activityType: "running" },
+      {
+        activityType: resolveProviderActivityType(
+          "HKWorkoutActivityTypeRunning",
+          "running",
+        ),
+      },
     );
     await sync.reconcile();
 
@@ -422,3 +442,4 @@ describe("finishProviderActivityListSync", () => {
     ).rejects.toThrow("reconciliation failed");
   });
 });
+import { resolveProviderActivityType } from "@dofek/training/activity-types";

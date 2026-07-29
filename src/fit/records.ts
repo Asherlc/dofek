@@ -1,4 +1,5 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import type { ActivityModality } from "@dofek/training/activity-types";
 import type { MetricStreamSourceRow } from "../db/metric-stream-writer.ts";
 import type { JsonValue } from "../metric-stream/events.ts";
 import type { ParsedFitRecord } from "./parser.ts";
@@ -33,9 +34,9 @@ export function fitRecordsToSensorSamples(
   records: ParsedFitRecord[],
   providerId: string,
   activityId: string,
-  activityType?: string,
+  modality?: ActivityModality | null,
 ): MetricStreamSourceRow[] {
-  const indoor = activityType ? isIndoorCycling(activityType) : false;
+  const indoor = isIndoorCyclingModality(modality ?? null);
   return records.map((record) => ({
     providerId,
     activityId,

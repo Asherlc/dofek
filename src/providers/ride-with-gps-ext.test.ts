@@ -438,11 +438,11 @@ describe("parseTripToActivity — additional edge cases", () => {
   });
 
   it("maps cyclocross to cyclocross", () => {
-    expect(mapActivityType("cyclocross")).toBe("cyclocross");
+    expect(mapActivityType("cyclocross").canonicalType).toBe("cyclocross");
   });
 
   it("maps track_cycling to track_cycling", () => {
-    expect(mapActivityType("track_cycling")).toBe("track_cycling");
+    expect(mapActivityType("track_cycling").canonicalType).toBe("track_cycling");
   });
 });
 

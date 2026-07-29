@@ -325,7 +325,7 @@ describe("Apple Health Provider -- parsing", () => {
   describe("parseWorkout", () => {
     it("parses workout attributes", () => {
       const result = parseWorkout(workoutAttrs);
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.durationSeconds).toBeCloseTo(1830); // 30.5 min
       expect(result.distanceMeters).toBe(5200);
       expect(result.sourceName).toBe("Apple Watch");
@@ -338,55 +338,55 @@ describe("Apple Health Provider -- parsing", () => {
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeRunning",
       });
-      expect(running.activityType).toBe("running");
+      expect(running.activityType.canonicalType).toBe("running");
 
       const cycling = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeCycling",
       });
-      expect(cycling.activityType).toBe("cycling");
+      expect(cycling.activityType.canonicalType).toBe("cycling");
 
       const swimming = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeSwimming",
       });
-      expect(swimming.activityType).toBe("swimming");
+      expect(swimming.activityType.canonicalType).toBe("swimming");
 
       const hiking = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeHiking",
       });
-      expect(hiking.activityType).toBe("hiking");
+      expect(hiking.activityType.canonicalType).toBe("hiking");
 
       const yoga = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeYoga",
       });
-      expect(yoga.activityType).toBe("yoga");
+      expect(yoga.activityType.canonicalType).toBe("yoga");
 
       const rowing = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeRowing",
       });
-      expect(rowing.activityType).toBe("rowing");
+      expect(rowing.activityType.canonicalType).toBe("rowing");
 
       const elliptical = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeElliptical",
       });
-      expect(elliptical.activityType).toBe("elliptical");
+      expect(elliptical.activityType.canonicalType).toBe("elliptical");
 
       const hiit = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeHighIntensityIntervalTraining",
       });
-      expect(hiit.activityType).toBe("hiit");
+      expect(hiit.activityType.canonicalType).toBe("hiit");
 
       const strength = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeTraditionalStrengthTraining",
       });
-      expect(strength.activityType).toBe("strength_training");
+      expect(strength.activityType.canonicalType).toBe("strength");
     });
 
     it("parses a cycling workout with unit conversions", () => {
@@ -400,7 +400,7 @@ describe("Apple Health Provider -- parsing", () => {
         startDate: "2024-03-01 08:00:00 -0500",
         endDate: "2024-03-01 09:00:00 -0500",
       });
-      expect(workout.activityType).toBe("cycling");
+      expect(workout.activityType.canonicalType).toBe("cycling");
       expect(workout.durationSeconds).toBe(3600);
       expect(workout.distanceMeters).toBe(30000);
       expect(workout.sourceName).toBe("Apple Watch");
@@ -417,7 +417,7 @@ describe("Apple Health Provider -- parsing", () => {
         endDate: "2024-03-01 18:10:00 -0500",
       };
       const result = parseWorkout(minimal);
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.distanceMeters).toBeUndefined();
     });
   });
@@ -915,7 +915,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("defaults to 'other' for HKWorkoutActivityTypeOther", () => {
@@ -927,7 +927,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("defaults to 'other' when workoutActivityType is missing", () => {
@@ -938,7 +938,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 });
 
@@ -968,7 +968,11 @@ describe("parseWorkoutStatistics -- edge cases", () => {
 describe("enrichWorkoutFromStats -- edge cases", () => {
   it("does not modify workout for unrecognized stat types", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Apple Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -989,7 +993,11 @@ describe("enrichWorkoutFromStats -- edge cases", () => {
 
   it("handles empty stats array", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Apple Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ENDURANCE_ACTIVITY_TYPES } from "./endurance-types";
 import {
   CANONICAL_ACTIVITY_TYPES,
+  classifyLegacyActivityType,
+} from "./activity-types";
+import { ENDURANCE_ACTIVITY_TYPES } from "./endurance-types";
+import {
   CYCLING_ACTIVITY_TYPES,
   cadenceAxisLabel,
   cadenceUnit,
@@ -95,18 +98,8 @@ describe("ENDURANCE_ACTIVITY_TYPES", () => {
 // ============================================================
 
 describe("CYCLING_ACTIVITY_TYPES", () => {
-  it("includes generic cycling and all subtypes", () => {
-    expect(CYCLING_ACTIVITY_TYPES).toContain("cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("road_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("mountain_biking");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("gravel_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("indoor_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("virtual_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("e_bike_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("cyclocross");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("track_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("bmx");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("hand_cycling");
+  it("contains the canonical cycling type", () => {
+    expect(CYCLING_ACTIVITY_TYPES).toEqual(["cycling"]);
   });
 });
 
@@ -128,8 +121,6 @@ describe("isCyclingActivity", () => {
 describe("cadenceUnit", () => {
   it("returns rpm for cycling activity types", () => {
     expect(cadenceUnit("cycling")).toBe("rpm");
-    expect(cadenceUnit("indoor_cycling")).toBe("rpm");
-    expect(cadenceUnit("hand_cycling")).toBe("rpm");
   });
 
   it("returns steps/min for running, walking, and hiking", () => {
@@ -153,19 +144,31 @@ describe("cadenceAxisLabel", () => {
 describe("createActivityTypeMapper", () => {
   it("maps known types using the provided mapping", () => {
     const mapper = createActivityTypeMapper({ foo: "cycling", bar: "running" });
-    expect(mapper("foo")).toBe("cycling");
-    expect(mapper("bar")).toBe("running");
+    expect(mapper("foo")).toEqual({
+      canonicalType: "cycling",
+      modality: null,
+      providerType: "foo",
+    });
+    expect(mapper("bar")).toEqual({
+      canonicalType: "running",
+      modality: null,
+      providerType: "bar",
+    });
   });
 
   it("returns 'other' for unknown types", () => {
     const mapper = createActivityTypeMapper<string>({ foo: "cycling" });
-    expect(mapper("unknown_type")).toBe("other");
+    expect(mapper("unknown_type")).toEqual({
+      canonicalType: "other",
+      modality: null,
+      providerType: "unknown_type",
+    });
   });
 
   it("is case-sensitive (mapping keys are used as-is)", () => {
     const mapper = createActivityTypeMapper<string>({ Ride: "cycling" });
-    expect(mapper("Ride")).toBe("cycling");
-    expect(mapper("ride")).toBe("other");
+    expect(mapper("Ride").canonicalType).toBe("cycling");
+    expect(mapper("ride").canonicalType).toBe("other");
   });
 });
 
@@ -204,7 +207,9 @@ describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const [, value] of Object.entries(STRAVA_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(
+        classifyLegacyActivityType(value).canonicalType,
+      );
     }
   });
 });
@@ -220,7 +225,9 @@ describe("WAHOO_WORKOUT_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(WAHOO_WORKOUT_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(
+        classifyLegacyActivityType(value).canonicalType,
+      );
     }
   });
 });
@@ -240,7 +247,9 @@ describe("POLAR_SPORT_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(POLAR_SPORT_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(
+        classifyLegacyActivityType(value).canonicalType,
+      );
     }
   });
 });
@@ -260,7 +269,9 @@ describe("GARMIN_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(GARMIN_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(
+        classifyLegacyActivityType(value).canonicalType,
+      );
     }
   });
 });
@@ -276,7 +287,9 @@ describe("OURA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(OURA_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(
+        classifyLegacyActivityType(value).canonicalType,
+      );
     }
   });
 });
@@ -292,7 +305,9 @@ describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(
+        classifyLegacyActivityType(value).canonicalType,
+      );
     }
   });
 });
@@ -355,15 +370,15 @@ describe("formatActivityTypeLabel", () => {
 
 describe("getVerticalAscentActivityTypeGroup", () => {
   it("keeps road, mountain, and gravel cycling in dedicated vertical ascent groups", () => {
-    expect(getVerticalAscentActivityTypeGroup("road_cycling")).toBe("road_cycling");
-    expect(getVerticalAscentActivityTypeGroup("mountain_biking")).toBe("mountain_biking");
-    expect(getVerticalAscentActivityTypeGroup("gravel_cycling")).toBe("gravel_cycling");
+    expect(getVerticalAscentActivityTypeGroup("road")).toBe("road_cycling");
+    expect(getVerticalAscentActivityTypeGroup("mountain")).toBe("mountain_biking");
+    expect(getVerticalAscentActivityTypeGroup("gravel")).toBe("gravel_cycling");
   });
 
   it("groups other cycling variants into other cycling", () => {
-    expect(getVerticalAscentActivityTypeGroup("indoor_cycling")).toBe("other_cycling");
-    expect(getVerticalAscentActivityTypeGroup("virtual_cycling")).toBe("other_cycling");
-    expect(getVerticalAscentActivityTypeGroup("  E_BIKE_CYCLING  ")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup("indoor")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup("virtual")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup(null)).toBe("other_cycling");
   });
 });
 
@@ -506,25 +521,6 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
   });
 
-  it("consolidates cycling subtypes into generic cycling", () => {
-    const rows = [
-      { week: "2026-03-01", activity_type: "road_cycling", count: 2, hours: 3 },
-      { week: "2026-03-01", activity_type: "mountain_biking", count: 1, hours: 2 },
-      { week: "2026-03-01", activity_type: "gravel_cycling", count: 1, hours: 1 },
-      { week: "2026-03-01", activity_type: "indoor_cycling", count: 1, hours: 1 },
-      { week: "2026-03-01", activity_type: "running", count: 3, hours: 4 },
-    ];
-    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    const types = result.map((r) => r.activity_type);
-    expect(types).toContain("cycling");
-    expect(types).not.toContain("road_cycling");
-    expect(types).not.toContain("mountain_biking");
-    expect(types).not.toContain("gravel_cycling");
-    expect(types).not.toContain("indoor_cycling");
-    const cyclingRow = result.find((r) => r.activity_type === "cycling");
-    expect(cyclingRow?.hours).toBe(7);
-    expect(cyclingRow?.count).toBe(5);
-  });
 });
 
 describe("selectRecentDailyLoad", () => {

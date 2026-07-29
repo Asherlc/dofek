@@ -6,7 +6,8 @@ import { activity, climbingAttempt, climbingEntry, fingerLoadingEntry } from "./
 import { labResult } from "./schema/clinical.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
-  activityTypeEnum,
+  activityModalityEnum,
+  canonicalActivityTypeEnum,
   climbingAttemptOutcomeEnum,
   climbingClimbTypeEnum,
   climbingFailureReasonEnum,
@@ -69,7 +70,8 @@ describe("drizzleSchema", () => {
   it("aggregates all database schema modules", () => {
     expect(drizzleSchema).toMatchObject({
       TEST_USER_ID,
-      activityTypeEnum,
+      activityModalityEnum,
+      canonicalActivityTypeEnum,
       provider,
       activity,
       foodEntry,

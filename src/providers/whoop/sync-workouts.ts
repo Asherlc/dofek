@@ -3,6 +3,7 @@ import {
   resolveRecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import type { WhoopWorkoutRecord } from "@dofek/whoop/types";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { parseDuringRange } from "@dofek/whoop/utils";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -313,7 +314,10 @@ export async function syncWhoopStrength(
               {
                 providerId,
                 externalId: activityId,
-                activityType: "strength",
+                activityType: resolveProviderActivityType(
+                  workoutRecord.sport_id,
+                  "strength",
+                ),
                 startedAt,
                 endedAt,
                 ...whoopLocalTimeContext(workoutRecord, startedAt, endedAt),
@@ -327,7 +331,10 @@ export async function syncWhoopStrength(
                 },
               },
               {
-                activityType: "strength",
+                activityType: resolveProviderActivityType(
+                  workoutRecord.sport_id,
+                  "strength",
+                ),
                 name: weightliftingData.name ?? null,
                 startedAt,
                 endedAt,
@@ -476,7 +483,10 @@ export async function syncWhoopStrengthForActivity(
     {
       providerId,
       externalId: activityId,
-      activityType: "strength",
+      activityType: resolveProviderActivityType(
+        workoutRecord.sport_id,
+        "strength",
+      ),
       startedAt,
       endedAt,
       ...whoopLocalTimeContext(workoutRecord, startedAt, endedAt),
@@ -490,7 +500,10 @@ export async function syncWhoopStrengthForActivity(
       },
     },
     {
-      activityType: "strength",
+      activityType: resolveProviderActivityType(
+        workoutRecord.sport_id,
+        "strength",
+      ),
       name: weightliftingData.name ?? null,
       startedAt,
       endedAt,

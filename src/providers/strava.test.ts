@@ -1,3 +1,4 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
@@ -175,28 +176,31 @@ const sampleStreams: StravaStreamSet = {
 describe("Strava Provider", () => {
   describe("mapStravaActivityType", () => {
     it("maps common Strava types to canonical types", () => {
-      expect(mapStravaActivityType("Ride")).toBe("road_cycling");
-      expect(mapStravaActivityType("VirtualRide")).toBe("virtual_cycling");
-      expect(mapStravaActivityType("MountainBikeRide")).toBe("mountain_biking");
-      expect(mapStravaActivityType("GravelRide")).toBe("gravel_cycling");
-      expect(mapStravaActivityType("EBikeRide")).toBe("e_bike_cycling");
-      expect(mapStravaActivityType("Run")).toBe("running");
-      expect(mapStravaActivityType("VirtualRun")).toBe("running");
-      expect(mapStravaActivityType("TrailRun")).toBe("running");
-      expect(mapStravaActivityType("Walk")).toBe("walking");
-      expect(mapStravaActivityType("Hike")).toBe("hiking");
-      expect(mapStravaActivityType("Swim")).toBe("swimming");
-      expect(mapStravaActivityType("WeightTraining")).toBe("strength");
-      expect(mapStravaActivityType("Yoga")).toBe("yoga");
-      expect(mapStravaActivityType("Rowing")).toBe("rowing");
-      expect(mapStravaActivityType("Elliptical")).toBe("elliptical");
-      expect(mapStravaActivityType("NordicSki")).toBe("skiing");
-      expect(mapStravaActivityType("AlpineSki")).toBe("skiing");
+      expect(mapStravaActivityType("Ride").canonicalType).toBe("cycling");
+      expect(mapStravaActivityType("VirtualRide").canonicalType).toBe("cycling");
+      expect(mapStravaActivityType("MountainBikeRide").canonicalType).toBe("cycling");
+      expect(mapStravaActivityType("GravelRide").canonicalType).toBe("cycling");
+      expect(mapStravaActivityType("EBikeRide").canonicalType).toBe("cycling");
+      expect(mapStravaActivityType("Run").canonicalType).toBe("running");
+      expect(mapStravaActivityType("VirtualRun").canonicalType).toBe("running");
+      expect(mapStravaActivityType("TrailRun").canonicalType).toBe("running");
+      expect(mapStravaActivityType("Walk").canonicalType).toBe("walking");
+      expect(mapStravaActivityType("Hike").canonicalType).toBe("hiking");
+      expect(mapStravaActivityType("Swim").canonicalType).toBe("swimming");
+      expect(mapStravaActivityType("WeightTraining").canonicalType).toBe("strength");
+      expect(mapStravaActivityType("Yoga").canonicalType).toBe("yoga");
+      expect(mapStravaActivityType("Rowing").canonicalType).toBe("rowing");
+      expect(mapStravaActivityType("Elliptical").canonicalType).toBe("elliptical");
+      expect(mapStravaActivityType("NordicSki").canonicalType).toBe("skiing");
+      expect(mapStravaActivityType("AlpineSki").canonicalType).toBe("skiing");
+      expect(mapStravaActivityType("Ride").modality).toBe("road");
+      expect(mapStravaActivityType("VirtualRide").modality).toBe("virtual");
+      expect(mapStravaActivityType("EBikeRide").modality).toBe("electric");
     });
 
     it("returns 'other' for unknown types", () => {
-      expect(mapStravaActivityType("Handcycle")).toBe("other");
-      expect(mapStravaActivityType("UnknownSport")).toBe("other");
+      expect(mapStravaActivityType("Handcycle").canonicalType).toBe("other");
+      expect(mapStravaActivityType("UnknownSport").canonicalType).toBe("other");
     });
   });
 
@@ -205,7 +209,7 @@ describe("Strava Provider", () => {
       const result = parseStravaActivity(sampleActivity);
 
       expect(result.externalId).toBe("12345678");
-      expect(result.activityType).toBe("road_cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.name).toBe("Morning Ride");
       expect(result.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
       expect(result.endedAt).toEqual(
@@ -251,7 +255,7 @@ describe("Strava Provider", () => {
       const result = parseStravaActivity(minimal);
 
       expect(result.externalId).toBe("99999");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.startedAt).toEqual(new Date("2026-03-05T14:00:00Z"));
       expect(result.sourceName).toBeUndefined();
     });
@@ -263,7 +267,7 @@ describe("Strava Provider", () => {
         sport_type: "TrailRun",
       };
       const result = parseStravaActivity(trailRun);
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
     });
   });
 
@@ -429,7 +433,7 @@ describe("Strava Provider", () => {
         "strava",
         "act-uuid",
         startedAt,
-        "indoor_cycling",
+        resolveProviderActivityType("Ride", "indoor_cycling"),
       );
       expect(rows[0]?.speed).toBeUndefined();
       expect(rows[1]?.speed).toBeUndefined();
@@ -444,7 +448,7 @@ describe("Strava Provider", () => {
         "strava",
         "act-uuid",
         startedAt,
-        "virtual_cycling",
+        resolveProviderActivityType("VirtualRide", "virtual_cycling"),
       );
       expect(rows[0]?.speed).toBeUndefined();
     });
@@ -455,7 +459,7 @@ describe("Strava Provider", () => {
         "strava",
         "act-uuid",
         startedAt,
-        "road_cycling",
+        resolveProviderActivityType("Ride", "road_cycling"),
       );
       expect(rows[0]?.speed).toBe(8.5);
     });
@@ -2984,31 +2988,31 @@ describe("StravaProvider.sync — additional coverage", () => {
 
 describe("mapStravaActivityType — additional types", () => {
   it("maps Canoeing and Kayaking to rowing", () => {
-    expect(mapStravaActivityType("Canoeing")).toBe("rowing");
-    expect(mapStravaActivityType("Kayaking")).toBe("rowing");
+    expect(mapStravaActivityType("Canoeing").canonicalType).toBe("rowing");
+    expect(mapStravaActivityType("Kayaking").canonicalType).toBe("rowing");
   });
 
   it("maps BackcountrySki to skiing", () => {
-    expect(mapStravaActivityType("BackcountrySki")).toBe("skiing");
+    expect(mapStravaActivityType("BackcountrySki").canonicalType).toBe("skiing");
   });
 
   it("maps Snowboard to skiing", () => {
-    expect(mapStravaActivityType("Snowboard")).toBe("skiing");
+    expect(mapStravaActivityType("Snowboard").canonicalType).toBe("skiing");
   });
 
   it("maps IceSkate to skating", () => {
-    expect(mapStravaActivityType("IceSkate")).toBe("skating");
+    expect(mapStravaActivityType("IceSkate").canonicalType).toBe("skating");
   });
 
   it("maps RollerSki to skiing", () => {
-    expect(mapStravaActivityType("RollerSki")).toBe("skiing");
+    expect(mapStravaActivityType("RollerSki").canonicalType).toBe("skiing");
   });
 
   it("maps Crossfit to strength", () => {
-    expect(mapStravaActivityType("Crossfit")).toBe("strength");
+    expect(mapStravaActivityType("Crossfit").canonicalType).toBe("strength");
   });
 
   it("maps RockClimbing to climbing", () => {
-    expect(mapStravaActivityType("RockClimbing")).toBe("climbing");
+    expect(mapStravaActivityType("RockClimbing").canonicalType).toBe("climbing");
   });
 });

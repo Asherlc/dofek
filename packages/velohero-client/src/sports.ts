@@ -1,6 +1,10 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 
-export const VELOHERO_SPORT_MAP: Record<string, CanonicalActivityType> = {
+export const VELOHERO_SPORT_MAP: Record<string, LegacyActivityType> = {
   "0": "other",
   "1": "cycling",
   "2": "running",
@@ -16,6 +20,9 @@ export const VELOHERO_SPORT_MAP: Record<string, CanonicalActivityType> = {
   "12": "e_bike_cycling", // pedelec / e-bike
 };
 
-export function mapVeloHeroSport(sportId: string): CanonicalActivityType {
-  return VELOHERO_SPORT_MAP[sportId] ?? "other";
+export function mapVeloHeroSport(sportId: string): ProviderActivityType {
+  return resolveProviderActivityType(
+    sportId,
+    VELOHERO_SPORT_MAP[sportId] ?? "other",
+  );
 }

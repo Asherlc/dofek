@@ -239,12 +239,12 @@ describe("FitbitProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "5001");
     if (!ride) throw new Error("expected activity 5001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Outdoor Bike Ride");
 
     const run = activityRows.find((r) => r.externalId === "5002");
     if (!run) throw new Error("expected activity 5002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify sleep
     const sleepRows = await ctx.db
@@ -716,7 +716,7 @@ describe("parseFitbitActivity — edge cases", () => {
     const parsed = parseFitbitActivity(act);
     expect(parsed.steps).toBeUndefined();
     expect(parsed.distanceKm).toBeUndefined();
-    expect(parsed.activityType).toBe("yoga");
+    expect(parsed.activityType.canonicalType).toBe("yoga");
   });
 });
 

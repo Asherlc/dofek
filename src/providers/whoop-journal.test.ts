@@ -50,7 +50,7 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     expect(parsed?.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
     expect(parsed?.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
     expect(parsed?.durationSeconds).toBe(5400);
-    expect(parsed?.activityType).toBe("cycling");
+    expect(parsed?.activityType.canonicalType).toBe("cycling");
   });
 
   it("uses record.id when activity_id is missing", () => {
@@ -65,7 +65,7 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("98765");
-    expect(parsed?.activityType).toBe("yoga");
+    expect(parsed?.activityType.canonicalType).toBe("yoga");
   });
 
   it("returns null when both activity_id and id are missing", () => {

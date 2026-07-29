@@ -149,12 +149,12 @@ describe("XertProvider.sync() (integration)", () => {
 
     const cycling = rows.find((r) => r.externalId === "9001");
     if (!cycling) throw new Error("expected activity 9001");
-    expect(cycling.activityType).toBe("cycling");
+    expect(cycling.canonicalType).toBe("cycling");
     expect(cycling.name).toBe("Threshold Intervals");
 
     const running = rows.find((r) => r.externalId === "9002");
     if (!running) throw new Error("expected activity 9002");
-    expect(running.activityType).toBe("running");
+    expect(running.canonicalType).toBe("running");
     expect(running.name).toBe("Easy Run");
   });
 
@@ -259,19 +259,19 @@ describe("XertProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "xert"));
 
     const swim = rows.find((r) => r.externalId === "8001");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
 
     const virtualCycling = rows.find((r) => r.externalId === "8002");
-    expect(virtualCycling?.activityType).toBe("virtual_cycling");
+    expect(virtualCycling?.canonicalType).toBe("cycling");
 
     const mtb = rows.find((r) => r.externalId === "8003");
-    expect(mtb?.activityType).toBe("mountain_biking");
+    expect(mtb?.canonicalType).toBe("cycling");
 
     const trail = rows.find((r) => r.externalId === "8004");
-    expect(trail?.activityType).toBe("trail_running");
+    expect(trail?.canonicalType).toBe("running");
 
     const unknown = rows.find((r) => r.externalId === "8005");
-    expect(unknown?.activityType).toBe("other");
+    expect(unknown?.canonicalType).toBe("other");
   });
 
   it("stores Xert-specific fields in raw JSON", async () => {

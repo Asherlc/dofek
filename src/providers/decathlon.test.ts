@@ -381,31 +381,31 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
 
 describe("mapDecathlonSport — all types", () => {
   it("maps known sport IDs from URI", () => {
-    expect(mapDecathlonSport("/v2/sports/381")).toBe("running");
-    expect(mapDecathlonSport("/v2/sports/121")).toBe("cycling");
-    expect(mapDecathlonSport("/v2/sports/153")).toBe("mountain_biking");
-    expect(mapDecathlonSport("/v2/sports/320")).toBe("walking");
-    expect(mapDecathlonSport("/v2/sports/110")).toBe("hiking");
-    expect(mapDecathlonSport("/v2/sports/274")).toBe("trail_running");
-    expect(mapDecathlonSport("/v2/sports/260")).toBe("swimming");
-    expect(mapDecathlonSport("/v2/sports/79")).toBe("cross_country_skiing");
-    expect(mapDecathlonSport("/v2/sports/173")).toBe("rowing");
-    expect(mapDecathlonSport("/v2/sports/263")).toBe("open_water_swimming");
-    expect(mapDecathlonSport("/v2/sports/91")).toBe("skiing");
-    expect(mapDecathlonSport("/v2/sports/174")).toBe("rowing");
-    expect(mapDecathlonSport("/v2/sports/395")).toBe("yoga");
-    expect(mapDecathlonSport("/v2/sports/105")).toBe("gym");
-    expect(mapDecathlonSport("/v2/sports/264")).toBe("triathlon");
-    expect(mapDecathlonSport("/v2/sports/292")).toBe("skating");
-    expect(mapDecathlonSport("/v2/sports/160")).toBe("climbing");
-    expect(mapDecathlonSport("/v2/sports/100")).toBe("cross_training");
-    expect(mapDecathlonSport("/v2/sports/367")).toBe("elliptical");
-    expect(mapDecathlonSport("/v2/sports/176")).toBe("strength_training");
+    expect(mapDecathlonSport("/v2/sports/381").canonicalType).toBe("running");
+    expect(mapDecathlonSport("/v2/sports/121").canonicalType).toBe("cycling");
+    expect(mapDecathlonSport("/v2/sports/153").canonicalType).toBe("cycling");
+    expect(mapDecathlonSport("/v2/sports/320").canonicalType).toBe("walking");
+    expect(mapDecathlonSport("/v2/sports/110").canonicalType).toBe("hiking");
+    expect(mapDecathlonSport("/v2/sports/274").canonicalType).toBe("running");
+    expect(mapDecathlonSport("/v2/sports/260").canonicalType).toBe("swimming");
+    expect(mapDecathlonSport("/v2/sports/79").canonicalType).toBe("skiing");
+    expect(mapDecathlonSport("/v2/sports/173").canonicalType).toBe("rowing");
+    expect(mapDecathlonSport("/v2/sports/263").canonicalType).toBe("swimming");
+    expect(mapDecathlonSport("/v2/sports/91").canonicalType).toBe("skiing");
+    expect(mapDecathlonSport("/v2/sports/174").canonicalType).toBe("rowing");
+    expect(mapDecathlonSport("/v2/sports/395").canonicalType).toBe("yoga");
+    expect(mapDecathlonSport("/v2/sports/105").canonicalType).toBe("strength");
+    expect(mapDecathlonSport("/v2/sports/264").canonicalType).toBe("triathlon");
+    expect(mapDecathlonSport("/v2/sports/292").canonicalType).toBe("skating");
+    expect(mapDecathlonSport("/v2/sports/160").canonicalType).toBe("climbing");
+    expect(mapDecathlonSport("/v2/sports/100").canonicalType).toBe("cross_training");
+    expect(mapDecathlonSport("/v2/sports/367").canonicalType).toBe("elliptical");
+    expect(mapDecathlonSport("/v2/sports/176").canonicalType).toBe("strength");
   });
 
   it("returns other for unknown sport ID", () => {
-    expect(mapDecathlonSport("/v2/sports/999")).toBe("other");
-    expect(mapDecathlonSport("")).toBe("other");
+    expect(mapDecathlonSport("/v2/sports/999").canonicalType).toBe("other");
+    expect(mapDecathlonSport("").canonicalType).toBe("other");
   });
 });
 
@@ -427,7 +427,7 @@ describe("parseDecathlonActivity", () => {
 
     const parsed = parseDecathlonActivity(act);
     expect(parsed.externalId).toBe("dec-123");
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
     expect(parsed.name).toBe("Morning Run");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date(new Date("2026-03-01T08:00:00Z").getTime() + 3600000));

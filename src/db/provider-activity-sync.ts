@@ -1,4 +1,5 @@
 import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
@@ -14,16 +15,30 @@ import {
 import { activity } from "./schema/activity.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
-export type ProviderActivityInsert = typeof activity.$inferInsert;
+type StoredActivityInsert = typeof activity.$inferInsert;
 
-type ProviderActivityConflictUpdateKey = Exclude<
-  keyof ProviderActivityInsert,
+export type ProviderActivityInsert = Omit<
+  StoredActivityInsert,
+  "canonicalType" | "providerType" | "modality"
+> & {
+  activityType: ProviderActivityType;
+};
+
+type StoredActivityConflictUpdateKey = Exclude<
+  keyof StoredActivityInsert,
   "userId" | "providerId" | "externalId" | "providerAbsentAt"
 >;
 
+type StoredActivityConflictUpdate = {
+  [K in StoredActivityConflictUpdateKey]?: StoredActivityInsert[K] | SQL;
+};
+
 /** Fields allowed in activity upsert conflict updates. Never includes providerAbsentAt. */
-export type ProviderActivityConflictUpdate = {
-  [K in ProviderActivityConflictUpdateKey]?: ProviderActivityInsert[K] | SQL;
+export type ProviderActivityConflictUpdate = Omit<
+  StoredActivityConflictUpdate,
+  "canonicalType" | "providerType" | "modality"
+> & {
+  activityType?: ProviderActivityType;
 };
 
 export interface ProviderActivityListSyncScope {
@@ -37,7 +52,7 @@ export interface ProviderActivityListSyncScope {
 export interface ProviderActivityExactIdentity {
   providerId: string;
   userId: string;
-  activityType: ProviderActivityInsert["activityType"];
+  canonicalType: StoredActivityInsert["canonicalType"];
   startedAt: Date;
   endedAt: Date;
 }
@@ -56,7 +71,7 @@ export async function findUniqueProviderActivityByExactIdentity(
         FROM fitness.activity
         WHERE provider_id = ${identity.providerId}
           AND user_id = ${identity.userId}
-          AND activity_type = ${identity.activityType}
+          AND canonical_type = ${identity.canonicalType}
           AND started_at = ${identity.startedAt}
           AND ended_at = ${identity.endedAt}
           AND provider_absent_at IS NULL
@@ -77,11 +92,15 @@ function requireExternalId(externalId: string | null | undefined): string {
 function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
-): { values: ProviderActivityInsert; updateLocalTimeContext: boolean } {
-  const externalIdValues =
-    values.externalId === normalizedExternalId
-      ? values
-      : { ...values, externalId: normalizedExternalId };
+): { values: StoredActivityInsert; updateLocalTimeContext: boolean } {
+  const { activityType, ...storedValues } = values;
+  const externalIdValues: StoredActivityInsert = {
+    ...storedValues,
+    canonicalType: activityType.canonicalType,
+    providerType: activityType.providerType,
+    modality: activityType.modality,
+    externalId: normalizedExternalId,
+  };
   if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
     return { values: externalIdValues, updateLocalTimeContext: true };
   }
@@ -139,6 +158,19 @@ function normalizeProviderActivityInsert(
   }
 }
 
+function normalizeProviderActivityConflictUpdate(
+  update: ProviderActivityConflictUpdate,
+): StoredActivityConflictUpdate {
+  const { activityType, ...storedUpdate } = update;
+  if (!activityType) return storedUpdate;
+  return {
+    ...storedUpdate,
+    canonicalType: activityType.canonicalType,
+    providerType: activityType.providerType,
+    modality: activityType.modality,
+  };
+}
+
 /**
  * Tracks activities present in an authoritative provider list fetch and
  * tombstones rows missing from that list when `reconcile()` runs.
@@ -180,7 +212,11 @@ export class ProviderActivityListSync {
     update: ProviderActivityConflictUpdate,
   ): Promise<{ id: string } | undefined> {
     const normalizedExternalId = requireExternalId(values.externalId);
-    const row = await upsertProviderActivity(this.#scope.db, values, update);
+    const row = await upsertProviderActivity(
+      this.#scope.db,
+      { ...values, externalId: normalizedExternalId },
+      update,
+    );
     this.trackPresent(normalizedExternalId);
     return row;
   }
@@ -224,7 +260,7 @@ export async function upsertProviderActivity(
     .values(normalizedValues)
     .onConflictDoUpdate({
       target: [activity.userId, activity.providerId, activity.externalId],
-      set: { ...update, ...contextUpdate },
+      set: { ...normalizeProviderActivityConflictUpdate(update), ...contextUpdate },
     })
     .returning({ id: activity.id });
 

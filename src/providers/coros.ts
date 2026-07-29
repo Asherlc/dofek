@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -90,7 +94,7 @@ const corosDailyResponseSchema = z.object({
 
 export interface ParsedCorosWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -101,7 +105,7 @@ export interface ParsedCorosWorkout {
 // Activity type mapping
 // ============================================================
 
-const COROS_SPORT_MAP: Record<number, CanonicalActivityType> = {
+const COROS_SPORT_MAP: Record<number, LegacyActivityType> = {
   8: "running",
   9: "cycling",
   10: "swimming",
@@ -116,15 +120,15 @@ const COROS_SPORT_MAP: Record<number, CanonicalActivityType> = {
   100: "other",
 };
 
-export function mapCorosSportType(mode: number): CanonicalActivityType {
-  return COROS_SPORT_MAP[mode] ?? "other";
+export function mapCorosSportType(mode: number): ProviderActivityType {
+  return resolveProviderActivityType(mode, COROS_SPORT_MAP[mode] ?? "other");
 }
 
 export function parseCorosWorkout(workout: CorosWorkout): ParsedCorosWorkout {
   return {
     externalId: workout.labelId,
     activityType: mapCorosSportType(workout.mode),
-    name: `COROS ${mapCorosSportType(workout.mode)}`,
+    name: `COROS ${mapCorosSportType(workout.mode).canonicalType}`,
     startedAt: new Date(workout.startTime * 1000),
     endedAt: new Date(workout.endTime * 1000),
     raw: {

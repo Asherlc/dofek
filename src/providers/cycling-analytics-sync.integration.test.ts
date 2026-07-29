@@ -152,7 +152,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
 
     const ride1 = rows.find((r) => r.externalId === "5001");
     if (!ride1) throw new Error("expected ride 5001");
-    expect(ride1.activityType).toBe("cycling");
+    expect(ride1.canonicalType).toBe("cycling");
     expect(ride1.name).toBe("Morning Ride");
 
     const ride2 = rows.find((r) => r.externalId === "5002");

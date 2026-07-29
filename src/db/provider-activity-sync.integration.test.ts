@@ -27,7 +27,9 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
       .values({
         providerId: "garmin-dump-identity-test",
         externalId: "8844120420",
-        activityType: "hiking",
+        canonicalType: "hiking",
+        providerType: "hiking",
+        modality: null,
         startedAt,
         endedAt,
         name: "Tronadora Hiking",
@@ -38,7 +40,7 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
     const identity: ProviderActivityExactIdentity = {
       providerId: "garmin-dump-identity-test",
       userId: summaryActivity.userId,
-      activityType: "hiking",
+      canonicalType: "hiking",
       startedAt,
       endedAt,
     };
@@ -56,7 +58,9 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
       providerId: identity.providerId,
       userId: identity.userId,
       externalId: "second-exact-identity",
-      activityType: identity.activityType,
+      canonicalType: identity.canonicalType,
+      providerType: "hiking",
+      modality: null,
       startedAt,
       endedAt,
     });

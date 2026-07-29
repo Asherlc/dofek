@@ -31,11 +31,11 @@ describe("garminSyncStepToApiQuery", () => {
       garminSyncStepToApiQuery({
         type: "activity_detail",
         activityId: 123,
-        activityType: "running",
+        activityModality: null,
       }),
     ).toEqual({
       path: "connectapi/activity",
-      filters: { activityId: 123, activityType: "running" },
+      filters: { activityId: 123, activityModality: null },
     });
   });
 

@@ -1,6 +1,9 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
-  type CanonicalActivityType,
+  resolveProviderActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
+import {
   createActivityTypeMapper,
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
 } from "@dofek/training/training";
@@ -195,8 +198,10 @@ export function rideWithGpsOAuthConfig(host?: string): OAuthConfig | null {
 
 const mapRwgpsType = createActivityTypeMapper(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP);
 
-export function mapActivityType(rawType: string | null | undefined): CanonicalActivityType {
-  if (!rawType) return "cycling";
+export function mapActivityType(
+  rawType: string | null | undefined,
+): ProviderActivityType {
+  if (!rawType) return resolveProviderActivityType("cycling", "cycling");
   return mapRwgpsType(rawType);
 }
 
@@ -206,7 +211,7 @@ export function mapActivityType(rawType: string | null | undefined): CanonicalAc
 
 export interface ParsedActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date | undefined;
@@ -269,11 +274,11 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
 export function buildRideWithGpsMetricRows(options: {
   activityId: string;
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   trackPoints: RideWithGpsTrackPoint[];
 }): MetricStreamSourceRow[] {
   const parsedTrackPoints = parseTrackPoints(options.trackPoints);
-  const indoor = isIndoorCycling(options.activityType);
+  const indoor = isIndoorCyclingModality(options.activityType.modality);
 
   return parsedTrackPoints.map((point) => ({
     recordedAt: point.recordedAt,

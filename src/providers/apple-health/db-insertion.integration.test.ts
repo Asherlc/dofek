@@ -1,3 +1,4 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
@@ -44,14 +45,20 @@ describe("db-insertion deduplication (integration)", () => {
 
       const workouts: HealthWorkout[] = [
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType(
+            "HKWorkoutActivityTypeRunning",
+            "running",
+          ),
           sourceName: "Apple Watch",
           durationSeconds: 1800,
           startDate: sharedStart,
           endDate: sharedEnd,
         },
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType(
+            "HKWorkoutActivityTypeRunning",
+            "running",
+          ),
           sourceName: "iPhone",
           durationSeconds: 1800,
           startDate: sharedStart,
@@ -78,21 +85,30 @@ describe("db-insertion deduplication (integration)", () => {
 
       const workouts: HealthWorkout[] = [
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType(
+            "HKWorkoutActivityTypeRunning",
+            "running",
+          ),
           sourceName: "Apple Watch",
           durationSeconds: 1800,
           startDate: start1,
           endDate: new Date("2024-07-01T08:30:00Z"),
         },
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType(
+            "HKWorkoutActivityTypeRunning",
+            "running",
+          ),
           sourceName: "iPhone",
           durationSeconds: 1800,
           startDate: start1,
           endDate: new Date("2024-07-01T08:30:00Z"),
         },
         {
-          activityType: "cycling",
+          activityType: resolveProviderActivityType(
+            "HKWorkoutActivityTypeCycling",
+            "cycling",
+          ),
           sourceName: "Apple Watch",
           durationSeconds: 3600,
           startDate: start2,

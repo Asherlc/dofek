@@ -159,23 +159,23 @@ function findUpsertUpdate(
 
 describe("mapConcept2Type", () => {
   it("maps rower to rowing", () => {
-    expect(mapConcept2Type("rower")).toBe("rowing");
-    expect(mapConcept2Type("Rower")).toBe("rowing");
-    expect(mapConcept2Type("ROWER")).toBe("rowing");
+    expect(mapConcept2Type("rower").canonicalType).toBe("rowing");
+    expect(mapConcept2Type("Rower").canonicalType).toBe("rowing");
+    expect(mapConcept2Type("ROWER").canonicalType).toBe("rowing");
   });
 
   it("maps skierg to skiing", () => {
-    expect(mapConcept2Type("skierg")).toBe("skiing");
-    expect(mapConcept2Type("SkiErg")).toBe("skiing");
+    expect(mapConcept2Type("skierg").canonicalType).toBe("skiing");
+    expect(mapConcept2Type("SkiErg").canonicalType).toBe("skiing");
   });
 
   it("maps bikerg to cycling", () => {
-    expect(mapConcept2Type("bikerg")).toBe("cycling");
-    expect(mapConcept2Type("BikeErg")).toBe("cycling");
+    expect(mapConcept2Type("bikerg").canonicalType).toBe("cycling");
+    expect(mapConcept2Type("BikeErg").canonicalType).toBe("cycling");
   });
 
   it("defaults to rowing for unknown types", () => {
-    expect(mapConcept2Type("unknown")).toBe("rowing");
+    expect(mapConcept2Type("unknown").canonicalType).toBe("rowing");
   });
 });
 
@@ -203,7 +203,7 @@ describe("parseConcept2Result", () => {
     const parsed = parseConcept2Result(sampleResult);
 
     expect(parsed.externalId).toBe("12345");
-    expect(parsed.activityType).toBe("rowing");
+    expect(parsed.activityType.canonicalType).toBe("rowing");
     expect(parsed.name).toBe("Rower FixedDistSplits");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
     // Duration: 12000 tenths = 1200 seconds = 1200000 ms
@@ -242,7 +242,7 @@ describe("parseConcept2Result", () => {
 
     const parsed = parseConcept2Result(result);
     expect(parsed.externalId).toBe("12345");
-    expect(parsed.activityType).toBe("rowing");
+    expect(parsed.activityType.canonicalType).toBe("rowing");
     expect(parsed.name).toBe("Rower FixedDistanceFixedTime");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01 09:00:00"));
     expect(parsed.raw.distance).toBe(5000);
@@ -274,7 +274,7 @@ describe("parseConcept2Result", () => {
     };
 
     const parsed = parseConcept2Result(result);
-    expect(parsed.activityType).toBe("skiing");
+    expect(parsed.activityType.canonicalType).toBe("skiing");
     expect(parsed.raw.avgHeartRate).toBeUndefined();
     expect(parsed.raw.maxHeartRate).toBeUndefined();
   });
@@ -478,13 +478,20 @@ describe("Concept2Provider", () => {
       const val = findUpsertValues(
         (values) => values.externalId === "12345" && values.providerId === "concept2",
       );
-      expect(val?.activityType).toBe("rowing");
+      expect(val?.activityType).toMatchObject({ canonicalType: "rowing" });
       expect(val?.name).toBe("Rower FixedDistSplits");
 
-      const update = findUpsertUpdate((rec) => rec.activityType === "rowing");
+      const update = findUpsertUpdate(
+        (rec) =>
+          isRecord(rec.activityType) &&
+          rec.activityType.canonicalType === "rowing",
+      );
       expect(update).toEqual(
         expect.objectContaining({
-          activityType: "rowing",
+          activityType: expect.objectContaining({
+            canonicalType: "rowing",
+            providerType: "rower",
+          }),
           name: "Rower FixedDistSplits",
           startedAt: val?.startedAt,
           endedAt: val?.endedAt,

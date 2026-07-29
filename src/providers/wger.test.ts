@@ -94,7 +94,7 @@ describe("parseWgerWorkoutSession", () => {
 
     const parsed = parseWgerWorkoutSession(session);
     expect(parsed.externalId).toBe("42");
-    expect(parsed.activityType).toBe("strength");
+    expect(parsed.activityType.canonicalType).toBe("strength");
     expect(parsed.name).toBe("Leg Day");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01"));
     expect(parsed.raw.comment).toBe("Leg Day");

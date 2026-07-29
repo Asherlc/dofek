@@ -13,14 +13,14 @@ import { mapXertSport, parseXertActivity } from "./xert.ts";
 describe("Xert Provider", () => {
   describe("mapXertSport", () => {
     it("maps known sports", () => {
-      expect(mapXertSport("Cycling")).toBe("cycling");
-      expect(mapXertSport("Running")).toBe("running");
-      expect(mapXertSport("Virtual Cycling")).toBe("virtual_cycling");
-      expect(mapXertSport("Mountain Biking")).toBe("mountain_biking");
+      expect(mapXertSport("Cycling").canonicalType).toBe("cycling");
+      expect(mapXertSport("Running").canonicalType).toBe("running");
+      expect(mapXertSport("Virtual Cycling").canonicalType).toBe("cycling");
+      expect(mapXertSport("Mountain Biking").canonicalType).toBe("cycling");
     });
 
     it("returns other for unknown sports", () => {
-      expect(mapXertSport("Juggling")).toBe("other");
+      expect(mapXertSport("Juggling").canonicalType).toBe("other");
     });
   });
 
@@ -51,7 +51,7 @@ describe("Xert Provider", () => {
 
       const parsed = parseXertActivity(raw);
       expect(parsed.externalId).toBe("12345");
-      expect(parsed.activityType).toBe("cycling");
+      expect(parsed.activityType.canonicalType).toBe("cycling");
       expect(parsed.name).toBe("Morning Ride");
       expect(parsed.startedAt).toEqual(new Date(1709290800000));
       expect(parsed.endedAt).toEqual(new Date(1709294400000));
@@ -92,7 +92,7 @@ describe("Cycling Analytics Provider", () => {
 
       const parsed = parseCyclingAnalyticsRide(ride);
       expect(parsed.externalId).toBe("99001");
-      expect(parsed.activityType).toBe("cycling");
+      expect(parsed.activityType.canonicalType).toBe("cycling");
       expect(parsed.name).toBe("Club Ride");
       expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
       expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
@@ -134,7 +134,7 @@ describe("Wger Provider", () => {
 
       const parsed = parseWgerWorkoutSession(session);
       expect(parsed.externalId).toBe("555");
-      expect(parsed.activityType).toBe("strength");
+      expect(parsed.activityType.canonicalType).toBe("strength");
       expect(parsed.name).toBe("Upper body day");
       expect(parsed.raw.impression).toBe("2");
     });
@@ -177,14 +177,14 @@ describe("Wger Provider", () => {
 describe("Decathlon Provider", () => {
   describe("mapDecathlonSport", () => {
     it("extracts sport ID from URI and maps it", () => {
-      expect(mapDecathlonSport("/v2/sports/381")).toBe("running");
-      expect(mapDecathlonSport("/v2/sports/121")).toBe("cycling");
-      expect(mapDecathlonSport("/v2/sports/260")).toBe("swimming");
-      expect(mapDecathlonSport("/v2/sports/110")).toBe("hiking");
+      expect(mapDecathlonSport("/v2/sports/381").canonicalType).toBe("running");
+      expect(mapDecathlonSport("/v2/sports/121").canonicalType).toBe("cycling");
+      expect(mapDecathlonSport("/v2/sports/260").canonicalType).toBe("swimming");
+      expect(mapDecathlonSport("/v2/sports/110").canonicalType).toBe("hiking");
     });
 
     it("returns other for unknown sport URIs", () => {
-      expect(mapDecathlonSport("/v2/sports/9999")).toBe("other");
+      expect(mapDecathlonSport("/v2/sports/9999").canonicalType).toBe("other");
     });
   });
 
@@ -206,7 +206,7 @@ describe("Decathlon Provider", () => {
 
       const parsed = parseDecathlonActivity(act);
       expect(parsed.externalId).toBe("act-789");
-      expect(parsed.activityType).toBe("running");
+      expect(parsed.activityType.canonicalType).toBe("running");
       expect(parsed.name).toBe("Morning Run");
       expect(parsed.startedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
       expect(parsed.endedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
@@ -223,14 +223,14 @@ describe("Decathlon Provider", () => {
 describe("VeloHero Provider", () => {
   describe("mapVeloHeroSport", () => {
     it("maps known sport IDs", () => {
-      expect(mapVeloHeroSport("1")).toBe("cycling");
-      expect(mapVeloHeroSport("2")).toBe("running");
-      expect(mapVeloHeroSport("3")).toBe("swimming");
-      expect(mapVeloHeroSport("6")).toBe("mountain_biking");
+      expect(mapVeloHeroSport("1").canonicalType).toBe("cycling");
+      expect(mapVeloHeroSport("2").canonicalType).toBe("running");
+      expect(mapVeloHeroSport("3").canonicalType).toBe("swimming");
+      expect(mapVeloHeroSport("6").canonicalType).toBe("cycling");
     });
 
     it("returns other for unknown IDs", () => {
-      expect(mapVeloHeroSport("99")).toBe("other");
+      expect(mapVeloHeroSport("99").canonicalType).toBe("other");
     });
   });
 
@@ -269,7 +269,7 @@ describe("VeloHero Provider", () => {
 
       const parsed = parseVeloHeroWorkout(workout);
       expect(parsed.externalId).toBe("42");
-      expect(parsed.activityType).toBe("cycling");
+      expect(parsed.activityType.canonicalType).toBe("cycling");
       expect(parsed.name).toBe("Morning Ride");
       expect(parsed.raw.distanceMeters).toBe(45500);
       expect(parsed.raw.avgHeartRate).toBe(145);

@@ -1,4 +1,4 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { mapTrainingPeaksSport } from "./sports.ts";
 import type { TrainingPeaksPmcEntry, TrainingPeaksWorkout } from "./types.ts";
 
@@ -8,7 +8,7 @@ import type { TrainingPeaksPmcEntry, TrainingPeaksWorkout } from "./types.ts";
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;

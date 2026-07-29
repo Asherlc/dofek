@@ -1,7 +1,11 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import type { PelotonPerformanceGraph, PelotonWorkout } from "./types.ts";
 
-const DISCIPLINE_MAP: Record<string, CanonicalActivityType> = {
+const DISCIPLINE_MAP: Record<string, LegacyActivityType> = {
   cycling: "indoor_cycling",
   running: "running",
   walking: "walking",
@@ -17,13 +21,16 @@ const DISCIPLINE_MAP: Record<string, CanonicalActivityType> = {
   outdoor: "running",
 };
 
-export function mapFitnessDiscipline(discipline: string): CanonicalActivityType {
-  return DISCIPLINE_MAP[discipline] ?? "other";
+export function mapFitnessDiscipline(discipline: string): ProviderActivityType {
+  return resolveProviderActivityType(
+    discipline,
+    DISCIPLINE_MAP[discipline] ?? "other",
+  );
 }
 
 export interface ParsedPelotonWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name?: string;
   timezone?: string;
   stravaId?: string;

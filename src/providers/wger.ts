@@ -1,4 +1,7 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -60,7 +63,7 @@ const jwtPayloadSchema = z.object({
 
 export interface ParsedWgerWorkoutSession {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   raw: Record<string, unknown>;
@@ -79,7 +82,7 @@ export interface ParsedWgerWeightEntry {
 export function parseWgerWorkoutSession(session: WgerWorkoutSession): ParsedWgerWorkoutSession {
   return {
     externalId: String(session.id),
-    activityType: "strength",
+    activityType: resolveProviderActivityType("strength", "strength"),
     name: session.comment || "Workout",
     startedAt: new Date(session.date),
     raw: {

@@ -135,35 +135,35 @@ describe("SuuntoProvider.authSetup()", () => {
 
 describe("mapSuuntoActivityType — additional mappings", () => {
   it("maps walking (11)", () => {
-    expect(mapSuuntoActivityType(11)).toBe("walking");
+    expect(mapSuuntoActivityType(11).canonicalType).toBe("walking");
   });
 
   it("maps strength (14)", () => {
-    expect(mapSuuntoActivityType(14)).toBe("strength");
+    expect(mapSuuntoActivityType(14).canonicalType).toBe("strength");
   });
 
   it("maps yoga (23)", () => {
-    expect(mapSuuntoActivityType(23)).toBe("yoga");
+    expect(mapSuuntoActivityType(23).canonicalType).toBe("yoga");
   });
 
   it("maps trail_running (67)", () => {
-    expect(mapSuuntoActivityType(67)).toBe("trail_running");
+    expect(mapSuuntoActivityType(67).canonicalType).toBe("running");
   });
 
   it("maps rowing (69)", () => {
-    expect(mapSuuntoActivityType(69)).toBe("rowing");
+    expect(mapSuuntoActivityType(69).canonicalType).toBe("rowing");
   });
 
   it("maps virtual_cycling (82)", () => {
-    expect(mapSuuntoActivityType(82)).toBe("virtual_cycling");
+    expect(mapSuuntoActivityType(82).canonicalType).toBe("cycling");
   });
 
   it("maps virtual_running (83)", () => {
-    expect(mapSuuntoActivityType(83)).toBe("running");
+    expect(mapSuuntoActivityType(83).canonicalType).toBe("running");
   });
 
   it("maps cross_country_skiing (4)", () => {
-    expect(mapSuuntoActivityType(4)).toBe("cross_country_skiing");
+    expect(mapSuuntoActivityType(4).canonicalType).toBe("skiing");
   });
 });
 
@@ -286,31 +286,31 @@ describe("XertProvider.authSetup()", () => {
 
 describe("mapXertSport — additional mappings", () => {
   it("maps Swimming", () => {
-    expect(mapXertSport("Swimming")).toBe("swimming");
+    expect(mapXertSport("Swimming").canonicalType).toBe("swimming");
   });
 
   it("maps Walking", () => {
-    expect(mapXertSport("Walking")).toBe("walking");
+    expect(mapXertSport("Walking").canonicalType).toBe("walking");
   });
 
   it("maps Hiking", () => {
-    expect(mapXertSport("Hiking")).toBe("hiking");
+    expect(mapXertSport("Hiking").canonicalType).toBe("hiking");
   });
 
   it("maps Rowing", () => {
-    expect(mapXertSport("Rowing")).toBe("rowing");
+    expect(mapXertSport("Rowing").canonicalType).toBe("rowing");
   });
 
   it("maps Skiing", () => {
-    expect(mapXertSport("Skiing")).toBe("skiing");
+    expect(mapXertSport("Skiing").canonicalType).toBe("skiing");
   });
 
   it("maps Trail Running", () => {
-    expect(mapXertSport("Trail Running")).toBe("trail_running");
+    expect(mapXertSport("Trail Running").canonicalType).toBe("running");
   });
 
   it("maps Cross Country Skiing", () => {
-    expect(mapXertSport("Cross Country Skiing")).toBe("cross_country_skiing");
+    expect(mapXertSport("Cross Country Skiing").canonicalType).toBe("skiing");
   });
 });
 
@@ -412,27 +412,27 @@ describe("MapMyFitnessProvider.authSetup()", () => {
 
 describe("mapMapMyFitnessActivityType — additional mappings", () => {
   it("maps Yoga", () => {
-    expect(mapMapMyFitnessActivityType("Yoga")).toBe("yoga");
+    expect(mapMapMyFitnessActivityType("Yoga").canonicalType).toBe("yoga");
   });
 
   it("maps Weight Training", () => {
-    expect(mapMapMyFitnessActivityType("Weight Training")).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Weight Training").canonicalType).toBe("strength");
   });
 
   it("maps Strength Training", () => {
-    expect(mapMapMyFitnessActivityType("Strength Training")).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Strength Training").canonicalType).toBe("strength");
   });
 
   it("maps Rowing", () => {
-    expect(mapMapMyFitnessActivityType("Rowing")).toBe("rowing");
+    expect(mapMapMyFitnessActivityType("Rowing").canonicalType).toBe("rowing");
   });
 
   it("maps Mountain Biking", () => {
-    expect(mapMapMyFitnessActivityType("Mountain Biking")).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Mountain Biking").canonicalType).toBe("cycling");
   });
 
   it("maps Bike Ride", () => {
-    expect(mapMapMyFitnessActivityType("Bike Ride")).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Bike Ride").canonicalType).toBe("cycling");
   });
 });
 
@@ -467,7 +467,7 @@ describe("parseMapMyFitnessWorkout — edge cases", () => {
     expect(result.endedAt).toEqual(result.startedAt);
   });
 
-  it("uses activity_type even when empty string (no fallback to name)", () => {
+  it("uses the workout name when activity_type is blank", () => {
     const workout = {
       _links: { self: [{ id: "w-5" }] },
       name: "Running Session",
@@ -477,8 +477,8 @@ describe("parseMapMyFitnessWorkout — edge cases", () => {
       activity_type: "",
     };
     const result = parseMapMyFitnessWorkout(workout);
-    // ?? only falls back on null/undefined, not empty string
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("running");
+    expect(result.activityType.providerType).toBe("Running Session");
   });
 });
 

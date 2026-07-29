@@ -17,7 +17,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { fitness, resolveImplicitUserId } from "./core.ts";
 import {
-  activityTypeEnum,
+  activityModalityEnum,
+  canonicalActivityTypeEnum,
   climbingAttemptOutcomeEnum,
   climbingClimbTypeEnum,
   climbingFailureReasonEnum,
@@ -207,7 +208,9 @@ export const activity = fitness.table(
       .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
     externalId: text("external_id").notNull(),
-    activityType: activityTypeEnum("activity_type").notNull(),
+    canonicalType: canonicalActivityTypeEnum("canonical_type").notNull(),
+    providerType: text("provider_type").notNull(),
+    modality: activityModalityEnum("modality"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     name: text("name"),

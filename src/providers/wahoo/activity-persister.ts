@@ -77,7 +77,9 @@ export class WahooActivityPersister {
               activityType: parsed.activityType,
               startedAtIso: parsed.startedAt.toISOString(),
               ...(parsed.endedAt ? { endedAtIso: parsed.endedAt.toISOString() } : {}),
-              name: parsed.name ?? `Wahoo ${parsed.activityType.replace(/_/g, " ")}`,
+              name:
+                parsed.name ??
+                `Wahoo ${parsed.activityType.canonicalType.replace(/_/g, " ")}`,
             },
           });
           logger.info(`[wahoo] Imported FIT file for workout ${parsed.externalId}`);

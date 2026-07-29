@@ -308,7 +308,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
       expect(query).not.toContain("resting_heart_rate");
       expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
+      expect(query).toContain("has({activityTypes:Array(String)}, activity.canonical_type)");
       expect(query).toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
       expect(params).toMatchObject({
         userId: "user-1",
@@ -416,7 +416,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
       expect(query).not.toContain("resting_heart_rate");
       expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
+      expect(query).toContain("has({activityTypes:Array(String)}, activity.canonical_type)");
       expect(query).toContain("round(mean_load, 2) AS daily_mean_load");
       expect(query).toContain("round(stdev_load, 2) AS daily_load_standard_deviation");
       expect(params).toMatchObject({
@@ -697,7 +697,8 @@ describe("CyclingAdvancedRepository", () => {
         {
           date: "2024-03-15",
           name: "Hill Climb",
-          activity_type: "mountain_biking",
+          canonical_type: "cycling",
+          modality: "mountain",
           elevation_gain: 500,
           elapsed_seconds: 1800,
         },
@@ -713,21 +714,24 @@ describe("CyclingAdvancedRepository", () => {
         {
           date: "2024-03-15",
           name: "Spin Class",
-          activity_type: "indoor_cycling",
+          canonical_type: "cycling",
+          modality: "indoor",
           elevation_gain: 500,
           elapsed_seconds: 1800,
         },
         {
           date: "2024-03-16",
           name: "Virtual Climb",
-          activity_type: "virtual_cycling",
+          canonical_type: "cycling",
+          modality: "virtual",
           elevation_gain: 1000,
           elapsed_seconds: 3600,
         },
         {
           date: "2024-03-17",
           name: "Outdoor Climb",
-          activity_type: "road_cycling",
+          canonical_type: "cycling",
+          modality: "road",
           elevation_gain: 750,
           elapsed_seconds: 2700,
         },
@@ -747,7 +751,8 @@ describe("CyclingAdvancedRepository", () => {
           {
             date: "2024-04-01",
             name: "Garmin Ride",
-            activity_type: "road_cycling",
+            canonical_type: "cycling",
+            modality: "road",
             elevation_gain: 800,
             elapsed_seconds: 2400,
           },
@@ -765,8 +770,9 @@ describe("CyclingAdvancedRepository", () => {
       await repo.getVerticalAscentRates(90);
       const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("coalesce(nullIf(asum.name, ''), asum.activity_type) AS name");
-      expect(query).toContain("asum.activity_type AS activity_type");
+      expect(query).toContain("coalesce(nullIf(asum.name, ''), asum.canonical_type) AS name");
+      expect(query).toContain("asum.canonical_type AS canonical_type");
+      expect(query).toContain("asum.modality AS modality");
       expect(query).toContain("round(asum.elevation_gain_m, 1)");
       expect(query).toContain(
         "greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS elapsed_seconds",
@@ -786,7 +792,8 @@ describe("CyclingAdvancedRepository", () => {
         {
           date: "2026-04-20",
           name: "Rolling Gravel",
-          activity_type: "gravel_cycling",
+          canonical_type: "cycling",
+          modality: "gravel",
           elevation_gain: 300,
           elapsed_seconds: 45,
         },
@@ -797,7 +804,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.toDetail()).toMatchObject({
         activityName: "Rolling Gravel",
-        activityType: "gravel_cycling",
+        activityType: "cycling",
         elevationGainMeters: 300,
       });
     });

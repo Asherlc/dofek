@@ -1,4 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
@@ -17,35 +18,35 @@ const rateLimitedFetch: typeof globalThis.fetch = async (): Promise<Response> =>
 
 describe("mapActivityType", () => {
   it("maps cycling types", () => {
-    expect(mapActivityType("cycling")).toBe("cycling");
-    expect(mapActivityType("mountain_biking")).toBe("mountain_biking");
-    expect(mapActivityType("road_cycling")).toBe("road_cycling");
-    expect(mapActivityType("gravel_cycling")).toBe("gravel_cycling");
+    expect(mapActivityType("cycling").canonicalType).toBe("cycling");
+    expect(mapActivityType("mountain_biking").canonicalType).toBe("cycling");
+    expect(mapActivityType("road_cycling").canonicalType).toBe("cycling");
+    expect(mapActivityType("gravel_cycling").canonicalType).toBe("cycling");
   });
 
   it("maps colon-delimited RideWithGPS cycling types", () => {
-    expect(mapActivityType("cycling:generic")).toBe("cycling");
-    expect(mapActivityType("cycling:road")).toBe("road_cycling");
+    expect(mapActivityType("cycling:generic").canonicalType).toBe("cycling");
+    expect(mapActivityType("cycling:road").canonicalType).toBe("cycling");
   });
 
   it("maps running types", () => {
-    expect(mapActivityType("running")).toBe("running");
-    expect(mapActivityType("trail_running")).toBe("running");
+    expect(mapActivityType("running").canonicalType).toBe("running");
+    expect(mapActivityType("trail_running").canonicalType).toBe("running");
   });
 
   it("maps other known types", () => {
-    expect(mapActivityType("walking")).toBe("walking");
-    expect(mapActivityType("hiking")).toBe("hiking");
-    expect(mapActivityType("swimming")).toBe("swimming");
+    expect(mapActivityType("walking").canonicalType).toBe("walking");
+    expect(mapActivityType("hiking").canonicalType).toBe("hiking");
+    expect(mapActivityType("swimming").canonicalType).toBe("swimming");
   });
 
   it("defaults unknown to other", () => {
-    expect(mapActivityType("paragliding")).toBe("other");
+    expect(mapActivityType("paragliding").canonicalType).toBe("other");
   });
 
   it("defaults null/undefined to cycling", () => {
-    expect(mapActivityType(null)).toBe("cycling");
-    expect(mapActivityType(undefined)).toBe("cycling");
+    expect(mapActivityType(null).canonicalType).toBe("cycling");
+    expect(mapActivityType(undefined).canonicalType).toBe("cycling");
   });
 });
 
@@ -68,7 +69,7 @@ describe("parseTripToActivity", () => {
   it("maps all fields correctly", () => {
     const result = parseTripToActivity(baseTrip);
     expect(result.externalId).toBe("12345");
-    expect(result.activityType).toBe("cycling");
+    expect(result.activityType.canonicalType).toBe("cycling");
     expect(result.name).toBe("Morning Ride");
     expect(result.startedAt).toEqual(new Date("2024-08-10T07:30:00Z"));
     expect(result.endedAt).toEqual(new Date("2024-08-10T09:30:00Z")); // +7200s
@@ -96,7 +97,7 @@ describe("parseTripToActivity", () => {
 
   it("maps activity type through mapActivityType", () => {
     const trip = { ...baseTrip, activity_type: "mountain_biking" };
-    expect(parseTripToActivity(trip).activityType).toBe("mountain_biking");
+    expect(parseTripToActivity(trip).activityType.canonicalType).toBe("cycling");
   });
 
   it("handles null description", () => {
@@ -226,7 +227,7 @@ describe("buildRideWithGpsMetricRows", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
       externalId: "trip-1",
-      activityType: "road_cycling",
+      activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
       trackPoints: [
         {
           longitude: -122.6,
@@ -264,7 +265,10 @@ describe("buildRideWithGpsMetricRows", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
       externalId: "trip-1",
-      activityType: "indoor_cycling",
+      activityType: resolveProviderActivityType(
+        "cycling:indoor",
+        "indoor_cycling",
+      ),
       trackPoints: [
         {
           longitude: -122.6,

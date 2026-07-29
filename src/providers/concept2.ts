@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -96,7 +100,7 @@ function resolveScopedUserId(userId?: string): string {
 
 export interface ParsedConcept2Result {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -107,18 +111,23 @@ export interface ParsedConcept2Result {
 // Parsing
 // ============================================================
 
-export function mapConcept2Type(type: string): CanonicalActivityType {
+export function mapConcept2Type(type: string): ProviderActivityType {
+  let normalizedType: LegacyActivityType;
   switch (type.toLowerCase()) {
     case "rower":
-      return "rowing";
+      normalizedType = "rowing";
+      break;
     case "skierg":
-      return "skiing";
+      normalizedType = "skiing";
+      break;
     case "bikerg":
     case "bikeerg":
-      return "cycling";
+      normalizedType = "cycling";
+      break;
     default:
-      return "rowing";
+      normalizedType = "rowing";
   }
+  return resolveProviderActivityType(type, normalizedType);
 }
 
 export function parseConcept2Result(result: Concept2Result): ParsedConcept2Result {

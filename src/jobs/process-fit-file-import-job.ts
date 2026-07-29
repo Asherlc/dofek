@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import { UnrecoverableError } from "bullmq";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -140,10 +144,10 @@ function normalizedFitSport(value: string | undefined): string {
   );
 }
 
-function activityTypeFromFitSession(session: ParsedFitSession): CanonicalActivityType {
+function activityTypeFromFitSession(session: ParsedFitSession): ProviderActivityType {
   const sport = normalizedFitSport(session.sport);
   const subSport = normalizedFitSport(session.subSport);
-  const typeBySport: Record<string, CanonicalActivityType> = {
+  const typeBySport: Record<string, LegacyActivityType> = {
     cycling: "cycling",
     road: "cycling",
     road_biking: "cycling",
@@ -169,9 +173,17 @@ function activityTypeFromFitSession(session: ParsedFitSession): CanonicalActivit
   };
   for (const candidate of [subSport, sport]) {
     const activityType = typeBySport[candidate];
-    if (activityType) return activityType;
+    if (activityType) {
+      return resolveProviderActivityType(
+        session.subSport ?? session.sport ?? candidate,
+        activityType,
+      );
+    }
   }
-  return "other";
+  return resolveProviderActivityType(
+    session.subSport ?? session.sport ?? "other",
+    "other",
+  );
 }
 
 const FIT_FILE_TYPE_ACTIVITY = 4;
@@ -360,13 +372,16 @@ async function beginActivityImport(
   metadata: FitStreamMetadata,
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
   metricStreamPublisher?: ReplacementCapableMetricStreamPublisher,
-): Promise<{ activityId: string | undefined; activityType: CanonicalActivityType }> {
+): Promise<{ activityId: string | undefined; activityType: ProviderActivityType }> {
   const session = metadata.session;
   const summary = data.activitySummary;
   const externalId =
     summary?.externalId ?? (await fitExternalIdFromFile(data.originalPath, data.filePath));
   const activityType =
-    summary?.activityType ?? (session ? activityTypeFromFitSession(session) : "other");
+    summary?.activityType ??
+    (session
+      ? activityTypeFromFitSession(session)
+      : resolveProviderActivityType("other", "other"));
   const startedAt = summary ? new Date(summary.startedAtIso) : session?.startTime;
   if (!startedAt || Number.isNaN(startedAt.getTime())) {
     throw new FitFileImportValidationError("missing a valid start time");
@@ -376,7 +391,9 @@ async function beginActivityImport(
       ? new Date(summary.endedAtIso)
       : new Date(startedAt.getTime() + (session?.totalElapsedTime ?? 0) * 1000)
     : new Date(startedAt.getTime() + (session?.totalElapsedTime ?? 0) * 1000);
-  const name = summary?.name ?? `FIT ${activityType.replace(/_/g, " ")}`;
+  const name =
+    summary?.name ??
+    `FIT ${activityType.canonicalType.replace(/_/g, " ")}`;
   const raw = summary?.raw ?? { fitPath: data.originalPath, session: session?.raw ?? null };
 
   await onProgress({ percentage: 80, message: "Writing FIT activity data..." });
@@ -385,7 +402,7 @@ async function beginActivityImport(
       ? await findUniqueProviderActivityByExactIdentity(db, {
           providerId: data.providerId,
           userId: data.userId,
-          activityType,
+          canonicalType: activityType.canonicalType,
           startedAt,
           endedAt,
         })
@@ -548,7 +565,7 @@ export async function importFitFile(
             records,
             data.providerId,
             activityId,
-            activityImport.activityType,
+            activityImport.activityType.modality,
           ).map((row) => ({ ...row, userId: data.userId }));
           const scope = { activityId };
           if (activityMetricStreamPublisher) {

@@ -1416,7 +1416,10 @@ describe("FitbitProvider", () => {
         db,
         (v) => v.externalId === "12345678" && v.providerId === "fitbit",
       );
-      expect(activityValues.activityType).toBe("running");
+      expect(activityValues.activityType).toMatchObject({
+        canonicalType: "running",
+        providerType: "90009",
+      });
       expect(activityValues.name).toBe("Run");
       expectConflictTarget(db, [
         activityTable.userId,

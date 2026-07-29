@@ -4,7 +4,11 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  resolveProviderActivityType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+} from "@dofek/training/activity-types";
 import yauzl from "yauzl";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -117,7 +121,7 @@ interface GarminDumpProgress {
   message: string;
 }
 
-const GARMIN_ACTIVITY_TYPE_MAP: Readonly<Record<string, CanonicalActivityType>> = {
+const GARMIN_ACTIVITY_TYPE_MAP: Readonly<Record<string, LegacyActivityType>> = {
   cycling: "cycling",
   road_biking: "cycling",
   mountain_biking: "cycling",
@@ -149,20 +153,22 @@ function normalizeGarminType(value: string | undefined): string {
 export function mapGarminDumpActivityType(
   activityType: string | undefined,
   sportType?: string,
-): CanonicalActivityType {
+): ProviderActivityType {
   const normalizedActivityType = normalizeGarminType(activityType);
   const normalizedSportType = normalizeGarminType(sportType);
-  return (
+  const normalizedType =
     GARMIN_ACTIVITY_TYPE_MAP[normalizedActivityType] ??
     GARMIN_ACTIVITY_TYPE_MAP[normalizedSportType] ??
-    "other"
+    "other";
+  return resolveProviderActivityType(
+    activityType ?? sportType ?? "other",
+    normalizedType,
   );
 }
 
 export function mapFitSportToGarminDumpActivityType(
   session: ParsedFitSession,
-): CanonicalActivityType {
-  if (session.subSport === "indoor_cycling") return "indoor_cycling";
+): ProviderActivityType {
   return mapGarminDumpActivityType(session.sport, session.subSport);
 }
 
@@ -538,7 +544,9 @@ function garminSummaryToFitJobSummary(
     activityType,
     startedAtIso: startedAt.toISOString(),
     endedAtIso: endedAt.toISOString(),
-    name: summary.name ?? `Garmin ${activityType.replace(/_/g, " ")}`,
+    name:
+      summary.name ??
+      `Garmin ${activityType.canonicalType.replace(/_/g, " ")}`,
   };
 }
 
@@ -606,7 +614,9 @@ export async function prepareGarminDumpImport(
       }
 
       const activityType = mapGarminDumpActivityType(summary.activityType, summary.sportType);
-      const name = summary.name ?? `Garmin ${activityType.replace(/_/g, " ")}`;
+      const name =
+        summary.name ??
+        `Garmin ${activityType.canonicalType.replace(/_/g, " ")}`;
       const endedAt = new Date(startedAt.getTime() + durationMilliseconds(summary));
       await upsertProviderActivity(
         db,
