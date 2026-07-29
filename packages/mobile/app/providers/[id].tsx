@@ -635,6 +635,7 @@ function ProviderDetailContent({
     isSyncing,
     syncMessage,
     syncProgress,
+    syncDateRange,
     shouldShowActions,
     shouldShowFullSync,
     shouldShowAppleHealthPermissionBanner,
@@ -796,6 +797,7 @@ function ProviderDetailContent({
           isSyncing={isSyncing}
           syncMessage={syncMessage}
           syncProgress={syncProgress}
+          syncDateRange={syncDateRange}
           shouldShowFullSync={shouldShowFullSync}
           shouldShowAppleHealthPermissionBanner={shouldShowAppleHealthPermissionBanner}
           onPrimaryAction={() => void handlePrimaryAction()}

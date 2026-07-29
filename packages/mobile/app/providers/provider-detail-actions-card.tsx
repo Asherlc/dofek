@@ -1,12 +1,21 @@
+import { formatDateYmd } from "@dofek/format/format";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { colors } from "../../theme";
+import type { ProviderSyncDateRange } from "./use-provider-detail-actions";
+
+function localDateFromYmd(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, 12);
+}
 
 export function ProviderDetailActionsCard({
   primaryActionLabel,
   isSyncing,
   syncMessage,
   syncProgress,
+  syncDateRange,
   shouldShowFullSync,
   shouldShowAppleHealthPermissionBanner,
   onPrimaryAction,
@@ -16,6 +25,7 @@ export function ProviderDetailActionsCard({
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
+  syncDateRange: ProviderSyncDateRange | null;
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
   onPrimaryAction: () => void;
@@ -24,6 +34,43 @@ export function ProviderDetailActionsCard({
   return (
     <View style={styles.actionCard}>
       <Text style={styles.actionTitle}>Actions</Text>
+      {syncDateRange ? (
+        <View style={styles.dateRange}>
+          <View style={styles.dateField}>
+            <Text style={styles.dateLabel}>From</Text>
+            <DateTimePicker
+              accessibilityLabel="From"
+              disabled={isSyncing}
+              display="compact"
+              maximumDate={localDateFromYmd(syncDateRange.untilDate)}
+              mode="date"
+              onChange={(_event, selectedDate) => {
+                if (selectedDate) {
+                  syncDateRange.onSinceDateChange(formatDateYmd(selectedDate));
+                }
+              }}
+              value={localDateFromYmd(syncDateRange.sinceDate)}
+            />
+          </View>
+          <View style={styles.dateField}>
+            <Text style={styles.dateLabel}>To</Text>
+            <DateTimePicker
+              accessibilityLabel="To"
+              disabled={isSyncing}
+              display="compact"
+              maximumDate={localDateFromYmd(formatDateYmd())}
+              minimumDate={localDateFromYmd(syncDateRange.sinceDate)}
+              mode="date"
+              onChange={(_event, selectedDate) => {
+                if (selectedDate) {
+                  syncDateRange.onUntilDateChange(formatDateYmd(selectedDate));
+                }
+              }}
+              value={localDateFromYmd(syncDateRange.untilDate)}
+            />
+          </View>
+        </View>
+      ) : null}
       <View style={styles.syncButtonRow}>
         <TouchableOpacity
           style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
@@ -86,6 +133,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: colors.text,
+  },
+  dateRange: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  dateField: {
+    flex: 1,
+    gap: 4,
+  },
+  dateLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   syncButtonRow: {
     flexDirection: "row",

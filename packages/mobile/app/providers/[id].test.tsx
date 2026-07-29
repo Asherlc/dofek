@@ -10,6 +10,39 @@ const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 const mockSyncHealthKit = vi.fn();
+const mockDatePickerSelections = vi.hoisted(() => ({
+  From: new Date(2026, 5, 1, 12),
+  To: new Date(2026, 5, 15, 12),
+}));
+
+vi.mock("@react-native-community/datetimepicker", () => ({
+  default: ({
+    accessibilityLabel,
+    maximumDate,
+    onChange,
+    value,
+  }: {
+    accessibilityLabel: "From" | "To";
+    maximumDate?: Date;
+    onChange: (event: { type: "set" }, date: Date) => void;
+    value: Date;
+  }) =>
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        "aria-label": accessibilityLabel,
+        "data-maximum-time": maximumDate?.getTime(),
+        "data-value-time": value.getTime(),
+        onClick: () => onChange({ type: "set" }, mockDatePickerSelections[accessibilityLabel]),
+      },
+      [
+        value.getFullYear(),
+        String(value.getMonth() + 1).padStart(2, "0"),
+        String(value.getDate()).padStart(2, "0"),
+      ].join("-"),
+    ),
+}));
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -210,6 +243,14 @@ vi.mock("../../lib/auth-context", () => ({
 }));
 
 vi.mock("@dofek/format/format", () => ({
+  formatDateYmd: (date?: Date) => {
+    const resolvedDate = date ?? new Date(2026, 6, 29, 12);
+    return [
+      resolvedDate.getFullYear(),
+      String(resolvedDate.getMonth() + 1).padStart(2, "0"),
+      String(resolvedDate.getDate()).padStart(2, "0"),
+    ].join("-");
+  },
   formatRelativeTime: (date: string) => `${date} ago`,
   formatTableCellValue: (value: unknown) => String(value),
   formatTime: (date: string) => date,
@@ -460,6 +501,8 @@ describe("ProviderDetailScreen", () => {
     mockRequestPermissions.mockReset();
     mockRequestPermissions.mockResolvedValue(true);
     mockSyncHealthKit.mockReset();
+    mockDatePickerSelections.From = new Date(2026, 5, 1, 12);
+    mockDatePickerSelections.To = new Date(2026, 5, 15, 12);
     mockCaptureException.mockReset();
     mockAlertFn.mockReset();
     mockUseRefresh.mockClear();
@@ -1276,6 +1319,61 @@ describe("ProviderDetailScreen", () => {
       mockSettingsGetSetData.mockReset();
       mockSettingsGetInvalidate.mockReset();
       mockCaptureException.mockReset();
+    });
+
+    it("gives WHOOP one exact range and one sync action", async () => {
+      mockSyncMutateAsync.mockResolvedValue({
+        providerResults: [
+          {
+            providerId: "whoop",
+            status: "skippedCooldown",
+            message: "WHOOP sync is already current",
+          },
+        ],
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByRole("button", { name: "From" })).toBeTruthy();
+      const toDatePicker = screen.getByRole("button", { name: "To" });
+      expect(toDatePicker.getAttribute("data-maximum-time")).toBe(
+        toDatePicker.getAttribute("data-value-time"),
+      );
+      expect(screen.getAllByRole("button", { name: "Sync" })).toHaveLength(1);
+      expect(screen.queryByText("Full sync")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "From" }));
+      fireEvent.click(screen.getByRole("button", { name: "To" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+
+      await waitFor(() => {
+        expect(mockSyncMutateAsync).toHaveBeenCalledWith({
+          providerId: "whoop",
+          sinceDate: "2026-06-01",
+          untilDate: "2026-06-15",
+        });
+      });
+    });
+
+    it("does not start a WHOOP sync when its selected range is inverted", async () => {
+      mockDatePickerSelections.From = new Date(2026, 5, 18, 12);
+      mockDatePickerSelections.To = new Date(2026, 5, 17, 12);
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByRole("button", { name: "From" }));
+      fireEvent.click(screen.getByRole("button", { name: "To" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+
+      expect(screen.getByText('"From" date must be on or before "To" date')).toBeTruthy();
+      expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+
+      mockDatePickerSelections.To = new Date(2026, 5, 19, 12);
+      fireEvent.click(screen.getByRole("button", { name: "To" }));
+
+      expect(screen.queryByText('"From" date must be on or before "To" date')).toBeNull();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
