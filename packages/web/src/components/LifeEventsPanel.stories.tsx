@@ -9,6 +9,7 @@ import { UnitContext } from "../lib/unitContext.ts";
 import { LifeEventsPanel } from "./LifeEventsPanel.tsx";
 
 interface LifeEventStoryScenario {
+  loading?: boolean;
   unitSystem?: UnitSystem;
   events: Array<{
     id: string;
@@ -35,6 +36,16 @@ const creatineEvent = {
   category: "supplement",
   ongoing: true,
   notes: "5 g daily",
+};
+
+const travelWeekEvent = {
+  id: "event-travel-week",
+  label: "Travel Week",
+  started_at: "2026-07-20",
+  ended_at: "2026-07-27",
+  category: "lifestyle",
+  ongoing: false,
+  notes: null,
 };
 
 const defaultScenario: LifeEventStoryScenario = {
@@ -67,6 +78,17 @@ const defaultScenario: LifeEventStoryScenario = {
   },
 };
 
+const travelWeekScenario: LifeEventStoryScenario = {
+  events: [travelWeekEvent],
+  analysis: null,
+};
+
+const loadingScenario: LifeEventStoryScenario = {
+  loading: true,
+  events: [],
+  analysis: null,
+};
+
 const emptyScenario: LifeEventStoryScenario = {
   events: [],
   analysis: null,
@@ -74,8 +96,24 @@ const emptyScenario: LifeEventStoryScenario = {
 
 function createMockLink(scenario: LifeEventStoryScenario): TRPCLink<AppRouter> {
   return () =>
-    ({ op }) =>
-      createMockObservable(resolveOperation(op.path, scenario));
+    ({ op }) => {
+      if (scenario.loading && op.path === "lifeEvents.list") {
+        return createPendingMockObservable();
+      }
+      return createMockObservable(resolveOperation(op.path, scenario));
+    };
+}
+
+function createPendingMockObservable(): OperationResultObservable<AppRouter, unknown> {
+  const result: OperationResultObservable<AppRouter, unknown> = {
+    subscribe() {
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return result;
+    },
+  };
+  return result;
 }
 
 function createMockObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
@@ -119,7 +157,7 @@ function LifeEventsStoryFrame({ scenario }: { scenario: LifeEventStoryScenario }
         <UnitContext.Provider
           value={{ unitSystem: scenario.unitSystem ?? "metric", setUnitSystem: () => {} }}
         >
-          <div className="w-[760px] p-4">
+          <div className="w-full max-w-[760px] p-2 sm:p-4">
             <LifeEventsPanel />
           </div>
         </UnitContext.Provider>
@@ -148,4 +186,15 @@ export const Imperial: Story = {
 
 export const Empty: Story = {
   render: () => <LifeEventsStoryFrame scenario={emptyScenario} />,
+};
+
+export const Loading: Story = {
+  render: () => <LifeEventsStoryFrame scenario={loadingScenario} />,
+};
+
+export const TravelWeek: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  render: () => <LifeEventsStoryFrame scenario={travelWeekScenario} />,
 };
