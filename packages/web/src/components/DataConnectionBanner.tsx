@@ -1,0 +1,82 @@
+import { onlineManager, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+
+function subscribeToOnlineStatus(onStoreChange: () => void) {
+  return onlineManager.subscribe(onStoreChange);
+}
+
+function getOnlineStatus(): boolean {
+  return onlineManager.isOnline();
+}
+
+function useActiveQueryFailureCount(): number {
+  const queryClient = useQueryClient();
+  const queryCache = queryClient.getQueryCache();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => queryCache.subscribe(onStoreChange),
+    [queryCache],
+  );
+  const getSnapshot = useCallback(
+    () =>
+      queryCache.findAll({ type: "active" }).filter((query) => query.state.error !== null).length,
+    [queryCache],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function DataConnectionBanner() {
+  const queryClient = useQueryClient();
+  const isOnline = useSyncExternalStore(subscribeToOnlineStatus, getOnlineStatus, getOnlineStatus);
+  const activeFailureCount = useActiveQueryFailureCount();
+  const [isRetrying, setIsRetrying] = useState(false);
+  const isRetryingRef = useRef(false);
+
+  if (isOnline && activeFailureCount === 0 && !isRetrying) {
+    return null;
+  }
+
+  const message = isOnline
+    ? "Data refresh failed — showing last available data where available."
+    : "Offline — showing last available data where available. It may be stale until you reconnect.";
+  const retryLabel = isOnline
+    ? isRetrying
+      ? "Retrying..."
+      : "Retry"
+    : "Retry unavailable offline";
+  const retryFailedQueries = async () => {
+    if (isRetryingRef.current) {
+      return;
+    }
+    isRetryingRef.current = true;
+    setIsRetrying(true);
+    try {
+      await queryClient.refetchQueries({
+        type: "active",
+        predicate: (query) => query.state.error !== null,
+      });
+    } finally {
+      isRetryingRef.current = false;
+      setIsRetrying(false);
+    }
+  };
+
+  return (
+    <output
+      aria-live="polite"
+      className="border-b border-amber-700/30 bg-amber-100/80 px-3 py-2 text-amber-950 sm:px-6"
+    >
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium sm:text-sm">{message}</p>
+        <button
+          type="button"
+          disabled={!isOnline || isRetrying}
+          onClick={() => void retryFailedQueries()}
+          className="rounded-md border border-amber-800/30 bg-white/70 px-3 py-1.5 text-xs font-semibold text-amber-950 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {retryLabel}
+        </button>
+      </div>
+    </output>
+  );
+}
