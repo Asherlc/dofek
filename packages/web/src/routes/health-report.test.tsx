@@ -41,8 +41,17 @@ vi.mock("../components/PageLayout.tsx", () => ({
 }));
 
 vi.mock("../components/WeeklyReportCard.tsx", () => ({
-  WeeklyReportCard: ({ data }: { data?: { current: { weekStart: string } | null } }) => (
-    <div>Weekly snapshot {data?.current?.weekStart}</div>
+  WeeklyReportCard: ({
+    data,
+  }: {
+    data?: {
+      current: { weekStart: string } | null;
+      decisionSupport?: { whatChanged: string[] } | null;
+    };
+  }) => (
+    <div>
+      Weekly snapshot {data?.current?.weekStart} {data?.decisionSupport?.whatChanged[0]}
+    </div>
   ),
 }));
 
@@ -140,6 +149,30 @@ describe("health report route", () => {
     expect(screen.getByText("Weekly snapshot 2026-07-19")).toBeTruthy();
   });
 
+  it("renders decision support stored in a new shared report snapshot", () => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportData: {
+          ...weeklyReport.reportData,
+          decisionSupport: {
+            whatChanged: ["Weekly training increased."],
+            likelyAssociations: ["Training and sleep moved together."],
+            whatWorked: ["Sleep stayed consistent."],
+            whatToTryNext: ["Repeat the routine next week."],
+            confidenceAndMissingData: ["Confidence is limited."],
+          },
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("new-shared-token");
+
+    expect(screen.getByText(/Weekly training increased/)).toBeTruthy();
+  });
+
   it("renders a valid monthly shared report", () => {
     mockGetShared.mockReturnValue({
       data: {
@@ -222,6 +255,30 @@ describe("health report route", () => {
       data: {
         ...weeklyReport,
         reportData: { current: { weekStart: "2026-07-19" }, history: [] },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("shared-token");
+
+    expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
+  });
+
+  it("rejects blank decision-support narratives in persisted report data", () => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportData: {
+          ...weeklyReport.reportData,
+          decisionSupport: {
+            whatChanged: ["   "],
+            likelyAssociations: [],
+            whatWorked: [],
+            whatToTryNext: [],
+            confidenceAndMissingData: [],
+          },
+        },
       },
       error: null,
       isLoading: false,

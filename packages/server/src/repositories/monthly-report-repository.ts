@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildMonthlyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -22,6 +26,8 @@ export interface MonthSummary {
 export interface MonthlyReportResult {
   current: MonthSummary | null;
   history: MonthSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +220,10 @@ export class MonthlyReportRepository {
     const current = summaries.length > 0 ? (summaries[summaries.length - 1] ?? null) : null;
     const history = summaries.slice(0, -1);
 
-    return { current, history };
+    return {
+      current,
+      history,
+      decisionSupport: current ? buildMonthlyDecisionSynthesis(current, history) : null,
+    };
   }
 }

@@ -20,12 +20,20 @@ describe("WeeklyReportCard", () => {
             avgHrv: null,
           },
           history: [],
+          decisionSupport: {
+            whatChanged: ["Weekly training increased."],
+            likelyAssociations: ["Training and sleep moved together."],
+            whatWorked: ["Sleep stayed consistent."],
+            whatToTryNext: ["Repeat the routine next week."],
+            confidenceAndMissingData: ["Confidence is limited."],
+          },
         }}
       />,
     );
 
     expect(screen.getByText("Sleep not tracked")).toBeTruthy();
     expect(screen.getByText("Not tracked")).toBeTruthy();
+    expect(screen.getByText("Weekly training increased.")).toBeTruthy();
   });
 
   it("shows no-training status instead of optimal when the week has no activities", () => {
@@ -44,6 +52,7 @@ describe("WeeklyReportCard", () => {
             avgHrv: 52,
           },
           history: [],
+          decisionSupport: null,
         }}
       />,
     );
@@ -67,6 +76,7 @@ describe("WeeklyReportCard", () => {
             avgHrv: 52,
           },
           history: [],
+          decisionSupport: null,
         }}
       />,
     );
@@ -102,6 +112,7 @@ describe("WeeklyReportCard", () => {
               avgHrv: null,
             },
           ],
+          decisionSupport: null,
         }}
       />,
     );

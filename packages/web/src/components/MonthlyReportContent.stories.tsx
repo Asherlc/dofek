@@ -18,6 +18,22 @@ const meta = {
         avgSleepTrend: -2,
       },
       history: [],
+      decisionSupport: {
+        whatChanged: [
+          "This is the first observed month, so month-over-month changes are not available yet.",
+        ],
+        likelyAssociations: [
+          "No training-and-recovery association can be assessed yet because there is no comparison month with tracked sleep and recovery.",
+        ],
+        whatWorked: ["There is not enough history yet to identify a repeatable positive pattern."],
+        whatToTryNext: [
+          "Repeat or deliberately adjust one part of the routine next month, then compare it with this baseline.",
+        ],
+        confidenceAndMissingData: [
+          "Confidence is low because only 1 monthly period is available.",
+          "These period averages can show co-movement, but they cannot establish cause and effect.",
+        ],
+      },
     },
   },
 } satisfies Meta<typeof MonthlyReportContent>;

@@ -177,6 +177,6 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
   it("returns the no-data result for an empty user", async () => {
     const report = await new MonthlyReportRepository(emptyUserId, sensorStore).getReport(12);
 
-    expect(report).toEqual({ current: null, history: [] });
+    expect(report).toEqual({ current: null, history: [], decisionSupport: null });
   });
 });
