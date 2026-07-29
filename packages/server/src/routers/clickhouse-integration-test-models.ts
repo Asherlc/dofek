@@ -54,6 +54,8 @@ export const analyticsBuildOrder = [
   "analytics.deduped_location",
   "analytics.activity_location_sample",
   "analytics.activity_sensor_sample",
+  "analytics.activity_location_summary_rows",
+  "analytics.activity_sensor_summary_rows",
   "analytics.activity_stream_points",
   "analytics.activity_heart_rate_zones",
   "analytics.activity_summary",
@@ -292,6 +294,18 @@ lng Nullable(Float32),
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at Nullable(DateTime64(6, 'UTC'))`,
+    activity_location_summary_rows: `activity_id UUID,
+user_id UUID,
+total_distance Nullable(Float64),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
+    activity_sensor_summary_rows: `activity_id UUID,
+user_id UUID,
+elevation_gain_m Nullable(Float64),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
     activity_stream_points: `user_id UUID,
 activity_id UUID,
 points Array(Tuple(recorded_at DateTime64(6, 'UTC'), heart_rate Nullable(Float64), power Nullable(Float64), speed Nullable(Float64), cadence Nullable(Float64), altitude Nullable(Float64), lat Nullable(Float64), lng Nullable(Float64))),
@@ -519,6 +533,8 @@ refreshed_at DateTime64(9)`,
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
     shortViewName === "activity_location_sample" ||
+    shortViewName === "activity_sensor_summary_rows" ||
+    shortViewName === "activity_location_summary_rows" ||
     shortViewName === "activity_stream_points" ||
     shortViewName === "activity_heart_rate_zones" ||
     shortViewName === "daily_sleep" ||
@@ -548,7 +564,9 @@ refreshed_at DateTime64(9)`,
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
         : shortViewName === "activity_location_sample"
           ? "(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)"
-          : shortViewName === "activity_stream_points" ||
+          : shortViewName === "activity_sensor_summary_rows" ||
+              shortViewName === "activity_location_summary_rows" ||
+              shortViewName === "activity_stream_points" ||
               shortViewName === "activity_heart_rate_zones"
             ? "(user_id, activity_id)"
             : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"

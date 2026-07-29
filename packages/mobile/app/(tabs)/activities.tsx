@@ -518,8 +518,8 @@ function ActivityControls({
 interface ActivityOverviewData {
   activityCount: number;
   totalMinutes: number;
-  totalDistanceMeters: number;
-  totalElevationGainM: number;
+  totalDistanceMeters: number | null;
+  totalElevationGainM: number | null;
 }
 
 function ActivityOverview({
@@ -537,15 +537,21 @@ function ActivityOverview({
     },
     {
       label: "Distance",
-      value: overview
-        ? formatMeasurementText(units.formatDistance(overview.totalDistanceMeters / 1000))
-        : "—",
+      value:
+        overview?.totalDistanceMeters != null
+          ? formatMeasurementText(units.formatDistance(overview.totalDistanceMeters / 1000))
+          : overview
+            ? "Distance not recorded"
+            : "—",
     },
     {
       label: "Elevation",
-      value: overview
-        ? formatMeasurementText(units.formatElevation(overview.totalElevationGainM))
-        : "—",
+      value:
+        overview?.totalElevationGainM != null
+          ? formatMeasurementText(units.formatElevation(overview.totalElevationGainM))
+          : overview
+            ? "Elevation unavailable"
+            : "—",
     },
   ];
 

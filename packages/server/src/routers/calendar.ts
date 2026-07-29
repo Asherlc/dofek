@@ -87,8 +87,8 @@ const activityListInputSchema = z.object({
 const activityOverviewSchema = z.object({
   activityCount: z.number().int().nonnegative(),
   totalMinutes: z.number().nonnegative(),
-  totalDistanceMeters: z.number().nonnegative(),
-  totalElevationGainM: z.number().nonnegative(),
+  totalDistanceMeters: z.number().nonnegative().nullable(),
+  totalElevationGainM: z.number().nonnegative().nullable(),
   activityTypes: z.array(z.string()),
 });
 

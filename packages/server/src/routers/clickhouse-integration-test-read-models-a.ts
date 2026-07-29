@@ -76,6 +76,102 @@ export function buildTestActivityLocationSampleSelectSql(
 FROM ${databases.analytics}.deduped_location`;
 }
 
+export function buildTestActivityLocationSummarySelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH location_deltas AS (
+  SELECT
+    activity_id,
+    user_id,
+    lat,
+    lng,
+    lagInFrame(lat) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_lat,
+    lagInFrame(lng) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_lng
+  FROM ${databases.analytics}.activity_location_sample FINAL
+  WHERE is_deleted = 0
+),
+distance_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(sum(
+      2 * 6371000 * asin(sqrt(
+        pow(sin(radians(lat - previous_lat) / 2), 2)
+        + cos(radians(previous_lat)) * cos(radians(lat))
+        * pow(sin(radians(lng - previous_lng) / 2), 2)
+      ))
+    ), 'Nullable(Float64)') AS total_distance
+  FROM location_deltas
+  WHERE previous_lat IS NOT NULL
+    AND previous_lng IS NOT NULL
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  distance_per_activity.total_distance AS total_distance,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN distance_per_activity
+  ON distance_per_activity.activity_id = activity.activity_id
+ AND distance_per_activity.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
+}
+
+export function buildTestActivitySensorSummarySelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH altitude_deltas AS (
+  SELECT
+    activity_id,
+    user_id,
+    scalar AS altitude,
+    lagInFrame(scalar) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_altitude
+  FROM ${databases.analytics}.activity_sensor_sample FINAL
+  WHERE is_deleted = 0
+    AND channel = 'altitude'
+    AND scalar IS NOT NULL
+),
+elevation_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(
+      sum(if(altitude - previous_altitude > 0, altitude - previous_altitude, 0)),
+      'Nullable(Float64)'
+    ) AS elevation_gain_m
+  FROM altitude_deltas
+  WHERE previous_altitude IS NOT NULL
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  elevation_per_activity.elevation_gain_m AS elevation_gain_m,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN elevation_per_activity
+  ON elevation_per_activity.activity_id = activity.activity_id
+ AND elevation_per_activity.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
+}
+
 export function buildTestProviderStatsSelectSql(selectSql: string): string {
   return selectSql;
 }

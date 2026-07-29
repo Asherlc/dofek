@@ -5,6 +5,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import type { AccessWindow } from "../billing/entitlement.ts";
 import {
   createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
@@ -13,6 +14,7 @@ import { TrainingRepository } from "./training-repository.ts";
 
 const AUTHORIZED_RUN_ID = "11111111-1111-4111-8111-111111111111";
 const AUTHORIZED_WALK_ID = "22222222-2222-4222-8222-222222222222";
+const MEASURED_ZERO_RUN_ID = "77777777-7777-4777-8777-777777777777";
 const UNAUTHORIZED_RIDE_ID = "33333333-3333-4333-8333-333333333333";
 const BEFORE_LOCAL_ACCESS_ID = "44444444-4444-4444-8444-444444444444";
 const BEFORE_LOCAL_END_ID = "55555555-5555-4555-8555-555555555555";
@@ -56,6 +58,10 @@ describe("activity visibility consistency", () => {
             '2026-03-16T10:00:00Z', '2026-03-16T10:30:00Z', 'Authorized Walk'
           ),
           (
+            ${MEASURED_ZERO_RUN_ID}, 'issue_2060', ${TEST_USER_ID}, 'measured-zero-run', 'running',
+            '2026-03-14T10:00:00Z', '2026-03-14T10:15:00Z', 'Measured Zero Run'
+          ),
+          (
             ${UNAUTHORIZED_RIDE_ID}, 'issue_2060', ${TEST_USER_ID}, 'unauthorized-ride', 'cycling',
             '2026-02-15T10:00:00Z', '2026-02-15T11:30:00Z', 'Unauthorized Ride'
           ),
@@ -72,6 +78,44 @@ describe("activity visibility consistency", () => {
     );
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
     await syncClickHouseTestActivitySensorStore(testContext);
+    await seedClickHouseMetricStreamRows(testContext, [
+      {
+        activityId: MEASURED_ZERO_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-14T10:00:00Z",
+        channel: "location",
+        providerId: "issue_2060",
+        sourceType: "api",
+        point: "(-122.0,37.0)",
+      },
+      {
+        activityId: MEASURED_ZERO_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-14T10:01:00Z",
+        channel: "location",
+        providerId: "issue_2060",
+        sourceType: "api",
+        point: "(-122.0,37.0)",
+      },
+      {
+        activityId: MEASURED_ZERO_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-14T10:00:00Z",
+        channel: "altitude",
+        providerId: "issue_2060",
+        sourceType: "api",
+        scalar: 100,
+      },
+      {
+        activityId: MEASURED_ZERO_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-14T10:01:00Z",
+        channel: "altitude",
+        providerId: "issue_2060",
+        sourceType: "api",
+        scalar: 100,
+      },
+    ]);
   }, 60_000);
 
   afterAll(async () => {
@@ -109,17 +153,30 @@ describe("activity visibility consistency", () => {
       weeks: 8,
       endDate: "2026-03-20",
     });
+    const unavailableOverview = await calendarRepository.getActivityOverview({
+      weeks: 8,
+      endDate: "2026-03-20",
+      activityType: "walking",
+    });
     const training = await trainingRepository.getActivityStatsAndWeeklyVolume(null);
 
     expect(calendar.flatMap((day) => day.activities.map((activity) => activity.id))).toEqual([
       AUTHORIZED_WALK_ID,
       AUTHORIZED_RUN_ID,
+      MEASURED_ZERO_RUN_ID,
     ]);
     expect(overview).toEqual({
-      activityCount: 2,
-      totalMinutes: 75,
+      activityCount: 3,
+      totalMinutes: 90,
       totalDistanceMeters: 0,
       totalElevationGainM: 0,
+      activityTypes: ["running", "walking"],
+    });
+    expect(unavailableOverview).toEqual({
+      activityCount: 1,
+      totalMinutes: 30,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
       activityTypes: ["running", "walking"],
     });
     await expect(activityRepository.findById(AUTHORIZED_RUN_ID)).resolves.toMatchObject({
@@ -128,12 +185,12 @@ describe("activity visibility consistency", () => {
     });
     await expect(activityRepository.findById(UNAUTHORIZED_RIDE_ID)).resolves.toBeNull();
     expect(training.activities.map((activity) => activity.id).sort()).toEqual(
-      [AUTHORIZED_RUN_ID, AUTHORIZED_WALK_ID].sort(),
+      [AUTHORIZED_RUN_ID, AUTHORIZED_WALK_ID, MEASURED_ZERO_RUN_ID].sort(),
     );
     expect(training.weeklyVolume).toHaveLength(2);
     expect(training.weeklyVolume).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ activity_type: "running", count: 1 }),
+        expect.objectContaining({ activity_type: "running", count: 2 }),
         expect.objectContaining({ activity_type: "walking", count: 1 }),
       ]),
     );
@@ -157,8 +214,8 @@ describe("activity visibility consistency", () => {
     ).resolves.toEqual({
       activityCount: 0,
       totalMinutes: 0,
-      totalDistanceMeters: 0,
-      totalElevationGainM: 0,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
       activityTypes: ["running", "walking"],
     });
     await expect(
