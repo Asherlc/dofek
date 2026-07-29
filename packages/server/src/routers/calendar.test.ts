@@ -92,7 +92,14 @@ describe("calendarRouter", () => {
             durationMin: 60,
             location: null,
             tss: null,
-            stats: [{ label: "Training Stress Score", value: "—" }],
+            stats: [
+              {
+                status: "unavailable",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
           },
         ],
       },
@@ -111,6 +118,64 @@ describe("calendarRouter", () => {
           expect.objectContaining({
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
+          }),
+        ],
+      },
+    ]);
+  });
+
+  it("accepts a server-authored unavailable activity stat at the API boundary", async () => {
+    repositoryResultMock.mockResolvedValueOnce([
+      {
+        date: "2026-03-18",
+        activities: [
+          {
+            id: "activity-1",
+            name: "Trainer Ride",
+            activityType: "indoor_cycling",
+            startedAt: "2026-03-18T07:00:00.000Z",
+            endedAt: "2026-03-18T08:00:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
+            durationMin: 60,
+            location: null,
+            tss: null,
+            stats: [
+              {
+                status: "unavailable",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+      {
+        date: "2026-03-18",
+        activities: [
+          expect.objectContaining({
+            stats: [
+              {
+                status: "unavailable",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
           }),
         ],
       },
@@ -159,7 +224,14 @@ describe("calendarRouter", () => {
               elevationGainM: 120,
             },
             tss: null,
-            stats: [{ label: "Training Stress Score", value: "—" }],
+            stats: [
+              {
+                status: "unavailable",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
           },
         ],
       },

@@ -146,7 +146,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     durationMin: 60,
     location: null,
     tss: 100,
-    stats: [{ label: "Training Stress Score", value: "100" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }
@@ -233,6 +233,42 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
+  });
+
+  it("renders the server-authored unavailable reason instead of a broken dash", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              tss: null,
+              stats: [
+                {
+                  status: "unavailable",
+                  label: "Training Stress Score",
+                  reason:
+                    "Record average power, or record average heart rate and set maximum heart rate.",
+                },
+              ],
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Training Stress Score unavailable")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Record average power, or record average heart rate and set maximum heart rate.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {

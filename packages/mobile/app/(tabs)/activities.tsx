@@ -65,6 +65,10 @@ type ActivityMapPreview = {
   routePath: RoutePathPoint[] | null;
 };
 
+type ActivityStat =
+  | { status: "available"; label: string; value: string }
+  | { status: "unavailable"; label: string; reason: string };
+
 function formatRouteCoordinate(value: number): string {
   const rounded = Math.round(value * 1000) / 1000;
   return Object.is(rounded, -0) ? "0" : String(rounded);
@@ -703,14 +707,15 @@ function ActivityMetricStrip({
       distanceMeters: number | null;
       elevationGainM: number | null;
     } | null;
-    stats: { label: string; value: string }[];
+    stats: ActivityStat[];
   };
   units: ReturnType<typeof useUnitConverter>;
 }) {
-  const stats =
+  const stats: ActivityStat[] =
     activity.location != null
       ? [
           {
+            status: "available",
             label: "Distance",
             value:
               activity.location.distanceMeters != null
@@ -720,6 +725,7 @@ function ActivityMetricStrip({
                 : "—",
           },
           {
+            status: "available",
             label: "Elevation",
             value:
               activity.location.elevationGainM != null
@@ -731,12 +737,19 @@ function ActivityMetricStrip({
 
   return (
     <View style={styles.statsRow}>
-      {stats.slice(0, 2).map((stat) => (
-        <View key={stat.label} style={styles.statBadge}>
-          <Text style={styles.statValue}>{stat.value}</Text>
-          <Text style={styles.statLabel}>{stat.label}</Text>
-        </View>
-      ))}
+      {stats.slice(0, 2).map((stat) =>
+        stat.status === "available" ? (
+          <View key={stat.label} style={styles.statBadge}>
+            <Text style={styles.statValue}>{stat.value}</Text>
+            <Text style={styles.statLabel}>{stat.label}</Text>
+          </View>
+        ) : (
+          <View key={stat.label} style={styles.statBadge}>
+            <Text style={styles.statUnavailableTitle}>{stat.label} unavailable</Text>
+            <Text style={styles.statUnavailableReason}>{stat.reason}</Text>
+          </View>
+        ),
+      )}
     </View>
   );
 }
@@ -1022,5 +1035,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
+  },
+  statUnavailableTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  statUnavailableReason: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+    paddingHorizontal: spacing.sm,
+    textAlign: "center",
   },
 });

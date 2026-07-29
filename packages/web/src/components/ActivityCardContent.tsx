@@ -25,8 +25,12 @@ export interface ActivityCardData {
   providerAbsentAt?: string | null;
   partialAbsentSources?: ProviderAbsentSource[];
   location: ActivityMapLocation | null;
-  stats: { label: string; value: string }[];
+  stats: ActivityCardStat[];
 }
+
+export type ActivityCardStat =
+  | { status: "available"; label: string; value: string }
+  | { status: "unavailable"; label: string; reason: string };
 
 interface ActivityCardContentProps {
   activity: ActivityCardData;
@@ -125,9 +129,10 @@ function ActivityMetricGrid({
   activity: Pick<ActivityCardData, "location" | "stats">;
   units: UnitConverter;
 }) {
-  const metrics = activity.location
+  const metrics: ActivityCardStat[] = activity.location
     ? [
         {
+          status: "available",
           label: "Distance",
           value:
             activity.location.distanceMeters != null
@@ -135,6 +140,7 @@ function ActivityMetricGrid({
               : "—",
         },
         {
+          status: "available",
           label: "Elevation",
           value:
             activity.location.elevationGainM != null
@@ -146,12 +152,19 @@ function ActivityMetricGrid({
 
   return (
     <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-      {metrics.slice(0, 2).map((metric) => (
-        <div key={metric.label} className="min-w-0">
-          <div className="text-lg font-semibold tabular-nums">{metric.value}</div>
-          <div className="mt-1 text-[11px] leading-tight text-muted">{metric.label}</div>
-        </div>
-      ))}
+      {metrics.slice(0, 2).map((metric) =>
+        metric.status === "available" ? (
+          <div key={metric.label} className="min-w-0">
+            <div className="text-lg font-semibold tabular-nums">{metric.value}</div>
+            <div className="mt-1 text-[11px] leading-tight text-muted">{metric.label}</div>
+          </div>
+        ) : (
+          <div key={metric.label} className="col-span-2 min-w-0">
+            <div className="text-sm font-semibold">{metric.label} unavailable</div>
+            <div className="mt-1 text-xs leading-relaxed text-muted">{metric.reason}</div>
+          </div>
+        ),
+      )}
     </div>
   );
 }

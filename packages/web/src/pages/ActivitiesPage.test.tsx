@@ -157,7 +157,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     durationMin: 60,
     location: null,
     tss: 100,
-    stats: [{ label: "Training Stress Score", value: "100" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }

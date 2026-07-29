@@ -21,7 +21,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     },
     durationMin: 30,
     location: null,
-    stats: [{ label: "Training Stress Score", value: "8.5" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
     ...overrides,
   };
 }
@@ -61,6 +61,34 @@ describe("ActivityCardContent", () => {
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByText("8.5")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon").getAttribute("style")).toBeNull();
+  });
+
+  it("renders the server-authored unavailable reason instead of a broken dash", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          stats: [
+            {
+              status: "unavailable",
+              label: "Training Stress Score",
+              reason:
+                "Record average power, or record average heart rate and set maximum heart rate.",
+            },
+          ],
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText("Training Stress Score unavailable")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Record average power, or record average heart rate and set maximum heart rate.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
   });
 
   it("gives mapped activities a full-height map pane and keeps metrics with the details", () => {

@@ -178,7 +178,7 @@ describe("ActivitiesCalendarRepository", () => {
             },
             tss: 100.8,
             location: null,
-            stats: [{ label: "Training Stress Score", value: "100.8" }],
+            stats: [{ status: "available", label: "Training Stress Score", value: "100.8" }],
           }),
         ],
       },
@@ -785,7 +785,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).not.toHaveBeenCalled();
   });
 
-  it("returns null and dash stats when activities have no usable stress data", async () => {
+  it("explains every missing prerequisite when activities have no usable stress data", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ avg_power: null, avg_hr: null })],
@@ -799,7 +799,14 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: null,
-        stats: [{ label: "Training Stress Score", value: "—" }],
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Record average power, or record average heart rate and set maximum heart rate.",
+          },
+        ],
       }),
     );
   });
@@ -818,7 +825,13 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: null,
-        stats: [{ label: "Training Stress Score", value: "—" }],
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason: "Record an activity duration greater than zero.",
+          },
+        ],
       }),
     );
   });
@@ -848,7 +861,19 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        tss: null,
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Set functional threshold power, or record average heart rate and set maximum heart rate.",
+          },
+        ],
+      }),
+    );
   });
 
   it("falls back to heart-rate stress when power stress cannot be computed", async () => {
@@ -872,7 +897,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: 45.1,
-        stats: [{ label: "Training Stress Score", value: "45.1" }],
+        stats: [{ status: "available", label: "Training Stress Score", value: "45.1" }],
       }),
     );
   });
@@ -935,7 +960,19 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        tss: null,
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Record average power and set functional threshold power, or set maximum heart rate.",
+          },
+        ],
+      }),
+    );
   });
 
   it("does not compute heart-rate stress when max heart rate equals resting heart rate", async () => {
@@ -955,7 +992,19 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        tss: null,
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Record average power and set functional threshold power, or set maximum heart rate above resting heart rate.",
+          },
+        ],
+      }),
+    );
   });
 
   it("includes provider-absent activities from ClickHouse when requested", async () => {
@@ -1332,7 +1381,7 @@ describe("ActivitiesCalendarRepository", () => {
       durationMin: 60,
       location: null,
       tss: 100,
-      stats: [{ label: "Training Stress Score", value: "100" }],
+      stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
       isProviderAbsent: true,
       providerId: "strava",
       providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -1572,7 +1621,12 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result.map((day) => day.date)).toEqual(["2026-03-18", "2026-03-17"]);
     expect(result[0]?.activities[0]?.tss).toBeNull();
     expect(result[0]?.activities[0]?.stats).toEqual([
-      { label: "Training Stress Score", value: "—" },
+      {
+        status: "unavailable",
+        label: "Training Stress Score",
+        reason:
+          "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+      },
     ]);
   });
 
@@ -1999,7 +2053,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({
         id: "hidden-hr",
         tss: 45.1,
-        stats: [{ label: "Training Stress Score", value: "45.1" }],
+        stats: [{ status: "available", label: "Training Stress Score", value: "45.1" }],
       }),
     );
   });

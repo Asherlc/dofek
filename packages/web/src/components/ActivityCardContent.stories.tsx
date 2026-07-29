@@ -17,7 +17,19 @@ const strengthActivity: ActivityCardData = {
   },
   durationMin: 30,
   location: null,
-  stats: [{ label: "Training Stress Score", value: "8.5" }],
+  stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
+};
+
+const unavailableTrainingStressActivity: ActivityCardData = {
+  ...strengthActivity,
+  id: "strength-unavailable",
+  stats: [
+    {
+      status: "unavailable",
+      label: "Training Stress Score",
+      reason: "Record average power, or record average heart rate and set maximum heart rate.",
+    },
+  ],
 };
 
 const mappedActivity: ActivityCardData = {
@@ -77,7 +89,7 @@ const mappedActivity: ActivityCardData = {
     distanceMeters: 8530,
     elevationGainM: 493,
   },
-  stats: [{ label: "Training Stress Score", value: "41" }],
+  stats: [{ status: "available", label: "Training Stress Score", value: "41" }],
 };
 
 const meta = {
@@ -124,10 +136,21 @@ export const MappedActivity: Story = {
   ],
 };
 
+export const UnavailableTrainingStress: Story = {
+  args: { activity: unavailableTrainingStressActivity },
+  decorators: [
+    (Story) => (
+      <div className="card overflow-hidden">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
 export const ExampleGrid: Story = {
   render: () => (
     <div className="grid gap-4 lg:grid-cols-2">
-      {[mappedActivity, strengthActivity].map((activity) => (
+      {[mappedActivity, strengthActivity, unavailableTrainingStressActivity].map((activity) => (
         <article key={activity.id} className="card h-full overflow-hidden">
           <ActivityCardContent
             activity={activity}
