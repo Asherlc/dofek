@@ -1,10 +1,14 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./processing-status-story-fixture";
 import RecoveryScreen from "./recovery";
 
 function localDateString(dayOffset = 0): string {
@@ -30,6 +34,12 @@ function createSeededProviders() {
     respiratoryRateScore: 74,
   };
   const readinessWeights = { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 };
+
+  const processingStatus = seedReadyProcessingStatus(queryClient, [
+    "activity",
+    "sleep",
+    "recovery",
+  ]);
 
   queryClient.setQueryData(
     [["mobileDashboard", "recovery"], { input: { days: 30, endDate }, type: "query" }],
@@ -82,6 +92,7 @@ function createSeededProviders() {
         goal: { targetWeightKg: 72.5, targetDate: localDateString(60) },
         projectionLine: [],
       },
+      healthStatus: [],
       healthspan: {
         healthspanScore: 84,
         yearsDelta: 1.8,
@@ -92,14 +103,19 @@ function createSeededProviders() {
     },
   );
 
-  return { queryClient };
+  return { processingStatus, queryClient };
 }
 
 function MockProviders({ children }: { children: React.ReactNode }) {
-  const { queryClient } = createSeededProviders();
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
-  });
+  const { queryClient, trpcClient } = useMemo(() => {
+    const seededProviders = createSeededProviders();
+    return {
+      ...seededProviders,
+      trpcClient: trpc.createClient({
+        links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
+      }),
+    };
+  }, []);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
