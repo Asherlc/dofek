@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import { within } from "storybook/test";
+import { colors } from "../../theme";
 import { SyncAllControls } from "./sync-all-controls";
 
 const meta = {
@@ -8,7 +9,7 @@ const meta = {
   component: SyncAllControls,
   decorators: [
     (Story) => (
-      <View style={{ backgroundColor: "#000000", padding: 16, width: 360 }}>
+      <View style={{ backgroundColor: colors.background, padding: 16, width: 360 }}>
         <Story />
       </View>
     ),

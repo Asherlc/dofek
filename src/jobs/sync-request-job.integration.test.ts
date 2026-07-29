@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ConnectionOptions, Job } from "bullmq";
+import type { ConnectionOptions } from "bullmq";
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerSyncRequestQueryResolver } from "../lib/sync-request-query.ts";
 import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
 import type { SyncJobData } from "./queues.ts";
-import { enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
+import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
 
 registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
 
@@ -44,7 +44,7 @@ describe("full sync BullMQ lifecycle deduplication", () => {
     queue: Queue<SyncJobData>,
     untilIso: string,
     providerId = "strava",
-  ): Promise<Job<SyncJobData>> {
+  ): Promise<EnqueuedSyncJob> {
     const result = await enqueueSyncJobWithRequestDedup(
       providerId,
       {
