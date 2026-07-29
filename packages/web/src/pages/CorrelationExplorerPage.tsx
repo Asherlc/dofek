@@ -59,7 +59,7 @@ function MetricSelect({
   unavailableValue: string;
 }) {
   return (
-    <label className="flex-1 min-w-0 block">
+    <label className="min-w-0 block">
       <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">{label}</span>
       <select
         value={value}
@@ -315,7 +315,7 @@ export function CorrelationExplorerPage() {
         {/* Controls */}
         {metricsQuery.data && (
           <div className="space-y-3">
-            <div className="flex gap-3 items-end">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end sm:gap-3">
               <MetricSelect
                 value={metricX}
                 onChange={(nextMetric) => {
@@ -326,7 +326,7 @@ export function CorrelationExplorerPage() {
                 label="X axis"
                 unavailableValue={metricY}
               />
-              <span className="text-dim text-sm pb-2">vs</span>
+              <span className="hidden text-dim text-sm pb-2 sm:block">vs</span>
               <MetricSelect
                 value={metricY}
                 onChange={(nextMetric) => {
@@ -340,34 +340,36 @@ export function CorrelationExplorerPage() {
             </div>
 
             {/* Lag selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
-              <div className="flex gap-1">
-                {LAG_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      setLag(opt.value);
-                      resetObservationCursor();
-                    }}
-                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                      lag === opt.value
-                        ? "bg-accent/15 text-foreground"
-                        : "text-subtle hover:text-foreground"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
+                <div className="flex flex-wrap gap-1">
+                  {LAG_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setLag(opt.value);
+                        resetObservationCursor();
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                        lag === opt.value
+                          ? "bg-accent/15 text-foreground"
+                          : "text-subtle hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <span className="text-[10px] text-dim ml-1">
+              <p className="text-[10px] text-dim">
                 {formatCorrelationComparison({
                   xLabel: xMetric?.label ?? "X",
                   yLabel: yMetric?.label ?? "Y",
                   lag,
                 })}
-              </span>
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
