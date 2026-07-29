@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+// cspell:words activitydetail networkidle zonecharts
 import { readFile as readFileCallback } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
