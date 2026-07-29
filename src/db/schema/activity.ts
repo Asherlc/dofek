@@ -87,15 +87,13 @@ export const fingerLoadingEntry = fitness.table(
       sql`${table.edgeSizeMm} IS NULL OR ${table.edgeSizeMm} > 0`,
     ),
     check("finger_loading_entry_bodyweight_positive", sql`${table.bodyweightKg} > 0`),
+    check(
+      "finger_loading_entry_effective_load_positive",
+      sql`${table.bodyweightKg} + ${table.externalLoadKg} > 0`,
+    ),
     check("finger_loading_entry_set_count_positive", sql`${table.setCount} > 0`),
-    check(
-      "finger_loading_entry_hold_duration_positive",
-      sql`${table.holdDurationSeconds} > 0`,
-    ),
-    check(
-      "finger_loading_entry_rest_interval_nonnegative",
-      sql`${table.restIntervalSeconds} >= 0`,
-    ),
+    check("finger_loading_entry_hold_duration_positive", sql`${table.holdDurationSeconds} > 0`),
+    check("finger_loading_entry_rest_interval_nonnegative", sql`${table.restIntervalSeconds} >= 0`),
     check(
       "finger_loading_entry_rpe_range",
       sql`${table.rpe} IS NULL OR (${table.rpe} >= 0 AND ${table.rpe} <= 10)`,
@@ -178,10 +176,7 @@ export const climbingAttempt = fitness.table(
   },
   (table) => [
     index("climbing_attempt_entry_idx").on(table.climbingEntryId),
-    uniqueIndex("climbing_attempt_entry_index_idx").on(
-      table.climbingEntryId,
-      table.attemptIndex,
-    ),
+    uniqueIndex("climbing_attempt_entry_index_idx").on(table.climbingEntryId, table.attemptIndex),
     check("climbing_attempt_index_positive", sql`${table.attemptIndex} > 0`),
     check(
       "climbing_attempt_failure_reason",

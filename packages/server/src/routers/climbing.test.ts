@@ -62,9 +62,14 @@ describe("climbingRouter", () => {
         grade_system: "v_scale",
         grade: "v4",
         sent: true,
+        attempt_count: 7,
+        attempts: [],
+        ascent_type: "Redpoint",
+        hold_type: null,
         route_name: "Blue Arete",
         location_name: "Pacific Pipe",
         source_name: "Kaya",
+        wall_angle_degrees: null,
       },
     ]);
 
@@ -80,9 +85,14 @@ describe("climbingRouter", () => {
         gradeSystem: "v_scale",
         grade: "V4",
         sent: true,
+        attemptCount: 7,
+        attempts: [],
+        ascentType: "Redpoint",
+        holdType: null,
         routeName: "Blue Arete",
         locationName: "Pacific Pipe",
         sourceName: "Kaya",
+        wallAngleDegrees: null,
       },
     ]);
   });
@@ -211,5 +221,55 @@ describe("climbingRouter", () => {
       code: "PRECONDITION_FAILED",
       message: "sync first",
     });
+  });
+
+  it("rejects a finger-loading protocol with a non-positive effective load", async () => {
+    const { caller, execute } = makeCaller();
+
+    await expect(
+      caller.logFingerLoading({
+        bodyweightKg: 70,
+        edgeSizeMm: 20,
+        exercise: "max_hang",
+        externalLoadKg: -70,
+        gripPosition: "half_crimp",
+        holdDurationSeconds: 10,
+        laterality: "both",
+        notes: null,
+        restIntervalSeconds: 180,
+        rpe: 8,
+        setCount: 5,
+        startedAt: "2026-07-29T12:00:00.000Z",
+      }),
+    ).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "BAD_REQUEST",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("rejects inconsistent climbing grade systems and session timestamps", async () => {
+    const { caller, execute } = makeCaller();
+
+    await expect(
+      caller.logClimbingSession({
+        climbs: [
+          {
+            attempts: [{ failureReason: null, notes: null, outcome: "sent" }],
+            climbType: "boulder",
+            grade: "V5",
+            gradeSystem: "yds",
+            holdType: "crimp",
+            routeName: null,
+            wallAngleDegrees: 30,
+          },
+        ],
+        endedAt: "2026-07-29T11:00:00.000Z",
+        locationName: null,
+        startedAt: "2026-07-29T12:00:00.000Z",
+      }),
+    ).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "BAD_REQUEST",
+    });
+    expect(execute).not.toHaveBeenCalled();
   });
 });

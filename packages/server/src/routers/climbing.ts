@@ -2,39 +2,44 @@ import { TRPCError } from "@trpc/server";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
 import {
-  climbingAttemptOutcomeSchema,
-  climbingFailureReasonSchema,
-  climbingHoldTypeSchema,
-  ClimbingTrainingLogRepository,
-  fingerLoadingExerciseSchema,
-  fingerLoadingGripPositionSchema,
-  fingerLoadingLateralitySchema,
-} from "../repositories/climbing-training-log-repository.ts";
-import {
   type ClimbingActivityEntryRow,
   type ClimbingGradeProgressionRow,
   ClimbingRepository,
   type ClimbingSessionSummaryRow,
   type ClimbingVolumeByGradeRow,
 } from "../repositories/climbing-repository.ts";
+import {
+  ClimbingTrainingLogRepository,
+  climbingAttemptOutcomeSchema,
+  climbingFailureReasonSchema,
+  climbingHoldTypeSchema,
+  fingerLoadingExerciseSchema,
+  fingerLoadingGripPositionSchema,
+  fingerLoadingLateralitySchema,
+} from "../repositories/climbing-training-log-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const nullableNoteSchema = z.string().trim().min(1).max(500).nullable().default(null);
-const fingerLoadingInputSchema = z.object({
-  bodyweightKg: z.number().positive().max(500),
-  edgeSizeMm: z.number().positive().max(100).nullable().default(null),
-  exercise: fingerLoadingExerciseSchema,
-  externalLoadKg: z.number().min(-500).max(500),
-  gripPosition: fingerLoadingGripPositionSchema.nullable().default(null),
-  holdDurationSeconds: z.number().positive().max(600),
-  laterality: fingerLoadingLateralitySchema,
-  notes: nullableNoteSchema,
-  restIntervalSeconds: z.number().int().min(0).max(3_600),
-  rpe: z.number().min(0).max(10).nullable().default(null),
-  setCount: z.number().int().min(1).max(100),
-  startedAt: z.iso.datetime(),
-});
+const fingerLoadingInputSchema = z
+  .object({
+    bodyweightKg: z.number().positive().max(500),
+    edgeSizeMm: z.number().positive().max(100).nullable().default(null),
+    exercise: fingerLoadingExerciseSchema,
+    externalLoadKg: z.number().min(-500).max(500),
+    gripPosition: fingerLoadingGripPositionSchema.nullable().default(null),
+    holdDurationSeconds: z.number().positive().max(600),
+    laterality: fingerLoadingLateralitySchema,
+    notes: nullableNoteSchema,
+    restIntervalSeconds: z.number().int().min(0).max(3_600),
+    rpe: z.number().min(0).max(10).nullable().default(null),
+    setCount: z.number().int().min(1).max(100),
+    startedAt: z.iso.datetime(),
+  })
+  .refine((protocol) => protocol.bodyweightKg + protocol.externalLoadKg > 0, {
+    message: "Effective load must be greater than zero",
+    path: ["externalLoadKg"],
+  });
 const climbingAttemptInputSchema = z
   .object({
     failureReason: climbingFailureReasonSchema.nullable().default(null),
@@ -57,25 +62,45 @@ const climbingAttemptInputSchema = z
       });
     }
   });
-const climbingSessionInputSchema = z.object({
-  climbs: z
-    .array(
-      z.object({
-        attempts: z.array(climbingAttemptInputSchema).min(1).max(100),
-        climbType: z.enum(["boulder", "route"]),
-        grade: z.string().trim().min(1).max(20),
-        gradeSystem: z.enum(["v_scale", "yds"]),
-        holdType: climbingHoldTypeSchema.nullable().default(null),
-        routeName: z.string().trim().min(1).max(200).nullable().default(null),
-        wallAngleDegrees: z.number().min(-90).max(90).nullable().default(null),
-      }),
-    )
-    .min(1)
-    .max(30),
-  endedAt: z.iso.datetime().nullable().default(null),
-  locationName: z.string().trim().min(1).max(200).nullable().default(null),
-  startedAt: z.iso.datetime(),
-});
+const climbingSessionInputSchema = z
+  .object({
+    climbs: z
+      .array(
+        z
+          .object({
+            attempts: z.array(climbingAttemptInputSchema).min(1).max(100),
+            climbType: z.enum(["boulder", "route"]),
+            grade: z.string().trim().min(1).max(20),
+            gradeSystem: z.enum(["v_scale", "yds"]),
+            holdType: climbingHoldTypeSchema.nullable().default(null),
+            routeName: z.string().trim().min(1).max(200).nullable().default(null),
+            wallAngleDegrees: z.number().min(-90).max(90).nullable().default(null),
+          })
+          .refine(
+            (climb) =>
+              (climb.climbType === "boulder" && climb.gradeSystem === "v_scale") ||
+              (climb.climbType === "route" && climb.gradeSystem === "yds"),
+            {
+              message: "Grade system must match the climb type",
+              path: ["gradeSystem"],
+            },
+          ),
+      )
+      .min(1)
+      .max(30),
+    endedAt: z.iso.datetime().nullable().default(null),
+    locationName: z.string().trim().min(1).max(200).nullable().default(null),
+    startedAt: z.iso.datetime(),
+  })
+  .refine(
+    (session) =>
+      session.endedAt === null ||
+      new Date(session.endedAt).getTime() >= new Date(session.startedAt).getTime(),
+    {
+      message: "Session end time cannot be before its start time",
+      path: ["endedAt"],
+    },
+  );
 
 async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
   try {

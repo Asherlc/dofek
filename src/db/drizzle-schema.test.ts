@@ -2,12 +2,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { drizzleSchema } from "./drizzle-schema.ts";
 import { userSettings } from "./schema/account.ts";
-import {
-  activity,
-  climbingAttempt,
-  climbingEntry,
-  fingerLoadingEntry,
-} from "./schema/activity.ts";
+import { activity, climbingAttempt, climbingEntry, fingerLoadingEntry } from "./schema/activity.ts";
 import { labResult } from "./schema/clinical.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
@@ -133,6 +128,9 @@ describe("drizzleSchema", () => {
     });
     expect(config.indexes.map((indexBuilder) => indexBuilder.config.name)).toContain(
       "finger_loading_entry_activity_idx",
+    );
+    expect(config.checks.map((checkBuilder) => checkBuilder.name)).toContain(
+      "finger_loading_entry_effective_load_positive",
     );
   });
 

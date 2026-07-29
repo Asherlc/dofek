@@ -54,6 +54,9 @@ CREATE TABLE fitness.finger_loading_entry (
     edge_size_mm IS NULL OR edge_size_mm > 0
   ),
   CONSTRAINT finger_loading_entry_bodyweight_positive CHECK (bodyweight_kg > 0),
+  CONSTRAINT finger_loading_entry_effective_load_positive CHECK (
+    bodyweight_kg + external_load_kg > 0
+  ),
   CONSTRAINT finger_loading_entry_set_count_positive CHECK (set_count > 0),
   CONSTRAINT finger_loading_entry_hold_duration_positive CHECK (hold_duration_seconds > 0),
   CONSTRAINT finger_loading_entry_rest_interval_nonnegative CHECK (rest_interval_seconds >= 0),

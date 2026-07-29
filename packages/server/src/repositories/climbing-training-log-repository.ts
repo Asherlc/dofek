@@ -3,7 +3,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  executeWithSchema,
+  type SchemaExecutionDatabase,
+  timestampStringSchema,
+} from "../lib/typed-sql.ts";
 import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
@@ -27,13 +31,7 @@ export const fingerLoadingGripPositionSchema = z.enum([
 export const fingerLoadingLateralitySchema = z.enum(["both", "left", "right"]);
 export const climbingHoldTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
 export const climbingAttemptOutcomeSchema = z.enum(["sent", "failed"]);
-export const climbingFailureReasonSchema = z.enum([
-  "fell",
-  "pumped",
-  "skin",
-  "technique",
-  "fear",
-]);
+export const climbingFailureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
 
 export interface FingerLoadingInput {
   bodyweightKg: number;
@@ -100,9 +98,7 @@ export interface FingerLoadingDetail {
   startedAt: string;
 }
 
-function toFingerLoadingDetail(
-  row: z.infer<typeof fingerLoadingRowSchema>,
-): FingerLoadingDetail {
+function toFingerLoadingDetail(row: z.infer<typeof fingerLoadingRowSchema>): FingerLoadingDetail {
   return {
     activityId: row.activity_id,
     bodyweightKg: row.bodyweight_kg,
@@ -122,7 +118,7 @@ function toFingerLoadingDetail(
 }
 
 export async function readFingerLoadingRange(input: {
-  database: Pick<Database, "execute">;
+  database: SchemaExecutionDatabase;
   endDate: string;
   startDate: string;
   timezone: string;
@@ -226,7 +222,7 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
       return activity.id;
     });
 
-    const created = await this.getFingerLoadingActivity(activityId);
+    const created = await this.#getFingerLoadingActivity(activityId);
     if (!created) throw new Error("Saved finger-loading activity could not be read");
     return created;
   }
@@ -351,10 +347,7 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
     return rows.map(toFingerLoadingDetail);
   }
 
-  async getFingerLoadingRange(
-    startDate: string,
-    endDate: string,
-  ): Promise<FingerLoadingDetail[]> {
+  async getFingerLoadingRange(startDate: string, endDate: string): Promise<FingerLoadingDetail[]> {
     return readFingerLoadingRange({
       database: this.db,
       endDate,
@@ -364,9 +357,7 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
     });
   }
 
-  private async getFingerLoadingActivity(
-    activityId: string,
-  ): Promise<FingerLoadingDetail | null> {
+  async #getFingerLoadingActivity(activityId: string): Promise<FingerLoadingDetail | null> {
     const rows = await this.query(
       fingerLoadingRowSchema,
       sql`SELECT
