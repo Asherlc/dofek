@@ -10,6 +10,7 @@ import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { BodyRepository } from "../repositories/body-repository.ts";
+import { readFingerLoadingRange } from "../repositories/climbing-training-log-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import {
@@ -410,6 +411,49 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           group_by ?? "activity_type",
           context.timezone,
         ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_finger_loading",
+    {
+      title: "Get Finger Loading",
+      description:
+        "Return structured finger-loading protocols and server-computed effective load for an exact date range.",
+      inputSchema: {
+        start_date: dateSchema,
+        end_date: dateSchema,
+        timezone: z.string().optional(),
+      },
+    },
+    async ({ start_date, end_date, timezone }) => {
+      requireMcpScope(context.scopes, "activity:read");
+      assertDateRange(start_date, end_date);
+      const rows = await readFingerLoadingRange({
+        database: context.db,
+        endDate: end_date,
+        startDate: start_date,
+        timezone: timezone ?? context.timezone,
+        userId: context.userId,
+      });
+      return jsonContent(
+        rows.map((row) => ({
+          activity_id: row.activityId,
+          bodyweight_kg: row.bodyweightKg,
+          edge_size_mm: row.edgeSizeMm,
+          effective_load_kg: row.effectiveLoadKg,
+          exercise: row.exercise,
+          external_load_kg: row.externalLoadKg,
+          grip_position: row.gripPosition,
+          hold_duration_seconds: row.holdDurationSeconds,
+          laterality: row.laterality,
+          notes: row.notes,
+          rest_interval_seconds: row.restIntervalSeconds,
+          rpe: row.rpe,
+          set_count: row.setCount,
+          started_at: row.startedAt,
+        })),
       );
     },
   );
