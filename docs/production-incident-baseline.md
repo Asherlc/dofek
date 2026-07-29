@@ -20108,3 +20108,65 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep package-script-only TypeScript entry
   points in the owning workspace's Knip entry graph when adding or renaming
   repository automation.
+
+## 2026-07-29 — Mobile Storybook Release bundle and runtime failed
+
+- **Status:** Root cause fixed locally for issue #2203; fresh CI validation
+  pending.
+- **Symptoms:** The Storybook-enabled iOS Release bundle failed before the
+  native app could be installed. After that bundle failure was fixed, the
+  signed app installed but crashed while initializing Storybook.
+- **User impact:** The on-device component audit environment was unavailable.
+  The production mobile application was not affected because Storybook is
+  enabled only for the audit build.
+- **Evidence:** The exact failing command was
+  `CI=1 EXPO_PUBLIC_STORYBOOK_ENABLED=true pnpm --dir packages/mobile exec expo export --platform ios`.
+  Its first fatal line was
+  `Unable to resolve module react-native/Libraries/Renderer/shims/ReactNative`
+  from `react-native-gesture-handler/src/RNRenderer.ts`. The import chain ran
+  through `@storybook/react-native-ui`. The subsequent signed Release launch
+  failed with
+  `[runtime not ready]: TypeError: Object is not a function`; its source map
+  resolved the first frame to
+  `@testing-library/dom/dist/pretty-dom.js:12:46`, where CommonJS invokes
+  `_interopRequireDefault(...)`. The release source map showed that helper had
+  resolved to `@babel/runtime/helpers/esm/interopRequireDefault.js`.
+- **Root cause:** There were two independent causes. Storybook's optional
+  dependency first resolved `react-native-gesture-handler` 2.30.1, whose
+  renderer helper imported a React Native internal shim that is absent from
+  React Native 0.86.0. Separately, the mobile Metro configuration forced the
+  `import` package-export condition globally, so a CommonJS `require()` loaded
+  Babel's ESM helper and received a non-callable module namespace object.
+- **Fix / mitigation:** Add an exact direct dependency on
+  `react-native-gesture-handler` 2.32.0, the version recommended for Expo SDK
+  57 in the
+  [Expo documentation](https://docs.expo.dev/versions/v57.0.0/sdk/gesture-handler/).
+  The upstream
+  [compatibility table](https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/installation/)
+  supports this line with the repository's React Native version. Remove only
+  the project-wide `unstable_conditionNames` override and retain Expo's
+  platform-aware export resolution plus the existing pnpm-symlink resolver.
+  Storybook's own Metro wrapper continues to request the `import` condition
+  narrowly for Storybook and UUID packages. Metro documents that it selects
+  `import` or `require` from the source operation in its
+  [package-exports guidance](https://metrobundler.dev/docs/package-exports/).
+  Storybook's
+  [10.5.3 wrapper source](https://github.com/storybookjs/react-native/blob/v10.5.3/packages/react-native/src/metro/withStorybook.ts#L270-L280)
+  confirms the package-scoped condition. No Metro alias, local package patch,
+  exclusion, retry, or fallback was added.
+- **Validation:** Expo dependency validation passes, the exact previously
+  failing Storybook-enabled iOS export now bundles 1,791 modules successfully,
+  and the clean iOS project resolves the RNGestureHandler 2.32.0 pod. The
+  signed Release simulator app built, installed, and exposed the independent
+  Metro condition failure, and the corrected exact Release export passes.
+  Its corrected Release source map resolves both Babel helper versions to the
+  CommonJS `helpers/interopRequireDefault.js` while retaining the same
+  `@testing-library/dom/pretty-dom.js` path. The corrected signed app then
+  rebuilt, installed, launched the Storybook `Pages/Login` story canvas, and
+  emitted no JavaScript fatal or exception. All 1,126 mobile tests, mobile lint,
+  typecheck, frozen-lockfile verification, and signature validation pass
+  locally. Fresh exact-head CI remains required before merge.
+- **Remaining risk / follow-up:** Keep Expo-native package versions aligned
+  with the active SDK when React Native changes internal renderer boundaries,
+  and do not globally prefer the ESM `import` condition for mixed CommonJS/ESM
+  dependency graphs.
