@@ -30,9 +30,11 @@
   `require("@babel/runtime/helpers/interopRequireDefault")` resolve to
   `helpers/esm/interopRequireDefault.js`; `require()` therefore returned an ESM
   namespace object instead of the callable CommonJS helper. Expo SDK 57's
-  default condition-name list is empty (with `react-native` supplied for native
-  platforms), while Storybook's Metro wrapper already requests `import`
-  narrowly for Storybook and UUID packages. Metro's
+  [Metro configuration](https://github.com/expo/expo/blob/a4789f1e53353f4929b0baddcfe5a7c622b99c71/packages/%40expo/metro-config/src/ExpoMetroConfig.ts#L302-L309)
+  supplies `react-native` as a native platform condition without adding this
+  project-wide override, while Storybook's
+  [10.5.3 Metro wrapper](https://github.com/storybookjs/react-native/blob/v10.5.3/packages/react-native/src/metro/withStorybook.ts#L270-L280)
+  requests `import` narrowly for Storybook and UUID packages. Metro's
   [package-exports documentation](https://metrobundler.dev/docs/package-exports/)
   explains that it selects `import` or `require` from the source operation and
   warns that global export conditions are asserted for every resolution.

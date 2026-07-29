@@ -20150,7 +20150,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   narrowly for Storybook and UUID packages. Metro documents that it selects
   `import` or `require` from the source operation in its
   [package-exports guidance](https://metrobundler.dev/docs/package-exports/).
-  No Metro alias, local package patch, exclusion, retry, or fallback was added.
+  Storybook's
+  [10.5.3 wrapper source](https://github.com/storybookjs/react-native/blob/v10.5.3/packages/react-native/src/metro/withStorybook.ts#L270-L280)
+  confirms the package-scoped condition. No Metro alias, local package patch,
+  exclusion, retry, or fallback was added.
 - **Validation:** Expo dependency validation passes, the exact previously
   failing Storybook-enabled iOS export now bundles 1,791 modules successfully,
   and the clean iOS project resolves the RNGestureHandler 2.32.0 pod. The
