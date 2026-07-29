@@ -90,7 +90,7 @@ export function DataConnectionBanner() {
   return (
     <output
       aria-live="polite"
-      className="border-b border-amber-700/30 bg-amber-100/80 px-3 py-2 text-amber-950 sm:px-6"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-amber-700/30 bg-amber-100/80 px-3 py-2 text-amber-950 sm:px-6"
     >
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-medium sm:text-sm">{message}</p>

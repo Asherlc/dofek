@@ -29,9 +29,11 @@ describe("DataConnectionBanner", () => {
 
     renderBanner();
 
-    expect(screen.getByRole("status")).toHaveTextContent(
+    const banner = screen.getByRole("status");
+    expect(banner).toHaveTextContent(
       "Offline — showing last available data where available. It may be stale until you reconnect.",
     );
+    expect(banner).toHaveClass("fixed", "inset-x-0", "bottom-0", "z-50");
     expect(screen.getByRole("button", { name: "Retry unavailable offline" })).toBeDisabled();
   });
 
