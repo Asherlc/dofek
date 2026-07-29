@@ -32,10 +32,17 @@ export interface ActivityLocation {
   elevationGainM: number | null;
 }
 
-export interface ActivityStat {
-  label: string;
-  value: string;
-}
+export type ActivityStat =
+  | {
+      status: "available";
+      label: string;
+      value: string;
+    }
+  | {
+      status: "unavailable";
+      label: string;
+      reason: string;
+    };
 
 export interface CalendarActivityEntry {
   id: string;
@@ -275,7 +282,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
-      const tss = computeActivityTss({
+      const trainingStress = computeActivityTrainingStress({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
         avgHr: row.avg_hr,
@@ -285,6 +292,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         ftp: baseline.ftp,
         calculator,
       });
+      const tss = trainingStress.status === "available" ? trainingStress.score : null;
 
       const sourceAttribution = ActivitySourceAttribution.fromClickHouseRow(
         row.source_external_ids,
@@ -318,7 +326,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss),
+        stats: formatActivityStats(trainingStress),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];
@@ -418,7 +426,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of enrichedRows) {
-      const tss = computeActivityTss({
+      const trainingStress = computeActivityTrainingStress({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
         avgHr: row.avg_hr,
@@ -428,6 +436,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         ftp: baseline.ftp,
         calculator,
       });
+      const tss = trainingStress.status === "available" ? trainingStress.score : null;
 
       const entry: CalendarActivityEntry = {
         id: row.id,
@@ -452,7 +461,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss),
+        stats: formatActivityStats(trainingStress),
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
@@ -663,10 +672,28 @@ interface TssInput {
   calculator: TrainingStressCalculator;
 }
 
-function computeActivityTss(input: TssInput): number | null {
-  if (input.durationMin <= 0) return null;
+type ActivityTrainingStress =
+  | {
+      status: "available";
+      score: number;
+    }
+  | {
+      status: "unavailable";
+      reason: string;
+    };
+
+function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
+  if (input.durationMin <= 0) {
+    return {
+      status: "unavailable",
+      reason: "Record an activity duration greater than zero.",
+    };
+  }
   if (input.avgPower != null && input.avgPower > 0 && input.ftp != null && input.ftp > 0) {
-    return TrainingStressCalculator.computePowerTss(input.avgPower, input.ftp, input.durationMin);
+    return {
+      status: "available",
+      score: TrainingStressCalculator.computePowerTss(input.avgPower, input.ftp, input.durationMin),
+    };
   }
   const effectiveMaxHr = input.baselineMaxHr ?? input.maxHr;
   const effectiveRestingHr = input.baselineRestingHr ?? 60;
@@ -676,22 +703,74 @@ function computeActivityTss(input: TssInput): number | null {
     effectiveMaxHr != null &&
     effectiveMaxHr > effectiveRestingHr
   ) {
-    return input.calculator.computeHrTss(
-      input.durationMin,
-      input.avgHr,
-      effectiveMaxHr,
-      effectiveRestingHr,
-    );
+    return {
+      status: "available",
+      score: input.calculator.computeHrTss(
+        input.durationMin,
+        input.avgHr,
+        effectiveMaxHr,
+        effectiveRestingHr,
+      ),
+    };
   }
-  return null;
+  return {
+    status: "unavailable",
+    reason: formatTrainingStressUnavailableReason(input, effectiveMaxHr, effectiveRestingHr),
+  };
 }
 
-function formatActivityStats(tss: number | null): ActivityStat[] {
-  const roundedTss = tss != null ? Math.round(tss * 10) / 10 : null;
+function formatTrainingStressUnavailableReason(
+  input: TssInput,
+  effectiveMaxHr: number | null,
+  effectiveRestingHr: number,
+): string {
+  const powerActions: string[] = [];
+  if (input.avgPower == null || input.avgPower <= 0) {
+    powerActions.push("record average power");
+  }
+  if (input.ftp == null || input.ftp <= 0) {
+    powerActions.push("set functional threshold power");
+  }
+
+  const heartRateActions: string[] = [];
+  if (input.avgHr == null || input.avgHr <= 0) {
+    heartRateActions.push("record average heart rate");
+  }
+  if (effectiveMaxHr == null || effectiveMaxHr <= 0) {
+    heartRateActions.push("set maximum heart rate");
+  } else if (effectiveMaxHr <= effectiveRestingHr) {
+    heartRateActions.push("set maximum heart rate above resting heart rate");
+  }
+
+  const powerAction = joinActions(powerActions);
+  const heartRateAction = joinActions(heartRateActions);
+  return `${capitalize(powerAction)}, or ${heartRateAction}.`;
+}
+
+function joinActions(actions: string[]): string {
+  return actions.join(" and ");
+}
+
+function capitalize(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
+  if (trainingStress.status === "unavailable") {
+    return [
+      {
+        status: "unavailable",
+        label: "Training Stress Score",
+        reason: trainingStress.reason,
+      },
+    ];
+  }
+  const roundedTss = Math.round(trainingStress.score * 10) / 10;
   return [
     {
+      status: "available",
       label: "Training Stress Score",
-      value: roundedTss != null ? formatStatNumber(roundedTss) : "—",
+      value: formatStatNumber(roundedTss),
     },
   ];
 }
