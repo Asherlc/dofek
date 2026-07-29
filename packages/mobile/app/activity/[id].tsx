@@ -4,8 +4,8 @@ import {
   formatDurationRange,
   formatDurationSeconds,
   formatNumber,
-  formatTimeOnly,
 } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
@@ -780,7 +780,9 @@ export default function ActivityDetailScreen() {
         <Text style={styles.dateTime}>
           {formatDateLong(activity.startedAt)}
           {" at "}
-          {formatTimeOnly(activity.startedAt)}
+          {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
+            ? "Local time unavailable"
+            : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>

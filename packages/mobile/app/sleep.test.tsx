@@ -93,6 +93,14 @@ describe("SleepScreen", () => {
       nightly: [
         {
           date: "2026-07-20",
+          startedAt: "2026-07-20T05:00:00.000Z",
+          endedAt: "2026-07-20T13:00:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
           durationMinutes: 320,
           sleepMinutes: 300,
           deepPct: 20,
@@ -118,5 +126,40 @@ describe("SleepScreen", () => {
     expect(screen.getByText("91%")).toBeTruthy();
     expect(screen.queryByText("5h 0m")).toBeNull();
     expect(screen.queryByText("50%")).toBeNull();
+  });
+
+  it("renders the stored local bedtime and wake time", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockSleepData = {
+      nightly: [
+        {
+          date: today,
+          startedAt: `${today}T08:00:00.000Z`,
+          endedAt: `${today}T16:00:00.000Z`,
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
+          durationMinutes: 480,
+          sleepMinutes: 450,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 90,
+          rollingAvgDuration: 450,
+        },
+      ],
+      sleepDebt: 0,
+      averageSleepMinutes: 450,
+      averageEfficiencyPercent: 90,
+    };
+
+    const { default: SleepScreen } = await import("./sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getByText("1:00 AM – 9:00 AM")).toBeTruthy();
   });
 });

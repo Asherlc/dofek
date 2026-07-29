@@ -47,7 +47,21 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
   const query = vi.fn();
   for (const rows of rowSets) {
     query.mockImplementationOnce((schema: { parse: (row: Record<string, unknown>) => unknown }) =>
-      Promise.resolve(rows.map((row) => schema.parse(row))),
+      Promise.resolve(
+        rows.map((row) =>
+          schema.parse(
+            "activity_type" in row && "started_at" in row
+              ? {
+                  timezone: null,
+                  start_utc_offset_minutes: null,
+                  end_utc_offset_minutes: null,
+                  local_time_source: "unknown",
+                  ...row,
+                }
+              : row,
+          ),
+        ),
+      ),
     );
   }
   query.mockImplementation(() => {
@@ -115,6 +129,12 @@ function makeCalendarEntry(
     name: overrides.name ?? overrides.id,
     activityType: overrides.activityType ?? "running",
     endedAt: overrides.endedAt ?? overrides.startedAt,
+    localTimeContext: overrides.localTimeContext ?? {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
+    },
     durationMin: overrides.durationMin ?? 60,
     location: overrides.location ?? null,
     tss: overrides.tss ?? null,
@@ -127,7 +147,15 @@ describe("ActivitiesCalendarRepository", () => {
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
-      [makeActivityRow({ avg_power: 251 })],
+      [
+        makeActivityRow({
+          avg_power: 251,
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_timezone",
+        }),
+      ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
     ]);
@@ -142,6 +170,12 @@ describe("ActivitiesCalendarRepository", () => {
           expect.objectContaining({
             id: "activity-1",
             durationMin: 60,
+            localTimeContext: {
+              timezone: "America/Los_Angeles",
+              startUtcOffsetMinutes: -480,
+              endUtcOffsetMinutes: -420,
+              source: "provider_timezone",
+            },
             tss: 100.8,
             location: null,
             stats: [{ label: "Training Stress Score", value: "100.8" }],
@@ -149,6 +183,49 @@ describe("ActivitiesCalendarRepository", () => {
         ],
       },
     ]);
+  });
+
+  it("exposes timezone fields only for authoritative timezone provenance", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "offset-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "provider_offset",
+        }),
+        makeActivityRow({
+          id: "device-timezone-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "device_timezone",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+    const contextById = new Map(
+      (result[0]?.activities ?? []).map((entry) => [entry.id, entry.localTimeContext]),
+    );
+
+    expect(contextById.get("offset-context")).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -480,
+      source: "provider_offset",
+    });
+    expect(contextById.get("device-timezone-context")).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -420,
+      source: "device_timezone",
+    });
   });
 
   it("adds a clamped location tile and preserves distance/elevation for outdoor activities", async () => {
@@ -904,6 +981,10 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "unknown",
         },
       ],
       [],
@@ -928,6 +1009,12 @@ describe("ActivitiesCalendarRepository", () => {
             isProviderAbsent: true,
             providerId: "strava",
             providerAbsentAt: "2026-03-05T14:30:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
           }),
         ],
       },
@@ -1024,6 +1111,10 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "unknown",
         },
         {
           id: "hidden-only",
@@ -1232,6 +1323,12 @@ describe("ActivitiesCalendarRepository", () => {
       activityType: "indoor_cycling",
       startedAt: "2026-03-18T07:00:00.000Z",
       endedAt: "2026-03-18T08:00:00.000Z",
+      localTimeContext: {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "unknown",
+      },
       durationMin: 60,
       location: null,
       tss: 100,

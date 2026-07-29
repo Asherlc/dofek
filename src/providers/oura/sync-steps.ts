@@ -14,6 +14,7 @@ import { formatDate } from "./oauth.ts";
 import {
   mapOuraActivityType,
   mapOuraSessionType,
+  ouraProviderOffsetColumns,
   parseOuraDailyMetrics,
   parseOuraSleep,
 } from "./parsing.ts";
@@ -131,6 +132,10 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
                     efficiencyPct: parsed.efficiencyPct,
                     sleepType: parsed.sleepType,
                     isNap: parsed.isNap,
+                    timezone: parsed.localTimeContext.timezone,
+                    startUtcOffsetMinutes: parsed.localTimeContext.startUtcOffsetMinutes,
+                    endUtcOffsetMinutes: parsed.localTimeContext.endUtcOffsetMinutes,
+                    localTimeSource: parsed.localTimeContext.source,
                   })
                   .onConflictDoUpdate({
                     target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -145,6 +150,10 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
                       efficiencyPct: parsed.efficiencyPct,
                       sleepType: parsed.sleepType,
                       isNap: parsed.isNap,
+                      timezone: parsed.localTimeContext.timezone,
+                      startUtcOffsetMinutes: parsed.localTimeContext.startUtcOffsetMinutes,
+                      endUtcOffsetMinutes: parsed.localTimeContext.endUtcOffsetMinutes,
+                      localTimeSource: parsed.localTimeContext.source,
                     },
                   });
                 count++;
@@ -198,6 +207,7 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
                     activityType: mapOuraActivityType(workout.activity),
                     startedAt: new Date(workout.start_datetime),
                     endedAt: new Date(workout.end_datetime),
+                    ...ouraProviderOffsetColumns(workout.start_datetime, workout.end_datetime),
                     name: workout.label,
                     raw: workout,
                   },
@@ -205,6 +215,7 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
                     activityType: mapOuraActivityType(workout.activity),
                     startedAt: new Date(workout.start_datetime),
                     endedAt: new Date(workout.end_datetime),
+                    ...ouraProviderOffsetColumns(workout.start_datetime, workout.end_datetime),
                     name: workout.label,
                     raw: workout,
                   },
@@ -261,6 +272,7 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
                     activityType: sessionActivityType,
                     startedAt: new Date(session.start_datetime),
                     endedAt: new Date(session.end_datetime),
+                    ...ouraProviderOffsetColumns(session.start_datetime, session.end_datetime),
                     name: session.type,
                     raw: session,
                   },
@@ -268,6 +280,7 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
                     activityType: sessionActivityType,
                     startedAt: new Date(session.start_datetime),
                     endedAt: new Date(session.end_datetime),
+                    ...ouraProviderOffsetColumns(session.start_datetime, session.end_datetime),
                     name: session.type,
                     raw: session,
                   },

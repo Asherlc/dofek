@@ -1,3 +1,4 @@
+import { type RecordLocalTimeContext, recordLocalHour } from "@dofek/format/record-local-time";
 import {
   type ReadinessComponents,
   ReadinessScore,
@@ -56,21 +57,6 @@ function addDays(dateString: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function hourInTimezone(timestamp: string, timezone: string): number | null {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour + minute / 60;
-}
-
 function populationStddev(values: number[]): number | null {
   if (values.length === 0) return null;
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -99,6 +85,9 @@ export interface SleepNightlyRow {
   awakePct: number;
   efficiency: number;
   rollingAvgDuration: number | null;
+  startedAt: string;
+  endedAt: string | null;
+  localTimeContext: RecordLocalTimeContext;
 }
 
 export interface SleepAnalyticsResult {
@@ -148,8 +137,14 @@ export const recoveryRouter = router({
         })
       ).flatMap((row) => {
         const endedAt = row.ended_at;
-        const bedtimeHour = hourInTimezone(row.started_at, ctx.timezone);
-        const waketimeHour = endedAt ? hourInTimezone(endedAt, ctx.timezone) : null;
+        const localTimeContext = {
+          timezone: row.timezone,
+          startUtcOffsetMinutes: row.start_utc_offset_minutes,
+          endUtcOffsetMinutes: row.end_utc_offset_minutes,
+          source: row.local_time_source,
+        };
+        const bedtimeHour = recordLocalHour(row.started_at, localTimeContext, "start");
+        const waketimeHour = endedAt ? recordLocalHour(endedAt, localTimeContext, "end") : null;
         if (bedtimeHour == null || waketimeHour == null) return [];
         return [{ date: row.date, bedtimeHour, waketimeHour }];
       });
@@ -357,6 +352,14 @@ export const recoveryRouter = router({
             : 0;
         return {
           date: row.date,
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+          localTimeContext: {
+            timezone: row.timezone,
+            startUtcOffsetMinutes: row.start_utc_offset_minutes,
+            endUtcOffsetMinutes: row.end_utc_offset_minutes,
+            source: row.local_time_source,
+          },
           durationMinutes,
           sleepMinutes,
           deepPct:

@@ -137,6 +137,12 @@ function activity(overrides: Record<string, unknown> = {}) {
     activityType: "indoor_cycling",
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
+    localTimeContext: {
+      timezone: null,
+      startUtcOffsetMinutes: 60,
+      endUtcOffsetMinutes: 60,
+      source: "provider_offset",
+    },
     durationMin: 60,
     location: null,
     tss: 100,

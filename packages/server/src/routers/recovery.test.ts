@@ -54,6 +54,15 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
 type SleepNightTestRow = {
   date: string;
   provider_id: string;
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source:
+    | "provider_timezone"
+    | "provider_offset"
+    | "device_timezone"
+    | "device_offset"
+    | "unknown";
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -69,6 +78,10 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
   return {
     date,
     provider_id: "apple_health",
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "device_offset",
     started_at: `${date}T22:00:00Z`,
     ended_at: `${addDays(date, 1)}T06:00:00Z`,
     duration_minutes: 480,
@@ -195,7 +208,7 @@ describe("recoveryRouter.sleepConsistency", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      timezone: "UTC",
+      timezone: "America/Los_Angeles",
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
@@ -207,6 +220,26 @@ describe("recoveryRouter.sleepConsistency", () => {
     expect(result[0]?.waketimeHour).toBe(6.78);
     expect(result[0]?.rollingBedtimeStddev).toBe(0);
     expect(result[0]?.rollingWaketimeStddev).toBe(0);
+  });
+
+  it("omits schedule rows when the record local time is unknown", async () => {
+    const rows = [
+      sleepNightRow({
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    await expect(caller.sleepConsistency({})).resolves.toEqual([]);
   });
 
   it("sets consistencyScore to null when fewer than 7 nights are available", async () => {
@@ -656,6 +689,12 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.date).toBe("2026-03-01");
     expect(night?.durationMinutes).toBe(480);
     expect(night?.sleepMinutes).toBeCloseTo(436.97, 1);
+    expect(night?.localTimeContext).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: 0,
+      source: "device_offset",
+    });
     // deepPct rounds to 1 decimal: 18.567 -> 18.6
     expect(night?.deepPct).toBe(18.6);
     // remPct rounds to 1 decimal: 22.345 -> 22.3

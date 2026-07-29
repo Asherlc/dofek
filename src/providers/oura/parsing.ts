@@ -1,4 +1,8 @@
 import {
+  type RecordLocalTimeContext,
+  resolveTimestampOffsetLocalTimeContext,
+} from "@dofek/format/record-local-time";
+import {
   type CanonicalActivityType,
   createActivityTypeMapper,
   OURA_ACTIVITY_TYPE_MAP,
@@ -25,6 +29,7 @@ export interface ParsedOuraSleep {
   efficiencyPct: number;
   sleepType: OuraSleepDocument["type"];
   isNap: boolean;
+  localTimeContext: RecordLocalTimeContext;
 }
 
 export interface ParsedOuraDailyMetrics {
@@ -41,16 +46,37 @@ export interface ParsedOuraDailyMetrics {
   resilienceLevel?: string;
 }
 
+export function parseOuraRecordLocalTimeContext(startTimestamp: string, endTimestamp: string) {
+  return resolveTimestampOffsetLocalTimeContext({
+    startedAtTimestamp: startTimestamp,
+    endedAtTimestamp: endTimestamp,
+    source: "provider_offset",
+  });
+}
+
+export function ouraProviderOffsetColumns(startTimestamp: string, endTimestamp: string) {
+  const context = parseOuraRecordLocalTimeContext(startTimestamp, endTimestamp);
+  return {
+    timezone: context.timezone,
+    startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+    endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+    localTimeSource: context.source,
+  };
+}
+
 function secondsToMinutes(seconds: number | null): number | undefined {
   if (seconds === null) return undefined;
   return Math.round(seconds / 60);
 }
 
 export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
+  const startedAt = new Date(sleep.bedtime_start);
+  const endedAt = new Date(sleep.bedtime_end);
+  const localTimeContext = parseOuraRecordLocalTimeContext(sleep.bedtime_start, sleep.bedtime_end);
   return {
     externalId: sleep.id,
-    startedAt: new Date(sleep.bedtime_start),
-    endedAt: new Date(sleep.bedtime_end),
+    startedAt,
+    endedAt,
     durationMinutes: secondsToMinutes(sleep.total_sleep_duration),
     deepMinutes: secondsToMinutes(sleep.deep_sleep_duration),
     remMinutes: secondsToMinutes(sleep.rem_sleep_duration),
@@ -59,6 +85,7 @@ export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
     efficiencyPct: sleep.efficiency,
     sleepType: sleep.type,
     isNap: sleep.type !== "long_sleep" && sleep.type !== "sleep",
+    localTimeContext,
   };
 }
 

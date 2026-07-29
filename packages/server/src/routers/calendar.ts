@@ -1,3 +1,4 @@
+import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
@@ -54,6 +55,7 @@ const calendarActivityEntrySchema = z.object({
   activityType: z.string(),
   startedAt: timestampStringSchema,
   endedAt: timestampStringSchema.nullable(),
+  localTimeContext: recordLocalTimeContextSchema,
   durationMin: z.number(),
   location: activityLocationSchema.nullable(),
   tss: z.number().nullable(),

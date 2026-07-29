@@ -1,3 +1,7 @@
+import {
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import type { WhoopWorkoutRecord } from "@dofek/whoop/types";
 import { parseDuringRange } from "@dofek/whoop/utils";
 import { and, eq, sql } from "drizzle-orm";
@@ -25,6 +29,31 @@ export type WhoopWorkoutSyncResult = {
 
 /** Tombstone reconciliation covers at least this many days even on short sync windows. */
 const WHOOP_ACTIVITY_ABSENCE_RECONCILE_DAYS = 30;
+
+function whoopLocalTimeContext(workout: WhoopWorkoutRecord, startedAt: Date, endedAt: Date) {
+  const offsetMinutes = offsetMinutesFromTimestamp(workout.timezone_offset);
+  if (offsetMinutes == null) {
+    return {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown" as const,
+    };
+  }
+  const context = resolveRecordLocalTimeContext({
+    startedAt,
+    endedAt,
+    startUtcOffsetMinutes: offsetMinutes,
+    endUtcOffsetMinutes: offsetMinutes,
+    source: "provider_offset",
+  });
+  return {
+    timezone: context.timezone,
+    startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+    endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+    localTimeSource: context.source,
+  };
+}
 
 function collectWhoopWorkouts(context: WhoopSyncContext): {
   workouts: WhoopWorkoutRecord[];
@@ -121,6 +150,7 @@ export async function persistWhoopWorkoutsFromCycles(
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
           endedAt: parsed.endedAt,
+          ...whoopLocalTimeContext(workoutRecord, parsed.startedAt, parsed.endedAt),
           raw: {
             strain: workoutRecord.score,
             avgHeartRate: parsed.avgHeartRate,
@@ -132,6 +162,7 @@ export async function persistWhoopWorkoutsFromCycles(
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
           endedAt: parsed.endedAt,
+          ...whoopLocalTimeContext(workoutRecord, parsed.startedAt, parsed.endedAt),
           raw: {
             strain: workoutRecord.score,
             avgHeartRate: parsed.avgHeartRate,
@@ -194,6 +225,7 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
                 activityType: parsed.activityType,
                 startedAt: parsed.startedAt,
                 endedAt: parsed.endedAt,
+                ...whoopLocalTimeContext(workoutRecord, parsed.startedAt, parsed.endedAt),
                 raw: {
                   strain: workoutRecord.score,
                   avgHeartRate: parsed.avgHeartRate,
@@ -205,6 +237,7 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
                 activityType: parsed.activityType,
                 startedAt: parsed.startedAt,
                 endedAt: parsed.endedAt,
+                ...whoopLocalTimeContext(workoutRecord, parsed.startedAt, parsed.endedAt),
                 raw: {
                   strain: workoutRecord.score,
                   avgHeartRate: parsed.avgHeartRate,
@@ -283,6 +316,7 @@ export async function syncWhoopStrength(
                 activityType: "strength",
                 startedAt,
                 endedAt,
+                ...whoopLocalTimeContext(workoutRecord, startedAt, endedAt),
                 name: weightliftingData.name ?? null,
                 raw: {
                   rawMskStrainScore: parsed.rawMskStrainScore,
@@ -297,6 +331,7 @@ export async function syncWhoopStrength(
                 name: weightliftingData.name ?? null,
                 startedAt,
                 endedAt,
+                ...whoopLocalTimeContext(workoutRecord, startedAt, endedAt),
                 raw: sql`COALESCE(fitness.activity.raw, '{}'::jsonb) || ${JSON.stringify({
                   rawMskStrainScore: parsed.rawMskStrainScore,
                   scaledMskStrainScore: parsed.scaledMskStrainScore,
@@ -444,6 +479,7 @@ export async function syncWhoopStrengthForActivity(
       activityType: "strength",
       startedAt,
       endedAt,
+      ...whoopLocalTimeContext(workoutRecord, startedAt, endedAt),
       name: weightliftingData.name ?? null,
       raw: {
         rawMskStrainScore: parsed.rawMskStrainScore,
@@ -458,6 +494,7 @@ export async function syncWhoopStrengthForActivity(
       name: weightliftingData.name ?? null,
       startedAt,
       endedAt,
+      ...whoopLocalTimeContext(workoutRecord, startedAt, endedAt),
       raw: sql`COALESCE(fitness.activity.raw, '{}'::jsonb) || ${JSON.stringify({
         rawMskStrainScore: parsed.rawMskStrainScore,
         scaledMskStrainScore: parsed.scaledMskStrainScore,

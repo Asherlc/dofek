@@ -65,6 +65,7 @@ export interface ParsedMapMyFitnessWorkout {
   name: string;
   startedAt: Date;
   endedAt: Date;
+  timezone: string;
   raw: Record<string, unknown>;
 }
 
@@ -97,7 +98,9 @@ export function parseMapMyFitnessWorkout(workout: MapMyFitnessWorkout): ParsedMa
     name: workout.name,
     startedAt,
     endedAt,
+    timezone: workout.start_locale_timezone,
     raw: {
+      startLocaleTimezone: workout.start_locale_timezone,
       distanceMeters: workout.aggregates.distance_total,
       durationSeconds,
       avgSpeed: workout.aggregates.speed_avg,
@@ -304,6 +307,7 @@ export class MapMyFitnessProvider implements SyncProvider {
                       name: parsed.name,
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
+                      timezone: parsed.timezone,
                       raw: parsed.raw,
                     },
                     {
@@ -311,6 +315,7 @@ export class MapMyFitnessProvider implements SyncProvider {
                       name: parsed.name,
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
+                      timezone: parsed.timezone,
                       raw: parsed.raw,
                     },
                   );

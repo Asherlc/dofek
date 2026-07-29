@@ -1,3 +1,4 @@
+import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { RangeDays } from "../lib/date-window.ts";
@@ -17,6 +18,10 @@ const clickHouseSleepNightSchema = z
       .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
       .optional()
       .default([]),
+    timezone: z.string().nullable().optional().default(null),
+    start_utc_offset_minutes: nullableNumberSchema,
+    end_utc_offset_minutes: nullableNumberSchema,
+    local_time_source: localTimeSourceSchema.optional().default("unknown"),
     started_at: z.string().optional(),
     ended_at: z.string().nullable().optional(),
     duration_minutes: nullableNumberSchema,
@@ -54,6 +59,10 @@ const dailySleepPerformanceRowSchema = z.object({
   provider_id: z.string().nullable(),
   source_name: z.string().nullable(),
   source_providers: z.array(z.string()),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: nullableNumberSchema,
+  end_utc_offset_minutes: nullableNumberSchema,
+  local_time_source: localTimeSourceSchema,
   started_at: z.string(),
   ended_at: z.string().nullable(),
   duration_minutes: nullableNumberSchema,
@@ -105,6 +114,10 @@ export async function fetchSleepNights(
       sleep.provider_id AS provider_id,
       sleep.source_name AS source_name,
       sleep.source_providers AS source_providers,
+      sleep.timezone AS timezone,
+      sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+      sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+      sleep.local_time_source AS local_time_source,
       formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
       sleep.duration_minutes AS duration_minutes,
@@ -142,6 +155,10 @@ export async function fetchDailySleepPerformanceNights(
       sleep.provider_id AS provider_id,
       sleep.source_name AS source_name,
       sleep.source_providers AS source_providers,
+      sleep.timezone AS timezone,
+      sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+      sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+      sleep.local_time_source AS local_time_source,
       formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
       sleep.duration_minutes AS duration_minutes,
@@ -184,6 +201,10 @@ export async function fetchLatestSleepNight(input: {
       sleep.provider_id AS provider_id,
       sleep.source_name AS source_name,
       sleep.source_providers AS source_providers,
+      sleep.timezone AS timezone,
+      sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+      sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+      sleep.local_time_source AS local_time_source,
       formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
       sleep.duration_minutes AS duration_minutes,

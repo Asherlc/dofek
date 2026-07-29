@@ -141,6 +141,9 @@ entity "activity" {
   perceived_exertion : real
   source_name : text
   timezone : text
+  start_utc_offset_minutes : smallint
+  end_utc_offset_minutes : smallint
+  local_time_source : text
   strava_id : text
   raw : jsonb
   provider_absent_at : timestamp
@@ -278,6 +281,10 @@ entity "sleep_session" {
   sleep_need_from_strain_minutes : integer
   sleep_need_from_nap_minutes : integer
   source_name : text
+  timezone : text
+  start_utc_offset_minutes : smallint
+  end_utc_offset_minutes : smallint
+  local_time_source : text
   created_at : timestamp
 }
 

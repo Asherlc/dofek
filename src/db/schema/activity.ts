@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -214,6 +215,9 @@ export const activity = fitness.table(
     perceivedExertion: real("perceived_exertion"),
     sourceName: text("source_name"),
     timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
+    localTimeSource: text("local_time_source").notNull().default("unknown"),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
@@ -227,6 +231,24 @@ export const activity = fitness.table(
       table.externalId,
     ),
     index("activity_user_provider_idx").on(table.userId, table.providerId),
+    check(
+      "activity_local_time_context_check",
+      sql`(
+        ${table.localTimeSource} = 'unknown'
+        AND ${table.startUtcOffsetMinutes} IS NULL
+        AND ${table.endUtcOffsetMinutes} IS NULL
+      ) OR (
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      ) OR (
+        ${table.localTimeSource} IN ('provider_offset', 'device_offset')
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      )`,
+    ),
   ],
 );
 
@@ -395,6 +417,10 @@ export const sleepSession = fitness.table(
     sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
     sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
+    timezone: text("timezone"),
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
+    localTimeSource: text("local_time_source").notNull().default("unknown"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -404,6 +430,25 @@ export const sleepSession = fitness.table(
       table.externalId,
     ),
     index("sleep_session_user_provider_idx").on(table.userId, table.providerId),
+    check(
+      "sleep_session_local_time_context_check",
+      sql`(
+        ${table.localTimeSource} = 'unknown'
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} IS NULL
+        AND ${table.endUtcOffsetMinutes} IS NULL
+      ) OR (
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      ) OR (
+        ${table.localTimeSource} IN ('provider_offset', 'device_offset')
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      )`,
+    ),
   ],
 );
 
