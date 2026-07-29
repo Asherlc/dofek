@@ -526,6 +526,22 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("4.00")).toBeTruthy();
   });
 
+  it("constrains training load metrics to equal columns with centered wrapping labels", async () => {
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    for (const label of [
+      "Recent 7-day load",
+      "28-day baseline load",
+      "Recent-to-baseline workload ratio",
+    ]) {
+      const labelElement = screen.getByText(label);
+
+      expect(labelElement.parentElement?.style.flex).toBe("1 1 0%");
+      expect(labelElement.style.textAlign).toBe("center");
+    }
+  });
+
   it("does not use a prior displayed strain as today's strain fallback", async () => {
     mockTrainingState.data = {
       strainTarget: undefined,
