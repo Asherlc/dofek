@@ -20469,6 +20469,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If the same endpoint returns another 504,
   leave the PR blocked with the exact external evidence rather than adding a
   retry or weakening the required-secret failure.
+
 ## 2026-07-29 — iOS Native Secret Fetch Returned Gateway Timeout
 
 - **Status:** External Infisical gateway failure identified on PR #2313;
@@ -20534,6 +20535,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Cross-PR integration tests should assert the
   public source-label contract rather than assuming provider IDs are display
   labels.
+
 ## 2026-07-29 — Infisical 504 blocked the mobile Metro CI job
 
 - **Status:** External transient identified on PR #2314; the failed head was

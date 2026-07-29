@@ -33,7 +33,7 @@ const dailyOverlaySchema = z.object({
   resolution_status: nutritionSourceResolutionSchema.shape.status,
   source_providers: z.array(z.string()),
   contribution_grain: nutritionSourceResolutionSchema.shape.contributionGrain,
-  contribution_source_label: z.string().nullable(),
+  contribution_source_label: nutritionSourceResolutionSchema.shape.contributionLabel,
 });
 
 const nutrientOverlaySchema = z.object({
