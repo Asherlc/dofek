@@ -29,4 +29,64 @@ describe("formatBaselineContext", () => {
       "30d baseline 60 ms ± 6 ms · 2.0 SD above baseline · 7d vs prior 28d +5 ms · 24/30 baseline days",
     );
   });
+
+  it("omits unavailable baseline context", () => {
+    expect(
+      formatBaselineContext({
+        baseline: {
+          mean: null,
+          sampleCount: 0,
+          standardDeviation: null,
+          windowDays: 30,
+          zScore: null,
+        },
+        comparison: {
+          baselineDays: 28,
+          delta: null,
+          recentDays: 7,
+        },
+      }),
+    ).toBe("0/30 baseline days");
+  });
+
+  it("formats negative deviations and deltas without a positive sign", () => {
+    expect(
+      formatBaselineContext(
+        {
+          baseline: {
+            ...metric.baseline,
+            standardDeviation: null,
+            zScore: -1,
+          },
+          comparison: {
+            ...metric.comparison,
+            delta: -5,
+          },
+        },
+        { unit: "ms" },
+      ),
+    ).toBe(
+      "30d baseline 60.0 ms · 1.0 SD below baseline · 7d vs prior 28d -5.0 ms · 24/30 baseline days",
+    );
+  });
+
+  it("formats zero deviation as at baseline and zero delta without a positive sign", () => {
+    expect(
+      formatBaselineContext(
+        {
+          baseline: {
+            ...metric.baseline,
+            zScore: 0,
+          },
+          comparison: {
+            ...metric.comparison,
+            delta: 0,
+          },
+        },
+        { unit: "ms" },
+      ),
+    ).toBe(
+      "30d baseline 60.0 ms ± 6.0 ms · 0.0 SD at baseline · 7d vs prior 28d 0.0 ms · 24/30 baseline days",
+    );
+  });
 });
