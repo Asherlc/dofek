@@ -121,11 +121,15 @@ describe("startup telemetry", () => {
       "app.start.outcome": "authenticated",
     });
     expect(authSpans[0]?.end).toHaveBeenCalledTimes(1);
-    expect(mocks.mockLoggerInfo).toHaveBeenCalledWith("app-startup", "Startup phase completed", {
-      durationMs: 75,
-      outcome: "authenticated",
-      phase: "authentication",
-    });
+    expect(mocks.mockLoggerInfo).toHaveBeenCalledWith(
+      "app-startup",
+      "Startup phase completed: phase=authentication durationMs=75 outcome=authenticated",
+      {
+        durationMs: 75,
+        outcome: "authenticated",
+        phase: "authentication",
+      },
+    );
   });
 
   it("marks the app interactive but waits for deferred services before closing the lifecycle", async () => {

@@ -102,11 +102,17 @@ function finishLifecycleIfReady(): void {
   startupSpan.end(new Date(finishedAtMs));
   lifecycleFinished = true;
 
-  logger.info("app-startup", "Startup lifecycle completed", {
-    interactiveDurationMs: interactiveAtMs - startupStartedAtMs,
-    lifecycleDurationMs: finishedAtMs - startupStartedAtMs,
-    outcome: lifecycleOutcome,
-  });
+  const interactiveDurationMs = interactiveAtMs - startupStartedAtMs;
+  const lifecycleDurationMs = finishedAtMs - startupStartedAtMs;
+  logger.info(
+    "app-startup",
+    `Startup lifecycle completed: interactiveDurationMs=${interactiveDurationMs} lifecycleDurationMs=${lifecycleDurationMs} outcome=${lifecycleOutcome}`,
+    {
+      interactiveDurationMs,
+      lifecycleDurationMs,
+      outcome: lifecycleOutcome,
+    },
+  );
 }
 
 export function startStartupTelemetry(): StartupSpan {
@@ -146,11 +152,15 @@ export function startStartupTelemetry(): StartupSpan {
     "app.start.outcome": "ready",
   });
   otaSpan.end(new Date(javascriptStartedAtMs));
-  logger.info("app-startup", "Startup phase completed", {
-    durationMs: launchDurationMs,
-    outcome: "ready",
-    phase: "ota",
-  });
+  logger.info(
+    "app-startup",
+    `Startup phase completed: phase=ota durationMs=${launchDurationMs} outcome=ready`,
+    {
+      durationMs: launchDurationMs,
+      outcome: "ready",
+      phase: "ota",
+    },
+  );
 
   startPhaseAt("javascript", javascriptStartedAtMs);
   return startupSpan;
@@ -179,11 +189,15 @@ export function finishStartupPhase(phase: StartupPhase, outcome: StartupOutcome)
   record.span.end(new Date(finishedAtMs));
   record.finished = true;
 
-  logger.info("app-startup", "Startup phase completed", {
-    durationMs,
-    outcome,
-    phase,
-  });
+  logger.info(
+    "app-startup",
+    `Startup phase completed: phase=${phase} durationMs=${durationMs} outcome=${outcome}`,
+    {
+      durationMs,
+      outcome,
+      phase,
+    },
+  );
   finishLifecycleIfReady();
 }
 
