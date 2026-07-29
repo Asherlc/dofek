@@ -50,7 +50,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 const createCaller = createTestCallerFactory(stressRouter);
 
 function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
+  const row = {
     date: "2026-03-20",
     hrv: null,
     resting_hr: null,
@@ -60,6 +60,26 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     rhr_sd_60d: null,
     efficiency_pct: null,
     ...overrides,
+  };
+  const zScore = (value: unknown, mean: unknown, standardDeviation: unknown): number | null => {
+    if (value == null || mean == null || standardDeviation == null) return null;
+    const numericValue = Number(value);
+    const numericMean = Number(mean);
+    const numericStandardDeviation = Number(standardDeviation);
+    if (
+      !Number.isFinite(numericValue) ||
+      !Number.isFinite(numericMean) ||
+      !Number.isFinite(numericStandardDeviation) ||
+      numericStandardDeviation === 0
+    ) {
+      return null;
+    }
+    return (numericValue - numericMean) / numericStandardDeviation;
+  };
+  return {
+    ...row,
+    hrv_z_score: zScore(row.hrv, row.hrv_mean_60d, row.hrv_sd_60d),
+    resting_hr_z_score: zScore(row.resting_hr, row.rhr_mean_60d, row.rhr_sd_60d),
   };
 }
 
@@ -103,6 +123,8 @@ describe("Router transformation logic", () => {
       ([, sqlText]) => typeof sqlText === "string" && sqlText.includes("analytics.daily_recovery"),
     )?.[1];
     expect(queryText).toEqual(expect.any(String));
+    expect(queryText).toContain("hrv_z_score");
+    expect(queryText).toContain("resting_hr_z_score");
     expect(queryText).toContain("recovery_inputs.is_deleted = 0");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");

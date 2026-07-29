@@ -181,6 +181,26 @@ describe("stressRouter", () => {
   const createCaller = createTestCallerFactory(stressRouter);
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
+    const zScore = (
+      row: Record<string, unknown>,
+      valueKey: string,
+      meanKey: string,
+      standardDeviationKey: string,
+    ): number | null => {
+      const value = row[valueKey];
+      const mean = row[meanKey];
+      const standardDeviation = row[standardDeviationKey];
+      if (value == null || mean == null || standardDeviation == null) return null;
+      const numericStandardDeviation = Number(standardDeviation);
+      return numericStandardDeviation === 0
+        ? null
+        : (Number(value) - Number(mean)) / numericStandardDeviation;
+    };
+    const recoveryRows = rows.map((row) => ({
+      ...row,
+      hrv_z_score: zScore(row, "hrv", "hrv_mean_60d", "hrv_sd_60d"),
+      resting_hr_z_score: zScore(row, "resting_hr", "rhr_mean_60d", "rhr_sd_60d"),
+    }));
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
@@ -188,7 +208,7 @@ describe("stressRouter", () => {
       sensorStore: {
         ...makeMockSensorStore([]),
         query: vi.fn(async (_schema: unknown, query: string) => {
-          if (query.includes("analytics.daily_recovery")) return rows;
+          if (query.includes("analytics.daily_recovery")) return recoveryRows;
           return [];
         }),
       },
