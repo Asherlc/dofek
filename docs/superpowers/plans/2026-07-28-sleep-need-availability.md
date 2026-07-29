@@ -1,6 +1,6 @@
 # Sleep Need Availability TDD Plan
 
-> **For agentic workers:** Write each failing test before its production change.
+> **Test-first workflow:** Write each failing test before its production change.
 
 **Goal:** Stop presenting sleep-need totals and components when the previous night's sleep is missing, without breaking installed clients.
 

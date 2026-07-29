@@ -33,7 +33,7 @@ type SensorStore = import("../repositories/activity-repository.ts").ActivitySens
 
 type SleepTestRow = {
   date: string;
-  duration_minutes: number;
+  duration_minutes: number | null;
   hrv?: number | null;
   deep_minutes?: number | null;
   rem_minutes?: number | null;
@@ -159,6 +159,61 @@ const fullAccessWindow = {
   paid: true as const,
   reason: "paid_grant" as const,
 };
+
+describe("mobileDashboard.dashboardV2", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.dashboardV2({ endDate: "2026-03-28" })).rejects.toThrow(
+      "mobileDashboard.dashboardV2 requires the ClickHouse activity analytics store",
+    );
+  });
+
+  it("returns only the unavailable sleep-need variant when the prior night is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-03-28" });
+
+    expect(result.sleepNeed).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
+    expect(result.sleepNeed).not.toHaveProperty("recentNights");
+  });
+
+  it("returns the available projection with server-computed debt recovery", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore([], 0, [
+        {
+          date: "2026-03-27",
+          duration_minutes: 420,
+        },
+      ]),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-03-28" });
+
+    expect(result.sleepNeed).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 60,
+      debtRecoveryMinutes: 15,
+      totalNeedMinutes: 495,
+    });
+  });
+});
 
 describe("mobileDashboard.dashboard", () => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {

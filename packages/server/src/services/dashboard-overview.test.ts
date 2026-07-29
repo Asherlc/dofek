@@ -125,6 +125,8 @@ describe("loadDashboardOverview", () => {
       availability: "missing_previous_night",
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
+    expect(result.sleep.lastNight).toBeNull();
+    expect(result.sleep.sleepDebt).toBe(0);
   });
 
   it("provides server-computed debt recovery in the available V2 state", async () => {

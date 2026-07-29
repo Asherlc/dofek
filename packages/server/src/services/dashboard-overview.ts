@@ -233,16 +233,22 @@ export async function loadDashboardOverview({
   const sleepRows = [...dashboardSleepRows]
     .filter((sleepNight) => isWithinLookbackDays(sleepNight.date, endDate, 14))
     .reverse()
-    .map((row) => {
-      const durationMinutes = row.duration_minutes ?? 0;
-      return {
-        date: row.date,
-        duration_minutes: durationMinutes,
-        deep_pct: durationMinutes > 0 ? ((row.deep_minutes ?? 0) / durationMinutes) * 100 : 0,
-        rem_pct: durationMinutes > 0 ? ((row.rem_minutes ?? 0) / durationMinutes) * 100 : 0,
-        light_pct: durationMinutes > 0 ? ((row.light_minutes ?? 0) / durationMinutes) * 100 : 0,
-        awake_pct: durationMinutes > 0 ? ((row.awake_minutes ?? 0) / durationMinutes) * 100 : 0,
-      };
+    .flatMap((row) => {
+      if (row.duration_minutes == null) return [];
+      return [
+        {
+          date: row.date,
+          duration_minutes: row.duration_minutes,
+          deep_pct:
+            row.duration_minutes > 0 ? ((row.deep_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+          rem_pct:
+            row.duration_minutes > 0 ? ((row.rem_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+          light_pct:
+            row.duration_minutes > 0 ? ((row.light_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+          awake_pct:
+            row.duration_minutes > 0 ? ((row.awake_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+        },
+      ];
     });
 
   const lastNightRow = sleepRows.find((row) => isRecent(row.date, endDate));
