@@ -49,6 +49,12 @@ const activityStatSchema = z.object({
   value: z.string(),
 });
 
+const activityListSourceSchema = z.object({
+  primarySourceLabel: z.string(),
+  sourceCount: z.number().int().positive(),
+  overlapSummary: z.string().nullable(),
+});
+
 const calendarActivityEntrySchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
@@ -57,6 +63,8 @@ const calendarActivityEntrySchema = z.object({
   endedAt: timestampStringSchema.nullable(),
   localTimeContext: recordLocalTimeContextSchema,
   durationMin: z.number(),
+  source: activityListSourceSchema,
+  lastProcessedAt: timestampStringSchema.nullable(),
   location: activityLocationSchema.nullable(),
   tss: z.number().nullable(),
   stats: z.array(activityStatSchema),

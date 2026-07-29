@@ -90,6 +90,12 @@ describe("calendarRouter", () => {
               source: "unknown",
             },
             durationMin: 60,
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 2,
+              overlapSummary: "2 matched source records · Wahoo selected by source priority",
+            },
+            lastProcessedAt: "2026-03-18 08:07:00+00",
             location: null,
             tss: null,
             stats: [{ label: "Training Stress Score", value: "—" }],
@@ -111,6 +117,12 @@ describe("calendarRouter", () => {
           expect.objectContaining({
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 2,
+              overlapSummary: "2 matched source records · Wahoo selected by source priority",
+            },
+            lastProcessedAt: "2026-03-18T08:07:00.000Z",
           }),
         ],
       },
@@ -135,6 +147,12 @@ describe("calendarRouter", () => {
               source: "unknown",
             },
             durationMin: 60,
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 1,
+              overlapSummary: null,
+            },
+            lastProcessedAt: "2026-03-18T08:07:00.000Z",
             location: {
               centroidLat: 37.7749,
               centroidLng: -122.4194,

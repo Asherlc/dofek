@@ -7,6 +7,55 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-29: Shared Docker VM AIO exhaustion blocked local integration validation
+
+### Symptoms
+
+The issue-2183 focused router integration test first lost its ClickHouse socket
+during fixture setup. After recreating only that workspace's Compose state,
+Postgres, ClickHouse, and Redis became healthy, but Redpanda restarted with exit
+code 133. The same Redpanda startup failure recurred when issue-2123 started its
+isolated integration dependencies.
+
+### User Impact
+
+There was no production or end-user impact. Local real-database validation for
+issues 2183 and 2123 was blocked in the shared Docker Desktop environment;
+clean exact-head CI remains the integration gate.
+
+### Evidence
+
+Both recurrences reached the same first fatal line:
+`Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536.`
+During the issue-2183 investigation, the Docker VM reported `aio-nr=65536` and
+`aio-max-nr=65536`. Stopping the issue-2183 ClickHouse container left both
+values unchanged, proving that workspace was not holding the saturated
+capacity. The Linux kernel documents `aio-nr` as the current system-wide
+asynchronous I/O request count and `aio-max-nr` as its maximum:
+<https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr>.
+
+### Root Cause
+
+Other workloads in the shared Docker VM consumed the system-wide asynchronous
+I/O request capacity, so the affected Redpanda processes could not allocate
+even one event.
+
+### Fix or Mitigation
+
+The repository Compose wrapper removed only each affected workspace's
+disposable containers, network, and volumes. Issue 2123 briefly tried starting
+only Postgres and ClickHouse, but stopped that prerequisite-only tactic before
+running tests because omitting Redpanda from the repository integration setup
+was not approved. No global sysctl, other workspace, resource limit, timeout,
+retry, or application behavior was changed.
+
+### Remaining Risk
+
+Concurrent workspace stacks can exhaust Docker Desktop's shared AIO capacity
+again. Add an AIO-capacity diagnostic to the integration-test runbook and
+decide explicitly whether a focused suite may run with only its actual service
+prerequisites when an unrelated shared dependency cannot start.
+
 ## 2026-07-29: iOS cold-start delay could not be reproduced with phase telemetry
 
 ### Symptoms
@@ -20485,3 +20534,61 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Cross-PR integration tests should assert the
   public source-label contract rather than assuming provider IDs are display
   labels.
+## 2026-07-29 — Infisical 504 blocked the mobile Metro CI job
+
+- **Status:** External transient identified on PR #2314; the failed head was
+  superseded by required mutation-test fixes before a scoped rerun.
+- **Symptoms:** The `Build Mobile / Metro Bundle` job failed before dependency
+  verification or Metro execution.
+- **User impact:** No production or bundle impact. PR #2314 remained blocked
+  because the mobile bundle gate did not run.
+- **Evidence:** The exact failed step was
+  `.github/actions/load-infisical-secrets`. Its first fatal line was
+  `Failed to fetch Infisical secret: EXPO_PUBLIC_OTEL_ENDPOINT`, followed by
+  `Response Code: 504 Gateway Timeout` from the Infisical API in
+  [Actions job 90721897333](https://github.com/Asherlc/dofek/actions/runs/30494968123/job/90721897333).
+- **Root cause:** Infisical's API timed out while reading an existing required
+  production secret. The build never reached Expo dependency validation or
+  Metro, so there was no evidence of application code, dependency drift, or
+  secret configuration failure.
+- **Fix / mitigation:** Do not change workflows, retries, timeouts, or secret
+  handling. Because the branch required a new commit for an independent
+  mutation-test failure, validate the secret fetch in that commit's normal
+  exact-head Metro job instead of rerunning an obsolete head.
+- **Validation:** The original parent workflow reached a terminal state with
+  the Infisical 504 as the Metro job's only failure; exact-head validation on
+  the corrective commit remains required before merge.
+- **Remaining risk / follow-up:** A repeated 504 would remain an external
+  Infisical availability blocker and should be reported with the second job's
+  evidence rather than worked around in CI.
+
+## 2026-07-29 — Workspace ClickHouse restart blocked local SQLFluff
+
+- **Status:** Unresolved in the disposable issue-2153 Compose environment;
+  exact-head CI is the authoritative SQLFluff gate.
+- **Symptoms:** The complete `pnpm lint` command passed the repository policy
+  and Biome checks, then stopped while SQLFluff's dbt templater compiled
+  `activity_aerobic_efficiency.sql`.
+- **User impact:** No production impact. Local full-lint validation could not
+  complete, but the changed TypeScript and documentation files remained
+  independently verifiable.
+- **Evidence:** The exact failing command was `pnpm lint`. The first fatal line
+  was `dbt tried to connect to the database and failed`, caused by
+  `RemoteDisconnected('Remote end closed connection without response')` from
+  the worktree ClickHouse endpoint at `127.0.0.1:51115`. Immediately afterward,
+  `pnpm compose -- ps` showed `issue-2153-clickhouse-1` only five seconds into
+  another start, and Docker reported repeated health-check timeouts. The
+  container was not OOM-killed.
+- **Root cause:** The disposable worktree ClickHouse service was in an
+  established local restart loop, so SQLFluff lost its dbt compilation
+  connection. No changed SQL or analytics model was involved.
+- **Fix / mitigation:** Do not retry the unstable local database, weaken
+  SQLFluff, or change workflow resilience. Run the Docker-free focused tests,
+  Biome, and TypeScript checks locally, then require the normal exact-head
+  hosted SQLFluff job.
+- **Validation:** Repository policy checks and Biome passed before SQLFluff;
+  the focused correlation unit suite and server typecheck also passed. Hosted
+  exact-head validation remains required before merge.
+- **Remaining risk / follow-up:** Tear down only the issue-2153 Compose project
+  after merge. Treat any hosted SQLFluff failure as a new code signal rather
+  than attributing it to this local restart.

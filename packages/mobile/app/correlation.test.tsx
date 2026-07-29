@@ -7,10 +7,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted<{
   correlationData: Record<string, unknown> | undefined;
   correlationError: Error | null;
+  observationData: Record<string, unknown>;
+  observationPages: Record<string, Record<string, unknown>>;
+  observationInputs: Array<Record<string, unknown>>;
+  observationError: Error | null;
+  routerPush: ReturnType<typeof vi.fn>;
   metricsData: Array<{ id: string; label: string; unit: string; domain: string }> | undefined;
 }>(() => ({
   correlationData: {},
   correlationError: null,
+  observationData: {},
+  observationPages: {},
+  observationInputs: [],
+  observationError: null,
+  routerPush: vi.fn(),
   metricsData: undefined,
 }));
 
@@ -75,12 +85,24 @@ vi.mock("../lib/trpc", () => ({
           isLoading: false,
         }),
       },
+      observations: {
+        useQuery: (input: Record<string, unknown>) => {
+          state.observationInputs.push(input);
+          const cursor = typeof input.cursor === "string" ? input.cursor : "first";
+          return {
+            data: state.observationPages[cursor] ?? state.observationData,
+            isLoading: false,
+            isError: state.observationError !== null,
+            error: state.observationError,
+          };
+        },
+      },
     },
   },
 }));
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: state.routerPush }),
 }));
 
 vi.mock("../lib/useRefresh", () => ({
@@ -127,6 +149,11 @@ describe("CorrelationScreen", () => {
       interpretationWarning:
         "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
     };
+    state.observationData = { items: [], totalCount: 0, nextCursor: null };
+    state.observationPages = {};
+    state.observationInputs = [];
+    state.observationError = null;
+    state.routerPush.mockReset();
   });
 
   it("prevents selecting the metric already used on the opposite axis", async () => {
@@ -357,5 +384,124 @@ describe("CorrelationScreen", () => {
     expect(
       screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
     ).toBeTruthy();
+  });
+
+  it("renders lagged paired values with accessible aggregate and record navigation", async () => {
+    state.observationData = {
+      totalCount: 1,
+      nextCursor: null,
+      items: [
+        {
+          x: {
+            metricId: "protein",
+            date: "2025-04-01",
+            value: 120,
+            contributors: [
+              {
+                kind: "aggregate_inputs",
+                label: "Canonical daily nutrition inputs",
+                providerIds: ["apple_health"],
+                target: { type: "metric_family", family: "nutrition" },
+              },
+            ],
+          },
+          y: {
+            metricId: "hrv",
+            date: "2025-04-02",
+            value: 55,
+            contributors: [
+              {
+                kind: "record",
+                label: "Morning run",
+                providerIds: [],
+                target: {
+                  type: "activity",
+                  activityId: "00000000-0000-4000-8000-000000000106",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Paired Observations")).toBeTruthy();
+    expect(screen.getByText("2025-04-01 → 2025-04-02")).toBeTruthy();
+    expect(screen.getByText("Protein: 120 g")).toBeTruthy();
+    expect(screen.getByText("Heart Rate Variability: 55 ms")).toBeTruthy();
+    expect(screen.getByText("Aggregate inputs · Apple Health")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Canonical daily nutrition inputs" }));
+    expect(state.routerPush).toHaveBeenCalledWith("/food");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Morning run" }));
+    expect(state.routerPush).toHaveBeenCalledWith("/activity/00000000-0000-4000-8000-000000000106");
+  });
+
+  it("traverses cursor pages with accessible next and previous controls", async () => {
+    state.observationPages = {
+      first: {
+        totalCount: 2,
+        nextCursor: "2025-04-02",
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-03",
+              value: 123,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-03",
+              value: 58,
+              contributors: [],
+            },
+          },
+        ],
+      },
+      "2025-04-02": {
+        totalCount: 2,
+        nextCursor: null,
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-01",
+              value: 120,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-01",
+              value: 55,
+              contributors: [],
+            },
+          },
+        ],
+      },
+    };
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next observation page" }));
+    expect(screen.getByText("2025-04-01")).toBeTruthy();
+    expect(state.observationInputs.some((input) => input.cursor === "2025-04-02")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous observation page" }));
+    expect(screen.getByText("2025-04-03")).toBeTruthy();
+  });
+
+  it("surfaces the server observation error message", async () => {
+    state.observationError = new Error("Paired observations are temporarily unavailable");
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Paired observations are temporarily unavailable")).toBeTruthy();
   });
 });
