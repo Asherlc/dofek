@@ -44,6 +44,11 @@ export const bodyCompClickHouseSchema = z.object({
   body_fat_pct: z.coerce.number().nullable(),
 });
 
+export const bodyCompProvenanceClickHouseSchema = bodyCompClickHouseSchema.extend({
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
+});
+
 export const bodyWeightClickHouseSchema = z.object({
   date: dateStringSchema,
   weight_kg: z.coerce.number(),
@@ -157,6 +162,17 @@ export async function fetchBodyCompRows(
   endDate: string,
   days: RangeDays,
 ): Promise<z.infer<typeof bodyCompClickHouseSchema>[]> {
+  const rows = await fetchBodyCompProvenanceRows(store, userId, timezone, endDate, days);
+  return rows.map((row) => bodyCompClickHouseSchema.parse(row));
+}
+
+export async function fetchBodyCompProvenanceRows(
+  store: BodyClickHouseStore,
+  userId: string,
+  timezone: string,
+  endDate: string,
+  days: RangeDays,
+): Promise<z.infer<typeof bodyCompProvenanceClickHouseSchema>[]> {
   const localDateExpression = "toDate(toTimeZone(recorded_at, {timezone:String}))";
   const localDateRangePredicate = clickHouseDateRangePredicate({
     expression: localDateExpression,
@@ -164,16 +180,20 @@ export async function fetchBodyCompRows(
     endDateExpression: endDateExpression(endDate),
   });
   return store.query(
-    bodyCompClickHouseSchema,
+    bodyCompProvenanceClickHouseSchema,
     `
       SELECT
         toString(toDate(toTimeZone(body_measurements.recorded_at, {timezone:String}))) AS date,
         toString(body_measurements.recorded_at) AS recorded_at,
+        body_measurements.provider_id AS provider_id,
+        body_measurements.source_providers AS source_providers,
         weight_kg,
         body_fat_pct
       FROM (
         SELECT
           recorded_at,
+          provider_id,
+          source_providers,
           weight_kg,
           body_fat_pct
         FROM analytics.v_body_measurement

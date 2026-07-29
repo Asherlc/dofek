@@ -62,9 +62,9 @@ describe("selectedDateFoodSchema", () => {
         mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
         calorieGoal: { target: 2200, remaining: 1201, over: 0, progressPercentage: 45.4 },
         macros: {
-          protein: { grams: 88, calories: 352, percentage: 35 },
-          carbs: { grams: 111, calories: 444, percentage: 44 },
-          fat: { grams: 22, calories: 198, percentage: 20 },
+          protein: { grams: 88, calories: 352, energySharePercentage: 35 },
+          carbs: { grams: 111, calories: 444, energySharePercentage: 45 },
+          fat: { grams: 22, calories: 198, energySharePercentage: 20 },
         },
       },
     });

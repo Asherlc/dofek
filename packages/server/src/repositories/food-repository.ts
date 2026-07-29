@@ -1,5 +1,4 @@
 import type {
-  MacroNutritionSummary,
   NutritionSourceResolution,
   SelectedDateNutritionSummary,
 } from "@dofek/nutrition/selected-date-summary";
@@ -11,6 +10,7 @@ import {
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { summarizeMacros } from "./macro-nutrition-summary.ts";
 import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -271,19 +271,6 @@ export class DailyNutritionSummary {
   }
 }
 
-function summarizeMacro(
-  grams: number,
-  caloriesPerGram: number,
-  totalCalories: number,
-): MacroNutritionSummary {
-  const calories = grams * caloriesPerGram;
-  return {
-    grams,
-    calories,
-    percentage: totalCalories > 0 ? Math.round((calories / totalCalories) * 100) : 0,
-  };
-}
-
 function selectedDateNutritionSummary(
   row: SelectedDateNutritionTotalsRow,
   calorieGoal: number,
@@ -306,11 +293,7 @@ function selectedDateNutritionSummary(
       over,
       progressPercentage: Math.min((calories / calorieGoal) * 100, 100),
     },
-    macros: {
-      protein: summarizeMacro(row.protein_g ?? 0, 4, calories),
-      carbs: summarizeMacro(row.carbs_g ?? 0, 4, calories),
-      fat: summarizeMacro(row.fat_g ?? 0, 9, calories),
-    },
+    macros: summarizeMacros(row.protein_g ?? 0, row.carbs_g ?? 0, row.fat_g ?? 0),
   };
 }
 

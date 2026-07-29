@@ -92,9 +92,9 @@ describe("FoodScreen AI meal confirmation", () => {
           mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 0 },
           calorieGoal: { target: 2000, remaining: 2000, over: 0, progressPercentage: 0 },
           macros: {
-            protein: { grams: 0, calories: 0, percentage: 0 },
-            carbs: { grams: 0, calories: 0, percentage: 0 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+            carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
       },
@@ -242,9 +242,9 @@ describe("FoodScreen AI meal confirmation", () => {
           mealCalories: { breakfast: 120, lunch: 0, dinner: 0, snack: 0, other: 0 },
           calorieGoal: { target: 2000, remaining: 1880, over: 0, progressPercentage: 6 },
           macros: {
-            protein: { grams: 18, calories: 72, percentage: 60 },
-            carbs: { grams: 7, calories: 28, percentage: 23 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 18, calories: 72, energySharePercentage: 72 },
+            carbs: { grams: 7, calories: 28, energySharePercentage: 28 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
       },
@@ -281,9 +281,9 @@ describe("FoodScreen AI meal confirmation", () => {
           mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
           calorieGoal: { target: 2200, remaining: 1201, over: 0, progressPercentage: 45.4 },
           macros: {
-            protein: { grams: 88, calories: 352, percentage: 35 },
-            carbs: { grams: 111, calories: 444, percentage: 44 },
-            fat: { grams: 22, calories: 198, percentage: 20 },
+            protein: { grams: 88, calories: 352, energySharePercentage: 35 },
+            carbs: { grams: 111, calories: 444, energySharePercentage: 45 },
+            fat: { grams: 22, calories: 198, energySharePercentage: 20 },
           },
         },
       },
@@ -297,7 +297,10 @@ describe("FoodScreen AI meal confirmation", () => {
     expect(screen.getByText("999 kcal")).toBeTruthy();
     expect(screen.getByText("777 kcal")).toBeTruthy();
     expect(screen.getByText("1,201 kcal remaining")).toBeTruthy();
-    expect(screen.getByText("88 g")).toBeTruthy();
+    expect(screen.getByText("Share of energy")).toBeTruthy();
+    expect(screen.getByText("35%")).toBeTruthy();
+    expect(screen.getByText("88 g logged")).toBeTruthy();
+    expect(screen.getByLabelText("Protein: 35% share of energy; 88 grams logged")).toBeTruthy();
   });
 
   it("renders an accessible source conflict and leaves totals unavailable", async () => {
