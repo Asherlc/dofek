@@ -3,6 +3,7 @@ import {
   formatRecordLocalTime,
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
+  recordLocalHour,
   resolveRecordLocalTimeContext,
   resolveTimestampOffsetLocalTimeContext,
 } from "./record-local-time.ts";
@@ -170,5 +171,22 @@ describe("formatRecordLocalTime", () => {
         "en-US",
       ),
     ).toBe("--");
+  });
+});
+
+describe("recordLocalHour", () => {
+  it("uses the stored offset instead of the runtime timezone", () => {
+    expect(
+      recordLocalHour("2026-07-14T08:30:00.000Z", {
+        timezone: null,
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        source: "provider_offset",
+      }),
+    ).toBe(1.5);
+  });
+
+  it("returns null for unknown context", () => {
+    expect(recordLocalHour("2026-07-14T08:30:00.000Z", localTimeContextUnknown())).toBeNull();
   });
 });

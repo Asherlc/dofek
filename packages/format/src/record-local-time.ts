@@ -203,3 +203,36 @@ export function formatRecordLocalTime(
     .format(shiftedDate)
     .replace(/\u202f/g, " ");
 }
+
+export function recordLocalHour(
+  timestamp: string,
+  context: RecordLocalTimeContext,
+  boundary: "start" | "end" = "start",
+): number | null {
+  const date = parseValidDate(timestamp);
+  if (!date) return null;
+  const timezone = context.timezone;
+  const offsetMinutes =
+    boundary === "start" ? context.startUtcOffsetMinutes : context.endUtcOffsetMinutes;
+  const projectedDate =
+    timezone == null && offsetMinutes != null
+      ? new Date(date.getTime() + offsetMinutes * 60_000)
+      : date;
+  const projectedTimezone = timezone ?? (offsetMinutes == null ? null : "UTC");
+  if (!projectedTimezone) return null;
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: projectedTimezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(projectedDate);
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    const minute = Number(parts.find((part) => part.type === "minute")?.value);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    return hour + minute / 60;
+  } catch {
+    return null;
+  }
+}
