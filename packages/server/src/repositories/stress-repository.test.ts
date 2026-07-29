@@ -24,8 +24,32 @@ function makeDb(metricsRows: Record<string, unknown>[] = []) {
 }
 
 function makeSensorStore(rows: Record<string, unknown>[] = latestRowsForSensorStore) {
+  const numberValue = (value: unknown) => {
+    const parsed = Number(value);
+    return value == null || !Number.isFinite(parsed) ? null : parsed;
+  };
   return {
-    query: vi.fn().mockResolvedValue(rows),
+    query: vi.fn().mockResolvedValue(
+      rows.map((row) => {
+        const hrv = numberValue(row.hrv);
+        const hrvMean = numberValue(row.hrv_mean_60d);
+        const hrvSd = numberValue(row.hrv_sd_60d);
+        const restingHr = numberValue(row.resting_hr);
+        const restingHrMean = numberValue(row.rhr_mean_60d);
+        const restingHrSd = numberValue(row.rhr_sd_60d);
+        return {
+          ...row,
+          hrv_z_score:
+            hrv != null && hrvMean != null && hrvSd != null && hrvSd > 0
+              ? (hrv - hrvMean) / hrvSd
+              : null,
+          resting_hr_z_score:
+            restingHr != null && restingHrMean != null && restingHrSd != null && restingHrSd > 0
+              ? (restingHr - restingHrMean) / restingHrSd
+              : null,
+        };
+      }),
+    ),
   };
 }
 
@@ -52,6 +76,9 @@ describe("StressRepository", () => {
       const queryText = sensorStore.query.mock.calls[0]?.[1];
       expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
       expect(queryText).toContain("recovery_inputs.is_deleted = 0");
+      expect(queryText).toContain("hrv_z_score");
+      expect(queryText).toContain("resting_hr_z_score");
+      expect(queryText).not.toContain("hrv_mean_60d");
       expect(queryText).not.toContain("fitness.v_daily_metrics");
       expect(queryText).not.toContain("analytics.v_sleep");
     });

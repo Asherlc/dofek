@@ -19,6 +19,43 @@ const serverMetric = {
 };
 
 describe("HealthStatusBar", () => {
+  it("renders server-computed baseline deviation, comparison, and coverage", () => {
+    render(
+      <HealthStatusBar
+        metrics={[{ ...serverMetric, metric: "hrv", label: "Heart Rate Variability (HRV)" }]}
+        baselineRelative={[
+          {
+            metric: "hrv",
+            label: "Heart Rate Variability (HRV)",
+            value: 72,
+            baseline: {
+              windowDays: 30,
+              mean: 60,
+              standardDeviation: 6,
+              zScore: 2,
+              sampleCount: 24,
+              coverage: 0.8,
+            },
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 66,
+              baselineMean: 61,
+              delta: 5,
+              direction: "increasing",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "30d mean 60.0 ± 6.0 · 2.0 SD above baseline · 7d vs prior 28d +5.0 · 24/30 baseline days",
+      ),
+    ).toBeDefined();
+  });
+
   it("renders structured units while preserving the exact server status", () => {
     const { container } = render(
       <HealthStatusBar

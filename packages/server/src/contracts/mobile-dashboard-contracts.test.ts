@@ -138,6 +138,29 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
         },
         projectionLine: [],
       },
+      baselineRelative: [
+        {
+          metric: "hrv",
+          label: "Heart Rate Variability (HRV)",
+          value: 53,
+          baseline: {
+            windowDays: 30,
+            mean: 50,
+            standardDeviation: 4,
+            zScore: 0.75,
+            sampleCount: 28,
+            coverage: 28 / 30,
+          },
+          comparison: {
+            recentDays: 7,
+            baselineDays: 28,
+            recentMean: 52,
+            baselineMean: 50,
+            delta: 2,
+            direction: "increasing",
+          },
+        },
+      ],
       healthStatus: [],
       healthspan: {
         healthspanScore: 84,

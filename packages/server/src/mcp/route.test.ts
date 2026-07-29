@@ -637,6 +637,101 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it("returns server-computed baseline context for recovery health trends", async () => {
+    authorizeMcpToken();
+    const recoveryRow = {
+      date: "2026-05-19",
+      hrv: 72,
+      resting_hr: 48,
+      respiratory_rate: 14,
+      efficiency_pct: 90,
+      hrv_mean_30d: 60,
+      hrv_sd_30d: 6,
+      hrv_z_score: 2,
+      hrv_baseline_sample_count: 24,
+      hrv_baseline_coverage: 0.8,
+      hrv_mean_7d: 66,
+      hrv_mean_previous_28d: 61,
+      rhr_mean_30d: 52,
+      rhr_sd_30d: 2,
+      resting_hr_z_score: -2,
+      rhr_baseline_sample_count: 30,
+      rhr_baseline_coverage: 1,
+      rhr_mean_7d: 49,
+      rhr_mean_previous_28d: 53,
+      rr_mean_30d: 15,
+      rr_sd_30d: 0.5,
+      respiratory_rate_z_score: -2,
+      rr_baseline_sample_count: 15,
+      rr_baseline_coverage: 0.5,
+      rr_mean_7d: 14.5,
+      rr_mean_previous_28d: 15.2,
+      efficiency_mean_30d: 85,
+      efficiency_sd_30d: 2.5,
+      efficiency_z_score: 2,
+      efficiency_baseline_sample_count: 28,
+      efficiency_baseline_coverage: 28 / 30,
+      efficiency_mean_7d: 88,
+      efficiency_mean_previous_28d: 84,
+    };
+    const sensorStore = makeMockSensorStore([[], [recoveryRow]]);
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-19", hrv: 72, resting_hr: 48 },
+    ]);
+
+    const response = await request(createTestApp(sensorStore), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        end_date: "2026-05-19",
+        metrics: ["hrv", "resting_hr", "sleep_efficiency"],
+        start_date: "2026-05-19",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      {
+        date: "2026-05-19",
+        metrics: {
+          hrv: {
+            avg: 72,
+            max: 72,
+            min: 72,
+            baseline_relative: expect.objectContaining({
+              baseline: {
+                coverage: 0.8,
+                mean: 60,
+                sampleCount: 24,
+                standardDeviation: 6,
+                windowDays: 30,
+                zScore: 2,
+              },
+              comparison: expect.objectContaining({
+                delta: 5,
+                direction: "increasing",
+              }),
+            }),
+          },
+          resting_hr: {
+            avg: 48,
+            max: 48,
+            min: 48,
+            baseline_relative: expect.objectContaining({
+              baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
+            }),
+          },
+          sleep_efficiency: {
+            avg: 90,
+            max: 90,
+            min: 90,
+            baseline_relative: expect.objectContaining({
+              baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
+            }),
+          },
+        },
+      },
+    ]);
+  });
+
   it("rejects reversed longitudinal date ranges", async () => {
     authorizeMcpToken();
 

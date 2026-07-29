@@ -274,23 +274,93 @@ describe("dailyMetricsRouter", () => {
         latest_skin_temp: 36.6,
         latest_date: "2024-01-16",
         latest_steps_date: "2024-01-16",
+        baselineRelative: [],
         healthStatus: expect.arrayContaining([
-          expect.objectContaining({
-            metric: "hrv",
-            intent: "higher",
-            statusToken: "moving_as_intended",
-          }),
-          expect.objectContaining({
-            metric: "resting_heart_rate",
-            intent: "lower",
-            statusToken: "moving_as_intended",
-          }),
           expect.objectContaining({
             metric: "steps",
             sampleDeviation: 1200,
             statusToken: "near_baseline",
           }),
         ]),
+      });
+    });
+
+    it("returns canonical recovery baseline context with aggregate trends", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          avg_hrv: 60,
+          avg_resting_hr: 54,
+          avg_spo2: null,
+          avg_steps: null,
+          avg_skin_temp: null,
+          stddev_hrv: 6,
+          stddev_resting_hr: 2,
+          stddev_spo2: null,
+          stddev_steps: null,
+          stddev_skin_temp: null,
+          latest_hrv: 72,
+          latest_resting_hr: 48,
+          latest_spo2: null,
+          latest_steps: null,
+          latest_skin_temp: null,
+          latest_date: "2024-01-16",
+          latest_steps_date: null,
+        },
+      ]);
+      const recoveryRow = {
+        date: "2024-01-16",
+        hrv: 72,
+        resting_hr: 48,
+        respiratory_rate: 14,
+        efficiency_pct: 90,
+        hrv_mean_30d: 60,
+        hrv_sd_30d: 6,
+        hrv_z_score: 2,
+        hrv_baseline_sample_count: 24,
+        hrv_baseline_coverage: 0.8,
+        hrv_mean_7d: 66,
+        hrv_mean_previous_28d: 61,
+        rhr_mean_30d: 52,
+        rhr_sd_30d: 2,
+        resting_hr_z_score: -2,
+        rhr_baseline_sample_count: 30,
+        rhr_baseline_coverage: 1,
+        rhr_mean_7d: 49,
+        rhr_mean_previous_28d: 53,
+        rr_mean_30d: 15,
+        rr_sd_30d: 0.5,
+        respiratory_rate_z_score: -2,
+        rr_baseline_sample_count: 15,
+        rr_baseline_coverage: 0.5,
+        rr_mean_7d: 14.5,
+        rr_mean_previous_28d: 15.2,
+        efficiency_mean_30d: 85,
+        efficiency_sd_30d: 2.5,
+        efficiency_z_score: 2,
+        efficiency_baseline_sample_count: 28,
+        efficiency_baseline_coverage: 28 / 30,
+        efficiency_mean_7d: 88,
+        efficiency_mean_previous_28d: 84,
+      };
+      const sensorStore = makeMockSensorStore([
+        [{ date: "2024-01-16", resting_hr: 48 }],
+        [recoveryRow],
+      ]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
+
+      expect(result?.baselineRelative).toHaveLength(4);
+      expect(result?.baselineRelative[0]).toMatchObject({
+        metric: "hrv",
+        value: 72,
+        baseline: { mean: 60, zScore: 2, sampleCount: 24, coverage: 0.8 },
+        comparison: { delta: 5, direction: "increasing" },
       });
     });
 
@@ -368,7 +438,7 @@ describe("dailyMetricsRouter", () => {
           latest_active_energy_date: "2024-01-16",
         },
       ]);
-      const sensorStore = makeMockSensorStore([{ date: "2024-01-16", resting_hr: 53 }]);
+      const sensorStore = makeMockSensorStore([[{ date: "2024-01-16", resting_hr: 53 }], []]);
       const caller = createCaller({
         db: { execute },
         sensorStore,
@@ -379,7 +449,7 @@ describe("dailyMetricsRouter", () => {
       const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
 
       expect(result?.latest_resting_hr).toBe(53);
-      expect(sensorStore.query).toHaveBeenCalledOnce();
+      expect(sensorStore.query).toHaveBeenCalledTimes(2);
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
       expect(queryText).toContain("analytics.resting_heart_rate_sleep_window");
@@ -416,7 +486,7 @@ describe("dailyMetricsRouter", () => {
           latest_active_energy_date: "2024-01-16",
         },
       ]);
-      const sensorStore = makeMockSensorStore([{ date: "2024-01-16", resting_hr: 53 }]);
+      const sensorStore = makeMockSensorStore([[{ date: "2024-01-16", resting_hr: 53 }], []]);
       const caller = createCaller({
         db: { execute },
         sensorStore,

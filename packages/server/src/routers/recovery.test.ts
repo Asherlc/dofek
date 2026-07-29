@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -26,15 +27,59 @@ function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
   return rows.length > 0 && Array.isArray(rows[0]);
 }
 
+function baselineZScore(
+  row: Record<string, unknown>,
+  valueKey: string,
+  meanKey: string,
+  standardDeviationKey: string,
+): number | null {
+  const value = row[valueKey];
+  const mean = row[meanKey];
+  const standardDeviation = row[standardDeviationKey];
+  return typeof value === "number" &&
+    typeof mean === "number" &&
+    typeof standardDeviation === "number" &&
+    standardDeviation > 0
+    ? (value - mean) / standardDeviation
+    : null;
+}
+
+function canonicalizeRecoveryRows(sqlText: unknown, rows: unknown[]): unknown[] {
+  if (!String(sqlText).includes("analytics.daily_recovery")) return rows;
+  return rows.map((row) => {
+    if (typeof row !== "object" || row == null || Array.isArray(row)) return row;
+    const record = z.record(z.string(), z.unknown()).parse(row);
+    return {
+      ...record,
+      hrv_z_score:
+        "hrv_z_score" in record
+          ? record.hrv_z_score
+          : baselineZScore(record, "hrv", "hrv_mean_30d", "hrv_sd_30d"),
+      resting_hr_z_score:
+        "resting_hr_z_score" in record
+          ? record.resting_hr_z_score
+          : baselineZScore(record, "resting_hr", "rhr_mean_30d", "rhr_sd_30d"),
+      respiratory_rate_z_score:
+        "respiratory_rate_z_score" in record
+          ? record.respiratory_rate_z_score
+          : baselineZScore(record, "respiratory_rate", "rr_mean_30d", "rr_sd_30d"),
+    };
+  });
+}
+
 function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
   const queryMock = isMatrix(rows)
     ? (() => {
         const fn = vi.fn();
-        for (const batch of rows) fn.mockResolvedValueOnce(batch);
+        for (const batch of rows) {
+          fn.mockImplementationOnce(async (_schema: unknown, sqlText: unknown) =>
+            canonicalizeRecoveryRows(sqlText, batch),
+          );
+        }
         fn.mockResolvedValue([]);
         return fn;
       })()
-    : vi.fn().mockResolvedValue(rows);
+    : vi.fn(async (_schema: unknown, sqlText: unknown) => canonicalizeRecoveryRows(sqlText, rows));
   return {
     query: queryMock,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -801,6 +846,10 @@ describe("recoveryRouter.readinessScore", () => {
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
     expect(queryText).toContain("recovery_inputs.is_deleted = 0");
+    expect(queryText).toContain("hrv_z_score");
+    expect(queryText).toContain("resting_hr_z_score");
+    expect(queryText).toContain("respiratory_rate_z_score");
+    expect(queryText).not.toContain("hrv_mean_30d");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("accessStartDate");

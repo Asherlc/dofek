@@ -91,4 +91,29 @@ describe("RecoveryBaselineRepository", () => {
     expect(query).toContain("recovery.date >= toDate({startDate:String})");
     expect(query).toContain("recovery.date <= toDate({endDate:String})");
   });
+
+  it("constrains recovery rows to a limited access window", async () => {
+    const sensorStore = { query: vi.fn().mockResolvedValue([]) };
+    const repository = new RecoveryBaselineRepository(
+      "00000000-0000-4000-8000-000000000001",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-07-10",
+        endDateExclusive: "2026-07-17",
+      },
+    );
+
+    await repository.listRange("2026-07-01", "2026-07-29");
+
+    const query = sensorStore.query.mock.calls[0]?.[1];
+    expect(query).toContain("recovery.date >= toDate({accessStartDate:String})");
+    expect(query).toContain("recovery.date < toDate({accessEndDateExclusive:String})");
+    expect(sensorStore.query.mock.calls[0]?.[2]).toMatchObject({
+      accessStartDate: "2026-07-10",
+      accessEndDateExclusive: "2026-07-17",
+    });
+  });
 });

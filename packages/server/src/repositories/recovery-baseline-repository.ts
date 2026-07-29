@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import {
   type BaselineRelativeMetric,
   baselineRelativeMetricSchema,
@@ -51,6 +52,13 @@ export const dailyRecoveryBaselineSchema = z.object({
 });
 
 export type DailyRecoveryBaseline = z.infer<typeof dailyRecoveryBaselineSchema>;
+
+const recoveryMetricOrder = [
+  "hrv",
+  "resting_heart_rate",
+  "respiratory_rate",
+  "sleep_efficiency",
+] as const;
 
 function buildMetrics(row: RecoveryBaselineRow): BaselineRelativeMetric[] {
   return [
@@ -105,11 +113,31 @@ function buildMetrics(row: RecoveryBaselineRow): BaselineRelativeMetric[] {
   ];
 }
 
+export function latestRecoveryBaselineMetrics(
+  rows: DailyRecoveryBaseline[],
+): BaselineRelativeMetric[] {
+  return recoveryMetricOrder.flatMap((metricKey) => {
+    for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+      const metric = rows[rowIndex]?.metrics.find(
+        (candidate) => candidate.metric === metricKey && candidate.value != null,
+      );
+      if (metric) return [metric];
+    }
+    return [];
+  });
+}
+
 export class RecoveryBaselineRepository {
+  readonly #accessWindow: AccessWindow | undefined;
   readonly #userId: string;
   readonly #sensorStore: Pick<ActivitySensorStore, "query">;
 
-  constructor(userId: string, sensorStore: Pick<ActivitySensorStore, "query">) {
+  constructor(
+    userId: string,
+    sensorStore: Pick<ActivitySensorStore, "query">,
+    accessWindow?: AccessWindow,
+  ) {
+    this.#accessWindow = accessWindow;
     this.#userId = userId;
     this.#sensorStore = sensorStore;
   }
@@ -160,11 +188,23 @@ export class RecoveryBaselineRepository {
         AND recovery.is_deleted = 0
         AND recovery.date >= toDate({startDate:String})
         AND recovery.date <= toDate({endDate:String})
+        ${
+          this.#accessWindow?.kind === "limited"
+            ? `AND recovery.date >= toDate({accessStartDate:String})
+        AND recovery.date < toDate({accessEndDateExclusive:String})`
+            : ""
+        }
       ORDER BY recovery.date ASC`,
       {
         userId: this.#userId,
         startDate,
         endDate,
+        ...(this.#accessWindow?.kind === "limited"
+          ? {
+              accessStartDate: this.#accessWindow.startDate,
+              accessEndDateExclusive: this.#accessWindow.endDateExclusive,
+            }
+          : {}),
       },
       queryOptions,
     );

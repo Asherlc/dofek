@@ -121,6 +121,7 @@ vi.mock("../lib/trpc.ts", () => {
     latest_resting_hr: null,
     stddev_resting_hr: null,
     healthStatus: [],
+    baselineRelative: [],
   };
 
   return {
@@ -138,6 +139,7 @@ vi.mock("../lib/trpc.ts", () => {
           prediction: null,
           recomposition: [],
           healthStatus: [],
+          baselineRelative: [],
         }),
       },
       correlation: {

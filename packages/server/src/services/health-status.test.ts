@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildBaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   buildDailyMetricHealthStatuses,
   buildHealthStatusFromSummary,
@@ -32,6 +33,50 @@ describe("buildDailyMetricHealthStatuses", () => {
     expect(statuses.find((status) => status.metric === "spo2")?.label).toBe(
       "Blood Oxygen Saturation (SpO2)",
     );
+  });
+
+  it("uses canonical recovery baselines instead of selected-range aggregates", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: 68,
+        avg_resting_hr: null,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: 1,
+        stddev_resting_hr: null,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: 72,
+        latest_resting_hr: null,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+      },
+      [
+        buildBaselineRelativeMetric({
+          metric: "hrv",
+          label: "Heart Rate Variability (HRV)",
+          value: 72,
+          baselineMean: 60,
+          baselineStandardDeviation: 6,
+          zScore: 2,
+          baselineSampleCount: 24,
+          baselineCoverage: 0.8,
+          recentMean: 66,
+          comparisonMean: 61,
+        }),
+      ],
+    );
+
+    expect(statuses.find((status) => status.metric === "hrv")).toMatchObject({
+      baseline: 60,
+      sampleDeviation: 6,
+      deviation: 2,
+    });
   });
 });
 

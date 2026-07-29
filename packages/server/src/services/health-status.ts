@@ -1,5 +1,6 @@
 import { mean, sampleStandardDeviation } from "simple-statistics";
 import type { z } from "zod";
+import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   healthMetricIntentSchema,
   healthMetricKeySchema,
@@ -197,24 +198,31 @@ export function buildWeightHealthStatus(
   });
 }
 
-export function buildDailyMetricHealthStatuses(trends: TrendsRow): HealthStatusMetric[] {
+function recoveryMetricIntent(metric: BaselineRelativeMetric): HealthMetricIntent {
+  if (metric.metric === "hrv" || metric.metric === "sleep_efficiency") return "higher";
+  if (metric.metric === "resting_heart_rate") return "lower";
+  return "neutral";
+}
+
+export function buildHealthStatusFromBaselineMetric(
+  metric: BaselineRelativeMetric,
+): HealthStatusMetric {
+  return buildHealthStatusFromSummary({
+    metric: metric.metric,
+    label: metric.label,
+    value: metric.value,
+    baseline: metric.baseline.mean,
+    sampleDeviation: metric.baseline.standardDeviation,
+    intent: recoveryMetricIntent(metric),
+  });
+}
+
+export function buildDailyMetricHealthStatuses(
+  trends: TrendsRow,
+  baselineRelative: BaselineRelativeMetric[] = [],
+): HealthStatusMetric[] {
   return [
-    buildHealthStatusFromSummary({
-      metric: "hrv",
-      label: "Heart Rate Variability (HRV)",
-      value: trends.latest_hrv,
-      baseline: trends.avg_hrv,
-      sampleDeviation: trends.stddev_hrv,
-      intent: "higher",
-    }),
-    buildHealthStatusFromSummary({
-      metric: "resting_heart_rate",
-      label: "Resting Heart Rate",
-      value: trends.latest_resting_hr,
-      baseline: trends.avg_resting_hr,
-      sampleDeviation: trends.stddev_resting_hr,
-      intent: "lower",
-    }),
+    ...baselineRelative.map(buildHealthStatusFromBaselineMetric),
     buildHealthStatusFromSummary({
       metric: "spo2",
       label: "Blood Oxygen Saturation (SpO2)",

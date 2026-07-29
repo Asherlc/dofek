@@ -4,14 +4,54 @@ import {
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
+import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import type { HealthMetricKey, HealthStatusMetric } from "../lib/healthStatus.ts";
 
 interface HealthStatusBarProps {
+  baselineRelative?: BaselineRelativeMetric[];
   metrics: HealthStatusMetric[];
   loading?: boolean;
   formatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
   units?: Partial<Record<HealthMetricKey, string>>;
+}
+
+function formatContextValue(
+  value: number,
+  formatter?: FormattedMeasurementFormatter,
+  unit?: string,
+): string {
+  return formatter ? formatter(value).text : `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatBaselineContext(
+  metric: BaselineRelativeMetric,
+  formatter?: FormattedMeasurementFormatter,
+  unit?: string,
+): string {
+  const parts: string[] = [];
+  if (metric.baseline.mean != null) {
+    const standardDeviation =
+      metric.baseline.standardDeviation != null
+        ? ` ± ${formatContextValue(metric.baseline.standardDeviation, formatter, unit)}`
+        : "";
+    parts.push(
+      `${metric.baseline.windowDays}d mean ${formatContextValue(metric.baseline.mean, formatter, unit)}${standardDeviation}`,
+    );
+  }
+  if (metric.baseline.zScore != null) {
+    const direction =
+      metric.baseline.zScore > 0 ? "above" : metric.baseline.zScore < 0 ? "below" : "at";
+    parts.push(`${Math.abs(metric.baseline.zScore).toFixed(1)} SD ${direction} baseline`);
+  }
+  if (metric.comparison.delta != null) {
+    const sign = metric.comparison.delta > 0 ? "+" : "";
+    parts.push(
+      `${metric.comparison.recentDays}d vs prior ${metric.comparison.baselineDays}d ${sign}${formatContextValue(metric.comparison.delta, formatter, unit)}`,
+    );
+  }
+  parts.push(`${metric.baseline.sampleCount}/${metric.baseline.windowDays} baseline days`);
+  return parts.join(" · ");
 }
 
 const statusColors: Record<HealthStatusMetric["statusColor"], string> = {
@@ -94,6 +134,7 @@ function formatBaseline(
 }
 
 export function HealthStatusBar({
+  baselineRelative = [],
   metrics,
   loading,
   formatters = {},
@@ -121,6 +162,9 @@ export function HealthStatusBar({
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {
         const formatter = formatters[metric.metric];
+        const baselineContext = baselineRelative.find(
+          (candidate) => candidate.metric === metric.metric,
+        );
         return (
           <div
             key={metric.metric}
@@ -140,6 +184,11 @@ export function HealthStatusBar({
                 ? `baseline ${formatBaseline(metric, formatter)} · ${metric.statusLabel}`
                 : metric.statusLabel}
             </div>
+            {baselineContext ? (
+              <div className="mt-1 text-[10px] text-subtle">
+                {formatBaselineContext(baselineContext, formatter, units[metric.metric])}
+              </div>
+            ) : null}
           </div>
         );
       })}
