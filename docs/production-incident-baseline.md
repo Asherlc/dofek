@@ -20407,3 +20407,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   gateway errors from the secrets endpoint, investigate Infisical service
   availability with the captured request evidence before changing workflow
   behavior.
+
+## 2026-07-29 — Shared Docker VM AIO Exhaustion Recurred During Issue 2118 Validation
+
+- **Status:** External local-environment recurrence; exact-head CI remains the
+  complete validation gate.
+- **Symptoms:** The standard issue-2118 Compose dependencies could not become
+  healthy because Redpanda repeatedly restarted during pre-push validation.
+- **User impact:** No production or end-user impact. The full local lint gate
+  could not complete because its analytics SQL phase requires a healthy
+  worktree dependency stack.
+- **Evidence:** The exact startup command was
+  `pnpm compose -- up -d db clickhouse redis redpanda`. Redpanda's first fatal
+  line was
+  `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536.`
+- **Root cause:** This is the same shared Docker VM system-wide AIO-capacity
+  exhaustion already recorded above for issues 2183 and 2123, not an
+  issue-2118 source failure.
+- **Fix / mitigation:** Stopped the validation attempt and removed only the
+  issue-2118 containers, network, and named volumes with
+  `pnpm compose -- down --remove-orphans --volumes`. The stack was not retried,
+  and validation did not pivot to a partial dependency setup. No sysctl,
+  timeout, retry, resource limit, workflow, or application behavior changed.
+- **Validation:** All 14,804 Docker-free unit and mobile tests passed. Focused
+  Walking Biomechanics and hiking route tests, web and server typechecks,
+  focused Biome checks, and the production Storybook build also passed.
+  Exact-head CI must complete the full lint and clean-environment gates.
+- **Remaining risk / follow-up:** Shared Docker Desktop AIO capacity can block
+  additional concurrent worktree stacks. Keep the existing runbook follow-up
+  to add an AIO-capacity diagnostic and require an explicit decision before
+  any prerequisite-only validation.
