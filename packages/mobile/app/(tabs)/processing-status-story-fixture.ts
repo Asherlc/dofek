@@ -1,8 +1,31 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import type { inferRouterClient, OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 
 type ScreenshotProcessingDataset = "activity" | "sleep" | "recovery" | "training" | "body";
+type AppRouterClient = inferRouterClient<AppRouter>;
+type ProcessingStatusStoryCompanionResponses = {
+  "training.hrZones"?: Awaited<ReturnType<AppRouterClient["training"]["hrZones"]["query"]>>;
+  "efficiency.polarizationTrend"?: Awaited<
+    ReturnType<AppRouterClient["efficiency"]["polarizationTrend"]["query"]>
+  >;
+  "cyclingAdvanced.trainingMonotony"?: Awaited<
+    ReturnType<AppRouterClient["cyclingAdvanced"]["trainingMonotony"]["query"]>
+  >;
+};
+type ProcessingStatusStoryCompanionPath = keyof ProcessingStatusStoryCompanionResponses;
+
+const PROCESSING_STATUS_STORY_COMPANION_PATHS = [
+  "training.hrZones",
+  "efficiency.polarizationTrend",
+  "cyclingAdvanced.trainingMonotony",
+] satisfies readonly ProcessingStatusStoryCompanionPath[];
+
+function isProcessingStatusStoryCompanionPath(
+  path: string,
+): path is ProcessingStatusStoryCompanionPath {
+  return PROCESSING_STATUS_STORY_COMPANION_PATHS.some((companionPath) => companionPath === path);
+}
 
 const DATASET_LABELS = {
   activity: "Activities",
@@ -61,15 +84,24 @@ export function seedReadyProcessingStatus(
 
 export function createProcessingStatusStoryLink(
   snapshot: ProcessingStatusStorySnapshot,
+  companionResponses: Readonly<ProcessingStatusStoryCompanionResponses> = {},
 ): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
-          if (op.path !== "processing.status") {
+          let data: unknown;
+          if (op.path === "processing.status") {
+            data = snapshot;
+          } else if (
+            isProcessingStatusStoryCompanionPath(op.path) &&
+            Object.hasOwn(companionResponses, op.path)
+          ) {
+            data = companionResponses[op.path];
+          } else {
             throw new Error(`Unhandled processing-status story tRPC operation: ${op.path}`);
           }
-          observer.next?.({ result: { data: snapshot } });
+          observer.next?.({ result: { data } });
           observer.complete?.();
           return { unsubscribe: () => {} };
         },

@@ -238,6 +238,7 @@ export default function SettingsScreen() {
               accessibilityRole="button"
               accessibilityLabel={tab.label}
               accessibilityState={{ selected: isActive }}
+              aria-selected={isActive}
             >
               <Text style={[styles.tabText, isActive && styles.tabTextSelected]}>{tab.label}</Text>
             </TouchableOpacity>
