@@ -68,8 +68,19 @@ describe("System dark appearance", () => {
       .should("have.css", "background-color", "rgb(25, 38, 30)");
   });
 
-  it("preserves the light palette when the system prefers light", () => {
+  it("preserves the light palette on public and authentication surfaces", () => {
     emulateSystemAppearance("light");
+    cy.visit("/");
+    cy.window().then((window) => {
+      expect(window.matchMedia("(prefers-color-scheme: dark)").matches).to.equal(false);
+    });
+    cy.get("body").should("have.css", "background-color", "rgb(238, 243, 237)");
+    cy.get("h1").should("have.css", "color", "rgb(26, 46, 26)");
+    cy.contains("a", "Get started")
+      .first()
+      .should("have.css", "background-color", "rgb(45, 122, 86)")
+      .and("have.css", "color", "rgb(255, 255, 255)");
+
     cy.visit("/login");
     cy.window().then((window) => {
       expect(window.matchMedia("(prefers-color-scheme: dark)").matches).to.equal(false);
