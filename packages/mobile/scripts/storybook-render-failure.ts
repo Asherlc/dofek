@@ -24,4 +24,9 @@ export async function assertStoryRendered(page: StorybookPage, storyId: string):
       (await fetchError.count()) > 0 ? "Failed to fetch" : "Processing status is unavailable";
     throw new Error(`Storybook story ${storyId} contains a processing error: ${detail}`);
   }
+
+  const queryError = page.locator('[data-testid="query-state-error"]:visible');
+  if ((await queryError.count()) > 0) {
+    throw new Error(`Storybook story ${storyId} contains a query error panel`);
+  }
 }

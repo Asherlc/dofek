@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 // cspell:words activitydetail networkidle zonecharts
-import { readFile as readFileCallback } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureViewportScreenshot, manifestOutputPath } from "./screenshot-output";
+import { selectScreenshotTab } from "./screenshot-story-navigation";
 import { assertStoryRendered } from "./storybook-render-failure";
+import { startStorybookStaticServer } from "./storybook-static-server";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const mobileRoot = resolve(scriptDir, "..");
@@ -66,55 +68,6 @@ const SCREENSHOTS: ScreenshotConfig[] = [
   },
 ];
 
-function contentType(pathname: string): string {
-  if (pathname.endsWith(".html")) return "text/html; charset=utf-8";
-  if (pathname.endsWith(".js")) return "application/javascript; charset=utf-8";
-  if (pathname.endsWith(".css")) return "text/css; charset=utf-8";
-  if (pathname.endsWith(".json")) return "application/json; charset=utf-8";
-  if (pathname.endsWith(".svg")) return "image/svg+xml";
-  if (pathname.endsWith(".png")) return "image/png";
-  if (pathname.endsWith(".woff2")) return "font/woff2";
-  return "application/octet-stream";
-}
-
-function startStaticServer(rootDir: string): Promise<{ port: number; close: () => Promise<void> }> {
-  return new Promise((resolvePromise, reject) => {
-    const server = createServer((request, response) => {
-      const url = new URL(request.url ?? "/", "http://127.0.0.1");
-      const pathname = decodeURIComponent(url.pathname);
-      const filePath = join(rootDir, pathname === "/" ? "index.html" : pathname);
-      readFileCallback(filePath, (error, file) => {
-        if (error?.code === "ENOENT") {
-          response.writeHead(404);
-          response.end("Not found");
-          return;
-        }
-        if (error) {
-          response.destroy(error);
-          return;
-        }
-        response.writeHead(200, { "Content-Type": contentType(filePath) });
-        response.end(file);
-      });
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        reject(new Error("Failed to start static server"));
-        return;
-      }
-      resolvePromise({
-        port: address.port,
-        close: () =>
-          new Promise<void>((closeResolve, closeReject) => {
-            server.close((error) => (error ? closeReject(error) : closeResolve()));
-          }),
-      });
-    });
-  });
-}
-
 async function ensurePlaywright(): Promise<typeof import("playwright").chromium> {
   const playwright = await import("playwright");
   return playwright.chromium;
@@ -124,7 +77,7 @@ async function captureScreenshots(): Promise<void> {
   const chromium = await ensurePlaywright();
   await mkdir(outputDir, { recursive: true });
 
-  const server = await startStaticServer(storybookDir);
+  const server = await startStorybookStaticServer(storybookDir);
   const manifest: Array<{
     id: string;
     filename: string;
@@ -146,28 +99,18 @@ async function captureScreenshots(): Promise<void> {
         const url = `http://127.0.0.1:${server.port}/iframe.html?id=${shot.id}&viewMode=story`;
         console.log(`Capturing ${shot.filename} (${shot.id})`);
         await page.goto(url, { waitUntil: "networkidle" });
-        if (shot.tabLabel) {
-          await page.getByRole("button", { name: shot.tabLabel, exact: true }).click();
-        }
+        await selectScreenshotTab(page, shot.tabLabel);
         await page.evaluate(() => window.scrollTo(0, 0));
         await page.waitForTimeout(1500);
         await assertStoryRendered(page, shot.id);
 
         const outputPath = join(outputDir, shot.filename);
-        await page.screenshot({
-          path: outputPath,
-          clip: {
-            x: 0,
-            y: 0,
-            width: DEVICE.width * DEVICE.scale,
-            height: DEVICE.height * DEVICE.scale,
-          },
-        });
+        await captureViewportScreenshot(page, outputPath);
         manifest.push({
           id: shot.id,
           filename: shot.filename,
           caption: shot.caption,
-          outputPath: outputPath.replace(`${mobileRoot}/`, ""),
+          outputPath: manifestOutputPath(mobileRoot, outputPath),
           pixelSize: `${DEVICE.width * DEVICE.scale}x${DEVICE.height * DEVICE.scale}`,
         });
       }
@@ -187,12 +130,8 @@ async function captureScreenshots(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  try {
-    await readFile(join(storybookDir, "index.html"));
-  } catch (error: unknown) {
-    throw new Error("Storybook build not found. Run: pnpm storybook:mobile:build", {
-      cause: error,
-    });
+  if (!existsSync(join(storybookDir, "index.html"))) {
+    throw new Error("Storybook build not found. Run: pnpm storybook:mobile:build");
   }
 
   await captureScreenshots();

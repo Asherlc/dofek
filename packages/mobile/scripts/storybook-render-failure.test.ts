@@ -11,9 +11,11 @@ interface StorybookRenderFailure {
 function storybookPage({
   renderFailure,
   processingError,
+  queryError,
 }: {
   renderFailure?: StorybookRenderFailure;
   processingError?: string;
+  queryError?: string;
 } = {}): StorybookPage {
   return {
     locator(selector) {
@@ -23,6 +25,7 @@ function storybookPage({
         'text="Processing status is unavailable"':
           processingError !== undefined ? "Processing status is unavailable" : null,
         'text="Failed to fetch"': processingError || null,
+        '[data-testid="query-state-error"]:visible': queryError,
       }[selector];
       return {
         count: async () => (text == null ? 0 : 1),
@@ -81,6 +84,14 @@ describe("assertStoryRendered", () => {
 
     await expect(assertStoryRendered(page, "pages-strain--with-activities")).rejects.toThrow(
       "Storybook story pages-strain--with-activities contains a processing error: Processing status is unavailable",
+    );
+  });
+
+  it("fails when a screenshot contains a generic query error panel", async () => {
+    const page = storybookPage({ queryError: "Could not load cycling polarization" });
+
+    await expect(assertStoryRendered(page, "pages-strain--with-activities")).rejects.toThrow(
+      "Storybook story pages-strain--with-activities contains a query error panel",
     );
   });
 });

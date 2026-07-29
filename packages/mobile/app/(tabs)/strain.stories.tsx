@@ -11,6 +11,39 @@ import {
 } from "./processing-status-story-fixture";
 import StrainScreen from "./strain";
 
+const STRAIN_COMPANION_RESPONSES = {
+  "training.hrZones": {
+    maxHr: 190,
+    weeks: [],
+    intensityDistribution: {
+      model: "karvonen-five-zone",
+      activityScope: "endurance",
+      totalSeconds: 0,
+      zones: [],
+      explanation: "No intensity samples in this fixture.",
+    },
+  },
+  "efficiency.polarizationTrend": {
+    model: "treff-three-zone",
+    activityScope: "cycling",
+    threshold: 2,
+    maxHr: 190,
+    weeks: [],
+    explanation: "No cycling polarization samples in this fixture.",
+    method: {
+      formula: "Fixture formula.",
+      zoneBasis: "Fixture zones.",
+      calculationChoice: "Fixture calculation.",
+      interpretation: "Fixture interpretation.",
+      source: {
+        title: "Treff source",
+        url: "https://doi.org/10.3389/fphys.2019.00707",
+      },
+    },
+  },
+  "cyclingAdvanced.trainingMonotony": [],
+} satisfies Parameters<typeof createProcessingStatusStoryLink>[1];
+
 function createMockWorkloadData(dates: FixtureDates) {
   const timeSeries = Array.from({ length: 7 }, (_, index) => {
     const isLatest = index === 6;
@@ -156,7 +189,12 @@ function MockProviders({
     return {
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
-        links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
+        links: [
+          createProcessingStatusStoryLink(
+            seededProviders.processingStatus,
+            STRAIN_COMPANION_RESPONSES,
+          ),
+        ],
       }),
     };
   }, [withActivities]);
