@@ -47,7 +47,7 @@ export function SyncAllControls({
         accessibilityState={{ busy, disabled: busy }}
       >
         {busy ? (
-          <ActivityIndicator color={colors.text} size="small" />
+          <ActivityIndicator color={colors.textInverse} size="small" />
         ) : (
           <Text style={styles.recentButtonText}>{SYNC_ALL_ACTIONS.recent.label}</Text>
         )}
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   recentButtonText: {
-    color: colors.text,
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: "600",
   },
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   confirmButtonText: {
-    color: colors.text,
+    color: colors.textInverse,
     fontSize: 13,
     fontWeight: "600",
   },

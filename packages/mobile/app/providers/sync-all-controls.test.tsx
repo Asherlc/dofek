@@ -9,13 +9,8 @@ vi.mock("react-native", () => {
   const ReactModule = require("react");
   const View = ({ children, style: _style, ...props }: Record<string, unknown>) =>
     ReactModule.createElement("div", props, children);
-  const Text = ({
-    children,
-    accessibilityRole,
-    style: _style,
-    ...props
-  }: Record<string, unknown>) =>
-    ReactModule.createElement("span", { role: accessibilityRole, ...props }, children);
+  const Text = ({ children, accessibilityRole, style, ...props }: Record<string, unknown>) =>
+    ReactModule.createElement("span", { role: accessibilityRole, style, ...props }, children);
   const TouchableOpacity = ReactModule.forwardRef(
     (
       {
@@ -98,7 +93,8 @@ vi.mock("../../theme", () => ({
     danger: "#ff0000",
     surface: "#111111",
     surfaceSecondary: "#222222",
-    text: "#ffffff",
+    text: "#111111",
+    textInverse: "#ffffff",
     textSecondary: "#aaaaaa",
   },
 }));
@@ -121,6 +117,14 @@ describe("SyncAllControls", () => {
     expect(screen.getByText("Updates the last 7 days for every connected provider.")).toBeTruthy();
     fireEvent.click(recent);
     expect(onRecentSync).toHaveBeenCalledOnce();
+  });
+
+  it("uses inverse text on accent-filled actions", () => {
+    render(<SyncAllControls busy={false} onRecentSync={vi.fn()} onFullSync={vi.fn()} />);
+
+    expect(screen.getByText("Sync recent data").style.color).toBe("rgb(255, 255, 255)");
+    fireEvent.click(screen.getByRole("button", { name: "Sync full history for all providers" }));
+    expect(screen.getByText("Start full sync").style.color).toBe("rgb(255, 255, 255)");
   });
 
   it("requires confirmation after explaining full-history impact", () => {
