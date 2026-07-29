@@ -719,8 +719,8 @@ entity "breathwork_session" {
   duration_seconds : integer
   started_at : timestamp
   notes : text
-  stress_before : smallint
-  stress_after : smallint
+  stress_before : bigint
+  stress_after : bigint
   dizziness_after : boolean
   perceived_effect : text
   created_at : timestamp
