@@ -249,7 +249,7 @@ describe("DataSourcesPanel", () => {
     mockCaptureException.mockReset();
   });
 
-  it("reserves one stable provider region while inventory loads", () => {
+  it("reserves stable action and provider regions while inventory loads", () => {
     mockProvidersQuery.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -262,8 +262,11 @@ describe("DataSourcesPanel", () => {
     });
 
     const { rerender } = render(<DataSourcesPanel />);
+    const actionRegion = screen.getByRole("heading", { name: "Data Sources" }).parentElement;
     const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
 
+    expect(actionRegion?.className).toContain("min-h-20");
+    expect(screen.queryByRole("region", { name: "Sync all providers" })).toBeNull();
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
     expect(loadingRegion.className).toContain("h-80");
     expect(loadingRegion.className).toContain("sm:h-96");
@@ -282,6 +285,15 @@ describe("DataSourcesPanel", () => {
           pushOnly: false,
           needsReauth: false,
         },
+        {
+          id: "whoop",
+          name: "WHOOP",
+          authorized: true,
+          authType: "oauth2",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
       ],
       isLoading: false,
       error: null,
@@ -289,6 +301,8 @@ describe("DataSourcesPanel", () => {
     rerender(<DataSourcesPanel />);
 
     const processingRegion = screen.getByRole("region", { name: "Available data sources" });
+    expect(screen.getByRole("heading", { name: "Data Sources" }).parentElement).toBe(actionRegion);
+    expect(screen.getByRole("region", { name: "Sync all providers" })).toBeTruthy();
     expect(processingRegion).toBe(loadingRegion);
     expect(processingRegion.getAttribute("aria-busy")).toBe("true");
     expect(within(processingRegion).getByText("Loading processing status…")).toBeTruthy();
