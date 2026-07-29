@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock("@sentry/node", () => ({ captureException: sentry.captureException }));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -49,6 +53,33 @@ describe("weeklyReportRouter", () => {
       const result = await caller.report({ weeks: 4, endDate: "2026-03-24" });
       expect(result.current).toBeNull();
       expect(result.history).toEqual([]);
+      expect(result.recovery).toEqual({
+        range: { startDate: "2026-03-01", endDate: "2026-03-24" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-01 through 2026-03-24. Sync your providers, then retry or review processing alerts.",
+      });
+    });
+
+    it("reports failures and names the affected weekly range", async () => {
+      const failure = new Error("ClickHouse query failed");
+      const sensorStore = makeMockSensorStore([]);
+      vi.mocked(sensorStore.query).mockRejectedValue(failure);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await expect(caller.report({ weeks: 4, endDate: "2026-03-24" })).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message:
+          "The weekly report for 2026-03-01 through 2026-03-24 could not be refreshed. Retry now or review processing alerts if the problem continues.",
+      });
+      expect(sentry.captureException).toHaveBeenCalledWith(failure, {
+        tags: { reportType: "weekly" },
+        extra: { startDate: "2026-03-01", endDate: "2026-03-24" },
+      });
     });
 
     it("asserts correct trainingHours rounding", async () => {

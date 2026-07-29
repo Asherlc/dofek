@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock("@sentry/node", () => ({ captureException: sentry.captureException }));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -62,10 +66,36 @@ describe("monthlyReportRouter", () => {
         userId: "user-1",
         sensorStore: makeSensorStore([]),
       });
-      const result = await caller.report({ months: 6 });
+      const result = await caller.report({ months: 6, endDate: "2026-07-24" });
 
       expect(result.current).toBeNull();
       expect(result.history).toEqual([]);
+      expect(result.recovery).toEqual({
+        range: { startDate: "2026-02-01", endDate: "2026-07-24" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
+      });
+    });
+
+    it("reports failures and names the affected monthly range", async () => {
+      const failure = new Error("ClickHouse query failed");
+      const sensorStore = makeSensorStore([]);
+      vi.mocked(sensorStore.query).mockRejectedValue(failure);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        sensorStore,
+      });
+
+      await expect(caller.report({ months: 6, endDate: "2026-07-24" })).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message:
+          "The monthly report for 2026-02-01 through 2026-07-24 could not be refreshed. Retry now or review processing alerts if the problem continues.",
+      });
+      expect(sentry.captureException).toHaveBeenCalledWith(failure, {
+        tags: { reportType: "monthly" },
+        extra: { startDate: "2026-02-01", endDate: "2026-07-24" },
+      });
     });
 
     it("returns monthly summaries from SQL results", async () => {
