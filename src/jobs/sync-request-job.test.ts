@@ -1,9 +1,14 @@
 import type { JobsOptions } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
-import { buildSyncRequestJobId } from "../lib/sync-request-query.ts";
+import {
+  buildSyncRequestJobId,
+  registerSyncRequestQueryResolver,
+} from "../lib/sync-request-query.ts";
 import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
 import type { SyncJobData } from "./queues.ts";
 import { enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
+
+registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
 
 describe("resolveWhoopSyncRequestQuery", () => {
   it("maps a fresh sync job to the first bootstrap cycles request", () => {
@@ -328,6 +333,69 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     );
     expect(result).toBe(existingJob);
     expect(result?.alreadyQueued).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "lifecycle deduplication is absent",
+      jobOptions: {},
+      returnedJobId: "different-job-id",
+      jobData,
+    },
+    {
+      name: "request job ID is absent",
+      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      returnedJobId: "different-job-id",
+      jobData: {
+        userId: "user-1",
+        providerId: "whoop",
+        checkpoint: {
+          runId: "run-1",
+          recordsSynced: 0,
+          phase: "done" as const,
+          cycleFetchCursorMs: null,
+          cycles: [],
+          apiSteps: [],
+          apiStepIndex: 0,
+          presentExternalIds: [],
+        },
+      },
+    },
+    {
+      name: "BullMQ returns no job ID",
+      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      returnedJobId: undefined,
+      jobData,
+    },
+    {
+      name: "BullMQ returns the requested job ID",
+      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      returnedJobId: "requested-job-id",
+      jobData,
+    },
+  ])("does not report already queued when $name", async ({
+    jobOptions,
+    returnedJobId,
+    jobData,
+  }) => {
+    const returnedJob = { id: returnedJobId };
+    const addJob = vi.fn().mockImplementation(async (_name, _data, options: JobsOptions) => {
+      if (returnedJobId === "requested-job-id") {
+        returnedJob.id = options.jobId;
+      }
+      return returnedJob;
+    });
+    const getJob = vi.fn().mockResolvedValue(undefined);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(result?.alreadyQueued).toBe(false);
   });
 
   it("returns an existing cooldown-delayed job without enqueueing a duplicate", async () => {

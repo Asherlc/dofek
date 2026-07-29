@@ -836,6 +836,11 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.triggerSync({ providerId: "garmin" });
+      expect(enqueueSpy).toHaveBeenCalledWith(
+        "garmin",
+        expect.objectContaining({ providerId: "garmin", userId: "user-1" }),
+        expect.objectContaining({ skipWhenRateLimited: true }),
+      );
       enqueueSpy.mockRestore();
 
       expect(result.providerResults).toEqual([
