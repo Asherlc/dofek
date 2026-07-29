@@ -460,6 +460,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="breathwork"
+            options={{
+              title: "Breathwork",
+            }}
+          />
+          <Stack.Screen
             name="activity/[id]"
             options={{
               title: "Activity",

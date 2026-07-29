@@ -17,13 +17,17 @@ interface SaveOptions {
 
 const mocks = vi.hoisted<{
   captureException: ReturnType<typeof vi.fn>;
-  invalidate: ReturnType<typeof vi.fn>;
+  invalidateAll: ReturnType<typeof vi.fn>;
+  safetyInvalidate: ReturnType<typeof vi.fn>;
+  stackInvalidate: ReturnType<typeof vi.fn>;
   mutate: ReturnType<typeof vi.fn>;
   query: QueryState;
   saveOptions: SaveOptions | undefined;
 }>(() => ({
   captureException: vi.fn(),
-  invalidate: vi.fn(),
+  invalidateAll: vi.fn(),
+  safetyInvalidate: vi.fn(),
+  stackInvalidate: vi.fn(),
   mutate: vi.fn(),
   query: {
     data: [{ name: "Creatine", amount: 5, unit: "g" }],
@@ -44,8 +48,11 @@ vi.mock("../lib/useRefresh", () => ({
 vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
-      invalidate: mocks.invalidate,
-      supplements: { list: { invalidate: mocks.invalidate } },
+      invalidate: mocks.invalidateAll,
+      nutritionAnalytics: {
+        micronutrientAdequacyV2: { invalidate: mocks.safetyInvalidate },
+      },
+      supplements: { list: { invalidate: mocks.stackInvalidate } },
     }),
     supplements: {
       list: { useQuery: () => mocks.query },
@@ -77,6 +84,50 @@ vi.mock("../lib/trpc", () => ({
             mutate: mocks.mutate,
           };
         },
+      },
+    },
+    nutritionAnalytics: {
+      micronutrientAdequacyV2: {
+        useQuery: () => ({
+          data: {
+            nutrients: [
+              {
+                nutrientId: "vitamin_d",
+                nutrient: "Vitamin D",
+                unit: "mcg",
+                intake: {
+                  totalDailyAverage: 120,
+                  foodDailyAverage: 20,
+                  supplementDailyAverage: 100,
+                  daysTracked: 10,
+                },
+                upperLimit: {
+                  status: "at_or_above_limit",
+                  message:
+                    "Average intake over recorded days is at or above the included NIH adult upper limit. Review this intake with a doctor or pharmacist.",
+                  source: {
+                    agency: "NIH ODS",
+                    url: "https://ods.od.nih.gov/factsheets/VitaminD-HealthProfessional/",
+                  },
+                },
+                safetyStatus: "at_or_above_upper_limit",
+              },
+            ],
+            professionalReview: {
+              status: "professional_review_recommended",
+              message:
+                "Review your complete medication and supplement list with a doctor or pharmacist because supplements can interact with medications.",
+              limitation:
+                "Dofek does not determine whether a specific medication and supplement interact.",
+              source: {
+                agency: "FDA",
+                url: "https://www.fda.gov/consumers/consumer-updates/mixing-medications-and-dietary-supplements-can-endanger-your-health",
+              },
+            },
+          },
+          error: null,
+          isLoading: false,
+        }),
       },
     },
   },
@@ -130,12 +181,25 @@ describe("SupplementsScreen", () => {
     });
   });
 
-  it("invalidates the supplement stack after replacement succeeds", async () => {
+  it("invalidates the stack and safety review after replacement succeeds", async () => {
     const { default: SupplementsScreen } = await import("./supplements");
     render(<SupplementsScreen />);
 
     await mocks.saveOptions?.onSuccess?.();
 
-    expect(mocks.invalidate).toHaveBeenCalledOnce();
+    expect(mocks.stackInvalidate).toHaveBeenCalledOnce();
+    expect(mocks.safetyInvalidate).toHaveBeenCalledWith({ days: 30 });
+  });
+
+  it("renders server-owned upper-limit and medication-review guidance", async () => {
+    const { default: SupplementsScreen } = await import("./supplements");
+
+    render(<SupplementsScreen />);
+
+    expect(screen.getByText("Safety Context")).toBeTruthy();
+    expect(screen.getByText(/at or above the included NIH adult upper limit/)).toBeTruthy();
+    expect(screen.getByText(/complete medication and supplement list/)).toBeTruthy();
+    expect(screen.getByText(/does not determine whether a specific medication/)).toBeTruthy();
+    expect(screen.getByText(/over 10 recorded days/)).toBeTruthy();
   });
 });
