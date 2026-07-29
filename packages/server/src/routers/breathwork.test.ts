@@ -55,7 +55,14 @@ describe("breathworkRouter", () => {
         expect(technique.name).toBeTruthy();
         expect(technique.inhaleSeconds).toBeGreaterThan(0);
         expect(technique.exhaleSeconds).toBeGreaterThan(0);
+        expect(technique.safety.position).toBeTruthy();
+        expect(technique.safety.stopCriteria).toBeTruthy();
+        expect(technique.safety.emergency).toBeTruthy();
       }
+
+      expect(result.find((technique) => technique.id === "wim-hof")?.safety.warnings).toContain(
+        "Intense rounds can, in rare cases, cause loss of consciousness.",
+      );
     });
   });
 

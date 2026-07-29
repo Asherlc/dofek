@@ -7,7 +7,7 @@ locked = true
 node = "26.5.0"
 "npm:pnpm" = "11.17.0"
 python = "3.12.13"
-uv = "0.11.32"
+uv = "0.11.32" # Keep in sync with uv.toml required-version.
 infisical = "0.43.114"
 cmake = "4.4.0"
 ninja = "1.13.2"
@@ -36,6 +36,14 @@ description = "Prepare a complete cloud development environment"
 run = [
   { task = "cloud:prebuild" },
   { task = "cloud:start" },
+]
+
+[tasks."test:sandbox"]
+description = "Run the checks that need no Docker-backed services"
+run = [
+  "pnpm --recursive --include-workspace-root --if-present typecheck",
+  "pnpm lint:sandbox",
+  "pnpm test",
 ]
 
 [tasks.doctor]

@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../lib/open-external-url", () => ({
+  openExternalUrl: vi.fn(async () => true),
+}));
+
+import { openExternalUrl } from "../lib/open-external-url";
 import { TrainingDistributionCards } from "./TrainingDistributionCards";
 
 describe("TrainingDistributionCards", () => {
@@ -19,6 +25,7 @@ describe("TrainingDistributionCards", () => {
           explanation: "Server-provided descriptive Karvonen explanation.",
         }}
         polarization={null}
+        monotony={null}
       />,
     );
 
@@ -40,6 +47,16 @@ describe("TrainingDistributionCards", () => {
           threshold: 2,
           maxHr: 190,
           explanation: "Server-provided Treff explanation.",
+          method: {
+            formula: "Server-provided Treff formula.",
+            zoneBasis: "Server-provided zone basis.",
+            calculationChoice: "Server-provided calculation choice.",
+            interpretation: "Server-provided descriptive interpretation.",
+            source: {
+              title: "Treff source",
+              url: "https://doi.org/10.3389/fphys.2019.00707",
+            },
+          },
           weeks: [
             {
               week: "2026-07-20",
@@ -55,6 +72,7 @@ describe("TrainingDistributionCards", () => {
             },
           ],
         }}
+        monotony={null}
       />,
     );
 
@@ -74,6 +92,16 @@ describe("TrainingDistributionCards", () => {
           threshold: 2,
           maxHr: null,
           explanation: "Server-provided Treff explanation.",
+          method: {
+            formula: "Server-provided Treff formula.",
+            zoneBasis: "Server-provided zone basis.",
+            calculationChoice: "Server-provided calculation choice.",
+            interpretation: "Server-provided descriptive interpretation.",
+            source: {
+              title: "Treff source",
+              url: "https://doi.org/10.3389/fphys.2019.00707",
+            },
+          },
           weeks: [
             {
               week: "2026-07-20",
@@ -89,10 +117,57 @@ describe("TrainingDistributionCards", () => {
             },
           ],
         }}
+        monotony={null}
       />,
     );
 
     expect(screen.getByText("Insufficient data")).toBeTruthy();
     expect(screen.getByText("Polarization needs time in every Treff zone.")).toBeTruthy();
+  });
+
+  it("renders server-computed monotony inputs, descriptive method, and source", () => {
+    const method = {
+      formula:
+        "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+      calendar: "Monday–Sunday calendar weeks include zero-load days.",
+      activityScope: "Cycling activities with computed endurance training load.",
+      interpretation:
+        "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+      source: {
+        title: "Foster (1998), Monitoring training in athletes",
+        url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+      },
+    };
+
+    render(
+      <TrainingDistributionCards
+        intensityDistribution={null}
+        polarization={null}
+        monotony={[
+          {
+            week: "2026-07-20",
+            monotony: 2.18,
+            strain: 2460,
+            weeklyLoad: 1128,
+            dailyMeanLoad: 161.14,
+            dailyLoadStandardDeviation: 73.92,
+            method,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
+    expect(screen.getByText("Monotony 2.18")).toBeTruthy();
+    expect(screen.getByText("Strain 2460.0")).toBeTruthy();
+    expect(
+      screen.getByText("Daily mean 161.14 · population standard deviation (SD) 73.92"),
+    ).toBeTruthy();
+    expect(screen.getByText(method.formula)).toBeTruthy();
+    expect(screen.getByText(method.calendar)).toBeTruthy();
+    expect(screen.getByText(method.interpretation)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("link", { name: method.source.title }));
+    expect(openExternalUrl).toHaveBeenCalledWith(method.source.url, "training-monotony-source");
   });
 });

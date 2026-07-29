@@ -448,6 +448,7 @@ describe("Router transformation logic", () => {
       expect(historyBefore.result.data).toHaveLength(0);
       const { result: phaseBefore } = await query("menstrualCycle.currentPhase");
       expect(phaseBefore.result.data.phase).toBeNull();
+      expect(phaseBefore.result.data.estimate).toBeNull();
 
       const { status } = await mutate("menstrualCycle.logPeriod", {
         startDate: today,
@@ -459,6 +460,14 @@ describe("Router transformation logic", () => {
       expect(historyAfter.result.data).toHaveLength(1);
       const { result: phaseAfter } = await query("menstrualCycle.currentPhase");
       expect(phaseAfter.result.data.phase).not.toBeNull();
+      expect(phaseAfter.result.data.estimate).toMatchObject({
+        basis: "generic-28-day-default",
+        completedCycleCount: 0,
+        observedCycleLengthRange: null,
+        methodLabel:
+          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
+        uncertaintyLabel: "No personal cycle-length range is available yet.",
+      });
     });
 
     it("refreshes breathwork history after logging a session", async () => {

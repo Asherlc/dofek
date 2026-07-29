@@ -19500,6 +19500,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   complete production analytics-plus-cache cycle below the unchanged
   four-minute ceiling, and only then resolve DOFEK-SERVER-5A.
 
+## 2026-07-27 — Polarization Integration Assertion Used the Former Label
+
+- **Status:** Root cause confirmed and the stale assertion corrected on PR
+  #2231.
+- **Symptoms:** CI run
+  [30321871930](https://github.com/Asherlc/dofek/actions/runs/30321871930)
+  failed `Test / Integration Tests (4/4)` in job
+  [90159569441](https://github.com/Asherlc/dofek/actions/runs/30321871930/job/90159569441).
+- **User impact:** No production impact. The pull request could not merge while
+  its integration gate was red.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`. The first
+  fatal line was
+  `AssertionError: expected { week: '2026-04-06', …(9) } to match object { status: 'insufficient_data', …(1) }`;
+  the diff showed expected `statusLabel: "Insufficient data"` but received the
+  approved neutral `statusLabel: "Not calculated"`.
+- **Root cause:** The integration fixture retained the previous presentation
+  label after the server-owned insufficient-data classification intentionally
+  changed its label to `Not calculated`.
+- **Fix / mitigation:** Update only the stale integration expectation to the
+  current server-owned label. No production behavior, timeout, retry, or CI
+  configuration changed.
+- **Validation:** Database-backed validation of the correction remains pending
+  in a fresh exact-head `Test / Integration Tests (4/4)` run. Merge also remains
+  gated on the complete exact-head CI and review results.
+- **Remaining risk / follow-up:** Confirm the refreshed integration shard and
+  every other required exact-head check complete successfully before merge.
+
+## 2026-07-27 — Polarization Integration Fixture Violated the Calculation Invariant
+
+- **Status:** Root cause confirmed and the invalid fixture corrected on PR
+  #2231.
+- **Symptoms:** CI run
+  [30322677959](https://github.com/Asherlc/dofek/actions/runs/30322677959)
+  failed `Test / Integration Tests (3/4)` in job
+  [90161814107](https://github.com/Asherlc/dofek/actions/runs/30322677959/job/90161814107).
+- **User impact:** No production impact. The pull request could not merge while
+  its integration gate was red.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=3/4`. The first
+  fatal line was `AssertionError: expected null not to be null` at
+  `router-data.integration.test.ts:639`. The fixture seeded 600 seconds in the
+  easy zone and 900 seconds in the high zone, while the public router correctly
+  returned no polarization index.
+- **Root cause:** The dedicated non-null polarization fixture violated the
+  approved calculation invariant that high-zone time must not exceed easy-zone
+  time.
+- **Fix / mitigation:** Change the fixture to a valid nontrivial three-zone
+  distribution of 900 easy-zone seconds, 300 threshold-zone seconds, and 600
+  high-zone seconds, and update the matching response assertions. No production
+  behavior, timeout, retry, or CI configuration changed.
+- **Validation:** Database-backed validation of the corrected fixture remains
+  pending in a fresh exact-head `Test / Integration Tests (3/4)` run. Merge also
+  remains gated on the complete exact-head CI and review results.
+- **Remaining risk / follow-up:** Confirm all four refreshed integration shards
+  and every other required exact-head check complete successfully before merge.
+
 ## 2026-07-27 — Correlation repository mutants survived CI
 
 - **Status:** Root cause fixed and focused mutation validation complete; fresh
@@ -19621,3 +19678,69 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Validate both package credentials
   concurrently on a physical Zepp OS watch and confirm each survives pairing
   and revocation of the other after the production migration is deployed.
+## 2026-07-27 — Lint CI could not resolve the uv tool version
+
+- **Status:** Root cause fixed locally on PR #2234; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30326495873](https://github.com/Asherlc/dofek/actions/runs/30326495873)
+  failed `Test / Lint` in job
+  [90173062542](https://github.com/Asherlc/dofek/actions/runs/30326495873/job/90173062542).
+- **User impact:** No production impact. PR #2234 could not merge while its
+  required lint job was red.
+- **Evidence:** The failing step was `Setup uv`, before `pnpm lint` ran. The
+  action reported that neither `uv.toml` nor a root `pyproject.toml` provided a
+  version, fell back to fetching Astral's remote latest-version manifest, and
+  then emitted the first fatal line `##[error]fetch failed`. Astral documents
+  that exact fallback order in the official
+  [setup-uv version-selection guidance](https://github.com/astral-sh/setup-uv#install-a-required-version-or-latest-default).
+- **Root cause:** The repository did not provide
+  `astral-sh/setup-uv` with its supported root-level `required-version`
+  configuration, so every uv-backed CI job depended on an additional manifest
+  lookup before it could install the tool. The action documents this lookup
+  order in its
+  [version-selection guidance](https://github.com/astral-sh/setup-uv#install-a-required-version-or-latest-default).
+- **Fix / mitigation:** Add a root `uv.toml` that pins
+  `required-version = "==0.11.32"`, matching the repository's existing
+  `mise.toml` tool pin and the current stable
+  [uv 0.11.32 release](https://github.com/astral-sh/uv/releases/tag/0.11.32).
+  uv supports exact PEP 440 constraints for this
+  [setting](https://docs.astral.sh/uv/reference/settings/#required-version).
+  No retry, timeout, skip, fallback, or warn-and-continue behavior was added.
+- **Validation:** TOML parsing and exact-version enforcement pass with uv
+  0.11.32; action and workflow policy linting pass locally. The corrected
+  `Setup uv` and `Test / Lint` steps remain gated on fresh exact-head CI.
+- **Remaining risk / follow-up:** Keep the exact `uv.toml` and `mise.toml` uv
+  pins synchronized during future upgrades. Confirm every uv-backed exact-head
+  job uses the pinned version and that the complete CI run passes before merge.
+
+## 2026-07-27 — E2E server image omitted nutrition package source
+
+- **Status:** Root cause fixed locally on PR #2236; fresh exact-head E2E
+  validation pending.
+- **Symptoms:** Exact-head CI job
+  [90183949945](https://github.com/Asherlc/dofek/actions/runs/30330263244/job/90183949945)
+  failed the `Start e2e server` step.
+- **User impact:** No production impact. PR #2236 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `docker compose -f docker-compose.e2e.yml up -d --wait --no-build --no-deps server`.
+  The first causal application line was
+  `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/packages/server/node_modules/@dofek/nutrition/src/nutrient-safety.ts'`.
+  The server container then exited with status 1.
+- **Root cause:** The server image copied the `@dofek/nutrition` workspace
+  manifest through its production dependency stage, but did not copy
+  `packages/nutrition/src` or create the root workspace link. The new safety
+  repository import made that incomplete runtime package startup-reachable.
+- **Fix / mitigation:** Copy the nutrition package source and manifest into
+  the final server stage and link `node_modules/@dofek/nutrition` consistently
+  with the other runtime workspace packages. No retry, timeout, healthcheck,
+  or fallback behavior changed. Docker documents cross-stage file copying in
+  [multi-stage builds](https://docs.docker.com/build/building/multi-stage/).
+- **Validation:** A clean production server-image build completed, including
+  both native decoder tests. A container smoke run from
+  `/app/packages/server` loaded the nutrition package subpath and the safety
+  repository module successfully. The replacement exact-head E2E job remains
+  the full server-start regression gate.
+- **Remaining risk / follow-up:** The Dockerfile still enumerates runtime
+  workspace packages manually, so future server imports must keep the final
+  image copy/link list synchronized with the server dependency graph.

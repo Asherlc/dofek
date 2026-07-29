@@ -16,7 +16,7 @@ import { trpc } from "../lib/trpc.ts";
 export function NutritionAnalyticsPage() {
   const [days, setDays] = useState<TimeRangeDays>(30);
 
-  const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacy.useQuery(
+  const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery(
     selectedRangeQueryInput(days),
   );
   const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery(
@@ -66,10 +66,13 @@ export function NutritionAnalyticsPage() {
         {/* Micronutrient Adequacy */}
         <Section
           title="Micronutrient Adequacy"
-          subtitle={`Average daily intake as % of Recommended Dietary Allowance (RDA) (${formatTimeRangeLabel(days)})`}
+          subtitle={`Average over recorded days as % of the U.S. Food and Drug Administration (FDA) Daily Value (${formatTimeRangeLabel(days)}); this generic label reference is not a personalized deficiency or safety assessment`}
         >
           {micronutrients.isError && <QueryStatePanel error={micronutrients.error} height={72} />}
-          <MicronutrientChart data={micronutrients.data ?? []} loading={micronutrients.isLoading} />
+          <MicronutrientChart
+            data={micronutrients.data?.nutrients ?? []}
+            loading={micronutrients.isLoading}
+          />
         </Section>
       </div>
     </ChartRangeProvider>

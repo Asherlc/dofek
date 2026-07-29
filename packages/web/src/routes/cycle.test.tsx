@@ -17,6 +17,14 @@ interface PhaseData {
   phase: "menstrual";
   dayOfCycle: number;
   cycleLength: number;
+  estimate: {
+    phaseLabel: string;
+    cycleDayLabel: string;
+    dayBasisLabel: string;
+    methodLabel: string;
+    uncertaintyLabel: string;
+    limitationLabel: string;
+  };
 }
 
 interface TestState {
@@ -155,6 +163,14 @@ describe("CyclePage", () => {
       phase: "menstrual",
       dayOfCycle: 3,
       cycleLength: 28,
+      estimate: {
+        phaseLabel: "Estimated Menstrual phase",
+        cycleDayLabel: "Day 3 of an estimated 28-day cycle",
+        dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+        methodLabel: "Phase and cycle length use the average of 3 completed cycles.",
+        uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 29 days.",
+        limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+      },
     };
 
     renderCyclePage();
@@ -162,6 +178,63 @@ describe("CyclePage", () => {
     expect(screen.getByRole("note", { name: "Cycle tracking safety notice" })).toHaveTextContent(
       "Tracking estimates only. Do not use for birth control or diagnosis.",
     );
+  });
+
+  it("renders the server-provided estimate method and observed uncertainty", () => {
+    state.phaseQuery.data = {
+      phase: "menstrual",
+      dayOfCycle: 3,
+      cycleLength: 28,
+      estimate: {
+        phaseLabel: "Estimated Menstrual phase",
+        cycleDayLabel: "Day 3 of an estimated 28-day cycle",
+        dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+        methodLabel: "Phase and cycle length use the average of 3 completed cycles.",
+        uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 29 days.",
+        limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+      },
+    };
+
+    renderCyclePage();
+
+    expect(screen.getByText("Estimated Menstrual phase")).toBeTruthy();
+    expect(screen.getByText("Day 3 of an estimated 28-day cycle")).toBeTruthy();
+    expect(
+      screen.getByText("Cycle day is counted from the latest recorded period start."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Phase and cycle length use the average of 3 completed cycles."),
+    ).toBeTruthy();
+    expect(screen.getByText("Recorded cycle lengths ranged from 27 to 29 days.")).toBeTruthy();
+    expect(
+      screen.getByText("No calibrated confidence score or next-period forecast is available."),
+    ).toBeTruthy();
+  });
+
+  it("plainly identifies the zero-history generic default", () => {
+    state.phaseQuery.data = {
+      phase: "menstrual",
+      dayOfCycle: 3,
+      cycleLength: 28,
+      estimate: {
+        phaseLabel: "Estimated Menstrual phase",
+        cycleDayLabel: "Day 3 of an estimated 28-day cycle",
+        dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+        methodLabel:
+          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
+        uncertaintyLabel: "No personal cycle-length range is available yet.",
+        limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+      },
+    };
+
+    renderCyclePage();
+
+    expect(
+      screen.getByText(
+        "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("No personal cycle-length range is available yet.")).toBeTruthy();
   });
 
   it("renders the server-provided duration label", () => {

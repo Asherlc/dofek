@@ -4,10 +4,12 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { ProviderLogo } from "../components/ProviderLogo";
@@ -39,6 +41,8 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const { fontScale } = useWindowDimensions();
+  const stackModeButtons = fontScale > 1;
 
   useEffect(() => {
     let mounted = true;
@@ -149,7 +153,14 @@ export default function LoginScreen() {
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      automaticallyAdjustKeyboardInsets
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.content}>
         <Text style={styles.title}>Dofek</Text>
         <Text style={styles.subtitle}>Sign in to view your health data</Text>
@@ -214,9 +225,13 @@ export default function LoginScreen() {
                   </>
                 ) : (
                   <>
-                    <View style={styles.modeToggle}>
+                    <View style={[styles.modeToggle, stackModeButtons && styles.modeToggleStacked]}>
                       <TouchableOpacity
-                        style={[styles.modeButton, authMode === "login" && styles.modeButtonActive]}
+                        style={[
+                          styles.modeButton,
+                          stackModeButtons && styles.modeButtonStacked,
+                          authMode === "login" && styles.modeButtonActive,
+                        ]}
                         onPress={() => setAuthMode("login")}
                         disabled={loggingIn}
                         accessibilityRole="button"
@@ -238,6 +253,7 @@ export default function LoginScreen() {
                       <TouchableOpacity
                         style={[
                           styles.modeButton,
+                          stackModeButtons && styles.modeButtonStacked,
                           authMode === "register" && styles.modeButtonActive,
                         ]}
                         onPress={() => setAuthMode("register")}
@@ -372,7 +388,7 @@ export default function LoginScreen() {
 
         {loggingIn ? <ActivityIndicator color={colors.accent} style={styles.spinner} /> : null}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -381,10 +397,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   content: {
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 32,
+    paddingVertical: 32,
   },
   title: {
     fontSize: 32,
@@ -429,11 +449,18 @@ const styles = StyleSheet.create({
     borderColor: colors.surfaceSecondary,
     overflow: "hidden",
   },
+  modeToggleStacked: {
+    flexDirection: "column",
+  },
   modeButton: {
     flex: 1,
     paddingVertical: 10,
     alignItems: "center",
     backgroundColor: colors.surface,
+  },
+  modeButtonStacked: {
+    flex: 0,
+    width: "100%",
   },
   modeButtonActive: {
     backgroundColor: colors.surfaceSecondary,
