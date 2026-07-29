@@ -31,14 +31,17 @@ describe("MoreScreen", () => {
   });
 
   it.each([
-    ["Account & settings", "/settings"],
-    ["Breathwork", "/breathwork"],
-    ["Cycle tracking", "/cycle"],
+    [
+      "Account & settings. Manage your profile, preferences, data sources, and account.",
+      "/settings",
+    ],
+    ["Breathwork. Start a guided breathing session and review recent practice.", "/breathwork"],
+    ["Cycle tracking. Review cycle phases and record period dates.", "/cycle"],
   ] as const)("opens %s from an accessible link", async (label, route) => {
     const { default: MoreScreen } = await import("./more");
     render(<MoreScreen />);
 
-    fireEvent.click(screen.getByRole("link", { name: new RegExp(label) }));
+    fireEvent.click(screen.getByRole("link", { name: label }));
 
     expect(mockPush).toHaveBeenCalledWith(route);
   });
