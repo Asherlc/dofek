@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
-const mockInvalidateUserQueryDomains = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const { mockInvalidateUserQueryDomains, mockLoggerError } = vi.hoisted(() => ({
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+  mockLoggerError: vi.fn(),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
   invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { error: mockLoggerError },
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -64,9 +71,27 @@ const createCaller = createTestCallerFactory(personalizationRouter);
 describe("personalizationRouter", () => {
   beforeEach(() => {
     mockInvalidateUserQueryDomains.mockClear();
+    mockLoggerError.mockClear();
   });
 
   describe("status", () => {
+    it("returns an actionable user-safe error when activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.status()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Personalization is unavailable because activity analytics are not configured. Contact your administrator.",
+      });
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "[personalization] personalization.status requires CLICKHOUSE_URL",
+      );
+    });
+
     it("returns not personalized with defaults when no stored params", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
       const caller = createCaller({

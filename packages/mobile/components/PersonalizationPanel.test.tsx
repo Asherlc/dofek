@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { trpc } from "../lib/trpc";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/telemetry", () => ({
+  captureException: mockCaptureException,
+}));
+
 // Mock TRPC
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -157,6 +163,25 @@ describe("PersonalizationPanel", () => {
     render(<PersonalizationPanel />);
 
     expect(screen.getByText("Personalization history is unavailable")).toBeTruthy();
+  });
+
+  it("reports incomplete model evidence and renders an actionable panel error", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 4) },
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    expect(
+      screen.getByText(
+        "Personalization model details are incomplete. Refresh and try again; contact support if this continues.",
+      ),
+    ).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "personalization-model-cards",
+      missingModelCard: "trainingImpulseConstants",
+    });
   });
 
   it("renders personalized status", () => {

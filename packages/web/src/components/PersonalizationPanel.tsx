@@ -5,6 +5,8 @@ import {
   formatStandardDeviation,
 } from "@dofek/format/format";
 import type { PersonalizationModelCard } from "dofek-server/types";
+import { useEffect } from "react";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export function PersonalizationPanel() {
@@ -36,6 +38,11 @@ export function PersonalizationPanel() {
 
   const data = status.data;
   if (!data) return null;
+  const resolvedModelCards = resolveModelCards(data.modelCards);
+  if ("missingKey" in resolvedModelCards) {
+    return <IncompleteModelCardsError missingKey={resolvedModelCards.missingKey} />;
+  }
+  const modelCards = resolvedModelCards.cards;
 
   return (
     <div className="space-y-4">
@@ -57,7 +64,7 @@ export function PersonalizationPanel() {
       {/* Parameter cards */}
       <div className="space-y-3">
         <ParamCard
-          modelCard={getModelCard(data.modelCards, "exponentialMovingAverage")}
+          modelCard={modelCards.exponentialMovingAverage}
           effective={data.effective.exponentialMovingAverage}
           defaults={data.defaults.exponentialMovingAverage}
           renderValue={(v: { chronicTrainingLoadDays: number; acuteTrainingLoadDays: number }) =>
@@ -66,7 +73,7 @@ export function PersonalizationPanel() {
         />
 
         <ParamCard
-          modelCard={getModelCard(data.modelCards, "readinessWeights")}
+          modelCard={modelCards.readinessWeights}
           effective={data.effective.readinessWeights}
           defaults={data.defaults.readinessWeights}
           renderValue={(v: {
@@ -80,14 +87,14 @@ export function PersonalizationPanel() {
         />
 
         <ParamCard
-          modelCard={getModelCard(data.modelCards, "sleepTarget")}
+          modelCard={modelCards.sleepTarget}
           effective={data.effective.sleepTarget}
           defaults={data.defaults.sleepTarget}
           renderValue={(v: { minutes: number }) => formatDurationMinutes(v.minutes)}
         />
 
         <ParamCard
-          modelCard={getModelCard(data.modelCards, "stressThresholds")}
+          modelCard={modelCards.stressThresholds}
           effective={data.effective.stressThresholds}
           defaults={data.defaults.stressThresholds}
           renderValue={(v: {
@@ -99,7 +106,7 @@ export function PersonalizationPanel() {
         />
 
         <ParamCard
-          modelCard={getModelCard(data.modelCards, "trainingImpulseConstants")}
+          modelCard={modelCards.trainingImpulseConstants}
           effective={data.effective.trainingImpulseConstants}
           defaults={data.defaults.trainingImpulseConstants}
           renderValue={(v: { genderFactor: number; exponent: number }) =>
@@ -193,13 +200,53 @@ function EvidenceRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getModelCard(
+type ModelCardsByKey = Record<PersonalizationModelCard["key"], PersonalizationModelCard>;
+
+function resolveModelCards(
   modelCards: PersonalizationModelCard[],
-  key: PersonalizationModelCard["key"],
-): PersonalizationModelCard {
-  const modelCard = modelCards.find((candidate) => candidate.key === key);
-  if (!modelCard) {
-    throw new Error(`Missing personalization model card: ${key}`);
-  }
-  return modelCard;
+): { cards: ModelCardsByKey } | { missingKey: PersonalizationModelCard["key"] } {
+  const exponentialMovingAverage = modelCards.find(
+    (card) => card.key === "exponentialMovingAverage",
+  );
+  if (!exponentialMovingAverage) return { missingKey: "exponentialMovingAverage" };
+  const readinessWeights = modelCards.find((card) => card.key === "readinessWeights");
+  if (!readinessWeights) return { missingKey: "readinessWeights" };
+  const sleepTarget = modelCards.find((card) => card.key === "sleepTarget");
+  if (!sleepTarget) return { missingKey: "sleepTarget" };
+  const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
+  if (!stressThresholds) return { missingKey: "stressThresholds" };
+  const trainingImpulseConstants = modelCards.find(
+    (card) => card.key === "trainingImpulseConstants",
+  );
+  if (!trainingImpulseConstants) return { missingKey: "trainingImpulseConstants" };
+
+  return {
+    cards: {
+      exponentialMovingAverage,
+      readinessWeights,
+      sleepTarget,
+      stressThresholds,
+      trainingImpulseConstants,
+    },
+  };
+}
+
+function IncompleteModelCardsError({
+  missingKey,
+}: {
+  missingKey: PersonalizationModelCard["key"];
+}) {
+  useEffect(() => {
+    captureException(new Error(`Missing personalization model card: ${missingKey}`), {
+      context: "personalization-model-cards",
+      missingModelCard: missingKey,
+    });
+  }, [missingKey]);
+
+  return (
+    <p className="text-sm text-red-400">
+      Personalization model details are incomplete. Refresh and try again; contact support if this
+      continues.
+    </p>
+  );
 }

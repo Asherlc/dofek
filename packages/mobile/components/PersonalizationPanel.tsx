@@ -5,7 +5,9 @@ import {
   formatStandardDeviation,
 } from "@dofek/format/format";
 import type { PersonalizationModelCard } from "dofek-server/types";
+import { useEffect } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 
@@ -36,6 +38,11 @@ export function PersonalizationPanel() {
 
   const data = status.data;
   if (!data) return null;
+  const resolvedModelCards = resolveModelCards(data.modelCards);
+  if ("missingKey" in resolvedModelCards) {
+    return <IncompleteModelCardsError missingKey={resolvedModelCards.missingKey} />;
+  }
+  const modelCards = resolvedModelCards.cards;
 
   function handleReset() {
     Alert.alert(
@@ -73,31 +80,31 @@ export function PersonalizationPanel() {
 
       {/* Parameter cards */}
       <ParamCard
-        modelCard={getModelCard(data.modelCards, "exponentialMovingAverage")}
+        modelCard={modelCards.exponentialMovingAverage}
         value={`Fitness: ${data.effective.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.effective.exponentialMovingAverage.acuteTrainingLoadDays}d`}
         defaultValue={`Fitness: ${data.defaults.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.defaults.exponentialMovingAverage.acuteTrainingLoadDays}d`}
       />
 
       <ParamCard
-        modelCard={getModelCard(data.modelCards, "readinessWeights")}
+        modelCard={modelCards.readinessWeights}
         value={`Heart Rate Variability ${formatIntensity(data.effective.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.effective.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.effective.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.effective.readinessWeights.respiratoryRate * 100)}`}
         defaultValue={`Heart Rate Variability ${formatIntensity(data.defaults.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.defaults.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.defaults.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.defaults.readinessWeights.respiratoryRate * 100)}`}
       />
 
       <ParamCard
-        modelCard={getModelCard(data.modelCards, "sleepTarget")}
+        modelCard={modelCards.sleepTarget}
         value={formatDurationMinutes(data.effective.sleepTarget.minutes)}
         defaultValue={formatDurationMinutes(data.defaults.sleepTarget.minutes)}
       />
 
       <ParamCard
-        modelCard={getModelCard(data.modelCards, "stressThresholds")}
+        modelCard={modelCards.stressThresholds}
         value={`Heart Rate Variability: ${data.effective.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.effective.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
         defaultValue={`Heart Rate Variability: ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
       />
 
       <ParamCard
-        modelCard={getModelCard(data.modelCards, "trainingImpulseConstants")}
+        modelCard={modelCards.trainingImpulseConstants}
         value={`Factor: ${data.effective.trainingImpulseConstants.genderFactor}, Exp: ${data.effective.trainingImpulseConstants.exponent}`}
         defaultValue={`Factor: ${data.defaults.trainingImpulseConstants.genderFactor}, Exp: ${data.defaults.trainingImpulseConstants.exponent}`}
       />
@@ -202,15 +209,55 @@ function EvidenceRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getModelCard(
+type ModelCardsByKey = Record<PersonalizationModelCard["key"], PersonalizationModelCard>;
+
+function resolveModelCards(
   modelCards: PersonalizationModelCard[],
-  key: PersonalizationModelCard["key"],
-): PersonalizationModelCard {
-  const modelCard = modelCards.find((candidate) => candidate.key === key);
-  if (!modelCard) {
-    throw new Error(`Missing personalization model card: ${key}`);
-  }
-  return modelCard;
+): { cards: ModelCardsByKey } | { missingKey: PersonalizationModelCard["key"] } {
+  const exponentialMovingAverage = modelCards.find(
+    (card) => card.key === "exponentialMovingAverage",
+  );
+  if (!exponentialMovingAverage) return { missingKey: "exponentialMovingAverage" };
+  const readinessWeights = modelCards.find((card) => card.key === "readinessWeights");
+  if (!readinessWeights) return { missingKey: "readinessWeights" };
+  const sleepTarget = modelCards.find((card) => card.key === "sleepTarget");
+  if (!sleepTarget) return { missingKey: "sleepTarget" };
+  const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
+  if (!stressThresholds) return { missingKey: "stressThresholds" };
+  const trainingImpulseConstants = modelCards.find(
+    (card) => card.key === "trainingImpulseConstants",
+  );
+  if (!trainingImpulseConstants) return { missingKey: "trainingImpulseConstants" };
+
+  return {
+    cards: {
+      exponentialMovingAverage,
+      readinessWeights,
+      sleepTarget,
+      stressThresholds,
+      trainingImpulseConstants,
+    },
+  };
+}
+
+function IncompleteModelCardsError({
+  missingKey,
+}: {
+  missingKey: PersonalizationModelCard["key"];
+}) {
+  useEffect(() => {
+    captureException(new Error(`Missing personalization model card: ${missingKey}`), {
+      context: "personalization-model-cards",
+      missingModelCard: missingKey,
+    });
+  }, [missingKey]);
+
+  return (
+    <Text style={styles.errorText}>
+      Personalization model details are incomplete. Refresh and try again; contact support if this
+      continues.
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create({

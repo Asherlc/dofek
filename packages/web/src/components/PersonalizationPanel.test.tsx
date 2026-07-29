@@ -2,10 +2,17 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { refitUseMutation, resetUseMutation, statusUseQuery } = vi.hoisted(() => ({
-  refitUseMutation: vi.fn(),
-  resetUseMutation: vi.fn(),
-  statusUseQuery: vi.fn(),
+const { mockCaptureException, refitUseMutation, resetUseMutation, statusUseQuery } = vi.hoisted(
+  () => ({
+    mockCaptureException: vi.fn(),
+    refitUseMutation: vi.fn(),
+    resetUseMutation: vi.fn(),
+    statusUseQuery: vi.fn(),
+  }),
+);
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -162,6 +169,25 @@ describe("PersonalizationPanel", () => {
     render(<PersonalizationPanel />);
 
     expect(screen.getByText("Personalization history is unavailable")).toBeTruthy();
+  });
+
+  it("reports incomplete model evidence and renders an actionable panel error", () => {
+    statusUseQuery.mockReturnValue({
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 4) },
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    expect(
+      screen.getByText(
+        "Personalization model details are incomplete. Refresh and try again; contact support if this continues.",
+      ),
+    ).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "personalization-model-cards",
+      missingModelCard: "trainingImpulseConstants",
+    });
   });
 
   it("renders personalized stress thresholds as deviations from baseline", () => {
