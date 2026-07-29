@@ -23,7 +23,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
-  it("uses the same details and route-frame structure for non-map activities", () => {
+  it("renders a details-only card when no route is available", () => {
     render(
       <ActivityCardContent
         activity={activity()}
@@ -33,13 +33,11 @@ describe("ActivityCardContent", () => {
       />,
     );
 
-    const layout = screen.getByTestId("activity-card-layout");
-    expect(layout.className).toContain("sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]");
+    expect(screen.getByTestId("activity-card-layout").className).not.toContain("sm:grid-cols");
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
-    expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
-    expect(screen.getByTestId("activity-secondary-inset").className).toContain("rounded-lg");
-    expect(screen.getByText("Route")).toBeDefined();
-    expect(screen.getByText("No route recorded")).toBeDefined();
+    expect(screen.queryByTestId("activity-secondary-panel")).toBeNull();
+    expect(screen.queryByText("Route")).toBeNull();
+    expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByText("8.5")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon").getAttribute("style")).toBeNull();
   });
@@ -66,6 +64,9 @@ describe("ActivityCardContent", () => {
       />,
     );
 
+    expect(screen.getByTestId("activity-card-layout").className).toContain(
+      "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
+    );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByText("No route recorded")).toBeNull();
