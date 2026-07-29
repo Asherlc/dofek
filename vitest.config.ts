@@ -67,7 +67,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          setupFiles: ["@testing-library/jest-dom/vitest"],
+          setupFiles: ["./packages/web/test-setup.ts"],
           include: [
             ".github/workflows/**/*.test.ts",
             "entrypoint.test.ts",
