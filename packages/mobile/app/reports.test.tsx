@@ -35,6 +35,13 @@ vi.mock("../lib/trpc", () => ({
                 avgHrv: 48,
               },
               history: [],
+              decisionSupport: {
+                whatChanged: ["Weekly training increased."],
+                likelyAssociations: ["Training and sleep moved together."],
+                whatWorked: ["Sleep stayed consistent."],
+                whatToTryNext: ["Repeat the routine next week."],
+                confidenceAndMissingData: ["Confidence is limited."],
+              },
             },
             isLoading: false,
             error: null,
@@ -63,6 +70,13 @@ vi.mock("../lib/trpc", () => ({
                       avgSleepTrend: null,
                     },
                     history: [],
+                    decisionSupport: {
+                      whatChanged: ["Monthly training increased."],
+                      likelyAssociations: ["Training and sleep moved together."],
+                      whatWorked: ["Sleep stayed consistent."],
+                      whatToTryNext: ["Repeat the routine next month."],
+                      confidenceAndMissingData: ["Confidence is limited."],
+                    },
                   },
             isLoading: false,
             error: monthlyQueryControl.showError
@@ -103,6 +117,8 @@ describe("ReportsScreen", () => {
     expect(screen.getAllByText("Average Heart Rate Variability (HRV)")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Share weekly report" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share monthly report" })).toBeTruthy();
+    expect(screen.getByText("Weekly training increased.")).toBeTruthy();
+    expect(screen.getByText("Monthly training increased.")).toBeTruthy();
     expect(mockWeeklyReportQuery).toHaveBeenCalledWith(
       { weeks: 12, endDate: "2026-07-24" },
       { retry: false },
