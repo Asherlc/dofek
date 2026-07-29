@@ -1,3 +1,4 @@
+import { environmentManager, QueryObserver } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppQueryClient, locallyReportedErrorMeta } from "./query-client.ts";
 
@@ -58,6 +59,96 @@ describe("createAppQueryClient", () => {
     ).rejects.toThrow(queryError);
 
     expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("does not automatically retry a failed query", async () => {
+    const queryClient = createAppQueryClient();
+    const queryFn = vi.fn().mockRejectedValue(new Error("Server unavailable"));
+    const wasServer = environmentManager.isServer();
+    environmentManager.setIsServer(() => false);
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ["offline-query"],
+      queryFn,
+      retryDelay: 0,
+    });
+    const settled = new Promise<void>((resolve) => {
+      const unsubscribe = observer.subscribe((result) => {
+        if (result.isError) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
+    try {
+      await settled;
+    } finally {
+      environmentManager.setIsServer(() => wasServer);
+    }
+
+    expect(queryFn).toHaveBeenCalledOnce();
+  });
+
+  it("keeps authenticated data through route-away/back during an active session", async () => {
+    const queryClient = createAppQueryClient();
+    const queryKey = [
+      ["recovery", "readinessScore"],
+      { input: { days: 30, endDate: "2026-07-28" }, type: "query" },
+    ];
+    const routeObserver = new QueryObserver(queryClient, {
+      queryKey,
+      queryFn: async () => ({ score: 82 }),
+    });
+    const settled = new Promise<void>((resolve) => {
+      const unsubscribe = routeObserver.subscribe((result) => {
+        if (result.isSuccess) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
+    await settled;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData(queryKey)).toEqual({ score: 82 });
+
+    const returnedRouteObserver = new QueryObserver(queryClient, {
+      queryKey,
+      queryFn: async () => {
+        throw new Error("Server unavailable");
+      },
+    });
+    const initialResult = returnedRouteObserver.getCurrentResult();
+
+    expect(initialResult.data).toEqual({ score: 82 });
+    expect(initialResult.isStale).toBe(true);
+
+    await new Promise<void>((resolve) => {
+      const unsubscribe = returnedRouteObserver.subscribe((result) => {
+        if (result.isError) {
+          expect(result.data).toEqual({ score: 82 });
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+  });
+
+  it("does not persist authenticated health data into a cold browser session", async () => {
+    const activeSessionClient = createAppQueryClient();
+    const queryKey = [
+      ["recovery", "readinessScore"],
+      { input: { days: 30, endDate: "2026-07-28" }, type: "query" },
+    ];
+    await activeSessionClient.fetchQuery({
+      queryKey,
+      queryFn: async () => ({ score: 82 }),
+    });
+
+    const coldSessionClient = createAppQueryClient();
+
+    expect(coldSessionClient.getQueryData(queryKey)).toBeUndefined();
   });
 
   it("reports mutation errors without including variables", async () => {
@@ -133,8 +224,9 @@ describe("createAppQueryClient", () => {
 
     expect(defaults.queries).toMatchObject({
       staleTime: 0,
-      gcTime: 0,
+      gcTime: 1000 * 60 * 5,
       refetchOnWindowFocus: false,
+      retry: false,
     });
   });
 });

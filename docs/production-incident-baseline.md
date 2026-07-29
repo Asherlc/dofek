@@ -19801,6 +19801,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workspace packages manually, so future server imports must keep the final
   image copy/link list synchronized with the server dependency graph.
 
+## 2026-07-28 — PWA worker masked a web layout regression
+
+- **Status:** Root cause fixed on PR #2269; fresh exact-head E2E validation
+  pending.
+- **Symptoms:** Exact-head CI run
+  [30415802286](https://github.com/Asherlc/dofek/actions/runs/30415802286)
+  failed all three settings-layout scenarios in
+  [`settings-layout-stability.cy.ts`](../cypress/e2e/settings-layout-stability.cy.ts).
+- **User impact:** No production outage. PR #2269 was blocked from merging,
+  and the new connection-status banner would have shifted visible page content
+  when connectivity or query failures changed.
+- **Evidence:** The first test attempt installed the layout observer and
+  measured CLS `0.0251`, with both section-relative deltas remaining `0px`.
+  That proves the top-level banner moved the app uniformly rather than a
+  settings section resizing. Retry attempts then failed first at
+  `waitForLayoutShiftQuietWindow` with
+  `Layout shift measurement was not installed`. Cypress documents the
+  underlying service-worker limitation in
+  [issue #21213](https://github.com/cypress-io/cypress/issues/21213):
+  service-worker-served HTML bypasses its proxy and test-code injection.
+- **Root cause:** `DataConnectionBanner` was inserted in normal document flow
+  before the router, so transient query state shifted the whole page. The new
+  production service worker also controlled retry page loads, preventing
+  Cypress's `onBeforeLoad` observer from being injected again and masking the
+  original measured failure.
+- **Fix / mitigation:** Render the banner as a fixed-bottom overlay so state
+  transitions cannot move page content. In Cypress only, serve an inert
+  `/sw.js` so application documents continue through the Cypress proxy; the
+  generated production worker remains covered by its production-build runtime
+  test. No retry, timeout, threshold, or warn-and-continue behavior changed.
+- **Validation:** The positioning contract failed before the overlay fix and
+  now passes with all five focused banner tests. Web and root TypeScript,
+  targeted Biome, and diff validation pass. Fresh exact-head CI remains the
+  live CLS and full-suite gate.
+- **Remaining risk / follow-up:** Merge only after the fresh web E2E job proves
+  both direct-load CLS and instrumentation remain stable, all required checks
+  pass, and review threads remain resolved.
 ## 2026-07-28 — Knip setup downloaded an unused Cypress binary
 
 - **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
