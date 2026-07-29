@@ -96,6 +96,9 @@ const WORKOUT_SYNC_WINDOW = {
   windowEnd: "2024-12-31T23:59:59.999Z",
 };
 
+const DELETED_HEART_RATE_UUID = "00000000-0000-4000-8000-000000000101";
+const DELETED_VO2_MAX_UUID = "00000000-0000-4000-8000-000000000102";
+
 function makeSample(overrides: Record<string, unknown> = {}) {
   return {
     type: "HKQuantityTypeIdentifierStepCount",
@@ -164,13 +167,13 @@ describe("healthKitSyncRouter", () => {
 
       const result = await caller.deleteQuantitySamples({
         typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-        deletedUUIDs: ["deleted-heart-rate"],
+        deletedUUIDs: [DELETED_HEART_RATE_UUID],
       });
 
       expect(result).toEqual({ deleted: 1 });
       expect(replaceRows).toHaveBeenCalledWith(
         {
-          externalId: "hk:deleted-heart-rate",
+          externalId: `hk:${DELETED_HEART_RATE_UUID}`,
           providerId: "apple_health",
           userId: "00000000-0000-0000-0000-000000000001",
         },
@@ -220,7 +223,7 @@ describe("healthKitSyncRouter", () => {
       await expect(
         caller.deleteQuantitySamples({
           typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-          deletedUUIDs: ["deleted-heart-rate"],
+          deletedUUIDs: [DELETED_HEART_RATE_UUID],
         }),
       ).rejects.toMatchObject({
         code: "PRECONDITION_FAILED",
@@ -242,6 +245,24 @@ describe("healthKitSyncRouter", () => {
       );
     });
 
+    it("rejects malformed HealthKit deletion identifiers", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+          deletedUUIDs: ["not-a-uuid"],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
     it("preserves unexpected repository failures", async () => {
       const repositoryError = new Error("database unavailable");
       const execute = makeExecute();
@@ -258,13 +279,20 @@ describe("healthKitSyncRouter", () => {
       await expect(
         caller.deleteQuantitySamples({
           typeIdentifier: "HKQuantityTypeIdentifierVO2Max",
-          deletedUUIDs: ["vo2-max-1"],
+          deletedUUIDs: [DELETED_VO2_MAX_UUID],
         }),
       ).rejects.toMatchObject({
         cause: repositoryError,
         code: "INTERNAL_SERVER_ERROR",
       });
-      expect(mockSentryCaptureException).not.toHaveBeenCalled();
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(repositoryError, {
+        extra: {
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
+        tags: {
+          endpoint: "deleteQuantitySamples",
+        },
+      });
     });
   });
 

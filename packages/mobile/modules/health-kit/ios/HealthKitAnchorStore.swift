@@ -142,9 +142,7 @@ final class HealthKitAnchoredQueryCoordinator {
                     actual: typeIdentifier
                 )
             }
-            if !succeeded {
-                pendingAnchors.removeValue(forKey: queryId)
-            }
+            pendingAnchors.removeValue(forKey: queryId)
             return pendingAnchor
         }
 
@@ -152,8 +150,5 @@ final class HealthKitAnchoredQueryCoordinator {
             return
         }
         try anchorStore.save(pendingAnchor.anchor, typeIdentifier: typeIdentifier)
-        _ = pendingLock.withLock {
-            pendingAnchors.removeValue(forKey: queryId)
-        }
     }
 }

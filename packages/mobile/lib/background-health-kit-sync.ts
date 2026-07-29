@@ -73,7 +73,7 @@ async function performHealthKitSync(
   const startedAt = performance.now();
   const stageTelemetry = createStageTelemetry();
   logger.info(TAG, "Starting sync");
-  let result: Awaited<ReturnType<AppleHealthSyncService["sync"]>>;
+  let result: Awaited<ReturnType<AppleHealthSyncService["syncObserverChanges"]>>;
   try {
     result = await new AppleHealthSyncService({ trpcClient }).syncObserverChanges({
       typeIdentifiers,
@@ -108,11 +108,16 @@ async function performHealthKitSync(
   }
 
   stageTelemetry.complete("completed");
-  logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`, {
-    durationMs: performance.now() - startedAt,
-    errorCount: result.errors.length,
-    inserted: result.inserted,
-  });
+  logger.info(
+    TAG,
+    `Sync complete: ${result.inserted} inserted, ${result.deleted} deleted, ${result.errors.length} errors`,
+    {
+      deleted: result.deleted,
+      durationMs: performance.now() - startedAt,
+      errorCount: result.errors.length,
+      inserted: result.inserted,
+    },
+  );
   try {
     if (onSyncComplete) {
       stageTelemetry.start({ operation: "postSyncCallback" });

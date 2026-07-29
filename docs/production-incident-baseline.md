@@ -19718,12 +19718,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   independent tombstones concurrently, expose a validated router output,
   translate missing tombstone support into an actionable precondition error,
   and fail native observer acknowledgement when a resolved sync contains
-  errors. Stryker describes survived mutants as changes that existing tests did
-  not detect:
+  errors. Follow-up review hardened the same path by preserving the publisher
+  method binding, reporting actual SQL deletion counts, validating HealthKit
+  UUIDs, reporting unexpected repository errors to Sentry, treating rejected
+  native anchor commits as failures, separating deletion and insertion
+  telemetry, atomically clearing completed native anchors, and batching
+  observer workout routes. Stryker describes survived mutants as changes that
+  existing tests did not detect:
   <https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/>.
 - **Validation:** All three exact changed ranges report 100% locally (54 of 54
   mutants killed). Lint, root/server/web TypeScript checks, 314 focused
-  HealthKit tests, and 14,244 unit/mobile tests also pass.
+  HealthKit tests, and 14,316 unit/mobile tests also pass. The follow-up review
+  fixes pass 153 focused mobile tests, 283 focused server tests, all 77
+  HealthKit Swift tests, and the mobile typecheck.
 - **Remaining risk / follow-up:** Confirm both Stryker shards and the aggregate
   mutation gate pass on the fresh exact-head CI run before merging.
 

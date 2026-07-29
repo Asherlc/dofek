@@ -380,7 +380,7 @@ export class HealthKitSyncRepository {
 
     if (bodyMeasurementTypes[typeIdentifier] || metricStreamTypes[typeIdentifier]) {
       const publisher = await this.#publisher();
-      const replaceRows = publisher.replaceRows;
+      const replaceRows = publisher.replaceRows?.bind(publisher);
       if (!replaceRows) {
         throw new HealthKitDeletionTombstonesUnsupportedError();
       }
@@ -404,7 +404,7 @@ export class HealthKitSyncRepository {
     }
 
     const externalIds = uniqueUUIDs.map((uuid) => `hk:${uuid}`);
-    await executeWithSchema(
+    const deletedRows = await executeWithSchema(
       this.#db,
       z.object({ externalId: z.string() }),
       sql`DELETE FROM fitness.health_event
@@ -416,7 +416,7 @@ export class HealthKitSyncRepository {
             )})
           RETURNING external_id AS "externalId"`,
     );
-    return uniqueUUIDs.length;
+    return deletedRows.length;
   }
 
   /** Process body measurement samples */

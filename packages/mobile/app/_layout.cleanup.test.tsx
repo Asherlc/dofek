@@ -169,23 +169,22 @@ const mockIsHealthKitAvailable = vi.fn<() => boolean>();
 const mockHasEverAuthorized = vi.fn<() => boolean>();
 const mockRequestPermissions = vi.fn<() => Promise<boolean>>();
 
-vi.mock("../modules/health-kit", () => ({
-  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
-  isAvailable: (...args: unknown[]) => mockIsHealthKitAvailable(...args),
-  hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
-  requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
-  completeAnchoredQuery: vi.fn().mockResolvedValue(true),
-  queryAnchoredSamples: vi.fn().mockResolvedValue({
-    queryId: null,
-    samples: [],
-    deletedUUIDs: [],
-  }),
-  queryDailyStatistics: vi.fn().mockResolvedValue([]),
-  queryQuantitySamples: vi.fn().mockResolvedValue([]),
-  queryWorkouts: vi.fn().mockResolvedValue([]),
-  querySleepSamples: vi.fn().mockResolvedValue([]),
-  queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
-}));
+vi.mock("../modules/health-kit", async () => {
+  const { createEmptyAnchoredQueryResult } = await import("../modules/health-kit/test-helpers");
+  return {
+    getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+    isAvailable: (...args: unknown[]) => mockIsHealthKitAvailable(...args),
+    hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
+    requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+    completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+    queryAnchoredSamples: vi.fn().mockResolvedValue(createEmptyAnchoredQueryResult()),
+    queryDailyStatistics: vi.fn().mockResolvedValue([]),
+    queryQuantitySamples: vi.fn().mockResolvedValue([]),
+    queryWorkouts: vi.fn().mockResolvedValue([]),
+    querySleepSamples: vi.fn().mockResolvedValue([]),
+    queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+  };
+});
 
 vi.mock("./login", () => ({
   default: () => null,
@@ -193,7 +192,7 @@ vi.mock("./login", () => ({
 
 mockCreateClient.mockImplementation(() => ({
   healthKitSync: {
-    deleteQuantitySamples: { mutate: vi.fn() },
+    deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
     pushQuantitySamples: { mutate: vi.fn() },
     pushWorkouts: { mutate: vi.fn() },
     pushWorkoutRoutes: { mutate: vi.fn() },

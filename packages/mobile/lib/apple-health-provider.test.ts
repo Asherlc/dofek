@@ -161,7 +161,7 @@ describe("AppleHealthAuthorizationService", () => {
 describe("AppleHealthSyncService", () => {
   it("delegates sync with shared native adapter and tRPC client shape", async () => {
     const trpcClient = createTrpcClient();
-    const syncResult: SyncResult = { inserted: 2, errors: [] };
+    const syncResult: SyncResult = { deleted: 0, inserted: 2, errors: [] };
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => syncResult);
     const service = new AppleHealthSyncService({
       trpcClient,

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
@@ -1137,6 +1138,39 @@ describe("HealthKitSyncRepository", () => {
       await expect(deletion).resolves.toBe(2);
     });
 
+    it("invokes tombstone publishing with the publisher instance bound", async () => {
+      const publisher: MetricStreamEventPublisher & { calls: number } = {
+        calls: 0,
+        publishRows: vi.fn(async () => []),
+        async replaceRows(scope, rows, operationRevision) {
+          this.calls += 1;
+          return {
+            deleted: {
+              version: 3 as const,
+              eventType: "metric_stream_deleted" as const,
+              eventId: "00000000-0000-4000-8000-000000000001",
+              operationRevision,
+              scope,
+              partitionKey: "test",
+            },
+            rows: [...rows],
+          };
+        },
+      };
+      const repository = new HealthKitSyncRepository(
+        { execute: vi.fn().mockResolvedValue([]) },
+        "user-1",
+        publisher,
+      );
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierHeartRate", [
+          "heart-rate-1",
+        ]),
+      ).resolves.toBe(1);
+      expect(publisher.calls).toBe(1);
+    });
+
     it("deletes UUID-addressed HealthKit events through typed repository SQL", async () => {
       const execute = vi.fn().mockResolvedValue([{ externalId: "hk:vo2-max-1" }]);
       const publisher: MetricStreamEventPublisher = {
@@ -1154,6 +1188,18 @@ describe("HealthKitSyncRepository", () => {
       expect(JSON.stringify(execute.mock.calls)).toContain("hk:vo2-max-1");
     });
 
+    it("returns the actual number of deleted HealthKit event rows", async () => {
+      const execute = vi.fn().mockResolvedValue([{ externalId: "hk:vo2-max-1" }]);
+      const repository = new HealthKitSyncRepository({ execute }, "user-1");
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", [
+          "vo2-max-1",
+          "vo2-max-2",
+        ]),
+      ).resolves.toBe(1);
+    });
+
     it("rejects an invalid typed deletion result", async () => {
       const repository = new HealthKitSyncRepository(
         { execute: vi.fn().mockResolvedValue([{}]) },
@@ -1162,7 +1208,7 @@ describe("HealthKitSyncRepository", () => {
 
       await expect(
         repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", ["vo2-max-1"]),
-      ).rejects.toThrow();
+      ).rejects.toBeInstanceOf(ZodError);
     });
   });
 

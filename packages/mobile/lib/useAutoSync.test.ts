@@ -48,25 +48,24 @@ const mockHasEverAuthorized = vi.fn().mockReturnValue(false);
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 
-vi.mock("../modules/health-kit", () => ({
-  completeAnchoredQuery: vi.fn().mockResolvedValue(true),
-  isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
-  hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
-  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
-  requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
-  queryAnchoredSamples: vi.fn().mockResolvedValue({
-    queryId: null,
-    samples: [],
-    deletedUUIDs: [],
-  }),
-  queryDailyStatistics: vi.fn(),
-  queryQuantitySamples: vi.fn(),
-  queryWorkouts: vi.fn(),
-  querySleepSamples: vi.fn(),
-  queryWorkoutRoutes: vi.fn(),
-  writeDietarySamples: vi.fn(),
-  deleteDietarySamples: vi.fn(),
-}));
+vi.mock("../modules/health-kit", async () => {
+  const { createEmptyAnchoredQueryResult } = await import("../modules/health-kit/test-helpers");
+  return {
+    completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+    isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
+    hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
+    getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+    requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+    queryAnchoredSamples: vi.fn().mockResolvedValue(createEmptyAnchoredQueryResult()),
+    queryDailyStatistics: vi.fn(),
+    queryQuantitySamples: vi.fn(),
+    queryWorkouts: vi.fn(),
+    querySleepSamples: vi.fn(),
+    queryWorkoutRoutes: vi.fn(),
+    writeDietarySamples: vi.fn(),
+    deleteDietarySamples: vi.fn(),
+  };
+});
 
 const mockCaptureException = vi.fn();
 

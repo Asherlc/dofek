@@ -46,7 +46,12 @@ vi.mock("./telemetry", () => ({
   },
 }));
 
-import { queryDailyStatistics, queryWorkoutRoutes, queryWorkouts } from "../modules/health-kit";
+import {
+  type HealthKitSample,
+  queryDailyStatistics,
+  queryWorkoutRoutes,
+  queryWorkouts,
+} from "../modules/health-kit";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -676,9 +681,9 @@ describe("initBackgroundHealthKitSync", () => {
     mockCompleteObserverUpdates.mockClear();
 
     const firstSync = createDeferred<{
-      queryId: string;
-      samples: [];
-      deletedUUIDs: [];
+      queryId: string | null;
+      samples: HealthKitSample[];
+      deletedUUIDs: string[];
     }>();
     mockQueryAnchoredSamples.mockReturnValueOnce(firstSync.promise);
 

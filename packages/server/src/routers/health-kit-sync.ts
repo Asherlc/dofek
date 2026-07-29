@@ -66,7 +66,7 @@ export const healthKitSyncRouter = router({
   deleteQuantitySamples: protectedProcedure
     .input(
       z.object({
-        deletedUUIDs: z.array(z.string().min(1)).max(500),
+        deletedUUIDs: z.array(z.uuid()).max(500),
         typeIdentifier: z.string().min(1),
       }),
     )
@@ -82,6 +82,10 @@ export const healthKitSyncRouter = router({
         );
       } catch (error) {
         if (!(error instanceof HealthKitDeletionTombstonesUnsupportedError)) {
+          Sentry.captureException(error, {
+            tags: { endpoint: "deleteQuantitySamples" },
+            extra: { userId: ctx.userId },
+          });
           throw error;
         }
         Sentry.captureException(error, {

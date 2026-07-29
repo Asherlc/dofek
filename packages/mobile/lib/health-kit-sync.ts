@@ -159,6 +159,7 @@ export interface SyncOptions {
 }
 
 export interface SyncResult {
+  deleted: number;
   inserted: number;
   errors: string[];
 }
@@ -203,7 +204,7 @@ async function pushQuantitySampleBatches(
     inserted += result.inserted;
     errors.push(...result.errors);
   }
-  return { inserted, errors };
+  return { deleted: 0, inserted, errors };
 }
 
 /**
@@ -374,7 +375,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     totalInserted += result.inserted;
   }
 
-  return { inserted: totalInserted, errors };
+  return { deleted: 0, inserted: totalInserted, errors };
 }
 
 export interface ObserverSyncOptions {
@@ -441,10 +442,20 @@ async function syncAnchoredQuantityType(
 
     if (changes.queryId) {
       onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
-      await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, true);
+      const committed = await healthKit.completeAnchoredQuery(
+        typeIdentifier,
+        changes.queryId,
+        true,
+      );
+      if (!committed) {
+        throw new Error(
+          `HealthKit anchor commit rejected for ${typeIdentifier} (query ${changes.queryId})`,
+        );
+      }
     }
     return {
-      inserted: uploadResult.inserted + deleted,
+      deleted,
+      inserted: uploadResult.inserted,
       errors: [],
     };
   } catch (error) {
@@ -479,6 +490,7 @@ async function syncObserverWorkouts(
     windowEnd: endDate,
   });
   let inserted = workoutResult.inserted;
+  const routes: WorkoutRoutePayload[] = [];
 
   onStage?.({ operation: "queryWorkoutRoutes", itemCount: workouts.length });
   for (const workout of workouts) {
@@ -487,17 +499,11 @@ async function syncObserverWorkouts(
       if (locations.length === 0) {
         continue;
       }
-      onStage?.({ operation: "pushWorkoutRoutes", itemCount: locations.length });
-      const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({
-        routes: [
-          {
-            workoutUuid: workout.uuid,
-            sourceName: workout.sourceName,
-            locations,
-          },
-        ],
+      routes.push({
+        workoutUuid: workout.uuid,
+        sourceName: workout.sourceName,
+        locations,
       });
-      inserted += routeResult.inserted;
     } catch (error) {
       if (isHealthKitDatabaseInaccessible(error)) {
         throw error;
@@ -510,7 +516,22 @@ async function syncObserverWorkouts(
       errors.push(`Route sync for workout ${workout.uuid}: ${message}`);
     }
   }
-  return { inserted, errors };
+
+  if (routes.length > 0) {
+    onStage?.({ operation: "pushWorkoutRoutes", itemCount: routes.length });
+    try {
+      const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
+      inserted += routeResult.inserted;
+    } catch (error) {
+      captureException(error, {
+        source: "health-kit-workout-route-observer-push",
+        routeCount: routes.length,
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Push workout routes: ${message}`);
+    }
+  }
+  return { deleted: 0, inserted, errors };
 }
 
 /**
@@ -525,6 +546,7 @@ export async function syncHealthKitObserverChanges(
   const typeIdentifiers = new Set(options.typeIdentifiers);
   const startDate = syncWindowStart(1);
   const endDate = new Date().toISOString();
+  let deleted = 0;
   let inserted = 0;
   const errors: string[] = [];
 
@@ -557,6 +579,7 @@ export async function syncHealthKitObserverChanges(
     }
     if (ANCHORED_QUANTITY_TYPES.has(typeIdentifier)) {
       const result = await syncAnchoredQuantityType(options, typeIdentifier, startDate);
+      deleted += result.deleted;
       inserted += result.inserted;
       errors.push(...result.errors);
       continue;
@@ -588,5 +611,5 @@ export async function syncHealthKitObserverChanges(
     }
   }
 
-  return { inserted, errors };
+  return { deleted, inserted, errors };
 }
