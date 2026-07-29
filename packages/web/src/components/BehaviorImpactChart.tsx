@@ -1,3 +1,4 @@
+import { formatReadinessDifference } from "@dofek/format/format";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -18,13 +19,7 @@ function ReadinessAssociationBar({
   const maxBar = 50; // max percentage width
   const barWidth = Math.min(Math.abs(readinessDifferencePercent), maxBar);
   const isHigher = readinessDifferencePercent >= 0;
-  const direction =
-    readinessDifferencePercent > 0
-      ? "higher"
-      : readinessDifferencePercent < 0
-        ? "lower"
-        : "difference";
-  const value = `${Math.abs(readinessDifferencePercent).toFixed(1)}% ${direction}`;
+  const value = formatReadinessDifference(readinessDifferencePercent);
 
   return (
     <div
@@ -138,7 +133,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
             <ReadinessAssociationBar
               key={item.questionSlug}
               label={item.displayName}
-              readinessDifferencePercent={item.readinessDifferencePercent}
+              readinessDifferencePercent={item.impactPercent}
               category={item.category}
               yesCount={item.yesCount}
               noCount={item.noCount}

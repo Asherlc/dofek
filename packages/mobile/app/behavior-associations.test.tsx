@@ -26,6 +26,25 @@ vi.mock("../lib/trpc", () => ({
   },
 }));
 
+const associationData = [
+  {
+    questionSlug: "meditation",
+    displayName: "Meditation",
+    category: "wellness",
+    impactPercent: 18.6,
+    yesCount: 18,
+    noCount: 24,
+  },
+  {
+    questionSlug: "late-meal",
+    displayName: "Late meal",
+    category: "nutrition",
+    impactPercent: -12.4,
+    yesCount: 14,
+    noCount: 28,
+  },
+];
+
 describe("BehaviorAssociationsScreen", () => {
   afterEach(cleanup);
 
@@ -34,24 +53,7 @@ describe("BehaviorAssociationsScreen", () => {
     mocks.queryInputs.length = 0;
     mocks.refetch.mockReset();
     mocks.query.mockReturnValue({
-      data: [
-        {
-          questionSlug: "meditation",
-          displayName: "Meditation",
-          category: "wellness",
-          readinessDifferencePercent: 18.6,
-          yesCount: 18,
-          noCount: 24,
-        },
-        {
-          questionSlug: "late-meal",
-          displayName: "Late meal",
-          category: "nutrition",
-          readinessDifferencePercent: -12.4,
-          yesCount: 14,
-          noCount: 28,
-        },
-      ],
+      data: associationData,
       error: null,
       isLoading: false,
       isFetching: false,
@@ -125,6 +127,59 @@ describe("BehaviorAssociationsScreen", () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);
 
+    expect(screen.getByText("Behavior association data is unavailable.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
+    expect(mocks.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces an error instead of an empty state when cached data is empty", async () => {
+    mocks.query.mockReturnValue({
+      data: [],
+      error: new Error("Behavior association data is unavailable."),
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("Behavior association data is unavailable.")).toBeTruthy();
+    expect(screen.queryByText("Not enough journal data yet")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
+    expect(mocks.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps cached associations visible while loading", async () => {
+    mocks.query.mockReturnValue({
+      data: associationData,
+      error: null,
+      isLoading: true,
+      isFetching: true,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("18.6% higher")).toBeTruthy();
+    expect(screen.getByText("12.4% lower")).toBeTruthy();
+  });
+
+  it("keeps cached associations and retry visible after a refresh error", async () => {
+    mocks.query.mockReturnValue({
+      data: associationData,
+      error: new Error("Behavior association data is unavailable."),
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("18.6% higher")).toBeTruthy();
+    expect(screen.getByText("12.4% lower")).toBeTruthy();
     expect(screen.getByText("Behavior association data is unavailable.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
     expect(mocks.refetch).toHaveBeenCalledOnce();

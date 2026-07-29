@@ -1,3 +1,4 @@
+import { formatReadinessDifference } from "@dofek/format/format";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../components/Card";
@@ -12,12 +13,6 @@ const DAY_OPTIONS = [
   { label: "180d", value: 180 },
   { label: "1y", value: 365 },
 ];
-
-function formatDifference(value: number): string {
-  if (value > 0) return `${Math.abs(value).toFixed(1)}% higher`;
-  if (value < 0) return `${Math.abs(value).toFixed(1)}% lower`;
-  return "0.0% difference";
-}
 
 export default function BehaviorAssociationsScreen() {
   const [days, setDays] = useState(90);
@@ -48,7 +43,7 @@ export default function BehaviorAssociationsScreen() {
 
       {query.isLoading && !data ? (
         <QueryStatePanel variant="loading" />
-      ) : query.error && !data ? (
+      ) : query.error && (!data || data.length === 0) ? (
         <QueryStatePanel
           variant="error"
           message={getQueryErrorMessage(query.error)}
@@ -75,7 +70,7 @@ export default function BehaviorAssociationsScreen() {
             <Card key={association.questionSlug} title={association.displayName}>
               <Text style={styles.category}>{association.category}</Text>
               <Text style={styles.difference}>
-                {formatDifference(association.readinessDifferencePercent)}
+                {formatReadinessDifference(association.impactPercent)}
               </Text>
               <Text style={styles.sample}>
                 Yes n = {association.yesCount} · No n = {association.noCount}

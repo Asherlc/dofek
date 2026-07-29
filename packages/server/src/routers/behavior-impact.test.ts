@@ -93,15 +93,15 @@ describe("behaviorImpactRouter", () => {
       expect(alcohol).toBeDefined();
       expect(alcohol?.displayName).toBe("Alcohol");
       expect(alcohol?.category).toBe("substance");
-      // Relative difference: ((55 - 70) / 70) * 100 = -21.4%
-      expect(alcohol?.readinessDifferencePercent).toBeCloseTo(-21.4, 0);
+      // Impact: ((55 - 70) / 70) * 100 = -21.4%
+      expect(alcohol?.impactPercent).toBeCloseTo(-21.4, 0);
       expect(alcohol?.yesCount).toBe(10);
       expect(alcohol?.noCount).toBe(20);
 
       const meditation = result.find((r) => r.questionSlug === "meditation");
       expect(meditation).toBeDefined();
-      // Relative difference: ((75 - 60) / 60) * 100 = 25%
-      expect(meditation?.readinessDifferencePercent).toBeCloseTo(25, 0);
+      // Impact: ((75 - 60) / 60) * 100 = 25%
+      expect(meditation?.impactPercent).toBeCloseTo(25, 0);
     });
 
     it("uses default days of 90", async () => {

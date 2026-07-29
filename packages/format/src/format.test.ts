@@ -26,6 +26,7 @@ import {
   formatNutritionNumber,
   formatPace,
   formatPercent,
+  formatReadinessDifference,
   formatRelativeTime,
   formatSigned,
   formatSleepDebt,
@@ -184,6 +185,18 @@ describe("formatClimbingAttemptResult", () => {
     expect(formatClimbingAttemptResult(true, 7)).toBe("Sent in 7 attempts");
     expect(formatClimbingAttemptResult(false, 1)).toBe("Attempted 1 time");
     expect(formatClimbingAttemptResult(false, 3)).toBe("Attempted 3 times");
+  });
+});
+
+describe("formatReadinessDifference", () => {
+  it("uses neutral direction labels for positive, negative, and zero differences", () => {
+    expect(formatReadinessDifference(18.6)).toBe("18.6% higher");
+    expect(formatReadinessDifference(-12.4)).toBe("12.4% lower");
+    expect(formatReadinessDifference(0)).toBe("0.0% difference");
+  });
+
+  it("returns a placeholder for a non-finite difference", () => {
+    expect(formatReadinessDifference(Number.NaN)).toBe("--");
   });
 });
 

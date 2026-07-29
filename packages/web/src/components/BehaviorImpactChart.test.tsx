@@ -8,6 +8,25 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
 }));
 
+const associationData = [
+  {
+    questionSlug: "meditation",
+    displayName: "Meditation",
+    category: "wellness",
+    impactPercent: 18.6,
+    yesCount: 18,
+    noCount: 24,
+  },
+  {
+    questionSlug: "late-meal",
+    displayName: "Late meal",
+    category: "nutrition",
+    impactPercent: -12.4,
+    yesCount: 14,
+    noCount: 28,
+  },
+];
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     behaviorImpact: {
@@ -24,24 +43,7 @@ describe("BehaviorImpactChart", () => {
   beforeEach(() => {
     mocks.query.mockReset();
     mocks.query.mockReturnValue({
-      data: [
-        {
-          questionSlug: "meditation",
-          displayName: "Meditation",
-          category: "wellness",
-          readinessDifferencePercent: 18.6,
-          yesCount: 18,
-          noCount: 24,
-        },
-        {
-          questionSlug: "late-meal",
-          displayName: "Late meal",
-          category: "nutrition",
-          readinessDifferencePercent: -12.4,
-          yesCount: 14,
-          noCount: 28,
-        },
-      ],
+      data: associationData,
       error: null,
       isLoading: false,
     });
@@ -116,6 +118,32 @@ describe("BehaviorImpactChart", () => {
 
     render(<BehaviorImpactChart days={90} />);
 
+    expect(screen.getByText("Behavior association data is unavailable.")).toBeDefined();
+  });
+
+  it("keeps cached associations visible while loading", () => {
+    mocks.query.mockReturnValue({
+      data: associationData,
+      error: null,
+      isLoading: true,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getAllByTestId("readiness-association-bar")).toHaveLength(2);
+    expect(screen.queryByText("Behavior association data is unavailable.")).toBeNull();
+  });
+
+  it("keeps cached associations visible alongside a refresh error", () => {
+    mocks.query.mockReturnValue({
+      data: associationData,
+      error: new Error("Behavior association data is unavailable."),
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getAllByTestId("readiness-association-bar")).toHaveLength(2);
     expect(screen.getByText("Behavior association data is unavailable.")).toBeDefined();
   });
 });

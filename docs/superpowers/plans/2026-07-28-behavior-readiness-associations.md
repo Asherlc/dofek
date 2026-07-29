@@ -1,12 +1,12 @@
 # Behavior Readiness Associations TDD Plan
 
-> **For agentic workers:** Write the failing tests before each implementation task. Use subagent-driven development when a bounded investigation or review can run independently.
+Write the failing tests before each implementation task.
 
 **Goal:** Present the descriptive relationship between boolean journal behaviors and next-day readiness without causal language.
 
 **Behavior:** Web and mobile describe the result as an association, explain the supported Yes-versus-No mean comparison, show each group’s sample count and the selected observation window, explicitly state that an uncertainty interval is not available for this comparison, and use neutral higher/lower direction language.
 
-**Scope:** Keep the existing server-computed readiness difference and API query. Do not add a confidence interval because the behavior-impact contract does not expose the paired time series or an uncertainty estimate. Do not add an N-of-1 experiment flow because the current experiment contract has no supported mapping from a journal question to an intervention.
+**Scope:** Keep the existing server-computed readiness difference and stable API response shape. Do not add a confidence interval because the behavior-impact contract does not expose the paired time series or an uncertainty estimate. Do not add an N-of-1 experiment flow because the current experiment contract has no supported mapping from a journal question to an intervention.
 
 **Docs:** Issue [#2158](https://github.com/Asherlc/dofek/issues/2158), the existing behavior repository at `packages/server/src/repositories/behavior-impact-repository.ts`, and the separate correlation evidence contract documented in `packages/server/README.md`.
 
@@ -17,7 +17,7 @@
 - `packages/web/src/routes/behavior-impact.tsx` says daily behaviors “affect” next-day readiness.
 - `packages/web/src/components/BehaviorImpactChart.tsx` labels the result “impact” and the directions “HURTS” and “HELPS.”
 - The server computes a descriptive percentage difference between mean next-day readiness after Yes and No entries, and returns `yesCount` and `noCount`.
-- The web route already selects a 7–365 day or all-history window.
+- The web route already selects a 7–365-day or all-history window.
 - PR #2217 neutralized journal-entry score semantics but did not change the Behavior Impact surface.
 - PR #2230 added dependence-aware uncertainty to `correlation.computeV2`; that interval is not part of `behaviorImpact.impactSummary`.
 
@@ -30,9 +30,8 @@
 
 ## File Structure
 
-- Modify: `packages/server/src/repositories/behavior-impact-repository.ts` — give the server-owned metric a descriptive name.
-- Modify: `packages/server/src/repositories/behavior-impact-repository.test.ts` — lock the descriptive API detail.
-- Modify: `packages/server/src/routers/behavior-impact.ts` and test — expose the renamed server value.
+- Modify: `packages/server/src/repositories/behavior-impact-repository.ts` — document the server-owned metric as a descriptive comparison without changing its cached response shape.
+- Modify: `packages/format/src/format.ts` and test — share neutral direction formatting across web and mobile.
 - Modify: `packages/web/src/routes/behavior-impact.tsx` — replace causal page copy.
 - Modify/create: `packages/web/src/components/BehaviorImpactChart.tsx` and colocated test — render honest context.
 - Create: `packages/mobile/app/behavior-associations.tsx`, test, and story — add the parity surface.
@@ -40,16 +39,15 @@
 
 ## Tasks
 
-### Task 1: Add Failing Server Contract Tests
+### Task 1: Verify the Stable Server Contract
 
-- [ ] Update repository and router tests to expect `readinessDifferencePercent`.
-- [ ] Run `rtk pnpm exec vitest run packages/server/src/repositories/behavior-impact-repository.test.ts packages/server/src/routers/behavior-impact.test.ts`.
-- [ ] Confirm the tests fail because the old `impactPercent` field is still returned.
+- [ ] Run the repository and router tests to capture the existing server-owned formula and response field.
+- [ ] Confirm no query or cached response-shape change is required for the presentation fix.
 
-### Task 2: Implement the Minimal Server Rename
+### Task 2: Add Shared Formatting Tests
 
-- [ ] Rename the domain getter and returned field without changing the formula or query.
-- [ ] Run the focused server tests and confirm they pass.
+- [ ] Add failing tests for neutral higher/lower/difference formatting.
+- [ ] Implement the shared formatter in `@dofek/format`.
 
 ### Task 3: Add Failing Web Tests
 
@@ -64,7 +62,7 @@
 - [ ] Render the supported method, per-group sample counts, and selected window.
 - [ ] State that an uncertainty interval is not available for this descriptive comparison.
 - [ ] Use neutral styling and “lower/higher” labels.
-- [ ] Update the existing Storybook fixture for the renamed server field.
+- [ ] Update the existing Storybook fixture with representative association data.
 - [ ] Run the focused web tests and confirm they pass.
 
 ### Task 5: Add Failing Mobile Parity Tests

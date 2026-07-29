@@ -53,7 +53,7 @@ export class BehaviorImpact {
   }
 
   /** Relative difference in mean next-day readiness when behavior=yes versus no. */
-  get readinessDifferencePercent(): number {
+  get impactPercent(): number {
     if (this.#row.avgReadinessNo === 0) return 0;
     return (
       Math.round(
@@ -67,7 +67,7 @@ export class BehaviorImpact {
       questionSlug: this.questionSlug,
       displayName: this.displayName,
       category: this.category,
-      readinessDifferencePercent: this.readinessDifferencePercent,
+      impactPercent: this.impactPercent,
       yesCount: this.yesCount,
       noCount: this.noCount,
     };
