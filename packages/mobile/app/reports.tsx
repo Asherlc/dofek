@@ -6,6 +6,7 @@ import {
 } from "@dofek/format/format";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../components/Card";
+import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { HealthReportShareButton } from "../components/HealthReportShareButton";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -79,6 +80,8 @@ export default function ReportsScreen() {
               />
             </View>
           </Card>
+        ) : weeklyReport.data ? (
+          <EmptyStatePreview content={weeklyReport.data.emptyState} />
         ) : (
           <QueryStatePanel variant="empty" message="Not enough weekly data to create a report." />
         )}
@@ -119,6 +122,8 @@ export default function ReportsScreen() {
               />
             </View>
           </Card>
+        ) : monthlyReport.data ? (
+          <EmptyStatePreview content={monthlyReport.data.emptyState} />
         ) : (
           <QueryStatePanel variant="empty" message="Not enough monthly data to create a report." />
         )}

@@ -50,8 +50,31 @@ describe("MonthlyReportContent", () => {
   });
 
   it("renders the empty state", () => {
-    render(<MonthlyReportContent data={{ current: null, history: [] }} />);
+    render(
+      <MonthlyReportContent
+        data={{
+          current: null,
+          history: [],
+          emptyState: {
+            reportKind: "monthly",
+            title: "Server monthly preview title",
+            message: "Server monthly preview message.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"],
+            requirement: "Server monthly coverage requirement.",
+            previewTitle: "Server monthly structure",
+            previewItems: ["Average daily strain", "Month-over-month training and sleep changes"],
+            note: "Server no-estimate note.",
+          },
+        }}
+      />,
+    );
 
-    expect(screen.getByText("Not enough data for a monthly report yet.")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview title")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server monthly structure")).toBeTruthy();
+    expect(screen.getByText("Average daily strain")).toBeTruthy();
+    expect(screen.getByText("Server no-estimate note.")).toBeTruthy();
   });
 });

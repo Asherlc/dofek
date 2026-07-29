@@ -1,7 +1,11 @@
 import { formatRelativeTime } from "@dofek/format/format";
-import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
+import {
+  PROCESSING_ALERTS_EMPTY_PREVIEW,
+  type ProcessingAlert,
+} from "@dofek/providers/processing-alerts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { EmptyStatePreview } from "../components/EmptyStatePreview.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -44,12 +48,7 @@ export function AlertsPage() {
           message="Alerts could not be loaded. Refresh the page to try again."
         />
       ) : alertsQuery.data?.alerts.length === 0 ? (
-        <section className="rounded-lg border border-border bg-surface px-5 py-8 text-center">
-          <h3 className="text-sm font-semibold text-foreground">Nothing needs your attention</h3>
-          <p className="mt-1 text-sm text-muted">
-            New sync, connection, and import problems will appear here.
-          </p>
-        </section>
+        <EmptyStatePreview content={PROCESSING_ALERTS_EMPTY_PREVIEW} />
       ) : (
         <div className="space-y-3">
           {visibleAlerts.map((alert) => (

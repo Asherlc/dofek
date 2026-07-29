@@ -2,6 +2,12 @@
 
 export type { ActivityHrZone } from "@dofek/zones/zones";
 export type { BaselineRelativeMetric } from "./contracts/baseline-relative-metrics.ts";
+export type {
+  MonthlyReportEmptyState,
+  ReportEmptyState,
+  ReportKind,
+  WeeklyReportEmptyState,
+} from "./contracts/report-empty-state.ts";
 export type { ActivityDetail } from "./models/activity.ts";
 export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 

@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const monthlyQueryControl = vi.hoisted(() => ({
   showError: false,
   preserveData: false,
+  weeklyEmpty: false,
+  monthlyEmpty: false,
 }));
 const mockWeeklyReportQuery = vi.hoisted(() => vi.fn());
 const mockMonthlyReportQuery = vi.hoisted(() => vi.fn());
@@ -22,20 +24,36 @@ vi.mock("../lib/trpc", () => ({
         useQuery: (...args: unknown[]) => {
           mockWeeklyReportQuery(...args);
           return {
-            data: {
-              current: {
-                weekStart: "2026-07-19",
-                trainingHours: 5,
-                activityCount: 3,
-                avgDailyLoad: 4,
-                avgSleepMinutes: 450,
-                sleepPerformancePct: 100,
-                avgReadiness: 0,
-                avgRestingHr: 55,
-                avgHrv: 48,
-              },
-              history: [],
-            },
+            data: monthlyQueryControl.weeklyEmpty
+              ? {
+                  current: null,
+                  history: [],
+                  emptyState: {
+                    reportKind: "weekly",
+                    title: "Server weekly preview title",
+                    message: "Server weekly preview message.",
+                    minimumObservedDays: 1,
+                    acceptedDataTypes: ["activity", "sleep", "recovery"],
+                    requirement: "Server weekly coverage requirement.",
+                    previewTitle: "Server weekly structure",
+                    previewItems: ["Training time and activity count", "Average nightly sleep"],
+                    note: "Server weekly no-estimate note.",
+                  },
+                }
+              : {
+                  current: {
+                    weekStart: "2026-07-19",
+                    trainingHours: 5,
+                    activityCount: 3,
+                    avgDailyLoad: 4,
+                    avgSleepMinutes: 450,
+                    sleepPerformancePct: 100,
+                    avgReadiness: 0,
+                    avgRestingHr: 55,
+                    avgHrv: 48,
+                  },
+                  history: [],
+                },
             isLoading: false,
             error: null,
           };
@@ -50,20 +68,39 @@ vi.mock("../lib/trpc", () => ({
             data:
               monthlyQueryControl.showError && !monthlyQueryControl.preserveData
                 ? undefined
-                : {
-                    current: {
-                      monthStart: "2026-07-01",
-                      trainingHours: 20,
-                      activityCount: 10,
-                      avgDailyStrain: 8,
-                      avgSleepMinutes: 450,
-                      avgRestingHr: 55,
-                      avgHrv: 48,
-                      trainingHoursTrend: null,
-                      avgSleepTrend: null,
+                : monthlyQueryControl.monthlyEmpty
+                  ? {
+                      current: null,
+                      history: [],
+                      emptyState: {
+                        reportKind: "monthly",
+                        title: "Server monthly preview title",
+                        message: "Server monthly preview message.",
+                        minimumObservedDays: 1,
+                        acceptedDataTypes: ["activity", "sleep", "recovery"],
+                        requirement: "Server monthly coverage requirement.",
+                        previewTitle: "Server monthly structure",
+                        previewItems: [
+                          "Average daily strain",
+                          "Month-over-month training and sleep changes",
+                        ],
+                        note: "Server monthly no-estimate note.",
+                      },
+                    }
+                  : {
+                      current: {
+                        monthStart: "2026-07-01",
+                        trainingHours: 20,
+                        activityCount: 10,
+                        avgDailyStrain: 8,
+                        avgSleepMinutes: 450,
+                        avgRestingHr: 55,
+                        avgHrv: 48,
+                        trainingHoursTrend: null,
+                        avgSleepTrend: null,
+                      },
+                      history: [],
                     },
-                    history: [],
-                  },
             isLoading: false,
             error: monthlyQueryControl.showError
               ? new Error("Monthly report service unavailable")
@@ -89,6 +126,8 @@ describe("ReportsScreen", () => {
   beforeEach(() => {
     monthlyQueryControl.showError = false;
     monthlyQueryControl.preserveData = false;
+    monthlyQueryControl.weeklyEmpty = false;
+    monthlyQueryControl.monthlyEmpty = false;
     mockWeeklyReportQuery.mockClear();
     mockMonthlyReportQuery.mockClear();
   });
@@ -118,6 +157,27 @@ describe("ReportsScreen", () => {
 
     expect(screen.getByText("Monthly report service unavailable")).toBeTruthy();
     expect(screen.queryByText("Not enough monthly data to create a report.")).toBeNull();
+  });
+
+  it("renders the server-owned empty report previews without deriving requirements", async () => {
+    monthlyQueryControl.weeklyEmpty = true;
+    monthlyQueryControl.monthlyEmpty = true;
+    const { default: ReportsScreen } = await import("./reports");
+
+    render(<ReportsScreen />);
+
+    expect(screen.getByText("Server weekly preview title")).toBeTruthy();
+    expect(screen.getByText("Server weekly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server weekly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server weekly structure")).toBeTruthy();
+    expect(screen.getByText("Training time and activity count")).toBeTruthy();
+    expect(screen.getByText("Server weekly no-estimate note.")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview title")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server monthly structure")).toBeTruthy();
+    expect(screen.getByText("Average daily strain")).toBeTruthy();
+    expect(screen.getByText("Server monthly no-estimate note.")).toBeTruthy();
   });
 
   it("keeps cached monthly report data visible during a background failure", async () => {

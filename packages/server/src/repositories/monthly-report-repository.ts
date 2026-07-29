@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  createReportEmptyState,
+  type MonthlyReportEmptyState,
+} from "../contracts/report-empty-state.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 // ---------------------------------------------------------------------------
@@ -19,10 +23,17 @@ export interface MonthSummary {
   avgSleepTrend: number | null;
 }
 
-export interface MonthlyReportResult {
-  current: MonthSummary | null;
-  history: MonthSummary[];
-}
+export type MonthlyReportResult =
+  | {
+      current: MonthSummary;
+      history: MonthSummary[];
+    }
+  | {
+      current: null;
+      history: [];
+      /** Canonical readiness and value-free preview when no report exists. */
+      emptyState: MonthlyReportEmptyState;
+    };
 
 // ---------------------------------------------------------------------------
 // Zod schema for raw DB rows
@@ -213,6 +224,14 @@ export class MonthlyReportRepository {
 
     const current = summaries.length > 0 ? (summaries[summaries.length - 1] ?? null) : null;
     const history = summaries.slice(0, -1);
+
+    if (current === null) {
+      return {
+        current: null,
+        history: [],
+        emptyState: createReportEmptyState("monthly"),
+      };
+    }
 
     return { current, history };
   }

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  createReportEmptyState,
+  type WeeklyReportEmptyState,
+} from "../contracts/report-empty-state.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -28,12 +32,19 @@ export interface WeekSummary {
   avgHrv: number | null;
 }
 
-export interface WeeklyReportResult {
-  /** Current week's summary */
-  current: WeekSummary | null;
-  /** Previous weeks for comparison */
-  history: WeekSummary[];
-}
+export type WeeklyReportResult =
+  | {
+      /** Current week's summary */
+      current: WeekSummary;
+      /** Previous weeks for comparison */
+      history: WeekSummary[];
+    }
+  | {
+      current: null;
+      history: [];
+      /** Canonical readiness and value-free preview when no report exists. */
+      emptyState: WeeklyReportEmptyState;
+    };
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -242,6 +253,14 @@ export class WeeklyReportRepository {
     const cutoffWeeks = summaries.slice(-weeks);
     const current = cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
     const history = cutoffWeeks.slice(0, -1);
+
+    if (current === null) {
+      return {
+        current: null,
+        history: [],
+        emptyState: createReportEmptyState("weekly"),
+      };
+    }
 
     return { current, history };
   }

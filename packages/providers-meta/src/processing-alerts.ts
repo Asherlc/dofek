@@ -7,6 +7,14 @@ export const PROCESSING_ALERT_ACTIONS = [
 
 export type ProcessingAlertAction = (typeof PROCESSING_ALERT_ACTIONS)[number];
 
+export const PROCESSING_ALERTS_EMPTY_PREVIEW = {
+  title: "Nothing needs your attention",
+  message: "New sync, connection, and import problems will appear here.",
+  previewTitle: "When an alert appears, it will show",
+  previewItems: ["What happened", "When it happened", "What to do next"],
+  note: "Only real problems detected for your account are shown.",
+} as const;
+
 export interface ProcessingAlert {
   id: string;
   providerId: string | null;
