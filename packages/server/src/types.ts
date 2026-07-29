@@ -19,6 +19,7 @@ export type {
   ClimbingSessionSummaryRow,
   ClimbingVolumeByGradeRow,
 } from "./repositories/climbing-repository.ts";
+export type { ReportDecisionSynthesis } from "./repositories/report-decision-synthesis.ts";
 // Training router types
 export type {
   HrZoneRow,

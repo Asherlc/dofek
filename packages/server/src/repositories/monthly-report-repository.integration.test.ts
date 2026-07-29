@@ -183,6 +183,6 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
       endDate,
     );
 
-    expect(report).toEqual({ current: null, history: [] });
+    expect(report).toEqual({ current: null, history: [], decisionSupport: null });
   });
 });

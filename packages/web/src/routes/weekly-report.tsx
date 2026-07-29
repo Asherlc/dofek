@@ -30,7 +30,7 @@ function WeeklyReportPage() {
   return (
     <PageLayout
       title="Weekly Report"
-      subtitle="Weekly training, sleep, and recovery trends"
+      subtitle="What changed, what the data suggests, and what to try next"
       tabs={healthReportTabs}
       headerChildren={
         report.data?.current ? (

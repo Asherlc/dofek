@@ -31,7 +31,7 @@ function MonthlyReportPage() {
   return (
     <PageLayout
       title="Monthly Report"
-      subtitle="Month-over-month performance trends"
+      subtitle="Decisions and evidence from month-over-month health patterns"
       tabs={healthReportTabs}
       headerChildren={
         data?.current ? (

@@ -1,6 +1,7 @@
 import { formatDurationMinutes, formatHRV, formatMonthYear } from "@dofek/format/format";
 import { textColors } from "@dofek/scoring/colors";
 import type { MonthlyReportData, MonthSummary } from "dofek-server/types";
+import { ReportDecisionSynthesis } from "./ReportDecisionSynthesis.tsx";
 
 export function MonthlyReportContent({ data }: { data: MonthlyReportData | undefined }) {
   if (!data || (!data.current && data.history.length === 0)) {
@@ -13,6 +14,7 @@ export function MonthlyReportContent({ data }: { data: MonthlyReportData | undef
 
   return (
     <div className="space-y-4">
+      {data.decisionSupport && <ReportDecisionSynthesis synthesis={data.decisionSupport} />}
       {data.current && (
         <div>
           <h3 className="text-xs text-muted uppercase tracking-wider mb-2">Current Month</h3>

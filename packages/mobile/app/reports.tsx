@@ -9,6 +9,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../components/Card";
 import { HealthReportShareButton } from "../components/HealthReportShareButton";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { ReportDecisionSynthesis } from "../components/ReportDecisionSynthesis";
 import { ReportRecoveryPanel } from "../components/ReportRecoveryPanel";
 import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
@@ -40,7 +41,7 @@ export default function ReportsScreen() {
       <View style={styles.intro}>
         <Text style={styles.title}>Health Reports</Text>
         <Text style={styles.subtitle}>
-          Create shareable snapshots from the health data calculated by Dofek.
+          See what changed, what the data suggests, and what to compare next.
         </Text>
       </View>
 
@@ -87,6 +88,9 @@ export default function ReportsScreen() {
                 preserved
                 retrying={weeklyReport.isFetching}
               />
+            ) : null}
+            {weeklyReport.data.decisionSupport ? (
+              <ReportDecisionSynthesis synthesis={weeklyReport.data.decisionSupport} />
             ) : null}
             <Card>
               <Text style={styles.periodLabel}>
@@ -164,6 +168,9 @@ export default function ReportsScreen() {
                 preserved
                 retrying={monthlyReport.isFetching}
               />
+            ) : null}
+            {monthlyReport.data.decisionSupport ? (
+              <ReportDecisionSynthesis synthesis={monthlyReport.data.decisionSupport} />
             ) : null}
             <Card>
               <Text style={styles.periodLabel}>
