@@ -3,7 +3,7 @@ import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import * as Notifications from "expo-notifications";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth-context";
@@ -29,6 +29,12 @@ import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence"
 import { createAppQueryClient } from "../lib/query-client";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
+import {
+  finishStartupPhase,
+  markAppInteractive,
+  startStartupPhase,
+  startStartupTelemetry,
+} from "../lib/startup-telemetry";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
@@ -56,6 +62,12 @@ try {
   initTelemetry();
 } catch (error: unknown) {
   captureException(error, { source: "bootstrap-telemetry-init" });
+}
+
+try {
+  startStartupTelemetry();
+} catch (error: unknown) {
+  captureException(error, { source: "startup-telemetry-init" });
 }
 
 SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
@@ -153,8 +165,13 @@ function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
     useAuth();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
+  const startupInteractiveMarkedRef = useRef(false);
 
   const [queryClient] = useState(createAppQueryClient);
+
+  useEffect(() => {
+    finishStartupPhase("javascript", "ready");
+  }, []);
 
   const trpcClient = useMemo(() => {
     const url = getTrpcUrl(serverUrl);
@@ -208,12 +225,22 @@ function AuthGate() {
   }, [queryClient, user]);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || startupInteractiveMarkedRef.current) return;
 
-    SplashScreen.hideAsync().catch((error: unknown) => {
-      captureException(error, { source: "splash-screen-hide" });
-    });
-  }, [isLoading]);
+    startupInteractiveMarkedRef.current = true;
+    startStartupPhase("splash-hide");
+    SplashScreen.hideAsync()
+      .then(() => {
+        markAppInteractive({ serviceBootstrapExpected: Boolean(user) });
+      })
+      .catch((error: unknown) => {
+        captureException(error, { source: "splash-screen-hide" });
+        markAppInteractive({
+          serviceBootstrapExpected: Boolean(user),
+          outcome: "error",
+        });
+      });
+  }, [isLoading, user]);
 
   useEffect(() => {
     if (!user) {
@@ -235,6 +262,8 @@ function AuthGate() {
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
     if (!user || !trpcClient || !backgroundSyncReady) return;
+    startStartupPhase("service-bootstrap");
+    let serviceBootstrapFailed = false;
     const syncClient: SyncTrpcClient = {
       healthKitSync: {
         deleteQuantitySamples: {
@@ -254,9 +283,10 @@ function AuthGate() {
         },
       },
     };
-    initBackgroundHealthKitSync(syncClient, () => {
+    const healthKitBootstrap = initBackgroundHealthKitSync(syncClient, () => {
       return invalidateSyncedHealthData(queryClient);
     }).catch((error: unknown) => {
+      serviceBootstrapFailed = true;
       logger.warn(
         "bg-healthkit-sync",
         `Init failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -266,16 +296,31 @@ function AuthGate() {
 
     // Start continuous accelerometer recording and background sync
     const imuSyncClient = createWatchSyncClient(trpcClient);
-    initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
-      // Best-effort — accelerometer sync is non-critical
-      captureException(error, { source: "bg-accelerometer-sync" });
-    });
+    const accelerometerBootstrap = initBackgroundAccelerometerSync(imuSyncClient).catch(
+      (error: unknown) => {
+        serviceBootstrapFailed = true;
+        // Best-effort — accelerometer sync is non-critical
+        captureException(error, { source: "bg-accelerometer-sync" });
+      },
+    );
 
     // Start Apple Watch IMU sync (if Watch is paired)
-    initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
-      // Best-effort — Watch sync is non-critical
-      captureException(error, { source: "bg-watch-sync" });
-    });
+    const watchBootstrap = initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch(
+      (error: unknown) => {
+        serviceBootstrapFailed = true;
+        // Best-effort — Watch sync is non-critical
+        captureException(error, { source: "bg-watch-sync" });
+      },
+    );
+
+    void Promise.all([healthKitBootstrap, accelerometerBootstrap, watchBootstrap])
+      .then(() => {
+        finishStartupPhase("service-bootstrap", serviceBootstrapFailed ? "error" : "ready");
+      })
+      .catch((error: unknown) => {
+        captureException(error, { source: "startup-service-bootstrap-telemetry" });
+        finishStartupPhase("service-bootstrap", "error");
+      });
 
     // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook
     // inside the tRPC provider tree (see WhoopBleSyncManager below).

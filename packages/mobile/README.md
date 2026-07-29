@@ -138,6 +138,17 @@ Release configuration locally:
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
 
+Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
+native `App Start` span. The lifecycle attributes time to the Expo
+Updates launch, JavaScript bootstrap, authentication restore, splash dismissal,
+and deferred native-service bootstrap. It also emits the same phase durations
+as structured `app-startup` logs for local Release audits and OTLP correlation.
+Call `Sentry.appLoaded()` only after the splash is dismissed so the native app
+start measurement ends at the first interactive screen, as described by
+[Sentry's React Native custom instrumentation guidance](https://docs.sentry.io/platforms/react-native/tracing/instrumentation/custom-instrumentation/).
+The native OTA duration comes from
+[`Updates.launchDuration`](https://docs.expo.dev/versions/latest/sdk/updates/#updateslaunchduration).
+
 To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 
 - `EXPO_PUBLIC_OTEL_ENDPOINT` (for example, `https://api.axiom.co/v1/logs`)
