@@ -6,9 +6,11 @@ import { loadDashboardOverview } from "./dashboard-overview.ts";
 function makeSensorStore({
   metricDate = "2026-06-29",
   sleepDurationMinutes = 455,
+  sleepNights,
 }: {
   metricDate?: string | Date;
   sleepDurationMinutes?: number | null;
+  sleepNights?: Array<{ date: string; durationMinutes: number | null }>;
 } = {}): ActivitySensorStore {
   return {
     query: vi.fn(async <TSchema extends z.ZodType>(schema: TSchema, queryText: string) => {
@@ -29,16 +31,16 @@ function makeSensorStore({
         ];
       } else if (queryText.includes("analytics.daily_sleep")) {
         expect(queryText).toContain("AND sleep.is_deleted = 0");
-        rows = [
-          {
-            date: "2026-06-29",
-            duration_minutes: sleepDurationMinutes,
+        rows = (sleepNights ?? [{ date: "2026-06-29", durationMinutes: sleepDurationMinutes }]).map(
+          (night) => ({
+            date: night.date,
+            duration_minutes: night.durationMinutes,
             deep_minutes: 70,
             rem_minutes: 95,
             light_minutes: 260,
             awake_minutes: 30,
-          },
-        ];
+          }),
+        );
       } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
         expect(queryText).toContain("strain.is_deleted = 0");
         rows = [{ load: 0 }];
@@ -138,6 +140,36 @@ describe("loadDashboardOverview", () => {
       accumulatedDebtMinutes: 25,
       debtRecoveryMinutes: 6,
       totalNeedMinutes: 486,
+    });
+  });
+
+  it("excludes older missing durations from dashboard debt and recent-night values", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore({
+        sleepNights: [
+          { date: "2026-06-29", durationMinutes: null },
+          { date: "2026-06-30", durationMinutes: 480 },
+        ],
+      }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 480,
+    });
+    if (result.sleepNeedV2.availability !== "available") {
+      throw new Error("Expected available sleep need");
+    }
+    expect(
+      result.sleepNeedV2.recentNights.find((night) => night.date === "2026-06-29"),
+    ).toMatchObject({
+      actualMinutes: null,
+      debtMinutes: null,
     });
   });
 });

@@ -200,7 +200,7 @@ async function calculateSleepNeed(
     const nextDayHrv = hrvByDate.get(addDays(sleepRow.date, 1)) ?? null;
     return {
       date: sleepRow.date,
-      duration_minutes: sleepRow.duration_minutes ?? 0,
+      duration_minutes: sleepRow.duration_minutes,
       next_day_hrv: nextDayHrv,
       median_hrv: medianHrv,
       good_recovery: medianHrv != null && nextDayHrv != null && nextDayHrv >= medianHrv,
@@ -209,11 +209,15 @@ async function calculateSleepNeed(
   });
 
   // Calculate personalized baseline from nights that preceded good recovery
-  const goodNights = nights.filter((n) => n.good_recovery && n.duration_minutes > 0);
+  const goodNightDurations = nights
+    .filter((night) => night.good_recovery)
+    .map((night) => night.duration_minutes)
+    .filter((duration): duration is number => duration != null && duration > 0);
   const baselineMinutes =
-    goodNights.length >= 7
+    goodNightDurations.length >= 7
       ? Math.round(
-          goodNights.reduce((sum, n) => sum + Number(n.duration_minutes), 0) / goodNights.length,
+          goodNightDurations.reduce((sum, duration) => sum + duration, 0) /
+            goodNightDurations.length,
         )
       : 480; // default to 8 hours if insufficient data
 
@@ -226,7 +230,8 @@ async function calculateSleepNeed(
   const last14 = nights.slice(-14);
   let accumulatedDebt = 0;
   for (const night of last14) {
-    const deficit = baselineMinutes - Number(night.duration_minutes);
+    if (night.duration_minutes == null) continue;
+    const deficit = baselineMinutes - night.duration_minutes;
     if (deficit > 0) accumulatedDebt += deficit;
   }
 
@@ -245,8 +250,8 @@ async function calculateSleepNeed(
   // Map all 7 calendar dates to nights (null for missing)
   const recentNights: SleepNight[] = calendarDates.map((date) => {
     const night = nightsByDate.get(date);
-    if (night) {
-      const actual = Number(night.duration_minutes);
+    if (night?.duration_minutes != null) {
+      const actual = night.duration_minutes;
       const sleepRow = sleepRows.find((row) => row.date === date);
       return {
         date,

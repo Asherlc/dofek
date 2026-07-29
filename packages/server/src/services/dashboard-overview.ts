@@ -249,7 +249,7 @@ export async function loadDashboardOverview({
   const hrvByDate = new Map(readinessRows.map((row) => [row.date, row.hrv]));
   const sleepBaselineRows = dashboardSleepRows.map((row) => ({
     date: row.date,
-    duration_minutes: row.duration_minutes ?? 0,
+    duration_minutes: row.duration_minutes,
     hrv: hrvByDate.get(addDays(row.date, 1)) ?? null,
     yesterday_load: yesterdayLoadFromClickHouse,
   }));
@@ -266,14 +266,17 @@ export async function loadDashboardOverview({
       : ((values[midpoint - 1] ?? 50) + (values[midpoint] ?? 50)) / 2;
   })();
 
-  const goodNights = sleepBaselineRows.filter(
-    (row) => row.hrv != null && row.hrv >= hrvMedian && row.duration_minutes > 0,
-  );
+  const goodNightDurations = sleepBaselineRows
+    .filter((row) => row.hrv != null && row.hrv >= hrvMedian)
+    .map((row) => row.duration_minutes)
+    .filter((duration): duration is number => duration != null && duration > 0);
   const baselineMinutes =
-    goodNights.length >= 7
+    goodNightDurations.length >= 7
       ? Math.round(
-          goodNights.reduce((totalMinutes, row) => totalMinutes + row.duration_minutes, 0) /
-            goodNights.length,
+          goodNightDurations.reduce(
+            (totalMinutes, durationMinutes) => totalMinutes + durationMinutes,
+            0,
+          ) / goodNightDurations.length,
         )
       : 480;
 
@@ -281,7 +284,13 @@ export async function loadDashboardOverview({
   const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
   const accumulatedDebt = sleepBaselineRows
     .slice(-14)
-    .reduce((totalDebt, row) => totalDebt + Math.max(0, baselineMinutes - row.duration_minutes), 0);
+    .reduce(
+      (totalDebt, row) =>
+        row.duration_minutes == null
+          ? totalDebt
+          : totalDebt + Math.max(0, baselineMinutes - row.duration_minutes),
+      0,
+    );
   const nightsByDate = new Map(sleepBaselineRows.map((row) => [row.date, row]));
   const recentNights: SleepNight[] = [];
   const anchorDate = new Date(`${endDate}T12:00:00Z`);
@@ -292,9 +301,12 @@ export async function loadDashboardOverview({
     const night = nightsByDate.get(dateString);
     recentNights.push({
       date: dateString,
-      actualMinutes: night ? Math.round(night.duration_minutes) : null,
+      actualMinutes: night?.duration_minutes != null ? Math.round(night.duration_minutes) : null,
       neededMinutes: baselineMinutes,
-      debtMinutes: night ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes)) : null,
+      debtMinutes:
+        night?.duration_minutes != null
+          ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes))
+          : null,
       providerId: null,
       sourceName: null,
       sourceProviders: [],

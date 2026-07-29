@@ -174,6 +174,35 @@ describe("sleepNeedRouter", () => {
         totalNeedMinutes: 523,
       });
     });
+
+    it("excludes older missing durations from debt and recent-night values", async () => {
+      const caller = createCalculateCaller([
+        {
+          date: "2026-03-13",
+          duration_minutes: null,
+        },
+        {
+          date: "2026-03-14",
+          duration_minutes: 480,
+        },
+      ]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toMatchObject({
+        availability: "available",
+        accumulatedDebtMinutes: 0,
+        debtRecoveryMinutes: 0,
+        totalNeedMinutes: 480,
+      });
+      if (result.availability !== "available") {
+        throw new Error("Expected available sleep need");
+      }
+      expect(result.recentNights.find((night) => night.date === "2026-03-13")).toMatchObject({
+        actualMinutes: null,
+        debtMinutes: null,
+      });
+    });
   });
 
   // ── calculate ──────────────────────────────────────────

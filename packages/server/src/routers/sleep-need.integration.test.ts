@@ -9,7 +9,7 @@ import {
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
-import type { SleepNeedResult, SleepPerformanceInfo } from "./sleep-need.ts";
+import type { SleepNeedResult, SleepNeedV2, SleepPerformanceInfo } from "./sleep-need.ts";
 import type { WeeklyReportResult } from "./weekly-report.ts";
 
 /**
@@ -176,6 +176,68 @@ describe("sleep-need router integration", () => {
     });
     expect(result).not.toHaveProperty("totalNeedMinutes");
     expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 excludes an older null duration when the prior night is available", async () => {
+    const endDate = new Date();
+    endDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const missingNightDate = new Date(endDate);
+    missingNightDate.setUTCDate(missingNightDate.getUTCDate() - 2);
+    const missingNightStartedAt = new Date(missingNightDate);
+    missingNightStartedAt.setUTCHours(22);
+    const missingNightEndedAt = new Date(missingNightDate);
+    missingNightEndedAt.setUTCDate(missingNightEndedAt.getUTCDate() + 1);
+    missingNightEndedAt.setUTCHours(6);
+    const priorNightStartedAt = new Date(endDate);
+    priorNightStartedAt.setUTCDate(priorNightStartedAt.getUTCDate() - 1);
+    priorNightStartedAt.setUTCHours(22);
+    const priorNightEndedAt = new Date(endDate);
+    priorNightEndedAt.setUTCHours(6);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, external_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, sleep_type
+          ) VALUES
+          (
+            'apple_health', ${TEST_USER_ID}, 'older-null-duration',
+            ${missingNightStartedAt}, ${missingNightEndedAt},
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          ),
+          (
+            'apple_health', ${TEST_USER_ID}, 'available-prior-night',
+            ${priorNightStartedAt}, ${priorNightEndedAt},
+            480, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          )`,
+    );
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
+    const result = await query<SleepNeedV2>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 480,
+    });
+    if (result.availability !== "available") {
+      throw new Error("Expected available sleep need");
+    }
+    expect(
+      result.recentNights.find(
+        (night) => night.date === missingNightDate.toISOString().slice(0, 10),
+      ),
+    ).toMatchObject({
+      actualMinutes: null,
+      debtMinutes: null,
+    });
   });
 
   it("performance returns deduped sleep data from v_sleep", async () => {
