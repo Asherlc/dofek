@@ -410,7 +410,7 @@ describe("CorrelationExplorerPage", () => {
               {
                 kind: "aggregate_inputs",
                 label: "Canonical daily nutrition inputs",
-                providerIds: ["macro_factor"],
+                providerIds: ["apple_health"],
                 target: { type: "metric_family", family: "nutrition" },
               },
             ],
@@ -446,7 +446,7 @@ describe("CorrelationExplorerPage", () => {
     expect(
       screen.getByRole("link", { name: "Canonical daily nutrition inputs" }).getAttribute("href"),
     ).toBe("/nutrition");
-    expect(screen.getByText("macro_factor")).toBeTruthy();
+    expect(screen.getByText("Apple Health")).toBeTruthy();
     expect(screen.getByText("Aggregate inputs")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Morning run" }).getAttribute("href")).toBe(
       "/activity/00000000-0000-4000-8000-000000000106",

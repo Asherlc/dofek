@@ -1,9 +1,12 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
 } from "@dofek/stats/correlation-lag";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "dofek-server/router";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -44,34 +47,9 @@ const METRIC_FAMILY_ROUTES = {
   body: "/recovery",
 } as const;
 
-type ObservationContributor =
-  | {
-      kind: "record";
-      label: string;
-      providerIds: string[];
-      target: { type: "activity"; activityId: string };
-    }
-  | {
-      kind: "aggregate_inputs";
-      label: string;
-      providerIds: string[];
-      target: {
-        type: "metric_family";
-        family: "recovery" | "sleep" | "nutrition" | "activity" | "body";
-      };
-    };
-
-interface ObservationValue {
-  metricId: string;
-  date: string;
-  value: number;
-  contributors: ObservationContributor[];
-}
-
-interface PairedObservation {
-  x: ObservationValue;
-  y: ObservationValue;
-}
+type CorrelationObservationsOutput = inferRouterOutputs<AppRouter>["correlation"]["observations"];
+type PairedObservation = CorrelationObservationsOutput["items"][number];
+type ObservationContributor = PairedObservation["x"]["contributors"][number];
 
 function formatObservationValue(value: number): string {
   return Number.isInteger(value) ? value.toLocaleString() : formatNumber(value);
@@ -300,7 +278,9 @@ function ObservationContributors({
           {contributor.kind === "aggregate_inputs" && (
             <Text style={styles.observationSourceText}>
               Aggregate inputs
-              {contributor.providerIds.length > 0 ? ` · ${contributor.providerIds.join(", ")}` : ""}
+              {contributor.providerIds.length > 0
+                ? ` · ${contributor.providerIds.map(providerLabel).join(", ")}`
+                : ""}
             </Text>
           )}
         </View>

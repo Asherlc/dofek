@@ -1,10 +1,13 @@
 import { formatNumber } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
 } from "@dofek/stats/correlation-lag";
 import { Link } from "@tanstack/react-router";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "dofek-server/router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
@@ -83,34 +86,10 @@ function formatValue(v: number): string {
   return formatNumber(v);
 }
 
-type ObservationContributor =
-  | {
-      kind: "record";
-      label: string;
-      providerIds: string[];
-      target: { type: "activity"; activityId: string };
-    }
-  | {
-      kind: "aggregate_inputs";
-      label: string;
-      providerIds: string[];
-      target: {
-        type: "metric_family";
-        family: "recovery" | "sleep" | "nutrition" | "activity" | "body";
-      };
-    };
-
-interface ObservationValue {
-  metricId: string;
-  date: string;
-  value: number;
-  contributors: ObservationContributor[];
-}
-
-interface PairedObservation {
-  x: ObservationValue;
-  y: ObservationValue;
-}
+type CorrelationObservationsOutput = inferRouterOutputs<AppRouter>["correlation"]["observations"];
+type PairedObservation = CorrelationObservationsOutput["items"][number];
+type ObservationValue = PairedObservation["x"];
+type ObservationContributor = ObservationValue["contributors"][number];
 
 const METRIC_FAMILY_ROUTES = {
   recovery: "/training/recovery",
@@ -157,7 +136,7 @@ function ObservationContributors({ contributors }: { contributors: ObservationCo
           )}
           {contributor.providerIds.map((providerId) => (
             <span key={providerId} className="text-[10px] text-dim">
-              {providerId}
+              {providerLabel(providerId)}
             </span>
           ))}
         </div>

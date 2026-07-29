@@ -400,7 +400,7 @@ describe("CorrelationScreen", () => {
               {
                 kind: "aggregate_inputs",
                 label: "Canonical daily nutrition inputs",
-                providerIds: ["macro_factor"],
+                providerIds: ["apple_health"],
                 target: { type: "metric_family", family: "nutrition" },
               },
             ],
@@ -432,7 +432,7 @@ describe("CorrelationScreen", () => {
     expect(screen.getByText("2025-04-01 → 2025-04-02")).toBeTruthy();
     expect(screen.getByText("Protein: 120 g")).toBeTruthy();
     expect(screen.getByText("Heart Rate Variability: 55 ms")).toBeTruthy();
-    expect(screen.getByText("Aggregate inputs · macro_factor")).toBeTruthy();
+    expect(screen.getByText("Aggregate inputs · Apple Health")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open Canonical daily nutrition inputs" }));
     expect(state.routerPush).toHaveBeenCalledWith("/food");
