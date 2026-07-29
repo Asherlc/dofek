@@ -20324,3 +20324,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge only after every exact-head attempt
   completes successfully. Avoid close/reopen refreshes while a same-PR
   concurrency group is still active.
+
+## 2026-07-29 — Expo compatibility metadata invalidated pinned mobile dependencies
+
+- **Status:** Root cause fixed locally for PR #2303; fresh exact-head CI
+  validation pending.
+- **Symptoms:** `Build Mobile / Metro Bundle` failed during dependency
+  validation before Metro started.
+- **User impact:** No production impact. PR #2303 was blocked from merging
+  because its mobile build prerequisite no longer matched Expo SDK 57's
+  compatibility recommendations.
+- **Evidence:** The exact failing command was
+  `cd packages/mobile && pnpm expo install --check`. Its first fatal output was
+  `Found outdated dependencies`, after the CLI listed 12 newly expected patch
+  releases, including `expo-router` 57.0.9,
+  `react-native-reanimated` 4.5.1, and `react-native-worklets` 0.10.1. The
+  branch and `origin/main` had identical mobile dependency and lockfile state,
+  while an earlier PR run had passed the same live validation.
+- **Root cause:** Expo's live SDK 57 compatibility metadata advanced after the
+  previous successful run, so exact pins that had been accepted became stale
+  without a repository change.
+- **Fix / mitigation:** Run Expo's canonical `expo install --fix`, retain exact
+  package pins, and commit the resulting coherent lockfile update. Expo
+  documents that `--check` exits nonzero in CI for incompatible versions and
+  `--fix` updates invalid versions to the compatible set in its
+  [CLI version-validation guidance](https://docs.expo.dev/more/expo-cli/#version-validation).
+  The package manager's generated release-age exceptions were removed; no
+  retry, validation exclusion, fallback, or warning-only behavior was added.
+- **Validation:** The same Expo dependency check reports
+  `Dependencies are up to date`; frozen-lockfile installation, exact-version
+  policy, mobile typecheck, the focused mobile panel tests, and a clean iOS
+  Metro export of 2,919 modules all pass locally.
+- **Remaining risk / follow-up:** The gate depends on mutable upstream
+  compatibility metadata, so future patch publications can invalidate a clean
+  head. Merge only after the new exact head passes the same CI step.
