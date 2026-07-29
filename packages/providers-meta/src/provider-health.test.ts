@@ -30,7 +30,7 @@ describe("providerHealth", () => {
     });
   });
 
-  it("reports a removed expired connection as reconnectable", () => {
+  it("reports that a removed expired connection still requires reconnection", () => {
     expect(
       providerHealth({
         authorized: false,
