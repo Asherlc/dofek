@@ -49,7 +49,7 @@ function getActivityColor(type: string): string {
 
 const weeklyVolumeRowSchema = z.object({
   week: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   count: z.number(),
   hours: z.number(),
 });
@@ -163,7 +163,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   // Pivot: collect all weeks and activity types
   const weekSet = [...new Set(collapsedRows.map((r) => r.week))].sort();
   const typeTotals = collapsedRows.reduce(
-    (acc, row) => acc.set(row.activity_type, (acc.get(row.activity_type) ?? 0) + row.hours),
+    (acc, row) => acc.set(row.canonical_type, (acc.get(row.canonical_type) ?? 0) + row.hours),
     new Map<string, number>(),
   );
   const typeSet = [...typeTotals.entries()].sort((a, b) => b[1] - a[1]).map(([type]) => type);
@@ -176,7 +176,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
       inner = new Map();
       lookup.set(row.week, inner);
     }
-    inner.set(row.activity_type, Number(row.hours) || 0);
+    inner.set(row.canonical_type, Number(row.hours) || 0);
   }
 
   const series = typeSet.map((type) => ({

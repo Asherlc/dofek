@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type NormalizedActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { mapSportId, mapV2ActivityType } from "@dofek/whoop/sports";
 import type {
@@ -317,10 +317,7 @@ export function resolveActivityType(
   if (fromSportId === "other" && v2ActivityTypeName) {
     normalizedType = mapV2ActivityType(v2ActivityTypeName) ?? "other";
   }
-  return resolveProviderActivityType(
-    v2ActivityTypeName ?? sportId,
-    normalizedType,
-  );
+  return resolveProviderActivityType(v2ActivityTypeName ?? sportId, normalizedType);
 }
 
 export function parseWorkout(

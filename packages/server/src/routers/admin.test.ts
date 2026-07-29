@@ -450,7 +450,7 @@ describe("adminRouter", () => {
             user_id: "user-1",
             user_name: "Test",
             provider_id: "garmin",
-            activity_type: "running",
+            canonical_type: "running",
             name: "Morning Run",
             started_at: "2024-01-01T08:00:00Z",
             duration_seconds: "1800",

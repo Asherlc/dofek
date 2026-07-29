@@ -16,12 +16,12 @@ interface TrainingInsightsScenario {
 }
 
 const volume = [
-  { week: "2026-06-01", activity_type: "running", count: 3, hours: 3.2 },
-  { week: "2026-06-01", activity_type: "strength_training", count: 2, hours: 1.8 },
-  { week: "2026-06-08", activity_type: "running", count: 4, hours: 4.1 },
-  { week: "2026-06-08", activity_type: "cycling", count: 1, hours: 2.3 },
-  { week: "2026-06-15", activity_type: "running", count: 3, hours: 3.7 },
-  { week: "2026-06-15", activity_type: "strength_training", count: 2, hours: 2.0 },
+  { week: "2026-06-01", canonical_type: "running", count: 3, hours: 3.2 },
+  { week: "2026-06-01", canonical_type: "strength", count: 2, hours: 1.8 },
+  { week: "2026-06-08", canonical_type: "running", count: 4, hours: 4.1 },
+  { week: "2026-06-08", canonical_type: "cycling", count: 1, hours: 2.3 },
+  { week: "2026-06-15", canonical_type: "running", count: 3, hours: 3.7 },
+  { week: "2026-06-15", canonical_type: "strength", count: 2, hours: 2.0 },
 ];
 
 const hrZones = {

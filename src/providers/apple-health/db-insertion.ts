@@ -731,9 +731,7 @@ export async function upsertWorkoutBatch(
           lat: loc.lat,
           lng: loc.lng,
           altitude: loc.altitude,
-          speed: isIndoorCyclingModality(workout.activityType.modality)
-            ? undefined
-            : loc.speed,
+          speed: isIndoorCyclingModality(workout.activityType.modality) ? undefined : loc.speed,
           horizontalAccuracy: loc.horizontalAccuracy,
           sourceName: workout.sourceName,
         });

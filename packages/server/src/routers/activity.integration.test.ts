@@ -35,11 +35,12 @@ describe("Activity router", () => {
 
     const insertedActivities = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
             'test_provider',
             ${TEST_USER_ID},
             'metric-stream-only-activity',
+            'running',
             'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
@@ -52,14 +53,15 @@ describe("Activity router", () => {
     }
     metricOnlyActivityId = activityId;
 
-    const filteredActivities = await testCtx.db.execute<{ id: string; activity_type: string }>(
+    const filteredActivities = await testCtx.db.execute<{ id: string; canonical_type: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
           (
             'test_provider',
             ${TEST_USER_ID},
             'filtered-cycling-activity',
+            'cycling',
             'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
             CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '75 minutes',
@@ -70,17 +72,18 @@ describe("Activity router", () => {
             ${TEST_USER_ID},
             'filtered-walking-activity',
             'walking',
+            'walking',
             CURRENT_TIMESTAMP - INTERVAL '12 hours',
             CURRENT_TIMESTAMP - INTERVAL '12 hours' + INTERVAL '40 minutes',
             'Filtered Walking Activity'
           )
-          RETURNING id, activity_type`,
+          RETURNING id, canonical_type`,
     );
     const cyclingActivity = filteredActivities.find(
-      (activity) => activity.activity_type === "cycling",
+      (activity) => activity.canonical_type === "cycling",
     );
     const walkingActivity = filteredActivities.find(
-      (activity) => activity.activity_type === "walking",
+      (activity) => activity.canonical_type === "walking",
     );
     if (!cyclingActivity || !walkingActivity) {
       throw new Error("Failed to insert filtered test activities");
@@ -211,10 +214,10 @@ describe("Activity router", () => {
         activityTypes: ["cycling"],
       });
       expect(result.error).toBeUndefined();
-      const items: Array<{ id: string; activity_type: string }> = result.result?.data?.items ?? [];
+      const items: Array<{ id: string; canonical_type: string }> = result.result?.data?.items ?? [];
       expect(items).toHaveLength(1);
       expect(items[0]?.id).toBe(cyclingActivityId);
-      expect(items[0]?.activity_type).toBe("cycling");
+      expect(items[0]?.canonical_type).toBe("cycling");
       expect(items.some((item) => item.id === metricOnlyActivityId)).toBe(false);
       expect(items.some((item) => item.id === walkingActivityId)).toBe(false);
     });

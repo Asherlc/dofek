@@ -1,8 +1,8 @@
-import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
-  resolveProviderActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
   createActivityTypeMapper,
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
@@ -198,9 +198,7 @@ export function rideWithGpsOAuthConfig(host?: string): OAuthConfig | null {
 
 const mapRwgpsType = createActivityTypeMapper(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP);
 
-export function mapActivityType(
-  rawType: string | null | undefined,
-): ProviderActivityType {
+export function mapActivityType(rawType: string | null | undefined): ProviderActivityType {
   if (!rawType) return resolveProviderActivityType("cycling", "cycling");
   return mapRwgpsType(rawType);
 }

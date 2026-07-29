@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 
 export const VELOHERO_SPORT_MAP: Record<string, LegacyActivityType> = {
@@ -21,8 +21,5 @@ export const VELOHERO_SPORT_MAP: Record<string, LegacyActivityType> = {
 };
 
 export function mapVeloHeroSport(sportId: string): ProviderActivityType {
-  return resolveProviderActivityType(
-    sportId,
-    VELOHERO_SPORT_MAP[sportId] ?? "other",
-  );
+  return resolveProviderActivityType(sportId, VELOHERO_SPORT_MAP[sportId] ?? "other");
 }

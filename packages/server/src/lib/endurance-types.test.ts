@@ -22,7 +22,7 @@ describe("enduranceTypeFilter", () => {
   it("generates SQL IN clause with the given alias", () => {
     const result = enduranceTypeFilter("a");
     const sqlString = result.queryChunks.map((c) => c.value ?? c).join("");
-    expect(sqlString).toContain("a.activity_type IN (");
+    expect(sqlString).toContain("a.canonical_type IN (");
     expect(sqlString).toContain("'cycling'");
     expect(sqlString).toContain("'running'");
     expect(sqlString).toContain("'swimming'");
@@ -33,6 +33,6 @@ describe("enduranceTypeFilter", () => {
   it("uses the provided alias in the output", () => {
     const result = enduranceTypeFilter("asum");
     const sqlString = result.queryChunks.map((c) => c.value ?? c).join("");
-    expect(sqlString).toContain("asum.activity_type");
+    expect(sqlString).toContain("asum.canonical_type");
   });
 });

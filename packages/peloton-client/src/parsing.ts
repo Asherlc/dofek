@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import type { PelotonPerformanceGraph, PelotonWorkout } from "./types.ts";
 
@@ -22,10 +22,7 @@ const DISCIPLINE_MAP: Record<string, LegacyActivityType> = {
 };
 
 export function mapFitnessDiscipline(discipline: string): ProviderActivityType {
-  return resolveProviderActivityType(
-    discipline,
-    DISCIPLINE_MAP[discipline] ?? "other",
-  );
+  return resolveProviderActivityType(discipline, DISCIPLINE_MAP[discipline] ?? "other");
 }
 
 export interface ParsedPelotonWorkout {

@@ -152,7 +152,9 @@ const expectedListColumns = {
     "id",
     "provider_id",
     "external_id",
-    "activity_type",
+    "canonical_type",
+    "provider_type",
+    "modality",
     "started_at",
     "ended_at",
     "name",
@@ -589,7 +591,7 @@ describe("providerDetailRouter", () => {
             {
               id: "act-1",
               name: "Morning Run",
-              activity_type: "running",
+              canonical_type: "running",
               started_at: "2024-01-14T08:00:00Z",
             },
           ]),
@@ -623,7 +625,7 @@ describe("providerDetailRouter", () => {
         dataType: "activities",
       });
 
-      expect(result.activity_type).toEqual([{ value: "running" }, { value: "cycling" }]);
+      expect(result.canonical_type).toEqual([{ value: "running" }, { value: "cycling" }]);
     });
 
     it.each(
@@ -817,12 +819,12 @@ describe("providerDetailRouter", () => {
       await caller.records({
         providerId: "strava",
         dataType: "activities",
-        filters: { activity_type: "run", name: "Morning" },
+        filters: { canonical_type: "run", name: "Morning" },
       });
 
       const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
       expect(sqlText).toContain("ILIKE");
-      expect(sqlText).toContain("activity_type");
+      expect(sqlText).toContain("canonical_type");
       expect(sqlText).toContain("name");
     });
 
@@ -840,11 +842,11 @@ describe("providerDetailRouter", () => {
         dataType: "activities",
       });
 
-      expect(result.columns).toContain("activity_type");
+      expect(result.columns).toContain("canonical_type");
       expect(result.columns).toContain("name");
       expect(result.columns).not.toContain("provider_id");
       expect(result.filterColumns).toContain("provider_id");
-      expect(result.filterColumns).toContain("activity_type");
+      expect(result.filterColumns).toContain("canonical_type");
       expect(result.rows).toHaveLength(1);
     });
   });
@@ -860,7 +862,7 @@ describe("providerDetailRouter", () => {
               id: "act-1",
               provider_id: "strava",
               name: "Morning Run",
-              activity_type: "running",
+              canonical_type: "running",
               started_at: "2024-01-14T08:00:00Z",
               raw: { distance: 5000, elapsed_time: 1400 },
             },

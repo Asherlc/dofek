@@ -212,7 +212,7 @@ export const activityRouter = router({
       if (!activity) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
-      if (!isCyclingActivity(activity.activity_type)) return null;
+      if (!isCyclingActivity(activity.canonical_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
       if (!ctx.sensorStore) {
         throw new TRPCError({

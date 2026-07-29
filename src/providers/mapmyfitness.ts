@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -77,17 +77,11 @@ export interface ParsedMapMyFitnessWorkout {
 // Parsing — pure functions
 // ============================================================
 
-export function mapMapMyFitnessActivityType(
-  activityType: string,
-): ProviderActivityType {
+export function mapMapMyFitnessActivityType(activityType: string): ProviderActivityType {
   const lower = activityType.toLowerCase();
   let normalizedType: LegacyActivityType = "other";
   if (lower.includes("run")) normalizedType = "running";
-  else if (
-    lower.includes("ride") ||
-    lower.includes("cycl") ||
-    lower.includes("bik")
-  ) {
+  else if (lower.includes("ride") || lower.includes("cycl") || lower.includes("bik")) {
     normalizedType = "cycling";
   } else if (lower.includes("walk")) normalizedType = "walking";
   else if (lower.includes("swim")) normalizedType = "swimming";

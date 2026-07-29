@@ -12,7 +12,7 @@ WITH activity_bounds AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         ended_at
     FROM {{ ref('activity_summary_rows') }} FINAL
@@ -48,7 +48,7 @@ activity_meta AS (
     SELECT
         activity_bounds.activity_id AS activity_id,
         activity_bounds.user_id AS user_id,
-        activity_bounds.activity_type AS activity_type,
+        activity_bounds.canonical_type AS canonical_type,
         activity_bounds.started_at AS started_at,
         activity_bounds.ended_at AS ended_at,
         user_profile.max_hr AS max_hr
@@ -62,7 +62,7 @@ zone_counts AS (
     SELECT
         am.activity_id AS activity_id,
         am.user_id AS user_id,
-        any(am.activity_type) AS activity_type,
+        any(am.canonical_type) AS canonical_type,
         any(am.started_at) AS started_at,
         any(am.max_hr) AS max_hr,
         toInt32(countIf(sensor.scalar < am.max_hr * 0.8)) AS z1_seconds,
@@ -93,7 +93,7 @@ refresh_clock AS (
 SELECT
     activity_keys.activity_id AS activity_id,
     activity_keys.user_id AS user_id,
-    zone_counts.activity_type AS activity_type,
+    zone_counts.canonical_type AS canonical_type,
     zone_counts.started_at AS started_at,
     zone_counts.max_hr AS max_hr,
     coalesce(zone_counts.z1_seconds, 0) AS z1_seconds,

@@ -80,6 +80,7 @@ export interface VerticalAscentRow {
   date: string;
   activityName: string;
   activityType: string;
+  modality: string | null;
   verticalAscentRate: number;
   elevationGainMeters: number;
   elapsedMinutes: number;

@@ -1,8 +1,8 @@
 import {
-  resolveProviderActivityType,
   type ActivityModality,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "./activity-types.js";
 
 export const OTHER_ACTIVITY_TYPE = "__other__";
@@ -26,9 +26,7 @@ export const STRENGTH_ACTIVITY_TYPES = [
  * Individual activities show the specific subtype, but aggregated views
  * (weekly volume, PMC, cycling page) treat them as one sport.
  */
-export const CYCLING_ACTIVITY_TYPES = [
-  "cycling",
-] as const;
+export const CYCLING_ACTIVITY_TYPES = ["cycling"] as const;
 
 export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
 

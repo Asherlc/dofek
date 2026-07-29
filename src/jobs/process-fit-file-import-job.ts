@@ -3,9 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { UnrecoverableError } from "bullmq";
 import { z } from "zod";
@@ -180,10 +180,7 @@ function activityTypeFromFitSession(session: ParsedFitSession): ProviderActivity
       );
     }
   }
-  return resolveProviderActivityType(
-    session.subSport ?? session.sport ?? "other",
-    "other",
-  );
+  return resolveProviderActivityType(session.subSport ?? session.sport ?? "other", "other");
 }
 
 const FIT_FILE_TYPE_ACTIVITY = 4;
@@ -379,9 +376,7 @@ async function beginActivityImport(
     summary?.externalId ?? (await fitExternalIdFromFile(data.originalPath, data.filePath));
   const activityType =
     summary?.activityType ??
-    (session
-      ? activityTypeFromFitSession(session)
-      : resolveProviderActivityType("other", "other"));
+    (session ? activityTypeFromFitSession(session) : resolveProviderActivityType("other", "other"));
   const startedAt = summary ? new Date(summary.startedAtIso) : session?.startTime;
   if (!startedAt || Number.isNaN(startedAt.getTime())) {
     throw new FitFileImportValidationError("missing a valid start time");
@@ -391,9 +386,7 @@ async function beginActivityImport(
       ? new Date(summary.endedAtIso)
       : new Date(startedAt.getTime() + (session?.totalElapsedTime ?? 0) * 1000)
     : new Date(startedAt.getTime() + (session?.totalElapsedTime ?? 0) * 1000);
-  const name =
-    summary?.name ??
-    `FIT ${activityType.canonicalType.replace(/_/g, " ")}`;
+  const name = summary?.name ?? `FIT ${activityType.canonicalType.replace(/_/g, " ")}`;
   const raw = summary?.raw ?? { fitPath: data.originalPath, session: session?.raw ?? null };
 
   await onProgress({ percentage: 80, message: "Writing FIT activity data..." });

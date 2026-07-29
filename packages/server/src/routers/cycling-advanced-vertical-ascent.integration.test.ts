@@ -197,9 +197,9 @@ describe("cyclingAdvanced vertical ascent integration", () => {
   ): Promise<string> {
     const activityRows = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, ${`vertical-ascent-${name}-${startedAt.toISOString()}`}, ${activityType},
+            'test_provider', ${TEST_USER_ID}, ${`vertical-ascent-${name}-${startedAt.toISOString()}`}, ${activityType}, ${activityType},
             ${startedAt.toISOString()},
             ${endedAt.toISOString()}, ${name}
           )

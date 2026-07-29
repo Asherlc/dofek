@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import type { XertActivity } from "./types.ts";
 

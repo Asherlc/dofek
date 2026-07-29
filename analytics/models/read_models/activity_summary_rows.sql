@@ -15,7 +15,9 @@ WITH current_activity AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
+        provider_type,
+        modality,
         name,
         started_at,
         ended_at,
@@ -213,7 +215,9 @@ existing_activity_summary_for_dirty_keys AS (
         SELECT
             activity_id,
             user_id,
-            activity_type,
+            canonical_type,
+            provider_type,
+            modality,
             name,
             started_at,
             ended_at
@@ -233,7 +237,9 @@ existing_activity_summary_for_dirty_keys AS (
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
             CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(String)') AS activity_type,
+            CAST(null, 'Nullable(String)') AS canonical_type,
+            CAST(null, 'Nullable(String)') AS provider_type,
+            CAST(null, 'Nullable(String)') AS modality,
             CAST(null, 'Nullable(String)') AS name,
             CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
             CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at
@@ -245,7 +251,9 @@ activity_bounds AS (
     SELECT
         current_activity.activity_id AS activity_id,
         current_activity.user_id AS user_id,
-        current_activity.activity_type AS activity_type,
+        current_activity.canonical_type AS canonical_type,
+        current_activity.provider_type AS provider_type,
+        current_activity.modality AS modality,
         current_activity.name AS name,
         current_activity.started_at AS started_at,
         current_activity.ended_at AS ended_at
@@ -299,9 +307,17 @@ SELECT
     active_dirty_keys.activity_id AS activity_id,
     active_dirty_keys.user_id AS user_id,
     CAST(
-        coalesce(activity_bounds.activity_type, existing_activity_summary_for_dirty_keys.activity_type),
+        coalesce(activity_bounds.canonical_type, existing_activity_summary_for_dirty_keys.canonical_type),
         'Nullable(String)'
-    ) AS activity_type,
+    ) AS canonical_type,
+    CAST(
+        coalesce(activity_bounds.provider_type, existing_activity_summary_for_dirty_keys.provider_type),
+        'Nullable(String)'
+    ) AS provider_type,
+    CAST(
+        coalesce(activity_bounds.modality, existing_activity_summary_for_dirty_keys.modality),
+        'Nullable(String)'
+    ) AS modality,
     CAST(
         coalesce(activity_bounds.name, existing_activity_summary_for_dirty_keys.name),
         'Nullable(String)'
@@ -319,12 +335,12 @@ SELECT
     sensor_summary.min_hr AS min_hr,
     sensor_summary.avg_power AS avg_power,
     sensor_summary.max_power AS max_power,
-    if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'), null, sensor_summary.avg_speed) AS avg_speed,
-    if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'), null, sensor_summary.max_speed) AS max_speed,
+    if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.avg_speed) AS avg_speed,
+    if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.max_speed) AS max_speed,
     sensor_summary.avg_cadence AS avg_cadence,
     sensor_summary.elevation_gain_legacy AS elevation_gain_legacy,
     if(
-        activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'),
+        activity_bounds.modality IN ('indoor', 'virtual'),
         CAST(0, 'Nullable(Float64)'),
         location_summary.total_distance
     ) AS total_distance,

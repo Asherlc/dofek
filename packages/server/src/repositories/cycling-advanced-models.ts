@@ -153,6 +153,7 @@ export interface VerticalAscentRowData {
   date: string;
   activityName: string;
   activityType: string;
+  modality: string | null;
   elevationGainMeters: number;
   elapsedSeconds: number;
 }
@@ -177,6 +178,10 @@ export class VerticalAscentModel {
     return this.#row.activityType;
   }
 
+  get modality(): string | null {
+    return this.#row.modality;
+  }
+
   get elevationGainMeters(): number {
     return this.#row.elevationGainMeters;
   }
@@ -196,6 +201,7 @@ export class VerticalAscentModel {
       date: this.date,
       activityName: this.activityName,
       activityType: this.activityType,
+      modality: this.modality,
       verticalAscentRate: this.verticalAscentRate,
       elevationGainMeters: this.elevationGainMeters,
       elapsedMinutes: this.elapsedMinutes,

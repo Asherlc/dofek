@@ -16,7 +16,7 @@ type ClickHouseClient = ReturnType<typeof createClient>;
 
 interface ActivitySummaryRow {
   activity_id: string;
-  activity_type: string;
+  canonical_type: string;
   avg_hr: number | null;
   is_deleted: number;
   name: string | null;
@@ -61,7 +61,7 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     const visibleRowsResult = await activeClient.query({
       query: `SELECT
           toString(activity_id) AS activity_id,
-          coalesce(activity_type, '') AS activity_type,
+          coalesce(canonical_type, '') AS canonical_type,
           name,
           avg_hr,
           total_distance,
@@ -76,7 +76,7 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     expect(visibleRows).toEqual([
       {
         activity_id: canonicalActivityId,
-        activity_type: "mountain_biking",
+        canonical_type: "cycling",
         avg_hr: 150,
         is_deleted: 0,
         name: "Lunch Mountain Bike Ride",
@@ -87,7 +87,7 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     const rowStateResult = await activeClient.query({
       query: `SELECT
           toString(activity_id) AS activity_id,
-          coalesce(activity_type, '') AS activity_type,
+          coalesce(canonical_type, '') AS canonical_type,
           name,
           avg_hr,
           total_distance,
@@ -118,7 +118,7 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     const visibleRowsResult = await activeClient.query({
       query: `SELECT
           toString(activity_id) AS activity_id,
-          coalesce(activity_type, '') AS activity_type,
+          coalesce(canonical_type, '') AS canonical_type,
           name,
           avg_hr,
           total_distance,
@@ -133,7 +133,7 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     expect(visibleRows).toEqual([
       {
         activity_id: canonicalActivityId,
-        activity_type: "mountain_biking",
+        canonical_type: "cycling",
         avg_hr: 150,
         is_deleted: 0,
         name: "Lunch Mountain Bike Ride",
@@ -330,7 +330,9 @@ function createDedupedActivitiesTableSql(targetSchema: string): string {
   provider_id String,
   user_id UUID,
   primary_activity_id UUID,
-  activity_type String,
+  canonical_type String,
+  provider_type String,
+  modality Nullable(String),
   name Nullable(String),
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
@@ -401,7 +403,7 @@ function insertUnchangedRawMemberActivitySql(targetSchema: string): string {
 
 function insertDedupedActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.deduped_activities VALUES
-  ('${canonicalActivityId}', 'garmin', '${testUserId}', '${canonicalActivityId}', 'mountain_biking', 'Lunch Mountain Bike Ride', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 'Garmin Edge', NULL, 'America/Los_Angeles', NULL, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), ['garmin', 'wahoo'], [], [], ['${canonicalActivityId}', '${memberActivityId}'], 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  ('${canonicalActivityId}', 'garmin', '${testUserId}', '${canonicalActivityId}', 'cycling', 'mountain_biking', 'mountain', 'Lunch Mountain Bike Ride', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 'Garmin Edge', NULL, 'America/Los_Angeles', NULL, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), ['garmin', 'wahoo'], [], [], ['${canonicalActivityId}', '${memberActivityId}'], 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertDedupedActivityMembersSql(targetSchema: string): string {
@@ -427,7 +429,7 @@ function insertCanonicalLocationSummarySql(targetSchema: string): string {
 
 function insertStaleRawActivitySummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_summary_rows VALUES
-  ('${memberActivityId}', '${testUserId}', 'cycling', NULL, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${testUserId}', 'cycling', NULL, NULL, NULL, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
 }
 
 function insertMetricPresenceActivitiesSql(targetSchema: string): string {

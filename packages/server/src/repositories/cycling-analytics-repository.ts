@@ -619,7 +619,7 @@ export class CyclingAnalyticsRepository {
         id: row.id,
         started_at: row.started_at,
         ended_at: row.ended_at,
-        activity_type: row.canonical_type,
+        canonical_type: row.canonical_type,
         name: row.activity_name,
         provider_id: row.provider_id,
         source_providers: row.source_providers,

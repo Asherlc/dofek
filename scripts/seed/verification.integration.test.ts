@@ -172,13 +172,15 @@ async function insertVerificationPrerequisites(): Promise<void> {
       provider_id,
       user_id,
       external_id,
-      activity_type,
+      canonical_type,
+      provider_type,
       started_at
     )
     SELECT
       'manual_review',
       ${USER_ID},
       'verification-activity-' || generated_index,
+      'walking',
       'walking',
       TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
     FROM generate_series(1, 90) AS generated_index

@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -120,10 +120,7 @@ const SUUNTO_ACTIVITY_MAP: Record<number, LegacyActivityType> = {
 };
 
 export function mapSuuntoActivityType(activityId: number): ProviderActivityType {
-  return resolveProviderActivityType(
-    activityId,
-    SUUNTO_ACTIVITY_MAP[activityId] ?? "other",
-  );
+  return resolveProviderActivityType(activityId, SUUNTO_ACTIVITY_MAP[activityId] ?? "other");
 }
 
 export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout {
@@ -131,8 +128,7 @@ export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout 
     externalId: workout.workoutKey,
     activityType: mapSuuntoActivityType(workout.activityId),
     name:
-      workout.workoutName ??
-      `Suunto ${mapSuuntoActivityType(workout.activityId).canonicalType}`,
+      workout.workoutName ?? `Suunto ${mapSuuntoActivityType(workout.activityId).canonicalType}`,
     startedAt: new Date(workout.startTime),
     endedAt: new Date(workout.stopTime),
     raw: {

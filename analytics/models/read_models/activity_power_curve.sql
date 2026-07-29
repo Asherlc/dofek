@@ -15,7 +15,7 @@ WITH current_activity AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         ended_at,
         is_deleted,
@@ -33,7 +33,7 @@ current_power_activity AS (
     WHERE current_activity.is_deleted = 0
         AND current_activity.ended_at IS NOT NULL
         AND current_activity.power_sample_count > 1
-        AND current_activity.activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
+        AND current_activity.canonical_type IN ('cycling', 'running', 'swimming', 'walking', 'hiking')
 ),
 
 {% if is_incremental() %}
@@ -107,7 +107,7 @@ activity_bounds AS (
     SELECT
         current_activity.activity_id,
         current_activity.user_id,
-        current_activity.activity_type,
+        current_activity.canonical_type,
         current_activity.started_at,
         current_activity.ended_at
     FROM current_activity
@@ -116,7 +116,7 @@ activity_bounds AS (
         AND activity_keys.user_id = current_activity.user_id
     WHERE current_activity.is_deleted = 0
         AND current_activity.ended_at IS NOT NULL
-        AND current_activity.activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
+        AND current_activity.canonical_type IN ('cycling', 'running', 'swimming', 'walking', 'hiking')
 ),
 
 {% if is_incremental() %}

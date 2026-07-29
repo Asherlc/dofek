@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -95,10 +95,7 @@ const KOMOOT_SPORT_MAP: Record<string, LegacyActivityType> = {
 };
 
 export function mapKomootSport(sport: string): ProviderActivityType {
-  return resolveProviderActivityType(
-    sport,
-    KOMOOT_SPORT_MAP[sport] ?? "other",
-  );
+  return resolveProviderActivityType(sport, KOMOOT_SPORT_MAP[sport] ?? "other");
 }
 
 export function parseKomootTour(tour: KomootTour): ParsedKomootTour {

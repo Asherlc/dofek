@@ -70,20 +70,20 @@ describe("activity overlap query plan", () => {
       testCtx.db,
       z.object({}),
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, external_id, activity_type, started_at, ended_at
+            id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at
           ) VALUES
           (
-            ${activityIds[0]}::uuid, 'wahoo', ${TEST_USER_ID}, 'overlap-plan-a', 'cycling',
+            ${activityIds[0]}::uuid, 'wahoo', ${TEST_USER_ID}, 'overlap-plan-a', 'cycling', 'cycling',
             TIMESTAMPTZ '2026-01-10 10:00:00+00',
             TIMESTAMPTZ '2026-01-10 11:00:00+00'
           ),
           (
-            ${activityIds[1]}::uuid, 'wahoo', ${TEST_USER_ID}, 'overlap-plan-contained', 'cycling',
+            ${activityIds[1]}::uuid, 'wahoo', ${TEST_USER_ID}, 'overlap-plan-contained', 'cycling', 'cycling',
             TIMESTAMPTZ '2026-01-10 10:05:00+00',
             TIMESTAMPTZ '2026-01-10 10:55:00+00'
           ),
           (
-            ${activityIds[2]}::uuid, 'wahoo', ${TEST_USER_ID}, 'overlap-plan-touching', 'cycling',
+            ${activityIds[2]}::uuid, 'wahoo', ${TEST_USER_ID}, 'overlap-plan-touching', 'cycling', 'cycling',
             TIMESTAMPTZ '2026-01-10 11:00:00+00',
             TIMESTAMPTZ '2026-01-10 12:00:00+00'
           )`,

@@ -105,8 +105,8 @@ describe("DerivedCardioRepository integration", () => {
     ] as const) {
       const endedAt = new Date(new Date(startedAt).getTime() + 300_000).toISOString();
       await testContext.db.execute(sql`INSERT INTO fitness.activity
-        (id, provider_id, user_id, external_id, activity_type, started_at, ended_at)
-        VALUES (${activityId}, 'test_provider', ${TEST_USER_ID}, ${activityId}, 'cycling', ${startedAt}, ${endedAt})`);
+        (id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at)
+        VALUES (${activityId}, 'test_provider', ${TEST_USER_ID}, ${activityId}, 'cycling', 'cycling', ${startedAt}, ${endedAt})`);
     }
 
     const result = await repo.getVo2MaxAverage("2026-04-28", 90);

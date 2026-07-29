@@ -100,7 +100,7 @@ function createMockActivities(dates: FixtureDates) {
     {
       id: "a1",
       name: "Morning Ride",
-      activity_type: "cycling",
+      canonical_type: "cycling",
       started_at: `${dates.date()}T07:00:00.000Z`,
       ended_at: `${dates.date()}T08:30:00.000Z`,
       avg_hr: 148,
@@ -115,7 +115,7 @@ function createMockActivities(dates: FixtureDates) {
     {
       id: "a2",
       name: "Evening Run",
-      activity_type: "running",
+      canonical_type: "running",
       started_at: `${dates.date(-1)}T18:00:00.000Z`,
       ended_at: `${dates.date(-1)}T18:45:00.000Z`,
       avg_hr: 155,
@@ -169,10 +169,10 @@ function createSeededProviders(hasActivities: boolean, trainingUnavailable: bool
       activities,
       weeklyVolume: hasActivities
         ? [
-            { week: dates.weekStart(), activity_type: "cycling", count: 1, hours: 1.5 },
+            { week: dates.weekStart(), canonical_type: "cycling", count: 1, hours: 1.5 },
             {
               week: dates.weekStart(-1),
-              activity_type: "running",
+              canonical_type: "running",
               count: 1,
               hours: 0.75,
             },

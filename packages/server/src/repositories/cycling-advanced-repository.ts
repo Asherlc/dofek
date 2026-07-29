@@ -491,6 +491,7 @@ export class CyclingAdvancedRepository {
             date: row.date,
             activityName: row.name,
             activityType: row.canonical_type,
+            modality: row.modality,
             elevationGainMeters: row.elevation_gain,
             elapsedSeconds: row.elapsed_seconds,
           }),

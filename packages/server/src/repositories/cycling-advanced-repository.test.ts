@@ -174,7 +174,8 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Hill Climb",
-      activityType: "mountain_biking",
+      activityType: "cycling",
+      modality: "mountain",
       elevationGainMeters: 500,
       elapsedSeconds: 1800, // 30 minutes
     });
@@ -186,7 +187,8 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Hill Climb",
-      activityType: "mountain_biking",
+      activityType: "cycling",
+      modality: "mountain",
       elevationGainMeters: 500,
       elapsedSeconds: 1800,
     });
@@ -197,7 +199,8 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Flat Ride",
-      activityType: "road_cycling",
+      activityType: "cycling",
+      modality: "road",
       elevationGainMeters: 0,
       elapsedSeconds: 0,
     });
@@ -208,14 +211,16 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Hill Climb",
-      activityType: "mountain_biking",
+      activityType: "cycling",
+      modality: "mountain",
       elevationGainMeters: 500,
       elapsedSeconds: 1800,
     });
     const detail = model.toDetail();
     expect(detail.date).toBe("2024-03-15");
     expect(detail.activityName).toBe("Hill Climb");
-    expect(detail.activityType).toBe("mountain_biking");
+    expect(detail.activityType).toBe("cycling");
+    expect(detail.modality).toBe("mountain");
     expect(detail.verticalAscentRate).toBe(1000);
     expect(detail.elevationGainMeters).toBe(500);
     expect(detail.elapsedMinutes).toBe(30);

@@ -89,7 +89,7 @@ const recoveryMetricKeys: Partial<
 };
 
 const activityMcpRowSchema = z.object({
-  activity_type: z.string(),
+  canonical_type: z.string(),
   started_at: z.string(),
   ended_at: z.string().nullable(),
   avg_hr: z.coerce.number().nullable().optional(),
@@ -211,32 +211,32 @@ function average(values: Array<number | null | undefined>): number | null {
 
 function activitySummaries(
   rows: ActivityMcpRow[],
-  groupBy: "activity_type" | "week" | "activity_type_and_week",
+  groupBy: "canonical_type" | "week" | "canonical_type_and_week",
   timezone: string,
 ) {
   const groups = new Map<string, ActivityMcpRow[]>();
   for (const row of rows) {
     const week = isoWeek(localDateString(new Date(row.started_at), timezone));
     const key =
-      groupBy === "activity_type"
-        ? row.activity_type
+      groupBy === "canonical_type"
+        ? row.canonical_type
         : groupBy === "week"
           ? week
-          : `${row.activity_type}|${week}`;
+          : `${row.canonical_type}|${week}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   return [...groups.entries()].map(([key, groupRows]) => {
     const [activityType, week] =
-      groupBy === "activity_type_and_week" ? key.split("|") : [undefined, undefined];
+      groupBy === "canonical_type_and_week" ? key.split("|") : [undefined, undefined];
     const durations = groupRows.map((row) => {
       if (!row.ended_at) return null;
       return (new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 60_000;
     });
     const totalDuration = durations.reduce<number>((total, duration) => total + (duration ?? 0), 0);
     return {
-      ...(groupBy === "activity_type" ? { activity_type: key } : {}),
+      ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
       ...(groupBy === "week" ? { week: key } : {}),
-      ...(groupBy === "activity_type_and_week" ? { activity_type: activityType, week } : {}),
+      ...(groupBy === "canonical_type_and_week" ? { canonical_type: activityType, week } : {}),
       count: groupRows.length,
       total_duration_minutes: totalDuration,
       avg_duration_minutes: average(durations),
@@ -462,11 +462,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
-        group_by: z.enum(["activity_type", "week", "activity_type_and_week"]).optional(),
-        activity_types: z.array(z.string()).optional(),
+        group_by: z.enum(["canonical_type", "week", "canonical_type_and_week"]).optional(),
+        canonical_types: z.array(z.string()).optional(),
       },
     },
-    async ({ start_date, end_date, group_by, activity_types }) => {
+    async ({ start_date, end_date, group_by, canonical_types }) => {
       requireMcpScope(context.scopes, "activity:read");
       assertDateRange(start_date, end_date);
       const repository = new ActivityRepository(
@@ -476,11 +476,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         { kind: "full", paid: true, reason: "paid_grant" },
         context.sensorStore,
       );
-      const rows = await repository.listRange(start_date, end_date, activity_types);
+      const rows = await repository.listRange(start_date, end_date, canonical_types);
       return jsonContent(
         activitySummaries(
           rows.map((row) => activityMcpRowSchema.parse(row)),
-          group_by ?? "activity_type",
+          group_by ?? "canonical_type",
           context.timezone,
         ),
       );

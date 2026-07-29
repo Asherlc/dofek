@@ -109,7 +109,7 @@ const rawTableSyncs: RawTableSync[] = [
       "provider_id",
       "user_id",
       "external_id",
-      "activity_type",
+      "canonical_type",
       "started_at",
       "ended_at",
       "name",
@@ -578,7 +578,7 @@ export async function seedClickHouseActivityPolarizationZone(
     query: `INSERT INTO analytics.activity_polarization_zones (
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         max_hr,
         z1_seconds,

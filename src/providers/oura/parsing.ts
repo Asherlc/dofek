@@ -7,9 +7,7 @@ import {
   type LegacyActivityType,
   type ProviderActivityType,
 } from "@dofek/training/activity-types";
-  createActivityTypeMapper,
-  OURA_ACTIVITY_TYPE_MAP,
-} from "@dofek/training/training";
+import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import type {
   OuraDailyActivity,
   OuraDailyReadiness,
@@ -160,8 +158,5 @@ const OURA_SESSION_TYPE_MAP: Record<string, LegacyActivityType> = {
 };
 
 export function mapOuraSessionType(sessionType: string): ProviderActivityType {
-  return resolveProviderActivityType(
-    sessionType,
-    OURA_SESSION_TYPE_MAP[sessionType] ?? "other",
-  );
+  return resolveProviderActivityType(sessionType, OURA_SESSION_TYPE_MAP[sessionType] ?? "other");
 }

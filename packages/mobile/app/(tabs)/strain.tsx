@@ -270,8 +270,8 @@ export default function StrainScreen() {
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
     activityTypeTotalsMap.set(
-      row.activity_type,
-      (activityTypeTotalsMap.get(row.activity_type) ?? 0) + row.hours,
+      row.canonical_type,
+      (activityTypeTotalsMap.get(row.canonical_type) ?? 0) + row.hours,
     );
   }
   const activityTypeTotals = [...activityTypeTotalsMap.entries()]
@@ -575,7 +575,7 @@ export default function StrainScreen() {
                   >
                     <ActivityCard
                       name={activity.name ?? ""}
-                      activityType={activity.activity_type ?? ""}
+                      activityType={activity.canonical_type ?? ""}
                       startedAt={activity.started_at}
                       endedAt={activity.ended_at ?? null}
                       avgHr={activity.avg_hr ?? null}

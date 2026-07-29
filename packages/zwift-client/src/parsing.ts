@@ -1,6 +1,6 @@
 import {
-  resolveProviderActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 

@@ -72,7 +72,7 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
       `INSERT INTO analytics.activity_summary (
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         ended_at,
         avg_hr,
@@ -185,7 +185,7 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
       `INSERT INTO analytics.activity_summary (
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         ended_at,
         avg_hr,

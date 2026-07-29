@@ -261,7 +261,7 @@ export const LEGACY_ACTIVITY_TYPES = [
 export type LegacyActivityType = (typeof LEGACY_ACTIVITY_TYPES)[number];
 export type NormalizedActivityType = LegacyActivityType | CanonicalActivityType;
 
-const LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS = {
+export const LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS = {
   cycling: { canonicalType: "cycling", modality: null },
   road_cycling: { canonicalType: "cycling", modality: "road" },
   mountain_biking: { canonicalType: "cycling", modality: "mountain" },
@@ -417,4 +417,12 @@ export function resolveProviderActivityType(
     ...classification,
     providerType: rawProviderType,
   };
+}
+
+export function resolveRawProviderActivityType(
+  providerType: string | number,
+): ProviderActivityType {
+  const rawProviderType = String(providerType);
+  const normalizedType = isLegacyActivityType(rawProviderType) ? rawProviderType : "other";
+  return resolveProviderActivityType(rawProviderType, normalizedType);
 }

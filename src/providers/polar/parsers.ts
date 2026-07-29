@@ -1,10 +1,8 @@
 import {
-  resolveProviderActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
-import {
-  POLAR_SPORT_MAP,
-} from "@dofek/training/training";
+import { POLAR_SPORT_MAP } from "@dofek/training/training";
 import type {
   ParsedPolarActivity,
   ParsedPolarDailyMetrics,
@@ -17,10 +15,7 @@ import type {
 } from "./types.ts";
 
 export function mapPolarSport(sport: string): ProviderActivityType {
-  return resolveProviderActivityType(
-    sport,
-    POLAR_SPORT_MAP[sport.toLowerCase()] ?? "other",
-  );
+  return resolveProviderActivityType(sport, POLAR_SPORT_MAP[sport.toLowerCase()] ?? "other");
 }
 
 export function parsePolarDuration(isoDuration: string): number {

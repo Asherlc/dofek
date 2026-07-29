@@ -764,8 +764,8 @@ describe("Router transformation logic", () => {
 
           await testCtx.db.execute(
             sql`INSERT INTO fitness.activity
-                (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-                VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Ride ${externalId}`})
+                (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+                VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'cycling', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Ride ${externalId}`})
                 ON CONFLICT DO NOTHING`,
           );
 
@@ -995,8 +995,8 @@ describe("Router transformation logic", () => {
       workoutDate.setDate(workoutDate.getDate() - 3);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, started_at, name, activity_type)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout', 'strength')
+            (provider_id, user_id, external_id, started_at, name, canonical_type, provider_type)
+            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout', 'strength', 'strength')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -1191,8 +1191,8 @@ describe("Router transformation logic", () => {
         const externalId = `hike-gap-${i}`;
         await testCtx.db.execute(
           sql`INSERT INTO fitness.activity
-              (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Mountain Hike ${i}`})
+              (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Mountain Hike ${i}`})
               ON CONFLICT DO NOTHING`,
         );
 
@@ -1337,8 +1337,8 @@ describe("Router transformation logic", () => {
         const externalId = `repeated-trail-${i}`;
         await testCtx.db.execute(
           sql`INSERT INTO fitness.activity
-              (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Repeated Trail')
+              (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Repeated Trail')
               ON CONFLICT DO NOTHING`,
         );
 
@@ -1461,8 +1461,8 @@ describe("Router transformation logic", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'interval-detect-1', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Interval Workout')
+            (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+            VALUES ('test-provider', ${TEST_USER_ID}, 'interval-detect-1', 'cycling', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Interval Workout')
             ON CONFLICT DO NOTHING`,
       );
 

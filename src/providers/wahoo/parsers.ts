@@ -1,8 +1,5 @@
 import type { ProviderActivityType } from "@dofek/training/activity-types";
-import {
-  createActivityTypeMapper,
-  WAHOO_WORKOUT_TYPE_MAP,
-} from "@dofek/training/training";
+import { createActivityTypeMapper, WAHOO_WORKOUT_TYPE_MAP } from "@dofek/training/training";
 import type { WahooWorkout, WahooWorkoutListResponse } from "./client.ts";
 
 // ============================================================

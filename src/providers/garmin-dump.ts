@@ -5,9 +5,9 @@ import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import yauzl from "yauzl";
 import { z } from "zod";
@@ -160,10 +160,7 @@ export function mapGarminDumpActivityType(
     GARMIN_ACTIVITY_TYPE_MAP[normalizedActivityType] ??
     GARMIN_ACTIVITY_TYPE_MAP[normalizedSportType] ??
     "other";
-  return resolveProviderActivityType(
-    activityType ?? sportType ?? "other",
-    normalizedType,
-  );
+  return resolveProviderActivityType(activityType ?? sportType ?? "other", normalizedType);
 }
 
 export function mapFitSportToGarminDumpActivityType(
@@ -544,9 +541,7 @@ function garminSummaryToFitJobSummary(
     activityType,
     startedAtIso: startedAt.toISOString(),
     endedAtIso: endedAt.toISOString(),
-    name:
-      summary.name ??
-      `Garmin ${activityType.canonicalType.replace(/_/g, " ")}`,
+    name: summary.name ?? `Garmin ${activityType.canonicalType.replace(/_/g, " ")}`,
   };
 }
 
@@ -614,9 +609,7 @@ export async function prepareGarminDumpImport(
       }
 
       const activityType = mapGarminDumpActivityType(summary.activityType, summary.sportType);
-      const name =
-        summary.name ??
-        `Garmin ${activityType.canonicalType.replace(/_/g, " ")}`;
+      const name = summary.name ?? `Garmin ${activityType.canonicalType.replace(/_/g, " ")}`;
       const endedAt = new Date(startedAt.getTime() + durationMilliseconds(summary));
       await upsertProviderActivity(
         db,

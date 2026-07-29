@@ -67,7 +67,7 @@ export function VerticalAscentChart({ data, loading, availability }: VerticalAsc
     value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
     activityType: d.activityType,
-    activityTypeGroup: getVerticalAscentActivityTypeGroup(d.activityType),
+    activityTypeGroup: getVerticalAscentActivityTypeGroup(d.modality),
     elevationGain: units.convertElevation(d.elevationGainMeters),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,

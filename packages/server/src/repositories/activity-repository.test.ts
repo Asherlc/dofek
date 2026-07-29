@@ -260,7 +260,7 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
       expect(compiledQuery.sql).toContain("AND ended_at IS NOT NULL");
-      expect(compiledQuery.sql).toContain("AND activity_type IN");
+      expect(compiledQuery.sql).toContain("AND canonical_type IN");
       expect(compiledQuery.sql).toContain(
         "AND started_at >= (CAST($3::date AS timestamp without time zone) AT TIME ZONE $4)",
       );
@@ -310,7 +310,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepository([
         {
           id: "abc-123",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -337,7 +337,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "abc-123",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -361,7 +361,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "provider-row-id",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -414,7 +414,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "provider-row-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Run",
@@ -514,7 +514,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "provider-row-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Run",
@@ -618,7 +618,7 @@ describe("ActivityRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("a.activity_type IN (");
+      expect(compiledQuery.sql).toContain("a.canonical_type IN (");
       expect(compiledQuery.sql).not.toContain("ANY(($");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["cycling", "running"]));
     });
@@ -639,7 +639,7 @@ describe("ActivityRepository", () => {
       });
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("a.activity_type IN (");
+      expect(compiledQuery.sql).toContain("a.canonical_type IN (");
       expect(compiledQuery.sql).not.toContain("ANY(($");
       expect(compiledQuery.params).toEqual(
         expect.arrayContaining([
@@ -663,7 +663,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "abc-1",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Run",
@@ -769,7 +769,7 @@ describe("ActivityRepository", () => {
         .mockResolvedValueOnce([
           {
             id: "tombstoned-id",
-            activity_type: "running",
+            canonical_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
             ended_at: "2024-01-15T10:45:00.000Z",
             timezone: null,
@@ -822,7 +822,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepository([
         {
           id: "abc-123",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
@@ -854,7 +854,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "abc-123",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
@@ -879,7 +879,7 @@ describe("ActivityRepository", () => {
       const result = await repo.findById("abc-123");
       expect(result).not.toBeNull();
       expect(result?.id).toBe("abc-123");
-      expect(result?.activity_type).toBe("running");
+      expect(result?.canonical_type).toBe("running");
       expect(result?.name).toBe("Easy Run");
       expect(result?.subsource).toBe("Strong");
     });
@@ -888,7 +888,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "canonical-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
@@ -921,7 +921,7 @@ describe("ActivityRepository", () => {
       const { repo, execute } = makeRepositoryWithSensorStore([
         {
           id: "some-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",

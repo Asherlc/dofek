@@ -185,7 +185,7 @@ const gradeRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
   activity_name: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   distance_m: z.coerce.number(),
   duration_seconds: z.coerce.number(),
   elevation_gain_m: z.coerce.number(),
@@ -250,7 +250,7 @@ export class HikingRepository {
         toString(hiking.activity_id) AS activity_id,
         toString(toDate(toTimeZone(hiking.started_at, {timezone:String}))) AS date,
         hiking.activity_name AS activity_name,
-        hiking.activity_type AS activity_type,
+        hiking.canonical_type AS canonical_type,
         hiking.distance_m AS distance_m,
         hiking.duration_seconds AS duration_seconds,
         hiking.elevation_gain_m AS elevation_gain_m,
@@ -260,7 +260,7 @@ export class HikingRepository {
       WHERE hiking.user_id = {userId:UUID}
         AND hiking.is_deleted = 0
         ${rangeFilter}
-        AND hiking.activity_type IN ('walking', 'hiking', 'trail_running')
+        AND hiking.canonical_type IN ('walking', 'hiking', 'running')
         AND hiking.distance_m > 0
         AND hiking.duration_seconds > 0
       ORDER BY hiking.started_at`,
@@ -273,7 +273,7 @@ export class HikingRepository {
           activityId: row.activity_id,
           date: String(row.date),
           activityName: String(row.activity_name),
-          activityType: String(row.activity_type),
+          activityType: String(row.canonical_type),
           distanceMeters: Number(row.distance_m),
           durationSeconds: Number(row.duration_seconds),
           elevationGainMeters: Number(row.elevation_gain_m),
@@ -297,7 +297,7 @@ export class HikingRepository {
       WHERE hiking.user_id = {userId:UUID}
         AND hiking.is_deleted = 0
         ${rangeFilter}
-        AND hiking.activity_type IN ('walking', 'hiking')
+        AND hiking.canonical_type IN ('walking', 'hiking')
       GROUP BY week
       ORDER BY week`,
       { userId: this.#userId, timezone: this.#timezone, ...rangeDaysParams(days) },
@@ -368,7 +368,7 @@ export class HikingRepository {
         WHERE hiking.user_id = {userId:UUID}
           AND hiking.is_deleted = 0
           ${rangeFilter}
-          AND hiking.activity_type IN ('walking', 'hiking', 'trail_running')
+          AND hiking.canonical_type IN ('walking', 'hiking', 'running')
           AND hiking.activity_name IS NOT NULL
           AND hiking.duration_seconds > 0
       ),

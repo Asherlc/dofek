@@ -27,7 +27,7 @@ activity_bounds AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         ended_at,
         avg_hr
@@ -100,18 +100,8 @@ activity_load AS (
     LEFT JOIN resting_by_activity
         ON resting_by_activity.activity_id = activity_bounds.activity_id
         AND resting_by_activity.user_id = activity_bounds.user_id
-    WHERE activity_bounds.activity_type IN (
+    WHERE activity_bounds.canonical_type IN (
             'cycling',
-            'road_cycling',
-            'mountain_biking',
-            'gravel_cycling',
-            'indoor_cycling',
-            'virtual_cycling',
-            'e_bike_cycling',
-            'cyclocross',
-            'track_cycling',
-            'bmx',
-            'hand_cycling',
             'running',
             'swimming',
             'walking',

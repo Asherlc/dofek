@@ -96,9 +96,9 @@ export function resolveActivityIconCategory(activityType: string): ActivityIconC
   if (
     lower.includes("surf") ||
     lower.includes("kayak") ||
-    lower.includes("paddle") ||
+    lower.includes("paddl") ||
     lower.includes("aqua") ||
-    lower.includes("water_polo")
+    lower.includes("water")
   ) {
     return "water";
   }

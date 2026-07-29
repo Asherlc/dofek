@@ -7,19 +7,16 @@ describe("resolveActivityIconCategory", () => {
     expect(resolveActivityIconCategory(" cycling")).toBe("cycling");
   });
 
-  it("maps cycling variants to cycling", () => {
-    expect(resolveActivityIconCategory("indoor_cycling")).toBe("cycling");
-    expect(resolveActivityIconCategory("road_cycling")).toBe("cycling");
+  it("maps canonical cycling to cycling", () => {
+    expect(resolveActivityIconCategory("cycling")).toBe("cycling");
   });
 
-  it("maps running variants to running", () => {
+  it("maps canonical running to running", () => {
     expect(resolveActivityIconCategory("running")).toBe("running");
-    expect(resolveActivityIconCategory("trail_running")).toBe("running");
   });
 
   it("maps swimming variants to swimming", () => {
     expect(resolveActivityIconCategory("swimming")).toBe("swimming");
-    expect(resolveActivityIconCategory("open_water_swimming")).toBe("swimming");
     expect(resolveActivityIconCategory("triathlon")).toBe("swimming");
   });
 
@@ -30,8 +27,7 @@ describe("resolveActivityIconCategory", () => {
   });
 
   it("maps strength and mind-body types", () => {
-    expect(resolveActivityIconCategory("strength_training")).toBe("strength");
-    expect(resolveActivityIconCategory("functional_fitness")).toBe("strength");
+    expect(resolveActivityIconCategory("strength")).toBe("strength");
     expect(resolveActivityIconCategory("yoga")).toBe("yoga");
     expect(resolveActivityIconCategory("pilates")).toBe("yoga");
     expect(resolveActivityIconCategory("meditation")).toBe("yoga");
@@ -53,18 +49,17 @@ describe("resolveActivityIconCategory", () => {
     expect(resolveActivityIconCategory("skating")).toBe("winter");
     expect(resolveActivityIconCategory("snowboarding")).toBe("winter");
     expect(resolveActivityIconCategory("curling")).toBe("winter");
-    expect(resolveActivityIconCategory("ice_hockey")).toBe("winter");
   });
 
   it("maps climbing types", () => {
-    expect(resolveActivityIconCategory("rock_climbing")).toBe("climbing");
+    expect(resolveActivityIconCategory("climbing")).toBe("climbing");
   });
 
   it("maps water sports", () => {
     expect(resolveActivityIconCategory("surfing")).toBe("water");
     expect(resolveActivityIconCategory("kayaking")).toBe("water");
-    expect(resolveActivityIconCategory("paddleboarding")).toBe("water");
-    expect(resolveActivityIconCategory("aqua_fitness")).toBe("water");
+    expect(resolveActivityIconCategory("paddling")).toBe("water");
+    expect(resolveActivityIconCategory("water_fitness")).toBe("water");
     expect(resolveActivityIconCategory("water_polo")).toBe("water");
   });
 
@@ -72,11 +67,11 @@ describe("resolveActivityIconCategory", () => {
     expect(resolveActivityIconCategory("tennis")).toBe("team");
     expect(resolveActivityIconCategory("soccer")).toBe("team");
     expect(resolveActivityIconCategory("basketball")).toBe("team");
+    expect(resolveActivityIconCategory("hockey")).toBe("team");
   });
 
   it("maps dance types", () => {
     expect(resolveActivityIconCategory("dance")).toBe("dance");
-    expect(resolveActivityIconCategory("dancing")).toBe("dance");
   });
 
   it("falls back to other for unknown types", () => {

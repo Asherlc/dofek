@@ -45,20 +45,14 @@ describe("db-insertion deduplication (integration)", () => {
 
       const workouts: HealthWorkout[] = [
         {
-          activityType: resolveProviderActivityType(
-            "HKWorkoutActivityTypeRunning",
-            "running",
-          ),
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "Apple Watch",
           durationSeconds: 1800,
           startDate: sharedStart,
           endDate: sharedEnd,
         },
         {
-          activityType: resolveProviderActivityType(
-            "HKWorkoutActivityTypeRunning",
-            "running",
-          ),
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "iPhone",
           durationSeconds: 1800,
           startDate: sharedStart,
@@ -85,30 +79,21 @@ describe("db-insertion deduplication (integration)", () => {
 
       const workouts: HealthWorkout[] = [
         {
-          activityType: resolveProviderActivityType(
-            "HKWorkoutActivityTypeRunning",
-            "running",
-          ),
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "Apple Watch",
           durationSeconds: 1800,
           startDate: start1,
           endDate: new Date("2024-07-01T08:30:00Z"),
         },
         {
-          activityType: resolveProviderActivityType(
-            "HKWorkoutActivityTypeRunning",
-            "running",
-          ),
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "iPhone",
           durationSeconds: 1800,
           startDate: start1,
           endDate: new Date("2024-07-01T08:30:00Z"),
         },
         {
-          activityType: resolveProviderActivityType(
-            "HKWorkoutActivityTypeCycling",
-            "cycling",
-          ),
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
           sourceName: "Apple Watch",
           durationSeconds: 3600,
           startDate: start2,

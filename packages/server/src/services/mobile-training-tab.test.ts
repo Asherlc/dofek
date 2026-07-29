@@ -153,7 +153,7 @@ describe("loadMobileTrainingTab", () => {
       [
         {
           id: "act-1",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Morning Run",
           started_at: "2026-03-28T08:00:00.000Z",
           ended_at: "2026-03-28T09:00:00.000Z",
@@ -167,12 +167,13 @@ describe("loadMobileTrainingTab", () => {
           distance_meters: 10500,
         },
       ],
-      [{ week: "2026-03-24", activity_type: "running", count: 2, hours: 3.5 }],
+      [{ week: "2026-03-24", canonical_type: "running", count: 2, hours: 3.5 }],
       [
         new VerticalAscentModel({
           date: "2026-03-28",
           activityName: "Hill Climb",
-          activityType: "road_cycling",
+          activityType: "cycling",
+          modality: "road",
           elevationGainMeters: 500,
           elapsedSeconds: 1800,
         }),
@@ -202,7 +203,8 @@ describe("loadMobileTrainingTab", () => {
       period: { observationCount: 2, elapsedWeekCount: 3 },
     });
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(1000);
-    expect(result.verticalAscent[0]?.activityType).toBe("road_cycling");
+    expect(result.verticalAscent[0]?.activityType).toBe("cycling");
+    expect(result.verticalAscent[0]?.modality).toBe("road");
     expect(cyclingSpy).toHaveBeenCalledWith(expect.objectContaining({ days: 30 }), {
       activityLimit: 1,
       activityOffset: 0,

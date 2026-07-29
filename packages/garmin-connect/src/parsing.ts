@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import type {
   ConnectActivityDetail,
@@ -58,10 +58,7 @@ const GARMIN_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
 
 export function mapConnectActivityType(typeKey: string): ProviderActivityType {
   const providerType = typeKey.trim() || "other";
-  return resolveProviderActivityType(
-    providerType,
-    GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other",
-  );
+  return resolveProviderActivityType(providerType, GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other");
 }
 
 // ============================================================

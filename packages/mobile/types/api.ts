@@ -26,7 +26,7 @@ export type {
 const ActivityRowBaseSchema = z.object({
   id: z.union([z.string(), z.number()]),
   name: z.string().nullable().optional(),
-  activity_type: z.string().nullable().optional(),
+  canonical_type: z.string().nullable().optional(),
   started_at: z.string(),
   ended_at: z.string().nullable().optional(),
   avg_hr: z.number().nullable().optional(),
@@ -49,7 +49,7 @@ export type ActivityRow = z.infer<typeof ActivityRowSchema>;
 
 export const WeeklyVolumeRowSchema = z.object({
   week: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   count: z.number(),
   hours: z.coerce.number(),
 });

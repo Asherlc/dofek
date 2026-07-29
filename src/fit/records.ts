@@ -1,5 +1,5 @@
-import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { ActivityModality } from "@dofek/training/activity-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MetricStreamSourceRow } from "../db/metric-stream-writer.ts";
 import type { JsonValue } from "../metric-stream/events.ts";
 import type { ParsedFitRecord } from "./parser.ts";

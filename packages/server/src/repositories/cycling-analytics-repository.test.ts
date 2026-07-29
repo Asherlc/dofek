@@ -668,7 +668,7 @@ describe("CyclingAnalyticsRepository", () => {
           id: "11111111-1111-4111-8111-111111111111",
           started_at: "2026-07-10T10:00:00.000Z",
           ended_at: "2026-07-10T11:00:00.000Z",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Intervals",
           provider_id: "wahoo",
           source_providers: ["wahoo"],

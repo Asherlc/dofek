@@ -10,7 +10,8 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-06-01",
     activityName: "Mountain Ride",
-    activityType: "mountain_biking",
+    activityType: "cycling",
+    modality: "mountain",
     verticalAscentRate: 800,
     elevationGainMeters: 600,
     elapsedMinutes: 45,
@@ -18,7 +19,8 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-06-08",
     activityName: "Hill Repeats",
-    activityType: "road_cycling",
+    activityType: "cycling",
+    modality: "road",
     verticalAscentRate: 1200,
     elevationGainMeters: 400,
     elapsedMinutes: 20,
@@ -61,7 +63,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2024-06-08",
             activityName: "Hill Repeats",
-            activityType: "road_cycling",
+            activityType: "cycling",
+            modality: "road",
             verticalAscentRate: 1200,
             elevationGainMeters: 400,
             elapsedMinutes: 20,
@@ -69,7 +72,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2024-06-01",
             activityName: "Mountain Ride",
-            activityType: "mountain_biking",
+            activityType: "cycling",
+            modality: "mountain",
             verticalAscentRate: 800,
             elevationGainMeters: 600,
             elapsedMinutes: 45,
@@ -90,7 +94,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2024-06-01",
             activityName: "Trainer Ride",
-            activityType: "indoor_cycling",
+            activityType: "cycling",
+            modality: "indoor",
             verticalAscentRate: 800,
             elevationGainMeters: 600,
             elapsedMinutes: 45,
@@ -98,7 +103,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2024-06-08",
             activityName: "Virtual Ride",
-            activityType: "virtual_cycling",
+            activityType: "cycling",
+            modality: "virtual",
             verticalAscentRate: 1200,
             elevationGainMeters: 400,
             elapsedMinutes: 20,
@@ -106,7 +112,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2024-06-15",
             activityName: "Gravel Ride",
-            activityType: "gravel_cycling",
+            activityType: "cycling",
+            modality: "gravel",
             verticalAscentRate: 1000,
             elevationGainMeters: 500,
             elapsedMinutes: 30,

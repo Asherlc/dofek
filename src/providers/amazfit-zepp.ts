@@ -1,8 +1,8 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { signInToZepp, ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { z } from "zod";

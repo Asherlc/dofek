@@ -212,7 +212,7 @@ export class ClimbingRepository extends BaseRepository {
   #activityWindowPredicate(days: number) {
     return sql`
       a.user_id = ${this.userId}
-      AND a.activity_type IN ('climbing', 'rock_climbing')
+      AND a.canonical_type = 'climbing'
       AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
       ${this.timestampAccessPredicate(sql`a.started_at`)}
     `;

@@ -1,7 +1,7 @@
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 
 /**
@@ -27,8 +27,5 @@ export const TRAINING_PEAKS_SPORT_MAP: Record<number, LegacyActivityType> = {
  * Map a TrainingPeaks workoutTypeFamilyId to a normalized sport type.
  */
 export function mapTrainingPeaksSport(familyId: number): ProviderActivityType {
-  return resolveProviderActivityType(
-    familyId,
-    TRAINING_PEAKS_SPORT_MAP[familyId] ?? "other",
-  );
+  return resolveProviderActivityType(familyId, TRAINING_PEAKS_SPORT_MAP[familyId] ?? "other");
 }

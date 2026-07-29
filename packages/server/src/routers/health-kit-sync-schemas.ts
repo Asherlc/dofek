@@ -158,7 +158,7 @@ type WorkoutActivityType = (typeof activity.$inferInsert)["activityType"];
  * HKWorkoutActivityType rawValue → canonical snake_case activity type.
  *
  * Keys are the UInt rawValues from Apple's HKWorkoutActivityType enum.
- * Values must match the fitness.activity_type DB enum (snake_case).
+ * Values must match the fitness.canonical_type DB enum (snake_case).
  *
  * Reference: https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype
  */

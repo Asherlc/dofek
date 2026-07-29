@@ -1,8 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  ACTIVITY_MODALITIES,
-  CANONICAL_ACTIVITY_TYPES,
-} from "@dofek/training/activity-types";
+import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";

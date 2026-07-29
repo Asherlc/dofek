@@ -586,9 +586,9 @@ function ActivitiesTab() {
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
     {
-      id: "activity_type",
+      id: "canonical_type",
       header: "Type",
-      cell: ({ row }) => row.original.activity_type ?? "\u2014",
+      cell: ({ row }) => row.original.canonical_type ?? "\u2014",
     },
     {
       id: "name",

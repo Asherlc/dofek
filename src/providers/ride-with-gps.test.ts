@@ -265,10 +265,7 @@ describe("buildRideWithGpsMetricRows", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
       externalId: "trip-1",
-      activityType: resolveProviderActivityType(
-        "cycling:indoor",
-        "indoor_cycling",
-      ),
+      activityType: resolveProviderActivityType("cycling:indoor", "indoor_cycling"),
       trackPoints: [
         {
           longitude: -122.6,

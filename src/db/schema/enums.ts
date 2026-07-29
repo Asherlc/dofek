@@ -1,7 +1,4 @@
-import {
-  ACTIVITY_MODALITIES,
-  CANONICAL_ACTIVITY_TYPES,
-} from "@dofek/training/activity-types";
+import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
 import { fitness } from "./core.ts";
 
 // ============================================================

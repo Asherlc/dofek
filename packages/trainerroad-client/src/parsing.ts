@@ -1,6 +1,6 @@
 import {
-  resolveProviderActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import type { TrainerRoadActivity } from "./types.ts";
 
@@ -19,10 +19,7 @@ export function mapTrainerRoadActivityType(
 ): ProviderActivityType {
   const type = activityType.toLowerCase();
   if (type.includes("ride") || type.includes("cycling")) {
-    return resolveProviderActivityType(
-      activityType,
-      isOutside ? "cycling" : "virtual_cycling",
-    );
+    return resolveProviderActivityType(activityType, isOutside ? "cycling" : "virtual_cycling");
   }
   if (type.includes("run")) {
     return resolveProviderActivityType(activityType, "running");

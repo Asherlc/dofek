@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { createDatabaseFromEnv, type Database } from "../src/db/index.ts";
@@ -24,7 +24,9 @@ interface RideWithGpsActivityRow {
   id: string;
   externalId: string;
   userId: string;
-  activityType: string;
+  canonicalType: string;
+  providerType: string;
+  modality: string | null;
   raw: unknown;
 }
 
@@ -32,7 +34,7 @@ export interface RideWithGpsActivityBackfillPlan {
   id: string;
   externalId: string;
   userId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   shouldUpdateActivityType: boolean;
   metricRows: ReturnType<typeof buildRideWithGpsMetricRows>;
 }
@@ -87,7 +89,9 @@ const activityRowSchema = z.object({
   id: z.string(),
   externalId: z.string(),
   userId: z.string(),
-  activityType: z.string(),
+  canonicalType: z.string(),
+  providerType: z.string(),
+  modality: z.string().nullable(),
   raw: z.unknown(),
 });
 
@@ -170,7 +174,10 @@ export function planRideWithGpsActivityBackfill(
     externalId: row.externalId,
     userId: row.userId,
     activityType,
-    shouldUpdateActivityType: row.activityType !== activityType,
+    shouldUpdateActivityType:
+      row.canonicalType !== activityType.canonicalType ||
+      row.providerType !== activityType.providerType ||
+      row.modality !== activityType.modality,
     metricRows: buildRideWithGpsMetricRows({
       activityId: row.id,
       externalId: row.externalId,
@@ -219,7 +226,9 @@ async function loadActivityRows(
     SELECT id::text AS id,
            external_id AS "externalId",
            user_id::text AS "userId",
-           activity_type AS "activityType",
+           canonical_type AS "canonicalType",
+           provider_type AS "providerType",
+           modality::text AS modality,
            raw
     FROM fitness.activity
     WHERE ${sql.join(conditions, sql` AND `)}
@@ -237,7 +246,9 @@ export async function applyRideWithGpsActivityBackfillPlan(
   if (plan.shouldUpdateActivityType) {
     await db.execute(sql`
       UPDATE fitness.activity
-      SET activity_type = ${plan.activityType}
+      SET canonical_type = ${plan.activityType.canonicalType},
+          provider_type = ${plan.activityType.providerType},
+          modality = ${plan.activityType.modality}
       WHERE id = ${plan.id}
     `);
   }

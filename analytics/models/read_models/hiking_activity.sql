@@ -12,7 +12,8 @@ WITH activity_summary AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
+        modality,
         name,
         started_at,
         ended_at,
@@ -23,7 +24,10 @@ WITH activity_summary AS (
         refreshed_at
     FROM {{ ref('activity_summary_rows') }} FINAL
     WHERE is_deleted = 0
-        AND activity_type IN ('walking', 'hiking', 'trail_running')
+        AND (
+            canonical_type IN ('walking', 'hiking')
+            OR (canonical_type = 'running' AND modality = 'trail')
+        )
 ),
 
 target_state AS (
@@ -51,7 +55,7 @@ existing_hiking_activity AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         activity_name,
         started_at,
         ended_at,
@@ -77,7 +81,7 @@ active_rows AS (
     SELECT
         activity_summary.activity_id AS activity_id,
         activity_summary.user_id AS user_id,
-        activity_summary.activity_type AS activity_type,
+        activity_summary.canonical_type AS canonical_type,
         activity_summary.name AS activity_name,
         activity_summary.started_at AS started_at,
         activity_summary.ended_at AS ended_at,
@@ -127,7 +131,7 @@ tombstone_rows AS (
     SELECT
         existing_hiking_activity.activity_id AS activity_id,
         existing_hiking_activity.user_id AS user_id,
-        existing_hiking_activity.activity_type AS activity_type,
+        existing_hiking_activity.canonical_type AS canonical_type,
         existing_hiking_activity.activity_name AS activity_name,
         existing_hiking_activity.started_at AS started_at,
         existing_hiking_activity.ended_at AS ended_at,
@@ -153,7 +157,7 @@ tombstone_rows AS (
 SELECT
     activity_id,
     user_id,
-    activity_type,
+    canonical_type,
     activity_name,
     started_at,
     ended_at,
@@ -173,7 +177,7 @@ UNION ALL
 SELECT
     activity_id,
     user_id,
-    activity_type,
+    canonical_type,
     activity_name,
     started_at,
     ended_at,

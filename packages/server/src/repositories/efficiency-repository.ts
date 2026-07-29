@@ -109,7 +109,7 @@ function createPolarizationMethod(): PolarizationTrendResult["method"] {
 const efficiencyRowSchema = z.object({
   max_hr: z.coerce.number(),
   date: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   name: z.string().nullable(),
   avg_power_z2: z.coerce.number(),
   avg_hr_z2: z.coerce.number(),
@@ -119,7 +119,7 @@ const efficiencyRowSchema = z.object({
 
 const decouplingRowSchema = z.object({
   date: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   name: z.string().nullable(),
   first_half_ratio: z.coerce.number(),
   second_half_ratio: z.coerce.number(),
@@ -195,7 +195,7 @@ export class EfficiencyRepository extends BaseRepository {
       `SELECT
         max_hr AS max_hr,
         toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-        activity_type AS activity_type,
+        canonical_type AS canonical_type,
         name AS name,
         avg_power_z2 AS avg_power_z2,
         avg_hr_z2 AS avg_hr_z2,
@@ -203,7 +203,7 @@ export class EfficiencyRepository extends BaseRepository {
         z2_samples AS z2_samples
       FROM analytics.activity_aerobic_efficiency FINAL
       WHERE user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, activity_type)
+        AND has({activityTypes:Array(String)}, canonical_type)
         ${lowerBoundPredicate}
         AND is_deleted = 0
       ORDER BY started_at`,
@@ -220,7 +220,7 @@ export class EfficiencyRepository extends BaseRepository {
         maxHr: Number(readModelRows[0]?.max_hr),
         activities: readModelRows.map((row) => ({
           date: String(row.date),
-          activityType: String(row.activity_type),
+          activityType: String(row.canonical_type),
           name: String(row.name ?? ""),
           avgPowerZ2: Number(row.avg_power_z2),
           avgHrZ2: Number(row.avg_hr_z2),
@@ -254,7 +254,7 @@ export class EfficiencyRepository extends BaseRepository {
           asum.started_at AS started_at,
           asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-          asum.activity_type AS activity_type,
+          asum.canonical_type AS canonical_type,
           asum.name AS name,
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
@@ -266,14 +266,14 @@ export class EfficiencyRepository extends BaseRepository {
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         WHERE asum.user_id = {userId:UUID}
-          AND has({activityTypes:Array(String)}, asum.activity_type)
+          AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${activitySummaryLowerBoundPredicate}
           AND up.max_hr IS NOT NULL
       )
       SELECT
         any(hr.max_hr) AS max_hr,
         any(hr.date) AS date,
-        any(hr.activity_type) AS activity_type,
+        any(hr.canonical_type) AS canonical_type,
         any(hr.name) AS name,
         round(avg(pwr.scalar), 1) AS avg_power_z2,
         round(avg(hr.heart_rate), 1) AS avg_hr_z2,
@@ -286,7 +286,7 @@ export class EfficiencyRepository extends BaseRepository {
           am.started_at AS started_at,
           am.ended_at AS ended_at,
           am.date AS date,
-          am.activity_type AS activity_type,
+          am.canonical_type AS canonical_type,
           am.name AS name,
           am.max_hr AS max_hr,
           hr.recorded_at AS recorded_at,
@@ -361,7 +361,7 @@ export class EfficiencyRepository extends BaseRepository {
       maxHr,
       activities: rows.map((row) => ({
         date: String(row.date),
-        activityType: String(row.activity_type),
+        activityType: String(row.canonical_type),
         name: String(row.name ?? ""),
         avgPowerZ2: Number(row.avg_power_z2),
         avgHrZ2: Number(row.avg_hr_z2),
@@ -381,7 +381,7 @@ export class EfficiencyRepository extends BaseRepository {
             SELECT id
             FROM fitness.v_activity
             WHERE user_id = ${this.userId}::uuid
-              AND activity_type IN (${sql.join(
+              AND canonical_type IN (${sql.join(
                 CYCLING_TYPES.map((activityType) => sql`${activityType}`),
                 sql`, `,
               )})
@@ -428,7 +428,7 @@ export class EfficiencyRepository extends BaseRepository {
           ON va.id = asum.activity_id
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({activityTypes:Array(String)}, asum.activity_type)
+          AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${range.clickHouseTimestampAfter("asum.started_at")}
       ),
       sensor_samples_by_activity AS (
@@ -492,14 +492,14 @@ export class EfficiencyRepository extends BaseRepository {
           asum.started_at AS started_at,
           asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-          asum.activity_type AS activity_type,
+          asum.canonical_type AS canonical_type,
           asum.name AS name
         FROM analytics.activity_summary asum
         INNER JOIN analytics.v_activity va
           ON va.id = asum.activity_id
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({activityTypes:Array(String)}, asum.activity_type)
+          AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${range.clickHouseTimestampAfter("asum.started_at")}
       ),
       activity_halves AS (
@@ -535,7 +535,7 @@ export class EfficiencyRepository extends BaseRepository {
       )
       SELECT
         am.date AS date,
-        am.activity_type AS activity_type,
+        am.canonical_type AS canonical_type,
         am.name AS name,
         hr.first_half_ratio AS first_half_ratio,
         hr.second_half_ratio AS second_half_ratio,
@@ -555,7 +555,7 @@ export class EfficiencyRepository extends BaseRepository {
 
     return rows.map((row) => ({
       date: String(row.date),
-      activityType: String(row.activity_type),
+      activityType: String(row.canonical_type),
       name: String(row.name ?? ""),
       firstHalfRatio: Number(row.first_half_ratio),
       secondHalfRatio: Number(row.second_half_ratio),
@@ -584,7 +584,7 @@ export class EfficiencyRepository extends BaseRepository {
         toInt32(sum(z3_seconds)) AS z3_seconds
       FROM analytics.activity_polarization_zones FINAL
       WHERE user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, activity_type)
+        AND has({activityTypes:Array(String)}, canonical_type)
         ${lowerBoundPredicate}
         AND is_deleted = 0
       GROUP BY toMonday(toTimeZone(started_at, {timezone:String}))

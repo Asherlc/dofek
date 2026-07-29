@@ -1,13 +1,10 @@
 import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
-import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
-  resolveProviderActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
-import {
-  createActivityTypeMapper,
-  STRAVA_ACTIVITY_TYPE_MAP,
-} from "@dofek/training/training";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -131,10 +128,7 @@ const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
  * When sport_type is "Ride" and trainer is true, override to indoor_cycling
  * (covers spin bikes and other stationary trainers recorded via Strava).
  */
-export function mapStravaActivityType(
-  sportType: string,
-  trainer = false,
-): ProviderActivityType {
+export function mapStravaActivityType(sportType: string, trainer = false): ProviderActivityType {
   if (sportType === "Ride" && trainer) {
     return resolveProviderActivityType(sportType, "indoor_cycling");
   }
@@ -242,9 +236,7 @@ export function stravaStreamsToMetricStream(
       power: watts?.[i],
       cadence: cadences?.[i],
       speed:
-        activityType && isIndoorCyclingModality(activityType.modality)
-          ? undefined
-          : speeds?.[i],
+        activityType && isIndoorCyclingModality(activityType.modality) ? undefined : speeds?.[i],
       lat: latlng?.[0],
       lng: latlng?.[1],
       altitude: altitudes?.[i],

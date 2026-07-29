@@ -442,7 +442,7 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:workout:workout-uuid-1'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0]?.activity_type).toBe("running");
+      expect(rows[0]?.canonical_type).toBe("running");
     });
 
     it("maps unknown workout types to 'other'", async () => {
@@ -470,7 +470,7 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:workout:workout-uuid-unknown'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0]?.activity_type).toBe("other");
+      expect(rows[0]?.canonical_type).toBe("other");
     });
 
     it("does not tombstone apple_health workouts when HealthKit returns an empty workout list", async () => {

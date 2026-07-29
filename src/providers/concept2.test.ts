@@ -482,9 +482,7 @@ describe("Concept2Provider", () => {
       expect(val?.name).toBe("Rower FixedDistSplits");
 
       const update = findUpsertUpdate(
-        (rec) =>
-          isRecord(rec.activityType) &&
-          rec.activityType.canonicalType === "rowing",
+        (rec) => isRecord(rec.activityType) && rec.activityType.canonicalType === "rowing",
       );
       expect(update).toEqual(
         expect.objectContaining({

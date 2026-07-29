@@ -165,11 +165,11 @@ describe("TrainingRepository", () => {
 
     it("returns parsed weekly volume rows", async () => {
       const { repo } = makeRepository([
-        { week: "2024-01-15", activity_type: "cycling", count: 3, hours: 4.5 },
+        { week: "2024-01-15", canonical_type: "cycling", count: 3, hours: 4.5 },
       ]);
       const result = await repo.getWeeklyVolume(90);
       expect(result).toHaveLength(1);
-      expect(result[0]?.activity_type).toBe("cycling");
+      expect(result[0]?.canonical_type).toBe("cycling");
       expect(result[0]?.hours).toBe(4.5);
     });
   });
@@ -193,7 +193,7 @@ describe("TrainingRepository", () => {
         },
       });
       expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
-      expect(executedSql(execute)).toContain("activity_type IN");
+      expect(executedSql(execute)).toContain("canonical_type IN");
       expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
@@ -341,7 +341,7 @@ describe("TrainingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "act-1",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Morning Run",
           started_at: "2024-01-15T08:00:00Z",
           ended_at: "2024-01-15T09:00:00Z",
@@ -357,7 +357,7 @@ describe("TrainingRepository", () => {
       ]);
       const result = await repo.getActivityStats(90);
       expect(result).toHaveLength(1);
-      expect(result[0]?.activity_type).toBe("running");
+      expect(result[0]?.canonical_type).toBe("running");
       expect(result[0]?.avg_hr).toBe(145.5);
       expect(result[0]?.distance_meters).toBe(10500);
     });
@@ -367,7 +367,7 @@ describe("TrainingRepository", () => {
         [
           {
             id: "act-hidden",
-            activity_type: "running",
+            canonical_type: "running",
             name: "Deleted Run",
             started_at: "2024-01-15T08:00:00Z",
             ended_at: "2024-01-15T09:00:00Z",
@@ -396,7 +396,7 @@ describe("TrainingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "act-no-sensor",
-          activity_type: "strength_training",
+          canonical_type: "strength",
           name: "Gym Session",
           started_at: "2024-01-15T10:00:00Z",
           ended_at: "2024-01-15T11:00:00Z",
@@ -424,7 +424,7 @@ describe("TrainingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "act-2",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Afternoon Ride",
           started_at: "2024-01-15T14:00:00Z",
           ended_at: "2024-01-15T15:30:00Z",
@@ -463,7 +463,7 @@ describe("TrainingRepository", () => {
               return [
                 schema.parse({
                   id: "act-1",
-                  activity_type: "running",
+                  canonical_type: "running",
                   name: "Morning Run",
                   started_at: "2024-01-15T08:00:00Z",
                   ended_at: "2024-01-15T09:00:00Z",
@@ -481,7 +481,7 @@ describe("TrainingRepository", () => {
             return [
               schema.parse({
                 week: "2024-01-15",
-                activity_type: "running",
+                canonical_type: "running",
                 count: 3,
                 hours: 4.5,
               }),
@@ -512,7 +512,7 @@ describe("TrainingRepository", () => {
       expect(execute).toHaveBeenCalledTimes(2);
       expect(query).toHaveBeenCalledTimes(2);
       expect(result.activities).toHaveLength(1);
-      expect(result.activities[0]?.activity_type).toBe("running");
+      expect(result.activities[0]?.canonical_type).toBe("running");
       expect(result.weeklyVolume).toHaveLength(1);
       expect(result.weeklyVolume[0]?.hours).toBe(4.5);
     });
@@ -533,7 +533,7 @@ describe("TrainingRepository", () => {
               return [
                 schema.parse({
                   id: "act-in-window",
-                  activity_type: "running",
+                  canonical_type: "running",
                   name: "In Window Run",
                   started_at: "2024-01-03T08:00:00Z",
                   ended_at: "2024-01-03T09:00:00Z",
@@ -551,7 +551,7 @@ describe("TrainingRepository", () => {
             return [
               schema.parse({
                 week: "2024-01-01",
-                activity_type: "running",
+                canonical_type: "running",
                 count: 1,
                 hours: 1,
               }),

@@ -39,7 +39,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2026-04-03",
             activityName: "Gravel Ride",
-            activityType: "gravel_cycling",
+            activityType: "cycling",
+            modality: "gravel",
             verticalAscentRate: 700,
             elevationGainMeters: 350,
             elapsedMinutes: 30,
@@ -47,7 +48,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2026-04-01",
             activityName: "Road Ride",
-            activityType: "road_cycling",
+            activityType: "cycling",
+            modality: "road",
             verticalAscentRate: 600,
             elevationGainMeters: 300,
             elapsedMinutes: 30,
@@ -55,7 +57,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2026-04-02",
             activityName: "Trail Ride",
-            activityType: "mountain_biking",
+            activityType: "cycling",
+            modality: "mountain",
             verticalAscentRate: 500,
             elevationGainMeters: 250,
             elapsedMinutes: 30,
@@ -63,7 +66,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2026-04-04",
             activityName: "Trainer Ride",
-            activityType: "indoor_cycling",
+            activityType: "cycling",
+            modality: "indoor",
             verticalAscentRate: 400,
             elevationGainMeters: 200,
             elapsedMinutes: 30,
@@ -71,7 +75,8 @@ describe("VerticalAscentChart", () => {
           {
             date: "2026-04-05",
             activityName: "Virtual Ride",
-            activityType: "virtual_cycling",
+            activityType: "cycling",
+            modality: "virtual",
             verticalAscentRate: 300,
             elevationGainMeters: 150,
             elapsedMinutes: 30,
@@ -111,6 +116,7 @@ describe("VerticalAscentChart", () => {
             date: "2026-04-03",
             activityName: maliciousName,
             activityType: maliciousType,
+            modality: null,
             verticalAscentRate: 700,
             elevationGainMeters: 350,
             elapsedMinutes: 30,

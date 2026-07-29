@@ -105,7 +105,7 @@ const activityItemSchema = z.object({
   id: z.string(),
   started_at: z.string(),
   ended_at: z.string().nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),

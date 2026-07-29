@@ -111,7 +111,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       query: `SELECT
           toString(activity_id) AS activityId,
           provider_id AS providerId,
-          activity_type AS activityType
+          canonical_type AS activityType
         FROM ${targetSchema}.deduped_activities FINAL
         WHERE activity_id = {activityId:UUID}
           AND is_deleted = 0`,
@@ -244,7 +244,7 @@ function createActivitySourceRecordsTableSql(targetSchema: string): string {
   provider_id Nullable(String),
   user_id Nullable(UUID),
   external_id Nullable(String),
-  activity_type Nullable(String),
+  canonical_type Nullable(String),
   started_at Nullable(DateTime64(6, 'UTC')),
   ended_at Nullable(DateTime64(6, 'UTC')),
   source_name Nullable(String),

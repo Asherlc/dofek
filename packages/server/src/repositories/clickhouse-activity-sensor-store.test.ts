@@ -171,7 +171,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.v_activity");
     expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
+    expect(queryText).toContain("has({activityTypes:Array(String)}, activity.canonical_type)");
     expect(queryText).toContain("activity.started_at > now() - toIntervalDay({days:UInt32})");
     expect(queryText).not.toContain("enduranceActivityTypes");
     expect(query.mock.calls[0]?.[0]?.query_params).toMatchObject({

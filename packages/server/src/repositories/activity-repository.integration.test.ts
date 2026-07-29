@@ -15,29 +15,29 @@ describe("ActivityRepository exact-range search", () => {
     );
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
-          ('mcp_search_test', ${TEST_USER_ID}, 'before', 'cycling',
+          ('mcp_search_test', ${TEST_USER_ID}, 'before', 'cycling', 'cycling',
             '2026-05-09T22:59:59Z', '2026-05-09T23:59:59Z', 'Boundary Ride Before'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'first', 'cycling',
+          ('mcp_search_test', ${TEST_USER_ID}, 'first', 'cycling', 'cycling',
             '2026-05-10T00:00:00Z', '2026-05-10T01:00:00Z', 'Boundary Ride First'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'matching', 'cycling',
+          ('mcp_search_test', ${TEST_USER_ID}, 'matching', 'cycling', 'cycling',
             '2026-05-18T23:00:00Z', '2026-05-18T23:30:00Z', 'Evening Ride'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'other', 'walking',
+          ('mcp_search_test', ${TEST_USER_ID}, 'other', 'walking', 'walking',
             '2026-05-18T12:00:00Z', '2026-05-18T12:30:00Z', 'Lunch Walk'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'after', 'cycling',
+          ('mcp_search_test', ${TEST_USER_ID}, 'after', 'cycling', 'cycling',
             '2026-05-19T00:00:00Z', '2026-05-19T01:00:00Z', 'Boundary Ride After'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'percent-literal', 'running',
+          ('mcp_search_test', ${TEST_USER_ID}, 'percent-literal', 'running', 'running',
             '2026-06-01T08:00:00Z', '2026-06-01T09:00:00Z', '50% Effort'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'percent-other', 'running',
+          ('mcp_search_test', ${TEST_USER_ID}, 'percent-other', 'running', 'running',
             '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z', '500 Effort'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'underscore-literal', 'running',
+          ('mcp_search_test', ${TEST_USER_ID}, 'underscore-literal', 'running', 'running',
             '2026-06-01T12:00:00Z', '2026-06-01T13:00:00Z', 'Leg_day Run'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'underscore-other', 'running',
+          ('mcp_search_test', ${TEST_USER_ID}, 'underscore-other', 'running', 'running',
             '2026-06-01T14:00:00Z', '2026-06-01T15:00:00Z', 'Leg-day Run'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'backslash-literal', 'running',
+          ('mcp_search_test', ${TEST_USER_ID}, 'backslash-literal', 'running', 'running',
             '2026-06-01T16:00:00Z', '2026-06-01T17:00:00Z', 'Trail\\Run'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'backslash-other', 'running',
+          ('mcp_search_test', ${TEST_USER_ID}, 'backslash-other', 'running', 'running',
             '2026-06-01T18:00:00Z', '2026-06-01T19:00:00Z', 'TrailRun')`,
     );
   }, 60_000);

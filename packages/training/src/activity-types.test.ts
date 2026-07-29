@@ -5,6 +5,7 @@ import {
   classifyLegacyActivityType,
   LEGACY_ACTIVITY_TYPES,
   resolveProviderActivityType,
+  resolveRawProviderActivityType,
 } from "./activity-types.ts";
 
 interface ExpectedLegacyClassification {
@@ -201,6 +202,24 @@ describe("resolveProviderActivityType", () => {
     expect(resolveProviderActivityType("gaelic-football", "gaelic_football")).toEqual({
       canonicalType: "gaelic_football",
       providerType: "gaelic-football",
+      modality: null,
+    });
+  });
+});
+
+describe("resolveRawProviderActivityType", () => {
+  it("classifies known legacy values while preserving the exact provider string", () => {
+    expect(resolveRawProviderActivityType("trail_running")).toEqual({
+      canonicalType: "running",
+      providerType: "trail_running",
+      modality: "trail",
+    });
+  });
+
+  it("classifies unknown provider strings as other without rewriting them", () => {
+    expect(resolveRawProviderActivityType("Zepp Outdoor Workout")).toEqual({
+      canonicalType: "other",
+      providerType: "Zepp Outdoor Workout",
       modality: null,
     });
   });

@@ -190,10 +190,7 @@ function makeRecord(overrides: Partial<HealthRecord> & { type: string }): Health
 
 function makeWorkout(overrides: Partial<HealthWorkout> = {}): HealthWorkout {
   return {
-    activityType: resolveProviderActivityType(
-      "HKWorkoutActivityTypeRunning",
-      "running",
-    ),
+    activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
     sourceName: "Apple Watch",
     durationSeconds: 1800,
     startDate: new Date("2024-03-01T18:00:00Z"),
@@ -1406,10 +1403,7 @@ describe("upsertWorkoutBatch", () => {
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z"), sourceName: "iPhone" }),
       makeWorkout({
         startDate: new Date("2024-06-01T10:00:00Z"),
-        activityType: resolveProviderActivityType(
-          "HKWorkoutActivityTypeCycling",
-          "cycling",
-        ),
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
       }),
     ];
 
@@ -1426,10 +1420,7 @@ describe("upsertWorkoutBatch", () => {
       makeWorkout({
         startDate: start,
         endDate: end,
-        activityType: resolveProviderActivityType(
-          "HKWorkoutActivityTypeCycling",
-          "cycling",
-        ),
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
         sourceName: "Wahoo",
       }),
     ]);
@@ -1439,7 +1430,11 @@ describe("upsertWorkoutBatch", () => {
     ).toMatchObject({
       providerId: "p1",
       externalId: `ah:workout:${start.toISOString()}`,
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "HKWorkoutActivityTypeCycling",
+        modality: null,
+      },
       startedAt: start,
       endedAt: end,
       sourceName: "Wahoo",

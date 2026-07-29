@@ -4,10 +4,10 @@ import { extractCteSql, readModelSql } from "./read-model-sql-test-helpers.ts";
 const modelSql = readModelSql("activity_vo2max_estimate.sql");
 
 describe("activity_vo2max_estimate model", () => {
-  it("includes trail running in the upstream activity filter", () => {
+  it("includes canonical running in the upstream activity filter", () => {
     const currentActivitySql = extractCteSql(modelSql, "current_activity");
 
-    expect(currentActivitySql).toMatch(/activity_type IN \([\s\S]*'trail_running'[\s\S]*\)/);
+    expect(currentActivitySql).toMatch(/canonical_type IN \([\s\S]*'running'[\s\S]*\)/);
   });
 
   it("reads bounded raw activity rows instead of the full deduping activity view", () => {

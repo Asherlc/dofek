@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  CANONICAL_ACTIVITY_TYPES,
-  classifyLegacyActivityType,
-} from "./activity-types";
+import { CANONICAL_ACTIVITY_TYPES, classifyLegacyActivityType } from "./activity-types";
 import { ENDURANCE_ACTIVITY_TYPES } from "./endurance-types";
 import {
   CYCLING_ACTIVITY_TYPES,
@@ -207,9 +204,7 @@ describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const [, value] of Object.entries(STRAVA_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(
-        classifyLegacyActivityType(value).canonicalType,
-      );
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -225,9 +220,7 @@ describe("WAHOO_WORKOUT_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(WAHOO_WORKOUT_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(
-        classifyLegacyActivityType(value).canonicalType,
-      );
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -247,9 +240,7 @@ describe("POLAR_SPORT_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(POLAR_SPORT_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(
-        classifyLegacyActivityType(value).canonicalType,
-      );
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -269,9 +260,7 @@ describe("GARMIN_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(GARMIN_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(
-        classifyLegacyActivityType(value).canonicalType,
-      );
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -287,9 +276,7 @@ describe("OURA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(OURA_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(
-        classifyLegacyActivityType(value).canonicalType,
-      );
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -305,9 +292,7 @@ describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(
-        classifyLegacyActivityType(value).canonicalType,
-      );
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -520,7 +505,6 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(types).toContain("swimming");
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
   });
-
 });
 
 describe("selectRecentDailyLoad", () => {

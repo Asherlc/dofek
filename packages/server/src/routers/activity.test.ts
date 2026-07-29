@@ -145,7 +145,7 @@ function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
 function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
   return {
     id: "00000000-0000-0000-0000-000000000001",
-    activity_type: "cycling",
+    canonical_type: "cycling",
     started_at: "2026-04-01T10:00:00Z",
     ended_at: "2026-04-01T11:00:00Z",
     name: "Ride",
@@ -176,7 +176,7 @@ describe("activityRouter", () => {
           id: "a1",
           started_at: "2024-01-01 10:00:00+00",
           ended_at: "2024-01-01 11:00:00+00",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           provider_id: "wahoo",
           source_providers: ["wahoo"],
@@ -197,7 +197,7 @@ describe("activityRouter", () => {
       expect(item).toMatchObject({
         id: "a1",
         started_at: "2024-01-01 10:00:00+00",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         avg_hr: 150,
         max_hr: 180,
         avg_power: 200,
@@ -211,7 +211,7 @@ describe("activityRouter", () => {
           id: "a1",
           started_at: "2024-01-15 14:30:00+00",
           ended_at: "2024-01-15 15:15:00+00",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Easy Run",
           provider_id: "apple_health",
           source_providers: ["apple_health"],
@@ -320,7 +320,7 @@ describe("activityRouter", () => {
     it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         started_at: "2024-01-01T10:00:00Z",
         ended_at: "2024-01-01T11:00:00Z",
         name: "Morning Ride",
@@ -383,7 +383,7 @@ describe("activityRouter", () => {
     it("handles null optional fields", async () => {
       const row = {
         id: "abc-123",
-        activity_type: "running",
+        canonical_type: "running",
         started_at: "2024-01-01",
         ended_at: null,
         name: null,
@@ -1171,7 +1171,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "running", avg_power: null, max_power: null }),
+          makeActivityRow({ canonical_type: "running", avg_power: null, max_power: null }),
         );
       const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
@@ -1211,7 +1211,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 340 }),
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 340 }),
         );
       const caller = makeCallerWithoutSensorStore();
 
@@ -1230,7 +1230,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 360 }),
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
         );
       const getEftpTrendSpy = vi
         .spyOn(PowerRepository.prototype, "getEftpTrend")
@@ -1293,7 +1293,7 @@ describe("Activity model (via router integration)", () => {
 
   const fullRow = {
     id: "abc-123",
-    activity_type: "cycling",
+    canonical_type: "cycling",
     started_at: "2026-03-01T10:00:00+00:00",
     ended_at: "2026-03-01T11:30:00+00:00",
     name: "Morning Ride",

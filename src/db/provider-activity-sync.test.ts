@@ -118,17 +118,11 @@ describe("upsertProviderActivity", () => {
           {
             providerId: "apple_health",
             externalId,
-            activityType: resolveProviderActivityType(
-              "HKWorkoutActivityTypeRunning",
-              "running",
-            ),
+            activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
             startedAt: new Date("2026-06-20T21:49:00Z"),
           },
           {
-            activityType: resolveProviderActivityType(
-              "HKWorkoutActivityTypeRunning",
-              "running",
-            ),
+            activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           },
         ),
       ).rejects.toThrow("Provider activity upsert requires externalId");
@@ -147,10 +141,7 @@ describe("upsertProviderActivity", () => {
         startedAt: new Date("2026-06-20T21:49:00Z"),
       },
       {
-        activityType: resolveProviderActivityType(
-          "HKWorkoutActivityTypeRunning",
-          "running",
-        ),
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
       },
     );
 
@@ -331,10 +322,7 @@ describe("ProviderActivityListSync", () => {
         startedAt: new Date("2026-06-20T21:49:00Z"),
       },
       {
-        activityType: resolveProviderActivityType(
-          "HKWorkoutActivityTypeRunning",
-          "running",
-        ),
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
       },
     );
     await sync.reconcile();
@@ -442,4 +430,5 @@ describe("finishProviderActivityListSync", () => {
     ).rejects.toThrow("reconciliation failed");
   });
 });
+
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
