@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { nutritionSourceResolutionSchema } from "@dofek/nutrition/selected-date-summary";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -29,9 +30,9 @@ const currentDefinitionSchema = z.object({
 
 const dailyOverlaySchema = z.object({
   calories: z.coerce.number(),
-  resolution_status: z.string(),
+  resolution_status: nutritionSourceResolutionSchema.shape.status,
   source_providers: z.array(z.string()),
-  contribution_grain: z.string().nullable(),
+  contribution_grain: nutritionSourceResolutionSchema.shape.contributionGrain,
   contribution_source_label: z.string().nullable(),
 });
 

@@ -1,3 +1,4 @@
+import { nutritionSourceResolutionSchema } from "@dofek/nutrition/selected-date-summary";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -10,11 +11,13 @@ import { NutritionAnalyticsRepository } from "./nutrition-analytics-repository.t
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000002059";
+const resolutionStatusSchema = nutritionSourceResolutionSchema.shape.status;
+const contributionGrainSchema = nutritionSourceResolutionSchema.shape.contributionGrain;
 const idRowSchema = z.object({ id: z.string() });
 const dailyNutritionRowSchema = z.object({
   calories: z.coerce.number(),
   protein_g: z.coerce.number(),
-  resolution_status: z.string(),
+  resolution_status: resolutionStatusSchema,
   source_providers: z.array(z.string()),
   contributing_providers: z.array(z.string()),
   excluded_providers: z.array(z.string()),
@@ -22,13 +25,13 @@ const dailyNutritionRowSchema = z.object({
 const aggregateOnlyRowSchema = z.object({
   calories: z.coerce.number(),
   protein_g: z.coerce.number(),
-  resolution_status: z.string(),
+  resolution_status: resolutionStatusSchema,
   contributing_source_labels: z.array(z.string()),
-  contribution_grain: z.string().nullable(),
+  contribution_grain: contributionGrainSchema,
 });
 const conflictRowSchema = z.object({
   calories: z.coerce.number().nullable(),
-  resolution_status: z.string(),
+  resolution_status: resolutionStatusSchema,
   contributing_providers: z.array(z.string()),
 });
 const conflictSourceLabelsRowSchema = z.object({
@@ -105,6 +108,18 @@ describe("canonical nutrition contribution set", () => {
       VALUES ${sql.join(nutrientRows, sql`, `)}
     `);
     return id;
+  }
+
+  async function fetchAggregateRows(date: string) {
+    return executeWithSchema(
+      context.db,
+      aggregateOnlyRowSchema,
+      sql`
+        SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
+        FROM fitness.v_nutrition_daily
+        WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
+      `,
+    );
   }
 
   it("uses one itemized source and excludes an overlapping aggregate without deleting provenance", async () => {
@@ -214,15 +229,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { protein: 95 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
+    const rows = await fetchAggregateRows(date);
     expect(rows).toEqual([
       {
         calories: 1900,
@@ -244,15 +251,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1900, protein: 95 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
+    const rows = await fetchAggregateRows(date);
 
     expect(rows).toEqual([
       {
@@ -280,15 +279,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1900, protein: 95 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-        SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-        FROM fitness.v_nutrition_daily
-        WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-      `,
-    );
+    const rows = await fetchAggregateRows(date);
 
     expect(rows).toEqual([
       {
@@ -318,15 +309,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { protein: 95 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
+    const rows = await fetchAggregateRows(date);
 
     expect(rows).toEqual([
       {
@@ -395,15 +378,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { protein: 95 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
+    const rows = await fetchAggregateRows(date);
 
     expect(rows).toEqual([
       {
@@ -494,15 +469,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1800, protein: 90 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
+    const rows = await fetchAggregateRows(date);
     expect(rows).toEqual([
       {
         calories: 1800,
