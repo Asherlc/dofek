@@ -25,12 +25,16 @@ export function ModalDialog({
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   function restoreFocus() {
-    if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+    if (returnFocusRef.current?.isConnected) {
+      returnFocusRef.current.focus({ preventScroll: true });
+    }
   }
 
   useEffect(
     () => () => {
-      if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+      if (returnFocusRef.current?.isConnected) {
+        returnFocusRef.current.focus({ preventScroll: true });
+      }
     },
     [],
   );
@@ -48,13 +52,7 @@ export function ModalDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay
-          aria-hidden="true"
-          className={`fixed inset-0 z-50 ${overlayClassName}`}
-          onClick={() => {
-            if (closeOnInteractOutside) closeDialog();
-          }}
-        />
+        <Dialog.Overlay aria-hidden="true" className={`fixed inset-0 z-50 ${overlayClassName}`} />
         <Dialog.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -73,10 +71,10 @@ export function ModalDialog({
             }
             if (!initialFocusRef?.current) return;
             event.preventDefault();
-            initialFocusRef.current.focus();
+            initialFocusRef.current.focus({ preventScroll: true });
           }}
           onPointerDownOutside={(event) => {
-            event.preventDefault();
+            if (!closeOnInteractOutside) event.preventDefault();
           }}
         >
           {children}
