@@ -20453,3 +20453,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   gateway errors from the secrets endpoint, investigate Infisical service
   availability with the captured request evidence before changing workflow
   behavior.
+
+## 2026-07-29 — Merged nutrition test expected pre-label source IDs
+
+- **Status:** Test contract corrected on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** Integration shard 1 failed after PR #2315 merged current main,
+  even though the new nutrition source-breakdown calculations were correct.
+- **User impact:** No production impact because the migration was not merged.
+  The PR remained blocked from merge.
+- **Evidence:** The exact command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4` in
+  [job 90731942530](https://github.com/Asherlc/dofek/actions/runs/30497852817/job/90731942530).
+  Its first fatal assertion was
+  `expected { nutrientId: 'vitamin_c', … } to match object` in
+  `nutrition-analytics-source-breakdown.integration.test.ts`. The test expected
+  raw IDs such as `nutrition-2136-manual`, while the view correctly returned
+  canonical display labels such as `Manual Food`.
+- **Root cause:** The newly merged main test encoded the previous raw-provider-
+  ID label behavior. Migration 0065 intentionally changes food source labels to
+  human-readable provider/source paths for issue #2133, so the old expectation
+  contradicted the new production contract.
+- **Fix / mitigation:** Update only the merged test expectations to the
+  canonical display labels. Keep supplement labels unchanged because supplement
+  provenance still uses its event source/provider identity. Production behavior,
+  retries, timeouts, and workflow configuration are unchanged.
+- **Validation:** Server typecheck, formatting, and exact-head integration
+  validation are required before merge. Local Docker validation remains
+  unavailable because the daemon control plane stopped responding earlier in
+  this workspace.
+- **Remaining risk / follow-up:** Cross-PR integration tests should assert the
+  public source-label contract rather than assuming provider IDs are display
+  labels.
