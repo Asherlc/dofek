@@ -5,10 +5,12 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{
-  correlationData: Record<string, unknown>;
+  correlationData: Record<string, unknown> | undefined;
+  correlationError: Error | null;
   metricsData: Array<{ id: string; label: string; unit: string; domain: string }> | undefined;
 }>(() => ({
   correlationData: {},
+  correlationError: null,
   metricsData: undefined,
 }));
 
@@ -38,6 +40,12 @@ vi.mock("../components/ChartTitleWithTooltip", () => ({
   ChartTitleWithTooltip: ({ title }: { title: string }) => <span>{title}</span>,
 }));
 
+vi.mock("../components/QueryStatePanel", () => ({
+  getQueryErrorMessage: (error: unknown) =>
+    error instanceof Error ? error.message : "Could not load this section.",
+  QueryStatePanel: ({ message }: { message?: string }) => <span>{message}</span>,
+}));
+
 vi.mock("react-native-svg", () => ({
   default: ({ children }: { children: ReactNode }) => (
     <svg>
@@ -62,6 +70,8 @@ vi.mock("../lib/trpc", () => ({
       computeV2: {
         useQuery: () => ({
           data: state.correlationData,
+          error: state.correlationError,
+          isError: state.correlationError !== null,
           isLoading: false,
         }),
       },
@@ -83,6 +93,7 @@ vi.mock("../theme", () => ({
 
 describe("CorrelationScreen", () => {
   beforeEach(() => {
+    state.correlationError = null;
     state.metricsData = [
       { id: "protein", label: "Protein", unit: "g", domain: "nutrition" },
       { id: "hrv", label: "Heart Rate Variability", unit: "ms", domain: "recovery" },
@@ -113,7 +124,46 @@ describe("CorrelationScreen", () => {
       },
       insight:
         "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
+      interpretationWarning:
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
     };
+  });
+
+  it("prevents selecting the metric already used on the opposite axis", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    const proteinChips = screen.getAllByLabelText("Protein");
+    const heartRateVariabilityChips = screen.getAllByLabelText("Heart Rate Variability");
+
+    expect(proteinChips[0].getAttribute("aria-disabled")).not.toBe("true");
+    expect(proteinChips[1].getAttribute("aria-disabled")).toBe("true");
+    expect(heartRateVariabilityChips[0].getAttribute("aria-disabled")).toBe("true");
+    expect(heartRateVariabilityChips[1].getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(proteinChips[1]);
+    expect(screen.queryByText("Select two different metrics to compare.")).toBeNull();
+  });
+
+  it("renders the server-authored interpretation warning", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(
+      screen.getByText(
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders the specific server error when a request is rejected", async () => {
+    state.correlationData = undefined;
+    state.correlationError = new Error("Choose two different metrics to compare.");
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Choose two different metrics to compare.")).toBeTruthy();
   });
 
   it("shows sample requirements without inferential statistics when data is insufficient", async () => {

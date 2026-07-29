@@ -48,6 +48,11 @@ reports paired-calendar-day coverage, Spearman rho, linear slope/$R^2$, and a 95
 moving-block interval; `correlation.compute` remains an exact legacy compatibility projection.
 Both endpoints share the source pipeline in
 [`correlation-repository.ts`](./src/repositories/correlation-repository.ts).
+Both endpoints reject a comparison of a metric with itself. V2 also returns a
+server-authored interpretation warning because measurements that persist from one day to the
+next or share a time trend can appear strongly related without a direct relationship, the
+classic spurious-regression problem described by
+[Granger and Newbold (1974)](https://doi.org/10.1016/0304-4076(74)90034-7).
 
 Nutrition inputs come from the canonical `fitness.v_nutrition_daily` available-resolution
 rows. Activity-duration inputs come from the deduplicated ClickHouse
