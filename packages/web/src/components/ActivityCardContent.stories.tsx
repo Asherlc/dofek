@@ -9,6 +9,12 @@ const strengthActivity: ActivityCardData = {
   name: null,
   activityType: "strength_training",
   startedAt: "2026-07-14T08:46:00-07:00",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone",
+  },
   durationMin: 30,
   location: null,
   stats: [{ label: "Training Stress Score", value: "8.5" }],
@@ -19,6 +25,12 @@ const mappedActivity: ActivityCardData = {
   name: "Morning Run",
   activityType: "running",
   startedAt: "2026-07-14T07:38:00-07:00",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "device_timezone",
+  },
   durationMin: 64,
   location: {
     mapPreview: {

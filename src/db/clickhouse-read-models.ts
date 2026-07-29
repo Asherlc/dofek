@@ -162,6 +162,9 @@ ranked AS (
     active_activity.name AS name,
     active_activity.notes AS notes,
     active_activity.timezone AS timezone,
+    active_activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+    active_activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+    active_activity.local_time_source AS local_time_source,
     active_activity.raw AS raw,
     coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
   FROM active_activity
@@ -326,7 +329,26 @@ merged AS (
     any(best.source_name) AS source_name,
     argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
     argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
-    argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
+    argMinIf(
+      ranked.timezone,
+      ranked.priority,
+      ranked.local_time_source IN ('provider_timezone', 'device_timezone')
+    ) AS timezone,
+    argMinIf(
+      ranked.start_utc_offset_minutes,
+      ranked.priority,
+      ranked.local_time_source != 'unknown'
+    ) AS start_utc_offset_minutes,
+    argMinIf(
+      ranked.end_utc_offset_minutes,
+      ranked.priority,
+      ranked.local_time_source != 'unknown'
+    ) AS end_utc_offset_minutes,
+    argMinIf(
+      ranked.local_time_source,
+      ranked.priority,
+      ranked.local_time_source != 'unknown'
+    ) AS local_time_source,
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
     arraySort(groupUniqArrayIf(ranked.provider_id, ranked.id IS NOT NULL)) AS source_providers,
     groupArrayIf(
@@ -359,6 +381,9 @@ SELECT
   name,
   notes,
   timezone,
+  start_utc_offset_minutes,
+  end_utc_offset_minutes,
+  coalesce(local_time_source, 'unknown') AS local_time_source,
   raw,
   source_providers,
   source_external_ids,
@@ -438,6 +463,10 @@ ranked AS (
     active_sleep.efficiency_pct AS efficiency_pct,
     active_sleep.sleep_type AS sleep_type,
     active_sleep.source_name AS source_name,
+    active_sleep.timezone AS timezone,
+    active_sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+    active_sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+    active_sleep.local_time_source AS local_time_source,
     coalesce(device_priority_match.sleep_priority, active_provider_priority.sleep_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority,
     multiIf(
       active_sleep.sleep_type IN ('nap', 'late_nap', 'rest'), true,
@@ -523,6 +552,10 @@ best AS (
       ranked.efficiency_pct AS efficiency_pct,
       ranked.sleep_type AS sleep_type,
       ranked.source_name AS source_name,
+      ranked.timezone AS timezone,
+      ranked.start_utc_offset_minutes AS start_utc_offset_minutes,
+      ranked.end_utc_offset_minutes AS end_utc_offset_minutes,
+      ranked.local_time_source AS local_time_source,
       ranked.priority AS priority,
       ranked.is_nap AS is_nap,
       row_number() OVER (
@@ -561,6 +594,10 @@ SELECT
   best.sleep_type AS sleep_type,
   best.is_nap AS is_nap,
   best.source_name AS source_name,
+  best.timezone AS timezone,
+  best.start_utc_offset_minutes AS start_utc_offset_minutes,
+  best.end_utc_offset_minutes AS end_utc_offset_minutes,
+  best.local_time_source AS local_time_source,
   arraySort(groupUniqArray(ranked.provider_id)) AS source_providers
 FROM best
 INNER JOIN final_groups
@@ -581,7 +618,11 @@ GROUP BY
   best.efficiency_pct,
   best.sleep_type,
   best.is_nap,
-  best.source_name`;
+  best.source_name,
+  best.timezone,
+  best.start_utc_offset_minutes,
+  best.end_utc_offset_minutes,
+  best.local_time_source`;
 }
 
 function buildDailyMetricsReadModelSql(): string {

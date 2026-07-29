@@ -1,3 +1,4 @@
+import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "./index.ts";
@@ -76,9 +77,27 @@ function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
 ): ProviderActivityInsert {
-  return values.externalId === normalizedExternalId
-    ? values
-    : { ...values, externalId: normalizedExternalId };
+  const externalIdValues =
+    values.externalId === normalizedExternalId
+      ? values
+      : { ...values, externalId: normalizedExternalId };
+  const timezone = externalIdValues.timezone?.trim();
+  if (!timezone || (externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
+    return externalIdValues;
+  }
+  const context = resolveRecordLocalTimeContext({
+    startedAt: externalIdValues.startedAt,
+    endedAt: externalIdValues.endedAt,
+    timezone,
+    source: "provider_timezone",
+  });
+  return {
+    ...externalIdValues,
+    timezone: context.timezone,
+    startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+    endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+    localTimeSource: context.source,
+  };
 }
 
 /**
@@ -154,13 +173,23 @@ export async function upsertProviderActivity(
   update: ProviderActivityConflictUpdate,
 ): Promise<{ id: string } | undefined> {
   const normalizedExternalId = requireExternalId(values.externalId);
+  const normalizedValues = normalizeProviderActivityInsert(values, normalizedExternalId);
+  const contextUpdate =
+    normalizedValues.localTimeSource && normalizedValues.localTimeSource !== "unknown"
+      ? {
+          timezone: normalizedValues.timezone,
+          startUtcOffsetMinutes: normalizedValues.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: normalizedValues.endUtcOffsetMinutes,
+          localTimeSource: normalizedValues.localTimeSource,
+        }
+      : {};
 
   const [row] = await db
     .insert(activity)
-    .values(normalizeProviderActivityInsert(values, normalizedExternalId))
+    .values(normalizedValues)
     .onConflictDoUpdate({
       target: [activity.userId, activity.providerId, activity.externalId],
-      set: update,
+      set: { ...update, ...contextUpdate },
     })
     .returning({ id: activity.id });
 

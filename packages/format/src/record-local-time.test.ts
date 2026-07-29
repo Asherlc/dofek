@@ -4,6 +4,7 @@ import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
   resolveRecordLocalTimeContext,
+  resolveTimestampOffsetLocalTimeContext,
 } from "./record-local-time.ts";
 
 describe("resolveRecordLocalTimeContext", () => {
@@ -92,6 +93,33 @@ describe("offsetMinutesFromTimestamp", () => {
 
   it("returns null when the timestamp carries no explicit offset", () => {
     expect(offsetMinutesFromTimestamp("2026-01-01T10:00:00")).toBeNull();
+  });
+});
+
+describe("resolveTimestampOffsetLocalTimeContext", () => {
+  it("preserves different boundary offsets", () => {
+    expect(
+      resolveTimestampOffsetLocalTimeContext({
+        startedAtTimestamp: "2026-03-08T01:30:00-08:00",
+        endedAtTimestamp: "2026-03-08T03:30:00-07:00",
+        source: "provider_offset",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -420,
+      source: "provider_offset",
+    });
+  });
+
+  it("returns unknown when either timestamp has no offset", () => {
+    expect(
+      resolveTimestampOffsetLocalTimeContext({
+        startedAtTimestamp: "2026-03-08T01:30:00",
+        endedAtTimestamp: "2026-03-08T03:30:00-07:00",
+        source: "device_offset",
+      }),
+    ).toEqual(localTimeContextUnknown());
   });
 });
 

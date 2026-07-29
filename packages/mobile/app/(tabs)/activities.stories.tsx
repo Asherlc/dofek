@@ -140,6 +140,12 @@ function createStoryData() {
           activityType: "road_cycling",
           startedAt: `${today}T07:30:00Z`,
           endedAt: `${today}T09:00:00Z`,
+          localTimeContext: {
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "device_timezone",
+          },
           durationMin: 90,
           location: {
             centroidLat: 37.7749,
@@ -162,6 +168,12 @@ function createStoryData() {
           activityType: "strength",
           startedAt: `${yesterday}T17:00:00Z`,
           endedAt: `${yesterday}T17:45:00Z`,
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: null,
+            endUtcOffsetMinutes: null,
+            source: "unknown",
+          },
           durationMin: 45,
           location: null,
           tss: 42.1,

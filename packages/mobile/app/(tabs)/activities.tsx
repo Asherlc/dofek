@@ -6,11 +6,14 @@ import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
-  formatTime,
   isToday,
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
+import {
+  formatRecordLocalTime,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
@@ -67,11 +70,20 @@ function formatRouteCoordinate(value: number): string {
   return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
+function displayRecordLocalTime(
+  startedAt: string,
+  localTimeContext: RecordLocalTimeContext,
+): string {
+  const localTime = formatRecordLocalTime(startedAt, localTimeContext, "start");
+  return localTime === "--" ? "Local time unavailable" : localTime;
+}
+
 function formatActivityAccessibilityLabel(
   action: "Open" | "Select" | "Deselect",
   activity: {
     activityType: string;
     durationMin: number;
+    localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
   },
@@ -79,7 +91,7 @@ function formatActivityAccessibilityLabel(
   const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
   const labelParts = [
     activity.name ?? activityTypeLabel,
-    formatTime(activity.startedAt),
+    displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
     formatDurationMinutes(activity.durationMin),
   ];
 
@@ -343,7 +355,7 @@ export default function ActivitiesScreen() {
                         </Text>
                       </View>
                       <Text style={styles.activityMeta}>
-                        {formatTime(activity.startedAt)} ·{" "}
+                        {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
                         {formatDurationMinutes(activity.durationMin)}
                       </Text>
                       <ActivityMetricStrip activity={activity} units={units} />

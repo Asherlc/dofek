@@ -148,6 +148,25 @@ export function offsetMinutesFromTimestamp(timestamp: string): number | null {
   return sign * (hours * 60 + minutes);
 }
 
+export function resolveTimestampOffsetLocalTimeContext(input: {
+  startedAtTimestamp: string;
+  endedAtTimestamp: string;
+  source: "provider_offset" | "device_offset";
+}): RecordLocalTimeContext {
+  const startUtcOffsetMinutes = offsetMinutesFromTimestamp(input.startedAtTimestamp);
+  const endUtcOffsetMinutes = offsetMinutesFromTimestamp(input.endedAtTimestamp);
+  if (startUtcOffsetMinutes == null || endUtcOffsetMinutes == null) {
+    return localTimeContextUnknown();
+  }
+  return resolveRecordLocalTimeContext({
+    startedAt: new Date(input.startedAtTimestamp),
+    endedAt: new Date(input.endedAtTimestamp),
+    startUtcOffsetMinutes,
+    endUtcOffsetMinutes,
+    source: input.source,
+  });
+}
+
 function timeFormatter(locale: string | undefined, timezone: string): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat(locale, {
     hour: "numeric",

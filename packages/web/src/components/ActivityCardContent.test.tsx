@@ -13,6 +13,12 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     name: null,
     activityType: "strength_training",
     startedAt: "2026-07-14T08:46:00.000Z",
+    localTimeContext: {
+      timezone: null,
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_offset",
+    },
     durationMin: 30,
     location: null,
     stats: [{ label: "Training Stress Score", value: "8.5" }],
@@ -23,6 +29,19 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it("renders the stored record-local clock time", () => {
+    render(
+      <ActivityCardContent
+        activity={activity()}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText(/1:46 AM/)).toBeDefined();
+  });
+
   it("renders a details-only card when no route is available", () => {
     render(
       <ActivityCardContent

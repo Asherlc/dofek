@@ -1,4 +1,8 @@
-import { formatDurationMinutes, formatTime } from "@dofek/format/format";
+import { formatDurationMinutes } from "@dofek/format/format";
+import {
+  formatRecordLocalTime,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import {
   formatProviderAbsentTombstoneSummary,
@@ -14,6 +18,7 @@ export interface ActivityCardData {
   name: string | null;
   activityType: string;
   startedAt: string;
+  localTimeContext: RecordLocalTimeContext;
   durationMin: number;
   isProviderAbsent?: boolean;
   providerId?: string;
@@ -45,6 +50,11 @@ export function ActivityCardContent({
     activity.partialAbsentSources ?? [],
   );
   const activityLabel = formatActivityTypeLabel(activity.activityType);
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+  );
 
   return (
     <div
@@ -70,7 +80,8 @@ export function ActivityCardContent({
           <div className="min-w-0">
             <h4 className="truncate text-base font-semibold">{activity.name ?? activityLabel}</h4>
             <p className="mt-0.5 text-xs text-muted">
-              {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
+              {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
+              {formatDurationMinutes(activity.durationMin)}
             </p>
           </div>
         </div>

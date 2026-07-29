@@ -1,3 +1,7 @@
+import {
+  localTimeSourceSchema,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
@@ -33,6 +37,7 @@ export interface CalendarActivityEntry {
   activityType: string;
   startedAt: string;
   endedAt: string | null;
+  localTimeContext: RecordLocalTimeContext;
   durationMin: number;
   location: ActivityLocation | null;
   tss: number | null;
@@ -66,6 +71,10 @@ const activityRowSchema = z.object({
   activity_type: z.string(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.coerce.number().nullable(),
+  end_utc_offset_minutes: z.coerce.number().nullable(),
+  local_time_source: localTimeSourceSchema,
   duration_min: z.coerce.number(),
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
@@ -166,6 +175,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.activity_type AS activity_type,
             toString(activity.started_at) AS started_at,
             toString(activity.ended_at) AS ended_at,
+            activity.timezone AS timezone,
+            activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+            activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+            activity.local_time_source AS local_time_source,
             dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
@@ -244,6 +257,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityType: row.activity_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
+        localTimeContext: {
+          timezone: row.timezone,
+          startUtcOffsetMinutes: row.start_utc_offset_minutes,
+          endUtcOffsetMinutes: row.end_utc_offset_minutes,
+          source: row.local_time_source,
+        },
         durationMin: Math.round(row.duration_min * 10) / 10,
         partialAbsentSources: sourceAttribution.hasPartialAbsence
           ? sourceAttribution.partialAbsentSources()
@@ -291,6 +310,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           activity.activity_type AS activity_type,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
+          activity.timezone AS timezone,
+          activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+          activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+          activity.local_time_source AS local_time_source,
           dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
           NULL AS avg_hr,
           NULL AS max_hr,
@@ -372,6 +395,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityType: row.activity_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
+        localTimeContext: {
+          timezone: row.timezone,
+          startUtcOffsetMinutes: row.start_utc_offset_minutes,
+          endUtcOffsetMinutes: row.end_utc_offset_minutes,
+          source: row.local_time_source,
+        },
         durationMin: Math.round(row.duration_min * 10) / 10,
         location:
           row.centroid_lat != null && row.centroid_lng != null

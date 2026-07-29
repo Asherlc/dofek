@@ -1,10 +1,48 @@
--- Canonical definition of the fitness.v_activity view.
--- This file is the source definition for fresh databases, local test schemas,
--- and future forward migrations that need to update the deployed view.
---
--- To change v_activity: edit THIS file and add a forward migration when the
--- deployed view definition must change.
--- Git merge conflicts here force developers to reconcile concurrent changes.
+ALTER TABLE fitness.activity
+  ADD COLUMN start_utc_offset_minutes smallint,
+  ADD COLUMN end_utc_offset_minutes smallint,
+  ADD COLUMN local_time_source text NOT NULL DEFAULT 'unknown',
+  ADD CONSTRAINT activity_local_time_context_check CHECK (
+    (
+      local_time_source = 'unknown'
+      AND start_utc_offset_minutes IS NULL
+      AND end_utc_offset_minutes IS NULL
+    ) OR (
+      local_time_source IN ('provider_timezone', 'device_timezone')
+      AND NULLIF(btrim(timezone), '') IS NOT NULL
+      AND start_utc_offset_minutes BETWEEN -840 AND 840
+      AND (ended_at IS NULL OR end_utc_offset_minutes BETWEEN -840 AND 840)
+    ) OR (
+      local_time_source IN ('provider_offset', 'device_offset')
+      AND timezone IS NULL
+      AND start_utc_offset_minutes BETWEEN -840 AND 840
+      AND (ended_at IS NULL OR end_utc_offset_minutes BETWEEN -840 AND 840)
+    )
+  );
+
+ALTER TABLE fitness.sleep_session
+  ADD COLUMN timezone text,
+  ADD COLUMN start_utc_offset_minutes smallint,
+  ADD COLUMN end_utc_offset_minutes smallint,
+  ADD COLUMN local_time_source text NOT NULL DEFAULT 'unknown',
+  ADD CONSTRAINT sleep_session_local_time_context_check CHECK (
+    (
+      local_time_source = 'unknown'
+      AND timezone IS NULL
+      AND start_utc_offset_minutes IS NULL
+      AND end_utc_offset_minutes IS NULL
+    ) OR (
+      local_time_source IN ('provider_timezone', 'device_timezone')
+      AND NULLIF(btrim(timezone), '') IS NOT NULL
+      AND start_utc_offset_minutes BETWEEN -840 AND 840
+      AND (ended_at IS NULL OR end_utc_offset_minutes BETWEEN -840 AND 840)
+    ) OR (
+      local_time_source IN ('provider_offset', 'device_offset')
+      AND timezone IS NULL
+      AND start_utc_offset_minutes BETWEEN -840 AND 840
+      AND (ended_at IS NULL OR end_utc_offset_minutes BETWEEN -840 AND 840)
+    )
+  );
 
 CREATE OR REPLACE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
@@ -293,7 +331,6 @@ merged AS (
          'providerId', r.provider_id,
          'externalId', r.external_id,
          'memberActivityId', r.id::text,
-         -- Preserve the per-member upstream app for grouped Apple Health rows.
          'subsource', COALESCE(
            NULLIF(trim(r.raw->>'sourceName'), ''),
            NULLIF(trim(r.source_name), '')

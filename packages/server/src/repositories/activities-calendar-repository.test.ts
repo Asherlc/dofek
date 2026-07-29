@@ -47,7 +47,21 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
   const query = vi.fn();
   for (const rows of rowSets) {
     query.mockImplementationOnce((schema: { parse: (row: Record<string, unknown>) => unknown }) =>
-      Promise.resolve(rows.map((row) => schema.parse(row))),
+      Promise.resolve(
+        rows.map((row) =>
+          schema.parse(
+            "activity_type" in row && "started_at" in row
+              ? {
+                  timezone: null,
+                  start_utc_offset_minutes: null,
+                  end_utc_offset_minutes: null,
+                  local_time_source: "unknown",
+                  ...row,
+                }
+              : row,
+          ),
+        ),
+      ),
     );
   }
   query.mockImplementation(() => {
@@ -115,6 +129,12 @@ function makeCalendarEntry(
     name: overrides.name ?? overrides.id,
     activityType: overrides.activityType ?? "running",
     endedAt: overrides.endedAt ?? overrides.startedAt,
+    localTimeContext: overrides.localTimeContext ?? {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
+    },
     durationMin: overrides.durationMin ?? 60,
     location: overrides.location ?? null,
     tss: overrides.tss ?? null,
@@ -1232,6 +1252,12 @@ describe("ActivitiesCalendarRepository", () => {
       activityType: "indoor_cycling",
       startedAt: "2026-03-18T07:00:00.000Z",
       endedAt: "2026-03-18T08:00:00.000Z",
+      localTimeContext: {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "unknown",
+      },
       durationMin: 60,
       location: null,
       tss: 100,
