@@ -102,6 +102,9 @@ describe("AppHeader", () => {
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Reports").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
+
     expect(screen.getAllByRole("link", { name: "More" })).toHaveLength(2);
     for (const moreLink of screen.getAllByRole("link", { name: "More" })) {
       expect(moreLink.getAttribute("href")).toBe("/more");
