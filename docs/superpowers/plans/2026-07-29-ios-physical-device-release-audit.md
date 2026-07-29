@@ -1,10 +1,5 @@
 # iOS Physical-Device Release Audit TDD Plan
 
-> **For agentic workers:** Apply the repository's test-first rules when this
-> plan changes executable behavior. This issue is documentation-only, so use
-> schema-aware review and spelling/lint validation instead of tests that assert
-> static Markdown content.
-
 **Goal:** Establish a repeatable physical-device release gate for Dofek's
 hardware-dependent iOS and watchOS behavior.
 
@@ -26,8 +21,14 @@ behavior, or add a volatile list of Apple device models.
 
 - The iOS release workflow uploads signed Release archives to TestFlight, but
   the repository has no physical-device release gate.
-- The Simulator cannot prove HealthKit background delivery, Core Bluetooth,
-  Core Motion, Watch Connectivity, or camera behavior.
+- Apple explicitly requires a device for
+  [HealthKit observer background delivery](https://developer.apple.com/documentation/healthkit/executing-observer-queries)
+  and a physical iPhone and Watch for its
+  [Watch Connectivity transfer sample](https://developer.apple.com/documentation/watchconnectivity/transferring-data-with-watch-connectivity).
+- The remaining matrix exercises the real hardware boundaries documented by
+  [Core Bluetooth](https://developer.apple.com/documentation/corebluetooth),
+  [Core Motion](https://developer.apple.com/documentation/coremotion), and
+  [AVFoundation camera authorization](https://developer.apple.com/documentation/avfoundation/requesting-authorization-to-capture-and-save-media).
 - Existing module docs identify individual physical-device boundaries, but
   release evidence is not gathered in one matrix.
 - `pnpm seed` is a development/review-database tool with fixed identifiers and
