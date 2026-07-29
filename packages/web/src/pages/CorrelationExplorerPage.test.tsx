@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{
-  correlationData: Record<string, unknown>;
+  correlationData: Record<string, unknown> | undefined;
+  correlationError: Error | null;
   metricsData:
     | Array<{
         id: string;
@@ -18,6 +19,7 @@ const state = vi.hoisted<{
     | undefined;
 }>(() => ({
   correlationData: {},
+  correlationError: null,
   metricsData: undefined,
 }));
 
@@ -47,7 +49,7 @@ vi.mock("../components/PageLayout.tsx", () => ({
 }));
 
 vi.mock("../components/QueryStatePanel.tsx", () => ({
-  QueryStatePanel: () => null,
+  QueryStatePanel: ({ error }: { error?: Error }) => <div>{error?.message}</div>,
 }));
 
 vi.mock("../components/TimeRangeSelector.tsx", () => ({
@@ -66,7 +68,8 @@ vi.mock("../lib/trpc.ts", () => ({
       computeV2: {
         useQuery: () => ({
           data: state.correlationData,
-          isError: false,
+          error: state.correlationError,
+          isError: state.correlationError !== null,
           isLoading: false,
         }),
       },
@@ -76,6 +79,7 @@ vi.mock("../lib/trpc.ts", () => ({
 
 describe("CorrelationExplorerPage", () => {
   beforeEach(() => {
+    state.correlationError = null;
     state.metricsData = [
       {
         id: "protein",
@@ -118,7 +122,45 @@ describe("CorrelationExplorerPage", () => {
       },
       insight:
         "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
+      interpretationWarning:
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
     };
+  });
+
+  it("prevents selecting the metric already used on the opposite axis", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    const proteinOptions = screen.getAllByRole("option", { name: "Protein (g)" });
+    const heartRateVariabilityOptions = screen.getAllByRole("option", {
+      name: "Heart Rate Variability (ms)",
+    });
+
+    expect(proteinOptions[0]).not.toBeDisabled();
+    expect(proteinOptions[1]).toBeDisabled();
+    expect(heartRateVariabilityOptions[0]).toBeDisabled();
+    expect(heartRateVariabilityOptions[1]).not.toBeDisabled();
+  });
+
+  it("renders the server-authored interpretation warning", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(
+      screen.getByText(
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders the specific server error when a request is rejected", async () => {
+    state.correlationData = undefined;
+    state.correlationError = new Error("Choose two different metrics to compare.");
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Choose two different metrics to compare.")).toBeTruthy();
   });
 
   it("shows sample requirements without inferential statistics when data is insufficient", async () => {

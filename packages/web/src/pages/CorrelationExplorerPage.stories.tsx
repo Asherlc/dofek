@@ -14,6 +14,9 @@ import { CorrelationExplorerPage } from "./CorrelationExplorerPage.tsx";
 
 type CorrelationScenario = "available" | "insufficient";
 
+const interpretationWarning =
+  "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.";
+
 const metrics = [
   {
     id: "protein",
@@ -66,6 +69,7 @@ const availableResult = {
   xStats: { mean: 110, median: 110, stddev: 15.81, min: 90, max: 130, n: 5 },
   yStats: { mean: 54, median: 55, stddev: 6.52, min: 46, max: 63, n: 5 },
   insight: "Higher protein intake tended to coincide with higher heart rate variability.",
+  interpretationWarning,
 };
 
 const insufficientResult = {
@@ -94,6 +98,7 @@ const insufficientResult = {
   },
   insight:
     "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
+  interpretationWarning,
 };
 
 function createMockLink(scenario: CorrelationScenario): TRPCLink<AppRouter> {

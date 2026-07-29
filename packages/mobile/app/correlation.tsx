@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -96,11 +97,13 @@ function MetricPicker({
   selected,
   metrics,
   onSelect,
+  unavailableMetricId,
 }: {
   label: string;
   selected: string;
   metrics: MetricItem[];
   onSelect: (id: string) => void;
+  unavailableMetricId: string;
 }) {
   const grouped = useMemo(() => {
     const groups: Record<string, MetricItem[]> = {};
@@ -123,21 +126,38 @@ function MetricPicker({
           <View key={domain} style={styles.chipGroup}>
             <Text style={styles.chipGroupLabel}>{domain}</Text>
             <View style={styles.chipRow}>
-              {items.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[styles.chip, selected === m.id && styles.chipActive]}
-                  onPress={() => onSelect(m.id)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={m.label}
-                  accessibilityState={{ selected: selected === m.id }}
-                >
-                  <Text style={[styles.chipText, selected === m.id && styles.chipTextActive]}>
-                    {m.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {items.map((m) => {
+                const isUnavailable = m.id === unavailableMetricId;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.chip,
+                      selected === m.id && styles.chipActive,
+                      isUnavailable && styles.chipUnavailable,
+                    ]}
+                    onPress={isUnavailable ? undefined : () => onSelect(m.id)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={m.label}
+                    accessibilityState={{
+                      disabled: isUnavailable,
+                      selected: selected === m.id,
+                    }}
+                    disabled={isUnavailable}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        selected === m.id && styles.chipTextActive,
+                        isUnavailable && styles.chipTextUnavailable,
+                      ]}
+                    >
+                      {m.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         ))}
@@ -350,8 +370,20 @@ export default function CorrelationScreen() {
       {/* Metric pickers */}
       {metrics.length > 0 && (
         <>
-          <MetricPicker label="X Axis" selected={metricX} metrics={metrics} onSelect={setMetricX} />
-          <MetricPicker label="Y Axis" selected={metricY} metrics={metrics} onSelect={setMetricY} />
+          <MetricPicker
+            label="X Axis"
+            selected={metricX}
+            metrics={metrics}
+            onSelect={setMetricX}
+            unavailableMetricId={metricY}
+          />
+          <MetricPicker
+            label="Y Axis"
+            selected={metricY}
+            metrics={metrics}
+            onSelect={setMetricY}
+            unavailableMetricId={metricX}
+          />
         </>
       )}
 
@@ -391,6 +423,22 @@ export default function CorrelationScreen() {
         <View style={styles.warningCard}>
           <Text style={styles.warningText}>Select two different metrics to compare.</Text>
         </View>
+      )}
+
+      {metricsQuery.isError && (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(metricsQuery.error)}
+          minHeight={72}
+        />
+      )}
+
+      {correlationQuery.isError && metricX !== metricY && (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(correlationQuery.error)}
+          minHeight={72}
+        />
       )}
 
       {/* Loading */}
@@ -451,6 +499,7 @@ export default function CorrelationScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Finding</Text>
             <Text style={styles.insightText}>{data.insight}</Text>
+            <Text style={styles.interpretationWarning}>{data.interpretationWarning}</Text>
 
             {data.availability === "available" && hasMetricMetadata && (
               <View style={styles.statsGrid}>
@@ -587,6 +636,9 @@ const styles = StyleSheet.create({
   chipActive: {
     backgroundColor: colors.accent,
   },
+  chipUnavailable: {
+    opacity: 0.45,
+  },
   chipText: {
     fontSize: 12,
     color: colors.textSecondary,
@@ -594,6 +646,9 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.text,
     fontWeight: "600",
+  },
+  chipTextUnavailable: {
+    color: colors.textSecondary,
   },
 
   lagHint: {
@@ -645,6 +700,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
+  },
+  interpretationWarning: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   statsGrid: {

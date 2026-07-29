@@ -165,6 +165,17 @@ vi.mock("../lib/trpc.ts", () => {
         macroRatios: recordQuery("nutritionAnalytics.macroRatios"),
         micronutrientAdequacyV2: recordQuery("nutritionAnalytics.micronutrientAdequacyV2", {
           nutrients: [],
+          dataQuality: {
+            selectedWindowDays: 30,
+            daysWithData: 0,
+            usableDays: 0,
+            overlapDays: 0,
+            conflictDays: 0,
+            completenessPercent: 0,
+            sourceLabels: [],
+            contributingSourceLabels: [],
+            excludedSourceLabels: [],
+          },
           professionalReview: null,
         }),
       },

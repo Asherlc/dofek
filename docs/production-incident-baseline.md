@@ -20420,3 +20420,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If the same endpoint returns another 504,
   leave the PR blocked with the exact external evidence rather than adding a
   retry or weakening the required-secret failure.
+## 2026-07-29 — iOS Native Secret Fetch Returned Gateway Timeout
+
+- **Status:** External Infisical gateway failure identified on PR #2313;
+  replacement exact-head CI pending.
+- **Symptoms:** `Build Mobile / iOS Native Build` failed before Xcode or native
+  compilation started.
+- **User impact:** No production users were affected. PR #2313 remained blocked
+  from merge.
+- **Evidence:** The exact failed step was `Export Infisical secrets`, which ran
+  `infisical secrets get EXPO_PUBLIC_SENTRY_DSN --env=prod`. Its first fatal
+  line was `Failed to fetch Infisical secret: EXPO_PUBLIC_SENTRY_DSN`; the
+  immediately preceding request to Infisical's `/api/v4/secrets` endpoint
+  returned `504 Gateway Timeout`. Checkout, dependency installation, GitHub
+  OIDC token minting, Infisical login, and CLI installation had already
+  succeeded. The later `ccache: command not found` cleanup error was secondary
+  to the failed secret-load step.
+- **Root cause:** Infisical's secrets API gateway timed out while the
+  authenticated CLI fetched a required production secret. The
+  [Infisical CLI documentation](https://infisical.com/docs/cli/commands/secrets)
+  documents `infisical secrets get` as the command that retrieves requested
+  secret values; the application and native build were not reached.
+- **Fix / mitigation:** Schedule replacement exact-head CI after the external
+  service recovers. No secret fallback, cached value, retry, timeout, or native
+  build behavior changed.
+- **Validation:** The same iOS native job passed on the preceding PR head, and
+  the rebased head passes 69 focused shared/server/web tests, six mobile tests,
+  nutrition/server/web/mobile typechecks, cspell, and diff validation. The
+  replacement exact-head job must fetch all required secrets and complete the
+  iOS build before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly receive
+  gateway errors from the secrets endpoint, investigate Infisical service
+  availability with the captured request evidence before changing workflow
+  behavior.

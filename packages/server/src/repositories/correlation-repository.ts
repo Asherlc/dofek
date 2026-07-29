@@ -63,6 +63,9 @@ const METRIC_EXTRACTORS = new Map<string, JoinedDayExtractor>(
 
 const METRIC_LABEL_MAP = new Map(CORRELATION_METRICS.map((m) => [m.id, m.label]));
 
+const CORRELATION_INTERPRETATION_WARNING =
+  "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.";
+
 export function extractMetricValue(day: JoinedDay, metricId: string): number | null {
   const extractor = METRIC_EXTRACTORS.get(metricId);
   if (!extractor) return null;
@@ -255,6 +258,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
       coverage: analysis.coverage,
       uncertainty: unavailableUncertainty(analysis.observations.length, "insufficient_pairs"),
       insight: `Insufficient data to describe the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} paired calendar ${pairCount === 1 ? "day" : "days"}; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "is" : "are"} required).`,
+      interpretationWarning: CORRELATION_INTERPRETATION_WARNING,
     };
   }
 
@@ -295,6 +299,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
     xStats,
     yStats,
     insight,
+    interpretationWarning: CORRELATION_INTERPRETATION_WARNING,
   };
 }
 

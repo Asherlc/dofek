@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
@@ -116,6 +117,7 @@ const correlationV2BaseShape = {
   coverage: correlationCoverageSchema,
   uncertainty: correlationUncertaintySchema,
   insight: z.string(),
+  interpretationWarning: z.string(),
 };
 
 const correlationComputeV2OutputSchema = z.discriminatedUnion("availability", [
@@ -149,6 +151,15 @@ function correlationInputSchema(endpoint: "correlation.compute" | "correlation.c
   });
 }
 
+function assertDistinctMetrics(metricX: string, metricY: string): void {
+  if (metricX === metricY) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Choose two different metrics to compare.",
+    });
+  }
+}
+
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
 export const correlationRouter = router({
@@ -164,6 +175,7 @@ export const correlationRouter = router({
     CacheTTL.MEDIUM,
     correlationInputSchema("correlation.compute"),
     async ({ ctx, input, range }) => {
+      assertDistinctMetrics(input.metricX, input.metricY);
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.compute(
         input.metricX,
@@ -181,6 +193,7 @@ export const correlationRouter = router({
     CacheTTL.MEDIUM,
     correlationInputSchema("correlation.computeV2"),
     async ({ ctx, input, range }) => {
+      assertDistinctMetrics(input.metricX, input.metricY);
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.computeV2(
         input.metricX,
