@@ -1,8 +1,5 @@
 # Sync Action Hierarchy TDD Plan
 
-> **For agentic workers:** Implement each behavior in test-first order. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make routine recent sync the clear primary action while protecting
 full-history sync with an accurate explanation, confirmation, and end-to-end
 single-flight behavior on web and mobile.

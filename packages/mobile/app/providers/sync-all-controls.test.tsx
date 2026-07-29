@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type React from "react";
 import { describe, expect, it, vi } from "vitest";
 
-const setAccessibilityFocus = vi.hoisted(() => vi.fn());
+const sendAccessibilityEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => {
   const ReactModule = require("react");
@@ -17,6 +17,7 @@ vi.mock("react-native", () => {
         accessibilityLabel,
         accessibilityRole,
         accessibilityState,
+        accessible,
         activeOpacity: _activeOpacity,
         children,
         disabled,
@@ -47,6 +48,7 @@ vi.mock("react-native", () => {
               ? accessibilityState.disabled
               : undefined,
           "aria-label": accessibilityLabel,
+          "data-accessible": accessible,
           disabled,
           onClick: onPress,
           role: accessibilityRole,
@@ -80,9 +82,8 @@ vi.mock("react-native", () => {
       : null;
   };
   return {
-    AccessibilityInfo: { setAccessibilityFocus },
+    AccessibilityInfo: { sendAccessibilityEvent },
     ActivityIndicator: () => ReactModule.createElement("span", { role: "progressbar" }),
-    findNodeHandle: () => 42,
     Modal,
     StyleSheet: { create: (styles: Record<string, unknown>) => styles },
     Text,
@@ -160,7 +161,8 @@ describe("SyncAllControls", () => {
     const dialog = screen.getByRole("dialog", { name: "Full sync confirmation" });
     const actions = within(dialog).getAllByRole("button");
     expect(actions.map((action) => action.textContent)).toEqual(["Cancel", "Start full sync"]);
-    await waitFor(() => expect(setAccessibilityFocus).toHaveBeenCalledWith(42));
+    expect(actions[0]?.getAttribute("data-accessible")).toBe("true");
+    await waitFor(() => expect(sendAccessibilityEvent).toHaveBeenCalledWith(actions[0], "focus"));
 
     fireEvent.click(dialog);
     expect(screen.queryByRole("dialog")).toBeNull();

@@ -12,6 +12,7 @@ const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 const mockAlert = vi.hoisted(() => vi.fn());
+const mockSendAccessibilityEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -50,45 +51,53 @@ vi.mock("react-native", () => ({
   },
   RefreshControl: () => null,
   Alert: { alert: mockAlert },
-  TouchableOpacity: ({
-    children,
-    onPress,
-    disabled,
-    ...props
-  }: {
-    children?: React.ReactNode;
-    onPress?: () => void;
-    disabled?: boolean;
-  } & Record<string, unknown>) => {
-    const {
-      accessibilityLabel,
-      accessibilityRole,
-      accessibilityState,
-      style: _s,
-      activeOpacity: _ao,
-      testID,
-      ...rest
-    } = props;
-    const state =
-      typeof accessibilityState === "object" && accessibilityState !== null
-        ? accessibilityState
-        : {};
-    return React.createElement(
-      "button",
+  TouchableOpacity: React.forwardRef(
+    (
       {
-        type: "button",
-        onClick: onPress,
+        children,
+        onPress,
         disabled,
-        "aria-busy": "busy" in state ? state.busy : undefined,
-        "aria-disabled": "disabled" in state ? state.disabled : undefined,
-        "aria-label": accessibilityLabel,
-        role: accessibilityRole ?? "presentation",
-        ...(testID ? { "data-testid": testID } : {}),
-        ...rest,
-      },
-      children,
-    );
-  },
+        ...props
+      }: {
+        children?: React.ReactNode;
+        onPress?: () => void;
+        disabled?: boolean;
+      } & Record<string, unknown>,
+      ref: React.ForwardedRef<HTMLButtonElement>,
+    ) => {
+      const {
+        accessibilityLabel,
+        accessibilityRole,
+        accessibilityState,
+        accessible,
+        style: _s,
+        activeOpacity: _ao,
+        testID,
+        ...rest
+      } = props;
+      const state =
+        typeof accessibilityState === "object" && accessibilityState !== null
+          ? accessibilityState
+          : {};
+      return React.createElement(
+        "button",
+        {
+          type: "button",
+          ref,
+          onClick: onPress,
+          disabled,
+          "aria-busy": "busy" in state ? state.busy : undefined,
+          "aria-disabled": "disabled" in state ? state.disabled : undefined,
+          "aria-label": accessibilityLabel,
+          "data-accessible": accessible,
+          role: accessibilityRole ?? "presentation",
+          ...(testID ? { "data-testid": testID } : {}),
+          ...rest,
+        },
+        children,
+      );
+    },
+  ),
   TextInput: ({
     placeholder,
     value,
@@ -125,18 +134,13 @@ vi.mock("react-native", () => ({
     children?: React.ReactNode;
     visible?: boolean;
   } & Record<string, unknown>) => {
-    if (!visible) return null;
-    const {
-      animationType: _at,
-      transparent: _t,
-      onRequestClose: _orc,
-      onShow: _os,
-      ...rest
-    } = props;
-    return React.createElement("div", { role: "dialog", ...rest }, children);
+    const { animationType: _at, transparent: _t, onRequestClose: _orc, onShow, ...rest } = props;
+    React.useEffect(() => {
+      if (visible) onShow?.();
+    }, [onShow, visible]);
+    return visible ? React.createElement("div", { role: "dialog", ...rest }, children) : null;
   },
-  AccessibilityInfo: { setAccessibilityFocus: vi.fn() },
-  findNodeHandle: () => 1,
+  AccessibilityInfo: { sendAccessibilityEvent: mockSendAccessibilityEvent },
   Image: ({
     source: _source,
     style: _style,
@@ -959,6 +963,7 @@ describe("ProvidersScreen", () => {
     mockImportSharedFile.mockReset();
     mockGetDocumentAsync.mockReset();
     mockAlert.mockReset();
+    mockSendAccessibilityEvent.mockReset();
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
@@ -1747,6 +1752,10 @@ describe("ProvidersScreen", () => {
     fireEvent.click(screen.getByText("Sync full history…"));
     expect(screen.getByText(/all history each connected provider makes available/i)).toBeTruthy();
     expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+    const cancelButton = screen.getByText("Cancel").closest("button");
+    await waitFor(() =>
+      expect(mockSendAccessibilityEvent).toHaveBeenCalledWith(cancelButton, "focus"),
+    );
     fireEvent.click(screen.getByText("Start full sync"));
 
     await waitFor(() => {

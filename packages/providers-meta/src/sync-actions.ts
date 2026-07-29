@@ -3,8 +3,8 @@ export const ROUTINE_SYNC_DAYS = 7;
 export const SYNC_ALL_ACTIONS = {
   recent: {
     label: "Sync recent data",
-    accessibilityLabel: "Sync all providers for the last 7 days",
-    description: "Updates the last 7 days for every connected provider.",
+    accessibilityLabel: `Sync all providers for the last ${ROUTINE_SYNC_DAYS} days`,
+    description: `Updates the last ${ROUTINE_SYNC_DAYS} days for every connected provider.`,
   },
   full: {
     label: "Sync full history…",

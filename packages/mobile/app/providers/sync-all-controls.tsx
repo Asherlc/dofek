@@ -3,7 +3,6 @@ import { type ComponentRef, useCallback, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  findNodeHandle,
   Modal,
   StyleSheet,
   Text,
@@ -29,9 +28,8 @@ export function SyncAllControls({
   const cancelRef = useRef<ComponentRef<typeof TouchableOpacity>>(null);
   const closeConfirmation = useCallback(() => setConfirmationOpen(false), []);
   const focusCancel = useCallback(() => {
-    const cancelNode = findNodeHandle(cancelRef.current);
-    if (cancelNode !== null) {
-      AccessibilityInfo.setAccessibilityFocus(cancelNode);
+    if (cancelRef.current) {
+      AccessibilityInfo.sendAccessibilityEvent(cancelRef.current, "focus");
     }
   }, []);
 
@@ -94,6 +92,7 @@ export function SyncAllControls({
             <View style={styles.actions}>
               <TouchableOpacity
                 ref={cancelRef}
+                accessible
                 onPress={closeConfirmation}
                 activeOpacity={0.7}
                 accessibilityRole="button"

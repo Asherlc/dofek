@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import { Queue, QueueEvents, Worker } from "bullmq";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerSyncRequestQueryResolver } from "../lib/sync-request-query.ts";
 import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
 import type { SyncJobData } from "./queues.ts";
@@ -10,7 +10,11 @@ import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-req
 registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
 
 function testRedisConnection(): ConnectionOptions {
-  const parsed = new URL(process.env.REDIS_URL ?? "redis://localhost:6379");
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    throw new Error("REDIS_URL is required for BullMQ integration tests");
+  }
+  const parsed = new URL(redisUrl);
   return {
     host: parsed.hostname,
     port: Number(parsed.port || "6379"),
@@ -23,7 +27,10 @@ describe("full sync BullMQ lifecycle deduplication", () => {
   const cleanup: Array<() => Promise<void>> = [];
 
   afterEach(async () => {
-    await Promise.all(cleanup.splice(0).map((close) => close()));
+    while (cleanup.length > 0) {
+      const close = cleanup.pop();
+      if (close) await close();
+    }
   });
 
   function createQueue(suffix: string) {
@@ -32,13 +39,22 @@ describe("full sync BullMQ lifecycle deduplication", () => {
       connection,
     });
     const events = new QueueEvents(queue.name, { connection });
-    cleanup.push(async () => events.close());
     cleanup.push(async () => {
       await queue.obliterate({ force: true });
       await queue.close();
     });
+    cleanup.push(async () => events.close());
     return { connection, events, queue };
   }
+
+  it("fails loudly when REDIS_URL is missing", () => {
+    vi.stubEnv("REDIS_URL", "");
+    try {
+      expect(testRedisConnection).toThrow("REDIS_URL is required for BullMQ integration tests");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
   async function enqueueFull(
     queue: Queue<SyncJobData>,

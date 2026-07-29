@@ -5,9 +5,13 @@ describe("SYNC_ALL_ACTIONS", () => {
   it("defines the routine action as a recent seven-day sync", () => {
     expect(ROUTINE_SYNC_DAYS).toBe(7);
     expect(SYNC_ALL_ACTIONS.recent.label).toMatch(/recent/i);
-    expect(SYNC_ALL_ACTIONS.recent.description).toMatch(/last 7 days/i);
+    expect(SYNC_ALL_ACTIONS.recent.description).toMatch(
+      new RegExp(`last ${ROUTINE_SYNC_DAYS} days`, "i"),
+    );
     expect(SYNC_ALL_ACTIONS.recent.accessibilityLabel).toMatch(/all providers/i);
-    expect(SYNC_ALL_ACTIONS.recent.accessibilityLabel).toMatch(/last 7 days/i);
+    expect(SYNC_ALL_ACTIONS.recent.accessibilityLabel).toMatch(
+      new RegExp(`last ${ROUTINE_SYNC_DAYS} days`, "i"),
+    );
   });
 
   it("explains the material full-history impact in layman-readable language", () => {
