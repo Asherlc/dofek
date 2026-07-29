@@ -456,9 +456,9 @@ describe("MenstrualCycleRepository", () => {
     it("rejects an end date before the corrected start date without writing", async () => {
       const { repo, execute } = makeRepository();
 
-      await expect(
-        repo.updatePeriod("period-1", "2025-02-10", "2025-02-09", null),
-      ).rejects.toThrow("Period end date cannot be before start date.");
+      await expect(repo.updatePeriod("period-1", "2025-02-10", "2025-02-09", null)).rejects.toThrow(
+        "Period end date cannot be before start date.",
+      );
       expect(execute).not.toHaveBeenCalled();
     });
 
@@ -473,12 +473,7 @@ describe("MenstrualCycleRepository", () => {
         },
       ]);
 
-      const result = await repo.updatePeriod(
-        "period-1",
-        "2025-02-10",
-        "2025-02-12",
-        "Corrected",
-      );
+      const result = await repo.updatePeriod("period-1", "2025-02-10", "2025-02-12", "Corrected");
 
       expect(result).toEqual({
         id: "period-1",

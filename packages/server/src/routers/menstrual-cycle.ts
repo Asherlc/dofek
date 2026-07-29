@@ -1,5 +1,5 @@
-import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { TRPCError } from "@trpc/server";
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import {
   type CurrentPhaseResult,
@@ -57,32 +57,27 @@ export const menstrualCycleRouter = router({
   ),
 
   /** Log a new period start/end */
-  logPeriod: protectedProcedure
-    .input(periodInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
-      const period = await repo.logPeriod(input.startDate, input.endDate, input.notes);
-      if (period !== null) {
-        await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
-      }
-      return period;
-    }),
-
-  /** Correct an existing period by its stable ID. */
-  updatePeriod: protectedProcedure.input(periodUpdateInputSchema).mutation(async ({ ctx, input }) => {
+  logPeriod: protectedProcedure.input(periodInputSchema).mutation(async ({ ctx, input }) => {
     const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
-    const period = await repo.updatePeriod(
-      input.id,
-      input.startDate,
-      input.endDate,
-      input.notes,
-    );
-    if (period === null) {
-      throw periodNotFoundError();
+    const period = await repo.logPeriod(input.startDate, input.endDate, input.notes);
+    if (period !== null) {
+      await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
     }
-    await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
     return period;
   }),
+
+  /** Correct an existing period by its stable ID. */
+  updatePeriod: protectedProcedure
+    .input(periodUpdateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
+      const period = await repo.updatePeriod(input.id, input.startDate, input.endDate, input.notes);
+      if (period === null) {
+        throw periodNotFoundError();
+      }
+      await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
+      return period;
+    }),
 
   /** Delete an erroneous period by its stable ID. */
   deletePeriod: protectedProcedure.input(periodIdInputSchema).mutation(async ({ ctx, input }) => {

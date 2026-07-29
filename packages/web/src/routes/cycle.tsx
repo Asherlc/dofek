@@ -12,6 +12,13 @@ export const Route = createFileRoute("/cycle")({
   component: CyclePage,
 });
 
+interface PeriodEditDraft {
+  id: string;
+  startDate: string;
+  endDate: string;
+  notes: string;
+}
+
 function CyclePage() {
   const currentPhase = trpc.menstrualCycle.currentPhase.useQuery();
   const periodHistory = trpc.menstrualCycle.history.useQuery({
@@ -19,17 +26,40 @@ function CyclePage() {
   });
 
   const [startDate, setStartDate] = useState(formatDateYmd());
+  const [editDraft, setEditDraft] = useState<PeriodEditDraft | null>(null);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const utils = trpc.useUtils();
+  const invalidateCycleData = async () => {
+    await Promise.all([
+      utils.menstrualCycle.currentPhase.invalidate(),
+      utils.menstrualCycle.history.invalidate(),
+    ]);
+  };
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
     meta: locallyReportedErrorMeta,
-    onSuccess: async () => {
-      await Promise.all([
-        utils.menstrualCycle.currentPhase.invalidate(),
-        utils.menstrualCycle.history.invalidate(),
-      ]);
-    },
+    onSuccess: invalidateCycleData,
     onError: (error) => {
       captureException(error, { context: "cycle-log-period" });
+    },
+  });
+  const updateMutation = trpc.menstrualCycle.updatePeriod.useMutation({
+    meta: locallyReportedErrorMeta,
+    onSuccess: async () => {
+      setEditDraft(null);
+      await invalidateCycleData();
+    },
+    onError: (error) => {
+      captureException(error, { context: "cycle-update-period" });
+    },
+  });
+  const deleteMutation = trpc.menstrualCycle.deletePeriod.useMutation({
+    meta: locallyReportedErrorMeta,
+    onSuccess: async () => {
+      setDeleteConfirmationId(null);
+      await invalidateCycleData();
+    },
+    onError: (error) => {
+      captureException(error, { context: "cycle-delete-period" });
     },
   });
 
@@ -67,9 +97,7 @@ function CyclePage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-dim">
-                No active cycle detected. Log a period start to begin tracking.
-              </p>
+              <p className="text-sm text-dim">{currentPhase.data.availability.label}</p>
             )
           ) : currentPhase.isLoading ? (
             <QueryStatePanel variant="loading" height={96} />
@@ -131,19 +159,167 @@ function CyclePage() {
             periodHistory.data.length > 0 ? (
               <div className="space-y-2">
                 {[...periodHistory.data].reverse().map((period) => (
-                  <div
-                    key={period.id}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                  >
-                    <div>
-                      <span className="text-sm text-foreground">{period.startDate}</span>
-                      {period.endDate && (
-                        <span className="text-sm text-dim ml-1">to {period.endDate}</span>
-                      )}
-                    </div>
-                    {period.durationLabel && (
-                      <span className="text-xs text-muted">{period.durationLabel}</span>
+                  <div key={period.id} className="py-3 border-b border-border last:border-0">
+                    {editDraft?.id === period.id ? (
+                      <form
+                        className="space-y-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          updateMutation.mutate({
+                            id: editDraft.id,
+                            startDate: editDraft.startDate,
+                            endDate: editDraft.endDate || null,
+                            notes: editDraft.notes.trim() || null,
+                          });
+                        }}
+                      >
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="space-y-1 text-xs text-muted">
+                            Start date
+                            <input
+                              aria-label="Corrected period start date"
+                              className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                              onChange={(event) =>
+                                setEditDraft({ ...editDraft, startDate: event.target.value })
+                              }
+                              type="date"
+                              value={editDraft.startDate}
+                            />
+                          </label>
+                          <label className="space-y-1 text-xs text-muted">
+                            End date (optional)
+                            <input
+                              aria-label="Corrected period end date"
+                              className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                              min={editDraft.startDate}
+                              onChange={(event) =>
+                                setEditDraft({ ...editDraft, endDate: event.target.value })
+                              }
+                              type="date"
+                              value={editDraft.endDate}
+                            />
+                          </label>
+                        </div>
+                        <label className="block space-y-1 text-xs text-muted">
+                          Notes (optional)
+                          <input
+                            aria-label="Period notes"
+                            className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                            onChange={(event) =>
+                              setEditDraft({ ...editDraft, notes: event.target.value })
+                            }
+                            type="text"
+                            value={editDraft.notes}
+                          />
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            aria-label={
+                              updateMutation.error ? "Retry period changes" : "Save period changes"
+                            }
+                            className="rounded bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+                            disabled={updateMutation.isPending}
+                            type="submit"
+                          >
+                            {updateMutation.isPending
+                              ? "Saving..."
+                              : updateMutation.error
+                                ? "Retry"
+                                : "Save"}
+                          </button>
+                          <button
+                            className="rounded border border-border px-3 py-2 text-sm text-foreground"
+                            onClick={() => {
+                              updateMutation.reset();
+                              setEditDraft(null);
+                            }}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {updateMutation.error ? (
+                          <QueryStatePanel error={updateMutation.error} height={72} />
+                        ) : null}
+                      </form>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <span className="text-sm text-foreground">{period.startDate}</span>
+                          {period.endDate ? (
+                            <span className="ml-1 text-sm text-dim">to {period.endDate}</span>
+                          ) : null}
+                          {period.notes ? (
+                            <p className="mt-1 text-xs text-muted">{period.notes}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {period.durationLabel ? (
+                            <span className="text-xs text-muted">{period.durationLabel}</span>
+                          ) : null}
+                          <button
+                            aria-label={`Edit period starting ${period.startDate}`}
+                            className="rounded border border-border px-2 py-1 text-xs text-foreground"
+                            onClick={() => {
+                              updateMutation.reset();
+                              deleteMutation.reset();
+                              setDeleteConfirmationId(null);
+                              setEditDraft({
+                                id: period.id,
+                                startDate: period.startDate,
+                                endDate: period.endDate ?? "",
+                                notes: period.notes ?? "",
+                              });
+                            }}
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                          {deleteConfirmationId === period.id ? (
+                            <>
+                              <button
+                                aria-label="Confirm delete period"
+                                className="rounded bg-danger px-2 py-1 text-xs text-white disabled:opacity-50"
+                                disabled={deleteMutation.isPending}
+                                onClick={() => deleteMutation.mutate({ id: period.id })}
+                                type="button"
+                              >
+                                {deleteMutation.isPending ? "Deleting..." : "Confirm delete"}
+                              </button>
+                              <button
+                                className="rounded border border-border px-2 py-1 text-xs text-foreground"
+                                onClick={() => {
+                                  deleteMutation.reset();
+                                  setDeleteConfirmationId(null);
+                                }}
+                                type="button"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              aria-label={`Delete period starting ${period.startDate}`}
+                              className="rounded border border-danger px-2 py-1 text-xs text-danger"
+                              onClick={() => {
+                                updateMutation.reset();
+                                deleteMutation.reset();
+                                setEditDraft(null);
+                                setDeleteConfirmationId(period.id);
+                              }}
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     )}
+                    {deleteConfirmationId === period.id && deleteMutation.error ? (
+                      <div className="mt-2">
+                        <QueryStatePanel error={deleteMutation.error} height={72} />
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

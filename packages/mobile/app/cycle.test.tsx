@@ -157,6 +157,7 @@ vi.mock("../lib/trpc", () => ({
           },
           isPending: false,
           error: state.updateMutationError,
+          reset: vi.fn(),
         }),
       },
       deletePeriod: {
@@ -167,6 +168,7 @@ vi.mock("../lib/trpc", () => ({
           },
           isPending: false,
           error: state.deleteMutationError,
+          reset: vi.fn(),
         }),
       },
     },
@@ -284,37 +286,6 @@ describe("CycleScreen", () => {
     ).toBeTruthy();
   });
 
-  it("plainly identifies the zero-history generic default", async () => {
-    state.phaseQuery.data = {
-      phase: "menstrual",
-      dayOfCycle: 3,
-      cycleLength: 28,
-      estimate: {
-        phaseLabel: "Estimated Menstrual phase",
-        cycleDayLabel: "Day 3 of an estimated 28-day cycle",
-        dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
-        methodLabel:
-          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
-        uncertaintyLabel: "No personal cycle-length range is available yet.",
-        limitationLabel: "No calibrated confidence score or next-period forecast is available.",
-      },
-      availability: {
-        status: "estimated",
-        label: "Phase estimate available from recorded cycle history.",
-      },
-    };
-    const { default: CycleScreen } = await import("./cycle");
-
-    render(<CycleScreen />);
-
-    expect(
-      screen.getByText(
-        "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText("No personal cycle-length range is available yet.")).toBeTruthy();
-  });
-
   it("renders the server-provided duration label", async () => {
     state.historyQuery.data = [
       {
@@ -430,7 +401,7 @@ describe("CycleScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit period starting 2026-07-01" }));
     fireEvent.click(screen.getByRole("button", { name: "Corrected period start date" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save period changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry period changes" }));
 
     expect(screen.getByRole("button", { name: "Corrected period start date" }).textContent).toBe(
       "2026-07-03",

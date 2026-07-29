@@ -97,7 +97,9 @@ describe("MenstrualCycleRepository period durations", () => {
     );
     const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
 
-    await expect(repository.updatePeriod(otherPeriodId, "2099-03-02", null, null)).resolves.toBeNull();
+    await expect(
+      repository.updatePeriod(otherPeriodId, "2099-03-02", null, null),
+    ).resolves.toBeNull();
     await expect(repository.deletePeriod(otherPeriodId)).resolves.toBe(false);
     await expect(repository.deletePeriod(ownedPeriodId)).resolves.toBe(true);
 
