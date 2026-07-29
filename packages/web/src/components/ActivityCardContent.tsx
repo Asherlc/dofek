@@ -49,7 +49,11 @@ export function ActivityCardContent({
   return (
     <div
       data-testid="activity-card-layout"
-      className="grid min-h-60 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
+      className={
+        activity.location
+          ? "grid min-h-60 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
+          : "grid min-h-60"
+      }
     >
       <div className="flex min-w-0 flex-col p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -85,24 +89,20 @@ export function ActivityCardContent({
           <ActivityMetricGrid activity={activity} units={units} />
         </div>
       </div>
-      <div
-        data-testid="activity-secondary-panel"
-        className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
-      >
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Route</p>
+      {activity.location ? (
         <div
-          data-testid="activity-secondary-inset"
-          className="mt-3 min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
+          data-testid="activity-secondary-panel"
+          className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
         >
-          {activity.location ? (
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Route</p>
+          <div
+            data-testid="activity-secondary-inset"
+            className="mt-3 min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
+          >
             <ActivityMapTile location={activity.location} variant="panel" />
-          ) : (
-            <div className="flex h-full min-h-48 items-center justify-center text-sm text-muted">
-              No route recorded
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
