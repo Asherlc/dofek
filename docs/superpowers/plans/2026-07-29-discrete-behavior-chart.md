@@ -56,7 +56,7 @@ accessibility.
 - [x] Add a mixed point/line option test to `TimeSeriesChart.test.ts`.
 - [x] Add a mixed boolean/numeric classification test to `JournalPanel.test.tsx`.
 - [x] Run
-  `rtk pnpm test -- --run packages/web/src/components/TimeSeriesChart.test.ts packages/web/src/components/JournalPanel.test.tsx`.
+  `rtk pnpm exec vitest --project unit --run packages/web/src/components/TimeSeriesChart.test.ts packages/web/src/components/JournalPanel.test.tsx`.
 - [x] Confirm failure because explicit point-series semantics do not exist yet.
 
 ### Task 2: Implement Minimal Fix
