@@ -236,6 +236,37 @@ describe("MenstrualCycleRepository", () => {
       });
     });
 
+    it("allows the inclusive regular-cycle and variation boundaries", async () => {
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "26",
+          minimumCycleLength: 21,
+          maximumCycleLength: 30,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result.availability.status).toBe("estimated");
+      expect(result.cycleLength).toBe(26);
+    });
+
+    it("withholds a phase model when recorded variation exceeds nine days", async () => {
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "26",
+          minimumCycleLength: 21,
+          maximumCycleLength: 31,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result.availability.status).toBe("irregular-history");
+      expect(result.phase).toBeNull();
+      expect(result.cycleLength).toBeNull();
+    });
+
     it("withholds a phase model when a recorded interval is outside 21 to 35 days", async () => {
       const { repo } = makeRepository([
         phaseRow({
@@ -251,6 +282,24 @@ describe("MenstrualCycleRepository", () => {
       expect(result.availability.status).toBe("irregular-history");
       expect(result.phase).toBeNull();
       expect(result.cycleLength).toBeNull();
+    });
+
+    it("keeps an estimate through the inclusive expected cycle window", async () => {
+      const { repo } = makeRepository([phaseRow()]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-02-18T12:00:00Z"));
+
+      expect(result.dayOfCycle).toBe(35);
+      expect(result.availability.status).toBe("estimated");
+    });
+
+    it("withholds an estimate immediately beyond the expected cycle window", async () => {
+      const { repo } = makeRepository([phaseRow()]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-02-19T12:00:00Z"));
+
+      expect(result.dayOfCycle).toBeNull();
+      expect(result.availability.status).toBe("stale-history");
     });
 
     it("rounds average cycle length to nearest integer", async () => {

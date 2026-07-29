@@ -124,13 +124,10 @@ function buildCyclePhaseEstimate({
   minimumCycleLength: number;
   maximumCycleLength: number;
 }): CyclePhaseEstimate {
-  const completedCycleNoun = completedCycleCount === 1 ? "cycle" : "cycles";
-  const methodLabel = `Phase and cycle length use the average of ${completedCycleCount} completed ${completedCycleNoun}.`;
+  const methodLabel = `Phase and cycle length use the average of ${completedCycleCount} completed cycles.`;
   const uncertaintyLabel =
     minimumCycleLength === maximumCycleLength
-      ? completedCycleCount === 1
-        ? `The recorded cycle length was ${minimumCycleLength} days.`
-        : `All ${completedCycleCount} recorded cycles were ${minimumCycleLength} days long.`
+      ? `All ${completedCycleCount} recorded cycles were ${minimumCycleLength} days long.`
       : `Recorded cycle lengths ranged from ${minimumCycleLength} to ${maximumCycleLength} days.`;
 
   return {
