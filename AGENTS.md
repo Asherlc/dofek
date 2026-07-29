@@ -263,3 +263,13 @@ Visit `http://localhost:5173/auth/dev-login` (enabled when `NODE_ENV !== 'produc
 
 ### Out of scope on this Linux VM
 The mobile app (`packages/mobile`, Expo/iOS — needs macOS/Xcode) and the Zepp watch app (`packages/zepp*`) cannot run here. Web dashboard + API + sync runner + analytics are the supported dev surface.
+
+## OpenAI Codex Cloud specific instructions
+
+Codex cloud tasks run in the `codex-universal` image, configured by setup scripts that run before the agent phase; see [OpenAI's cloud environments documentation](https://developers.openai.com/codex/cloud/environments).
+
+- **No Docker.** Our own setup logs show the daemon cannot start in this container because user namespace creation is blocked — an observed limitation of the environment, not documented OpenAI behavior. Do not try to install or start Docker. Postgres/TimescaleDB, ClickHouse, Redpanda, Redis, and testcontainers are all unavailable, so `pnpm test:integration`, `pnpm test:all`, `pnpm test:changed:all`, `pnpm test:coverage:all`, `pnpm compose:up`, `pnpm e2e:web`, and `mise run doctor` cannot run here.
+- **Boot with `SANDBOX=1`.** `SANDBOX=1 mise run cloud:init` installs dependencies and initializes CodeGraph/RTK; `SANDBOX=1` makes `cloud:start` skip the Docker-backed services instead of failing on `docker info`. The variable gates only that startup path, so local development is unchanged.
+- **Verify with `mise run test:sandbox`.** Runs the typecheck script of every package that declares one (the set CI's `typecheck-discover` job matrixes over), `pnpm lint:sandbox`, and the Docker-free unit and mobile test tiers. `lint:sandbox` is `pnpm lint` minus `lint:analytics-sql`, the one policy needing `uv` and a running ClickHouse.
+- **Still write integration tests.** The **TDD** and **Test database behavior with executable database tests** rules stay in force for database-dependent behavior. You cannot execute them here, so state plainly in the PR that they were not run locally; CI's `test-integration` job runs them against real services. Never claim an integration test passes when you have not run it.
+- **Secrets are gone at agent time.** Codex decrypts secrets only for setup scripts and removes them before the agent phase, so anything needed at runtime must be written to disk during setup ([cloud environments documentation](https://developers.openai.com/codex/cloud/environments)). `scripts/with-env.ts` fails fast rather than running degraded, which is intended.
