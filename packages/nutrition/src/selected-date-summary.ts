@@ -11,7 +11,7 @@ export const nutritionMealCaloriesSchema = z.object({
 export const macroNutritionSummarySchema = z.object({
   grams: z.number().nonnegative(),
   calories: z.number().nonnegative(),
-  percentage: z.number().nonnegative(),
+  energySharePercentage: z.number().min(0).max(100),
 });
 
 export const selectedDateNutritionSummarySchema = z.object({

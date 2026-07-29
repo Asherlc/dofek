@@ -430,9 +430,9 @@ describe("FoodRepository", () => {
             progressPercentage: 0,
           },
           macros: {
-            protein: { grams: 0, calories: 0, percentage: 0 },
-            carbs: { grams: 0, calories: 0, percentage: 0 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+            carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
         resolution: {
@@ -482,11 +482,68 @@ describe("FoodRepository", () => {
           progressPercentage: 62.5,
         },
         macros: {
-          protein: { grams: 55, calories: 220, percentage: 22 },
-          carbs: { grams: 105, calories: 420, percentage: 42 },
-          fat: { grams: 40, calories: 360, percentage: 36 },
+          protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+          carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+          fat: { grams: 40, calories: 360, energySharePercentage: 36 },
         },
       });
+    });
+
+    it("normalizes macro energy and deterministically rounds the shares to 100 percent", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: "1000",
+          protein_g: "65",
+          carbs_g: "107.5",
+          fat_g: String(340 / 9),
+          breakfast_calories: "1000",
+          lunch_calories: "0",
+          dinner_calories: "0",
+          snack_calories: "0",
+          other_calories: "0",
+        },
+      ]);
+
+      const result = await repo.nutritionSummaryByDate("2024-06-15", 1600);
+
+      expect(result.macros).toEqual({
+        protein: { grams: 65, calories: 260, energySharePercentage: 25 },
+        carbs: { grams: 107.5, calories: 430, energySharePercentage: 42 },
+        fat: {
+          grams: 340 / 9,
+          calories: 340,
+          energySharePercentage: 33,
+        },
+      });
+      expect(
+        result.macros.protein.energySharePercentage +
+          result.macros.carbs.energySharePercentage +
+          result.macros.fat.energySharePercentage,
+      ).toBe(100);
+    });
+
+    it("uses protein, carbs, then fat as the stable equal-remainder tie order", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: "12",
+          protein_g: "1",
+          carbs_g: "1",
+          fat_g: String(4 / 9),
+          breakfast_calories: "12",
+          lunch_calories: "0",
+          dinner_calories: "0",
+          snack_calories: "0",
+          other_calories: "0",
+        },
+      ]);
+
+      const result = await repo.nutritionSummaryByDate("2024-06-15", 1600);
+
+      expect(result.macros.protein.energySharePercentage).toBe(34);
+      expect(result.macros.carbs.energySharePercentage).toBe(33);
+      expect(result.macros.fat.energySharePercentage).toBe(33);
     });
 
     it("caps goal progress and reports calories over the target", async () => {
