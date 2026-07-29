@@ -2,6 +2,7 @@ import { formatDateYmd } from "@dofek/format/format";
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MISSING_PREVIOUS_NIGHT_MESSAGE } from "dofek-server/sleep-need-contract";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
@@ -18,7 +19,7 @@ function localDateString(dayOffset = 0): string {
   return formatDateYmd(date);
 }
 
-function createSeededProviders() {
+function createSeededProviders(sleepDataUnavailable: boolean) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -48,15 +49,17 @@ function createSeededProviders() {
         weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       },
       sleep: {
-        lastNight: {
-          date: localDateString(-1),
-          durationMinutes: 456,
-          deepPct: 21,
-          remPct: 24,
-          lightPct: 47,
-          awakePct: 8,
-        },
-        sleepDebt: 18,
+        lastNight: sleepDataUnavailable
+          ? null
+          : {
+              date: localDateString(-1),
+              durationMinutes: 456,
+              deepPct: 21,
+              remPct: 24,
+              lightPct: 47,
+              awakePct: 8,
+            },
+        sleepDebt: sleepDataUnavailable ? 0 : 18,
       },
       strain: {
         dailyStrain: 11.8,
@@ -65,15 +68,20 @@ function createSeededProviders() {
         workloadRatio: 0.91,
         date: todayDate,
       },
-      sleepNeed: {
-        availability: "available",
-        baselineMinutes: 480,
-        strainDebtMinutes: 16,
-        accumulatedDebtMinutes: 28,
-        debtRecoveryMinutes: 7,
-        totalNeedMinutes: 503,
-        recentNights: [],
-      },
+      sleepNeed: sleepDataUnavailable
+        ? {
+            availability: "missing_previous_night",
+            message: MISSING_PREVIOUS_NIGHT_MESSAGE,
+          }
+        : {
+            availability: "available",
+            baselineMinutes: 480,
+            strainDebtMinutes: 16,
+            accumulatedDebtMinutes: 28,
+            debtRecoveryMinutes: 7,
+            totalNeedMinutes: 503,
+            recentNights: [],
+          },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: todayDate,
     },
@@ -202,16 +210,22 @@ function createSeededProviders() {
   return { processingStatus, queryClient };
 }
 
-function MockProviders({ children }: { children: ReactNode }) {
+function MockProviders({
+  children,
+  sleepDataUnavailable,
+}: {
+  children: ReactNode;
+  sleepDataUnavailable: boolean;
+}) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders();
+    const seededProviders = createSeededProviders(sleepDataUnavailable);
     return {
       ...seededProviders,
       trpcClient: trpc.createClient({
         links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
       }),
     };
-  }, []);
+  }, [sleepDataUnavailable]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -227,8 +241,8 @@ const meta = {
     layout: "fullscreen",
   },
   decorators: [
-    (Story) => (
-      <MockProviders>
+    (Story, context) => (
+      <MockProviders sleepDataUnavailable={context.parameters.sleepDataUnavailable === true}>
         <View style={{ minHeight: 1200, backgroundColor: colors.background }}>
           <Story />
         </View>
@@ -242,3 +256,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const SleepDataNeeded: Story = {
+  parameters: {
+    sleepDataUnavailable: true,
+  },
+};

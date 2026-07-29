@@ -369,7 +369,7 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
-  it("shows the server availability message without recommendation values when prior sleep is missing", async () => {
+  it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {
     mockDashboardData = {
       ...mockDashboardData,
       sleep: {
@@ -385,8 +385,10 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getByText("No sleep data")).toBeTruthy();
+    expect(screen.getByText("SLEEP DATA NEEDED")).toBeTruthy();
+    expect(screen.queryByText("LAST NIGHT")).toBeNull();
+    expect(screen.queryByText("SLEEP COACH")).toBeNull();
+    expect(screen.queryByText("No sleep data")).toBeNull();
     expect(
       screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
     ).toBeTruthy();
