@@ -12,7 +12,7 @@ describe("Provider detail page", () => {
     cy.url().should("include", "/providers/strava");
 
     // Should not redirect to login
-    cy.contains("Sign in to view your health data").should("not.exist");
+    cy.contains("Sign in to Dofek").should("not.exist");
 
     cy.contains("h1", "Provider not found").should("be.visible");
     cy.contains("This provider is unavailable.").should("be.visible");
