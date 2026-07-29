@@ -753,6 +753,7 @@ describe("production analytics read-model build", () => {
 
   it("materializes daily recovery inputs from compact daily and sleep sources", () => {
     const sql = readModel("daily_recovery_inputs");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_rows AS");
@@ -764,6 +765,25 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("hrv_mean_60d");
     expect(sql).toContain("rhr_mean_60d");
+    expect(normalizedSql).toContain(
+      "ORDER BY toUInt32(date) RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING",
+    );
+    expect(normalizedSql).toContain(
+      "ORDER BY toUInt32(date) RANGE BETWEEN 6 PRECEDING AND CURRENT ROW",
+    );
+    expect(normalizedSql).toContain(
+      "ORDER BY toUInt32(date) RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING",
+    );
+    expect(sql).toContain("hrv_baseline_sample_count");
+    expect(sql).toContain("hrv_baseline_coverage");
+    expect(sql).toContain("hrv_mean_7d");
+    expect(sql).toContain("hrv_mean_previous_28d");
+    expect(sql).toContain("efficiency_mean_30d");
+    expect(sql).toContain("efficiency_sd_30d");
+    expect(sql).toContain("efficiency_baseline_sample_count");
+    expect(sql).toContain("efficiency_baseline_coverage");
+    expect(sql).toContain("efficiency_mean_7d");
+    expect(sql).toContain("efficiency_mean_previous_28d");
     expect(sql).toContain("if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");
@@ -788,6 +808,14 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("resting_hr_score");
     expect(sql).toContain("sleep_score");
     expect(sql).toContain("respiratory_rate_score");
+    expect(sql).toContain("hrv_z_score");
+    expect(sql).toContain("resting_hr_z_score");
+    expect(sql).toContain("respiratory_rate_z_score");
+    expect(sql).toContain("efficiency_z_score");
+    expect(sql).toContain("hrv_mean_7d");
+    expect(sql).toContain("hrv_mean_previous_28d");
+    expect(sql).toContain("efficiency_mean_7d");
+    expect(sql).toContain("efficiency_mean_previous_28d");
   });
 
   it("materializes one daily sleep row per user from the ClickHouse sleep view", () => {
