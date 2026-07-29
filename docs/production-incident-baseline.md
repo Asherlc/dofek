@@ -19902,3 +19902,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   because `ghcr.io/${{ github.repository }}` preserved uppercase owner
   characters in a registry cache reference. Normalize that cache reference in
   a dedicated CI change so image builds can use both configured cache sources.
+
+## 2026-07-28 — Mobile screenshot script was absent from Knip entries
+
+- **Status:** Root cause fixed on PR #2273; fresh exact-head CI validation
+  pending.
+- **Symptoms:** CI run
+  [30422857027](https://github.com/Asherlc/dofek/actions/runs/30422857027)
+  failed `Test / Knip` in job
+  [90483140256](https://github.com/Asherlc/dofek/actions/runs/30422857027/job/90483140256).
+- **User impact:** No production impact. PR #2273 was blocked even though the
+  App Store screenshot command and its Playwright dependency are both used.
+- **Evidence:** The exact failing command was `pnpm knip`. Its first findings
+  were `Unused files (1)` for
+  `packages/mobile/scripts/capture-app-store-screenshots.ts` and
+  `Unused devDependencies (1)` for `playwright` in
+  `packages/mobile/package.json:99`.
+- **Root cause:** The package script invokes the TypeScript capture entry point
+  through `pnpm tsx`, but the mobile Knip workspace did not declare that script
+  as an entry. Knip therefore could not trace the file or its Playwright
+  import; Knip documents explicit production entry patterns in its
+  [configuration reference](https://knip.dev/reference/configuration#entry-files).
+- **Fix / mitigation:** Add
+  `scripts/capture-app-store-screenshots.ts` to the mobile workspace `entry`
+  list in `knip.json`. No dependency ignore, analysis suppression, or
+  warn-and-continue behavior was added.
+- **Validation:** `pnpm knip`, focused screenshot-render tests, typecheck,
+  mobile lint, and the production Storybook capture path pass locally. Fresh
+  exact-head CI remains the full-suite gate.
+- **Remaining risk / follow-up:** Keep package-script-only TypeScript entry
+  points in the owning workspace's Knip entry graph when adding or renaming
+  repository automation.
