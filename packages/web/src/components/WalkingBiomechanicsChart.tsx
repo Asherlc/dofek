@@ -17,6 +17,8 @@ function buildLineOption(
   color: string,
   convert?: (v: number) => number,
 ) {
+  const signalPointCount = data.filter((row) => valueAccessor(row) != null).length;
+
   return {
     grid: dofekGrid("single", { top: 30, right: 15, bottom: 25 }),
     tooltip: dofekTooltip(),
@@ -30,7 +32,11 @@ function buildLineOption(
             const value = valueAccessor(d);
             return [d.date, value != null && convert ? convert(value) : value];
           }),
-          { color },
+          {
+            color,
+            symbol: signalPointCount === 1 ? "circle" : undefined,
+            symbolSize: signalPointCount === 1 ? 6 : undefined,
+          },
         ),
         connectNulls: true,
       },
@@ -82,14 +88,14 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
     },
     {
       name: "Double Support",
-      unit: "%",
+      unit: units.percentageLabel,
       color: chartColors.amber,
       emptyMessage: "No double support data available",
       accessor: (d) => d.doubleSupportPct,
     },
     {
       name: "Asymmetry",
-      unit: "%",
+      unit: units.percentageLabel,
       color: statusColors.danger,
       emptyMessage: "No asymmetry data available",
       accessor: (d) => d.asymmetryPct,

@@ -5,6 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 interface ChartProps {
   empty?: boolean;
   emptyMessage?: string;
+  option?: {
+    series?: Array<{
+      symbol?: string;
+      symbolSize?: number;
+    }>;
+  };
 }
 
 const chartProps = vi.hoisted<ChartProps[]>(() => []);
@@ -86,5 +92,36 @@ describe("WalkingBiomechanicsChart", () => {
         ["No asymmetry data available", false],
       ]),
     );
+  });
+
+  it("renders a marker when an available signal has only one observation", () => {
+    render(
+      <WalkingBiomechanicsChart
+        data={[
+          {
+            date: "2026-07-27",
+            walkingSpeedKmh: 5.2,
+            stepLengthCm: null,
+            doubleSupportPct: null,
+            asymmetryPct: null,
+            steadiness: 0.9,
+          },
+          {
+            date: "2026-07-28",
+            walkingSpeedKmh: null,
+            stepLengthCm: null,
+            doubleSupportPct: null,
+            asymmetryPct: null,
+            steadiness: 0.92,
+          },
+        ]}
+      />,
+    );
+
+    expect(chartProps[0]?.empty).toBe(false);
+    expect(chartProps[0]?.option?.series?.[0]).toMatchObject({
+      symbol: "circle",
+      symbolSize: 6,
+    });
   });
 });

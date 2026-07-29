@@ -20423,7 +20423,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536.`
 - **Root cause:** This is the same shared Docker VM system-wide AIO-capacity
   exhaustion already recorded above for issues 2183 and 2123, not an
-  issue-2118 source failure.
+  issue-2118 source failure. The Linux kernel documents `aio-nr` as the
+  system-wide number of asynchronous I/O requests and `aio-max-nr` as its
+  maximum ([Linux kernel `/proc/sys/fs` documentation](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)).
 - **Fix / mitigation:** Stopped the validation attempt and removed only the
   issue-2118 containers, network, and named volumes with
   `pnpm compose -- down --remove-orphans --volumes`. The stack was not retried,
