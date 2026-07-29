@@ -185,6 +185,49 @@ describe("ActivitiesCalendarRepository", () => {
     ]);
   });
 
+  it("exposes timezone fields only for authoritative timezone provenance", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "offset-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "provider_offset",
+        }),
+        makeActivityRow({
+          id: "device-timezone-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "device_timezone",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+    const contextById = new Map(
+      (result[0]?.activities ?? []).map((entry) => [entry.id, entry.localTimeContext]),
+    );
+
+    expect(contextById.get("offset-context")).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -480,
+      source: "provider_offset",
+    });
+    expect(contextById.get("device-timezone-context")).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -420,
+      source: "device_timezone",
+    });
+  });
+
   it("adds a clamped location tile and preserves distance/elevation for outdoor activities", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -938,6 +981,10 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "unknown",
         },
       ],
       [],
@@ -962,6 +1009,12 @@ describe("ActivitiesCalendarRepository", () => {
             isProviderAbsent: true,
             providerId: "strava",
             providerAbsentAt: "2026-03-05T14:30:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
           }),
         ],
       },
@@ -1058,6 +1111,10 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "unknown",
         },
         {
           id: "hidden-only",

@@ -29,10 +29,12 @@ rows that already contain a provider-supplied IANA `timezone` can be populated
 after deploy with a separate bounded command. Sleep rows and activities without
 retained trusted context remain `unknown`.
 
-Start with the default dry run:
+Start with a dry run over an explicit half-open UTC time window:
 
 ```bash
-pnpm backfill:record-local-time
+pnpm backfill:record-local-time -- \
+  --start-at=2025-01-01T00:00:00.000Z \
+  --end-at=2025-02-01T00:00:00.000Z
 ```
 
 The command scans at most 20 batches of 250 rows. Invalid stored zones are
@@ -40,22 +42,29 @@ reported as skipped and are not rewritten. Choose explicit smaller bounds when
 operating under load:
 
 ```bash
-pnpm backfill:record-local-time -- --batch-size=100 --max-batches=5
+pnpm backfill:record-local-time -- \
+  --start-at=2025-01-01T00:00:00.000Z \
+  --end-at=2025-02-01T00:00:00.000Z \
+  --batch-size=100 \
+  --max-batches=5
 ```
 
 After reviewing the candidate and skipped counts, execute the same bounds:
 
 ```bash
 pnpm backfill:record-local-time -- \
+  --start-at=2025-01-01T00:00:00.000Z \
+  --end-at=2025-02-01T00:00:00.000Z \
   --batch-size=100 \
   --max-batches=5 \
   --execute
 ```
 
-Repeat the dry run. Advance the bounds only when the updated count matches the
-expected valid candidates. The update is idempotent: it only writes rows whose
-source is still `unknown`, and it resolves the start and end offsets from the
-stored IANA zone independently.
+Repeat the dry run with the same time window. Advance `--start-at` and `--end-at`
+only when the updated count matches the expected valid candidates. The update is
+idempotent and resumable: it only writes rows whose source is still `unknown`,
+paginates eligible rows by ID within the required time window, and resolves the
+start and end offsets from the stored IANA zone independently.
 
 Stop if the skipped count is unexpected, database health degrades, or the
 updated count differs from the valid candidate count. Investigate invalid zones

@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("main", () => {
-  it("defaults to a bounded dry run", async () => {
+  it("defaults to a bounded dry run within an explicit time window", async () => {
     const end = vi.fn().mockResolvedValue(undefined);
     const db = { execute: vi.fn(), $client: { end } };
     vi.mocked(createDatabaseFromEnv).mockReturnValue(db);
@@ -32,12 +32,14 @@ describe("main", () => {
     });
     vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await main([]);
+    await main(["--start-at=2026-01-01T00:00:00.000Z", "--end-at=2026-02-01T00:00:00.000Z"]);
 
     expect(backfillRecordLocalTimeContext).toHaveBeenCalledWith(db, {
       execute: false,
       batchSize: 250,
       maxBatches: 20,
+      startAt: new Date("2026-01-01T00:00:00.000Z"),
+      endAt: new Date("2026-02-01T00:00:00.000Z"),
     });
     expect(end).toHaveBeenCalledOnce();
     expect(Sentry.close).toHaveBeenCalledWith(2_000);
@@ -54,17 +56,38 @@ describe("main", () => {
     });
     vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await main(["--execute", "--batch-size=20", "--max-batches=4"]);
+    await main([
+      "--execute",
+      "--batch-size=20",
+      "--max-batches=4",
+      "--start-at=2025-01-01T00:00:00.000Z",
+      "--end-at=2026-01-01T00:00:00.000Z",
+    ]);
 
     expect(backfillRecordLocalTimeContext).toHaveBeenCalledWith(db, {
       execute: true,
       batchSize: 20,
       maxBatches: 4,
+      startAt: new Date("2025-01-01T00:00:00.000Z"),
+      endAt: new Date("2026-01-01T00:00:00.000Z"),
     });
   });
 
   it("rejects invalid bounds before opening the database", async () => {
-    await expect(main(["--batch-size=0"])).rejects.toThrow("--batch-size");
+    await expect(
+      main([
+        "--batch-size=0",
+        "--start-at=2025-01-01T00:00:00.000Z",
+        "--end-at=2026-01-01T00:00:00.000Z",
+      ]),
+    ).rejects.toThrow("--batch-size");
+    await expect(main([])).rejects.toThrow("--start-at");
+    await expect(main(["--start-at=invalid", "--end-at=2026-01-01T00:00:00.000Z"])).rejects.toThrow(
+      "--start-at",
+    );
+    await expect(
+      main(["--start-at=2026-02-01T00:00:00.000Z", "--end-at=2026-01-01T00:00:00.000Z"]),
+    ).rejects.toThrow("--start-at must be earlier than --end-at");
     expect(createDatabaseFromEnv).not.toHaveBeenCalled();
   });
 });

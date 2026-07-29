@@ -1,4 +1,5 @@
 import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
+import * as Sentry from "@sentry/node";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "./index.ts";
@@ -76,28 +77,66 @@ function requireExternalId(externalId: string | null | undefined): string {
 function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
-): ProviderActivityInsert {
+): { values: ProviderActivityInsert; updateLocalTimeContext: boolean } {
   const externalIdValues =
     values.externalId === normalizedExternalId
       ? values
       : { ...values, externalId: normalizedExternalId };
-  const timezone = externalIdValues.timezone?.trim();
-  if (!timezone || (externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
-    return externalIdValues;
+  if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
+    return { values: externalIdValues, updateLocalTimeContext: true };
   }
-  const context = resolveRecordLocalTimeContext({
-    startedAt: externalIdValues.startedAt,
-    endedAt: externalIdValues.endedAt,
-    timezone,
-    source: "provider_timezone",
-  });
-  return {
-    ...externalIdValues,
-    timezone: context.timezone,
-    startUtcOffsetMinutes: context.startUtcOffsetMinutes,
-    endUtcOffsetMinutes: context.endUtcOffsetMinutes,
-    localTimeSource: context.source,
-  };
+
+  const timezone = externalIdValues.timezone?.trim();
+  if (!timezone) {
+    const hasUntrustedContext =
+      externalIdValues.timezone != null ||
+      externalIdValues.startUtcOffsetMinutes != null ||
+      externalIdValues.endUtcOffsetMinutes != null;
+    return hasUntrustedContext
+      ? {
+          values: {
+            ...externalIdValues,
+            timezone: null,
+            startUtcOffsetMinutes: null,
+            endUtcOffsetMinutes: null,
+            localTimeSource: "unknown",
+          },
+          updateLocalTimeContext: true,
+        }
+      : { values: externalIdValues, updateLocalTimeContext: false };
+  }
+  try {
+    const context = resolveRecordLocalTimeContext({
+      startedAt: externalIdValues.startedAt,
+      endedAt: externalIdValues.endedAt,
+      timezone,
+      source: "provider_timezone",
+    });
+    return {
+      values: {
+        ...externalIdValues,
+        timezone: context.timezone,
+        startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+        endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+        localTimeSource: context.source,
+      },
+      updateLocalTimeContext: true,
+    };
+  } catch (error: unknown) {
+    Sentry.captureException(error, {
+      tags: { operation: "provider-activity-local-time-context" },
+    });
+    return {
+      values: {
+        ...externalIdValues,
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "unknown",
+      },
+      updateLocalTimeContext: true,
+    };
+  }
 }
 
 /**
@@ -141,11 +180,7 @@ export class ProviderActivityListSync {
     update: ProviderActivityConflictUpdate,
   ): Promise<{ id: string } | undefined> {
     const normalizedExternalId = requireExternalId(values.externalId);
-    const row = await upsertProviderActivity(
-      this.#scope.db,
-      normalizeProviderActivityInsert(values, normalizedExternalId),
-      update,
-    );
+    const row = await upsertProviderActivity(this.#scope.db, values, update);
     this.trackPresent(normalizedExternalId);
     return row;
   }
@@ -173,16 +208,16 @@ export async function upsertProviderActivity(
   update: ProviderActivityConflictUpdate,
 ): Promise<{ id: string } | undefined> {
   const normalizedExternalId = requireExternalId(values.externalId);
-  const normalizedValues = normalizeProviderActivityInsert(values, normalizedExternalId);
-  const contextUpdate =
-    normalizedValues.localTimeSource && normalizedValues.localTimeSource !== "unknown"
-      ? {
-          timezone: normalizedValues.timezone,
-          startUtcOffsetMinutes: normalizedValues.startUtcOffsetMinutes,
-          endUtcOffsetMinutes: normalizedValues.endUtcOffsetMinutes,
-          localTimeSource: normalizedValues.localTimeSource,
-        }
-      : {};
+  const normalized = normalizeProviderActivityInsert(values, normalizedExternalId);
+  const normalizedValues = normalized.values;
+  const contextUpdate = normalized.updateLocalTimeContext
+    ? {
+        timezone: normalizedValues.timezone,
+        startUtcOffsetMinutes: normalizedValues.startUtcOffsetMinutes,
+        endUtcOffsetMinutes: normalizedValues.endUtcOffsetMinutes,
+        localTimeSource: normalizedValues.localTimeSource,
+      }
+    : {};
 
   const [row] = await db
     .insert(activity)

@@ -16,6 +16,8 @@ export interface RecordLocalTimeBackfillOptions {
   execute: boolean;
   batchSize: number;
   maxBatches: number;
+  startAt: Date;
+  endAt: Date;
 }
 
 export interface RecordLocalTimeBackfillResult {
@@ -34,6 +36,15 @@ export async function backfillRecordLocalTimeContext(
   if (!Number.isInteger(options.maxBatches) || options.maxBatches < 1) {
     throw new Error("maxBatches must be a positive integer");
   }
+  if (!Number.isFinite(options.startAt.getTime())) {
+    throw new Error("startAt must be a valid date");
+  }
+  if (!Number.isFinite(options.endAt.getTime())) {
+    throw new Error("endAt must be a valid date");
+  }
+  if (options.startAt >= options.endAt) {
+    throw new Error("startAt must be earlier than endAt");
+  }
 
   let cursor: string | null = null;
   const result: RecordLocalTimeBackfillResult = { eligible: 0, skipped: 0, updated: 0 };
@@ -51,6 +62,8 @@ export async function backfillRecordLocalTimeContext(
           WHERE local_time_source = 'unknown'
             AND timezone IS NOT NULL
             AND trim(timezone) <> ''
+            AND started_at >= ${options.startAt}
+            AND started_at < ${options.endAt}
             ${cursor == null ? sql`` : sql`AND id > ${cursor}::uuid`}
           ORDER BY id
           LIMIT ${options.batchSize}`,
@@ -85,7 +98,7 @@ export async function backfillRecordLocalTimeContext(
     const values = sql.join(
       contexts.map(
         (context) =>
-          sql`(${context.id}::uuid, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text)`,
+          sql`(${context.id}::uuid, ${context.timezone}::text, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text)`,
       ),
       sql`, `,
     );
@@ -94,6 +107,7 @@ export async function backfillRecordLocalTimeContext(
       countSchema,
       sql`WITH context_values (
             id,
+            timezone,
             start_utc_offset_minutes,
             end_utc_offset_minutes,
             local_time_source
@@ -103,6 +117,7 @@ export async function backfillRecordLocalTimeContext(
           updated AS (
             UPDATE fitness.activity AS activity
             SET
+              timezone = context_values.timezone,
               start_utc_offset_minutes = context_values.start_utc_offset_minutes,
               end_utc_offset_minutes = context_values.end_utc_offset_minutes,
               local_time_source = context_values.local_time_source

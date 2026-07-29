@@ -16,7 +16,7 @@
 
 - `fitness.activity.started_at` / `ended_at` and `fitness.sleep_session.started_at` / `ended_at` preserve instants but not the resolved local offset. Activity has an optional `timezone`; sleep has no local-time context.
 - The current activity and sleep serving models format timestamps in UTC or the request timezone, so MCP and clients cannot state the record-local clock time reliably after travel or a daylight-saving transition.
-- Provider payloads vary: Peloton and MapMyFitness expose IANA zones, WHOOP exposes an explicit offset, native Apple Health / Zepp upload timestamps can retain explicit offsets, and several providers expose RFC 3339 timestamps whose offsets must only be used when their payload contract defines them as local context.
+- Provider contracts vary. WHOOP explicitly defines `timezone_offset` as the user's offset when a workout was recorded ([WHOOP workout contract](https://developer.whoop.com/docs/developing/user-data/workout/)); Google Fit defines session query bounds as RFC 3339 timestamps ([Google Fit sessions](https://developers.google.com/fit/rest/v1/reference/users/sessions/list)); Apple Health exposes workout start/end as `Date` values without a timezone field in that API surface ([Apple `HKWorkout`](https://developer.apple.com/documentation/healthkit/hkworkout)). Therefore an offset or zone is authoritative only when the specific provider contract or device upload field establishes it as record-local context; timestamp syntax alone is not sufficient.
 - Existing activity rows may retain trustworthy timezone/offset fields in `timezone` or `raw`; existing sleep rows generally do not retain raw payloads and therefore must remain explicitly unknown rather than receive an authoritative-looking guess.
 
 ## Chosen Design
@@ -96,7 +96,7 @@
 
 - [ ] Write failing tests for preview mode, bounded batches, idempotence, trusted existing timezone/raw extraction, and unknown preservation.
 - [ ] Implement a TypeScript operator command that updates only records with trustworthy retained context.
-- [ ] Document preview/execute usage, evidence output, resumability, and the deliberate absence of sleep guesses.
+- [ ] Document preview/execute usage, evidence output, how to resume, and the deliberate absence of sleep guesses.
 - [ ] Run `rtk pnpm vitest run scripts/backfill-record-local-time-context.test.ts --project unit`.
 - [ ] Confirm the test passes and preview mode makes no writes.
 

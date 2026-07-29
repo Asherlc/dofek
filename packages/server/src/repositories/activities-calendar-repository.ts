@@ -1,4 +1,5 @@
 import {
+  localTimeContextUnknown,
   localTimeSourceSchema,
   type RecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
@@ -123,6 +124,27 @@ const activitySummaryMetricsRowSchema = z.object({
   centroid_lat: z.coerce.number().nullable(),
   centroid_lng: z.coerce.number().nullable(),
 });
+
+function authoritativeLocalTimeContext(
+  row: Pick<
+    z.infer<typeof activityRowSchema>,
+    "timezone" | "start_utc_offset_minutes" | "end_utc_offset_minutes" | "local_time_source"
+  >,
+): RecordLocalTimeContext {
+  if (row.local_time_source === "unknown") {
+    return localTimeContextUnknown();
+  }
+  const timezone =
+    row.local_time_source === "provider_timezone" || row.local_time_source === "device_timezone"
+      ? row.timezone
+      : null;
+  return {
+    timezone,
+    startUtcOffsetMinutes: row.start_utc_offset_minutes,
+    endUtcOffsetMinutes: row.end_utc_offset_minutes,
+    source: row.local_time_source,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -257,12 +279,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityType: row.activity_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
-        localTimeContext: {
-          timezone: row.timezone,
-          startUtcOffsetMinutes: row.start_utc_offset_minutes,
-          endUtcOffsetMinutes: row.end_utc_offset_minutes,
-          source: row.local_time_source,
-        },
+        localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
         partialAbsentSources: sourceAttribution.hasPartialAbsence
           ? sourceAttribution.partialAbsentSources()
@@ -395,12 +412,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityType: row.activity_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
-        localTimeContext: {
-          timezone: row.timezone,
-          startUtcOffsetMinutes: row.start_utc_offset_minutes,
-          endUtcOffsetMinutes: row.end_utc_offset_minutes,
-          source: row.local_time_source,
-        },
+        localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
         location:
           row.centroid_lat != null && row.centroid_lng != null

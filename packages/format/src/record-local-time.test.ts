@@ -174,11 +174,11 @@ describe("offsetMinutesFromTimestamp", () => {
   });
 
   it.each([
-    "2026-01-01T10:00:00Zsuffix",
+    "2026-01-01T10:00:00Z-extra",
     "2026-01-01T10:00:00+14:01",
     "2026-01-01T10:00:00+15:00",
     "2026-01-01T10:00:00+01:60",
-    "2026-01-01T10:00:00+05:30suffix",
+    "2026-01-01T10:00:00+05:30-extra",
   ])("rejects the malformed or out-of-range offset in %s", (timestamp) => {
     expect(offsetMinutesFromTimestamp(timestamp)).toBeNull();
   });

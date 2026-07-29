@@ -13,21 +13,43 @@ function positiveIntegerOption(args: string[], name: string, defaultValue: numbe
   return value;
 }
 
+function requiredDateOption(args: string[], name: string): Date {
+  const prefix = `--${name}=`;
+  const argument = args.find((value) => value.startsWith(prefix));
+  if (!argument) {
+    throw new Error(`--${name} is required`);
+  }
+  const value = new Date(argument.slice(prefix.length));
+  if (!Number.isFinite(value.getTime())) {
+    throw new Error(`--${name} must be a valid timestamp`);
+  }
+  return value;
+}
+
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const unknownArgument = args.find(
     (argument) =>
       argument !== "--execute" &&
       !argument.startsWith("--batch-size=") &&
-      !argument.startsWith("--max-batches="),
+      !argument.startsWith("--max-batches=") &&
+      !argument.startsWith("--start-at=") &&
+      !argument.startsWith("--end-at="),
   );
   if (unknownArgument) {
     throw new Error(`Unknown option: ${unknownArgument}`);
   }
 
+  const startAt = requiredDateOption(args, "start-at");
+  const endAt = requiredDateOption(args, "end-at");
+  if (startAt >= endAt) {
+    throw new Error("--start-at must be earlier than --end-at");
+  }
   const options = {
     execute: args.includes("--execute"),
     batchSize: positiveIntegerOption(args, "batch-size", 250),
     maxBatches: positiveIntegerOption(args, "max-batches", 20),
+    startAt,
+    endAt,
   };
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
