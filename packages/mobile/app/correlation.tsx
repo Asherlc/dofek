@@ -5,8 +5,7 @@ import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
 } from "@dofek/stats/correlation-lag";
-import type { inferRouterOutputs } from "@trpc/server";
-import type { AppRouter } from "dofek-server/router";
+import type { AppRouterOutputs } from "dofek-server/router";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -47,7 +46,7 @@ const METRIC_FAMILY_ROUTES = {
   body: "/recovery",
 } as const;
 
-type CorrelationObservationsOutput = inferRouterOutputs<AppRouter>["correlation"]["observations"];
+type CorrelationObservationsOutput = AppRouterOutputs["correlation"]["observations"];
 type PairedObservation = CorrelationObservationsOutput["items"][number];
 type ObservationContributor = PairedObservation["x"]["contributors"][number];
 

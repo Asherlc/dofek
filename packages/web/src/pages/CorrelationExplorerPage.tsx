@@ -6,8 +6,7 @@ import {
   formatCorrelationLagOption,
 } from "@dofek/stats/correlation-lag";
 import { Link } from "@tanstack/react-router";
-import type { inferRouterOutputs } from "@trpc/server";
-import type { AppRouter } from "dofek-server/router";
+import type { AppRouterOutputs } from "dofek-server/router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
@@ -86,7 +85,7 @@ function formatValue(v: number): string {
   return formatNumber(v);
 }
 
-type CorrelationObservationsOutput = inferRouterOutputs<AppRouter>["correlation"]["observations"];
+type CorrelationObservationsOutput = AppRouterOutputs["correlation"]["observations"];
 type PairedObservation = CorrelationObservationsOutput["items"][number];
 type ObservationValue = PairedObservation["x"];
 type ObservationContributor = ObservationValue["contributors"][number];

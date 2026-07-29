@@ -26,7 +26,7 @@ import {
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { fetchBodyCompRows } from "./body-clickhouse.ts";
+import { bodyCompClickHouseSchema, fetchBodyCompProvenanceRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
@@ -366,39 +366,37 @@ export function buildCorrelationObservationPage(
   pagination: CorrelationObservationPagination,
 ): CorrelationObservationPage {
   const analysis = buildCorrelationAnalysis(joined, input);
-  const observations = analysis.observations
-    .flatMap((observation): CorrelationPairedObservation[] => {
-      if (observation.x === null || observation.y === null) return [];
-      return [
-        {
-          x: {
-            metricId: input.metricX,
-            date: observation.date,
-            value: observation.x,
-            contributors: contributorsForMetric(input.metricX, observation.date, evidenceByDate),
-          },
-          y: {
-            metricId: input.metricY,
-            date: observation.yDate,
-            value: observation.y,
-            contributors: contributorsForMetric(input.metricY, observation.yDate, evidenceByDate),
-          },
-        },
-      ];
-    })
-    .sort((left, right) => right.x.date.localeCompare(left.x.date));
-  const cursor = pagination.cursor;
-  const cursorFiltered =
-    cursor === undefined
-      ? observations
-      : observations.filter((observation) => observation.x.date < cursor);
-  const items = cursorFiltered.slice(0, pagination.pageSize);
-  const lastItem = items.at(-1);
+  const items: CorrelationPairedObservation[] = [];
+  let totalCount = 0;
+  let hasMore = false;
+  for (let index = analysis.observations.length - 1; index >= 0; index--) {
+    const observation = analysis.observations[index];
+    if (!observation || observation.x === null || observation.y === null) continue;
+    totalCount++;
+    if (pagination.cursor !== undefined && observation.date >= pagination.cursor) continue;
+    if (items.length >= pagination.pageSize) {
+      hasMore = true;
+      continue;
+    }
+    items.push({
+      x: {
+        metricId: input.metricX,
+        date: observation.date,
+        value: observation.x,
+        contributors: contributorsForMetric(input.metricX, observation.date, evidenceByDate),
+      },
+      y: {
+        metricId: input.metricY,
+        date: observation.yDate,
+        value: observation.y,
+        contributors: contributorsForMetric(input.metricY, observation.yDate, evidenceByDate),
+      },
+    });
+  }
   return {
     items,
-    totalCount: observations.length,
-    nextCursor:
-      lastItem !== undefined && cursorFiltered.length > items.length ? lastItem.x.date : null,
+    totalCount,
+    nextCursor: hasMore ? (items.at(-1)?.x.date ?? null) : null,
   };
 }
 
@@ -765,12 +763,25 @@ export class CorrelationRepository {
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),
-      fetchBodyCompRows(sensorStore, this.#userId, this.#timezone, effectiveEndDate, days),
+      fetchBodyCompProvenanceRows(
+        sensorStore,
+        this.#userId,
+        this.#timezone,
+        effectiveEndDate,
+        days,
+      ),
     ]);
 
-    const joined = joinByDate(metrics, sleepResult.joinedRows, activities, nutrition, bodyComp, {
-      minDailyCalories: 1200,
-    });
+    const joined = joinByDate(
+      metrics.map((row) => dailyRowSchema.parse(row)),
+      sleepResult.joinedRows,
+      activities,
+      nutrition.map((row) => nutritionRowSchema.parse(row)),
+      bodyComp.map((row) => bodyCompClickHouseSchema.parse(row)),
+      {
+        minDailyCalories: 1200,
+      },
+    );
 
     const evidenceByDate = new Map<string, CorrelationDayEvidence>();
     for (const row of metrics) {

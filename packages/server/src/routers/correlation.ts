@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
@@ -208,6 +209,10 @@ const correlationObservationsInputSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(25),
 });
 
+function currentCorrelationEndDate(timezone: string): string {
+  return formatDateYmdInTimeZone(new Date(), timezone);
+}
+
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
 export const correlationRouter = router({
@@ -230,7 +235,7 @@ export const correlationRouter = router({
         input.metricY,
         range.days,
         input.lag,
-        new Date().toISOString().slice(0, 10),
+        currentCorrelationEndDate(ctx.timezone),
       );
     },
     correlationComputeOutputSchema,
@@ -248,7 +253,7 @@ export const correlationRouter = router({
         input.metricY,
         range.days,
         input.lag,
-        new Date().toISOString().slice(0, 10),
+        currentCorrelationEndDate(ctx.timezone),
       );
     },
     correlationComputeV2OutputSchema,
@@ -266,7 +271,7 @@ export const correlationRouter = router({
         input.metricY,
         range.days,
         input.lag,
-        new Date().toISOString().slice(0, 10),
+        currentCorrelationEndDate(ctx.timezone),
         {
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
           pageSize: input.pageSize,

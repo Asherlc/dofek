@@ -602,6 +602,47 @@ function makeSensorStore() {
 }
 
 describe("correlationRouter", () => {
+  it("anchors analysis and observations to the user's local calendar day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T12:30:00.000Z"));
+    const compute = vi
+      .spyOn(CorrelationRepository.prototype, "compute")
+      .mockRejectedValue(new Error("captured compute call"));
+    const computeV2 = vi
+      .spyOn(CorrelationRepository.prototype, "computeV2")
+      .mockRejectedValue(new Error("captured computeV2 call"));
+    const observations = vi
+      .spyOn(CorrelationRepository.prototype, "listObservations")
+      .mockRejectedValue(new Error("captured observations call"));
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "Pacific/Auckland",
+      sensorStore: makeSensorStore(),
+    });
+
+    try {
+      await expect(
+        caller.compute({ metricX: "resting_hr", metricY: "hrv", days: 90 }),
+      ).rejects.toThrow("captured compute call");
+      await expect(
+        caller.computeV2({ metricX: "resting_hr", metricY: "hrv", days: 90 }),
+      ).rejects.toThrow("captured computeV2 call");
+      await expect(
+        caller.observations({ metricX: "resting_hr", metricY: "hrv", days: 90 }),
+      ).rejects.toThrow("captured observations call");
+
+      expect(compute.mock.calls[0]?.[4]).toBe("2026-07-30");
+      expect(computeV2.mock.calls[0]?.[4]).toBe("2026-07-30");
+      expect(observations.mock.calls[0]?.[4]).toBe("2026-07-30");
+    } finally {
+      compute.mockRestore();
+      computeV2.mockRestore();
+      observations.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   describe("metrics", () => {
     it("returns available correlation metrics", async () => {
       const caller = createCaller({

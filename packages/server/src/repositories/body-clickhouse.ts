@@ -38,13 +38,15 @@ export const bodyMeasurementClickHouseSchema = z.object({
 });
 
 export const bodyCompClickHouseSchema = z.object({
-  id: z.string(),
   date: dateStringSchema,
   recorded_at: timestampStringSchema,
-  provider_id: z.string(),
-  source_providers: z.array(z.string()),
   weight_kg: z.coerce.number().nullable(),
   body_fat_pct: z.coerce.number().nullable(),
+});
+
+export const bodyCompProvenanceClickHouseSchema = bodyCompClickHouseSchema.extend({
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
 });
 
 export const bodyWeightClickHouseSchema = z.object({
@@ -160,6 +162,17 @@ export async function fetchBodyCompRows(
   endDate: string,
   days: RangeDays,
 ): Promise<z.infer<typeof bodyCompClickHouseSchema>[]> {
+  const rows = await fetchBodyCompProvenanceRows(store, userId, timezone, endDate, days);
+  return rows.map((row) => bodyCompClickHouseSchema.parse(row));
+}
+
+export async function fetchBodyCompProvenanceRows(
+  store: BodyClickHouseStore,
+  userId: string,
+  timezone: string,
+  endDate: string,
+  days: RangeDays,
+): Promise<z.infer<typeof bodyCompProvenanceClickHouseSchema>[]> {
   const localDateExpression = "toDate(toTimeZone(recorded_at, {timezone:String}))";
   const localDateRangePredicate = clickHouseDateRangePredicate({
     expression: localDateExpression,
@@ -167,10 +180,9 @@ export async function fetchBodyCompRows(
     endDateExpression: endDateExpression(endDate),
   });
   return store.query(
-    bodyCompClickHouseSchema,
+    bodyCompProvenanceClickHouseSchema,
     `
       SELECT
-        toString(body_measurements.id) AS id,
         toString(toDate(toTimeZone(body_measurements.recorded_at, {timezone:String}))) AS date,
         toString(body_measurements.recorded_at) AS recorded_at,
         body_measurements.provider_id AS provider_id,
@@ -179,7 +191,6 @@ export async function fetchBodyCompRows(
         body_fat_pct
       FROM (
         SELECT
-          id,
           recorded_at,
           provider_id,
           source_providers,

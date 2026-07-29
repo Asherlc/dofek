@@ -46,8 +46,8 @@
 - Modify: `packages/server/src/routers/correlation.test.ts`
 
 - [ ] Write failing tests for full-n cursor traversal, cursor stability, lag-date fidelity, contributor selection, output validation, and cross-user exclusion.
-- [ ] Run `rtk pnpm test -- --run packages/server/src/repositories/correlation-repository.test.ts packages/server/src/routers/correlation.test.ts`.
-- [ ] Run `rtk pnpm test:integration -- --run packages/server/src/repositories/correlation-repository.integration.test.ts`.
+- [ ] Run `pnpm test -- --run packages/server/src/repositories/correlation-repository.test.ts packages/server/src/routers/correlation.test.ts`.
+- [ ] Run `pnpm test:integration -- --run packages/server/src/repositories/correlation-repository.integration.test.ts`.
 - [ ] Confirm the tests fail because the observation endpoint and provenance do not exist.
 
 ### Task 2: Implement the Minimal Server Contract
@@ -70,7 +70,7 @@
 - Modify: `packages/mobile/app/correlation.test.tsx`
 
 - [ ] Write failing tests for row/list content, lagged dates, exact and aggregate navigation, accessibility, and next/previous pagination.
-- [ ] Run `rtk pnpm test -- --run packages/web/src/pages/CorrelationExplorerPage.test.tsx packages/mobile/app/correlation.test.tsx`.
+- [ ] Run `pnpm test -- --run packages/web/src/pages/CorrelationExplorerPage.test.tsx packages/mobile/app/correlation.test.tsx`.
 - [ ] Confirm the tests fail because observation rendering does not exist.
 
 ### Task 4: Implement Dual-Platform Observation Views
@@ -88,10 +88,10 @@
 
 ### Task 5: Final Verification and Delivery
 
-- [ ] Run `rtk pnpm lint`.
-- [ ] Run `rtk pnpm typecheck`.
-- [ ] Run `rtk pnpm test`.
-- [ ] Run `rtk pnpm test:integration -- --run packages/server/src/repositories/correlation-repository.integration.test.ts packages/server/src/routers/router-sql.integration.test.ts`.
+- [ ] Run `pnpm lint`.
+- [ ] Run `pnpm typecheck`.
+- [ ] Run `pnpm test`.
+- [ ] Run `pnpm test:integration -- --run packages/server/src/repositories/correlation-repository.integration.test.ts packages/server/src/routers/router-sql.integration.test.ts`.
 - [ ] Run the web and mobile Storybook/runtime checks required by their package guidance.
-- [ ] Review `rtk git diff --check` and `rtk git diff origin/main...HEAD`.
+- [ ] Review `git diff --check` and `git diff origin/main...HEAD`.
 - [ ] Commit, push, open a PR with `Fixes #2153`, link issue and PR, monitor checks/reviews, address feedback, and merge.
