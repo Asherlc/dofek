@@ -38,7 +38,7 @@ function formatDuration(minutes: number): string {
   const parts: string[] = [];
   if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
   if (remainder > 0) parts.push(`${remainder} ${remainder === 1 ? "minute" : "minutes"}`);
-  return parts.length > 0 ? parts.join(" ") : "0 minutes";
+  return parts.join(" ");
 }
 
 function relativeChange(current: number, previous: number): number | null {
@@ -142,9 +142,7 @@ function buildWhatWorked(
 
   const trainingSteady = Math.abs(current.trainingHours - previous.trainingHours) < 0.1;
   const sleepDidNotFall =
-    current.avgSleepMinutes > 0 &&
-    previous.avgSleepMinutes > 0 &&
-    current.avgSleepMinutes >= previous.avgSleepMinutes;
+    previous.avgSleepMinutes > 0 && current.avgSleepMinutes >= previous.avgSleepMinutes;
   const restingHeartRateDidNotRise =
     current.avgRestingHr != null &&
     previous.avgRestingHr != null &&
