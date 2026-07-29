@@ -250,6 +250,12 @@ describe("Token storage (integration)", () => {
       providerName: "Authorization Reset Provider",
       verifyToken: "authorization-reset-verifier",
     });
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity
+            (provider_id, user_id, external_id, activity_type, started_at)
+          VALUES
+            (${providerId}, ${TEST_USER_ID}, 'retained-after-disconnect', 'running', now())`,
+    );
 
     await deleteProviderAuthorization(ctx.db, providerId, TEST_USER_ID);
 
@@ -279,11 +285,18 @@ describe("Token storage (integration)", () => {
       .select({ id: provider.id })
       .from(provider)
       .where(eq(provider.id, providerId));
+    const activityRows = await ctx.db.execute<{ external_id: string }>(
+      sql`SELECT external_id
+          FROM fitness.activity
+          WHERE user_id = ${TEST_USER_ID}
+            AND provider_id = ${providerId}`,
+    );
 
     expect(connectionRows).toEqual([]);
     expect(tokenRows).toEqual([]);
     expect(webhookRows).toEqual([]);
     expect(providerRows).toEqual([{ id: providerId }]);
+    expect(activityRows).toEqual([{ external_id: "retained-after-disconnect" }]);
   });
 
   it("rolls back a new provider connection when token persistence fails", async () => {
