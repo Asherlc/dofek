@@ -1,5 +1,6 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
 import { operationalStatusColors } from "@dofek/scoring/colors";
+import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
@@ -9,6 +10,7 @@ interface SourceProcessingStatusCardProps {
   message: string | null;
   progress: number | null;
   status: ProcessingDisplayStatus;
+  children?: ReactNode;
 }
 
 export function SourceProcessingStatusCard({
@@ -17,6 +19,7 @@ export function SourceProcessingStatusCard({
   message,
   progress,
   status,
+  children,
 }: SourceProcessingStatusCardProps) {
   return (
     <View
@@ -27,6 +30,7 @@ export function SourceProcessingStatusCard({
       {contextLabel ? <Text style={styles.contextLabel}>{contextLabel}</Text> : null}
       <Text style={styles.heading}>{heading}</Text>
       {message ? <Text style={styles.message}>{message}</Text> : null}
+      {children}
       {progress !== null && status !== "ready" ? (
         <View
           style={styles.progressTrack}

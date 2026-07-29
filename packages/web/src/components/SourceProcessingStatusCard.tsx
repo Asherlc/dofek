@@ -1,5 +1,6 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
 import { operationalStatusColors } from "@dofek/scoring/colors";
+import type { ReactNode } from "react";
 
 interface SourceProcessingStatusCardProps {
   contextLabel?: string;
@@ -7,6 +8,7 @@ interface SourceProcessingStatusCardProps {
   message: string | null;
   progress: number | null;
   status: ProcessingDisplayStatus;
+  children?: ReactNode;
 }
 
 const indicatorColorByStatus: Record<ProcessingDisplayStatus, string> = {
@@ -26,6 +28,7 @@ export function SourceProcessingStatusCard({
   message,
   progress,
   status,
+  children,
 }: SourceProcessingStatusCardProps) {
   return (
     <section
@@ -40,6 +43,7 @@ export function SourceProcessingStatusCard({
       ) : null}
       <h2 className="text-sm font-semibold">{heading}</h2>
       {message ? <p className="mt-0.5 text-xs text-slate-600">{message}</p> : null}
+      {children}
       {progress !== null && status !== "ready" ? (
         <div
           className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"

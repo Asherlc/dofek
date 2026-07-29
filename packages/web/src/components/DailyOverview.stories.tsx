@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { workloadDisplayFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
 import { DailyOverview } from "./DailyOverview";
 
 const today = formatDateYmd();
@@ -13,7 +14,7 @@ const mockReadiness = [
   },
 ];
 
-const mockWorkloadRatio = {
+const mockWorkloadRatioData = {
   context: {
     label: "Recent-to-baseline workload ratio",
     description:
@@ -48,7 +49,7 @@ const mockSleepPerformance = {
   sourceProviders: ["whoop"],
 };
 
-const mockStrainTarget = {
+const mockStrainTargetData = {
   targetStrain: 15,
   currentStrain: 13.2,
   progressPercent: 88,
@@ -59,6 +60,12 @@ const mockStrainTarget = {
   chronicLoad: 80,
   workloadRatio: 1.19,
 };
+
+const { workloadRatio: mockWorkloadRatio, strainTarget: mockStrainTarget } =
+  workloadDisplayFixtureSchema.parse({
+    workloadRatio: mockWorkloadRatioData,
+    strainTarget: mockStrainTargetData,
+  });
 
 const meta = {
   title: "Dashboard/DailyOverview",

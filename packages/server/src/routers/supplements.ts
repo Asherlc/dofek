@@ -33,7 +33,9 @@ export const supplementsRouter = router({
     .output(supplementSaveResultSchema)
     .mutation(async ({ ctx, input }) => {
       const repository = new SupplementsRepository(ctx.db, ctx.userId, ctx.timezone);
-      return repository.save(input.supplements);
+      const result = await repository.save(input.supplements);
+      await invalidateNutritionCaches(ctx.userId);
+      return result;
     }),
 
   occurrences: protectedProcedure

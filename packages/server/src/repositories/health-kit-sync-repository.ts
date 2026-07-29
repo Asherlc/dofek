@@ -2,6 +2,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
+import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -330,6 +331,13 @@ export function aggregateDailyMetricSamples(
 // Repository
 // ---------------------------------------------------------------------------
 
+export class HealthKitDeletionTombstonesUnsupportedError extends Error {
+  constructor() {
+    super("Metric stream publisher does not support HealthKit deletion tombstones");
+    this.name = "HealthKitDeletionTombstonesUnsupportedError";
+  }
+}
+
 /** Data access for HealthKit sync operations (inserts, upserts, batch writes). */
 export class HealthKitSyncRepository {
   readonly #db: SyncDatabase;
@@ -358,6 +366,57 @@ export class HealthKitSyncRepository {
       providerName: "Apple Health",
       userId: this.#userId,
     });
+  }
+
+  /** Apply anchored-query deletions to UUID-addressable canonical stores. */
+  async processDeletedQuantitySamples(
+    typeIdentifier: string,
+    deletedUUIDs: string[],
+  ): Promise<number> {
+    const uniqueUUIDs = [...new Set(deletedUUIDs)];
+    if (uniqueUUIDs.length === 0) {
+      return 0;
+    }
+
+    if (bodyMeasurementTypes[typeIdentifier] || metricStreamTypes[typeIdentifier]) {
+      const publisher = await this.#publisher();
+      const replaceRows = publisher.replaceRows?.bind(publisher);
+      if (!replaceRows) {
+        throw new HealthKitDeletionTombstonesUnsupportedError();
+      }
+      const context = await getProviderDataGenerations(this.#db, [
+        { providerId: PROVIDER_ID, userId: this.#userId },
+      ]);
+      await Promise.all(
+        uniqueUUIDs.map((uuid) =>
+          replaceRows(
+            {
+              userId: this.#userId,
+              providerId: PROVIDER_ID,
+              externalId: `hk:${uuid}`,
+            },
+            [],
+            context.operationRevision,
+          ),
+        ),
+      );
+      return uniqueUUIDs.length;
+    }
+
+    const externalIds = uniqueUUIDs.map((uuid) => `hk:${uuid}`);
+    const deletedRows = await executeWithSchema(
+      this.#db,
+      z.object({ externalId: z.string() }),
+      sql`DELETE FROM fitness.health_event
+          WHERE user_id = ${this.#userId}
+            AND provider_id = ${PROVIDER_ID}
+            AND external_id IN (${sql.join(
+              externalIds.map((externalId) => sql`${externalId}`),
+              sql`, `,
+            )})
+          RETURNING external_id AS "externalId"`,
+    );
+    return deletedRows.length;
   }
 
   /** Process body measurement samples */
