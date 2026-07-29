@@ -377,6 +377,26 @@ export function useProviderDetailActions(
     await handleSync({ sinceDays: undefined });
   }, [handleSync]);
 
+  const handleRangeSinceDateChange = useCallback(
+    (date: string) => {
+      setRangeSinceDate(date);
+      if (date <= rangeUntilDate) {
+        setSyncMessage(null);
+      }
+    },
+    [rangeUntilDate],
+  );
+
+  const handleRangeUntilDateChange = useCallback(
+    (date: string) => {
+      setRangeUntilDate(date);
+      if (rangeSinceDate <= date) {
+        setSyncMessage(null);
+      }
+    },
+    [rangeSinceDate],
+  );
+
   const closeCredentialAuth = useCallback(() => {
     setCredentialAuthProvider(null);
   }, []);
@@ -428,8 +448,8 @@ export function useProviderDetailActions(
         ? {
             sinceDate: rangeSinceDate,
             untilDate: rangeUntilDate,
-            onSinceDateChange: setRangeSinceDate,
-            onUntilDateChange: setRangeUntilDate,
+            onSinceDateChange: handleRangeSinceDateChange,
+            onUntilDateChange: handleRangeUntilDateChange,
           }
         : null,
     shouldShowActions: Boolean(

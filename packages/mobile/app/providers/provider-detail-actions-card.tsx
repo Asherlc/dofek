@@ -58,7 +58,7 @@ export function ProviderDetailActionsCard({
               accessibilityLabel="To"
               disabled={isSyncing}
               display="compact"
-              maximumDate={new Date()}
+              maximumDate={localDateFromYmd(formatDateYmd())}
               minimumDate={localDateFromYmd(syncDateRange.sinceDate)}
               mode="date"
               onChange={(_event, selectedDate) => {

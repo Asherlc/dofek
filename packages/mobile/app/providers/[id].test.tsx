@@ -18,10 +18,12 @@ const mockDatePickerSelections = vi.hoisted(() => ({
 vi.mock("@react-native-community/datetimepicker", () => ({
   default: ({
     accessibilityLabel,
+    maximumDate,
     onChange,
     value,
   }: {
     accessibilityLabel: "From" | "To";
+    maximumDate?: Date;
     onChange: (event: { type: "set" }, date: Date) => void;
     value: Date;
   }) =>
@@ -30,6 +32,8 @@ vi.mock("@react-native-community/datetimepicker", () => ({
       {
         type: "button",
         "aria-label": accessibilityLabel,
+        "data-maximum-time": maximumDate?.getTime(),
+        "data-value-time": value.getTime(),
         onClick: () => onChange({ type: "set" }, mockDatePickerSelections[accessibilityLabel]),
       },
       [
@@ -1332,7 +1336,10 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByRole("button", { name: "From" })).toBeTruthy();
-      expect(screen.getByRole("button", { name: "To" })).toBeTruthy();
+      const toDatePicker = screen.getByRole("button", { name: "To" });
+      expect(toDatePicker.getAttribute("data-maximum-time")).toBe(
+        toDatePicker.getAttribute("data-value-time"),
+      );
       expect(screen.getAllByRole("button", { name: "Sync" })).toHaveLength(1);
       expect(screen.queryByText("Full sync")).toBeNull();
 
@@ -1362,6 +1369,11 @@ describe("ProviderDetailScreen", () => {
 
       expect(screen.getByText('"From" date must be on or before "To" date')).toBeTruthy();
       expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+
+      mockDatePickerSelections.To = new Date(2026, 5, 19, 12);
+      fireEvent.click(screen.getByRole("button", { name: "To" }));
+
+      expect(screen.queryByText('"From" date must be on or before "To" date')).toBeNull();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
