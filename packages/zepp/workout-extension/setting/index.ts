@@ -34,15 +34,26 @@ function buildPairingQrImage(sourceUrl: string): HTMLImageElement {
   return image;
 }
 
-const state = {
+interface WorkoutSettingsState {
+  serverUrl: string;
+  email: string;
+  password: string;
+  connectionStatus: Record<string, unknown>;
+  pairingShortCode: string | null;
+  pairingVerificationUrl: string | null;
+  pairingQrImageUrl: string | null;
+  pairingExpiresAt: string | null;
+}
+
+const state: WorkoutSettingsState = {
   serverUrl: DEFAULT_DOFEK_SERVER_URL,
   email: "",
   password: "",
   connectionStatus: EMPTY_STATUS,
-  pairingShortCode: null as string | null,
-  pairingVerificationUrl: null as string | null,
-  pairingQrImageUrl: null as string | null,
-  pairingExpiresAt: null as string | null,
+  pairingShortCode: null,
+  pairingVerificationUrl: null,
+  pairingQrImageUrl: null,
+  pairingExpiresAt: null,
 };
 
 AppSettingsPage({

@@ -71,6 +71,11 @@ connection. Pair both packages if you use both; connecting one no longer
 disconnects the other. Dofek web and mobile Settings list the two connections
 separately and can revoke either one.
 
+Update both Zepp packages to the current release before pairing. Older packages
+do not identify whether a request comes from the normal app or Workout
+Extension, so Dofek rejects those ambiguous requests instead of risking one
+package disconnecting the other.
+
 Each package supports the following ways to connect its phone-side Side Service:
 
 | Flow | Where it starts | Where it finishes | Notes |

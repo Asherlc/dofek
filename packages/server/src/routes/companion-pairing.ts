@@ -3,10 +3,7 @@ import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import QRCode from "qrcode";
 import { z } from "zod";
-import {
-  companionConnectionTypeSchema,
-  DEFAULT_COMPANION_CONNECTION_TYPE,
-} from "../companion/connection-type.ts";
+import { companionConnectionTypeSchema } from "../companion/connection-type.ts";
 import {
   type CompanionPairingStore,
   getCompanionPairingStore,
@@ -15,7 +12,7 @@ import { getPublicUrlOrigin } from "../lib/public-url.ts";
 import { logger } from "../logger.ts";
 
 const pairingStartSchema = z.object({
-  connectionType: companionConnectionTypeSchema.optional(),
+  connectionType: companionConnectionTypeSchema,
 });
 
 function sendJson(res: import("express").Response, status: number, body: unknown): void {
@@ -44,12 +41,21 @@ export function createCompanionPairingRouter(deps: {
   router.post("/start", express.json(), async (req, res) => {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      sendJson(res, 400, { error: "Invalid pairing request" });
+      const missingConnectionType =
+        typeof req.body === "object" &&
+        req.body !== null &&
+        !Array.isArray(req.body) &&
+        !("connectionType" in req.body);
+      sendJson(res, 400, {
+        error: missingConnectionType
+          ? "Update the Zepp package before connecting to Dofek."
+          : "Invalid pairing request",
+      });
       return;
     }
 
     try {
-      const connectionType = parsed.data.connectionType ?? DEFAULT_COMPANION_CONNECTION_TYPE;
+      const connectionType = parsed.data.connectionType;
       const challenge = await store.createChallenge(undefined, connectionType);
       sendJson(res, 200, {
         pairingId: challenge.id,

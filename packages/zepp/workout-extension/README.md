@@ -43,7 +43,9 @@ send a password-login request to the Side Service. It shows the server-verified
 connection state and error reason and provides **Check connection** and
 **Disconnect Dofek** actions. The Workout Extension uses its own
 `zepp-workout` connection, independently of the normal Zepp app's `zepp-main`
-connection.
+connection. Update both packages to the current release before pairing; Dofek
+rejects older ambiguous connection requests so a legacy Workout Extension
+cannot revoke the normal app's credential.
 
 ## Pair and enable the extension
 

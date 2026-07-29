@@ -5,7 +5,7 @@ import { colors } from "../theme";
 
 interface ZeppPairingCardBodyProps {
   connections: Array<{ connectionType: "zepp-main" | "zepp-workout" }>;
-  connectionsError: string;
+  connectionsError: string | null;
   isConnectionsLoading: boolean;
   pairingCode: string;
   pairingMessage: string;
@@ -51,7 +51,9 @@ export function ZeppPairingCard() {
   return (
     <ZeppPairingCardBody
       connections={connectionsQuery.data ?? []}
-      connectionsError={connectionsQuery.error?.message ?? disconnectMutation.error?.message ?? ""}
+      connectionsError={
+        connectionsQuery.error?.message ?? disconnectMutation.error?.message ?? null
+      }
       isConnectionsLoading={connectionsQuery.isLoading}
       pairingCode={pairingCode}
       pairingMessage={pairingMessage}

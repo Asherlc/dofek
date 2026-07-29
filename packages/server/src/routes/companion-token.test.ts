@@ -6,6 +6,7 @@ const {
   mockCaptureException,
   mockGetActiveCompanionTokenByToken,
   mockLogger,
+  mockOperationCounter,
   mockRegenerateCompanionToken,
   mockRevokeCompanionTokenByToken,
 } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const {
   mockCaptureException: vi.fn(),
   mockGetActiveCompanionTokenByToken: vi.fn(),
   mockLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  mockOperationCounter: { inc: vi.fn() },
   mockRegenerateCompanionToken: vi.fn(),
   mockRevokeCompanionTokenByToken: vi.fn(),
 }));
@@ -40,6 +42,10 @@ vi.mock("@sentry/node", () => ({
 
 vi.mock("../logger.ts", () => ({
   logger: mockLogger,
+}));
+
+vi.mock("../lib/metrics.ts", () => ({
+  companionConnectionOperationsTotal: mockOperationCounter,
 }));
 
 import { InvalidCredentialsError } from "../auth/password-credential.ts";
@@ -125,6 +131,7 @@ describe("createCompanionTokenHttpRouter", () => {
     const response = await postJson(app, "/api/companion-token/password-login", {
       email: "not-an-email",
       password: "password123",
+      connectionType: "zepp-main",
     });
 
     expect(response).toEqual({
@@ -141,6 +148,7 @@ describe("createCompanionTokenHttpRouter", () => {
     const response = await postJson(app, "/api/companion-token/password-login", {
       email: "user@example.com",
       password: "wrong-password",
+      connectionType: "zepp-main",
     });
 
     expect(response).toEqual({
@@ -155,6 +163,7 @@ describe("createCompanionTokenHttpRouter", () => {
     const response = await postJson(app, "/api/companion-token/password-login", {
       email: "user@example.com",
       password: "password123",
+      connectionType: "zepp-main",
     });
 
     expect(mockAuthenticatePasswordUser).toHaveBeenCalledWith(
@@ -175,6 +184,22 @@ describe("createCompanionTokenHttpRouter", () => {
     });
   });
 
+  it("requires legacy clients to identify their Zepp package", async () => {
+    const { app } = createTestApp();
+
+    const response = await postJson(app, "/api/companion-token/password-login", {
+      email: "user@example.com",
+      password: "password123",
+    });
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "Update the Zepp package before connecting to Dofek." },
+    });
+    expect(mockAuthenticatePasswordUser).not.toHaveBeenCalled();
+    expect(mockRegenerateCompanionToken).not.toHaveBeenCalled();
+  });
+
   it("reports unexpected token creation failures", async () => {
     mockRegenerateCompanionToken.mockResolvedValue({
       id: "token-1",
@@ -188,6 +213,7 @@ describe("createCompanionTokenHttpRouter", () => {
     const response = await postJson(app, "/api/companion-token/password-login", {
       email: "user@example.com",
       password: "password123",
+      connectionType: "zepp-main",
     });
 
     expect(mockCaptureException).toHaveBeenCalled();
@@ -213,6 +239,10 @@ describe("createCompanionTokenHttpRouter", () => {
       status: 200,
       body: { state: "connected", connectionType: "zepp-workout" },
     });
+    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+      operation: "verify",
+      outcome: "success",
+    });
   });
 
   it("revokes the current bearer connection", async () => {
@@ -229,5 +259,97 @@ describe("createCompanionTokenHttpRouter", () => {
       status: 200,
       body: { state: "disconnected" },
     });
+    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+      operation: "revoke",
+      outcome: "success",
+    });
+  });
+
+  it.each([
+    { method: "GET", operation: "verify" },
+    { method: "DELETE", operation: "revoke" },
+  ] as const)("records missing credentials for $operation", async ({ method, operation }) => {
+    const { app } = createTestApp();
+
+    const response = await requestJson(app, "/api/companion-token/current", { method });
+
+    expect(response).toEqual({
+      status: 401,
+      body: { error: "Dofek connection is required." },
+    });
+    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+      operation,
+      outcome: "missing_credentials",
+    });
+  });
+
+  it.each([
+    {
+      method: "GET",
+      operation: "verify",
+      repository: mockGetActiveCompanionTokenByToken,
+    },
+    {
+      method: "DELETE",
+      operation: "revoke",
+      repository: mockRevokeCompanionTokenByToken,
+    },
+  ] as const)("records invalid credentials for $operation", async ({
+    method,
+    operation,
+    repository,
+  }) => {
+    repository.mockResolvedValue(null);
+    const { app } = createTestApp();
+
+    const response = await requestJson(app, "/api/companion-token/current", {
+      method,
+      headers: { Authorization: "Bearer invalid_companion_token" },
+    });
+
+    expect(response).toEqual({
+      status: 401,
+      body: { error: "Invalid or revoked Dofek connection." },
+    });
+    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+      operation,
+      outcome: "invalid_credentials",
+    });
+  });
+
+  it.each([
+    {
+      method: "GET",
+      operation: "verify",
+      repository: mockGetActiveCompanionTokenByToken,
+      error: "Failed to validate Dofek connection.",
+    },
+    {
+      method: "DELETE",
+      operation: "revoke",
+      repository: mockRevokeCompanionTokenByToken,
+      error: "Failed to disconnect Dofek.",
+    },
+  ] as const)("records and reports internal $operation errors", async ({
+    method,
+    operation,
+    repository,
+    error,
+  }) => {
+    const databaseError = new Error(`${operation} database failed`);
+    repository.mockRejectedValue(databaseError);
+    const { app } = createTestApp();
+
+    const response = await requestJson(app, "/api/companion-token/current", {
+      method,
+      headers: { Authorization: "Bearer dofek_companion_test" },
+    });
+
+    expect(response).toEqual({ status: 500, body: { error } });
+    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+      operation,
+      outcome: "error",
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(databaseError);
   });
 });

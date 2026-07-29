@@ -65,7 +65,7 @@ export const Empty: Story = {
     <StoryFrame>
       <ZeppPairingCardBody
         connections={[]}
-        connectionsError=""
+        connectionsError={null}
         isConnectionsLoading={false}
         pairingCode=""
         pairingMessage=""
@@ -84,7 +84,7 @@ export const Loading: Story = {
     <StoryFrame>
       <ZeppPairingCardBody
         connections={[{ connectionType: "zepp-main" }]}
-        connectionsError=""
+        connectionsError={null}
         isConnectionsLoading
         pairingCode="ABC234"
         pairingMessage=""
@@ -103,7 +103,7 @@ export const Success: Story = {
     <StoryFrame>
       <ZeppPairingCardBody
         connections={[{ connectionType: "zepp-main" }, { connectionType: "zepp-workout" }]}
-        connectionsError=""
+        connectionsError={null}
         isConnectionsLoading={false}
         pairingCode=""
         pairingMessage="Zepp app connected. Return to Zepp to sync."

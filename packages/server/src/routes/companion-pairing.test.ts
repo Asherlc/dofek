@@ -84,13 +84,26 @@ describe("createCompanionPairingRouter", () => {
   it("starts a pairing challenge with a verification URL and QR image URL", async () => {
     const app = createTestApp(new InMemoryCompanionPairingStore());
 
-    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+    const response = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-main",
+    });
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       verificationUrl: expect.stringContaining("https://app.example.test/settings?zeppPair="),
       qrImageUrl: expect.stringContaining("https://app.example.test/api/companion-pairing/qr/"),
+    });
+  });
+
+  it("requires legacy clients to identify their Zepp package", async () => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Update the Zepp package before connecting to Dofek.",
     });
   });
 
@@ -112,7 +125,9 @@ describe("createCompanionPairingRouter", () => {
     process.env.PUBLIC_URL = "http://app.example.test";
     const app = createTestApp(new InMemoryCompanionPairingStore());
 
-    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+    const response = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-main",
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -147,7 +162,9 @@ describe("createCompanionPairingRouter", () => {
   it("returns pending status before the code is claimed", async () => {
     const store = new InMemoryCompanionPairingStore();
     const app = createTestApp(store);
-    const startResponse = await request(app, "POST", "/api/companion-pairing/start", {});
+    const startResponse = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-main",
+    });
     const startBody = pairingStartResponseSchema.parse(await startResponse.json());
 
     const statusResponse = await request(

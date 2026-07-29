@@ -1,5 +1,6 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
+import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
@@ -8,6 +9,7 @@ import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-
 BaseSideService.use(messagingPlugin);
 
 const logger = Logger.getLogger("imu-side");
+const connectionOperations = new LatestOperation();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -49,7 +51,7 @@ AppSideService(
       const pairingId = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (pairingId && !apiToken) {
-        this.schedulePairingPoll(pairingId, getStoredServerUrl());
+        this.schedulePairingPoll(pairingId, getStoredServerUrl(), connectionOperations.begin());
       }
       if (apiToken) {
         this.verifyConnection().catch((error: unknown) => {
@@ -191,6 +193,7 @@ AppSideService(
     },
 
     async startPairing() {
+      const operation = connectionOperations.begin();
       const serverUrl = getStoredServerUrl();
       try {
         this.setConnectionStatus({ state: "pairing" });
@@ -207,26 +210,31 @@ AppSideService(
         if (!isRecord(summary.body)) {
           throw new Error("Dofek pairing response was invalid.");
         }
+        if (!connectionOperations.isCurrent(operation)) {
+          return null;
+        }
         const pairingInfo = this.savePairingInfo(summary.body);
-        this.schedulePairingPoll(pairingInfo.pairingId, serverUrl);
+        this.schedulePairingPoll(pairingInfo.pairingId, serverUrl, operation);
         return pairingInfo;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek pairing failed.";
-        this.setConnectionStatus({ state: "error", reason: message });
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
         throw error;
       }
     },
 
-    schedulePairingPoll(pairingId: string, serverUrl: string) {
+    schedulePairingPoll(pairingId: string, serverUrl: string, operation: number) {
       setTimeout(() => {
-        this.pollPairing(pairingId, serverUrl).catch((error: unknown) => {
+        this.pollPairing(pairingId, serverUrl, operation).catch((error: unknown) => {
           logger.error("pairing poll failed %j", error);
         });
       }, 3000);
     },
 
-    async pollPairing(pairingId: string, serverUrl: string) {
-      if (!this.isCurrentPairing(pairingId)) {
+    async pollPairing(pairingId: string, serverUrl: string, operation: number) {
+      if (!connectionOperations.isCurrent(operation) || !this.isCurrentPairing(pairingId)) {
         return;
       }
       const expiresAt = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT);
@@ -244,14 +252,16 @@ AppSideService(
         });
       } catch (error) {
         logger.error("pairing poll request failed %j", error);
-        this.schedulePairingPoll(pairingId, serverUrl);
+        if (connectionOperations.isCurrent(operation)) {
+          this.schedulePairingPoll(pairingId, serverUrl, operation);
+        }
         return;
       }
       const summary = summarizeZeppFetchResponse(response);
       if (!summary.ok) {
         if (shouldRetryPairingPollFailure(summary)) {
           logger.error("pairing poll transient response failed %j", summary.errorMessage);
-          this.schedulePairingPoll(pairingId, serverUrl);
+          this.schedulePairingPoll(pairingId, serverUrl, operation);
           return;
         }
         this.setConnectionStatus({
@@ -267,7 +277,7 @@ AppSideService(
         });
         return;
       }
-      if (!this.isCurrentPairing(pairingId)) {
+      if (!connectionOperations.isCurrent(operation) || !this.isCurrentPairing(pairingId)) {
         return;
       }
 
@@ -291,7 +301,7 @@ AppSideService(
           state: "pairing",
           shortCode: settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_SHORT_CODE),
         });
-        this.schedulePairingPoll(pairingId, serverUrl);
+        this.schedulePairingPoll(pairingId, serverUrl, operation);
         return;
       }
 
@@ -299,6 +309,7 @@ AppSideService(
     },
 
     async loginWithPassword(rawPayload: string) {
+      const operation = connectionOperations.begin();
       const payload = readJson(rawPayload, {});
       const serverUrl = getStoredServerUrl();
       const email = getString(payload, "email");
@@ -329,6 +340,9 @@ AppSideService(
         if (!isRecord(summary.body) || typeof summary.body.token !== "string") {
           throw new Error("Dofek login did not return connection credentials.");
         }
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
 
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, email);
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, summary.body.token);
@@ -339,12 +353,15 @@ AppSideService(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
-        this.setConnectionStatus({ state: "error", reason: message });
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
         throw error;
       }
     },
 
     async verifyConnection() {
+      const operation = connectionOperations.begin();
       const serverUrl = getStoredServerUrl();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
@@ -360,6 +377,9 @@ AppSideService(
           headers: { Authorization: `Bearer ${apiToken}` },
         });
         const summary = summarizeZeppFetchResponse(response);
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
         if (!summary.ok) {
           if (summary.status === 401) {
             settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
@@ -379,12 +399,15 @@ AppSideService(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek connection check failed.";
-        this.setConnectionStatus({ state: "error", reason: message });
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
         throw error;
       }
     },
 
     async disconnect() {
+      const operation = connectionOperations.begin();
       const serverUrl = getStoredServerUrl();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
@@ -401,6 +424,9 @@ AppSideService(
           headers: { Authorization: `Bearer ${apiToken}` },
         });
         const summary = summarizeZeppFetchResponse(response);
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
         if (!summary.ok && summary.status !== 401) {
           throw new Error(summary.errorMessage ?? "Failed to disconnect Dofek.");
         }
@@ -409,7 +435,9 @@ AppSideService(
         this.setConnectionStatus({ state: "not connected" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to disconnect Dofek.";
-        this.setConnectionStatus({ state: "error", reason: message });
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
         throw error;
       }
     },
@@ -562,7 +590,7 @@ AppSideService(
 
       if (method === "dofek.startPairing") {
         this.startPairing()
-          .then((pairingInfo: Record<string, unknown>) => res(null, pairingInfo))
+          .then((pairingInfo) => res(null, pairingInfo))
           .catch((error: unknown) => res(error, null));
         return;
       }

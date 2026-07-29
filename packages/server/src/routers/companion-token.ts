@@ -43,6 +43,7 @@ export const companionTokenRouter = router({
     }),
 
   list: protectedProcedure
+    .input(z.void())
     .output(z.array(companionTokenOutputSchema.omit({ token: true })))
     .query(async ({ ctx }) => {
       const connections = await listActiveCompanionTokens(ctx.db, ctx.userId);
