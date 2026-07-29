@@ -38,8 +38,11 @@ export const bodyMeasurementClickHouseSchema = z.object({
 });
 
 export const bodyCompClickHouseSchema = z.object({
+  id: z.string(),
   date: dateStringSchema,
   recorded_at: timestampStringSchema,
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
   weight_kg: z.coerce.number().nullable(),
   body_fat_pct: z.coerce.number().nullable(),
 });
@@ -167,13 +170,19 @@ export async function fetchBodyCompRows(
     bodyCompClickHouseSchema,
     `
       SELECT
+        toString(body_measurements.id) AS id,
         toString(toDate(toTimeZone(body_measurements.recorded_at, {timezone:String}))) AS date,
         toString(body_measurements.recorded_at) AS recorded_at,
+        body_measurements.provider_id AS provider_id,
+        body_measurements.source_providers AS source_providers,
         weight_kg,
         body_fat_pct
       FROM (
         SELECT
+          id,
           recorded_at,
+          provider_id,
+          source_providers,
           weight_kg,
           body_fat_pct
         FROM analytics.v_body_measurement

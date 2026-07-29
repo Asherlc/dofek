@@ -30,6 +30,45 @@ const correlationDataPointSchema = z.object({
   date: dateStringSchema,
 });
 
+const correlationContributorSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("record"),
+    label: z.string(),
+    providerIds: z.array(z.string()),
+    target: z.object({
+      type: z.literal("activity"),
+      activityId: z.guid(),
+    }),
+  }),
+  z.object({
+    kind: z.literal("aggregate_inputs"),
+    label: z.string(),
+    providerIds: z.array(z.string()),
+    target: z.object({
+      type: z.literal("metric_family"),
+      family: z.enum(["recovery", "sleep", "nutrition", "activity", "body"]),
+    }),
+  }),
+]);
+
+const correlationObservationValueSchema = z.object({
+  metricId: z.string(),
+  date: dateStringSchema,
+  value: z.number(),
+  contributors: z.array(correlationContributorSchema),
+});
+
+const correlationObservationPageSchema = z.object({
+  items: z.array(
+    z.object({
+      x: correlationObservationValueSchema,
+      y: correlationObservationValueSchema,
+    }),
+  ),
+  totalCount: z.number().int().nonnegative(),
+  nextCursor: dateStringSchema.nullable(),
+});
+
 const correlationStatsSchema = z.object({
   mean: z.number(),
   median: z.number(),
@@ -160,6 +199,15 @@ function assertDistinctMetrics(metricX: string, metricY: string): void {
   }
 }
 
+const correlationObservationsInputSchema = z.object({
+  metricX: z.string(),
+  metricY: z.string(),
+  days: selectedChartRangeSchema("correlation.observations"),
+  lag: z.number().min(0).max(7).default(0),
+  cursor: dateStringSchema.optional(),
+  pageSize: z.number().int().min(1).max(100).default(25),
+});
+
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
 export const correlationRouter = router({
@@ -204,5 +252,27 @@ export const correlationRouter = router({
       );
     },
     correlationComputeV2OutputSchema,
+  ),
+
+  observations: selectedChartCustomRangeQuery(
+    "correlation.observations",
+    CacheTTL.MEDIUM,
+    correlationObservationsInputSchema,
+    async ({ ctx, input, range }) => {
+      assertDistinctMetrics(input.metricX, input.metricY);
+      const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
+      return repo.listObservations(
+        input.metricX,
+        input.metricY,
+        range.days,
+        input.lag,
+        new Date().toISOString().slice(0, 10),
+        {
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          pageSize: input.pageSize,
+        },
+      );
+    },
+    correlationObservationPageSchema,
   ),
 });

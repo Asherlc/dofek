@@ -8,6 +8,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted<{
   correlationData: Record<string, unknown> | undefined;
   correlationError: Error | null;
+  observationData: Record<string, unknown>;
+  observationPages: Record<string, Record<string, unknown>>;
+  observationInputs: Array<Record<string, unknown>>;
   metricsData:
     | Array<{
         id: string;
@@ -20,6 +23,9 @@ const state = vi.hoisted<{
 }>(() => ({
   correlationData: {},
   correlationError: null,
+  observationData: {},
+  observationPages: {},
+  observationInputs: [],
   metricsData: undefined,
 }));
 
@@ -28,9 +34,15 @@ vi.mock("@dofek/format/format", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a href={typeof to === "string" ? to : "/experiments"}>{children}</a>
-  ),
+  Link: ({
+    children,
+    to,
+    params,
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: Record<string, string>;
+  }) => <a href={to === "/activity/$id" ? `/activity/${params?.id ?? ""}` : to}>{children}</a>,
 }));
 
 vi.mock("../components/ChartDescriptionTooltip.tsx", () => ({
@@ -72,6 +84,17 @@ vi.mock("../lib/trpc.ts", () => ({
           isError: state.correlationError !== null,
           isLoading: false,
         }),
+      },
+      observations: {
+        useQuery: (input: Record<string, unknown>) => {
+          state.observationInputs.push(input);
+          const cursor = typeof input.cursor === "string" ? input.cursor : "first";
+          return {
+            data: state.observationPages[cursor] ?? state.observationData,
+            isError: false,
+            isLoading: false,
+          };
+        },
       },
     },
   },
@@ -125,6 +148,9 @@ describe("CorrelationExplorerPage", () => {
       interpretationWarning:
         "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
     };
+    state.observationData = { items: [], totalCount: 0, nextCursor: null };
+    state.observationPages = {};
+    state.observationInputs = [];
   });
 
   it("prevents selecting the metric already used on the opposite axis", async () => {
@@ -368,5 +394,117 @@ describe("CorrelationExplorerPage", () => {
     expect(
       screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
     ).toBeTruthy();
+  });
+
+  it("renders lagged paired values with honest provenance and record navigation", async () => {
+    state.observationData = {
+      totalCount: 1,
+      nextCursor: null,
+      items: [
+        {
+          x: {
+            metricId: "protein",
+            date: "2025-04-01",
+            value: 120,
+            contributors: [
+              {
+                kind: "aggregate_inputs",
+                label: "Canonical daily nutrition inputs",
+                providerIds: ["macro_factor"],
+                target: { type: "metric_family", family: "nutrition" },
+              },
+            ],
+          },
+          y: {
+            metricId: "hrv",
+            date: "2025-04-02",
+            value: 55,
+            contributors: [
+              {
+                kind: "record",
+                label: "Morning run",
+                providerIds: [],
+                target: {
+                  type: "activity",
+                  activityId: "00000000-0000-4000-8000-000000000106",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByRole("table", { name: "Paired observations" })).toBeTruthy();
+    expect(screen.getByText("2025-04-01")).toBeTruthy();
+    expect(screen.getByText("2025-04-02")).toBeTruthy();
+    expect(screen.getByText("120 g")).toBeTruthy();
+    expect(screen.getByText("55 ms")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Canonical daily nutrition inputs" }).getAttribute("href"),
+    ).toBe("/nutrition");
+    expect(screen.getByText("macro_factor")).toBeTruthy();
+    expect(screen.getByText("Aggregate inputs")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Morning run" }).getAttribute("href")).toBe(
+      "/activity/00000000-0000-4000-8000-000000000106",
+    );
+  });
+
+  it("traverses cursor pages without changing the selected correlation", async () => {
+    state.observationPages = {
+      first: {
+        totalCount: 2,
+        nextCursor: "2025-04-02",
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-03",
+              value: 123,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-03",
+              value: 58,
+              contributors: [],
+            },
+          },
+        ],
+      },
+      "2025-04-02": {
+        totalCount: 2,
+        nextCursor: null,
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-01",
+              value: 120,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-01",
+              value: 55,
+              contributors: [],
+            },
+          },
+        ],
+      },
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next observation page" }));
+    expect(screen.getAllByText("2025-04-01")).toHaveLength(2);
+    expect(state.observationInputs.some((input) => input.cursor === "2025-04-02")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous observation page" }));
+    expect(screen.getAllByText("2025-04-03")).toHaveLength(2);
   });
 });

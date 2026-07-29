@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JoinedDay } from "../insights/data-join.ts";
 import { joinByDate } from "../insights/data-join.ts";
 import {
+  buildCorrelationObservationPage,
   CorrelationRepository,
   computeCorrelation,
   computeCorrelationV2,
@@ -11,7 +12,8 @@ import {
   extractMetricValue,
 } from "./correlation-repository.ts";
 
-vi.mock("../insights/data-join.ts", () => ({
+vi.mock("../insights/data-join.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../insights/data-join.ts")>()),
   joinByDate: vi.fn().mockReturnValue([]),
 }));
 
@@ -551,6 +553,153 @@ describe("computeCorrelationV2 mutation boundaries", () => {
   });
 });
 
+describe("buildCorrelationObservationPage", () => {
+  const joined = Array.from({ length: 7 }, (_, index) =>
+    makeJoinedDay({
+      date: `2025-01-0${index + 1}`,
+      cardio_minutes: 30 + index,
+      weight_30d_avg: 70 + index,
+    }),
+  );
+  const evidenceByDate = new Map([
+    [
+      "2025-01-06",
+      {
+        dailyMetricProviderIds: [],
+        sleepProviderIds: [],
+        nutritionProviderIds: [],
+        bodyProviderIds: ["withings"],
+        activities: [
+          {
+            id: "00000000-0000-4000-8000-000000000106",
+            activityType: "running",
+            label: "Morning run",
+          },
+        ],
+      },
+    ],
+    [
+      "2025-01-07",
+      {
+        dailyMetricProviderIds: [],
+        sleepProviderIds: [],
+        nutritionProviderIds: [],
+        bodyProviderIds: ["withings"],
+        activities: [
+          {
+            id: "00000000-0000-4000-8000-000000000107",
+            activityType: "cycling",
+            label: "Evening ride",
+          },
+        ],
+      },
+    ],
+  ]);
+
+  it("returns newest-first pages whose union equals the full all-time pair count", () => {
+    const first = buildCorrelationObservationPage(
+      joined,
+      {
+        metricX: "cardio_duration",
+        metricY: "weight_30d",
+        days: null,
+        lag: 0,
+        endDate: "2025-01-07",
+      },
+      evidenceByDate,
+      { pageSize: 3 },
+    );
+    const second = buildCorrelationObservationPage(
+      joined,
+      {
+        metricX: "cardio_duration",
+        metricY: "weight_30d",
+        days: null,
+        lag: 0,
+        endDate: "2025-01-07",
+      },
+      evidenceByDate,
+      { pageSize: 3, cursor: first.nextCursor ?? undefined },
+    );
+    const third = buildCorrelationObservationPage(
+      joined,
+      {
+        metricX: "cardio_duration",
+        metricY: "weight_30d",
+        days: null,
+        lag: 0,
+        endDate: "2025-01-07",
+      },
+      evidenceByDate,
+      { pageSize: 3, cursor: second.nextCursor ?? undefined },
+    );
+
+    expect(first.items.map((item) => item.x.date)).toEqual([
+      "2025-01-07",
+      "2025-01-06",
+      "2025-01-05",
+    ]);
+    expect(first.totalCount).toBe(7);
+    expect([...first.items, ...second.items, ...third.items].map((item) => item.x.date)).toEqual([
+      "2025-01-07",
+      "2025-01-06",
+      "2025-01-05",
+      "2025-01-04",
+      "2025-01-03",
+      "2025-01-02",
+      "2025-01-01",
+    ]);
+    expect(third.nextCursor).toBeNull();
+  });
+
+  it("returns explicit lagged X and Y dates and exact activity record navigation", () => {
+    const page = buildCorrelationObservationPage(
+      joined,
+      {
+        metricX: "cardio_duration",
+        metricY: "weight_30d",
+        days: null,
+        lag: 1,
+        endDate: "2025-01-07",
+      },
+      evidenceByDate,
+      { pageSize: 2 },
+    );
+
+    expect(page.items[0]).toEqual({
+      x: {
+        metricId: "cardio_duration",
+        date: "2025-01-06",
+        value: 35,
+        contributors: [
+          {
+            kind: "record",
+            label: "Morning run",
+            providerIds: [],
+            target: {
+              type: "activity",
+              activityId: "00000000-0000-4000-8000-000000000106",
+            },
+          },
+        ],
+      },
+      y: {
+        metricId: "weight_30d",
+        date: "2025-01-07",
+        value: 76,
+        contributors: [
+          {
+            kind: "aggregate_inputs",
+            label: "30-day body measurement inputs",
+            providerIds: ["withings"],
+            target: { type: "metric_family", family: "body" },
+          },
+        ],
+      },
+    });
+  });
+});
+
 // ── CorrelationRepository ───────────────────────────────────────────────
 
 function makeDb() {
@@ -566,7 +715,10 @@ function makeDb() {
 
 function makeSensorStore() {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+    query: vi
+      .fn()
+      .mockResolvedValueOnce([{ date: "2024-01-01", resting_hr: 52 }])
+      .mockResolvedValue([]),
   };
 }
 
@@ -685,6 +837,83 @@ describe("CorrelationRepository", () => {
         availability: "insufficient",
         interpretationWarning:
           "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      });
+    });
+  });
+
+  describe("listObservations", () => {
+    it("attributes sleep metrics to the selected longest session for a wake date", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce([
+        makeJoinedDay({
+          date: "2026-01-02",
+          sleep_duration_min: 480,
+          sleep_efficiency: 92,
+        }),
+      ]);
+      const db = {
+        execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+      };
+      const sensorStore = {
+        query: vi
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              date: "2026-01-02",
+              provider_id: "long-session-provider",
+              source_name: "Long session",
+              source_providers: ["long-session-provider"],
+              timezone: "UTC",
+              start_utc_offset_minutes: 0,
+              end_utc_offset_minutes: 0,
+              local_time_source: "provider_timezone",
+              started_at: "2026-01-01T22:00:00Z",
+              ended_at: "2026-01-02T06:00:00Z",
+              duration_minutes: 480,
+              deep_minutes: 100,
+              rem_minutes: 100,
+              light_minutes: 260,
+              awake_minutes: 20,
+              efficiency_pct: 92,
+            },
+            {
+              date: "2026-01-02",
+              provider_id: "short-session-provider",
+              source_name: "Short session",
+              source_providers: ["short-session-provider"],
+              timezone: "UTC",
+              start_utc_offset_minutes: 0,
+              end_utc_offset_minutes: 0,
+              local_time_source: "provider_timezone",
+              started_at: "2026-01-01T23:00:00Z",
+              ended_at: "2026-01-02T01:00:00Z",
+              duration_minutes: 120,
+              deep_minutes: 20,
+              rem_minutes: 20,
+              light_minutes: 70,
+              awake_minutes: 10,
+              efficiency_pct: 90,
+            },
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+      };
+      const repository = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+
+      const page = await repository.listObservations(
+        "sleep_duration",
+        "sleep_efficiency",
+        30,
+        0,
+        "2026-01-02",
+        { pageSize: 25 },
+      );
+
+      expect(page.items[0]?.x.contributors[0]).toMatchObject({
+        providerIds: ["long-session-provider"],
+      });
+      expect(page.items[0]?.y.contributors[0]).toMatchObject({
+        providerIds: ["long-session-provider"],
       });
     });
   });

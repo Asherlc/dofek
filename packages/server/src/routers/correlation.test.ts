@@ -853,4 +853,134 @@ describe("correlationRouter", () => {
       ).rejects.toThrow();
     });
   });
+
+  describe("observations", () => {
+    it("returns the bounded paired-observation contract and strips unknown fields", async () => {
+      const repositoryResult = {
+        items: [
+          {
+            x: {
+              metricId: "cardio_duration",
+              date: "2025-01-06",
+              value: 35,
+              contributors: [
+                {
+                  kind: "record",
+                  label: "Morning run",
+                  providerIds: [],
+                  target: {
+                    type: "activity",
+                    activityId: "00000000-0000-4000-8000-000000000106",
+                  },
+                },
+              ],
+            },
+            y: {
+              metricId: "weight_30d",
+              date: "2025-01-07",
+              value: 76,
+              contributors: [
+                {
+                  kind: "aggregate_inputs",
+                  label: "30-day body measurement inputs",
+                  providerIds: ["withings"],
+                  target: { type: "metric_family", family: "body" },
+                },
+              ],
+            },
+          },
+        ],
+        totalCount: 7,
+        nextCursor: "2025-01-06",
+        unexpected: "not part of the API contract",
+      } as const;
+      const observations = vi
+        .spyOn(CorrelationRepository.prototype, "listObservations")
+        .mockResolvedValue(repositoryResult);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const result = await caller.observations({
+        metricX: "cardio_duration",
+        metricY: "weight_30d",
+        days: null,
+        lag: 1,
+        pageSize: 25,
+      });
+
+      expect(result).toMatchObject({
+        totalCount: 7,
+        nextCursor: "2025-01-06",
+        items: [
+          {
+            x: { date: "2025-01-06", value: 35 },
+            y: { date: "2025-01-07", value: 76 },
+          },
+        ],
+      });
+      expect(result).not.toHaveProperty("unexpected");
+      expect(observations).toHaveBeenCalledWith(
+        "cardio_duration",
+        "weight_30d",
+        null,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        { pageSize: 25 },
+      );
+      observations.mockRestore();
+    });
+
+    it("rejects malformed cursors and page sizes above the server bound", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.observations({
+          metricX: "cardio_duration",
+          metricY: "weight_30d",
+          days: null,
+          lag: 1,
+          cursor: "not-a-date",
+        }),
+      ).rejects.toThrow();
+      await expect(
+        caller.observations({
+          metricX: "cardio_duration",
+          metricY: "weight_30d",
+          days: null,
+          lag: 1,
+          pageSize: 101,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects a comparison of the same metric", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.observations({
+          metricX: "hrv",
+          metricY: "hrv",
+          days: 30,
+          lag: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Choose two different metrics to compare.",
+      });
+    });
+  });
 });
