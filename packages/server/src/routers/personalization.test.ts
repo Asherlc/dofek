@@ -87,6 +87,8 @@ describe("personalizationRouter", () => {
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
       expect(result.parameters.trainingImpulseConstants).toBeNull();
+      expect(result.modelCards).toHaveLength(5);
+      expect(result.modelCards.every((card) => card.status === "default")).toBe(true);
     });
 
     it("returns isPersonalized=true when at least one sub-param is non-null", async () => {
@@ -118,6 +120,12 @@ describe("personalizationRouter", () => {
       expect(result.fittedAt).toBe("2026-03-18T12:00:00Z");
       expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
       expect(result.parameters.exponentialMovingAverage).not.toBeNull();
+      expect(result.modelCards[0]).toMatchObject({
+        key: "exponentialMovingAverage",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+      });
     });
 
     it("returns isPersonalized=false when all sub-params are null", async () => {

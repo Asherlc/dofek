@@ -4,32 +4,10 @@ import {
   formatIntensity,
   formatStandardDeviation,
 } from "@dofek/format/format";
+import type { PersonalizationModelCard } from "dofek-server/types";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-
-const PARAM_LABELS: Record<string, { label: string; description: string }> = {
-  exponentialMovingAverage: {
-    label: "Training Load Windows",
-    description: "Days of training history used for fitness and fatigue",
-  },
-  readinessWeights: {
-    label: "Readiness Score Weights",
-    description: "How much each factor contributes to readiness",
-  },
-  sleepTarget: {
-    label: "Sleep Target",
-    description: "Sleep associated with your best recovery",
-  },
-  stressThresholds: {
-    label: "Stress Sensitivity",
-    description: "How far each threshold is from your usual baseline (in standard deviations)",
-  },
-  trainingImpulseConstants: {
-    label: "Heart Rate Effort Model",
-    description: "How heart rate intensity translates to load",
-  },
-};
 
 export function PersonalizationPanel() {
   const status = trpc.personalization.status.useQuery();
@@ -53,7 +31,7 @@ export function PersonalizationPanel() {
   }
 
   if (status.error) {
-    return <Text style={styles.errorText}>Failed to load personalization status</Text>;
+    return <Text style={styles.errorText}>{status.error.message}</Text>;
   }
 
   const data = status.data;
@@ -87,69 +65,41 @@ export function PersonalizationPanel() {
           </Text>
         </View>
         {data.fittedAt && (
-          <Text style={styles.statusDate}>Updated {formatDateMedium(data.fittedAt)}</Text>
+          <Text style={styles.statusDate}>
+            Last refit attempt {formatDateMedium(data.fittedAt)}
+          </Text>
         )}
       </View>
 
       {/* Parameter cards */}
       <ParamCard
-        paramKey="exponentialMovingAverage"
-        personalized={data.parameters.exponentialMovingAverage}
+        modelCard={getModelCard(data.modelCards, "exponentialMovingAverage")}
         value={`Fitness: ${data.effective.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.effective.exponentialMovingAverage.acuteTrainingLoadDays}d`}
         defaultValue={`Fitness: ${data.defaults.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.defaults.exponentialMovingAverage.acuteTrainingLoadDays}d`}
-        quality={
-          data.parameters.exponentialMovingAverage
-            ? `${data.parameters.exponentialMovingAverage.sampleCount} days, r=${data.parameters.exponentialMovingAverage.correlation}`
-            : undefined
-        }
       />
 
       <ParamCard
-        paramKey="readinessWeights"
-        personalized={data.parameters.readinessWeights}
+        modelCard={getModelCard(data.modelCards, "readinessWeights")}
         value={`Heart Rate Variability ${formatIntensity(data.effective.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.effective.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.effective.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.effective.readinessWeights.respiratoryRate * 100)}`}
         defaultValue={`Heart Rate Variability ${formatIntensity(data.defaults.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.defaults.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.defaults.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.defaults.readinessWeights.respiratoryRate * 100)}`}
-        quality={
-          data.parameters.readinessWeights
-            ? `${data.parameters.readinessWeights.sampleCount} days, r=${data.parameters.readinessWeights.correlation}`
-            : undefined
-        }
       />
 
       <ParamCard
-        paramKey="sleepTarget"
-        personalized={data.parameters.sleepTarget}
+        modelCard={getModelCard(data.modelCards, "sleepTarget")}
         value={formatDurationMinutes(data.effective.sleepTarget.minutes)}
         defaultValue={formatDurationMinutes(data.defaults.sleepTarget.minutes)}
-        quality={
-          data.parameters.sleepTarget
-            ? `${data.parameters.sleepTarget.sampleCount} qualifying nights`
-            : undefined
-        }
       />
 
       <ParamCard
-        paramKey="stressThresholds"
-        personalized={data.parameters.stressThresholds}
+        modelCard={getModelCard(data.modelCards, "stressThresholds")}
         value={`Heart Rate Variability: ${data.effective.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.effective.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
         defaultValue={`Heart Rate Variability: ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
-        quality={
-          data.parameters.stressThresholds
-            ? `${data.parameters.stressThresholds.sampleCount} days`
-            : undefined
-        }
       />
 
       <ParamCard
-        paramKey="trainingImpulseConstants"
-        personalized={data.parameters.trainingImpulseConstants}
+        modelCard={getModelCard(data.modelCards, "trainingImpulseConstants")}
         value={`Factor: ${data.effective.trainingImpulseConstants.genderFactor}, Exp: ${data.effective.trainingImpulseConstants.exponent}`}
         defaultValue={`Factor: ${data.defaults.trainingImpulseConstants.genderFactor}, Exp: ${data.defaults.trainingImpulseConstants.exponent}`}
-        quality={
-          data.parameters.trainingImpulseConstants
-            ? `${data.parameters.trainingImpulseConstants.sampleCount} activities, R²=${data.parameters.trainingImpulseConstants.r2}`
-            : undefined
-        }
       />
 
       {/* Actions */}
@@ -194,37 +144,73 @@ export function PersonalizationPanel() {
 }
 
 function ParamCard({
-  paramKey,
-  personalized,
+  modelCard,
   value,
   defaultValue,
-  quality,
 }: {
-  paramKey: string;
-  personalized: unknown;
+  modelCard: PersonalizationModelCard;
   value: string;
   defaultValue: string;
-  quality?: string;
 }) {
-  const meta = PARAM_LABELS[paramKey];
-  const isPersonalized = personalized !== null;
+  const isPersonalized = modelCard.status === "personalized";
+  const lastFit = modelCard.lastSuccessfulFitAt
+    ? formatDateMedium(modelCard.lastSuccessfulFitAt)
+    : modelCard.lastFitSummary;
 
   return (
     <View style={styles.paramCard}>
       <View style={styles.paramHeader}>
-        <Text style={styles.paramLabel}>{meta?.label ?? paramKey}</Text>
+        <Text
+          style={styles.paramLabel}
+          accessibilityRole="header"
+          accessibilityLabel={`${modelCard.title} model evidence`}
+        >
+          {modelCard.title}
+        </Text>
         <Text
           style={[styles.paramBadge, isPersonalized ? styles.badgeLearned : styles.badgeDefault]}
         >
           {isPersonalized ? "Learned" : "Default"}
         </Text>
       </View>
-      <Text style={styles.paramDescription}>{meta?.description}</Text>
+      <Text style={styles.paramDescription}>{modelCard.description}</Text>
       <Text style={styles.paramValue}>{value}</Text>
-      {isPersonalized && quality && <Text style={styles.paramQuality}>Quality: {quality}</Text>}
       {isPersonalized && <Text style={styles.paramDefault}>Default: {defaultValue}</Text>}
+      <View style={styles.modelEvidence}>
+        <EvidenceRow label="Last successful fit" value={lastFit} />
+        <EvidenceRow label="Data window" value={modelCard.dataWindow} />
+        <EvidenceRow label="Data sufficiency" value={modelCard.dataSufficiency} />
+        <EvidenceRow label="Fit evidence" value={modelCard.fitEvidence} />
+        <EvidenceRow label="Uncertainty" value={modelCard.uncertainty} />
+        <Text style={styles.evidenceLabel}>Excluded data:</Text>
+        {modelCard.excludedData.map((exclusion) => (
+          <Text key={exclusion} style={styles.evidenceValue}>
+            {"\u2022"} {exclusion}
+          </Text>
+        ))}
+      </View>
     </View>
   );
+}
+
+function EvidenceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Text style={styles.evidenceValue}>
+      <Text style={styles.evidenceLabel}>{label}: </Text>
+      {value}
+    </Text>
+  );
+}
+
+function getModelCard(
+  modelCards: PersonalizationModelCard[],
+  key: PersonalizationModelCard["key"],
+): PersonalizationModelCard {
+  const modelCard = modelCards.find((candidate) => candidate.key === key);
+  if (!modelCard) {
+    throw new Error(`Missing personalization model card: ${key}`);
+  }
+  return modelCard;
 }
 
 const styles = StyleSheet.create({
@@ -310,14 +296,23 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
     marginTop: 2,
   },
-  paramQuality: {
-    fontSize: 11,
-    color: colors.textTertiary,
-  },
   paramDefault: {
     fontSize: 11,
     color: colors.textTertiary,
     opacity: 0.7,
+  },
+  modelEvidence: {
+    gap: 3,
+    paddingTop: 8,
+  },
+  evidenceLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  evidenceValue: {
+    fontSize: 11,
+    color: colors.textTertiary,
   },
 
   // Actions
