@@ -147,7 +147,15 @@ describe("ActivitiesCalendarRepository", () => {
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
-      [makeActivityRow({ avg_power: 251 })],
+      [
+        makeActivityRow({
+          avg_power: 251,
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_timezone",
+        }),
+      ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
     ]);
@@ -162,6 +170,12 @@ describe("ActivitiesCalendarRepository", () => {
           expect.objectContaining({
             id: "activity-1",
             durationMin: 60,
+            localTimeContext: {
+              timezone: "America/Los_Angeles",
+              startUtcOffsetMinutes: -480,
+              endUtcOffsetMinutes: -420,
+              source: "provider_timezone",
+            },
             tss: 100.8,
             location: null,
             stats: [{ label: "Training Stress Score", value: "100.8" }],

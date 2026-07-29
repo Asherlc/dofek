@@ -80,6 +80,83 @@ describe("resolveRecordLocalTimeContext", () => {
       }),
     ).toThrow("UTC offset minutes must be an integer between -840 and 840");
   });
+
+  it.each([
+    ["startedAt", { startedAt: new Date("invalid") }],
+    [
+      "endedAt",
+      {
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        endedAt: new Date("invalid"),
+      },
+    ],
+  ])("rejects an invalid %s", (field, dates) => {
+    expect(() =>
+      resolveRecordLocalTimeContext({
+        ...dates,
+        source: "unknown",
+      }),
+    ).toThrow(`${field} must be a valid Date`);
+  });
+
+  it.each([-841, 840.5, 841])("rejects the invalid explicit offset %s", (offset) => {
+    expect(() =>
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        startUtcOffsetMinutes: offset,
+        source: "device_offset",
+      }),
+    ).toThrow("UTC offset minutes must be an integer between -840 and 840");
+  });
+
+  it.each([-840, 840])("accepts the civil UTC offset boundary %s", (offset) => {
+    expect(
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        startUtcOffsetMinutes: offset,
+        source: "device_offset",
+      }).startUtcOffsetMinutes,
+    ).toBe(offset);
+  });
+
+  it("trims a provider timezone before storing it", () => {
+    expect(
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        timezone: "  UTC  ",
+        source: "provider_timezone",
+      }),
+    ).toMatchObject({ timezone: "UTC", startUtcOffsetMinutes: 0 });
+  });
+
+  it("requires timezone sources to provide a timezone", () => {
+    expect(() =>
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        source: "device_timezone",
+      }),
+    ).toThrow("device_timezone local-time context requires an IANA timezone");
+  });
+
+  it("rejects a timezone attached to an offset source", () => {
+    expect(() =>
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        timezone: "UTC",
+        startUtcOffsetMinutes: 0,
+        source: "provider_offset",
+      }),
+    ).toThrow("provider_offset local-time context cannot include an IANA timezone");
+  });
+
+  it("requires offset sources to provide a start offset", () => {
+    expect(() =>
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        source: "provider_offset",
+      }),
+    ).toThrow("provider_offset local-time context requires a start UTC offset");
+  });
 });
 
 describe("offsetMinutesFromTimestamp", () => {
@@ -94,6 +171,23 @@ describe("offsetMinutesFromTimestamp", () => {
 
   it("returns null when the timestamp carries no explicit offset", () => {
     expect(offsetMinutesFromTimestamp("2026-01-01T10:00:00")).toBeNull();
+  });
+
+  it.each([
+    "2026-01-01T10:00:00Zsuffix",
+    "2026-01-01T10:00:00+14:01",
+    "2026-01-01T10:00:00+15:00",
+    "2026-01-01T10:00:00+01:60",
+    "2026-01-01T10:00:00+05:30suffix",
+  ])("rejects the malformed or out-of-range offset in %s", (timestamp) => {
+    expect(offsetMinutesFromTimestamp(timestamp)).toBeNull();
+  });
+
+  it.each([
+    ["2026-01-01T10:00:00+14:00", 840],
+    ["2026-01-01T10:00:00-14:00", -840],
+  ])("accepts the civil offset boundary in %s", (timestamp, expected) => {
+    expect(offsetMinutesFromTimestamp(timestamp)).toBe(expected);
   });
 });
 
@@ -172,6 +266,18 @@ describe("formatRecordLocalTime", () => {
       ),
     ).toBe("--");
   });
+
+  it("returns a placeholder for invalid timestamps and timezones", () => {
+    expect(formatRecordLocalTime("invalid", dstContext, "start", "en-US")).toBe("--");
+    expect(
+      formatRecordLocalTime(
+        "2026-03-08T09:30:00.000Z",
+        { ...dstContext, timezone: "Mars/Olympus_Mons" },
+        "start",
+        "en-US",
+      ),
+    ).toBe("--");
+  });
 });
 
 describe("recordLocalHour", () => {
@@ -188,5 +294,43 @@ describe("recordLocalHour", () => {
 
   it("returns null for unknown context", () => {
     expect(recordLocalHour("2026-07-14T08:30:00.000Z", localTimeContextUnknown())).toBeNull();
+  });
+
+  it("uses the selected end offset", () => {
+    expect(
+      recordLocalHour(
+        "2026-07-14T08:30:00.000Z",
+        {
+          timezone: null,
+          startUtcOffsetMinutes: -420,
+          endUtcOffsetMinutes: 330,
+          source: "provider_offset",
+        },
+        "end",
+      ),
+    ).toBe(14);
+  });
+
+  it("uses an IANA timezone when present", () => {
+    expect(
+      recordLocalHour("2026-07-14T08:30:00.000Z", {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        source: "provider_timezone",
+      }),
+    ).toBe(1.5);
+  });
+
+  it("returns null for invalid timestamps and timezones", () => {
+    expect(recordLocalHour("invalid", localTimeContextUnknown())).toBeNull();
+    expect(
+      recordLocalHour("2026-07-14T08:30:00.000Z", {
+        timezone: "Mars/Olympus_Mons",
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "provider_timezone",
+      }),
+    ).toBeNull();
   });
 });

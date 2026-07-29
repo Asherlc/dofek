@@ -49,6 +49,26 @@ describe("backfillRecordLocalTimeContext", () => {
     await expect(
       backfillRecordLocalTimeContext(db, { execute: false, batchSize: 10, maxBatches: 0 }),
     ).rejects.toThrow("maxBatches");
+    await expect(
+      backfillRecordLocalTimeContext(db, { execute: false, batchSize: 1_001, maxBatches: 1 }),
+    ).rejects.toThrow("batchSize");
+    await expect(
+      backfillRecordLocalTimeContext(db, { execute: false, batchSize: 1.5, maxBatches: 1 }),
+    ).rejects.toThrow("batchSize");
+    await expect(
+      backfillRecordLocalTimeContext(db, { execute: false, batchSize: 10, maxBatches: 1.5 }),
+    ).rejects.toThrow("maxBatches");
     expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("accepts the maximum bounded batch size", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(
+      backfillRecordLocalTimeContext(
+        { execute },
+        { execute: false, batchSize: 1_000, maxBatches: 1 },
+      ),
+    ).resolves.toEqual({ eligible: 0, skipped: 0, updated: 0 });
   });
 });

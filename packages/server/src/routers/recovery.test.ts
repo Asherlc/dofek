@@ -687,6 +687,12 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.date).toBe("2026-03-01");
     expect(night?.durationMinutes).toBe(480);
     expect(night?.sleepMinutes).toBeCloseTo(436.97, 1);
+    expect(night?.localTimeContext).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: 0,
+      source: "device_offset",
+    });
     // deepPct rounds to 1 decimal: 18.567 -> 18.6
     expect(night?.deepPct).toBe(18.6);
     // remPct rounds to 1 decimal: 22.345 -> 22.3

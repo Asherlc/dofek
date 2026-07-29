@@ -708,6 +708,47 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("returns null clock and duration fields when sleep local-time data is unavailable", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
+    toolTestMocks.sleepListRange.mockResolvedValue([
+      {
+        awake_minutes: null,
+        date: "2026-05-18",
+        deep_minutes: null,
+        duration_minutes: null,
+        efficiency_pct: null,
+        ended_at: null,
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+        light_minutes: null,
+        provider_id: "apple_health",
+        rem_minutes: null,
+        started_at: "2026-05-19T06:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_sleep_summary", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-18",
+        timezone: "America/Los_Angeles",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        onset_time: null,
+        time_in_bed_minutes: null,
+        total_duration_minutes: null,
+        wake_time: null,
+      }),
+    ]);
+  });
+
   it("aggregates activity summaries by activity type and ISO week", async () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
