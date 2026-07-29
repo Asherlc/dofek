@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
@@ -16,6 +17,9 @@ import {
   loadTokens,
   saveTokens,
 } from "./tokens.ts";
+import { executeWithSchema } from "./typed-sql.ts";
+
+const retainedActivitySchema = z.object({ external_id: z.string() });
 
 describe("Token storage (integration)", () => {
   let ctx: TestContext;
@@ -285,7 +289,9 @@ describe("Token storage (integration)", () => {
       .select({ id: provider.id })
       .from(provider)
       .where(eq(provider.id, providerId));
-    const activityRows = await ctx.db.execute<{ external_id: string }>(
+    const activityRows = await executeWithSchema(
+      ctx.db,
+      retainedActivitySchema,
       sql`SELECT external_id
           FROM fitness.activity
           WHERE user_id = ${TEST_USER_ID}

@@ -435,7 +435,9 @@ describe("ProviderDetailRepository", () => {
       );
 
       await expect(repository.canDeleteProviderData("whoop")).resolves.toBe(true);
-      expect(query.mock.calls[0]?.[1]).toContain("argMax(is_deleted, version) = 0");
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "argMax(is_deleted, tuple(version, ingested_at)) = 0",
+      );
       expect(query.mock.calls[0]?.[2]).toEqual({
         userId: "user-1",
         providerId: "whoop",

@@ -58,6 +58,7 @@ const countSchema = z.object({ count: z.coerce.number() });
 
 describe("ProviderDetailRepository metric stream (integration)", () => {
   const supersededId = "11111111-1111-4111-8111-111111111111";
+  const tiedVersionTombstonedId = "33333333-3333-4333-8333-333333333333";
 
   beforeAll(async () => {
     for (const statement of buildClickHouseBootstrapStatementsForNativeMetricStream("")) {
@@ -144,6 +145,26 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         is_deleted: 1,
         version: 1,
       },
+      {
+        id: tiedVersionTombstonedId,
+        recorded_at: "2026-04-12 10:30:00.000",
+        provider_id: "tied-version-tombstoned-provider",
+        channel: "heart_rate",
+        scalar: 65,
+        is_deleted: 0,
+        ingested_at: "2026-04-12 10:31:00.000",
+        version: 1,
+      },
+      {
+        id: tiedVersionTombstonedId,
+        recorded_at: "2026-04-12 10:30:00.000",
+        provider_id: "tied-version-tombstoned-provider",
+        channel: "heart_rate",
+        scalar: 65,
+        is_deleted: 1,
+        ingested_at: "2026-04-12 10:32:00.000",
+        version: 1,
+      },
     ]);
   }, 120_000);
 
@@ -202,6 +223,9 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
 
     await expect(repository.canDeleteProviderData("withings")).resolves.toBe(true);
     await expect(repository.canDeleteProviderData("tombstoned-provider")).resolves.toBe(false);
+    await expect(
+      repository.canDeleteProviderData("tied-version-tombstoned-provider"),
+    ).resolves.toBe(false);
     await expect(repository.canDeleteProviderData("fitbit")).resolves.toBe(true);
   });
 });

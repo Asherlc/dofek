@@ -846,7 +846,7 @@ export class ProviderDetailRepository {
           WHERE user_id = {userId:UUID}
             AND provider_id = {providerId:String}
           GROUP BY id
-          HAVING argMax(is_deleted, version) = 0
+          HAVING argMax(is_deleted, tuple(version, ingested_at)) = 0
           LIMIT 1
         )
       `,
