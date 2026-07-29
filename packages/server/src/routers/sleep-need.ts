@@ -228,6 +228,7 @@ async function calculateSleepNeed(
 
   // Accumulated sleep debt over last 14 nights
   const last14 = nights.slice(-14);
+  const debtObservedNightCount = last14.filter((night) => night.duration_minutes != null).length;
   let accumulatedDebt = 0;
   for (const night of last14) {
     if (night.duration_minutes == null) continue;
@@ -281,6 +282,8 @@ async function calculateSleepNeed(
     baselineMinutes,
     strainDebtMinutes,
     accumulatedDebtMinutes: Math.round(accumulatedDebt),
+    baselineQualifyingNightCount: goodNightDurations.length,
+    debtObservedNightCount,
     recentNights,
     hasPreviousNight: sleepRows.some(
       (sleepRow) => sleepRow.date === yesterdayStr && sleepRow.duration_minutes != null,

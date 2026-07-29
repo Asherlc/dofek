@@ -5,7 +5,6 @@ import {
   formatWeekdayShort,
 } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
-import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import {
   chartThemeColors,
@@ -66,7 +65,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         }
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         html += `<div>Slept: <b>${formatDurationMinutes(night.actualMinutes)}</b></div>`;
-        html += `<div>Needed: <b>${formatDurationMinutes(night.neededMinutes)}</b></div>`;
+        html += `<div>${escapeTooltipHtml(data.estimateMetadata.componentLabels.baseline)}: <b>${formatDurationMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
           html += `<div style="color:${statusColors.danger}">Debt: ${formatDurationMinutes(night.debtMinutes)}</div>`;
         }
@@ -106,7 +105,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       },
       {
         ...dofekSeries.line(
-          "Need",
+          data.estimateMetadata.componentLabels.baseline,
           data.recentNights.map((n) => n.neededMinutes),
           {
             color: chartThemeColors.axisLabel,
@@ -124,42 +123,48 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     <div className="card p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-muted text-sm font-medium mb-1">Sleep Need Tonight</h3>
-          <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-bold text-blue-400">
-              {formatDurationMinutes(data.totalNeedMinutes)}
-            </span>
-            <span className="text-subtle text-sm">recommended</span>
-          </div>
+          <h3 className="text-muted text-sm font-medium mb-1">Estimated sleep need tonight</h3>
+          <p className="text-4xl font-bold text-blue-400">
+            {`${data.estimateMetadata.valueQualifier} ${formatDurationMinutes(data.totalNeedMinutes)}`}
+          </p>
+          <p className="text-subtle text-sm">{data.estimateMetadata.summaryLabel}</p>
         </div>
       </div>
 
       {/* Breakdown */}
       <div className="flex gap-4 mb-4 text-xs">
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">Baseline</p>
+          <p className="text-subtle">{data.estimateMetadata.componentLabels.baseline}</p>
           <p className="text-foreground font-medium">
             {formatDurationMinutes(data.baselineMinutes)}
           </p>
         </div>
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">Strain Debt</p>
+          <p className="text-subtle">{data.estimateMetadata.componentLabels.strainDebt}</p>
           <p className="text-foreground font-medium">
             +{formatDurationMinutes(data.strainDebtMinutes)}
           </p>
         </div>
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">Sleep Debt</p>
-          <p className="font-medium" style={{ color: sleepDebtColor(data.accumulatedDebtMinutes) }}>
-            {formatDurationMinutes(data.accumulatedDebtMinutes)}
+          <p className="text-subtle">{data.estimateMetadata.componentLabels.debtRecovery}</p>
+          <p className="text-foreground font-medium">
+            +{formatDurationMinutes(data.debtRecoveryMinutes)}
           </p>
         </div>
+      </div>
+
+      <div className="mb-4 space-y-1 text-xs text-muted">
+        <p>{data.estimateMetadata.basisLabel}</p>
+        <p>{data.estimateMetadata.coverageLabel}</p>
+        <p>{data.estimateMetadata.methodLabel}</p>
+        <p>{data.estimateMetadata.uncertaintyLabel}</p>
+        <p>{data.estimateMetadata.limitationLabel}</p>
       </div>
 
       {/* Recent nights chart */}
       {data.recentNights.length > 0 && (
         <div>
-          <p className="text-subtle text-xs mb-1">Last 7 nights (dashed = need)</p>
+          <p className="text-subtle text-xs mb-1">Last 7 nights (dashed = baseline estimate)</p>
           <DofekChart option={chartOption} height={120} />
         </div>
       )}

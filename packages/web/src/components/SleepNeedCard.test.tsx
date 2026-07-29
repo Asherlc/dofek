@@ -31,6 +31,27 @@ const mockData = {
   accumulatedDebtMinutes: 90,
   debtRecoveryMinutes: 23,
   totalNeedMinutes: 515,
+  estimateMetadata: {
+    basis: "generic_eight_hour_default" as const,
+    baselineQualifyingNightCount: 1,
+    debtObservedNightCount: 1,
+    methodVersion: "sleep-need-heuristic-v1" as const,
+    uncertainty: "not_established" as const,
+    valueQualifier: "About" as const,
+    summaryLabel: "Heuristic estimate" as const,
+    componentLabels: {
+      baseline: "Baseline estimate" as const,
+      strainDebt: "Previous-day load adjustment" as const,
+      debtRecovery: "Debt recovery" as const,
+    },
+    basisLabel:
+      "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+    coverageLabel: "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+    methodLabel: "Method: sleep-need-heuristic-v1" as const,
+    uncertaintyLabel: "Uncertainty: not established" as const,
+    limitationLabel:
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established." as const,
+  },
   recentNights: [
     {
       date: "2026-03-14",
@@ -88,10 +109,19 @@ describe("SleepNeedCard", () => {
     expect(screen.queryByText("No sleep data")).toBeNull();
   });
 
-  it("renders recommendation header", () => {
+  it("presents the available value as an uncalibrated heuristic estimate", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
-    expect(screen.getByText(/recommended/)).toBeDefined();
+    expect(screen.getByText("About 8h 35m")).toBeDefined();
+    expect(screen.getByText("Heuristic estimate")).toBeDefined();
+    expect(screen.getByText("Previous-day load adjustment")).toBeDefined();
+    expect(screen.getByText("Uncertainty: not established")).toBeDefined();
+    expect(
+      screen.getByText(
+        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/recommended/)).toBeNull();
   });
 
   it("passes plain numeric values to bar series (not date tuples)", () => {
@@ -185,9 +215,19 @@ describe("SleepNeedCard", () => {
     expect(screen.queryByTestId("echarts")).toBeNull();
   });
 
-  it("shows the available recommendation", () => {
+  it("shows the available estimate basis and coverage", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
-    expect(screen.getByText(/recommended/)).toBeDefined();
+    expect(
+      screen.getByText(
+        "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("Method: sleep-need-heuristic-v1")).toBeDefined();
   });
 });

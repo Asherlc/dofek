@@ -235,6 +235,7 @@ type CacheExpiry = "localDayBoundary";
 interface CachePolicy {
   maxAge: number;
   expiresAt?: CacheExpiry;
+  keyVersion?: string;
 }
 
 function localDateString(date: Date, timezone: string): string {
@@ -285,8 +286,10 @@ export function requestCacheKey(
   path: string,
   rawInput: unknown,
   timezone: string,
+  keyVersion?: string,
 ): string {
-  return `${userId ?? "anon"}:${path}:${timezone}:${JSON.stringify(rawInput)}`;
+  const versionSegment = keyVersion === undefined ? "" : `${keyVersion}:`;
+  return `${userId ?? "anon"}:${path}:${versionSegment}${timezone}:${JSON.stringify(rawInput)}`;
 }
 
 function cached(policy: CachePolicy) {
@@ -294,7 +297,7 @@ function cached(policy: CachePolicy) {
     const start = performance.now();
     const rawInput = await getRawInput();
     // Include userId in cache key to prevent cross-user data leaks
-    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone);
+    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone, policy.keyVersion);
 
     // Cache lookup
     const cacheLookupStart = performance.now();

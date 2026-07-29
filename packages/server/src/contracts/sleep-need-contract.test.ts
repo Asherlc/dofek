@@ -27,6 +27,8 @@ describe("sleep need contract", () => {
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
+      baselineQualifyingNightCount: 1,
+      debtObservedNightCount: 1,
       recentNights,
       hasPreviousNight: true,
     });
@@ -38,6 +40,28 @@ describe("sleep need contract", () => {
       accumulatedDebtMinutes: 90,
       debtRecoveryMinutes: 23,
       totalNeedMinutes: 515,
+      estimateMetadata: {
+        basis: "generic_eight_hour_default",
+        baselineQualifyingNightCount: 1,
+        debtObservedNightCount: 1,
+        methodVersion: "sleep-need-heuristic-v1",
+        uncertainty: "not_established",
+        valueQualifier: "About",
+        summaryLabel: "Heuristic estimate",
+        componentLabels: {
+          baseline: "Baseline estimate",
+          strainDebt: "Previous-day load adjustment",
+          debtRecovery: "Debt recovery",
+        },
+        basisLabel:
+          "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+        coverageLabel:
+          "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+        methodLabel: "Method: sleep-need-heuristic-v1",
+        uncertaintyLabel: "Uncertainty: not established",
+        limitationLabel:
+          "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      },
       recentNights,
     });
   });
@@ -47,6 +71,8 @@ describe("sleep need contract", () => {
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
+      baselineQualifyingNightCount: 1,
+      debtObservedNightCount: 1,
       recentNights,
       hasPreviousNight: false,
     });
@@ -65,11 +91,40 @@ describe("sleep need contract", () => {
     ).toBe(false);
   });
 
+  it("describes a personalized basis and plural observed-night coverage", () => {
+    const computation = buildSleepNeedComputation({
+      baselineMinutes: 455,
+      strainDebtMinutes: 10,
+      accumulatedDebtMinutes: 40,
+      baselineQualifyingNightCount: 7,
+      debtObservedNightCount: 0,
+      recentNights,
+      hasPreviousNight: true,
+    });
+
+    const result = toSleepNeedV2(computation);
+    if (result.availability !== "available") {
+      throw new Error("Expected available sleep need");
+    }
+
+    expect(result.estimateMetadata).toMatchObject({
+      basis: "personalized_high_hrv_average",
+      baselineQualifyingNightCount: 7,
+      debtObservedNightCount: 0,
+      basisLabel:
+        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
+      coverageLabel:
+        "Sleep-debt input uses 0 observed nights from the model's recent-night window.",
+    });
+  });
+
   it("preserves the exact V1 DTO as a projection of the canonical computation", () => {
     const computation = buildSleepNeedComputation({
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
+      baselineQualifyingNightCount: 1,
+      debtObservedNightCount: 1,
       recentNights,
       hasPreviousNight: false,
     });

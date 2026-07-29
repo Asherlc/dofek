@@ -229,6 +229,28 @@ describe("TodayScreen independent loading states", () => {
         accumulatedDebtMinutes: 10,
         debtRecoveryMinutes: 17,
         totalNeedMinutes: 517,
+        estimateMetadata: {
+          basis: "generic_eight_hour_default",
+          baselineQualifyingNightCount: 1,
+          debtObservedNightCount: 1,
+          methodVersion: "sleep-need-heuristic-v1",
+          uncertainty: "not_established",
+          valueQualifier: "About",
+          summaryLabel: "Heuristic estimate",
+          componentLabels: {
+            baseline: "Baseline estimate",
+            strainDebt: "Previous-day load adjustment",
+            debtRecovery: "Debt recovery",
+          },
+          basisLabel:
+            "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+          coverageLabel:
+            "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+          methodLabel: "Method: sleep-need-heuristic-v1",
+          uncertaintyLabel: "Uncertainty: not established",
+          limitationLabel:
+            "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+        },
         recentNights: [],
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
@@ -398,13 +420,35 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByText("8h 37m")).toBeNull();
   });
 
-  it("uses the V2 dashboard and renders server-computed debt recovery", async () => {
+  it("renders the V2 sleep value as an uncalibrated heuristic estimate", async () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
     expect(mockDashboardV2UseQuery).toHaveBeenCalled();
-    expect(screen.getByText("8h 37m")).toBeTruthy();
+    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
+    expect(screen.queryByText("SLEEP COACH")).toBeNull();
+    expect(screen.getByText("About 8h 37m")).toBeTruthy();
     expect(screen.getByText("+17m")).toBeTruthy();
+    expect(screen.getByText("Heuristic estimate")).toBeTruthy();
+    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Method: sleep-need-heuristic-v1")).toBeTruthy();
+    expect(screen.getByText("Uncertainty: not established")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("recommended tonight")).toBeNull();
   });
 
   it("renders all rings when no queries are loading", async () => {

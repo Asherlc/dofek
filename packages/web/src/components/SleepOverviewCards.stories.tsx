@@ -9,6 +9,27 @@ const availableSleepNeed = {
   accumulatedDebtMinutes: 85,
   debtRecoveryMinutes: 21,
   totalNeedMinutes: 513,
+  estimateMetadata: {
+    basis: "personalized_high_hrv_average" as const,
+    baselineQualifyingNightCount: 12,
+    debtObservedNightCount: 11,
+    methodVersion: "sleep-need-heuristic-v1" as const,
+    uncertainty: "not_established" as const,
+    valueQualifier: "About" as const,
+    summaryLabel: "Heuristic estimate" as const,
+    componentLabels: {
+      baseline: "Baseline estimate" as const,
+      strainDebt: "Previous-day load adjustment" as const,
+      debtRecovery: "Debt recovery" as const,
+    },
+    basisLabel:
+      "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
+    coverageLabel: "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
+    methodLabel: "Method: sleep-need-heuristic-v1" as const,
+    uncertaintyLabel: "Uncertainty: not established" as const,
+    limitationLabel:
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established." as const,
+  },
   recentNights: [],
 };
 
