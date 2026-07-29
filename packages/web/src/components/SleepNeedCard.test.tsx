@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
-import { statusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { chartThemeColors } from "../lib/chartTheme.ts";
 import { SleepNeedCard } from "./SleepNeedCard.tsx";
 
 let capturedOption: Record<string, unknown> | null = null;
@@ -82,12 +82,29 @@ const barItemSchema = z.object({
   itemStyle: z.object({ color: z.string() }),
 });
 
+const tooltipFormatterSchema = z.custom<
+  (
+    params: {
+      dataIndex: number;
+      marker: string;
+      seriesName: string;
+      value: [string, number];
+    }[],
+  ) => string
+>((value) => typeof value === "function");
+
 function getBarSeriesData(): Array<z.infer<typeof barItemSchema>> {
   const series = capturedOption?.series;
   if (Array.isArray(series) && series[0] && "data" in series[0]) {
     return z.array(barItemSchema).parse(series[0].data);
   }
   return [];
+}
+
+function getTooltipFormatter() {
+  return z
+    .object({ tooltip: z.object({ formatter: tooltipFormatterSchema }) })
+    .parse(capturedOption).tooltip.formatter;
 }
 
 function getLineSeriesData(): unknown[] {
@@ -152,16 +169,25 @@ describe("SleepNeedCard", () => {
     expect(line[2]).toBe(480);
   });
 
-  it("colors bars green when actual >= needed, red when below", () => {
+  it("uses a neutral palette instead of grading sleep against the heuristic baseline", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
     const bars = getBarSeriesData();
-    // Night 0: 420 < 480 → red
-    expect(bars[0]?.itemStyle.color).toBe(statusColors.danger);
-    // Night 1: 500 >= 480 → green
-    expect(bars[1]?.itemStyle.color).toBe(statusColors.positive);
-    // Night 2: 390 < 480 → red
-    expect(bars[2]?.itemStyle.color).toBe(statusColors.danger);
+    expect(bars[0]?.itemStyle.color).toBe(chartThemeColors.axisLabel);
+    expect(bars[1]?.itemStyle.color).toBe(chartThemeColors.axisLabel);
+    expect(bars[2]?.itemStyle.color).toBe(chartThemeColors.axisLabel);
+
+    const tooltipHtml = getTooltipFormatter()([
+      {
+        dataIndex: 0,
+        marker: "",
+        seriesName: "Actual",
+        value: ["2026-03-14", 420],
+      },
+    ]);
+    expect(tooltipHtml).toContain("Difference from baseline estimate: 1h");
+    expect(tooltipHtml).not.toContain("color:#dc2626");
+    expect(tooltipHtml).not.toContain("Debt:");
   });
 
   it("renders placeholder bars for null nights (missing data)", () => {

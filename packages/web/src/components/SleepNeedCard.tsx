@@ -4,7 +4,6 @@ import {
   formatNumber,
   formatWeekdayShort,
 } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
 import type { SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import {
   chartThemeColors,
@@ -67,7 +66,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         html += `<div>Slept: <b>${formatDurationMinutes(night.actualMinutes)}</b></div>`;
         html += `<div>${escapeTooltipHtml(data.estimateMetadata.componentLabels.baseline)}: <b>${formatDurationMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
-          html += `<div style="color:${statusColors.danger}">Debt: ${formatDurationMinutes(night.debtMinutes)}</div>`;
+          const differenceLabel = `Difference from ${data.estimateMetadata.componentLabels.baseline.toLowerCase()}`;
+          html += `<div style="color:${chartThemeColors.axisLabel}">${escapeTooltipHtml(differenceLabel)}: ${formatDurationMinutes(night.debtMinutes)}</div>`;
         }
         if (night.providerId) {
           const { primary, alsoFrom } = formatSleepProvenance(night);
@@ -92,12 +92,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
           data.recentNights.map((n) => ({
             value: n.actualMinutes ?? 0,
             itemStyle: {
-              color:
-                n.actualMinutes == null
-                  ? "#3a3a3e"
-                  : n.actualMinutes >= n.neededMinutes
-                    ? statusColors.positive
-                    : statusColors.danger,
+              color: n.actualMinutes == null ? "#3a3a3e" : chartThemeColors.axisLabel,
             },
           })),
         ),
