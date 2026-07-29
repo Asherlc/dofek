@@ -650,9 +650,9 @@ describe("NutritionAnalyticsRepository", () => {
         {
           date: "2026-07-29",
           resolution_status: "source_conflict",
-          source_labels: ["cronometer", "myfitnesspal"],
+          source_labels: ["cronometer", "other itemized source"],
           contributing_source_labels: [],
-          excluded_source_labels: ["cronometer", "myfitnesspal"],
+          excluded_source_labels: ["cronometer", "other itemized source"],
         },
       ]);
       await expect(repo.getMicronutrientDataQuality(30)).resolves.toEqual({
@@ -662,9 +662,9 @@ describe("NutritionAnalyticsRepository", () => {
         overlapDays: 1,
         conflictDays: 1,
         completenessPercent: 3.3,
-        sourceLabels: ["cronometer", "manual", "myfitnesspal"],
+        sourceLabels: ["cronometer", "manual", "other itemized source"],
         contributingSourceLabels: ["manual"],
-        excludedSourceLabels: ["cronometer", "myfitnesspal"],
+        excludedSourceLabels: ["cronometer", "other itemized source"],
       });
     });
   });

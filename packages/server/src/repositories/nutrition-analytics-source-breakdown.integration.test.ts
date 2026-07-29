@@ -34,7 +34,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       VALUES
         ('nutrition-2136-manual', 'Manual Food'),
         ('nutrition-2136-cronometer', 'Cronometer'),
-        ('nutrition-2136-myfitnesspal', 'MyFitnessPal'),
+        ('nutrition-2136-other-itemized', 'Other Itemized Source'),
         ('nutrition-2136-supplements', 'Dofek Supplements')
       ON CONFLICT (id) DO NOTHING
     `);
@@ -80,7 +80,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
     });
     await addFoodEntry({
       date: dates[3] ?? "",
-      providerId: "nutrition-2136-myfitnesspal",
+      providerId: "nutrition-2136-other-itemized",
       grain: "itemized",
       foodName: "Other dinner",
       vitaminC: 60,
@@ -223,7 +223,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       sourceLabels: [
         "nutrition-2136-cronometer",
         "nutrition-2136-manual",
-        "nutrition-2136-myfitnesspal",
+        "nutrition-2136-other-itemized",
         "nutrition-2136-supplements",
       ],
       contributingSourceLabels: [
@@ -234,7 +234,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       excludedSourceLabels: [
         "nutrition-2136-cronometer",
         "nutrition-2136-manual",
-        "nutrition-2136-myfitnesspal",
+        "nutrition-2136-other-itemized",
       ],
     });
   });
