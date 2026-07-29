@@ -10,31 +10,32 @@ export default function TabsLayout() {
   const router = useRouter();
   const alerts = useProcessingAlerts();
   const activeAlertCount = alerts.data?.alerts.length ?? 0;
-  const alertsButton = () => (
-    <AlertsBell activeCount={activeAlertCount} onPress={() => router.push("/alerts")} />
+  const headerActions = () => (
+    <View style={styles.headerActions}>
+      <AlertsBell activeCount={activeAlertCount} onPress={() => router.push("/alerts")} />
+      <Pressable
+        onPress={() => router.push("/more")}
+        style={styles.headerButton}
+        accessibilityRole="button"
+        accessibilityLabel="More"
+      >
+        <Ionicons
+          name="ellipsis-horizontal-circle-outline"
+          size={22}
+          color={colors.textSecondary}
+        />
+      </Pressable>
+    </View>
   );
 
   return (
-    <Tabs screenOptions={{ ...tabsScreenOptions, headerRight: alertsButton }}>
+    <Tabs screenOptions={{ ...tabsScreenOptions, headerRight: headerActions }}>
       <Tabs.Screen
         name="index"
         options={{
           title: "Today",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={getTabIconName("index", focused)} size={size} color={color} />
-          ),
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              {alertsButton()}
-              <Pressable
-                onPress={() => router.push("/settings")}
-                style={styles.headerButton}
-                accessibilityRole="button"
-                accessibilityLabel="Settings"
-              >
-                <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-              </Pressable>
-            </View>
           ),
         }}
       />
