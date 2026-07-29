@@ -142,6 +142,12 @@ describe("tRPC error serialization", () => {
 });
 
 describe("requestCacheKey", () => {
+  it("preserves the exact legacy key when no contract version is provided", () => {
+    expect(requestCacheKey("user-1", "settings.get", { key: "units" }, "UTC")).toBe(
+      'user-1:settings.get:UTC:{"key":"units"}',
+    );
+  });
+
   it("keeps the user and route path prefix stable for invalidation", () => {
     expect(requestCacheKey("user-1", "settings.get", { key: "units" }, "UTC")).toMatch(
       /^user-1:settings\.get:/,
