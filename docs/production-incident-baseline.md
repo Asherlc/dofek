@@ -20396,3 +20396,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Forward migrations that replace a shared view
   must start from its latest steady-state definition and retain executable
   integration coverage for every data source the view combines.
+
+## 2026-07-29 — Mobile preview Infisical OIDC gateway timeout
+
+- **Status:** External transient failure identified on PR #2315; one unchanged-
+  head rerun remains pending after owned CI completes.
+- **Symptoms:** The Mobile Preview OTA workflow stopped while loading its
+  required secrets, before the publish step or application code ran.
+- **User impact:** No production impact. The PR-specific mobile preview was not
+  published.
+- **Evidence:** In exact-head
+  [job 90727596345](https://github.com/Asherlc/dofek/actions/runs/30496847456/job/90727596345),
+  the exact failing step was `Load mobile preview secrets from Infisical`. Its
+  first fatal line was `unable to authenticate with oidc auth` because
+  `POST https://app.infisical.com/api/v1/auth/oidc-auth/login` returned
+  `status-code=504`; the process then exited with code 1.
+- **Root cause:** Infisical's OIDC login endpoint returned an HTTP gateway
+  timeout. Checkout, dependency setup, and mobile-change detection had passed,
+  and the workflow had not reached any repository build or publish command.
+- **Fix / mitigation:** Make no repository or workflow change. After owned CI
+  passes, rerun this failed external workflow once against the same commit.
+- **Validation:** Pending the single unchanged-head rerun.
+- **Remaining risk / follow-up:** If the same endpoint returns another 504,
+  leave the PR blocked with the exact external evidence rather than adding a
+  retry or weakening the required-secret failure.
