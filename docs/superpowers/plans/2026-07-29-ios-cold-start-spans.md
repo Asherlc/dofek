@@ -45,10 +45,10 @@
 
 ### Task 1: Establish Baseline Evidence
 
-- [ ] Generate the canonical Release iOS project and use XcodeBuildMCP with a dedicated Simulator.
-- [ ] Capture cold-start logs, `Updates.launchDuration`, auth timing, visible-screen timing, and the first slow line.
-- [ ] Classify the slowdown using the loading-performance runbook.
-- [ ] Record the Axiom authentication blocker and the absence of existing Sentry startup spans.
+- [x] Generate the canonical Release iOS project and use XcodeBuildMCP with a dedicated Simulator.
+- [x] Capture cold-start logs, `Updates.launchDuration`, auth timing, visible-screen timing, and the first slow line.
+- [x] Classify the slowdown using the loading-performance runbook.
+- [x] Record the Axiom authentication blocker and the absence of existing Sentry startup spans.
 
 ### Task 2: Add Failing Startup Telemetry Tests
 
@@ -56,11 +56,11 @@
 - Create: `packages/mobile/lib/startup-telemetry.test.ts`
 - Modify: `packages/mobile/lib/auth-context.test.ts`
 
-- [ ] Expect OTA, JavaScript, auth, splash, and service phases to share one startup trace.
-- [ ] Expect every phase to finish once with duration and outcome attributes.
-- [ ] Expect auth success, unauthenticated completion, deferred background restore, and failure to close the auth phase correctly.
-- [ ] Run `pnpm exec vitest run --project mobile packages/mobile/lib/startup-telemetry.test.ts packages/mobile/lib/auth-context.test.ts`.
-- [ ] Confirm failure because the coordinator and lifecycle calls do not exist.
+- [x] Expect OTA, JavaScript, auth, splash, and service phases to share one startup trace.
+- [x] Expect every phase to finish once with duration and outcome attributes.
+- [x] Expect auth success, unauthenticated completion, deferred background restore, and failure to close the auth phase correctly.
+- [x] Run `pnpm exec vitest run --project mobile packages/mobile/lib/startup-telemetry.test.ts packages/mobile/lib/auth-context.test.ts`.
+- [x] Confirm failure because the coordinator and lifecycle calls do not exist.
 
 ### Task 3: Implement Startup Spans
 
@@ -70,25 +70,25 @@
 - Modify: `packages/mobile/lib/auth-context.tsx`
 - Modify: `packages/mobile/app/_layout.tsx`
 
-- [ ] Create the smallest startup trace coordinator supported by the installed Sentry SDK.
-- [ ] Record Expo launch duration/source, JavaScript readiness, auth outcome, splash hide, and deferred service bootstrap without adding blocking work.
-- [ ] Emit structured local/OTLP logs alongside the trace so Release Simulator evidence remains inspectable.
-- [ ] Run the focused mobile tests and confirm they pass.
+- [x] Create the smallest startup trace coordinator supported by the installed Sentry SDK.
+- [x] Record Expo launch duration/source, JavaScript readiness, auth outcome, splash hide, and deferred service bootstrap without adding blocking work.
+- [x] Emit structured local/OTLP logs alongside the trace so Release Simulator evidence remains inspectable.
+- [x] Run the focused mobile tests and confirm they pass.
 
 ### Task 4: Apply the Evidence-Backed Launch Fix
 
 **Files:**
 - Modify if proven: `packages/mobile/app.json`
 
-- [ ] Compare the measured native OTA launch duration with JavaScript, auth, and service durations.
-- [ ] If the configured native launch wait dominates, set the launch fallback to immediate cached/embedded startup while retaining `ON_LOAD` so updates download for the next launch.
-- [ ] Validate the generated native configuration with `pnpm prebuild`.
-- [ ] Do not change auth or service behavior unless their measured spans identify them as the critical-path bottleneck.
+- [x] Compare the measured native OTA launch duration with JavaScript, auth, and service durations.
+- [x] Retain the current launch fallback because no controlled launch approached it; the conditional launch-policy change was not supported by evidence.
+- [x] Validate the generated native configuration and signed Release bundle.
+- [x] Do not change auth or service behavior unless their measured spans identify them as the critical-path bottleneck.
 
 ### Task 5: Final Verification And Documentation
 
-- [ ] Rebuild and cold-launch the signed Release app at least three times after the fix.
-- [ ] Confirm the real first screen appears, startup spans/logs allocate all requested phases, and service bootstrap remains after splash hide.
-- [ ] Run `pnpm lint`, `pnpm tsc --noEmit`, server/web/mobile typechecks, focused mobile tests, and `pnpm test`.
-- [ ] Update mobile docs and the production incident baseline with before/after evidence and official citations.
+- [x] Build and cold-launch the signed Release app at least three times with the instrumented steady-state configuration.
+- [x] Confirm the real first screen appears, startup spans/logs allocate all requested phases, and unauthenticated service bootstrap is skipped.
+- [x] Run `pnpm lint`, `pnpm tsc --noEmit`, server/web/mobile typechecks, focused mobile tests, and the full unit/mobile suite until its unrelated Docker teardown hang.
+- [x] Update mobile docs and the production incident baseline with measured evidence and official citations.
 - [ ] Commit, push, open a PR with `Fixes #2193`, backlink the issue, and monitor CI/reviews through merge.

@@ -149,6 +149,15 @@ start measurement ends at the first interactive screen, as described by
 The native OTA duration comes from
 [`Updates.launchDuration`](https://docs.expo.dev/versions/latest/sdk/updates/#updateslaunchduration).
 
+The 2026-07-29 signed Release audit kept the production `ON_LOAD` and 5,000 ms
+fallback policy. Three force-stop launches reached the interactive login screen
+in 713, 968, and 660 ms; a clean reinstall took 864 ms. OTA launch was the
+largest phase at 632–942 ms, while JavaScript, authentication, and splash
+dismissal were each at most 11 ms. Because no controlled launch approached the
+configured fallback, the audit made no launch-policy change. See the
+[incident baseline](../../docs/production-incident-baseline.md#2026-07-29-ios-cold-start-delay-could-not-be-reproduced-with-phase-telemetry)
+for the evidence and remaining production-observability gap.
+
 To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 
 - `EXPO_PUBLIC_OTEL_ENDPOINT` (for example, `https://api.axiom.co/v1/logs`)
