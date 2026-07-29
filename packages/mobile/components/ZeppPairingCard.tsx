@@ -4,24 +4,40 @@ import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 
 interface ZeppPairingCardBodyProps {
+  connections: Array<{ connectionType: "zepp-main" | "zepp-workout" }>;
+  connectionsError: string | null;
+  disconnectError: string | null;
+  isConnectionsLoading: boolean;
   pairingCode: string;
   pairingMessage: string;
   isError: boolean;
   isPending: boolean;
   onPairingCodeChange: (value: string) => void;
   onClaimPairing: () => void;
+  onDisconnect: (connectionType: "zepp-main" | "zepp-workout") => void;
 }
 
 export function ZeppPairingCard() {
   const [pairingCode, setPairingCode] = useState("");
   const [pairingMessage, setPairingMessage] = useState("");
+  const connectionsQuery = trpc.companionToken.list.useQuery();
+  const disconnectMutation = trpc.companionToken.revoke.useMutation({
+    onSuccess: async () => {
+      await connectionsQuery.refetch();
+    },
+  });
   const pairingMutation = trpc.companionPairing.claim.useMutation({
     onMutate: () => {
       setPairingMessage("");
     },
-    onSuccess: () => {
+    onSuccess: async ({ connectionType }) => {
       setPairingCode("");
-      setPairingMessage("Zepp app connected. Return to Zepp to sync.");
+      setPairingMessage(
+        `${
+          connectionType === "zepp-main" ? "Zepp app" : "Workout extension"
+        } connected. Return to Zepp to sync.`,
+      );
+      await connectionsQuery.refetch();
     },
     onError: (error) => {
       setPairingMessage(error.message);
@@ -35,6 +51,10 @@ export function ZeppPairingCard() {
 
   return (
     <ZeppPairingCardBody
+      connections={connectionsQuery.data ?? []}
+      connectionsError={connectionsQuery.error?.message ?? null}
+      disconnectError={disconnectMutation.error?.message ?? null}
+      isConnectionsLoading={connectionsQuery.isLoading}
       pairingCode={pairingCode}
       pairingMessage={pairingMessage}
       isError={pairingMutation.isError}
@@ -44,17 +64,25 @@ export function ZeppPairingCard() {
         setPairingMessage("");
       }}
       onClaimPairing={handleClaimPairing}
+      onDisconnect={(connectionType) => {
+        disconnectMutation.mutate({ connectionType });
+      }}
     />
   );
 }
 
 export function ZeppPairingCardBody({
+  connections,
+  connectionsError,
+  disconnectError,
+  isConnectionsLoading,
   pairingCode,
   pairingMessage,
   isError,
   isPending,
   onPairingCodeChange,
   onClaimPairing,
+  onDisconnect,
 }: ZeppPairingCardBodyProps) {
   const normalizedPairingCode = pairingCode.trim();
 
@@ -63,6 +91,32 @@ export function ZeppPairingCardBody({
       <Text style={styles.sectionTitle}>Zepp App Pairing</Text>
       <Text style={styles.sectionDescription}>Connect the Zepp watch app to this account</Text>
       <View style={styles.card}>
+        <Text style={styles.statusTitle}>Current connections</Text>
+        {isConnectionsLoading ? (
+          <Text style={styles.notConnectedText}>Checking connections…</Text>
+        ) : connectionsError ? (
+          <Text style={styles.errorText}>{connectionsError}</Text>
+        ) : connections.length > 0 ? (
+          connections.map(({ connectionType }) => (
+            <View key={connectionType} style={styles.connectionRow}>
+              <Text style={styles.connectionText}>
+                {connectionType === "zepp-main" ? "Zepp app" : "Workout extension"}: Connected
+              </Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`Disconnect ${
+                  connectionType === "zepp-main" ? "Zepp app" : "Workout extension"
+                }`}
+                onPress={() => onDisconnect(connectionType)}
+              >
+                <Text style={styles.disconnectText}>Disconnect</Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.notConnectedText}>No Zepp apps connected</Text>
+        )}
+        {disconnectError ? <Text style={styles.errorText}>{disconnectError}</Text> : null}
         <TextInput
           style={styles.input}
           value={pairingCode}
@@ -113,6 +167,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
+  },
+  statusTitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  connectionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  connectionText: {
+    color: colors.text,
+    fontSize: 13,
+  },
+  disconnectText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  notConnectedText: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginBottom: 10,
   },
   input: {
     backgroundColor: colors.surfaceSecondary,

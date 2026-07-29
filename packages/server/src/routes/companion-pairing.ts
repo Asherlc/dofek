@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import QRCode from "qrcode";
 import { z } from "zod";
+import { companionConnectionTypeSchema } from "../companion/connection-type.ts";
 import {
   type CompanionPairingStore,
   getCompanionPairingStore,
@@ -10,7 +11,9 @@ import {
 import { getPublicUrlOrigin } from "../lib/public-url.ts";
 import { logger } from "../logger.ts";
 
-const pairingStartSchema = z.object({});
+const pairingStartSchema = z.object({
+  connectionType: companionConnectionTypeSchema,
+});
 
 function sendJson(res: import("express").Response, status: number, body: unknown): void {
   res.status(status).json(body);
@@ -38,15 +41,23 @@ export function createCompanionPairingRouter(deps: {
   router.post("/start", express.json(), async (req, res) => {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      sendJson(res, 400, { error: "Invalid pairing request" });
+      const missingConnectionType =
+        !Array.isArray(req.body) && !Object.hasOwn(req.body ?? {}, "connectionType");
+      sendJson(res, 400, {
+        error: missingConnectionType
+          ? "Update the Zepp package before connecting to Dofek."
+          : "Invalid pairing request",
+      });
       return;
     }
 
     try {
-      const challenge = await store.createChallenge();
+      const connectionType = parsed.data.connectionType;
+      const challenge = await store.createChallenge(undefined, connectionType);
       sendJson(res, 200, {
         pairingId: challenge.id,
         shortCode: challenge.shortCode,
+        connectionType: challenge.connectionType,
         verificationUrl: buildVerificationUrl(publicOrigin, challenge.shortCode),
         qrImageUrl: buildQrImageUrl(publicOrigin, challenge.id),
         expiresAt: challenge.expiresAt,
@@ -78,6 +89,7 @@ export function createCompanionPairingRouter(deps: {
       if (challenge.claimedAt && challenge.companionToken) {
         sendJson(res, 200, {
           state: "claimed",
+          connectionType: challenge.connectionType,
           companionToken: challenge.companionToken,
           claimedAt: challenge.claimedAt,
           expiresAt: challenge.expiresAt,
@@ -87,6 +99,7 @@ export function createCompanionPairingRouter(deps: {
 
       sendJson(res, 200, {
         state: "pending",
+        connectionType: challenge.connectionType,
         shortCode: challenge.shortCode,
         expiresAt: challenge.expiresAt,
       });

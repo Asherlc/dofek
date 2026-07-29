@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
+  check,
   foreignKey,
   index,
   jsonb,
@@ -89,6 +91,29 @@ export const session = fitness.table(
   (table) => [
     index("session_user_idx").on(table.userId),
     index("session_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const companionToken = fitness.table(
+  "companion_token",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    connectionType: text("connection_type").notNull().default("zepp-main"),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "companion_token_connection_type_check",
+      sql`${table.connectionType} IN ('zepp-main', 'zepp-workout')`,
+    ),
+    uniqueIndex("companion_token_user_connection_type_idx")
+      .on(table.userId, table.connectionType)
+      .where(sql`${table.revokedAt} IS NULL`),
   ],
 );
 

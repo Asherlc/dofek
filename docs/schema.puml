@@ -532,6 +532,16 @@ entity "auth_account" {
   created_at : timestamp
 }
 
+entity "companion_token" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  connection_type : text
+  token_hash : text
+  created_at : timestamp
+  revoked_at : timestamp
+}
+
 entity "data_export" {
   * id : uuid <<PK>>
   --
@@ -831,9 +841,9 @@ entity "personal_experiment" {
   hypothesis : text
   intervention : text
   outcome_metric_id : text
-  lag_days : integer
-  baseline_days : integer
-  intervention_days : integer
+  lag_days : bigint
+  baseline_days : bigint
+  intervention_days : bigint
   start_date : date
   status : text
   stopped_at : date
@@ -1009,6 +1019,7 @@ user_profile ||--o{ medication
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 user_profile ||--o{ auth_account
+user_profile ||--o{ companion_token
 user_profile ||--o{ data_export
 user_profile ||--o{ mcp_access_token
 user_profile ||--o{ mcp_oauth_authorization_code

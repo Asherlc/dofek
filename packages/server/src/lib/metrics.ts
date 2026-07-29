@@ -70,3 +70,10 @@ export const predictorLinearFitFallbacksTotal = new Counter({
   labelNames: ["prediction_target"] as const,
   registers: [registry],
 });
+
+export const companionConnectionOperationsTotal = new Counter({
+  name: "companion_connection_operations_total",
+  help: "Total number of companion connection verification and revocation outcomes",
+  labelNames: ["operation", "outcome"] as const,
+  registers: [registry],
+});

@@ -39,6 +39,7 @@ describe("companionTokenRouter", () => {
         {
           id: "new-id",
           user_id: "user-1",
+          connection_type: "zepp-main",
           created_at: "2026-01-01T00:00:00.000Z",
           revoked_at: null,
         },
@@ -57,6 +58,7 @@ describe("companionTokenRouter", () => {
           {
             id: "existing-id",
             user_id: "user-1",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
@@ -82,6 +84,7 @@ describe("companionTokenRouter", () => {
           {
             id: "new-id",
             user_id: "user-1",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
@@ -98,6 +101,58 @@ describe("companionTokenRouter", () => {
       const result = await caller.regenerate();
       expect(result.id).toBe("new-id");
       expect(result.token).not.toBeNull();
+    });
+  });
+
+  it("lists active connection types without exposing tokens", async () => {
+    const execute = vi.fn().mockResolvedValueOnce([
+      {
+        id: "main-id",
+        user_id: "user-1",
+        connection_type: "zepp-main",
+        created_at: "2026-01-01T00:00:00.000Z",
+        revoked_at: null,
+      },
+      {
+        id: "workout-id",
+        user_id: "user-1",
+        connection_type: "zepp-workout",
+        created_at: "2026-01-02T00:00:00.000Z",
+        revoked_at: null,
+      },
+    ]);
+    const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.list()).resolves.toEqual([
+      {
+        id: "main-id",
+        connectionType: "zepp-main",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        revokedAt: null,
+      },
+      {
+        id: "workout-id",
+        connectionType: "zepp-workout",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        revokedAt: null,
+      },
+    ]);
+  });
+
+  it("revokes one requested connection type", async () => {
+    const execute = vi.fn().mockResolvedValueOnce([
+      {
+        id: "workout-id",
+        user_id: "user-1",
+        connection_type: "zepp-workout",
+        created_at: "2026-01-02T00:00:00.000Z",
+        revoked_at: "2026-01-03T00:00:00.000Z",
+      },
+    ]);
+    const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.revoke({ connectionType: "zepp-workout" })).resolves.toEqual({
+      revoked: true,
     });
   });
 });

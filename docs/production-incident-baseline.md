@@ -19693,6 +19693,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge only after all exact-head integration
   shards, mutation shards, external checks, and review threads are green.
 
+## 2026-07-27 — Zepp packages invalidated each other's connection
+
+- **Status:** Root cause fixed locally; physical-device validation and
+  production deployment pending.
+- **Symptoms:** The normal Zepp app had no explicit disconnect or authoritative
+  connection check. The independently installed Workout Extension exposed only
+  password login, reported a generic connection error without its reason, and
+  its setup text did not name the watch's Motion Extensions menu.
+- **User impact:** Users could not reliably tell which Zepp package was
+  connected or revoke it. Connecting the Workout Extension invalidated the
+  normal app's credential (and vice versa), so one package subsequently failed
+  uploads with an invalid or revoked connection.
+- **Evidence:** `fitness.companion_token` had a partial unique index on
+  `user_id`, and `regenerateCompanionToken` revoked every active token for that
+  user. The failing real-PostgreSQL regression was
+  `pnpm test:integration -- packages/server/src/companion/token-repository.integration.test.ts`;
+  its first fatal line was `Error: Failed to create typed companion tokens`
+  because the second package could not obtain an independent active token.
+  Recent Swarm logs contained no matching companion-pairing event, confirming
+  that the client-side error reason was not observable from production logs.
+- **Root cause:** Two independently sandboxed Zepp packages were modeled as one
+  user-level companion credential, while their clients trusted local token
+  presence and the Workout Extension discarded the stored error reason.
+- **Fix / mitigation:** Model `zepp-main` and `zepp-workout` as separate active
+  connection types; scope create, rotate, list, verify, and revoke operations
+  to a type; add server-backed status and bearer-token disconnect endpoints;
+  expose QR/short-code pairing, status reasons, verification, and disconnect
+  in both Zepp Settings pages; and correct the Workout Extension instructions
+  to the documented Motion Extensions flow. No retry, timeout, or fallback
+  behavior was added.
+- **Validation:** The real-PostgreSQL regression passes with both connection
+  types active and independent revocation. Focused and changed server, web,
+  mobile, and Zepp suites pass, as do root and Zepp TypeScript, full lint, and
+  production Zeus builds for both `.zab` packages. The normal app and Workout
+  Extension also rebuild and refresh successfully in the connected Amazfit
+  T-Rex 3 simulator profile. Physical-watch pairing remains to be completed
+  before release because Zeus reports no authenticated account/Bridge session.
+- **Remaining risk / follow-up:** Validate both package credentials
+  concurrently on a physical Zepp OS watch and confirm each survives pairing
+  and revocation of the other after the production migration is deployed.
+
 ## 2026-07-27 — HealthKit deletion tests did not kill CI mutants
 
 - **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
@@ -19801,6 +19842,120 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workspace packages manually, so future server imports must keep the final
   image copy/link list synchronized with the server dependency graph.
 
+## 2026-07-28 — Companion migration failed SQLFluff indentation
+
+- **Status:** Root cause fixed on PR #2271; fresh exact-head CI validation
+  pending.
+- **Symptoms:** Exact-head CI run
+  [30416909304](https://github.com/Asherlc/dofek/actions/runs/30416909304)
+  failed `Test / SQLFluff` in job
+  [90465456835](https://github.com/Asherlc/dofek/actions/runs/30416909304/job/90465456835).
+- **User impact:** No production impact. PR #2271 could not merge while its
+  migration lint gate was red.
+- **Evidence:** The exact failing command was
+  `uv tool run sqlfluff lint drizzle/0062_companion_connection_type.sql`. The
+  first fatal finding was
+  `L: 2 | P: 1 | LT02 | Line should not be indented`, followed by the same
+  finding on four other top-level continuation lines.
+- **Root cause:** The new migration indented top-level `ADD`, `CHECK`, `ON`,
+  and `WHERE` clauses, contrary to SQLFluff's
+  [LT02 indentation rule](https://docs.sqlfluff.com/en/stable/reference/rules.html#sqlfluff.rules.layout.LT02).
+- **Fix / mitigation:** Align those clauses at the top level required by
+  SQLFluff. No migration behavior, retry, timeout, skip, or lint configuration
+  changed.
+- **Validation:** The exact SQLFluff command and the real-PostgreSQL companion
+  token integration suite pass locally. The replacement exact-head
+  `Test / SQLFluff` job remains the merge gate.
+- **Remaining risk / follow-up:** Confirm the replacement SQLFluff job and the
+  complete exact-head CI matrix pass before merge.
+
+## 2026-07-28 — Companion migration violated online lock-safety gates
+
+- **Status:** Root cause fixed locally on PR #2271; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30417671182](https://github.com/Asherlc/dofek/actions/runs/30417671182)
+  failed `Test / Migration Lint` in job
+  [90467927539](https://github.com/Asherlc/dofek/actions/runs/30417671182/job/90467927539).
+- **User impact:** No production impact. PR #2271 could not merge while its
+  migration safety gate was red.
+- **Evidence:** The exact failing command was
+  `echo "$NEW_MIGRATIONS" | xargs squawk`. Its first fatal finding was
+  `constraint-missing-not-valid` for the new connection-type check. Squawk also
+  reported `require-concurrent-index-deletion` for replacing the existing
+  active-token index.
+- **Root cause:** The migration altered the live token table in place. Adding
+  the validated check scanned existing rows, while dropping the existing
+  partial unique index required an exclusive table lock. Squawk recommends
+  `DROP INDEX CONCURRENTLY`, but PostgreSQL forbids concurrent index DDL inside
+  a transaction and the repository's Drizzle migrator intentionally runs all
+  migrations transactionally. See Squawk's
+  [constraint guidance](https://squawkhq.com/docs/constraint-missing-not-valid),
+  [index-deletion guidance](https://squawkhq.com/docs/require-concurrent-index-deletion),
+  and PostgreSQL's
+  [`DROP INDEX` restrictions](https://www.postgresql.org/docs/current/sql-dropindex.html).
+- **Fix / mitigation:** Replace the small companion-token relation
+  structurally in the existing migration transaction: rename the source,
+  create the canonical relation with the final constraint and index shape,
+  copy every token while assigning existing connections to `zepp-main`, drop
+  the legacy source, and restore canonical constraint names. This follows the
+  repository's established transaction-bound normalization pattern and adds no
+  waiver, retry, timeout, or migration-runner exception.
+- **Validation:** Direct Squawk 2.61.0, migration-policy, and SQLFluff checks
+  pass with zero findings. The real-PostgreSQL companion-token integration
+  suite passes all five tests on the rebuilt relation. Fresh exact-head CI
+  remains the merge gate.
+- **Remaining risk / follow-up:** The table replacement takes transactional
+  DDL locks while copying the relation. The companion-token relation is
+  intentionally small (at most one active token per user before this change);
+  deploy only after the exact-head safety and integration gates pass.
+
+## 2026-07-28 — Companion connection mutation coverage missed negative branches
+
+- **Status:** Root cause fixed on PR #2271; fresh exact-head CI validation
+  pending.
+- **Symptoms:** Exact-head CI run
+  [30418854427](https://github.com/Asherlc/dofek/actions/runs/30418854427)
+  failed Stryker shards
+  [1](https://github.com/Asherlc/dofek/actions/runs/30418854427/job/90471488988)
+  and
+  [5](https://github.com/Asherlc/dofek/actions/runs/30418854427/job/90471488996).
+  The first replacement run
+  [30419365948](https://github.com/Asherlc/dofek/actions/runs/30419365948)
+  then exposed independent gaps in shards
+  [0](https://github.com/Asherlc/dofek/actions/runs/30419365948/job/90473171092)
+  and
+  [1](https://github.com/Asherlc/dofek/actions/runs/30419365948/job/90473171114).
+- **User impact:** No production impact. PR #2271 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal lines reported mutation scores `58.82` and `71.43`, both
+  below the configured breaking threshold of `75`. The mutation artifacts
+  identified surviving branches in `revokeCompanionToken` and the legacy
+  pairing-body classifier. The replacement reports scored `54.35` and `70.59`
+  after identifying untested Workout Extension settings behavior and bearer
+  token revocation results.
+- **Root cause:** Unit tests covered successful typed revocation and a missing
+  connection type, but did not assert the no-active-token result or distinguish
+  malformed arrays and invalid typed objects. The Workout Extension settings
+  page also lacked a component test, and bearer-token revocation did not
+  exercise its true and false return values. Those gaps allowed result,
+  request-shape, and settings-state mutants to survive.
+- **Fix / mitigation:** Add true and false revocation-result tests, add malformed
+  pairing-body cases, and express the request classifier through
+  `Array.isArray` and `Object.hasOwn` so it models the actual JSON body
+  contract without redundant unreachable type guards. Add a Workout Extension
+  settings component suite covering stored status parsing, paired and empty
+  states, field updates, commands, and the corrected Motion Extensions
+  instructions. No mutation threshold, exclusion, or CI behavior changed.
+  Stryker documents surviving mutants and thresholds in its
+  [mutation testing guide](https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/).
+- **Validation:** All four formerly failing changed-line mutation targets now
+  score `100.00`; the focused route, repository, and Workout Extension settings
+  tests pass. Fresh exact-head CI remains the merge gate.
+- **Remaining risk / follow-up:** Confirm the replacement mutation shards and
+  the full required-check aggregate before merging.
+
 ## 2026-07-28 — PWA worker masked a web layout regression
 
 - **Status:** Root cause fixed on PR #2269; fresh exact-head E2E validation
@@ -19838,6 +19993,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge only after the fresh web E2E job proves
   both direct-load CLS and instrumentation remain stable, all required checks
   pass, and review threads remain resolved.
+
 ## 2026-07-28 — Knip setup downloaded an unused Cypress binary
 
 - **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI

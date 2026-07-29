@@ -264,6 +264,24 @@ AppSettingsPage({
       ]),
 
       Button({
+        label: "Check connection",
+        color: "secondary",
+        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+        onClick: () => {
+          toggle(props.settingsStorage, STORAGE_KEYS.CMD_CHECK_CONNECTION);
+        },
+      }),
+
+      Button({
+        label: "Disconnect Dofek",
+        color: "secondary",
+        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+        onClick: () => {
+          toggle(props.settingsStorage, STORAGE_KEYS.CMD_DISCONNECT);
+        },
+      }),
+
+      Button({
         label: "Sync health data now",
         color: "primary",
         style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
