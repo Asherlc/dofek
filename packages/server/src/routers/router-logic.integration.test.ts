@@ -519,7 +519,7 @@ describe("Router transformation logic", () => {
       expect(statusAfter.result.data.isPersonalized).toBe(false);
     });
 
-    it("refreshes provider and downstream queries after disconnect", async () => {
+    it("disconnects the provider while retaining downstream sync logs", async () => {
       const providerId = "cache-invalidation-provider";
       await queryCache.invalidateAll();
       await testCtx.db.execute(sql`DELETE FROM fitness.sync_log WHERE provider_id = ${providerId}`);
@@ -544,8 +544,15 @@ describe("Router transformation logic", () => {
       const { status } = await mutate("providerDetail.disconnect", { providerId });
       expect(status).toBe(200);
 
+      const connectionsAfter = await testCtx.db.execute(
+        sql`SELECT provider_id
+            FROM fitness.provider_connection
+            WHERE user_id = ${TEST_USER_ID} AND provider_id = ${providerId}`,
+      );
+      expect(connectionsAfter).toHaveLength(0);
+
       const { result: logsAfter } = await query("providerDetail.logs", logsInput);
-      expect(logsAfter.result.data).toHaveLength(0);
+      expect(logsAfter.result.data).toHaveLength(1);
     });
 
     it("refreshes provider and downstream queries after queuing data deletion", async () => {
