@@ -14,7 +14,8 @@ import {
   radius,
   spacing,
 } from "@dofek/scoring/tokens";
-import { lightColors } from "./theme-palette";
+import { DynamicColorIOS } from "react-native";
+import { createAdaptiveColors } from "./theme-palette";
 
 export { chartColors, operationalStatusColors, statusColors, surfaceColors, textColors };
 export { duration, easing, fontSize, fontWeight, radius, spacing };
@@ -25,5 +26,10 @@ export const fonts = {
   bold: fontFamily.body,
 } as const;
 
-/** Light fallback used by non-iOS renderers such as React Native Web Storybook. */
-export const colors = lightColors;
+/**
+ * Native colors resolve against the current iOS appearance even when they are
+ * captured in a static StyleSheet.
+ *
+ * @see https://reactnative.dev/docs/dynamiccolorios
+ */
+export const colors = createAdaptiveColors(DynamicColorIOS);

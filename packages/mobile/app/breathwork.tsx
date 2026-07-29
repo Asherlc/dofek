@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   startButtonText: {
-    color: colors.surface,
+    color: colors.textInverse,
     fontSize: fontSize.base,
     fontWeight: fontWeight.bold,
   },
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   stopButtonText: {
-    color: colors.surface,
+    color: colors.textInverse,
     fontSize: fontSize.base,
     fontWeight: fontWeight.bold,
   },
