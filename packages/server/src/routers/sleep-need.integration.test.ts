@@ -5,7 +5,10 @@ import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 import type { SleepNeedResult, SleepPerformanceInfo } from "./sleep-need.ts";
 import type { WeeklyReportResult } from "./weekly-report.ts";
 
@@ -126,6 +129,43 @@ describe("sleep-need router integration", () => {
     await queryCache.invalidateAll();
     const endDate = new Date();
     endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result).not.toHaveProperty("totalNeedMinutes");
+    expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 returns no recommendation fields when prior-night duration is null", async () => {
+    const endDate = new Date();
+    endDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 10);
+    const startedAt = new Date(endDate);
+    startedAt.setUTCDate(startedAt.getUTCDate() - 1);
+    startedAt.setUTCHours(22);
+    const endedAt = new Date(endDate);
+    endedAt.setUTCHours(6);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, external_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, sleep_type
+          ) VALUES (
+            'apple_health', ${TEST_USER_ID}, 'null-duration-prior-night',
+            ${startedAt}, ${endedAt},
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          )`,
+    );
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
     const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
       endDate: endDate.toISOString().slice(0, 10),
     });
