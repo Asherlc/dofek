@@ -382,12 +382,22 @@ describe("CorrelationExplorerPage", () => {
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
 
-    expect(screen.getByText("Same day")).toBeTruthy();
+    const xAxisSelect = screen.getByLabelText("X axis");
+    const metricControls = xAxisSelect.parentElement?.parentElement;
+    expect(metricControls?.className).toContain("grid");
+    expect(metricControls?.className).toContain("sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
+
+    const sameDayButton = screen.getByRole("button", { name: "Same day" });
+    const lagOptions = sameDayButton.parentElement;
+    expect(lagOptions?.className).toContain("flex-wrap");
+
+    const comparison = screen.getByText(
+      "Protein vs Heart Rate Variability on the same calendar day",
+    );
+    expect(comparison.parentElement).not.toBe(lagOptions?.parentElement);
+
     expect(screen.getByText("+1 calendar day")).toBeTruthy();
     expect(screen.getByText("+2 calendar days")).toBeTruthy();
-    expect(
-      screen.getByText("Protein vs Heart Rate Variability on the same calendar day"),
-    ).toBeTruthy();
 
     fireEvent.click(screen.getByText("+1 calendar day"));
 
