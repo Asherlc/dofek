@@ -1,0 +1,26 @@
+# Review Fixture Scenarios
+
+Web and mobile Storybook are the canonical review environments for isolated UI
+states. Each required scenario is tagged with `review-scenario` and a specific
+`review-scenario-*` tag, so reviewers can search for the scenario instead of
+depending on an ideal populated example.
+
+| Scenario | Web Storybook | Mobile Storybook |
+|----------|---------------|------------------|
+| Empty data | `Dashboard / DashboardEvidenceOverview / Empty data` in [DashboardEvidenceOverview.stories.tsx](../packages/web/src/components/DashboardEvidenceOverview.stories.tsx) | `State / QueryStatePanel / Empty data` in [QueryStatePanel.stories.tsx](../packages/mobile/components/QueryStatePanel.stories.tsx) |
+| Partial data | `State / ProcessingStatusWidget / Partial data` in [ProcessingStatusWidget.stories.tsx](../packages/web/src/components/ProcessingStatusWidget.stories.tsx) | `State / ProcessingStatusWidget / Partial data` in [ProcessingStatusWidget.stories.tsx](../packages/mobile/components/ProcessingStatusWidget.stories.tsx) |
+| Conflicting sources | `Activity / ActivitySourceDecisionCard / Conflicting sources` in [ActivitySourceDecisionCard.stories.tsx](../packages/web/src/components/ActivitySourceDecisionCard.stories.tsx) | `Activity / ActivitySourceDecisionCard / Conflicting sources` in [ActivitySourceDecisionCard.stories.tsx](../packages/mobile/app/activity/ActivitySourceDecisionCard.stories.tsx) |
+| Stale provider | `Providers / SyncProviderCard / Stale provider` in [SyncProviderCard.stories.tsx](../packages/web/src/components/SyncProviderCard.stories.tsx) | `Providers / ProviderCard / Stale provider` in [index.stories.tsx](../packages/mobile/app/providers/index.stories.tsx) |
+| Processing | `State / ProcessingStatusWidget / Processing` in [ProcessingStatusWidget.stories.tsx](../packages/web/src/components/ProcessingStatusWidget.stories.tsx) | `State / ProcessingStatusWidget / Processing` in [ProcessingStatusWidget.stories.tsx](../packages/mobile/components/ProcessingStatusWidget.stories.tsx) |
+| Error | `State / QueryStatePanel / Error` in [QueryStatePanel.stories.tsx](../packages/web/src/components/QueryStatePanel.stories.tsx) | `State / QueryStatePanel / Error` in [QueryStatePanel.stories.tsx](../packages/mobile/components/QueryStatePanel.stories.tsx) |
+
+Run `pnpm lint:review-scenarios` to verify that every scenario remains present
+on both platforms. The checker reads tags from exported Component Story Format
+story objects; unexported strings and metadata do not satisfy the policy. See
+[the policy source](../scripts/review-scenario-coverage-policy.ts).
+
+`pnpm seed` remains the canonical populated full-stack review fixture. It
+creates realistic data for route and API review, while Storybook isolates
+states such as request errors and active processing without making the default
+review login unusable. See [the seed source](../scripts/seed-dev-db.ts) and
+[scripts documentation](../scripts/README.md).

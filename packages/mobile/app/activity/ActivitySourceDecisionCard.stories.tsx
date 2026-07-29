@@ -25,7 +25,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const MultiSource: Story = {};
+export const MultiSource: Story = {
+  name: "Conflicting sources",
+  tags: ["review-scenario", "review-scenario-conflicting-sources"],
+};
 
 export const ThreeSources: Story = {
   args: {

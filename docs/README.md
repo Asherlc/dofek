@@ -28,6 +28,9 @@ the exact section.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
   experiments, goals, and trust roadmap.
 - [personal-experiments.md](personal-experiments.md): N-of-1 experiment setup and schedule slice.
+- [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile
+  Storybook fixtures for empty, partial, conflicting-source, stale-provider,
+  processing, and error review states.
 
 ## Architecture And Product Flows
 
