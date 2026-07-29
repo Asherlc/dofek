@@ -4,10 +4,17 @@ import {
   formatRelativeTime,
   formatTime,
 } from "@dofek/format/format";
+import { providerHealth } from "@dofek/providers/provider-health";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "../components/DataSourcesAuthModals.tsx";
 import { FileImportProviderCard } from "../components/FileImportProviderCard.tsx";
 import { getFileImportConfig } from "../components/file-import-configs.ts";
 import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
@@ -78,6 +85,13 @@ export function ProviderDetailPage() {
     (importJob) => importJob.providerId === providerId,
   );
   const pushOnly = provider?.pushOnly === true;
+  const health = provider
+    ? providerHealth({
+        authorized: provider.authorized,
+        needsReauth: provider.needsReauth,
+        requiresAuthorization: provider.authType !== "none",
+      })
+    : null;
   const lastSyncedRelative = hasValidDateInput(provider?.lastSyncedAt)
     ? formatRelativeTime(provider.lastSyncedAt)
     : null;
@@ -223,10 +237,51 @@ export function ProviderDetailPage() {
   // Disconnect
   const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [reconnectModal, setReconnectModal] = useState<
+    "credential" | "garmin" | "token" | "whoop" | null
+  >(null);
 
   const handleReauthorize = useCallback(() => {
     window.open(`/auth/provider/${providerId}`, "_blank");
   }, [providerId]);
+  const handleReconnect = useCallback(() => {
+    switch (provider?.authType) {
+      case "oauth":
+      case "oauth1":
+        handleReauthorize();
+        return;
+      case "credential":
+        setReconnectModal("credential");
+        return;
+      case "token": {
+        if (provider.tokenAuth) {
+          setReconnectModal("token");
+          return;
+        }
+        const error = new Error(
+          `${provider.name} personal-token authentication is unavailable. Refresh and try again.`,
+        );
+        captureException(error, {
+          operation: "reconnect-provider",
+          providerId: provider.id,
+        });
+        setSyncStatus("error");
+        setSyncMessage(error.message);
+        return;
+      }
+      case "custom:garmin":
+        setReconnectModal("garmin");
+        return;
+      case "custom:whoop":
+        setReconnectModal("whoop");
+        return;
+    }
+  }, [handleReauthorize, provider]);
+  const handleReconnectSuccess = useCallback(() => {
+    setReconnectModal(null);
+    trpcUtils.sync.providers.invalidate();
+    trpcUtils.processing.status.invalidate();
+  }, [trpcUtils]);
 
   // Listen for OAuth completion (re-authorize flow)
   const lastOAuthHandledAt = useRef(0);
@@ -337,10 +392,35 @@ export function ProviderDetailPage() {
                   </>
                 ) : provider.importOnly ? (
                   <span className="text-xs text-subtle">Import only</span>
-                ) : provider.authorized ? (
-                  <span className="text-xs text-emerald-400">Connected</span>
                 ) : (
-                  <span className="text-xs text-subtle">Not connected</span>
+                  <dl className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <div className="flex items-center gap-1">
+                      <dt className="text-dim">Connection</dt>
+                      <dd
+                        className={
+                          health?.connection.status === "healthy"
+                            ? "text-emerald-400"
+                            : "text-subtle"
+                        }
+                      >
+                        {health?.connection.label}
+                      </dd>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <dt className="text-dim">Authorization</dt>
+                      <dd
+                        className={
+                          health?.authorization.status === "warning"
+                            ? "text-amber-400"
+                            : health?.authorization.status === "healthy"
+                              ? "text-emerald-400"
+                              : "text-subtle"
+                        }
+                      >
+                        {health?.authorization.label}
+                      </dd>
+                    </div>
+                  </dl>
                 )}
                 {!provider.pushOnly && !provider.importOnly && lastSyncedRelative && (
                   <span className="text-xs text-dim">Last sync: {lastSyncedRelative}</span>
@@ -349,6 +429,16 @@ export function ProviderDetailPage() {
             )}
           </div>
         </div>
+        {provider && health?.requiresReconnect && !provider.importOnly && !provider.pushOnly ? (
+          <button
+            type="button"
+            onClick={handleReconnect}
+            className="rounded bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400"
+            aria-label={`Reconnect ${provider.name}`}
+          >
+            Reconnect {provider.name}
+          </button>
+        ) : null}
       </div>
 
       <ProcessingStatusWidget
@@ -356,6 +446,7 @@ export function ProviderDetailPage() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
+        alwaysVisible
       />
 
       {importConfig && (
@@ -394,92 +485,100 @@ export function ProviderDetailPage() {
       {/* Sync controls */}
       {provider?.authorized === true && !hasFileImportConfig && !pushOnly && (
         <section className="card p-4 space-y-3">
-          <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
+          <h2 className="text-sm font-medium text-foreground">
+            {health?.requiresReconnect ? "Connection Controls" : "Sync Controls"}
+          </h2>
           <div className="flex flex-wrap items-end gap-3">
-            <button
-              type="button"
-              onClick={() => handleSync(false)}
-              disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-            >
-              {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSync(true)}
-              disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-            >
-              Full Sync
-            </button>
-            <div className="flex items-end gap-1.5">
-              <div>
-                <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
-                  Days back
-                </label>
-                <input
-                  id="since-days"
-                  type="number"
-                  min="1"
-                  max="3650"
-                  value={sinceDays}
-                  onChange={(e) => setSinceDays(e.target.value)}
-                  className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSync(false, Number(sinceDays))}
-                disabled={syncStatus === "syncing" || !sinceDays}
-                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-              >
-                Sync Range
-              </button>
-            </div>
-            <div className="flex items-end gap-1.5">
-              <div>
-                <label htmlFor="range-start-date" className="block text-xs text-subtle mb-1">
-                  From
-                </label>
-                <input
-                  id="range-start-date"
-                  type="date"
-                  value={rangeStartDate}
-                  onChange={(e) => setRangeStartDate(e.target.value)}
-                  className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
-                />
-              </div>
-              <div>
-                <label htmlFor="range-end-date" className="block text-xs text-subtle mb-1">
-                  To
-                </label>
-                <input
-                  id="range-end-date"
-                  type="date"
-                  value={rangeEndDate}
-                  onChange={(e) => setRangeEndDate(e.target.value)}
-                  className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSyncDateRange()}
-                disabled={syncStatus === "syncing" || !rangeStartDate || !rangeEndDate}
-                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-              >
-                Sync Dates
-              </button>
-            </div>
-            <div className="ml-auto flex items-center gap-3">
-              {provider?.authType === "oauth" && provider.authorized && (
+            {!health?.requiresReconnect ? (
+              <>
                 <button
                   type="button"
-                  onClick={handleReauthorize}
-                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                  onClick={() => handleSync(false)}
+                  disabled={syncStatus === "syncing"}
+                  className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
                 >
-                  Re-authorize
+                  {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => handleSync(true)}
+                  disabled={syncStatus === "syncing"}
+                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                >
+                  Full Sync
+                </button>
+                <div className="flex items-end gap-1.5">
+                  <div>
+                    <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
+                      Days back
+                    </label>
+                    <input
+                      id="since-days"
+                      type="number"
+                      min="1"
+                      max="3650"
+                      value={sinceDays}
+                      onChange={(e) => setSinceDays(e.target.value)}
+                      className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSync(false, Number(sinceDays))}
+                    disabled={syncStatus === "syncing" || !sinceDays}
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                  >
+                    Sync Range
+                  </button>
+                </div>
+                <div className="flex items-end gap-1.5">
+                  <div>
+                    <label htmlFor="range-start-date" className="block text-xs text-subtle mb-1">
+                      From
+                    </label>
+                    <input
+                      id="range-start-date"
+                      type="date"
+                      value={rangeStartDate}
+                      onChange={(e) => setRangeStartDate(e.target.value)}
+                      className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="range-end-date" className="block text-xs text-subtle mb-1">
+                      To
+                    </label>
+                    <input
+                      id="range-end-date"
+                      type="date"
+                      value={rangeEndDate}
+                      onChange={(e) => setRangeEndDate(e.target.value)}
+                      className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSyncDateRange()}
+                    disabled={syncStatus === "syncing" || !rangeStartDate || !rangeEndDate}
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                  >
+                    Sync Dates
+                  </button>
+                </div>
+              </>
+            ) : null}
+            <div className="ml-auto flex items-center gap-3">
+              {!health?.requiresReconnect &&
+                (provider?.authType === "oauth" || provider?.authType === "oauth1") &&
+                provider.authorized && (
+                  <button
+                    type="button"
+                    onClick={handleReauthorize}
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                  >
+                    Re-authorize
+                  </button>
+                )}
               <ProviderDisconnectControl
                 canDisconnect={Boolean(provider?.authorized)}
                 showConfirm={showDisconnectConfirm}
@@ -502,6 +601,37 @@ export function ProviderDetailPage() {
           ) : null}
         </section>
       )}
+
+      {provider && reconnectModal === "credential" ? (
+        <CredentialAuthModal
+          providerId={provider.id}
+          providerName={provider.name}
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
+      {reconnectModal === "garmin" ? (
+        <GarminAuthModal
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
+      {provider?.tokenAuth && reconnectModal === "token" ? (
+        <TokenAuthModal
+          providerId={provider.id}
+          providerName={provider.name}
+          tokenLabel={provider.tokenAuth.label}
+          instructionsUrl={provider.tokenAuth.instructionsUrl}
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
+      {reconnectModal === "whoop" ? (
+        <WhoopAuthModal
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
 
       {/* WHOOP wear location */}
       {providerId === "whoop" && <WhoopWearLocationPicker />}

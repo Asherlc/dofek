@@ -4,6 +4,7 @@ import {
   formatTableCellValue,
   formatTime,
 } from "@dofek/format/format";
+import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import { statusColors } from "@dofek/scoring/colors";
@@ -12,7 +13,6 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Modal,
   RefreshControl,
   ScrollView,
@@ -833,7 +833,13 @@ export default function ProviderDetailScreen() {
     );
   }
 
-  return <ProviderDetailContent providerId={providerId} providerActions={providerActions} />;
+  return (
+    <ProviderDetailContent
+      providerId={providerId}
+      providerActions={providerActions}
+      displayProvider={providerActions.displayProvider}
+    />
+  );
 }
 
 function ProviderRouteError({
@@ -864,9 +870,11 @@ function ProviderRouteError({
 function ProviderDetailContent({
   providerId,
   providerActions,
+  displayProvider,
 }: {
   providerId: string;
   providerActions: ProviderDetailActionsResult;
+  displayProvider: NonNullable<ProviderDetailActionsResult["displayProvider"]>;
 }) {
   const { serverUrl } = useAuth();
   const router = useRouter();
@@ -880,7 +888,6 @@ function ProviderDetailContent({
   );
   const {
     provider,
-    displayProvider,
     isConnected,
     primaryActionLabel,
     isSyncing,
@@ -893,6 +900,11 @@ function ProviderDetailContent({
     handleFullSync,
     modals,
   } = providerActions;
+  const health = providerHealth({
+    authorized: isConnected,
+    needsReauth: Boolean(provider?.needsReauth),
+    requiresAuthorization: displayProvider.authType !== "none",
+  });
 
   const handleDisconnect = useCallback(() => {
     if (!providerId) return;
@@ -919,11 +931,6 @@ function ProviderDetailContent({
       ],
     );
   }, [providerId, disconnectMutation, trpcUtils, router]);
-
-  const handleReauthorize = useCallback(() => {
-    if (!providerId) return;
-    Linking.openURL(`${serverUrl}/auth/provider/${providerId}`);
-  }, [providerId, serverUrl]);
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -960,12 +967,33 @@ function ProviderDetailContent({
               </Text>
             </View>
             {displayProvider && (
-              <View style={styles.statusRow}>
-                {isConnected ? (
-                  <Text style={styles.statusConnected}>Connected</Text>
-                ) : (
-                  <Text style={styles.statusDisconnected}>Not connected</Text>
-                )}
+              <View style={styles.statusColumn}>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Connection</Text>
+                  <Text
+                    style={
+                      health.connection.status === "healthy"
+                        ? styles.statusConnected
+                        : styles.statusDisconnected
+                    }
+                  >
+                    {health.connection.label}
+                  </Text>
+                </View>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>Authorization</Text>
+                  <Text
+                    style={
+                      health.authorization.status === "warning"
+                        ? styles.statusWarning
+                        : health.authorization.status === "healthy"
+                          ? styles.statusConnected
+                          : styles.statusDisconnected
+                    }
+                  >
+                    {health.authorization.label}
+                  </Text>
+                </View>
                 {displayProvider.lastSyncedAt &&
                   formatRelativeTime(displayProvider.lastSyncedAt) && (
                     <Text style={styles.lastSync}>
@@ -975,15 +1003,15 @@ function ProviderDetailContent({
               </View>
             )}
           </View>
-          {provider?.needsReauth && provider.authorized && (
+          {provider?.needsReauth && (
             <TouchableOpacity
               style={styles.reauthorizeButton}
-              onPress={handleReauthorize}
+              onPress={() => void handlePrimaryAction()}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Re-authorize provider"
+              accessibilityLabel={`Reconnect ${displayProvider.name}`}
             >
-              <Text style={styles.reauthorizeButtonText}>Re-authorize</Text>
+              <Text style={styles.reauthorizeButtonText}>Reconnect</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -994,6 +1022,7 @@ function ProviderDetailContent({
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
+        alwaysVisible
       />
 
       {providerActions.inventoryError ? (
@@ -1151,8 +1180,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginTop: 4,
   },
+  statusColumn: { gap: 4, marginTop: 6 },
+  statusLabel: { color: colors.textTertiary, fontSize: 12 },
   statusConnected: {
     fontSize: 13,
     color: colors.positive,
@@ -1161,6 +1191,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textTertiary,
   },
+  statusWarning: { color: colors.warning, fontSize: 13 },
   lastSync: {
     fontSize: 13,
     color: colors.textTertiary,

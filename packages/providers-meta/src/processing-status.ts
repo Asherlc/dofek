@@ -159,3 +159,46 @@ export function processingAggregateProgress(
   if (progressValues.length === 0 || progressValues.length !== datasets.length) return null;
   return Math.min(...progressValues);
 }
+
+interface ProcessingErrorEvent {
+  datasetKey: string | null;
+  status: string;
+  occurredAt: string;
+  message: string | null;
+  errorMessage: string | null;
+}
+
+export function processingDatasetErrorMessage(
+  operations: readonly { timeline: readonly ProcessingErrorEvent[] }[],
+  datasetKey: string,
+): string | null {
+  const failedEvent = operations
+    .flatMap((operation) => operation.timeline)
+    .filter(
+      (event) =>
+        event.status === "failed" && (event.datasetKey === null || event.datasetKey === datasetKey),
+    )
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0];
+  return failedEvent?.errorMessage ?? failedEvent?.message ?? null;
+}
+
+export function processingDatasetStatusLabel(status: ProcessingDisplayStatus): string {
+  switch (status) {
+    case "ready":
+      return "Ready";
+    case "waiting":
+      return "Waiting";
+    case "active":
+      return "Updating";
+    case "partial":
+      return "Finishing";
+    case "delayed":
+      return "Delayed";
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+  }
+}

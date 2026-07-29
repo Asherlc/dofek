@@ -1,7 +1,10 @@
+import { formatRelativeTime } from "@dofek/format/format";
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
   processingAggregateProgress,
+  processingDatasetErrorMessage,
+  processingDatasetStatusLabel,
   processingHeading,
   processingStatusMessage,
   processingTarget,
@@ -80,12 +83,7 @@ export function ProcessingStatusWidget({
       />
     );
   }
-  if (
-    !data ||
-    data.overallStatus === "failed" ||
-    data.overallStatus === "blocked" ||
-    (data.overallStatus === "ready" && !alwaysVisible)
-  ) {
+  if (!data || (data.overallStatus === "ready" && !alwaysVisible)) {
     return null;
   }
 
@@ -100,8 +98,39 @@ export function ProcessingStatusWidget({
     errorMessage: null,
   });
   const heading = processingHeading(data.overallStatus, target);
+  const problemDatasets = data.datasets.filter(
+    (dataset) => dataset.status === "failed" || dataset.status === "blocked",
+  );
+  const datasetsWithHistory = data.datasets.filter(
+    (dataset) =>
+      dataset.status !== "ready" || dataset.lastAdvancedAt !== null || dataset.lastReadyAt !== null,
+  );
+  const visibleDatasets = alwaysVisible ? datasetsWithHistory : problemDatasets;
+  const datasetDetails =
+    visibleDatasets.length > 0 ? (
+      <ul className="mt-2 divide-y divide-slate-200 border-t border-slate-200">
+        {visibleDatasets.map((dataset) => {
+          const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
+          const datasetError = processingDatasetErrorMessage(data.operations, dataset.key);
+          return (
+            <li key={dataset.key} className="py-2 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-slate-800">{dataset.label}</span>
+                <span className="text-slate-600">
+                  {processingDatasetStatusLabel(dataset.status)}
+                </span>
+              </div>
+              <p className="mt-0.5 text-slate-500">
+                {lastReady ? `Last ready: ${lastReady}` : "No completed update recorded"}
+              </p>
+              {datasetError ? <p className="mt-1 text-red-700">{datasetError}</p> : null}
+            </li>
+          );
+        })}
+      </ul>
+    ) : null;
 
-  if (target.action === "recompute") {
+  if (target.action === "recompute" && visibleDatasets.length === 0) {
     return (
       <RecomputeStatusIndicator label={heading} progress={progress} status={data.overallStatus} />
     );
@@ -114,6 +143,8 @@ export function ProcessingStatusWidget({
       message={statusMessage}
       progress={progress}
       status={data.overallStatus}
-    />
+    >
+      {datasetDetails}
+    </SourceProcessingStatusCard>
   );
 }

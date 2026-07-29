@@ -48,6 +48,10 @@ const snapshot: ProcessingStatusSnapshot = {
 };
 const activityDataset = snapshot.datasets.at(0);
 if (!activityDataset) throw new Error("Expected the processing snapshot fixture to include data");
+const operation = snapshot.operations.at(0);
+if (!operation) throw new Error("Expected the processing snapshot fixture to include an operation");
+const timelineEvent = operation.timeline.at(0);
+if (!timelineEvent) throw new Error("Expected the processing snapshot fixture to include an event");
 
 describe("ProcessingStatusWidget", () => {
   afterEach(() => {
@@ -136,5 +140,120 @@ describe("ProcessingStatusWidget", () => {
     );
 
     expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it.each([
+    "failed",
+    "blocked",
+  ] as const)("surfaces %s datasets, their last ready age, and the actionable error", (status) => {
+    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: status,
+          datasets: [
+            {
+              ...activityDataset,
+              status,
+              progressPercentage: null,
+              lastReadyAt: "2026-07-22T12:00:00.000Z",
+            },
+          ],
+          operations: [
+            {
+              ...operation,
+              status,
+              timeline: [
+                {
+                  ...timelineEvent,
+                  status: "failed",
+                  errorMessage: "Reconnect Garmin, then start the sync again.",
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText(status === "failed" ? "Failed" : "Blocked")).toBeTruthy();
+    expect(screen.getByText("Last ready: 2h ago")).toBeTruthy();
+    expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+  });
+
+  it("shows every dataset and its freshness when explicitly kept visible", () => {
+    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: "ready",
+          datasets: [
+            {
+              ...activityDataset,
+              status: "ready",
+              progressPercentage: 100,
+              lastReadyAt: "2026-07-22T12:00:00.000Z",
+            },
+          ],
+        }}
+        alwaysVisible
+      />,
+    );
+
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.getByText("Last ready: 2h ago")).toBeTruthy();
+  });
+
+  it("surfaces a failed dataset on downstream metric pages", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          scope: { providerId: null, datasets: ["activity"] },
+          overallStatus: "failed",
+          datasets: [
+            {
+              ...activityDataset,
+              status: "failed",
+              progressPercentage: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
+  });
+
+  it("does not claim freshness for synthetic ready datasets without processing history", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: "ready",
+          operations: [],
+          datasets: [
+            {
+              ...activityDataset,
+              status: "ready",
+              progressPercentage: null,
+              lastAdvancedAt: null,
+              lastReadyAt: null,
+            },
+          ],
+        }}
+        alwaysVisible
+      />,
+    );
+
+    expect(screen.getByText("Garmin sync complete")).toBeTruthy();
+    expect(screen.queryByText("Activities")).toBeNull();
+    expect(screen.queryByText("No completed update recorded")).toBeNull();
   });
 });
