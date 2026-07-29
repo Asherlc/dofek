@@ -459,14 +459,14 @@ describe("Router transformation logic", () => {
       const { result: historyAfter } = await query("menstrualCycle.history", { months: 1 });
       expect(historyAfter.result.data).toHaveLength(1);
       const { result: phaseAfter } = await query("menstrualCycle.currentPhase");
-      expect(phaseAfter.result.data.phase).not.toBeNull();
-      expect(phaseAfter.result.data.estimate).toMatchObject({
-        basis: "generic-28-day-default",
-        completedCycleCount: 0,
-        observedCycleLengthRange: null,
-        methodLabel:
-          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
-        uncertaintyLabel: "No personal cycle-length range is available yet.",
+      expect(phaseAfter.result.data).toMatchObject({
+        phase: null,
+        estimate: null,
+        availability: {
+          status: "sparse-history",
+          label:
+            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
+        },
       });
     });
 

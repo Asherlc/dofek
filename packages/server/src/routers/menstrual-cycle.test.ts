@@ -52,6 +52,7 @@ describe("menstrualCycleRouter", () => {
       expect(result.phase).toBeNull();
       expect(result.dayOfCycle).toBeNull();
       expect(result.estimate).toBeNull();
+      expect(result.availability.status).toBe("no-history");
     });
 
     it("computes current phase from most recent period", async () => {
@@ -226,6 +227,114 @@ describe("menstrualCycleRouter", () => {
       const result = await caller.logPeriod({ startDate: "2026-03-01" });
 
       expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updatePeriod", () => {
+    const periodId = "11111111-1111-4111-8111-111111111111";
+
+    it("corrects a period and invalidates cycle queries", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          id: periodId,
+          start_date: "2026-03-02",
+          end_date: "2026-03-05",
+          duration_days: 4,
+          notes: "Corrected date",
+        },
+      ]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      const result = await caller.updatePeriod({
+        id: periodId,
+        startDate: "2026-03-02",
+        endDate: "2026-03-05",
+        notes: "Corrected date",
+      });
+
+      expect(result).toMatchObject({
+        id: periodId,
+        startDate: "2026-03-02",
+        durationLabel: "4 days",
+      });
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["menstrualCycle"]);
+    });
+
+    it("rejects an end date before the corrected start date without writing", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await expect(
+        caller.updatePeriod({
+          id: periodId,
+          startDate: "2026-03-02",
+          endDate: "2026-03-01",
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("Period end date cannot be before start date."),
+      });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("returns an actionable not-found error for a period outside the user scope", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.updatePeriod({ id: periodId, startDate: "2026-03-02" }),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Period entry was not found. Refresh the history and try again.",
+      });
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+    });
+
+    it("returns an actionable conflict when the corrected start date already exists", async () => {
+      const uniqueViolation = new Error("Failed query", {
+        cause: Object.assign(new Error("duplicate key value"), { code: "23505" }),
+      });
+      const caller = createCaller({
+        db: { execute: vi.fn().mockRejectedValue(uniqueViolation) },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.updatePeriod({ id: periodId, startDate: "2026-03-08" }),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "A period is already recorded for 2026-03-08. Choose a different start date.",
+      });
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deletePeriod", () => {
+    const periodId = "22222222-2222-4222-8222-222222222222";
+
+    it("deletes a period and invalidates cycle queries", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ id: periodId }]) },
+        userId: "user-1",
+      });
+
+      await expect(caller.deletePeriod({ id: periodId })).resolves.toEqual({ deleted: true });
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["menstrualCycle"]);
+    });
+
+    it("returns an actionable not-found error for a period outside the user scope", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await expect(caller.deletePeriod({ id: periodId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Period entry was not found. Refresh the history and try again.",
+      });
       expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
   });
