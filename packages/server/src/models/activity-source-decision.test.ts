@@ -200,7 +200,7 @@ describe("buildActivityListSource", () => {
 
   it("still attributes a canonical activity when no external source link is available", () => {
     expect(
-      buildActivityListSource("garmin", null, [], (id) =>
+      buildActivityListSource("garmin", null, undefined, (id) =>
         id === "garmin" ? { name: "Garmin Connect Custom" } : undefined,
       ),
     ).toEqual({

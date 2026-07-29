@@ -437,7 +437,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
-        source: buildActivityListSource(row.provider_id, row.source_name, [], getProvider),
+        source: buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
         lastProcessedAt: row.last_processed_at,
         location:
           row.centroid_lat != null && row.centroid_lng != null

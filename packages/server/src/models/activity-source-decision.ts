@@ -47,9 +47,17 @@ export function buildActivitySourceDecision(
 export function buildActivityListSource(
   providerId: string,
   subsource: string | null,
-  sourceLinks: SourceLink[],
+  sourceLinks: SourceLink[] | undefined,
   lookupProvider?: ProviderLookup,
 ): ActivityListSourceDetail {
+  if (sourceLinks === undefined) {
+    return {
+      primarySourceLabel: primarySourceLabelFor(providerId, subsource, sourceLinks, lookupProvider),
+      sourceCount: 1,
+      overlapSummary: null,
+    };
+  }
+
   const decision = buildActivitySourceDecision(providerId, subsource, sourceLinks, lookupProvider);
   const primarySourceLabel =
     decision?.primarySourceLabel ??
@@ -67,10 +75,10 @@ export function buildActivityListSource(
 function primarySourceLabelFor(
   providerId: string,
   subsource: string | null,
-  sourceLinks: SourceLink[],
+  sourceLinks: SourceLink[] | undefined,
   lookupProvider?: ProviderLookup,
 ): string {
-  const matchingLink = sourceLinks.find(
+  const matchingLink = sourceLinks?.find(
     (link) => link.providerId === providerId && (link.subsource ?? null) === subsource,
   );
   if (matchingLink) {
