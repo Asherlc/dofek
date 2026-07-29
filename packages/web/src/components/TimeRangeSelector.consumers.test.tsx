@@ -171,7 +171,7 @@ vi.mock("../lib/trpc.ts", () => {
         list: recordQuery("sleep.list"),
       },
       sleepNeed: {
-        calculate: recordQuery("sleepNeed.calculate"),
+        calculateV2: recordQuery("sleepNeed.calculateV2"),
         performance: recordQuery("sleepNeed.performance"),
       },
       stress: {

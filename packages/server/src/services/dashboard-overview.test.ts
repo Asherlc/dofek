@@ -94,4 +94,34 @@ describe("loadDashboardOverview", () => {
     expect(result.strain.date).toBe("2026-06-29");
     expect(result.strain.dailyStrain).toBeGreaterThan(0);
   });
+
+  it("provides the unavailable V2 state when the dashboard has no prior-night sleep", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore(),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+  });
+
+  it("provides server-computed debt recovery in the available V2 state", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore(),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 25,
+      debtRecoveryMinutes: 6,
+      totalNeedMinutes: 486,
+    });
+  });
 });

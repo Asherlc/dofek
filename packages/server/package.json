@@ -7,7 +7,8 @@
     "./router": "./src/router.ts",
     "./types": "./src/types.ts",
     "./health-report-share-expiry": "./src/health-report-share-expiry.ts",
-    "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts"
+    "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts",
+    "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts"
   },
   "scripts": {
     "dev": "tsx ../../scripts/with-env.ts -- tsx src/index.ts",

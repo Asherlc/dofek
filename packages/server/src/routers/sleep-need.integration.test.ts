@@ -122,6 +122,22 @@ describe("sleep-need router integration", () => {
     }
   });
 
+  it("calculateV2 returns no recommendation fields when the real read model has no prior night", async () => {
+    await queryCache.invalidateAll();
+    const endDate = new Date();
+    endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result).not.toHaveProperty("totalNeedMinutes");
+    expect(result).not.toHaveProperty("recentNights");
+  });
+
   it("performance returns deduped sleep data from v_sleep", async () => {
     // Insert a second provider with lower priority and different duration
     await testCtx.db.execute(

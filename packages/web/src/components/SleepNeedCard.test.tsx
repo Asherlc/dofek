@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { statusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
-import type { SleepNeedResult } from "dofek-server/types";
+import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { SleepNeedCard } from "./SleepNeedCard.tsx";
@@ -16,7 +16,7 @@ vi.mock("echarts-for-react", () => ({
 }));
 
 const emptyProvenance: Pick<
-  SleepNeedResult["recentNights"][number],
+  Extract<SleepNeedV2, { availability: "available" }>["recentNights"][number],
   "providerId" | "sourceName" | "sourceProviders"
 > = {
   providerId: null,
@@ -25,11 +25,12 @@ const emptyProvenance: Pick<
 };
 
 const mockData = {
+  availability: "available" as const,
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 90,
+  debtRecoveryMinutes: 23,
   totalNeedMinutes: 515,
-  canRecommend: true,
   recentNights: [
     {
       date: "2026-03-14",
@@ -169,18 +170,22 @@ describe("SleepNeedCard", () => {
     expect(bars[1]?.itemStyle.color).toBe("#3a3a3e");
   });
 
-  it("shows missing data message when canRecommend is false", () => {
+  it("shows only the server message when previous-night sleep is missing", () => {
     capturedOption = null;
-    const noRecommendData = {
-      ...mockData,
-      canRecommend: false,
+    const unavailableData: SleepNeedV2 = {
+      availability: "missing_previous_night",
+      message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     };
-    render(<SleepNeedCard data={noRecommendData} />);
-    expect(screen.getByText(/last night/i)).toBeDefined();
+    render(<SleepNeedCard data={unavailableData} />);
+    expect(screen.getByText(MISSING_PREVIOUS_NIGHT_MESSAGE)).toBeDefined();
     expect(screen.queryByText(/recommended/)).toBeNull();
+    expect(screen.queryByText("Baseline")).toBeNull();
+    expect(screen.queryByText("Strain Debt")).toBeNull();
+    expect(screen.queryByText("Sleep Debt")).toBeNull();
+    expect(screen.queryByTestId("echarts")).toBeNull();
   });
 
-  it("shows recommendation when canRecommend is true", () => {
+  it("shows the available recommendation", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
     expect(screen.getByText(/recommended/)).toBeDefined();
