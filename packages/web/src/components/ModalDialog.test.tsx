@@ -86,12 +86,14 @@ describe("ModalDialog", () => {
     );
 
     fireEvent.keyDown(screen.getByRole("button", { name: "Working" }), { key: "Escape" });
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Background", hidden: true }));
+    const overlay = document.querySelector("[data-state='open'][aria-hidden='true']");
+    if (!(overlay instanceof HTMLElement)) throw new Error("Expected the dialog overlay");
+    fireEvent.pointerDown(overlay);
 
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("dismisses from the overlay only when the caller opts in", () => {
+  it("dismisses from an outside pointer when the caller opts in", async () => {
     const onClose = vi.fn();
     render(
       <div>
@@ -105,8 +107,9 @@ describe("ModalDialog", () => {
 
     const overlay = document.querySelector("[data-state='open'][aria-hidden='true']");
     if (!(overlay instanceof HTMLElement)) throw new Error("Expected the dialog overlay");
-    fireEvent.click(overlay);
-
-    expect(onClose).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      fireEvent.pointerDown(overlay, { button: 1 });
+      expect(onClose).toHaveBeenCalledOnce();
+    });
   });
 });

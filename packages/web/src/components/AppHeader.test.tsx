@@ -167,7 +167,7 @@ describe("AppHeader", () => {
     expect(document.activeElement).toBe(menuButton);
   });
 
-  it("closes mobile navigation from the visible action, an outside pointer, or a destination", () => {
+  it("closes mobile navigation from the visible action, an outside pointer, or a destination", async () => {
     render(<AppHeader />);
     const menuButton = screen.getByLabelText("Toggle navigation menu");
 
@@ -178,8 +178,10 @@ describe("AppHeader", () => {
     fireEvent.click(menuButton);
     const overlay = document.querySelector("[data-state='open'][aria-hidden='true']");
     if (!(overlay instanceof HTMLElement)) throw new Error("Expected the navigation overlay");
-    fireEvent.click(overlay);
-    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    await waitFor(() => {
+      fireEvent.pointerDown(overlay, { button: 1 });
+      expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    });
 
     fireEvent.click(menuButton);
     fireEvent.click(
@@ -215,6 +217,13 @@ describe("AppHeader", () => {
     act(() => desktopChangeListener?.());
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
+    await waitFor(() =>
+      expect(
+        within(screen.getByLabelText("Primary navigation")).getByRole("link", {
+          name: "Overview",
+        }),
+      ).toHaveFocus(),
+    );
   });
 
   it("renders primary app destinations and the signed-in user", () => {

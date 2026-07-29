@@ -48,13 +48,7 @@ export function ModalDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay
-          aria-hidden="true"
-          className={`fixed inset-0 z-50 ${overlayClassName}`}
-          onClick={() => {
-            if (closeOnInteractOutside) closeDialog();
-          }}
-        />
+        <Dialog.Overlay aria-hidden="true" className={`fixed inset-0 z-50 ${overlayClassName}`} />
         <Dialog.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -76,7 +70,7 @@ export function ModalDialog({
             initialFocusRef.current.focus();
           }}
           onPointerDownOutside={(event) => {
-            event.preventDefault();
+            if (!closeOnInteractOutside) event.preventDefault();
           }}
         >
           {children}

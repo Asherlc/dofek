@@ -41,6 +41,7 @@ export function AppHeader({
 }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const firstDesktopLinkRef = useRef<HTMLAnchorElement | null>(null);
   const firstMobileLinkRef = useRef<HTMLAnchorElement | null>(null);
   const mobileNavigationId = "app-mobile-navigation";
 
@@ -49,7 +50,9 @@ export function AppHeader({
   useEffect(() => {
     const desktopMediaQuery = window.matchMedia("(min-width: 64rem)");
     const closeAtDesktopBreakpoint = () => {
-      if (desktopMediaQuery.matches) setMenuOpen(false);
+      if (!desktopMediaQuery.matches) return;
+      setMenuOpen(false);
+      window.requestAnimationFrame(() => firstDesktopLinkRef.current?.focus());
     };
 
     desktopMediaQuery.addEventListener("change", closeAtDesktopBreakpoint);
@@ -153,9 +156,10 @@ export function AppHeader({
         </div>
 
         <nav className="mt-8 flex flex-col gap-1" aria-label="Sections">
-          {items.map(({ to, label }) => (
+          {items.map(({ to, label }, index) => (
             <Link
               key={to}
+              ref={index === 0 ? firstDesktopLinkRef : undefined}
               to={to}
               className={desktopLinkClass}
               activeProps={{ className: desktopActiveLinkClass }}
