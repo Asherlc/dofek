@@ -1,3 +1,5 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { REVIEW_SCENARIOS, scanReviewScenarioCoverage } from "./review-scenario-coverage-policy.ts";
@@ -57,5 +59,53 @@ describe("scanReviewScenarioCoverage", () => {
       mobileScenarioCount: 0,
       webScenarioCount: 0,
     });
+  });
+
+  it("requires the generic review tag on the same exported story as the scenario tag", () => {
+    expect(
+      scanReviewScenarioCoverage({
+        mobileStoriesDirectory: path.join(fixtures, "missing-base-tag/mobile"),
+        webStoriesDirectory: path.join(fixtures, "missing-base-tag/web"),
+      }),
+    ).toEqual({
+      missingMobileScenarios: [...REVIEW_SCENARIOS],
+      missingWebScenarios: [...REVIEW_SCENARIOS],
+      mobileScenarioCount: 0,
+      webScenarioCount: 0,
+    });
+  });
+
+  it("does not discover review scenarios inside generated dependency directories", () => {
+    const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), "review-scenario-policy-"));
+    const webRoot = path.join(temporaryRoot, "web");
+    const mobileRoot = path.join(temporaryRoot, "mobile");
+
+    try {
+      for (const root of [webRoot, mobileRoot]) {
+        const dependencyRoot = path.join(root, "node_modules", "generated");
+        mkdirSync(dependencyRoot, { recursive: true });
+        writeFileSync(
+          path.join(dependencyRoot, "Review.stories.tsx"),
+          REVIEW_SCENARIOS.map(
+            (scenario) =>
+              `export const ${scenario.replaceAll("-", "_")} = { tags: ["review-scenario", "review-scenario-${scenario}"] };`,
+          ).join("\n"),
+        );
+      }
+
+      expect(
+        scanReviewScenarioCoverage({
+          mobileStoriesDirectory: mobileRoot,
+          webStoriesDirectory: webRoot,
+        }),
+      ).toEqual({
+        missingMobileScenarios: [...REVIEW_SCENARIOS],
+        missingWebScenarios: [...REVIEW_SCENARIOS],
+        mobileScenarioCount: 0,
+        webScenarioCount: 0,
+      });
+    } finally {
+      rmSync(temporaryRoot, { force: true, recursive: true });
+    }
   });
 });

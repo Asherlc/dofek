@@ -14,6 +14,16 @@ export const REVIEW_SCENARIOS = [
 
 type ReviewScenario = (typeof REVIEW_SCENARIOS)[number];
 
+const IGNORED_DIRECTORIES = new Set([
+  ".git",
+  ".pnpm",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+  "storybook-static",
+]);
+
 export interface ReviewScenarioCoverageOptions {
   mobileStoriesDirectory: string;
   webStoriesDirectory: string;
@@ -32,7 +42,9 @@ function listStoryFiles(directory: string): string[] {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      storyFiles.push(...listStoryFiles(entryPath));
+      if (!IGNORED_DIRECTORIES.has(entry.name)) {
+        storyFiles.push(...listStoryFiles(entryPath));
+      }
     } else if (entry.isFile() && entry.name.endsWith(".stories.tsx")) {
       storyFiles.push(entryPath);
     }
@@ -48,7 +60,7 @@ function propertyNameText(propertyName: ts.PropertyName): string | null {
   return null;
 }
 
-function exportedStoryTags(sourceText: string, fileName: string): Set<string> {
+function exportedStoryTagSets(sourceText: string, fileName: string): Set<string>[] {
   const sourceFile = ts.createSourceFile(
     fileName,
     sourceText,
@@ -56,7 +68,7 @@ function exportedStoryTags(sourceText: string, fileName: string): Set<string> {
     true,
     ts.ScriptKind.TSX,
   );
-  const tags = new Set<string>();
+  const storyTagSets: Set<string>[] = [];
 
   for (const statement of sourceFile.statements) {
     if (!ts.isVariableStatement(statement)) {
@@ -80,25 +92,31 @@ function exportedStoryTags(sourceText: string, fileName: string): Set<string> {
       if (!tagsProperty || !ts.isArrayLiteralExpression(tagsProperty.initializer)) {
         continue;
       }
+      const tags = new Set<string>();
       for (const element of tagsProperty.initializer.elements) {
         if (ts.isStringLiteral(element) || ts.isNoSubstitutionTemplateLiteral(element)) {
           tags.add(element.text);
         }
       }
+      storyTagSets.push(tags);
     }
   }
 
-  return tags;
+  return storyTagSets;
 }
 
 function scenariosInDirectory(directory: string): Set<ReviewScenario> {
   const scenarios = new Set<ReviewScenario>();
 
   for (const storyFile of listStoryFiles(directory)) {
-    const tags = exportedStoryTags(readFileSync(storyFile, "utf8"), storyFile);
-    for (const scenario of REVIEW_SCENARIOS) {
-      if (tags.has(`review-scenario-${scenario}`)) {
-        scenarios.add(scenario);
+    const storyTagSets = exportedStoryTagSets(readFileSync(storyFile, "utf8"), storyFile);
+    for (const tags of storyTagSets) {
+      if (tags.has("review-scenario")) {
+        for (const scenario of REVIEW_SCENARIOS) {
+          if (tags.has(`review-scenario-${scenario}`)) {
+            scenarios.add(scenario);
+          }
+        }
       }
     }
   }

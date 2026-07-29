@@ -1,1 +1,1 @@
-export const ErrorState = { tags: ["review-scenario-error"] };
+export const ErrorState = { tags: ["review-scenario", "review-scenario-error"] };
