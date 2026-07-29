@@ -8,6 +8,13 @@ export interface ActivitySourceDecisionDetail {
   explanation: string;
 }
 
+/** Compact source provenance rendered on activity list cards. */
+export interface ActivityListSourceDetail {
+  primarySourceLabel: string;
+  sourceCount: number;
+  overlapSummary: string | null;
+}
+
 /**
  * Derives a concise source-priority explanation for multi-source activities.
  * Single-source activities have no conflict to explain.
@@ -33,6 +40,27 @@ export function buildActivitySourceDecision(
     sourceCount: sourceLinks.length,
     primarySourceLabel,
     explanation: `${primarySourceLabel} was selected as the primary record by source priority. Missing details may come from the other matched sources.`,
+  };
+}
+
+/** Builds list-card provenance from the same source-priority semantics as activity detail. */
+export function buildActivityListSource(
+  providerId: string,
+  subsource: string | null,
+  sourceLinks: SourceLink[],
+  lookupProvider?: ProviderLookup,
+): ActivityListSourceDetail {
+  const decision = buildActivitySourceDecision(providerId, subsource, sourceLinks, lookupProvider);
+  const primarySourceLabel =
+    decision?.primarySourceLabel ??
+    primarySourceLabelFor(providerId, subsource, sourceLinks, lookupProvider);
+
+  return {
+    primarySourceLabel,
+    sourceCount: Math.max(sourceLinks.length, 1),
+    overlapSummary: decision
+      ? `${decision.sourceCount} matched source records · ${decision.primarySourceLabel} selected by source priority`
+      : null,
   };
 }
 
