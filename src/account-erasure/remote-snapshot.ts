@@ -231,6 +231,16 @@ async function loadProviderConnections(
           "Reconnect MapMyFitness before deleting your account so Dofek can durably revoke the MapMyFitness authorization.",
         );
       }
+      if (connection.provider_id === "withings" && tokens.providerAccountId === undefined) {
+        throw new ProviderRevocationPrerequisiteError(
+          "Reconnect Withings before deleting your account so Dofek can identify the remote authorization that must be revoked.",
+        );
+      }
+      if (connection.provider_id === "withings") {
+        throw new ProviderRevocationPrerequisiteError(
+          "Revoke Dofek's access in Withings, then disconnect Withings in Dofek before deleting your account.",
+        );
+      }
       if (connection.provider_id === "komoot" && !tokens.refreshToken) {
         throw new ProviderRevocationPrerequisiteError(
           "Reconnect Komoot before deleting your account so Dofek can durably revoke the Komoot authorization.",

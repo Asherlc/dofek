@@ -667,7 +667,9 @@ export async function syncHealthKitObserverChanges(
     }
 
     onStage?.({ operation: "queryQuantitySamples", typeIdentifier });
-    const samples = (await healthKit.queryQuantitySamples(typeIdentifier, startDate, endDate)).filter(
+    const samples = (
+      await healthKit.queryQuantitySamples(typeIdentifier, startDate, endDate)
+    ).filter(
       (sample) =>
         minimumSampleDate === null ||
         isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),

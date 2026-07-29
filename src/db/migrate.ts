@@ -1,6 +1,11 @@
 import { resolve } from "node:path";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
+import {
+  assertPostgresAccountErasureCoverage,
+  refreshPostgresAccountErasureWriteFences,
+} from "../account-erasure/postgres-erasure.ts";
 import { logger } from "../logger.ts";
 import { readBaselineMigration, runDrizzleMigrations } from "./postgres-migrator.ts";
 
@@ -9,6 +14,7 @@ export const MIGRATION_LOCK_KEY = 728370291;
 
 const migrationCountRowsSchema = z.array(z.object({ count: z.coerce.number().int() }));
 const schemaHasTablesRowsSchema = z.array(z.object({ has_tables: z.boolean() }));
+const accountErasureCoverageHookRowsSchema = z.array(z.object({ installed: z.boolean() }));
 
 async function getMigrationCount(client: Client): Promise<number> {
   const result = await client.query("SELECT count(*) AS count FROM drizzle.__drizzle_migrations");
@@ -74,6 +80,19 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     const countBeforeMigrate = await getMigrationCount(client);
     await runDrizzleMigrations(client, dir);
     const count = (await getMigrationCount(client)) - countBeforeMigrate;
+
+    const coverageHookResult = await client.query(
+      `SELECT to_regprocedure(
+        'fitness.refresh_account_erasure_write_fences()'
+      ) IS NOT NULL AS installed`,
+    );
+    const coverageHookInstalled =
+      accountErasureCoverageHookRowsSchema.parse(coverageHookResult.rows)[0]?.installed === true;
+    if (coverageHookInstalled) {
+      const database = drizzle(client);
+      await refreshPostgresAccountErasureWriteFences(database);
+      await assertPostgresAccountErasureCoverage(database);
+    }
 
     if (count > 0) {
       logger.info(`[migrate] Applied ${count} migration(s)`);

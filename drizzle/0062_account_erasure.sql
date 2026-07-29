@@ -109,20 +109,6 @@ CREATE TABLE "fitness"."account_erasure_identity_fence" (
 CREATE INDEX "account_erasure_identity_fence_request_idx"
   ON "fitness"."account_erasure_identity_fence" USING btree ("request_id");
 --> statement-breakpoint
-CREATE TABLE "fitness"."account_erasure_ledger" (
-  "request_id" uuid PRIMARY KEY NOT NULL,
-  "user_hash" text NOT NULL,
-  "user_hash_key_id" text NOT NULL,
-  "requested_at" timestamp with time zone NOT NULL,
-  "completed_at" timestamp with time zone NOT NULL,
-  CONSTRAINT "account_erasure_ledger_request_id_fkey"
-    FOREIGN KEY ("request_id") REFERENCES "fitness"."account_erasure_request"("id")
-    ON DELETE RESTRICT
-);
---> statement-breakpoint
-CREATE INDEX "account_erasure_ledger_user_hash_idx"
-  ON "fitness"."account_erasure_ledger" USING btree ("user_hash");
---> statement-breakpoint
 ALTER TABLE "fitness"."auth_account"
   ADD COLUMN "revocation_access_token" text,
   ADD COLUMN "revocation_refresh_token" text,

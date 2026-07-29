@@ -206,7 +206,6 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
             request.encrypted_remote_snapshot,
             request.pii_scrubbed_at IS NOT NULL AS pii_scrubbed,
             request.completed_at IS NOT NULL AS completed,
-            ledger.request_id IS NOT NULL AS ledger_persisted,
             outbox.status AS outbox_status,
             EXISTS (
               SELECT 1
@@ -221,15 +220,12 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
           FROM fitness.account_erasure_request AS request
           JOIN fitness.account_erasure_outbox AS outbox
             ON outbox.request_id = request.id
-          LEFT JOIN fitness.account_erasure_ledger AS ledger
-            ON ledger.request_id = request.id
           WHERE request.id = ${accepted.requestId}::uuid`,
     );
     expect(rows).toEqual([
       {
         completed: true,
         encrypted_remote_snapshot: null,
-        ledger_persisted: true,
         outbox_status: "dispatched",
         pii_scrubbed: true,
         profile_exists: false,

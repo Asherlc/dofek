@@ -54,4 +54,18 @@ describe("PrivacyPage", () => {
       "mailto:asherlc@asherlc.com",
     );
   });
+
+  it("does not contradict the disclosed processor sharing in the Garmin section", () => {
+    const PrivacyPage = Route.options.component;
+    if (!PrivacyPage) throw new Error("Privacy route is missing its page component");
+
+    render(<PrivacyPage />);
+
+    expect(
+      screen.getByText(
+        /Garmin data is not sold and is disclosed only to the service providers described above/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/never sold or shared with third parties/i)).not.toBeInTheDocument();
+  });
 });

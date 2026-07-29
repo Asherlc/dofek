@@ -29,7 +29,6 @@ const SHARED_SYSTEM_TABLES = new Set([
 const PRESERVED_ERASURE_TABLES = new Set([
   "fitness.account_erasure_checkpoint",
   "fitness.account_erasure_identity_fence",
-  "fitness.account_erasure_ledger",
   "fitness.account_erasure_outbox",
   "fitness.account_erasure_preparation",
   "fitness.account_erasure_request",

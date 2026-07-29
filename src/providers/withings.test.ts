@@ -1137,6 +1137,32 @@ describe("WithingsProvider webhook methods", () => {
 });
 
 describe("exchangeWithingsCode — scope handling", () => {
+  it("captures the stable Withings userid from the token response", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({
+        status: 0,
+        body: {
+          access_token: "access",
+          expires_in: 3600,
+          refresh_token: "refresh",
+          scope: "user.metrics",
+          userid: 489418,
+        },
+      });
+    const config = {
+      clientId: "test-id",
+      clientSecret: "test-secret",
+      authorizeUrl: "",
+      tokenUrl: "https://wbsapi.withings.net/v2/oauth2",
+      redirectUri: "",
+      scopes: [],
+    };
+
+    await expect(exchangeWithingsCode(config, "code", mockFetch)).resolves.toEqual(
+      expect.objectContaining({ providerAccountId: "489418" }),
+    );
+  });
+
   it("handles non-string scope in response", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({
@@ -1146,6 +1172,7 @@ describe("exchangeWithingsCode — scope handling", () => {
           refresh_token: "refresh",
           expires_in: 3600,
           scope: 12345, // non-string scope
+          userid: 489418,
         },
       });
     };

@@ -698,7 +698,7 @@ describe("account erasure persistence (integration)", () => {
     expect(profiles).toHaveLength(2);
   });
 
-  it("deletes the profile before final propagation and retains only a pseudonymous completion ledger", async () => {
+  it("deletes the profile before final propagation and retains a pseudonymous request record", async () => {
     const scrubbedAt = new Date("2026-08-03T00:00:00.000Z");
     await context.db.execute(
       sql`UPDATE fitness.account_erasure_request
@@ -802,7 +802,7 @@ describe("account erasure persistence (integration)", () => {
       leaseOwner,
       "retention_verification",
     );
-    const completedAt = new Date("2026-08-27T12:34:00.000Z");
+    const completedAt = new Date("2026-10-01T12:34:00.000Z");
     await completeAccountErasure(context.db, requestId, leaseOwner, completedAt);
     await expect(findAccountErasureStatus(context.db, statusToken, completedAt)).resolves.toEqual(
       expect.objectContaining({
@@ -852,11 +852,10 @@ describe("account erasure persistence (integration)", () => {
             (SELECT count(*)::int
               FROM fitness.account_erasure_identity_fence AS identity_fence
               WHERE identity_fence.request_id = request.id) AS identity_fence_count,
-            ledger.user_hash,
-            ledger.user_hash_key_id,
-            length(ledger.user_hash) AS hash_length
+            request.user_hash,
+            request.user_hash_key_id,
+            length(request.user_hash) AS hash_length
           FROM fitness.account_erasure_request AS request
-          JOIN fitness.account_erasure_ledger AS ledger ON ledger.request_id = request.id
           WHERE request.id = ${requestId}::uuid`,
     );
     const profiles = await context.db.execute(

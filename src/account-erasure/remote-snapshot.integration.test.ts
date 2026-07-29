@@ -20,6 +20,8 @@ const corosUserId = "60000000-0000-4000-8000-000000001995";
 const decathlonUserId = "70000000-0000-4000-8000-000000001995";
 const missingAuthTokenUserId = "80000000-0000-4000-8000-000000001995";
 const localOnlyUserId = "90000000-0000-4000-8000-000000001995";
+const legacyWithingsUserId = "a0000000-0000-4000-8000-000000001995";
+const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const storedAccountRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
@@ -30,6 +32,7 @@ const authProviderDefinitions = [
   ["coros", "COROS"],
   ["decathlon", "Decathlon"],
   ["wahoo", "Wahoo"],
+  ["withings", "Withings"],
 ] as const;
 const providers: Provider[] = [
   ...authProviderDefinitions.map(
@@ -70,7 +73,9 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
             (${corosUserId}::uuid, 'COROS Snapshot User'),
             (${decathlonUserId}::uuid, 'Decathlon Snapshot User'),
             (${missingAuthTokenUserId}::uuid, 'Missing Auth Token Snapshot User'),
-            (${localOnlyUserId}::uuid, 'Local-only Snapshot User')`,
+            (${localOnlyUserId}::uuid, 'Local-only Snapshot User'),
+            (${legacyWithingsUserId}::uuid, 'Legacy Withings Snapshot User'),
+            (${withingsUserId}::uuid, 'Withings Snapshot User')`,
     );
     await ensureProvider(
       context.db,
@@ -87,6 +92,20 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       missingAuthTokenUserId,
     );
     await ensureProvider(context.db, "strong-csv", "Strong CSV", undefined, localOnlyUserId);
+    await ensureProvider(
+      context.db,
+      "withings",
+      "Withings",
+      "https://wbsapi.withings.net",
+      legacyWithingsUserId,
+    );
+    await ensureProvider(
+      context.db,
+      "withings",
+      "Withings",
+      "https://wbsapi.withings.net",
+      withingsUserId,
+    );
     await ensureProvider(
       context.db,
       "polar",
@@ -202,6 +221,29 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       },
       decathlonUserId,
     );
+    await saveTokens(
+      context.db,
+      "withings",
+      {
+        accessToken: "legacy-withings-access-token",
+        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+        refreshToken: "legacy-withings-refresh-token",
+        scopes: "user.metrics",
+      },
+      legacyWithingsUserId,
+    );
+    await saveTokens(
+      context.db,
+      "withings",
+      {
+        accessToken: "withings-access-token",
+        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+        providerAccountId: "489418",
+        refreshToken: "withings-refresh-token",
+        scopes: "user.metrics",
+      },
+      withingsUserId,
+    );
   }, 120_000);
 
   afterAll(async () => {
@@ -298,6 +340,26 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       ),
     ).rejects.toThrow(
       "Reconnect Komoot before deleting your account so Dofek can durably revoke the Komoot authorization.",
+    );
+  });
+
+  it("requires legacy Withings connections to reconnect for a durable account id", async () => {
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, legacyWithingsUserId, providers),
+      ),
+    ).rejects.toThrow(
+      "Reconnect Withings before deleting your account so Dofek can identify the remote authorization that must be revoked.",
+    );
+  });
+
+  it("blocks Withings deletion until its signed remote-revocation contract is available", async () => {
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, withingsUserId, providers),
+      ),
+    ).rejects.toThrow(
+      "Revoke Dofek's access in Withings, then disconnect Withings in Dofek before deleting your account.",
     );
   });
 

@@ -256,20 +256,6 @@ export const accountErasureOutbox = fitness.table(
   ],
 );
 
-export const accountErasureLedger = fitness.table(
-  "account_erasure_ledger",
-  {
-    requestId: uuid("request_id")
-      .primaryKey()
-      .references(() => accountErasureRequest.id, { onDelete: "restrict" }),
-    userHash: text("user_hash").notNull(),
-    userHashKeyId: text("user_hash_key_id").notNull(),
-    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
-    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
-  },
-  (table) => [index("account_erasure_ledger_user_hash_idx").on(table.userHash)],
-);
-
 // ============================================================
 // MCP access tokens — per-user bearer tokens for remote MCP clients
 // ============================================================

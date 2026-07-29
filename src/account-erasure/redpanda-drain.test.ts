@@ -5,9 +5,26 @@ import {
   assertAccountErasureReplayExpired,
   captureAccountErasureHighWatermarks,
   captureAccountErasureQuarantineHighWatermarks,
+  createAccountErasureRedpandaAdminFromEnv,
 } from "./redpanda-drain.ts";
 
 describe("account erasure Redpanda drain", () => {
+  it("fails worker startup when the metric-stream topic is missing", () => {
+    expect(() =>
+      createAccountErasureRedpandaAdminFromEnv({
+        REDPANDA_BROKERS: "redpanda-1:9092",
+      }),
+    ).toThrow("METRIC_STREAM_TOPIC is required for account erasure");
+  });
+
+  it("fails worker startup when Redpanda brokers are missing", () => {
+    expect(() =>
+      createAccountErasureRedpandaAdminFromEnv({
+        METRIC_STREAM_TOPIC: "metric-stream-v1",
+      }),
+    ).toThrow("REDPANDA_BROKERS is required for account erasure");
+  });
+
   it("captures each topic partition high watermark in order", async () => {
     const admin = {
       fetchOffsets: vi.fn(),

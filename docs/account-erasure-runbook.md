@@ -433,10 +433,11 @@ Each indefinitely retained sealed object is deliberately narrow: a random
 deletion-request identifier and timestamp, a keyed pseudonymous account digest,
 a key identifier, AES-GCM initialization/authentication values, and encrypted
 status-capability bytes. It contains no raw account or provider identifier,
-email address, health data, or provider credential. The separate
-`fitness.account_erasure_ledger` remains the queryable Postgres completion
-record. The R2 copy is the immutable restore and deletion ledger that prevents a
-later database rollback from forgetting an overdue or completed request.
+email address, health data, or provider credential. This R2 object is the
+canonical immutable restore and deletion ledger that prevents a later database
+rollback from forgetting an overdue or completed request. The pseudonymous
+Postgres request row remains the live query and status record, not a second
+completion ledger.
 
 Key rotation for `ACCOUNT_ERASURE_LEDGER_KEYRING_JSON`:
 

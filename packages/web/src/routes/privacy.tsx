@@ -114,9 +114,9 @@ function PrivacyPage() {
               <p>
                 When you connect your Garmin account, your activity, sleep, daily health, and body
                 composition data is transferred from Garmin to Dofek. By connecting your Garmin
-                account, you expressly consent to this data transfer. Your data is used solely to
-                power your Dofek dashboard and is never sold or shared with third parties. For
-                details on how Garmin handles your data, see the{" "}
+                account, you expressly consent to this data transfer. Garmin data powers Dofek.
+                Garmin data is not sold and is disclosed only to the service providers described
+                above or when required by law. For details on how Garmin handles your data, see the{" "}
                 <a
                   href="https://www.garmin.com/privacy/connect"
                   target="_blank"

@@ -633,32 +633,6 @@ export async function completeAccountErasure(
       throw new Error("Account erasure request is not ready for pseudonymous completion");
     }
 
-    const ledgerRows = await executeWithSchema(
-      transaction,
-      z.object({ request_id: z.uuid() }),
-      sql`INSERT INTO fitness.account_erasure_ledger (
-            request_id,
-            user_hash,
-            user_hash_key_id,
-            requested_at,
-            completed_at
-          )
-          SELECT
-            id,
-            user_hash,
-            user_hash_key_id,
-            requested_at,
-            ${completedAt.toISOString()}
-          FROM fitness.account_erasure_request
-          WHERE id = ${requestId}::uuid
-          ON CONFLICT (request_id) DO UPDATE
-            SET completed_at = EXCLUDED.completed_at
-          RETURNING request_id`,
-    );
-    if (ledgerRows.length !== 1) {
-      throw new Error("Account erasure ledger entry was not persisted");
-    }
-
     await transaction.execute(
       sql`DELETE FROM fitness.account_erasure_identity_fence
           WHERE request_id = ${requestId}::uuid`,

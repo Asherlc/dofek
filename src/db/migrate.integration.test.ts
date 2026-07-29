@@ -21,6 +21,12 @@ const migrationRollbackRowsSchema = z.array(
   }),
 );
 const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
+const accountErasureTriggerRowsSchema = z.array(
+  z.object({
+    function_name: z.string(),
+    table_name: z.string(),
+  }),
+);
 let nextMigrationTimestamp = 2_000_000_000_000;
 
 function writeTestMigration(migrationsDir: string, file: string, content: string): void {
@@ -45,7 +51,7 @@ describe("runMigrations", () => {
     writeTestMigration(
       tmpDir,
       "0001_test.sql",
-      "CREATE TABLE IF NOT EXISTS fitness.migrate_test (id serial PRIMARY KEY, name text);",
+      "CREATE TABLE IF NOT EXISTS health.migrate_test (id serial PRIMARY KEY, name text);",
     );
 
     const count = await runMigrations(ctx.connectionString, tmpDir);
@@ -56,7 +62,7 @@ describe("runMigrations", () => {
     await client.connect();
     const result = await client.query(
       `SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'fitness' AND table_name = 'migrate_test'`,
+       WHERE table_schema = 'health' AND table_name = 'migrate_test'`,
     );
     expect(tableNameRowsSchema.parse(result.rows).length).toBe(1);
     await client.end();
@@ -67,7 +73,7 @@ describe("runMigrations", () => {
     writeTestMigration(
       tmpDir,
       "0001_test_idempotent.sql",
-      "CREATE TABLE IF NOT EXISTS fitness.migrate_idempotent_test (id serial PRIMARY KEY);",
+      "CREATE TABLE IF NOT EXISTS health.migrate_idempotent_test (id serial PRIMARY KEY);",
     );
 
     const firstCount = await runMigrations(ctx.connectionString, tmpDir);
@@ -77,10 +83,77 @@ describe("runMigrations", () => {
     expect(secondCount).toBe(0);
   });
 
+  it("refreshes write fences for future direct and transitive user tables", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-account-erasure-owned-"));
+    writeTestMigration(
+      tmpDir,
+      "0001_future_account_erasure_owned.sql",
+      `CREATE TABLE fitness.future_account_erasure_owner (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES fitness.user_profile(id)
+      );
+      CREATE TABLE fitness.future_account_erasure_child (
+        id uuid PRIMARY KEY,
+        owner_id uuid NOT NULL REFERENCES fitness.future_account_erasure_owner(id)
+      );`,
+    );
+
+    await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(1);
+
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const triggerRows = await client.query(
+        `SELECT
+           trigger_function.proname AS function_name,
+           relation.relname AS table_name
+         FROM pg_trigger AS trigger
+         JOIN pg_proc AS trigger_function ON trigger_function.oid = trigger.tgfoid
+         JOIN pg_class AS relation ON relation.oid = trigger.tgrelid
+         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = 'fitness'
+           AND relation.relname IN (
+             'future_account_erasure_owner',
+             'future_account_erasure_child'
+           )
+           AND NOT trigger.tgisinternal
+         ORDER BY relation.relname`,
+      );
+      expect(accountErasureTriggerRowsSchema.parse(triggerRows.rows)).toEqual([
+        {
+          function_name: "reject_transitive_account_erasure_write",
+          table_name: "future_account_erasure_child",
+        },
+        {
+          function_name: "reject_account_erasure_write",
+          table_name: "future_account_erasure_owner",
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("fails migration startup for a future table without an ownership or shared policy", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-account-erasure-unclassified-"));
+    writeTestMigration(
+      tmpDir,
+      "0001_future_account_erasure_unclassified.sql",
+      `CREATE TABLE fitness.future_account_erasure_unclassified (
+        id uuid PRIMARY KEY,
+        label text NOT NULL
+      );`,
+    );
+
+    await expect(runMigrations(ctx.connectionString, tmpDir)).rejects.toThrow(
+      "fitness.future_account_erasure_unclassified has no ownership or shared-system policy",
+    );
+  });
+
   it("rejects a modified applied Drizzle migration before applying pending work", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-modified-history-"));
     const appliedMigration = {
-      content: "CREATE TABLE fitness.integrity_applied (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.integrity_applied (id integer PRIMARY KEY);",
       file: "0001_integrity_applied.sql",
       when: nextMigrationTimestamp++,
     };
@@ -88,7 +161,7 @@ describe("runMigrations", () => {
     await runMigrations(ctx.connectionString, tmpDir);
 
     const pendingMigration = {
-      content: "CREATE TABLE fitness.integrity_pending (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.integrity_pending (id integer PRIMARY KEY);",
       file: "0002_integrity_pending.sql",
       when: nextMigrationTimestamp++,
     };
@@ -105,7 +178,7 @@ describe("runMigrations", () => {
     await client.connect();
     try {
       const result = await client.query(
-        "SELECT to_regclass('fitness.integrity_pending') IS NOT NULL AS relation_exists",
+        "SELECT to_regclass('health.integrity_pending') IS NOT NULL AS relation_exists",
       );
       expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: false }]);
     } finally {
@@ -116,7 +189,7 @@ describe("runMigrations", () => {
   it("rejects a missing applied Drizzle journal entry before applying pending work", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-missing-history-"));
     const appliedMigration = {
-      content: "CREATE TABLE fitness.missing_history_applied (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.missing_history_applied (id integer PRIMARY KEY);",
       file: "0001_missing_history_applied.sql",
       when: nextMigrationTimestamp++,
     };
@@ -124,7 +197,7 @@ describe("runMigrations", () => {
     await runMigrations(ctx.connectionString, tmpDir);
 
     const pendingMigration = {
-      content: "CREATE TABLE fitness.missing_history_pending (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.missing_history_pending (id integer PRIMARY KEY);",
       file: "0002_missing_history_pending.sql",
       when: nextMigrationTimestamp++,
     };
@@ -138,7 +211,7 @@ describe("runMigrations", () => {
     await client.connect();
     try {
       const result = await client.query(
-        "SELECT to_regclass('fitness.missing_history_pending') IS NOT NULL AS relation_exists",
+        "SELECT to_regclass('health.missing_history_pending') IS NOT NULL AS relation_exists",
       );
       expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: false }]);
     } finally {
@@ -150,12 +223,12 @@ describe("runMigrations", () => {
     const client = new Client({ connectionString: ctx.connectionString });
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-legacy-history-"));
     const firstMigration = {
-      content: "CREATE TABLE fitness.legacy_history_first (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.legacy_history_first (id integer PRIMARY KEY);",
       file: "0001_legacy_history_first.sql",
       when: 2_300_000_000_000,
     };
     const secondMigration = {
-      content: "CREATE TABLE fitness.legacy_history_second (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.legacy_history_second (id integer PRIMARY KEY);",
       file: "0002_legacy_history_second.sql",
       when: 2_300_000_000_001,
     };
@@ -180,7 +253,7 @@ describe("runMigrations", () => {
 
       expect(count).toBe(1);
       const result = await client.query(
-        "SELECT to_regclass('fitness.legacy_history_second') IS NOT NULL AS relation_exists",
+        "SELECT to_regclass('health.legacy_history_second') IS NOT NULL AS relation_exists",
       );
       expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: true }]);
     } finally {
@@ -189,8 +262,8 @@ describe("runMigrations", () => {
          WHERE created_at IN ($1, $2, $3)`,
         [firstMigration.when, secondMigration.when, 9_000_000_000_000],
       );
-      await client.query("DROP TABLE IF EXISTS fitness.legacy_history_second");
-      await client.query("DROP TABLE IF EXISTS fitness.legacy_history_first");
+      await client.query("DROP TABLE IF EXISTS health.legacy_history_second");
+      await client.query("DROP TABLE IF EXISTS health.legacy_history_first");
       await client.end();
     }
   });
@@ -199,11 +272,11 @@ describe("runMigrations", () => {
     const client = new Client({ connectionString: ctx.connectionString });
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-archived-history-"));
     const archivedMigration = {
-      content: "CREATE TABLE fitness.archived_history_must_not_run (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.archived_history_must_not_run (id integer PRIMARY KEY);",
       file: "0003_archived_history.sql",
     };
     const pendingMigration = {
-      content: "CREATE TABLE fitness.archived_history_pending (id integer PRIMARY KEY);",
+      content: "CREATE TABLE health.archived_history_pending (id integer PRIMARY KEY);",
       file: "0004_archived_history_pending.sql",
       when: 2_300_000_000_004,
     };
@@ -237,8 +310,8 @@ describe("runMigrations", () => {
       expect(migrationRows.rows).toEqual([{ content_hash: expectedHash, hash: expectedHash }]);
 
       const relationRows = await client.query(`SELECT
-        to_regclass('fitness.archived_history_must_not_run') IS NOT NULL AS archived_ran,
-        to_regclass('fitness.archived_history_pending') IS NOT NULL AS pending_ran`);
+        to_regclass('health.archived_history_must_not_run') IS NOT NULL AS archived_ran,
+        to_regclass('health.archived_history_pending') IS NOT NULL AS pending_ran`);
       expect(relationRows.rows).toEqual([{ archived_ran: false, pending_ran: true }]);
     } finally {
       await client.query(
@@ -246,7 +319,7 @@ describe("runMigrations", () => {
          WHERE created_at IN ($1, $2)`,
         [1, pendingMigration.when],
       );
-      await client.query("DROP TABLE IF EXISTS fitness.archived_history_pending");
+      await client.query("DROP TABLE IF EXISTS health.archived_history_pending");
       await client.end();
     }
   });
@@ -344,9 +417,9 @@ describe("runMigrations", () => {
       tmpDir,
       "0001_multi.sql",
       [
-        "CREATE TABLE IF NOT EXISTS fitness.multi_a (id serial PRIMARY KEY);",
+        "CREATE TABLE IF NOT EXISTS health.multi_a (id serial PRIMARY KEY);",
         "--> statement-breakpoint",
-        "CREATE TABLE IF NOT EXISTS fitness.multi_b (id serial PRIMARY KEY);",
+        "CREATE TABLE IF NOT EXISTS health.multi_b (id serial PRIMARY KEY);",
       ].join("\n"),
     );
 
@@ -358,7 +431,7 @@ describe("runMigrations", () => {
     await client.connect();
     const result = await client.query(
       `SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'fitness'
+       WHERE table_schema = 'health'
        AND table_name IN ('multi_a', 'multi_b')
        ORDER BY table_name`,
     );
