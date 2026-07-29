@@ -126,26 +126,27 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKSeriesType.workoutRoute()))
     }
 
-    func testBackgroundDeliveryTypesContainsEveryBackgroundDeliverableReadableSampleType() {
-        let readableSampleTypes = Set(readTypes.compactMap { $0 as? HKSampleType })
-        let clinicalSampleTypes = Set(readTypes.compactMap { $0 as? HKClinicalType })
-
-        XCTAssertEqual(backgroundDeliveryTypes, readableSampleTypes.subtracting(clinicalSampleTypes))
-        XCTAssertTrue(
-            backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!)
-        )
-        #if os(iOS)
+    func testBackgroundDeliveryTypesExcludeSamplesTheSyncPipelineDoesNotConsume() {
         XCTAssertFalse(
-            backgroundDeliveryTypes.contains(HKClinicalType.clinicalType(forIdentifier: .labResultRecord)!)
+            backgroundDeliveryTypes.contains(
+                HKQuantityType.quantityType(forIdentifier: .dietaryProtein)!
+            )
         )
-        #endif
+        XCTAssertFalse(
+            backgroundDeliveryTypes.contains(
+                HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
+            )
+        )
+        XCTAssertFalse(
+            backgroundDeliveryTypes.contains(
+                HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
+            )
+        )
     }
 
     func testBackgroundDeliveryTypesTotalCount() {
-        let readableSampleTypes = Set(readTypes.compactMap { $0 as? HKSampleType })
-        let clinicalSampleTypes = Set(readTypes.compactMap { $0 as? HKClinicalType })
-
-        XCTAssertEqual(backgroundDeliveryTypes.count, readableSampleTypes.subtracting(clinicalSampleTypes).count)
+        // 18 quantity types + sleep + workout + workout route.
+        XCTAssertEqual(backgroundDeliveryTypes.count, 21)
     }
 
     // MARK: - writeTypes

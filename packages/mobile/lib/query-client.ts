@@ -19,6 +19,7 @@ export function createAppQueryClient() {
         gcTime: QUERY_CACHE_MAX_AGE_MS,
         refetchOnMount: false,
         refetchOnWindowFocus: false,
+        retry: false,
       },
     },
   });

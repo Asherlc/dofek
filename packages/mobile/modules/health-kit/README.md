@@ -27,13 +27,14 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 
 ## Background Observer Completion
 
-Each native observer delivery receives a unique update ID. The native module
-retains HealthKit's completion callback while JavaScript immediately places the
-delivery in a single-flight sync queue and reports the batch result through
-`completeObserverUpdates`. Updates delivered during a running sync remain
-pending for the next serialized sync. Re-registration, JavaScript teardown, and
-Expo module destruction stop the queries and complete every callback still
-pending.
+Each native observer delivery receives a unique update ID and retains its
+HealthKit sample type. The native module observes only the quantity, sleep,
+workout, and workout-route types consumed by the sync pipeline. JavaScript
+places each delivery in a single-flight queue, processes only the delivered
+type or types, and reports the batch result through `completeObserverUpdates`.
+Updates delivered during a running sync remain pending for the next serialized
+sync. Re-registration, JavaScript teardown, and Expo module destruction stop
+the queries and complete every callback still pending.
 
 A native 25-second expiration completes an update exactly once and reports the
 expired update ID, HealthKit sample type, and monotonic callback age to Sentry
@@ -56,11 +57,22 @@ HealthKit must be configured in `app.json` entitlements:
 
 ## Incremental Anchored Queries
 
-`queryAnchoredSamples(typeIdentifier)` keeps `HKQueryAnchor` entirely inside
-the native module. The module securely archives the successful query's returned
-anchor in `UserDefaults`, restores it for the next query of that type, and does
-not expose or accept fabricated numeric anchor values in JavaScript. Apple
-documents `HKQueryAnchor` as conforming to `NSSecureCoding`:
+`queryAnchoredSamples(typeIdentifier, initialStartDate)` keeps `HKQueryAnchor`
+entirely inside the native module. If the type has no persisted anchor, the
+first query is bounded by `initialStartDate`; later queries use the opaque
+anchor to fetch only added and deleted objects. The returned query ID identifies
+a pending native anchor but does not expose or accept fabricated anchor values
+in JavaScript.
+
+JavaScript uploads the additions and applies UUID-scoped deletion tombstones
+before calling `completeAnchoredQuery`. Native code securely archives the new
+anchor in `UserDefaults` only when that completion reports success. A failed
+upload discards the pending anchor, so the persisted prior anchor causes the
+same changes to be retried. Apple documents anchored queries as the mechanism
+for receiving additions and deletions, including `HKDeletedObject` values:
+<https://developer.apple.com/documentation/HealthKit/HKAnchoredObjectQuery> and
+<https://developer.apple.com/documentation/healthkit/hkdeletedobject>. Apple
+also documents `HKQueryAnchor` as conforming to `NSSecureCoding`:
 <https://developer.apple.com/documentation/healthkit/hkqueryanchor>.
 
 ## Local Validation
