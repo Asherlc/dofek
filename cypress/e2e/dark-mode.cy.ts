@@ -1,12 +1,20 @@
-function emulateSystemAppearance(value: "dark" | "light"): void {
+function setEmulatedSystemAppearance(features: Array<{ name: string; value: string }>): void {
   cy.then(() =>
     Cypress.automation("remote:debugger:protocol", {
       command: "Emulation.setEmulatedMedia",
       params: {
-        features: [{ name: "prefers-color-scheme", value }],
+        features,
       },
     }),
   );
+}
+
+function emulateSystemAppearance(value: "dark" | "light"): void {
+  setEmulatedSystemAppearance([{ name: "prefers-color-scheme", value }]);
+}
+
+function resetSystemAppearance(): void {
+  setEmulatedSystemAppearance([]);
 }
 
 function stubPublicAuthRequests(): void {
@@ -25,9 +33,19 @@ function expectDarkSystemAppearance(): void {
 }
 
 describe("System dark appearance", () => {
+  before(function skipBrowsersWithoutCdpMediaEmulation() {
+    if (Cypress.browser.family !== "chromium") {
+      this.skip();
+    }
+  });
+
   beforeEach(() => {
     emulateSystemAppearance("dark");
     stubPublicAuthRequests();
+  });
+
+  afterEach(() => {
+    resetSystemAppearance();
   });
 
   it("uses the dark semantic palette on the public landing page", () => {
