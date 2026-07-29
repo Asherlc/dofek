@@ -19726,6 +19726,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   HealthKit tests, and 14,244 unit/mobile tests also pass.
 - **Remaining risk / follow-up:** Confirm both Stryker shards and the aggregate
   mutation gate pass on the fresh exact-head CI run before merging.
+
 ## 2026-07-27 — Lint CI could not resolve the uv tool version
 
 - **Status:** Root cause fixed locally on PR #2234; fresh exact-head CI
@@ -19792,3 +19793,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The Dockerfile still enumerates runtime
   workspace packages manually, so future server imports must keep the final
   image copy/link list synchronized with the server dependency graph.
+
+## 2026-07-28 — Knip setup downloaded an unused Cypress binary
+
+- **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
+  validation pending.
+- **Symptoms:** CI run
+  [30414033375](https://github.com/Asherlc/dofek/actions/runs/30414033375)
+  failed `Test / Knip` in job
+  [90456634078](https://github.com/Asherlc/dofek/actions/runs/30414033375/job/90456634078).
+- **User impact:** No production impact. PR #2233 was blocked from merging even
+  though the Knip command never ran.
+- **Evidence:** The exact failing command was
+  `pnpm install --frozen-lockfile` in the shared `Setup Node + pnpm` action.
+  The first fatal line was
+  `.../cypress@15.18.1/node_modules/cypress postinstall: Failed`; the subsequent
+  lifecycle failure skipped `pnpm knip`.
+- **Root cause:** The shared dependency setup coupled every CI job to Cypress's
+  optional binary download even when the job did not execute Cypress. The Knip
+  job therefore failed on an unrelated external binary transfer before its
+  actual static analysis could start.
+- **Fix / mitigation:** Set `CYPRESS_INSTALL_BINARY=0` for the shared
+  `pnpm install` step. The E2E job remains the sole owner of the separately
+  cached explicit `pnpm exec cypress install` step. Cypress documents this
+  install/download split in its
+  [command-line guidance](https://docs.cypress.io/app/references/command-line#cypress-install).
+  No retry, timeout, fallback, or warn-and-continue behavior was added.
+- **Validation:** `CYPRESS_INSTALL_BINARY=0 pnpm rebuild cypress` confirmed the
+  binary installation was skipped successfully. The CI-equivalent Knip command,
+  actionlint, the workflow download policy, composite-action YAML parsing, and
+  `git diff --check` all passed locally. Fresh exact-head CI must pass before
+  merging.
+- **Remaining risk / follow-up:** Keep Cypress binary installation explicit and
+  cached only in workflows that execute Cypress.
