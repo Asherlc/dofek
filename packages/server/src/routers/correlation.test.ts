@@ -950,6 +950,7 @@ describe("correlationRouter", () => {
         metricY: "weight_30d",
         days: null,
         lag: 1,
+        cursor: "2025-01-07",
         pageSize: 25,
       });
 
@@ -970,7 +971,7 @@ describe("correlationRouter", () => {
         null,
         1,
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        { pageSize: 25 },
+        { cursor: "2025-01-07", pageSize: 25 },
       );
       observations.mockRestore();
     });

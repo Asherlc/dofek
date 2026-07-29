@@ -277,7 +277,6 @@ function providerIdsForMetric(
   evidenceByDate: CorrelationEvidenceByDate,
 ): string[] {
   const evidence = evidenceByDate.get(date);
-  if (metricId === "resting_hr") return [];
   if (["hrv", "spo2", "skin_temp", "steps"].includes(metricId)) {
     return evidence?.dailyMetricProviderIds ?? [];
   }
@@ -367,16 +366,15 @@ export function buildCorrelationObservationPage(
 ): CorrelationObservationPage {
   const analysis = buildCorrelationAnalysis(joined, input);
   const items: CorrelationPairedObservation[] = [];
-  let totalCount = 0;
   let hasMore = false;
-  for (let index = analysis.observations.length - 1; index >= 0; index--) {
-    const observation = analysis.observations[index];
-    if (!observation || observation.x === null || observation.y === null) continue;
-    totalCount++;
-    if (pagination.cursor !== undefined && observation.date >= pagination.cursor) continue;
+  let pageCursor: string | null = null;
+  const totalCount = analysis.observations.reduceRight((count, observation) => {
+    if (observation.x === null || observation.y === null) return count;
+    const nextCount = count + 1;
+    if (pagination.cursor !== undefined && observation.date >= pagination.cursor) return nextCount;
     if (items.length >= pagination.pageSize) {
       hasMore = true;
-      continue;
+      return nextCount;
     }
     items.push({
       x: {
@@ -392,11 +390,13 @@ export function buildCorrelationObservationPage(
         contributors: contributorsForMetric(input.metricY, observation.yDate, evidenceByDate),
       },
     });
-  }
+    pageCursor = observation.date;
+    return nextCount;
+  }, 0);
   return {
     items,
     totalCount,
-    nextCursor: hasMore ? (items.at(-1)?.x.date ?? null) : null,
+    nextCursor: hasMore ? pageCursor : null,
   };
 }
 

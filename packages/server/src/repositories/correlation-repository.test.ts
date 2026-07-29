@@ -698,6 +698,300 @@ describe("buildCorrelationObservationPage", () => {
       },
     });
   });
+
+  it.each([
+    ["resting_hr", "Daily recovery aggregate inputs", []],
+    ["hrv", "Daily recovery aggregate inputs", ["apple_health"]],
+    ["sleep_duration", "Selected sleep-session input", ["eight_sleep"]],
+    ["protein", "Canonical daily nutrition inputs", ["cronometer"]],
+    ["steps", "Daily activity aggregate inputs", ["apple_health"]],
+    ["weight", "Body measurement inputs", ["withings"]],
+    ["body_fat", "Body measurement inputs", ["withings"]],
+  ] as const)("returns the correct aggregate provenance for %s", (metricId, label, providerIds) => {
+    const day = makeJoinedDay({
+      date: "2025-02-01",
+      resting_hr: 60,
+      hrv: 45,
+      sleep_duration_min: 480,
+      protein_g: 120,
+      steps: 8_000,
+      weight_kg: 72,
+      body_fat_pct: 18,
+    });
+    const page = buildCorrelationObservationPage(
+      [day],
+      {
+        metricX: metricId,
+        metricY: metricId === "hrv" ? "weight" : "hrv",
+        days: null,
+        lag: 0,
+        endDate: day.date,
+      },
+      new Map([
+        [
+          day.date,
+          {
+            dailyMetricProviderIds: ["apple_health"],
+            sleepProviderIds: ["eight_sleep"],
+            nutritionProviderIds: ["cronometer"],
+            bodyProviderIds: ["withings"],
+            activities: [],
+          },
+        ],
+      ]),
+      { pageSize: 1 },
+    );
+
+    expect(page.items[0]?.x.contributors).toEqual([
+      {
+        kind: "aggregate_inputs",
+        label,
+        providerIds,
+        target: {
+          type: "metric_family",
+          family:
+            metricId === "sleep_duration"
+              ? "sleep"
+              : metricId === "protein"
+                ? "nutrition"
+                : metricId === "steps"
+                  ? "activity"
+                  : metricId === "weight" || metricId === "body_fat"
+                    ? "body"
+                    : "recovery",
+        },
+      },
+    ]);
+  });
+
+  it.each([
+    "hrv",
+    "sleep_duration",
+    "protein",
+    "weight",
+  ] as const)("returns empty provider context for %s when no evidence exists", (metricId) => {
+    const day = makeJoinedDay({
+      date: "2025-02-01",
+      hrv: 45,
+      sleep_duration_min: 480,
+      protein_g: 120,
+      weight_kg: 72,
+    });
+    const page = buildCorrelationObservationPage(
+      [day],
+      {
+        metricX: metricId,
+        metricY: metricId === "hrv" ? "weight" : "hrv",
+        days: null,
+        lag: 0,
+        endDate: day.date,
+      },
+      new Map(),
+      { pageSize: 1 },
+    );
+
+    expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual([]);
+  });
+
+  it("filters activity contributors by metric and falls back to aggregate inputs", () => {
+    const day = makeJoinedDay({
+      date: "2025-02-01",
+      hrv: 45,
+      exercise_minutes: 90,
+      cardio_minutes: 30,
+      strength_minutes: 45,
+    });
+    const activities = [
+      {
+        id: "00000000-0000-4000-8000-000000000201",
+        activityType: "running",
+        label: "Run",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000202",
+        activityType: "strength_training",
+        label: "Lift",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000203",
+        activityType: "yoga",
+        label: "Yoga",
+      },
+    ];
+    const evidence = new Map([
+      [
+        day.date,
+        {
+          dailyMetricProviderIds: [],
+          sleepProviderIds: [],
+          nutritionProviderIds: [],
+          bodyProviderIds: [],
+          activities,
+        },
+      ],
+    ]);
+    const contributors = (metricX: "exercise_duration" | "cardio_duration" | "strength_duration") =>
+      buildCorrelationObservationPage(
+        [day],
+        { metricX, metricY: "hrv", days: null, lag: 0, endDate: day.date },
+        evidence,
+        { pageSize: 1 },
+      ).items[0]?.x.contributors;
+
+    expect(contributors("exercise_duration")?.map((contributor) => contributor.label)).toEqual([
+      "Run",
+      "Lift",
+      "Yoga",
+    ]);
+    expect(contributors("cardio_duration")?.map((contributor) => contributor.label)).toEqual([
+      "Run",
+    ]);
+    expect(contributors("strength_duration")?.map((contributor) => contributor.label)).toEqual([
+      "Lift",
+    ]);
+
+    const noRecordsPage = buildCorrelationObservationPage(
+      [day],
+      {
+        metricX: "strength_duration",
+        metricY: "hrv",
+        days: null,
+        lag: 0,
+        endDate: day.date,
+      },
+      new Map([
+        [
+          day.date,
+          {
+            dailyMetricProviderIds: [],
+            sleepProviderIds: [],
+            nutritionProviderIds: [],
+            bodyProviderIds: ["withings"],
+            activities: [],
+          },
+        ],
+      ]),
+      { pageSize: 1 },
+    );
+    expect(noRecordsPage.items[0]?.x.contributors).toEqual([
+      {
+        kind: "aggregate_inputs",
+        label: "Daily activity aggregate inputs",
+        providerIds: [],
+        target: { type: "metric_family", family: "activity" },
+      },
+    ]);
+  });
+
+  it("uses the inclusive 30-day provider window and returns sorted unique providers", () => {
+    const day = makeJoinedDay({
+      date: "2025-02-01",
+      hrv: 45,
+      weight_30d_avg: 72,
+    });
+    const evidence = (
+      bodyProviderIds: string[],
+    ): {
+      dailyMetricProviderIds: string[];
+      sleepProviderIds: string[];
+      nutritionProviderIds: string[];
+      bodyProviderIds: string[];
+      activities: [];
+    } => ({
+      dailyMetricProviderIds: [],
+      sleepProviderIds: [],
+      nutritionProviderIds: [],
+      bodyProviderIds,
+      activities: [],
+    });
+    const page = buildCorrelationObservationPage(
+      [day],
+      {
+        metricX: "weight_30d",
+        metricY: "hrv",
+        days: null,
+        lag: 0,
+        endDate: day.date,
+      },
+      new Map([
+        ["2025-01-02", evidence(["outside_before"])],
+        ["2025-01-03", evidence(["apple_health", "garmin", "withings"])],
+        ["2025-02-01", evidence(["oura"])],
+        ["2025-02-02", evidence(["outside_future"])],
+      ]),
+      { pageSize: 1 },
+    );
+
+    expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual([
+      "apple_health",
+      "garmin",
+      "oura",
+      "withings",
+    ]);
+  });
+
+  it("does not use earlier body evidence for a same-day body metric", () => {
+    const day = makeJoinedDay({
+      date: "2025-02-01",
+      hrv: 45,
+      weight_kg: 72,
+    });
+    const page = buildCorrelationObservationPage(
+      [day],
+      {
+        metricX: "weight",
+        metricY: "hrv",
+        days: null,
+        lag: 0,
+        endDate: day.date,
+      },
+      new Map([
+        [
+          "2025-01-15",
+          {
+            dailyMetricProviderIds: [],
+            sleepProviderIds: [],
+            nutritionProviderIds: [],
+            bodyProviderIds: ["older-provider"],
+            activities: [],
+          },
+        ],
+        [
+          day.date,
+          {
+            dailyMetricProviderIds: ["oura"],
+            sleepProviderIds: [],
+            nutritionProviderIds: [],
+            bodyProviderIds: ["withings"],
+            activities: [],
+          },
+        ],
+      ]),
+      { pageSize: 1 },
+    );
+
+    expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual(["withings"]);
+  });
+
+  it("excludes observations missing either side of the pair", () => {
+    const page = buildCorrelationObservationPage(
+      [
+        makeJoinedDay({ date: "2025-01-01", hrv: null, weight_kg: 70 }),
+        makeJoinedDay({ date: "2025-01-02", hrv: 45, weight_kg: null }),
+      ],
+      {
+        metricX: "hrv",
+        metricY: "weight",
+        days: null,
+        lag: 0,
+        endDate: "2025-01-02",
+      },
+      new Map(),
+      { pageSize: 1 },
+    );
+
+    expect(page).toEqual({ items: [], totalCount: 0, nextCursor: null });
+  });
 });
 
 // ── CorrelationRepository ───────────────────────────────────────────────
@@ -720,6 +1014,114 @@ function makeSensorStore() {
       .mockResolvedValueOnce([{ date: "2024-01-01", resting_hr: 52 }])
       .mockResolvedValue([]),
   };
+}
+
+function makeCorrelationEvidenceSources() {
+  const db = {
+    execute: vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          date: "2026-01-02",
+          resting_hr: 52,
+          hrv: 45,
+          spo2_avg: 98,
+          steps: 10_000,
+          skin_temp_c: 36.5,
+          source_providers: ["oura", "garmin", "oura"],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          date: "2026-01-02",
+          calories: 2_000,
+          protein_g: 150,
+          carbs_g: 200,
+          fat_g: 70,
+          fiber_g: 30,
+          water_ml: 2_500,
+          contributing_providers: ["cronometer", "apple_health", "cronometer"],
+        },
+      ]),
+  };
+  const sleepRow = {
+    date: "2026-01-02",
+    source_name: "Sleep session",
+    timezone: "UTC",
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "provider_timezone",
+    started_at: "2026-01-01T22:00:00Z",
+    ended_at: "2026-01-02T06:00:00Z",
+    duration_minutes: 480,
+    deep_minutes: 100,
+    rem_minutes: 100,
+    light_minutes: 260,
+    awake_minutes: 20,
+    efficiency_pct: 92,
+  };
+  const sensorStore = {
+    query: vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...sleepRow,
+          started_at: "2026-01-02T12:00:00Z",
+          ended_at: null,
+          duration_minutes: 1,
+          provider_id: "zero-duration-provider",
+          source_providers: ["zero-duration-source"],
+        },
+        {
+          ...sleepRow,
+          provider_id: null,
+          source_providers: ["sleep-source"],
+        },
+        {
+          ...sleepRow,
+          provider_id: "equal-duration-provider",
+          source_providers: ["equal-duration-provider"],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          activity_id: "run-1",
+          date: undefined,
+          started_at: "2026-01-02T08:00:00Z",
+          ended_at: "2026-01-02T08:30:00Z",
+          activity_type: "running",
+          name: null,
+        },
+        {
+          activity_id: "lift-1",
+          date: "2026-01-02",
+          started_at: "2026-01-02T09:00:00Z",
+          ended_at: "2026-01-02T09:45:00Z",
+          activity_type: "strength_training",
+          name: "Lift",
+        },
+        {
+          activity_id: "unfinished-1",
+          date: "2026-01-02",
+          started_at: "2026-01-02T10:00:00Z",
+          ended_at: null,
+          activity_type: "cycling",
+          name: "Unfinished",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          date: "2026-01-02",
+          recorded_at: "2026-01-02T07:00:00Z",
+          provider_id: "withings",
+          source_providers: ["apple_health", "withings"],
+          weight_kg: 72,
+          body_fat_pct: 15,
+        },
+      ]),
+  };
+  return { db, sensorStore };
 }
 
 describe("CorrelationRepository", () => {
@@ -789,6 +1191,14 @@ describe("CorrelationRepository", () => {
       expect(result.sampleCount).toBe(0);
       expect(result.confidenceLevel).toBe("insufficient");
     });
+
+    it("requires the ClickHouse analytics store", async () => {
+      const repo = new CorrelationRepository(makeDb(), "user-1");
+
+      await expect(repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01")).rejects.toThrow(
+        "ClickHouse activity analytics store is required for correlations",
+      );
+    });
   });
 
   describe("computeV2", () => {
@@ -842,6 +1252,293 @@ describe("CorrelationRepository", () => {
   });
 
   describe("listObservations", () => {
+    it("strips provenance before joining and merges sorted daily and nutrition evidence", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce([
+        makeJoinedDay({
+          date: "2026-01-02",
+          hrv: 45,
+          protein_g: 150,
+        }),
+      ]);
+      const { db, sensorStore } = makeCorrelationEvidenceSources();
+      const repository = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+
+      const page = await repository.listObservations("hrv", "protein", 30, 0, "2026-01-02", {
+        pageSize: 25,
+      });
+
+      expect(joinByDate).toHaveBeenLastCalledWith(
+        [
+          {
+            date: "2026-01-02",
+            resting_hr: 52,
+            hrv: 45,
+            spo2_avg: 98,
+            steps: 10_000,
+            skin_temp_c: 36.5,
+          },
+        ],
+        [
+          {
+            started_at: "2026-01-02T12:00:00.000Z",
+            duration_minutes: 1,
+            deep_minutes: 100,
+            rem_minutes: 100,
+            light_minutes: 260,
+            awake_minutes: 20,
+            efficiency_pct: 92,
+            is_nap: false,
+          },
+          {
+            started_at: "2026-01-01T22:00:00.000Z",
+            duration_minutes: 480,
+            deep_minutes: 100,
+            rem_minutes: 100,
+            light_minutes: 260,
+            awake_minutes: 20,
+            efficiency_pct: 92,
+            is_nap: false,
+          },
+          {
+            started_at: "2026-01-01T22:00:00.000Z",
+            duration_minutes: 480,
+            deep_minutes: 100,
+            rem_minutes: 100,
+            light_minutes: 260,
+            awake_minutes: 20,
+            efficiency_pct: 92,
+            is_nap: false,
+          },
+        ],
+        expect.any(Array),
+        [
+          {
+            date: "2026-01-02",
+            calories: 2_000,
+            protein_g: 150,
+            carbs_g: 200,
+            fat_g: 70,
+            fiber_g: 30,
+            water_ml: 2_500,
+          },
+        ],
+        [
+          {
+            date: "2026-01-02",
+            recorded_at: "2026-01-02T07:00:00.000Z",
+            weight_kg: 72,
+            body_fat_pct: 15,
+          },
+        ],
+        { minDailyCalories: 1200 },
+      );
+      expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual(["garmin", "oura"]);
+      expect(page.items[0]?.y.contributors[0]?.providerIds).toEqual(["apple_health", "cronometer"]);
+    });
+
+    it("selects the longest sleep evidence and merges body provenance", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce([
+        makeJoinedDay({
+          date: "2026-01-02",
+          sleep_duration_min: 480,
+          weight_kg: 72,
+        }),
+      ]);
+      const { db, sensorStore } = makeCorrelationEvidenceSources();
+      const repository = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+
+      const page = await repository.listObservations(
+        "sleep_duration",
+        "weight",
+        30,
+        0,
+        "2026-01-02",
+        { pageSize: 25 },
+      );
+
+      expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual(["sleep-source"]);
+      expect(page.items[0]?.y.contributors[0]?.providerIds).toEqual(["apple_health", "withings"]);
+    });
+
+    it("uses exact completed activity records with date and label fallbacks", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce([
+        makeJoinedDay({
+          date: "2026-01-02",
+          exercise_minutes: 75,
+          cardio_minutes: 30,
+        }),
+      ]);
+      const { db, sensorStore } = makeCorrelationEvidenceSources();
+      const repository = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+
+      const page = await repository.listObservations(
+        "exercise_duration",
+        "cardio_duration",
+        30,
+        0,
+        "2026-01-02",
+        { pageSize: 25 },
+      );
+
+      expect(page.items[0]?.x.contributors).toEqual([
+        {
+          kind: "record",
+          label: "running",
+          providerIds: [],
+          target: { type: "activity", activityId: "run-1" },
+        },
+        {
+          kind: "record",
+          label: "Lift",
+          providerIds: [],
+          target: { type: "activity", activityId: "lift-1" },
+        },
+      ]);
+      expect(page.items[0]?.y.contributors).toEqual([
+        {
+          kind: "record",
+          label: "running",
+          providerIds: [],
+          target: { type: "activity", activityId: "run-1" },
+        },
+      ]);
+    });
+
+    it("uses a provider-only sleep source when duration is absent", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce([
+        makeJoinedDay({
+          date: "2026-01-02",
+          sleep_duration_min: 0,
+          hrv: 45,
+        }),
+      ]);
+      const db = {
+        execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+      };
+      const sensorStore = {
+        query: vi
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              date: "2026-01-02",
+              provider_id: "provider-only",
+              source_name: null,
+              source_providers: [],
+              timezone: "UTC",
+              start_utc_offset_minutes: 0,
+              end_utc_offset_minutes: 0,
+              local_time_source: "provider_timezone",
+              started_at: "2026-01-02T00:00:00Z",
+              ended_at: null,
+              duration_minutes: null,
+              deep_minutes: null,
+              rem_minutes: null,
+              light_minutes: null,
+              awake_minutes: null,
+              efficiency_pct: null,
+            },
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+      };
+      const repository = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+
+      const page = await repository.listObservations("sleep_duration", "hrv", 30, 0, "2026-01-02", {
+        pageSize: 25,
+      });
+
+      expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual(["provider-only"]);
+    });
+
+    it("keeps absent evidence families empty after another source creates the day", async () => {
+      const makeSparseRepository = (source: "daily" | "nutrition") => {
+        const dailyRows =
+          source === "daily"
+            ? [
+                {
+                  date: "2026-01-02",
+                  resting_hr: 52,
+                  hrv: null,
+                  spo2_avg: null,
+                  steps: null,
+                  skin_temp_c: null,
+                  source_providers: ["oura"],
+                },
+              ]
+            : [];
+        const nutritionRows =
+          source === "nutrition"
+            ? [
+                {
+                  date: "2026-01-02",
+                  calories: 2_000,
+                  protein_g: null,
+                  carbs_g: null,
+                  fat_g: null,
+                  fiber_g: null,
+                  water_ml: null,
+                  contributing_providers: ["cronometer"],
+                },
+              ]
+            : [];
+        const db = {
+          execute: vi.fn().mockResolvedValueOnce(dailyRows).mockResolvedValueOnce(nutritionRows),
+        };
+        const sensorStore = {
+          query: vi.fn().mockResolvedValue([]),
+        };
+        return new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+      };
+      const cases = [
+        {
+          source: "daily",
+          metricX: "sleep_duration",
+          metricY: "protein",
+          day: makeJoinedDay({
+            date: "2026-01-02",
+            sleep_duration_min: 480,
+            protein_g: 150,
+          }),
+        },
+        {
+          source: "daily",
+          metricX: "weight",
+          metricY: "exercise_duration",
+          day: makeJoinedDay({
+            date: "2026-01-02",
+            weight_kg: 72,
+            exercise_minutes: 30,
+          }),
+        },
+        {
+          source: "nutrition",
+          metricX: "hrv",
+          metricY: "weight",
+          day: makeJoinedDay({
+            date: "2026-01-02",
+            hrv: 45,
+            weight_kg: 72,
+          }),
+        },
+      ] as const;
+
+      for (const testCase of cases) {
+        vi.mocked(joinByDate).mockReturnValueOnce([testCase.day]);
+        const page = await makeSparseRepository(testCase.source).listObservations(
+          testCase.metricX,
+          testCase.metricY,
+          30,
+          0,
+          "2026-01-02",
+          { pageSize: 25 },
+        );
+
+        expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual([]);
+        expect(page.items[0]?.y.contributors[0]?.providerIds).toEqual([]);
+      }
+    });
+
     it("attributes sleep metrics to the selected longest session for a wake date", async () => {
       vi.mocked(joinByDate).mockReturnValueOnce([
         makeJoinedDay({
@@ -862,7 +1559,7 @@ describe("CorrelationRepository", () => {
               date: "2026-01-02",
               provider_id: "long-session-provider",
               source_name: "Long session",
-              source_providers: ["long-session-provider"],
+              source_providers: [],
               timezone: "UTC",
               start_utc_offset_minutes: 0,
               end_utc_offset_minutes: 0,
