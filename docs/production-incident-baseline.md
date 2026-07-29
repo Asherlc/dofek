@@ -53,6 +53,46 @@ Local SQL lint and Cypress remain blocked until the unrelated build releases
 the daemon and the rebuildable-cache prune can complete. Other workspace
 resources must remain intact.
 
+## 2026-07-29: E2E image build timed out downloading npm packages
+
+### Symptoms
+
+The web E2E job for PR #2284 failed in `Build E2E images with cache` before
+starting its Compose dependencies or Cypress.
+
+### User Impact
+
+There was no production or end-user impact. The failure delayed CI validation
+of a responsive web fix.
+
+### Evidence
+
+Inside the Docker `client-build` stage, pnpm downloaded workspace packages at
+unusually low transfer rates and repeatedly logged registry tarball
+`error (23)` failures. The first fatal line was
+`[23] The operation was aborted due to timeout`, followed by
+`TimeoutError: The operation was aborted due to timeout`. The failing command
+was the dependency installation invoked before `packages/web` could build; the
+E2E services and Cypress step remained unstarted.
+
+### Root Cause
+
+Transient npm registry download timeouts exhausted pnpm's existing attempts
+during the isolated E2E image build. The failure occurred before application
+compilation or test execution and was unrelated to the responsive changes.
+
+### Fix or Mitigation
+
+No timeout, retry, cache, or application behavior was changed. The same
+canonical commit is being validated on a fresh GitHub Actions run, using the
+platform's documented rerun workflow:
+<https://docs.github.com/actions/managing-workflow-runs-and-deployments/managing-workflow-runs/re-running-workflows-and-jobs>.
+
+### Remaining Risk
+
+The incident remains unresolved until a fresh E2E job completes. An external
+registry interruption can recur without a repository change.
+
 ## 2026-07-25: Locked-device workout route queries generated Sentry errors
 
 ### Symptoms
