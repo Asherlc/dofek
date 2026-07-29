@@ -76,6 +76,148 @@ export function buildTestActivityLocationSampleSelectSql(
 FROM ${databases.analytics}.deduped_location`;
 }
 
+export function buildTestActivityLocationSummarySelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH location_deltas AS (
+  SELECT
+    activity_id,
+    user_id,
+    lat,
+    lng,
+    lagInFrame(lat) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_lat,
+    lagInFrame(lng) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_lng
+  FROM ${databases.analytics}.activity_location_sample FINAL
+  WHERE is_deleted = 0
+),
+distance_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(sum(
+      2 * 6371000 * asin(sqrt(
+        pow(sin(radians(lat - previous_lat) / 2), 2)
+        + cos(radians(previous_lat)) * cos(radians(lat))
+        * pow(sin(radians(lng - previous_lng) / 2), 2)
+      ))
+    ), 'Nullable(Float64)') AS total_distance
+  FROM location_deltas
+  WHERE previous_lat IS NOT NULL
+    AND previous_lng IS NOT NULL
+  GROUP BY activity_id, user_id
+),
+centroid_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(avg(lat), 'Nullable(Float64)') AS centroid_lat,
+    CAST(avg(lng), 'Nullable(Float64)') AS centroid_lng
+  FROM ${databases.analytics}.activity_location_sample FINAL
+  WHERE is_deleted = 0
+    AND lat IS NOT NULL
+    AND lng IS NOT NULL
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  distance_per_activity.total_distance AS total_distance,
+  centroid_per_activity.centroid_lat AS centroid_lat,
+  centroid_per_activity.centroid_lng AS centroid_lng,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN distance_per_activity
+  ON distance_per_activity.activity_id = activity.activity_id
+ AND distance_per_activity.user_id = activity.user_id
+LEFT JOIN centroid_per_activity
+  ON centroid_per_activity.activity_id = activity.activity_id
+ AND centroid_per_activity.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
+}
+
+export function buildTestActivitySensorSummarySelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH altitude_deltas AS (
+  SELECT
+    activity_id,
+    user_id,
+    scalar AS altitude,
+    lagInFrame(scalar) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_altitude
+  FROM ${databases.analytics}.activity_sensor_sample FINAL
+  WHERE is_deleted = 0
+    AND channel = 'altitude'
+    AND scalar IS NOT NULL
+),
+elevation_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(
+      sum(if(altitude - previous_altitude > 0, altitude - previous_altitude, 0)),
+      'Nullable(Float64)'
+    ) AS elevation_gain_m
+  FROM altitude_deltas
+  WHERE previous_altitude IS NOT NULL
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  CAST(NULL, 'Nullable(Float64)') AS avg_hr,
+  CAST(NULL, 'Nullable(Int16)') AS max_hr,
+  CAST(NULL, 'Nullable(Int16)') AS min_hr,
+  CAST(NULL, 'Nullable(Float64)') AS avg_power,
+  CAST(NULL, 'Nullable(Int16)') AS max_power,
+  CAST(NULL, 'Nullable(Float64)') AS avg_speed,
+  CAST(NULL, 'Nullable(Float64)') AS max_speed,
+  CAST(NULL, 'Nullable(Float64)') AS avg_cadence,
+  CAST(NULL, 'Nullable(Float64)') AS elevation_gain_legacy,
+  CAST(NULL, 'Nullable(Float64)') AS avg_left_balance,
+  CAST(NULL, 'Nullable(Float64)') AS avg_left_torque_eff,
+  CAST(NULL, 'Nullable(Float64)') AS avg_right_torque_eff,
+  CAST(NULL, 'Nullable(Float64)') AS avg_left_pedal_smooth,
+  CAST(NULL, 'Nullable(Float64)') AS avg_right_pedal_smooth,
+  elevation_per_activity.elevation_gain_m AS elevation_gain_m,
+  CAST(NULL, 'Nullable(Float64)') AS elevation_loss_m,
+  CAST(NULL, 'Nullable(Float64)') AS avg_stance_time,
+  CAST(NULL, 'Nullable(Float64)') AS avg_vertical_osc,
+  CAST(NULL, 'Nullable(Float64)') AS avg_ground_contact_time,
+  CAST(NULL, 'Nullable(Float64)') AS avg_stride_length,
+  CAST(NULL, 'Nullable(UInt64)') AS sample_count,
+  CAST(NULL, 'Nullable(UInt64)') AS hr_sample_count,
+  CAST(NULL, 'Nullable(UInt64)') AS power_sample_count,
+  CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS first_sample_at,
+  CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS last_sample_at,
+  CAST(NULL, 'Nullable(Float64)') AS best_twenty_minute_power,
+  CAST(NULL, 'Nullable(Float64)') AS normalized_power,
+  CAST(NULL, 'Nullable(Float64)') AS smoothed_avg_power,
+  CAST(NULL, 'Nullable(Float64)') AS climbing_elevation_gain_m,
+  CAST(NULL, 'Nullable(Int32)') AS climbing_seconds,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN elevation_per_activity
+  ON elevation_per_activity.activity_id = activity.activity_id
+ AND elevation_per_activity.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
+}
+
 export function buildTestProviderStatsSelectSql(selectSql: string): string {
   return selectSql;
 }

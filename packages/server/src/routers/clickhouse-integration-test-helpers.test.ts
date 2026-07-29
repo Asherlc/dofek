@@ -124,6 +124,24 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_sensor_summary_rows") &&
+          command.includes("avg_hr Nullable(Float64)") &&
+          command.includes("climbing_seconds Nullable(Int32)"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_location_summary_rows") &&
+          command.includes("centroid_lat Nullable(Float64)") &&
+          command.includes("centroid_lng Nullable(Float64)"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".daily_recovery_inputs"),
       ),
     ).toBe(true);
@@ -324,6 +342,22 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".activity_location_sample") &&
           command.includes("FROM analytics_test_"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".activity_sensor_summary_rows") &&
+          command.includes("elevation_per_activity.elevation_gain_m AS elevation_gain_m"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".activity_location_summary_rows") &&
+          command.includes("distance_per_activity.total_distance AS total_distance"),
       ),
     ).toBe(true);
     expect(

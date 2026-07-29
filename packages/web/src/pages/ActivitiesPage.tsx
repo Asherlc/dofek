@@ -1,4 +1,8 @@
 import {
+  formatActivityOverviewDistance,
+  formatActivityOverviewElevation,
+} from "@dofek/format/activity-overview";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -522,8 +526,8 @@ function ActivityCard({
 interface ActivityOverviewData {
   activityCount: number;
   totalMinutes: number;
-  totalDistanceMeters: number;
-  totalElevationGainM: number;
+  totalDistanceMeters: number | null;
+  totalElevationGainM: number | null;
 }
 
 function ActivityOverview({
@@ -542,13 +546,17 @@ function ActivityOverview({
     {
       label: "Distance",
       value: overview
-        ? formatMeasurementText(units.formatDistance(overview.totalDistanceMeters / 1000))
+        ? formatActivityOverviewDistance(overview.totalDistanceMeters, (distanceMeters) =>
+            formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+          )
         : "—",
     },
     {
       label: "Elevation",
       value: overview
-        ? formatMeasurementText(units.formatElevation(overview.totalElevationGainM))
+        ? formatActivityOverviewElevation(overview.totalElevationGainM, (elevationMeters) =>
+            formatMeasurementText(units.formatElevation(elevationMeters)),
+          )
         : "—",
     },
   ];

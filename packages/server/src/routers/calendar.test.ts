@@ -216,8 +216,8 @@ describe("calendarRouter", () => {
     repositoryResultMock.mockResolvedValueOnce({
       activityCount: 2,
       totalMinutes: 150,
-      totalDistanceMeters: 30000,
-      totalElevationGainM: 420,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
       activityTypes: ["cycling", "running"],
     });
     const caller = createCaller({
@@ -230,8 +230,8 @@ describe("calendarRouter", () => {
     await expect(caller.activityOverview({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual({
       activityCount: 2,
       totalMinutes: 150,
-      totalDistanceMeters: 30000,
-      totalElevationGainM: 420,
+      totalDistanceMeters: null,
+      totalElevationGainM: null,
       activityTypes: ["cycling", "running"],
     });
   });
