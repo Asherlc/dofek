@@ -486,6 +486,12 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain(
       "INNER JOIN dirty_keys ON dirty_keys.activity_id = location_samples.activity_id",
     );
+    expect(normalizedSql).toContain(
+      "distance_per_activity.total_distance AS total_distance",
+    );
+    expect(normalizedSql).not.toContain(
+      "coalesce(distance_per_activity.total_distance, CAST(0, 'Nullable(Float64)'))",
+    );
   });
 
   it("materializes activity stream points from bounded activity intermediaries", () => {

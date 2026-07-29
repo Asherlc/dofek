@@ -483,7 +483,7 @@ SELECT
     channel_aggs.avg_right_torque_eff AS avg_right_torque_eff,
     channel_aggs.avg_left_pedal_smooth AS avg_left_pedal_smooth,
     channel_aggs.avg_right_pedal_smooth AS avg_right_pedal_smooth,
-    coalesce(elevation_per_activity.elevation_gain_m, CAST(0, 'Nullable(Float64)')) AS elevation_gain_m,
+    elevation_per_activity.elevation_gain_m AS elevation_gain_m,
     coalesce(elevation_per_activity.elevation_loss_m, CAST(0, 'Nullable(Float64)')) AS elevation_loss_m,
     channel_aggs.avg_stance_time AS avg_stance_time,
     channel_aggs.avg_vertical_osc AS avg_vertical_osc,
