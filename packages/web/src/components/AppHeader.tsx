@@ -90,7 +90,7 @@ export function AppHeader({
               </svg>
             </button>
             <DofekLogo />
-            <h1 className="text-lg font-semibold tracking-tight shrink-0">Dofek</h1>
+            <span className="text-lg font-semibold tracking-tight shrink-0">Dofek</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <AlertLink activeCount={activeAlertCount} compact />
@@ -152,7 +152,7 @@ export function AppHeader({
       >
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <DofekLogo />
-          <h1 className="text-lg font-semibold tracking-tight shrink-0">Dofek</h1>
+          <span className="text-lg font-semibold tracking-tight shrink-0">Dofek</span>
         </div>
 
         <nav className="mt-8 flex flex-col gap-1" aria-label="Sections">

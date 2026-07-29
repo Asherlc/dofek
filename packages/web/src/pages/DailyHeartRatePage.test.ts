@@ -49,6 +49,21 @@ vi.mock("../lib/trpc.ts", () => ({
 import { DailyHeartRatePage } from "./DailyHeartRatePage.tsx";
 
 describe("DailyHeartRatePage", () => {
+  it("nests its title below the Body page heading", () => {
+    mockDailyBySourceQuery.mockReturnValue({
+      data: [],
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    render(createElement(DailyHeartRatePage));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Daily Heart Rate by Source" }),
+    ).toBeTruthy();
+  });
+
   beforeEach(() => {
     mockDailyBySourceQuery.mockReturnValue({
       data: [
