@@ -292,6 +292,24 @@ describe("menstrualCycleRouter", () => {
       });
       expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
+
+    it("returns an actionable conflict when the corrected start date already exists", async () => {
+      const uniqueViolation = new Error("Failed query", {
+        cause: Object.assign(new Error("duplicate key value"), { code: "23505" }),
+      });
+      const caller = createCaller({
+        db: { execute: vi.fn().mockRejectedValue(uniqueViolation) },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.updatePeriod({ id: periodId, startDate: "2026-03-08" }),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "A period is already recorded for 2026-03-08. Choose a different start date.",
+      });
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+    });
   });
 
   describe("deletePeriod", () => {

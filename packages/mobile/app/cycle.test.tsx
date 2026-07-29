@@ -98,10 +98,12 @@ vi.mock("@dofek/format/format", () => ({
 vi.mock("@react-native-community/datetimepicker", () => ({
   default: ({
     accessibilityLabel,
+    maximumDate,
     onChange,
     value,
   }: {
     accessibilityLabel: string;
+    maximumDate?: Date;
     onChange: (event: { type: "set" }, date: Date) => void;
     value: Date;
   }) =>
@@ -110,6 +112,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
       {
         type: "button",
         "aria-label": accessibilityLabel,
+        "data-maximum-hour": maximumDate?.getHours(),
         onClick: () =>
           onChange(
             { type: "set" },
@@ -140,20 +143,28 @@ vi.mock("../lib/trpc", () => ({
         useQuery: () => state.historyQuery,
       },
       logPeriod: {
-        useMutation: (options: { onError?: (error: Error) => void }) => ({
+        useMutation: (options: {
+          onError?: (error: Error) => void;
+          onSettled?: () => Promise<void> | void;
+        }) => ({
           mutate: (input: { startDate: string }) => {
             state.mutationInput = input;
             if (state.mutationError) options.onError?.(state.mutationError);
+            void options.onSettled?.();
           },
           isPending: false,
           error: state.mutationError,
         }),
       },
       updatePeriod: {
-        useMutation: (options: { onError?: (error: Error) => void }) => ({
+        useMutation: (options: {
+          onError?: (error: Error) => void;
+          onSettled?: () => Promise<void> | void;
+        }) => ({
           mutate: (input: NonNullable<TestState["updateMutationInput"]>) => {
             state.updateMutationInput = input;
             if (state.updateMutationError) options.onError?.(state.updateMutationError);
+            void options.onSettled?.();
           },
           isPending: false,
           error: state.updateMutationError,
@@ -161,10 +172,14 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
       deletePeriod: {
-        useMutation: (options: { onError?: (error: Error) => void }) => ({
+        useMutation: (options: {
+          onError?: (error: Error) => void;
+          onSettled?: () => Promise<void> | void;
+        }) => ({
           mutate: (input: { id: string }) => {
             state.deleteMutationInput = input;
             if (state.deleteMutationError) options.onError?.(state.deleteMutationError);
+            void options.onSettled?.();
           },
           isPending: false,
           error: state.deleteMutationError,
@@ -360,6 +375,38 @@ describe("CycleScreen", () => {
     });
   });
 
+  it("normalizes period picker maximum dates to the same noon date basis", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 24, 8));
+    state.historyQuery.data = [
+      {
+        id: "period-1",
+        startDate: "2026-07-24",
+        endDate: null,
+        durationDays: null,
+        durationLabel: null,
+        notes: null,
+      },
+    ];
+    const { default: CycleScreen } = await import("./cycle");
+
+    try {
+      render(<CycleScreen />);
+      expect(
+        screen.getByRole("button", { name: "Period start date" }).getAttribute("data-maximum-hour"),
+      ).toBe("12");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit period starting 2026-07-24" }));
+      expect(
+        screen
+          .getByRole("button", { name: "Corrected period start date" })
+          .getAttribute("data-maximum-hour"),
+      ).toBe("12");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("requires explicit confirmation before deleting an erroneous period", async () => {
     state.historyQuery.data = [
       {
@@ -411,6 +458,8 @@ describe("CycleScreen", () => {
     expect(state.captureException).toHaveBeenCalledWith(updateError, {
       source: "cycle-update-period",
     });
+    expect(state.invalidateCurrentPhase).toHaveBeenCalledOnce();
+    expect(state.invalidateHistory).toHaveBeenCalledOnce();
   });
 
   it("preserves the selected date, offers retry, and reports a failed write", async () => {

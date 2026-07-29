@@ -28,6 +28,7 @@ export default function CycleScreen() {
   const [startDate, setStartDate] = useState(formatDateYmd());
   const [editDraft, setEditDraft] = useState<PeriodEditDraft | null>(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+  const maximumPeriodDate = localDateFromYmd(formatDateYmd());
   const utils = trpc.useUtils();
   const invalidateCycleData = async () => {
     await Promise.all([
@@ -36,28 +37,28 @@ export default function CycleScreen() {
     ]);
   };
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
-    onSuccess: invalidateCycleData,
     onError: (error) => {
       captureException(error, { source: "cycle-log-period" });
     },
+    onSettled: invalidateCycleData,
   });
   const updateMutation = trpc.menstrualCycle.updatePeriod.useMutation({
-    onSuccess: async () => {
+    onSuccess: () => {
       setEditDraft(null);
-      await invalidateCycleData();
     },
     onError: (error) => {
       captureException(error, { source: "cycle-update-period" });
     },
+    onSettled: invalidateCycleData,
   });
   const deleteMutation = trpc.menstrualCycle.deletePeriod.useMutation({
-    onSuccess: async () => {
+    onSuccess: () => {
       setDeleteConfirmationId(null);
-      await invalidateCycleData();
     },
     onError: (error) => {
       captureException(error, { source: "cycle-delete-period" });
     },
+    onSettled: invalidateCycleData,
   });
 
   return (
@@ -141,7 +142,7 @@ export default function CycleScreen() {
             <DateTimePicker
               accessibilityLabel="Period start date"
               display="compact"
-              maximumDate={new Date()}
+              maximumDate={maximumPeriodDate}
               mode="date"
               onChange={(_event, selectedDate) => {
                 if (selectedDate) setStartDate(formatDateYmd(selectedDate));
@@ -184,7 +185,7 @@ export default function CycleScreen() {
                         <DateTimePicker
                           accessibilityLabel="Corrected period start date"
                           display="compact"
-                          maximumDate={new Date()}
+                          maximumDate={maximumPeriodDate}
                           mode="date"
                           onChange={(_event, selectedDate) => {
                             if (selectedDate) {
@@ -204,7 +205,7 @@ export default function CycleScreen() {
                             <DateTimePicker
                               accessibilityLabel="Corrected period end date"
                               display="compact"
-                              maximumDate={new Date()}
+                              maximumDate={maximumPeriodDate}
                               minimumDate={localDateFromYmd(editDraft.startDate)}
                               mode="date"
                               onChange={(_event, selectedDate) => {

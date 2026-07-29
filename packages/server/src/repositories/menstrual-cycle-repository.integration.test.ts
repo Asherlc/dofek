@@ -1,8 +1,12 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { MenstrualCycleRepository } from "./menstrual-cycle-repository.ts";
+
+const periodIdRowSchema = z.object({ id: z.string().uuid() });
 
 describe("MenstrualCycleRepository period durations", () => {
   let testContext: TestContext;
@@ -57,7 +61,9 @@ describe("MenstrualCycleRepository period durations", () => {
 
   it("corrects a period by stable ID and returns its inclusive duration", async () => {
     const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
-    const [row] = await testContext.db.execute<{ id: string }>(
+    const [row] = await executeWithSchema(
+      testContext.db,
+      periodIdRowSchema,
       sql`INSERT INTO fitness.menstrual_period (user_id, start_date, end_date, notes)
           VALUES (${TEST_USER_ID}, '2099-02-10', '2099-02-11', 'before correction')
           RETURNING id`,
@@ -103,7 +109,9 @@ describe("MenstrualCycleRepository period durations", () => {
     await expect(repository.deletePeriod(otherPeriodId)).resolves.toBe(false);
     await expect(repository.deletePeriod(ownedPeriodId)).resolves.toBe(true);
 
-    const rows = await testContext.db.execute<{ id: string }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      periodIdRowSchema,
       sql`SELECT id
           FROM fitness.menstrual_period
           WHERE id IN (${ownedPeriodId}, ${otherPeriodId})
@@ -122,11 +130,9 @@ describe("MenstrualCycleRepository period durations", () => {
             ('00000000-0000-4000-8000-000000002169', ${TEST_USER_ID}, '2099-04-08')`,
     );
 
-    await expect(
-      repository.updatePeriod(firstPeriodId, "2099-04-08", null, null),
-    ).rejects.toMatchObject({
-      cause: { code: "23505" },
-    });
+    await expect(repository.updatePeriod(firstPeriodId, "2099-04-08", null, null)).rejects.toThrow(
+      "A period is already recorded for 2099-04-08. Choose a different start date.",
+    );
   });
 });
 

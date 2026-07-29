@@ -107,20 +107,28 @@ vi.mock("../lib/trpc.ts", () => ({
         useQuery: () => state.historyQuery,
       },
       logPeriod: {
-        useMutation: (options: { onError?: (error: Error) => void }) => ({
+        useMutation: (options: {
+          onError?: (error: Error) => void;
+          onSettled?: () => Promise<void> | void;
+        }) => ({
           mutate: (input: { startDate: string }) => {
             state.mutationInput = input;
             if (state.mutationError) options.onError?.(state.mutationError);
+            void options.onSettled?.();
           },
           isPending: false,
           error: state.mutationError,
         }),
       },
       updatePeriod: {
-        useMutation: (options: { onError?: (error: Error) => void }) => ({
+        useMutation: (options: {
+          onError?: (error: Error) => void;
+          onSettled?: () => Promise<void> | void;
+        }) => ({
           mutate: (input: NonNullable<TestState["updateMutationInput"]>) => {
             state.updateMutationInput = input;
             if (state.updateMutationError) options.onError?.(state.updateMutationError);
+            void options.onSettled?.();
           },
           isPending: false,
           error: state.updateMutationError,
@@ -128,10 +136,14 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
       deletePeriod: {
-        useMutation: (options: { onError?: (error: Error) => void }) => ({
+        useMutation: (options: {
+          onError?: (error: Error) => void;
+          onSettled?: () => Promise<void> | void;
+        }) => ({
           mutate: (input: { id: string }) => {
             state.deleteMutationInput = input;
             if (state.deleteMutationError) options.onError?.(state.deleteMutationError);
+            void options.onSettled?.();
           },
           isPending: false,
           error: state.deleteMutationError,
@@ -385,6 +397,8 @@ describe("CyclePage", () => {
     expect(state.captureException).toHaveBeenCalledWith(updateError, {
       context: "cycle-update-period",
     });
+    expect(state.invalidateCurrentPhase).toHaveBeenCalledOnce();
+    expect(state.invalidateHistory).toHaveBeenCalledOnce();
   });
 
   it("preserves the selected date, offers retry, and reports a failed write", () => {

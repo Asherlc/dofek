@@ -37,30 +37,30 @@ function CyclePage() {
   };
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
     meta: locallyReportedErrorMeta,
-    onSuccess: invalidateCycleData,
     onError: (error) => {
       captureException(error, { context: "cycle-log-period" });
     },
+    onSettled: invalidateCycleData,
   });
   const updateMutation = trpc.menstrualCycle.updatePeriod.useMutation({
     meta: locallyReportedErrorMeta,
-    onSuccess: async () => {
+    onSuccess: () => {
       setEditDraft(null);
-      await invalidateCycleData();
     },
     onError: (error) => {
       captureException(error, { context: "cycle-update-period" });
     },
+    onSettled: invalidateCycleData,
   });
   const deleteMutation = trpc.menstrualCycle.deletePeriod.useMutation({
     meta: locallyReportedErrorMeta,
-    onSuccess: async () => {
+    onSuccess: () => {
       setDeleteConfirmationId(null);
-      await invalidateCycleData();
     },
     onError: (error) => {
       captureException(error, { context: "cycle-delete-period" });
     },
+    onSettled: invalidateCycleData,
   });
 
   return (

@@ -93,6 +93,25 @@ export interface MenstrualPeriod {
   notes: string | null;
 }
 
+export class PeriodStartDateConflictError extends Error {
+  constructor(startDate: string) {
+    super(`A period is already recorded for ${startDate}. Choose a different start date.`);
+    this.name = "PeriodStartDateConflictError";
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ("code" in error && error.code === "23505") return true;
+  return (
+    "cause" in error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "code" in error.cause &&
+    error.cause.code === "23505"
+  );
+}
+
 function formatPeriodDuration(durationDays: number | null): string | null {
   if (durationDays === null) return null;
   return `${durationDays} ${durationDays === 1 ? "day" : "days"}`;
@@ -325,22 +344,29 @@ export class MenstrualCycleRepository {
       throw new Error("Period end date cannot be before start date.");
     }
 
-    const rows = await executeWithSchema(
-      this.#db,
-      periodMutationRowSchema,
-      sql`UPDATE fitness.menstrual_period
-          SET start_date = ${startDate}::date,
-              end_date = ${endDate}::date,
-              notes = ${notes}
-          WHERE id = ${id}::uuid
-            AND user_id = ${this.#userId}
-          RETURNING id, start_date, end_date,
-                    end_date - start_date + 1 AS duration_days,
-                    notes`,
-    );
+    try {
+      const rows = await executeWithSchema(
+        this.#db,
+        periodMutationRowSchema,
+        sql`UPDATE fitness.menstrual_period
+            SET start_date = ${startDate}::date,
+                end_date = ${endDate}::date,
+                notes = ${notes}
+            WHERE id = ${id}::uuid
+              AND user_id = ${this.#userId}
+            RETURNING id, start_date, end_date,
+                      end_date - start_date + 1 AS duration_days,
+                      notes`,
+      );
 
-    const row = rows[0];
-    return row ? mapPeriod(row) : null;
+      const row = rows[0];
+      return row ? mapPeriod(row) : null;
+    } catch (error: unknown) {
+      if (isUniqueViolation(error)) {
+        throw new PeriodStartDateConflictError(startDate);
+      }
+      throw error;
+    }
   }
 
   /** Delete an erroneous period owned by this user. */
