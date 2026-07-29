@@ -6,7 +6,7 @@ Write the failing regression test before changing the component.
 
 **Behavior:** Below the small breakpoint, the event list and add control occupy separate stacked rows, the event list may shrink and wrap, and the add control reserves the full available row. At the small breakpoint and above, the existing horizontal layout returns.
 
-**Scope:** Responsive web only. Preserve event selection, pagination, form behavior, server contracts, and the desktop presentation. Do not add or change native mobile behavior.
+**Scope:** Responsive web only. Preserve event selection, pagination, form behavior, server contracts, and the desktop presentation. This is a user-approved exception to the dual-platform parity rule: the reported defect is in the mobile-width web layout, `LifeEventsPanel` exists only in `packages/web`, and `packages/mobile` has no equivalent Life Events surface to update or test. Adding one would create an unrelated native feature rather than restore parity.
 
 **Evidence:** Issue [#2159](https://github.com/Asherlc/dofek/issues/2159) and audit finding `TRACK-06` report that `+ Add event` overlaps the Travel Week event on mobile-width web layouts.
 
