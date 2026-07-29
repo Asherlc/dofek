@@ -1,4 +1,8 @@
-import { totalSessionSeconds } from "@dofek/scoring/breathwork";
+import {
+  type BreathworkOutcomeReport,
+  type PerceivedBreathworkEffect,
+  totalSessionSeconds,
+} from "@dofek/scoring/breathwork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
@@ -8,15 +12,11 @@ import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 
 type SessionPhase = "inhale" | "hold-in" | "exhale" | "hold-out";
 
-interface CompletedSessionInput {
+interface CompletedSessionInput extends BreathworkOutcomeReport {
   techniqueId: string;
   rounds: number;
   durationSeconds: number;
   startedAt: string;
-  stressBefore: number | null;
-  stressAfter: number | null;
-  dizzinessAfter: boolean | null;
-  perceivedEffect: "better" | "same" | "worse" | null;
 }
 
 const STRESS_RATINGS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -74,7 +74,7 @@ export default function BreathworkScreen() {
   const [stressBefore, setStressBefore] = useState<number | null>(null);
   const [stressAfter, setStressAfter] = useState<number | null>(null);
   const [dizzinessAfter, setDizzinessAfter] = useState<boolean | null>(null);
-  const [perceivedEffect, setPerceivedEffect] = useState<"better" | "same" | "worse" | null>(null);
+  const [perceivedEffect, setPerceivedEffect] = useState<PerceivedBreathworkEffect | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRunningRef = useRef(false);
   const startTimeRef = useRef<string | null>(null);
@@ -180,12 +180,7 @@ export default function BreathworkScreen() {
   }, [selectedTechnique, stressBefore]);
 
   const saveSession = useCallback(
-    (reports: {
-      stressBefore: number | null;
-      stressAfter: number | null;
-      dizzinessAfter: boolean | null;
-      perceivedEffect: "better" | "same" | "worse" | null;
-    }) => {
+    (reports: BreathworkOutcomeReport) => {
       if (!pendingSession) return;
       const input = { ...pendingSession, ...reports };
       setPendingSession(input);
@@ -398,7 +393,7 @@ export default function BreathworkScreen() {
                   disabled={logMutation.isPending}
                   onPress={() =>
                     saveSession({
-                      stressBefore: null,
+                      stressBefore: pendingSession.stressBefore,
                       stressAfter: null,
                       dizzinessAfter: null,
                       perceivedEffect: null,

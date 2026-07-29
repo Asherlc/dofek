@@ -1,5 +1,9 @@
 import { formatDateMedium } from "@dofek/format/format";
-import { totalSessionSeconds } from "@dofek/scoring/breathwork";
+import {
+  type BreathworkOutcomeReport,
+  type PerceivedBreathworkEffect,
+  totalSessionSeconds,
+} from "@dofek/scoring/breathwork";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -15,15 +19,11 @@ export const Route = createFileRoute("/breathwork")({
 
 type SessionPhase = "inhale" | "hold-in" | "exhale" | "hold-out";
 
-interface CompletedSessionInput {
+interface CompletedSessionInput extends BreathworkOutcomeReport {
   techniqueId: string;
   rounds: number;
   durationSeconds: number;
   startedAt: string;
-  stressBefore: number | null;
-  stressAfter: number | null;
-  dizzinessAfter: boolean | null;
-  perceivedEffect: "better" | "same" | "worse" | null;
 }
 
 const STRESS_RATINGS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -84,7 +84,7 @@ function SessionOutcome({
   stressBefore: number | null | undefined;
   stressAfter: number | null | undefined;
   dizzinessAfter: boolean | null | undefined;
-  perceivedEffect: "better" | "same" | "worse" | null | undefined;
+  perceivedEffect: PerceivedBreathworkEffect | null | undefined;
 }) {
   const parts: string[] = [];
   if (
@@ -142,7 +142,7 @@ function BreathworkPage() {
   const [stressBefore, setStressBefore] = useState<number | null>(null);
   const [stressAfter, setStressAfter] = useState<number | null>(null);
   const [dizzinessAfter, setDizzinessAfter] = useState<boolean | null>(null);
-  const [perceivedEffect, setPerceivedEffect] = useState<"better" | "same" | "worse" | null>(null);
+  const [perceivedEffect, setPerceivedEffect] = useState<PerceivedBreathworkEffect | null>(null);
   const [historyPage, setHistoryPage] = useState(0);
 
   const logMutation = trpc.breathwork.logSession.useMutation({
@@ -189,7 +189,7 @@ function BreathworkPage() {
   }, []);
 
   const startSession = useCallback(() => {
-    if (!selectedTechnique) return;
+    if (timerRef.current || !selectedTechnique) return;
 
     setIsRunning(true);
     setCurrentRound(1);
@@ -261,12 +261,7 @@ function BreathworkPage() {
   }, [selectedTechnique, stressBefore]);
 
   const saveSession = useCallback(
-    (reports: {
-      stressBefore: number | null;
-      stressAfter: number | null;
-      dizzinessAfter: boolean | null;
-      perceivedEffect: "better" | "same" | "worse" | null;
-    }) => {
+    (reports: BreathworkOutcomeReport) => {
       if (!pendingSession) return;
       const input = { ...pendingSession, ...reports };
       setPendingSession(input);
@@ -463,7 +458,7 @@ function BreathworkPage() {
                     type="button"
                     onClick={() =>
                       saveSession({
-                        stressBefore: null,
+                        stressBefore: pendingSession.stressBefore,
                         stressAfter: null,
                         dizzinessAfter: null,
                         perceivedEffect: null,

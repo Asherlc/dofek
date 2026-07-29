@@ -462,6 +462,36 @@ describe("BreathworkPage", () => {
     });
   });
 
+  it("preserves a pre-session stress report when the post-session check-in is skipped", () => {
+    vi.useFakeTimers();
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+
+    renderBreathworkPage();
+    fireEvent.click(screen.getByRole("button", { name: "Before-session stress 7" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
+
+    expect(state.mutationInput).toMatchObject({
+      stressBefore: 7,
+      stressAfter: null,
+      dizzinessAfter: null,
+      perceivedEffect: null,
+    });
+  });
+
   it("shows server-computed personal patterns and raw reports without causal claims", () => {
     state.techniques.data = [
       {
@@ -614,5 +644,30 @@ describe("BreathworkPage", () => {
       rounds: 1,
       durationSeconds: 8,
     });
+  });
+
+  it("starts only one timer for rapid duplicate Start presses", () => {
+    vi.useFakeTimers();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+
+    renderBreathworkPage();
+    const startButton = screen.getByRole("button", { name: "Start Session" });
+    act(() => {
+      startButton.click();
+      startButton.click();
+    });
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
   });
 });

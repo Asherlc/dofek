@@ -1,8 +1,40 @@
-import { type BreathworkTechnique, TECHNIQUES } from "@dofek/scoring/breathwork";
+import {
+  type BreathworkTechnique,
+  PERCEIVED_BREATHWORK_EFFECTS,
+  TECHNIQUES,
+} from "@dofek/scoring/breathwork";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import { BreathworkRepository } from "../repositories/breathwork-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+
+const outcomeCountSchema = z.number().int().nonnegative();
+const outcomeSummaryOutputSchema = z.object({
+  windowDays: z.number().int().positive(),
+  windowKind: z.literal("rolling-instant"),
+  techniques: z.array(
+    z.object({
+      techniqueId: z.string(),
+      sessionCount: outcomeCountSchema,
+      stress: z.object({
+        reportCount: outcomeCountSchema,
+        lowerCount: outcomeCountSchema,
+        sameCount: outcomeCountSchema,
+        higherCount: outcomeCountSchema,
+      }),
+      perceivedEffect: z.object({
+        reportCount: outcomeCountSchema,
+        betterCount: outcomeCountSchema,
+        sameCount: outcomeCountSchema,
+        worseCount: outcomeCountSchema,
+      }),
+      dizziness: z.object({
+        reportCount: outcomeCountSchema,
+        yesCount: outcomeCountSchema,
+      }),
+    }),
+  ),
+});
 
 export const breathworkRouter = router({
   techniques: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(
@@ -19,7 +51,7 @@ export const breathworkRouter = router({
         stressBefore: z.number().int().min(0).max(10).nullable().default(null),
         stressAfter: z.number().int().min(0).max(10).nullable().default(null),
         dizzinessAfter: z.boolean().nullable().default(null),
-        perceivedEffect: z.enum(["better", "same", "worse"]).nullable().default(null),
+        perceivedEffect: z.enum(PERCEIVED_BREATHWORK_EFFECTS).nullable().default(null),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -36,8 +68,11 @@ export const breathworkRouter = router({
       const repo = new BreathworkRepository(ctx.db, ctx.userId);
       return (await repo.getHistory(input.days)).map((session) => session.toDetail());
     }),
-  outcomes: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
-    const repo = new BreathworkRepository(ctx.db, ctx.userId);
-    return repo.getOutcomeSummaries();
-  }),
+  outcomes: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.void())
+    .output(outcomeSummaryOutputSchema)
+    .query(async ({ ctx }) => {
+      const repo = new BreathworkRepository(ctx.db, ctx.userId);
+      return repo.getOutcomeSummaries();
+    }),
 });

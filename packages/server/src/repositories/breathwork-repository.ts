@@ -1,9 +1,13 @@
+import {
+  type BreathworkOutcomeReport,
+  PERCEIVED_BREATHWORK_EFFECTS,
+} from "@dofek/scoring/breathwork";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
-const perceivedEffectSchema = z.enum(["better", "same", "worse"]);
+const perceivedEffectSchema = z.enum(PERCEIVED_BREATHWORK_EFFECTS);
 const OUTCOME_WINDOW_DAYS = 30;
 
 // ---------------------------------------------------------------------------
@@ -81,17 +85,15 @@ export class BreathworkRepository {
     this.#userId = userId;
   }
 
-  async logSession(input: {
-    techniqueId: string;
-    rounds: number;
-    durationSeconds: number;
-    startedAt: string;
-    notes: string | null;
-    stressBefore: number | null;
-    stressAfter: number | null;
-    dizzinessAfter: boolean | null;
-    perceivedEffect: z.infer<typeof perceivedEffectSchema> | null;
-  }): Promise<BreathworkSession | null> {
+  async logSession(
+    input: BreathworkOutcomeReport & {
+      techniqueId: string;
+      rounds: number;
+      durationSeconds: number;
+      startedAt: string;
+      notes: string | null;
+    },
+  ): Promise<BreathworkSession | null> {
     const rows = await executeWithSchema(
       this.#db,
       sessionRowSchema,
@@ -193,7 +195,7 @@ export class BreathworkRepository {
             COUNT(*) FILTER (WHERE dizziness_after IS TRUE)::int AS dizziness_count
           FROM fitness.breathwork_session
           WHERE user_id = ${this.#userId}
-            AND started_at >= CURRENT_TIMESTAMP - make_interval(days => 30)
+            AND started_at >= CURRENT_TIMESTAMP - make_interval(days => ${OUTCOME_WINDOW_DAYS}::int)
           GROUP BY technique_id
           ORDER BY technique_id`,
     );

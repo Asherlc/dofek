@@ -286,6 +286,38 @@ describe("BreathworkScreen", () => {
     );
   });
 
+  it("preserves a pre-session stress report when the post-session check-in is skipped", async () => {
+    vi.useFakeTimers();
+    const technique = mocks.techniques.data?.[0];
+    if (!technique) throw new Error("Expected a breathwork technique fixture");
+    mocks.techniques.data = [
+      {
+        ...technique,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+    const { default: BreathworkScreen } = await import("./breathwork");
+    render(<BreathworkScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Before-session stress 7" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
+
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stressBefore: 7,
+        stressAfter: null,
+        dizzinessAfter: null,
+        perceivedEffect: null,
+      }),
+    );
+  });
+
   it("shows server-computed personal patterns without causal claims", async () => {
     mocks.outcomes.data = {
       windowDays: 30,
