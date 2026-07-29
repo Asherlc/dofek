@@ -137,6 +137,22 @@ describe("sleepNeedRouter", () => {
       });
     });
 
+    it("returns the unavailable variant when the prior-night duration is missing", async () => {
+      const caller = createCalculateCaller([
+        {
+          date: "2026-03-14",
+          duration_minutes: null,
+        },
+      ]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toEqual({
+        availability: "missing_previous_night",
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      });
+    });
+
     it("returns server-computed debt recovery when prior sleep is available", async () => {
       const caller = createCalculateCaller([
         {

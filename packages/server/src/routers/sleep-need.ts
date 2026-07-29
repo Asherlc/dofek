@@ -277,7 +277,9 @@ async function calculateSleepNeed(
     strainDebtMinutes,
     accumulatedDebtMinutes: Math.round(accumulatedDebt),
     recentNights,
-    hasPreviousNight: nightsByDate.has(yesterdayStr),
+    hasPreviousNight: sleepRows.some(
+      (sleepRow) => sleepRow.date === yesterdayStr && sleepRow.duration_minutes != null,
+    ),
   });
 }
 

@@ -311,7 +311,9 @@ export async function loadDashboardOverview({
     strainDebtMinutes,
     accumulatedDebtMinutes: Math.round(accumulatedDebt),
     recentNights,
-    hasPreviousNight: nightsByDate.has(yesterdayDateString),
+    hasPreviousNight: dashboardSleepRows.some(
+      (sleepRow) => sleepRow.date === yesterdayDateString && sleepRow.duration_minutes != null,
+    ),
   });
   const sleepNeedResult = sleepBaselineRows.length > 0 ? toSleepNeedV1(sleepNeedComputation) : null;
 

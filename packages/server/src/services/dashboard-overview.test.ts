@@ -5,8 +5,10 @@ import { loadDashboardOverview } from "./dashboard-overview.ts";
 
 function makeSensorStore({
   metricDate = "2026-06-29",
+  sleepDurationMinutes = 455,
 }: {
   metricDate?: string | Date;
+  sleepDurationMinutes?: number | null;
 } = {}): ActivitySensorStore {
   return {
     query: vi.fn(async <TSchema extends z.ZodType>(schema: TSchema, queryText: string) => {
@@ -30,7 +32,7 @@ function makeSensorStore({
         rows = [
           {
             date: "2026-06-29",
-            duration_minutes: 455,
+            duration_minutes: sleepDurationMinutes,
             deep_minutes: 70,
             rem_minutes: 95,
             light_minutes: 260,
@@ -100,6 +102,20 @@ describe("loadDashboardOverview", () => {
       accessWindow: { kind: "full" },
       endDate: "2026-07-01",
       sensorStore: makeSensorStore(),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+  });
+
+  it("provides the unavailable V2 state when the prior-night duration is missing", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({ sleepDurationMinutes: null }),
       userId: "user-1",
     });
 
