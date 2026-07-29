@@ -79,6 +79,31 @@ describe("buildWeeklyDecisionSynthesis", () => {
     );
   });
 
+  it("pluralizes hours from the displayed rounded value", () => {
+    const synthesis = buildWeeklyDecisionSynthesis(
+      {
+        trainingHours: 0.96,
+        activityCount: 1,
+        avgSleepMinutes: 420,
+        avgRestingHr: 55,
+        avgHrv: 48,
+      },
+      [
+        {
+          trainingHours: 0,
+          activityCount: 0,
+          avgSleepMinutes: 420,
+          avgRestingHr: 55,
+          avgHrv: 48,
+        },
+      ],
+    );
+
+    expect(synthesis.whatChanged[0]).toBe(
+      "Training was 1 hour, up from no recorded training in the previous week.",
+    );
+  });
+
   it("recognizes a sustained routine without labeling a neutral direction as good or bad", () => {
     const synthesis = buildWeeklyDecisionSynthesis(
       {

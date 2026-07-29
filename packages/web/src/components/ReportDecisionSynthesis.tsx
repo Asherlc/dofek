@@ -11,6 +11,15 @@ const sections: {
   { key: "confidenceAndMissingData", title: "Confidence and missing data" },
 ];
 
+function keyedItems(items: string[]): { key: string; text: string }[] {
+  const occurrences = new Map<string, number>();
+  return items.map((text) => {
+    const occurrence = occurrences.get(text) ?? 0;
+    occurrences.set(text, occurrence + 1);
+    return { key: JSON.stringify([text, occurrence]), text };
+  });
+}
+
 export function ReportDecisionSynthesis({ synthesis }: { synthesis: ReportDecisionSynthesisData }) {
   return (
     <section className="card p-6" aria-label="Decision summary">
@@ -20,8 +29,8 @@ export function ReportDecisionSynthesis({ synthesis }: { synthesis: ReportDecisi
           <div key={section.key}>
             <h3 className="text-sm font-medium text-foreground mb-1">{section.title}</h3>
             <ul className="space-y-1 text-sm text-muted">
-              {synthesis[section.key].map((item) => (
-                <li key={item}>{item}</li>
+              {keyedItems(synthesis[section.key]).map((item) => (
+                <li key={item.key}>{item.text}</li>
               ))}
             </ul>
           </div>

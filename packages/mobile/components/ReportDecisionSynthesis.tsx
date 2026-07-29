@@ -14,15 +14,24 @@ const sections: {
   { key: "confidenceAndMissingData", title: "Confidence and missing data" },
 ];
 
+function keyedItems(items: string[]): { key: string; text: string }[] {
+  const occurrences = new Map<string, number>();
+  return items.map((text) => {
+    const occurrence = occurrences.get(text) ?? 0;
+    occurrences.set(text, occurrence + 1);
+    return { key: JSON.stringify([text, occurrence]), text };
+  });
+}
+
 export function ReportDecisionSynthesis({ synthesis }: { synthesis: ReportDecisionSynthesisData }) {
   return (
     <Card title="Decision summary">
       {sections.map((section) => (
         <View key={section.key} style={styles.section}>
           <Text style={styles.heading}>{section.title}</Text>
-          {synthesis[section.key].map((item) => (
-            <Text key={item} style={styles.body}>
-              {item}
+          {keyedItems(synthesis[section.key]).map((item) => (
+            <Text key={item.key} style={styles.body}>
+              {item.text}
             </Text>
           ))}
         </View>

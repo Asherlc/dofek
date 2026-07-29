@@ -36,7 +36,7 @@
 
 - [ ] Add unit cases for changed metrics, descriptive co-movement, positive evidence, next-step copy, observed-period context, and missing-data limitations.
 - [ ] Add repository assertions for synthesis presence and absence.
-- [ ] Run `rtk pnpm exec vitest run packages/server/src/repositories/report-decision-synthesis.test.ts packages/server/src/repositories/weekly-report-repository.test.ts packages/server/src/repositories/monthly-report-repository.test.ts`.
+- [ ] Run `pnpm exec vitest run packages/server/src/repositories/report-decision-synthesis.test.ts packages/server/src/repositories/weekly-report-repository.test.ts packages/server/src/repositories/monthly-report-repository.test.ts`.
 - [ ] Confirm the tests fail because the synthesis contract does not exist.
 
 ### Task 2: Implement the Server Synthesis
@@ -49,8 +49,8 @@
 
 - [ ] Require all five server-provided sections on web weekly/monthly reports and iOS.
 - [ ] Require shared-report parsing to accept both new synthesis snapshots and legacy snapshots without the field.
-- [ ] Run `rtk pnpm exec vitest run packages/web/src/components/ReportDecisionSynthesis.test.tsx packages/web/src/components/WeeklyReportCard.test.tsx packages/web/src/components/MonthlyReportContent.test.tsx packages/web/src/routes/health-report.test.tsx --project web`.
-- [ ] Run `rtk pnpm exec vitest run packages/mobile/components/ReportDecisionSynthesis.test.tsx packages/mobile/app/reports.test.tsx --project mobile`.
+- [ ] Run `pnpm exec vitest run packages/web/src/components/ReportDecisionSynthesis.test.tsx packages/web/src/components/WeeklyReportCard.test.tsx packages/web/src/components/MonthlyReportContent.test.tsx packages/web/src/routes/health-report.test.tsx --project unit`.
+- [ ] Run `pnpm exec vitest run packages/mobile/components/ReportDecisionSynthesis.test.tsx packages/mobile/app/reports.test.tsx --project mobile`.
 - [ ] Confirm the tests fail because the synthesis is not rendered.
 
 ### Task 4: Implement Web and iOS Parity
@@ -62,9 +62,10 @@
 
 ### Task 5: Final Verification
 
-- [ ] Run `rtk pnpm lint`.
-- [ ] Run `rtk pnpm tsc --noEmit`.
-- [ ] Run `rtk pnpm --dir packages/server tsc --noEmit`.
-- [ ] Run `rtk pnpm --dir packages/web tsc --noEmit`.
-- [ ] Run `rtk pnpm test`.
+- [ ] In Codex cloud, initialize with `SANDBOX=1 mise run cloud:init` and run the complete Docker-free verification entrypoint with `mise run test:sandbox`.
+- [ ] Outside the Codex cloud sandbox, run `pnpm lint`.
+- [ ] Run `pnpm typecheck`.
+- [ ] Run `pnpm --dir packages/server typecheck`.
+- [ ] Run `pnpm --dir packages/web typecheck`.
+- [ ] Run `pnpm test`.
 - [ ] Build both Storybook catalogs if the focused checks pass.

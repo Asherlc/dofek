@@ -26,8 +26,9 @@ function formatNumber(value: number, maximumFractionDigits = 1): string {
 }
 
 function formatHours(hours: number): string {
-  const value = formatNumber(hours);
-  return `${value} ${hours === 1 ? "hour" : "hours"}`;
+  const roundedHours = Math.round(hours * 10) / 10;
+  const value = formatNumber(roundedHours);
+  return `${value} ${roundedHours === 1 ? "hour" : "hours"}`;
 }
 
 function formatDuration(minutes: number): string {
