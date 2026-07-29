@@ -1,4 +1,5 @@
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   type CurrentPhaseResult,
@@ -7,6 +8,44 @@ import {
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export type { CurrentPhaseResult };
+
+const periodDateFields = {
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .default(null),
+  notes: z.string().nullable().default(null),
+};
+
+const periodInputSchema = z
+  .object(periodDateFields)
+  .refine(({ startDate, endDate }) => endDate === null || endDate >= startDate, {
+    message: "Period end date cannot be before start date.",
+    path: ["endDate"],
+  });
+
+const periodUpdateInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    ...periodDateFields,
+  })
+  .refine(({ startDate, endDate }) => endDate === null || endDate >= startDate, {
+    message: "Period end date cannot be before start date.",
+    path: ["endDate"],
+  });
+
+const periodIdInputSchema = z.object({
+  id: z.string().uuid(),
+});
+
+function periodNotFoundError(): TRPCError {
+  return new TRPCError({
+    code: "NOT_FOUND",
+    message: "Period entry was not found. Refresh the history and try again.",
+  });
+}
 
 export const menstrualCycleRouter = router({
   /** Current cycle phase based on most recent period start */
@@ -19,22 +58,7 @@ export const menstrualCycleRouter = router({
 
   /** Log a new period start/end */
   logPeriod: protectedProcedure
-    .input(
-      z
-        .object({
-          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-          endDate: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
-            .nullable()
-            .default(null),
-          notes: z.string().nullable().default(null),
-        })
-        .refine(({ startDate, endDate }) => endDate === null || endDate >= startDate, {
-          message: "Period end date cannot be before start date.",
-          path: ["endDate"],
-        }),
-    )
+    .input(periodInputSchema)
     .mutation(async ({ ctx, input }) => {
       const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
       const period = await repo.logPeriod(input.startDate, input.endDate, input.notes);
@@ -43,6 +67,33 @@ export const menstrualCycleRouter = router({
       }
       return period;
     }),
+
+  /** Correct an existing period by its stable ID. */
+  updatePeriod: protectedProcedure.input(periodUpdateInputSchema).mutation(async ({ ctx, input }) => {
+    const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
+    const period = await repo.updatePeriod(
+      input.id,
+      input.startDate,
+      input.endDate,
+      input.notes,
+    );
+    if (period === null) {
+      throw periodNotFoundError();
+    }
+    await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
+    return period;
+  }),
+
+  /** Delete an erroneous period by its stable ID. */
+  deletePeriod: protectedProcedure.input(periodIdInputSchema).mutation(async ({ ctx, input }) => {
+    const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
+    const deleted = await repo.deletePeriod(input.id);
+    if (!deleted) {
+      throw periodNotFoundError();
+    }
+    await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
+    return { deleted: true as const };
+  }),
 
   /** Period history for the past N months */
   history: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
