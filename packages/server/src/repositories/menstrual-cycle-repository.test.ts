@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { MenstrualCycleRepository } from "./menstrual-cycle-repository.ts";
+import {
+  MenstrualCycleRepository,
+  PeriodStartDateConflictError,
+} from "./menstrual-cycle-repository.ts";
 
 describe("MenstrualCycleRepository", () => {
   function phaseRow({
@@ -115,6 +118,25 @@ describe("MenstrualCycleRepository", () => {
             "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
         },
       });
+    });
+
+    it.each([
+      ["average cycle length", { averageCycleLength: null }],
+      ["minimum cycle length", { minimumCycleLength: null }],
+      ["maximum cycle length", { maximumCycleLength: null }],
+    ])("withholds a phase model when %s is unavailable", async (_field, overrides) => {
+      const { repo } = makeRepository([
+        phaseRow({
+          completedCycleCount: 3,
+          ...overrides,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result.availability.status).toBe("sparse-history");
+      expect(result.phase).toBeNull();
+      expect(result.estimate).toBeNull();
     });
 
     it("explains the personal history and observed range behind an estimate", async () => {
@@ -282,6 +304,36 @@ describe("MenstrualCycleRepository", () => {
       expect(result.availability.status).toBe("irregular-history");
       expect(result.phase).toBeNull();
       expect(result.cycleLength).toBeNull();
+    });
+
+    it("withholds a phase model when the minimum interval is below 21 days", async () => {
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "25",
+          minimumCycleLength: 20,
+          maximumCycleLength: 29,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result.availability.status).toBe("irregular-history");
+      expect(result.phase).toBeNull();
+    });
+
+    it("allows a maximum interval of exactly 35 days", async () => {
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "31",
+          minimumCycleLength: 27,
+          maximumCycleLength: 35,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result.availability.status).toBe("estimated");
+      expect(result.cycleLength).toBe(31);
     });
 
     it("keeps an estimate through the inclusive expected cycle window", async () => {
@@ -534,12 +586,59 @@ describe("MenstrualCycleRepository", () => {
       });
     });
 
+    it("allows a one-day corrected period", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "period-1",
+          start_date: "2025-02-10",
+          end_date: "2025-02-10",
+          duration_days: 1,
+          notes: null,
+        },
+      ]);
+
+      const result = await repo.updatePeriod("period-1", "2025-02-10", "2025-02-10", null);
+
+      expect(result?.durationLabel).toBe("1 day");
+    });
+
     it("returns null when the user does not own the period", async () => {
       const { repo } = makeRepository([]);
 
       await expect(
         repo.updatePeriod("another-user-period", "2025-02-10", null, null),
       ).resolves.toBeNull();
+    });
+
+    it.each([
+      ["a primitive error", "database unavailable"],
+      ["a null error", null],
+      ["an ordinary error", new Error("database unavailable")],
+      ["an error without a code", {}],
+      ["a null cause", { cause: null }],
+      ["a primitive cause", { cause: "database unavailable" }],
+      ["a cause without a code", { cause: {} }],
+      ["a different direct database code", { code: "40001" }],
+      ["a different wrapped database code", { cause: { code: "40001" } }],
+    ])("rethrows %s unchanged", async (_description, databaseError) => {
+      const execute = vi.fn().mockRejectedValue(databaseError);
+      const repo = new MenstrualCycleRepository({ execute }, "user-1");
+
+      await expect(repo.updatePeriod("period-1", "2025-02-10", "2025-02-12", null)).rejects.toBe(
+        databaseError,
+      );
+    });
+
+    it.each([
+      ["a direct PostgreSQL error", { code: "23505" }],
+      ["a Drizzle-wrapped PostgreSQL error", { cause: { code: "23505" } }],
+    ])("maps %s to a period start-date conflict", async (_description, databaseError) => {
+      const execute = vi.fn().mockRejectedValue(databaseError);
+      const repo = new MenstrualCycleRepository({ execute }, "user-1");
+
+      await expect(repo.updatePeriod("period-1", "2025-02-10", "2025-02-12", null)).rejects.toEqual(
+        new PeriodStartDateConflictError("2025-02-10"),
+      );
     });
   });
 
