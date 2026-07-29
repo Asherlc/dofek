@@ -1,83 +1,16 @@
-import { StrainScore } from "@dofek/scoring/scoring";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { buildWorkloadRatioResult, workloadRatioResultSchema } from "../services/workload-ratio.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
-  getClickHouseTestClient,
   seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
 } from "./clickhouse-integration-test-helpers.ts";
-
-async function diagnoseWorkloadRatioFixture(testContext: TestContext): Promise<void> {
-  const result = await getClickHouseTestClient(testContext).query({
-    query: `SELECT
-      toString(toDate(toTimeZone(toDateTime(strain.date), 'UTC'))) AS date,
-      strain.daily_load AS daily_load,
-      strain.acute_load_7d AS acute_load,
-      strain.chronic_load_28d AS chronic_load,
-      strain.workload_ratio AS workload_ratio
-    FROM analytics.daily_strain AS strain FINAL
-    WHERE strain.user_id = {userId:UUID}
-      AND strain.is_deleted = 0
-    ORDER BY date ASC`,
-    query_params: { userId: TEST_USER_ID },
-    format: "JSONEachRow",
-  });
-  const rows = z
-    .array(
-      z.object({
-        date: z.string(),
-        daily_load: z.coerce.number(),
-        acute_load: z.coerce.number(),
-        chronic_load: z.coerce.number(),
-        workload_ratio: z.coerce.number().nullable(),
-      }),
-    )
-    .parse(await result.json());
-  const workloadResult = buildWorkloadRatioResult(
-    rows.map((row) => {
-      const dailyLoad = Math.round(row.daily_load * 10) / 10;
-      return {
-        date: row.date,
-        dailyLoad,
-        strain: StrainScore.fromRawLoad(dailyLoad).value,
-        acuteLoad: Math.round(row.acute_load * 10) / 10,
-        chronicLoad: Math.round(row.chronic_load * 10) / 10,
-        workloadRatio:
-          row.workload_ratio == null ? null : Math.round(row.workload_ratio * 100) / 100,
-      };
-    }),
-  );
-  const parsed = workloadRatioResultSchema.safeParse(workloadResult);
-  if (parsed.success) return;
-
-  const diagnostics = parsed.error.issues.map((issue) => {
-    let value: unknown = workloadResult;
-    for (const segment of issue.path) {
-      if (value === null || typeof value !== "object") {
-        value = undefined;
-        break;
-      }
-      value = Reflect.get(value, segment);
-    }
-    const sanitizedValue =
-      typeof value === "string"
-        ? value.slice(0, 40)
-        : typeof value === "number" || value == null
-          ? value
-          : typeof value;
-    return `${issue.path.map(String).join(".")}=${JSON.stringify(sanitizedValue)} (${issue.code})`;
-  });
-  throw new Error(`workload-ratio fixture diagnostic: ${diagnostics.join("; ")}`);
-}
 
 /**
  * Integration tests covering uncovered transformation logic in tRPC router endpoints.
@@ -524,7 +457,6 @@ describe("Router data coverage", () => {
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
-    await diagnoseWorkloadRatioFixture(testCtx);
     if (!polarizationActivity) {
       throw new Error("Polarization activity fixture was not created");
     }
