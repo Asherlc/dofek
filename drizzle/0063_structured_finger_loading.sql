@@ -44,8 +44,12 @@ CREATE TABLE fitness.finger_loading_entry (
   external_load_kg real NOT NULL,
   bodyweight_kg real NOT NULL,
   laterality fitness.finger_loading_laterality NOT NULL,
+  -- The router caps a session at 100 sets, so this cannot approach the 32-bit limit.
+  -- squawk-ignore prefer-bigint-over-int
   set_count integer NOT NULL,
   hold_duration_seconds real NOT NULL,
+  -- The router caps rest intervals at one hour, so this cannot approach the 32-bit limit.
+  -- squawk-ignore prefer-bigint-over-int
   rest_interval_seconds integer NOT NULL,
   rpe real,
   notes text,
@@ -69,10 +73,14 @@ ON fitness.finger_loading_entry (activity_id);
 --> statement-breakpoint
 
 ALTER TABLE fitness.climbing_entry
+-- Structured manual logs store outcomes in climbing_attempt; imported aggregate rows retain values.
+-- squawk-ignore ban-drop-not-null
 ALTER COLUMN sent DROP NOT NULL;
 --> statement-breakpoint
 
 ALTER TABLE fitness.climbing_entry
+-- Structured manual logs store counts in climbing_attempt; imported aggregate rows retain values.
+-- squawk-ignore ban-drop-not-null
 ALTER COLUMN attempt_count DROP NOT NULL;
 --> statement-breakpoint
 
@@ -110,6 +118,8 @@ VALIDATE CONSTRAINT climbing_entry_wall_angle_range;
 CREATE TABLE fitness.climbing_attempt (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   climbing_entry_id uuid NOT NULL REFERENCES fitness.climbing_entry (id) ON DELETE CASCADE,
+  -- The router caps a climb at 100 attempts, so this cannot approach the 32-bit limit.
+  -- squawk-ignore prefer-bigint-over-int
   attempt_index integer NOT NULL,
   outcome fitness.climbing_attempt_outcome NOT NULL,
   failure_reason fitness.climbing_failure_reason,

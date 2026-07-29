@@ -90,7 +90,7 @@ export function ClimbingAttemptLog({
       }}
     >
       <p className="text-sm text-muted">
-        Record each attempt so outcomes and failure reasons remain inspectable.
+        Record each attempt so outcomes and failure reasons remain available for review.
       </p>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Field label="Climb type">
