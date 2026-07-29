@@ -772,7 +772,7 @@ daily_inputs AS (
     ON sleep_by_date.user_id = input_dates.user_id
    AND sleep_by_date.date = input_dates.date
 ),
-inputs_with_baselines AS (
+window_statistics AS (
   SELECT
     user_id,
     date,
@@ -780,24 +780,86 @@ inputs_with_baselines AS (
     resting_hr,
     respiratory_rate,
     efficiency_pct,
-    avg(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    avgOrNull(hrv) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
     ) AS hrv_mean_30d,
     stddevPop(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS hrv_sd_30d,
-    avg(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS hrv_sd_30d_raw,
+    countIf(hrv IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS hrv_baseline_sample_count,
+    avgOrNull(hrv) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS hrv_mean_7d,
+    avgOrNull(hrv) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS hrv_mean_previous_28d,
+    avgOrNull(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
     ) AS rhr_mean_30d,
     stddevPop(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rhr_sd_30d,
-    avg(respiratory_rate) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rhr_sd_30d_raw,
+    countIf(resting_hr IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rhr_baseline_sample_count,
+    avgOrNull(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS rhr_mean_7d,
+    avgOrNull(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS rhr_mean_previous_28d,
+    avgOrNull(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
     ) AS rr_mean_30d,
     stddevPop(respiratory_rate) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rr_sd_30d,
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rr_sd_30d_raw,
+    countIf(respiratory_rate IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rr_baseline_sample_count,
+    avgOrNull(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS rr_mean_7d,
+    avgOrNull(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS rr_mean_previous_28d,
+    avgOrNull(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS efficiency_mean_30d,
+    stddevPop(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS efficiency_sd_30d_raw,
+    countIf(efficiency_pct IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS efficiency_baseline_sample_count,
+    avgOrNull(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS efficiency_mean_7d,
+    avgOrNull(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS efficiency_mean_previous_28d,
     avg(hrv) OVER (
       PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
     ) AS hrv_mean_60d,
@@ -811,6 +873,40 @@ inputs_with_baselines AS (
       PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
     ) AS rhr_sd_60d
   FROM daily_inputs
+),
+inputs_with_baselines AS (
+  SELECT
+    * EXCEPT (
+      hrv_sd_30d_raw,
+      rhr_sd_30d_raw,
+      rr_sd_30d_raw,
+      efficiency_sd_30d_raw
+    ),
+    if(
+      hrv_baseline_sample_count >= 2,
+      hrv_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS hrv_sd_30d,
+    hrv_baseline_sample_count / 30.0 AS hrv_baseline_coverage,
+    if(
+      rhr_baseline_sample_count >= 2,
+      rhr_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS rhr_sd_30d,
+    rhr_baseline_sample_count / 30.0 AS rhr_baseline_coverage,
+    if(
+      rr_baseline_sample_count >= 2,
+      rr_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS rr_sd_30d,
+    rr_baseline_sample_count / 30.0 AS rr_baseline_coverage,
+    if(
+      efficiency_baseline_sample_count >= 2,
+      efficiency_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS efficiency_sd_30d,
+    efficiency_baseline_sample_count / 30.0 AS efficiency_baseline_coverage
+  FROM window_statistics
 ),
 refresh_clock AS (
   SELECT
@@ -826,10 +922,28 @@ SELECT
   inputs_with_baselines.efficiency_pct AS efficiency_pct,
   inputs_with_baselines.hrv_mean_30d AS hrv_mean_30d,
   inputs_with_baselines.hrv_sd_30d AS hrv_sd_30d,
+  inputs_with_baselines.hrv_baseline_sample_count AS hrv_baseline_sample_count,
+  inputs_with_baselines.hrv_baseline_coverage AS hrv_baseline_coverage,
+  inputs_with_baselines.hrv_mean_7d AS hrv_mean_7d,
+  inputs_with_baselines.hrv_mean_previous_28d AS hrv_mean_previous_28d,
   inputs_with_baselines.rhr_mean_30d AS rhr_mean_30d,
   inputs_with_baselines.rhr_sd_30d AS rhr_sd_30d,
+  inputs_with_baselines.rhr_baseline_sample_count AS rhr_baseline_sample_count,
+  inputs_with_baselines.rhr_baseline_coverage AS rhr_baseline_coverage,
+  inputs_with_baselines.rhr_mean_7d AS rhr_mean_7d,
+  inputs_with_baselines.rhr_mean_previous_28d AS rhr_mean_previous_28d,
   inputs_with_baselines.rr_mean_30d AS rr_mean_30d,
   inputs_with_baselines.rr_sd_30d AS rr_sd_30d,
+  inputs_with_baselines.rr_baseline_sample_count AS rr_baseline_sample_count,
+  inputs_with_baselines.rr_baseline_coverage AS rr_baseline_coverage,
+  inputs_with_baselines.rr_mean_7d AS rr_mean_7d,
+  inputs_with_baselines.rr_mean_previous_28d AS rr_mean_previous_28d,
+  inputs_with_baselines.efficiency_mean_30d AS efficiency_mean_30d,
+  inputs_with_baselines.efficiency_sd_30d AS efficiency_sd_30d,
+  inputs_with_baselines.efficiency_baseline_sample_count AS efficiency_baseline_sample_count,
+  inputs_with_baselines.efficiency_baseline_coverage AS efficiency_baseline_coverage,
+  inputs_with_baselines.efficiency_mean_7d AS efficiency_mean_7d,
+  inputs_with_baselines.efficiency_mean_previous_28d AS efficiency_mean_previous_28d,
   inputs_with_baselines.hrv_mean_60d AS hrv_mean_60d,
   inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
   inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,

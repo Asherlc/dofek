@@ -44,12 +44,8 @@ export interface StressResult {
 
 const rawRowSchema = z.object({
   date: dateStringSchema,
-  hrv: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
-  hrv_mean_60d: z.coerce.number().nullable(),
-  hrv_sd_60d: z.coerce.number().nullable(),
-  rhr_mean_60d: z.coerce.number().nullable(),
-  rhr_sd_60d: z.coerce.number().nullable(),
+  hrv_z_score: z.coerce.number().nullable(),
+  resting_hr_z_score: z.coerce.number().nullable(),
   efficiency_pct: z.coerce.number().nullable(),
 });
 
@@ -60,33 +56,11 @@ type RawRow = z.infer<typeof rawRowSchema>;
 // ---------------------------------------------------------------------------
 
 function computeHrvDeviation(row: RawRow): number | null {
-  if (
-    row.hrv == null ||
-    row.hrv_mean_60d == null ||
-    row.hrv_sd_60d == null ||
-    Number(row.hrv_sd_60d) <= 0
-  ) {
-    return null;
-  }
-  return (
-    Math.round(((Number(row.hrv) - Number(row.hrv_mean_60d)) / Number(row.hrv_sd_60d)) * 100) / 100
-  );
+  return row.hrv_z_score == null ? null : Math.round(row.hrv_z_score * 100) / 100;
 }
 
 function computeRestingHrDeviation(row: RawRow): number | null {
-  if (
-    row.resting_hr == null ||
-    row.rhr_mean_60d == null ||
-    row.rhr_sd_60d == null ||
-    Number(row.rhr_sd_60d) <= 0
-  ) {
-    return null;
-  }
-  return (
-    Math.round(
-      ((Number(row.resting_hr) - Number(row.rhr_mean_60d)) / Number(row.rhr_sd_60d)) * 100,
-    ) / 100
-  );
+  return row.resting_hr_z_score == null ? null : Math.round(row.resting_hr_z_score * 100) / 100;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,12 +98,8 @@ export class StressRepository extends BaseRepository {
       rawRowSchema,
       `SELECT
         toString(recovery_inputs.date) AS date,
-        hrv,
-        resting_hr,
-        hrv_mean_60d,
-        hrv_sd_60d,
-        rhr_mean_60d,
-        rhr_sd_60d,
+        hrv_z_score,
+        resting_hr_z_score,
         efficiency_pct
       FROM analytics.daily_recovery AS recovery_inputs FINAL
       WHERE recovery_inputs.user_id = {userId:UUID}

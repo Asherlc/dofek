@@ -430,7 +430,29 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".daily_recovery") &&
-          command.includes(".daily_recovery_inputs"),
+          command.includes(".daily_recovery_inputs") &&
+          [
+            "hrv_z_score",
+            "hrv_baseline_sample_count",
+            "hrv_baseline_coverage",
+            "hrv_mean_7d",
+            "hrv_mean_previous_28d",
+            "resting_hr_z_score",
+            "rhr_baseline_sample_count",
+            "rhr_baseline_coverage",
+            "rhr_mean_7d",
+            "rhr_mean_previous_28d",
+            "respiratory_rate_z_score",
+            "rr_baseline_sample_count",
+            "rr_baseline_coverage",
+            "rr_mean_7d",
+            "rr_mean_previous_28d",
+            "efficiency_z_score",
+            "efficiency_baseline_sample_count",
+            "efficiency_baseline_coverage",
+            "efficiency_mean_7d",
+            "efficiency_mean_previous_28d",
+          ].every((column) => command.includes(column)),
       ),
     ).toBe(true);
     expect(

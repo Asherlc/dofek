@@ -20202,7 +20202,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `ClickHouseError: Could not find table: activity_source_records`.
 - **Root cause:** The isolated activity and sleep analytics fixtures retained
   their old schemas after three record-local-time columns were added, while
-  migration 0062 unconditionally altered dbt-owned serving tables that do not
+  migration 0063 unconditionally altered dbt-owned serving tables that do not
   exist until after migrations during a fresh bootstrap. The follow-up
   failures came from retry-unsafe fixed external IDs and uncast Postgres
   `bigint` fixture assertions, legacy ClickHouse `argMinIf(String, ...)`
@@ -20211,7 +20211,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   local-time context required by the production query.
 - **Fix / mitigation:** Keep fixture schemas, raw-copy projections, and stored
   analytics selects aligned with the production activity and sleep models.
-  Migration 0062 now always upgrades the raw mirrors and explicitly queries
+  Migration 0063 now always upgrades the raw mirrors and explicitly queries
   `system.tables` before upgrading each dbt-owned table, so existing production
   tables are altered while the supported fresh-bootstrap absence is handled
   without swallowing query or migration errors. Retryable fixtures now use

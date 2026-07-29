@@ -30,7 +30,9 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
   const queryMock = isMatrix(rows)
     ? (() => {
         const fn = vi.fn();
-        for (const batch of rows) fn.mockResolvedValueOnce(batch);
+        for (const batch of rows) {
+          fn.mockResolvedValueOnce(batch);
+        }
         fn.mockResolvedValue([]);
         return fn;
       })()
@@ -840,6 +842,10 @@ describe("recoveryRouter.readinessScore", () => {
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
     expect(queryText).toContain("recovery_inputs.is_deleted = 0");
+    expect(queryText).toContain("hrv_z_score");
+    expect(queryText).toContain("resting_hr_z_score");
+    expect(queryText).toContain("respiratory_rate_z_score");
+    expect(queryText).not.toContain("hrv_mean_30d");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("accessStartDate");
@@ -862,12 +868,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0.5,
+        resting_hr_z_score: -0.4,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 92,
       },
     ];
@@ -881,8 +884,8 @@ describe("recoveryRouter.readinessScore", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe(dateStr);
-    // HRV: z=(55-50)/10=0.5 → 72, RHR: z=(58-60)/5=-0.4 inverted=0.4 → 70
-    // RR: z=(15-15)/1=0 inverted=0 → 62, Sleep: 92
+    // HRV z=0.5 → 72, RHR z=-0.4 inverted=0.4 → 70
+    // RR z=0 inverted=0 → 62, Sleep: 92
     // Weighted: 72*0.5 + 70*0.2 + 92*0.15 + 62*0.15 = 73.1 → 73
     expect(result[0]?.components.hrvScore).toBe(72);
     expect(result[0]?.components.restingHrScore).toBe(70);
@@ -908,12 +911,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
       {
@@ -921,12 +921,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 14,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 90,
       },
     ];
@@ -950,12 +947,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
       {
@@ -963,12 +957,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -984,7 +975,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.date).toBe("2026-05-21");
   });
 
-  it("defaults to 62 for HRV score when hrv_sd_30d is 0", async () => {
+  it("defaults to 62 for HRV score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -996,12 +987,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 0, // zero stddev -> skip z-score, use default 62
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1016,7 +1004,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.hrvScore).toBe(62);
   });
 
-  it("defaults to 62 for RHR score when rhr_sd_30d is 0", async () => {
+  it("defaults to 62 for RHR score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1028,12 +1016,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 0, // zero stddev -> skip z-score, use default 62
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1048,7 +1033,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.restingHrScore).toBe(62);
   });
 
-  it("defaults to 62 for respiratory rate score when rr_sd_30d is 0", async () => {
+  it("defaults to 62 for respiratory rate score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1060,12 +1045,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 0, // zero stddev
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1092,12 +1074,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -1129,12 +1108,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 120, // above 100
       },
     ];
@@ -1162,12 +1138,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: -10, // below 0
       },
     ];
@@ -1182,7 +1155,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.sleepScore).toBe(0);
   });
 
-  it("defaults to 62 for HRV score when only hrv is null (mean/sd present)", async () => {
+  it("defaults to 62 for HRV score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1194,12 +1167,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null, // null hrv but valid stats
         resting_hr: 45, // very low → high score when inverted
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: -3,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1212,11 +1182,11 @@ describe("recoveryRouter.readinessScore", () => {
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.hrvScore).toBe(62);
-    // RHR should compute: z=(45-60)/5=-3, inverted=+3 → high score
+    // RHR z=-3 is inverted to +3, producing a high score.
     expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
   });
 
-  it("defaults to 62 for HRV score when only hrv_mean_30d is null", async () => {
+  it("uses the canonical null HRV z-score even when the raw value is present", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1228,12 +1198,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: null, // null mean
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1248,7 +1215,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.hrvScore).toBe(62);
   });
 
-  it("defaults to 62 for RHR score when only resting_hr is null", async () => {
+  it("defaults to 62 for RHR score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1260,12 +1227,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 80, // far above mean → high HRV score
         resting_hr: null, // null resting HR
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 3,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1278,11 +1242,11 @@ describe("recoveryRouter.readinessScore", () => {
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.restingHrScore).toBe(62);
-    // HRV: z=(80-50)/10=+3 → high score
+    // HRV z=+3 produces a high score.
     expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
   });
 
-  it("defaults to 62 for RHR score when only rhr_mean_30d is null", async () => {
+  it("uses the canonical null RHR z-score even when the raw value is present", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1294,12 +1258,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: null, // null mean
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1326,12 +1287,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 80, // far above mean → high score
         resting_hr: 45, // far below mean → high score (inverted)
         respiratory_rate: null, // null respiratory rate
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 3,
+        resting_hr_z_score: -3,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1361,12 +1319,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 70, // significantly above mean of 50
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 2,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1378,7 +1333,7 @@ describe("recoveryRouter.readinessScore", () => {
     });
     const result = await caller.readinessScore({});
 
-    // z = (70-50)/10 = +2, zScoreToRecoveryScore(2) = 92
+    // Canonical z=+2 maps to 92.
     expect(result[0]?.components.hrvScore).toBe(92);
   });
 
@@ -1394,12 +1349,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 50,
         resting_hr: 50, // below mean of 60 = good
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: -2,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1411,7 +1363,7 @@ describe("recoveryRouter.readinessScore", () => {
     });
     const result = await caller.readinessScore({});
 
-    // z_rhr = (50-60)/5 = -2, inverted: -(-2) = +2, should map to ~93
+    // Canonical RHR z=-2 is inverted to +2.
     expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
   });
 
@@ -2550,12 +2502,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 30, // significantly below mean of 50
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: -2,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -2565,7 +2514,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z = (30-50)/10 = -2, should map to low score
+    // Canonical z=-2 maps to a low score.
     expect(result[0]?.components.hrvScore).toBeLessThan(50);
   });
 
@@ -2577,12 +2526,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 70, // above mean of 60 = bad
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 2,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -2592,7 +2538,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rhr = (70-60)/5 = +2, inverted: -2, should map to low score
+    // Canonical RHR z=+2 is inverted to -2.
     expect(result[0]?.components.restingHrScore).toBeLessThan(50);
   });
 
@@ -2604,12 +2550,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 13, // below mean of 15 = good
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: -2,
         efficiency_pct: 85,
       },
     ];
@@ -2619,7 +2562,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rr = (13-15)/1 = -2, inverted: +2, maps to high score
+    // Canonical respiratory z=-2 is inverted to +2.
     expect(result[0]?.components.respiratoryRateScore).toBeGreaterThan(80);
   });
 
@@ -2631,12 +2574,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 17, // above mean of 15 = bad
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 2,
         efficiency_pct: 85,
       },
     ];
@@ -2646,7 +2586,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rr = (17-15)/1 = +2, inverted: -2, maps to low score
+    // Canonical respiratory z=+2 is inverted to -2.
     expect(result[0]?.components.respiratoryRateScore).toBeLessThan(50);
   });
 
@@ -2658,12 +2598,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2684,12 +2621,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -2711,12 +2645,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2737,12 +2668,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: null,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2763,12 +2691,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: null,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2789,12 +2714,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0.5,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -2817,12 +2739,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -2842,12 +2761,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
       {
@@ -2855,12 +2771,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];

@@ -476,6 +476,7 @@ describe("Dashboard", () => {
         latest_steps: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
+        baselineRelative: [],
         healthStatus: [],
       },
       isLoading: false,
@@ -546,6 +547,7 @@ describe("Dashboard", () => {
         latest_steps: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
+        baselineRelative: [],
         healthStatus: [],
       },
       isLoading: false,
@@ -706,6 +708,7 @@ describe("buildHealthMetrics", () => {
       latest_steps: null,
       latest_skin_temp: null,
       latest_date: "2025-03-15",
+      baselineRelative: [],
       healthStatus: [restingHeartRateStatus],
     });
 

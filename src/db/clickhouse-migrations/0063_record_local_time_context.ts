@@ -32,7 +32,7 @@ export function createMigration(): ClickHouseMigration {
   ];
 
   return {
-    id: "0062_record_local_time_context",
+    id: "0063_record_local_time_context",
     statements,
     run: async (client) => {
       if (!client.query) {

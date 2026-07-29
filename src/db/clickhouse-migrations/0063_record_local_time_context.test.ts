@@ -9,7 +9,7 @@ vi.mock("./statement-runner.ts", () => ({
   runClickHouseMigrationStatement: mockRunClickHouseMigrationStatement,
 }));
 
-import { createMigration } from "./0062_record_local_time_context.ts";
+import { createMigration } from "./0063_record_local_time_context.ts";
 
 type QueryOptions = Parameters<NonNullable<ClickHouseCommandClient["query"]>>[0];
 
@@ -34,7 +34,7 @@ class TestClickHouseClient implements ClickHouseCommandClient {
   }
 }
 
-describe("0062_record_local_time_context", () => {
+describe("0063_record_local_time_context", () => {
   beforeEach(() => {
     mockRunClickHouseMigrationStatement.mockReset();
   });
@@ -42,7 +42,7 @@ describe("0062_record_local_time_context", () => {
   it("adds record-local time context to raw mirrors and serving tables", () => {
     const migration = createMigration();
 
-    expect(migration.id).toBe("0062_record_local_time_context");
+    expect(migration.id).toBe("0063_record_local_time_context");
     expect(migration.statements).toEqual([
       `ALTER TABLE postgres_fitness.activity
   ADD COLUMN IF NOT EXISTS start_utc_offset_minutes Nullable(Int16),
