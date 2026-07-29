@@ -19678,6 +19678,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Validate both package credentials
   concurrently on a physical Zepp OS watch and confirm each survives pairing
   and revocation of the other after the production migration is deployed.
+
 ## 2026-07-27 — Lint CI could not resolve the uv tool version
 
 - **Status:** Root cause fixed locally on PR #2234; fresh exact-head CI
@@ -19744,3 +19745,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The Dockerfile still enumerates runtime
   workspace packages manually, so future server imports must keep the final
   image copy/link list synchronized with the server dependency graph.
+
+## 2026-07-28 — Companion migration failed SQLFluff indentation
+
+- **Status:** Root cause fixed on PR #2271; fresh exact-head CI validation
+  pending.
+- **Symptoms:** Exact-head CI run
+  [30416909304](https://github.com/Asherlc/dofek/actions/runs/30416909304)
+  failed `Test / SQLFluff` in job
+  [90465456835](https://github.com/Asherlc/dofek/actions/runs/30416909304/job/90465456835).
+- **User impact:** No production impact. PR #2271 could not merge while its
+  migration lint gate was red.
+- **Evidence:** The exact failing command was
+  `uv tool run sqlfluff lint drizzle/0062_companion_connection_type.sql`. The
+  first fatal finding was
+  `L: 2 | P: 1 | LT02 | Line should not be indented`, followed by the same
+  finding on four other top-level continuation lines.
+- **Root cause:** The new migration indented top-level `ADD`, `CHECK`, `ON`,
+  and `WHERE` clauses, contrary to SQLFluff's
+  [LT02 indentation rule](https://docs.sqlfluff.com/en/stable/reference/rules.html#sqlfluff.rules.layout.LT02).
+- **Fix / mitigation:** Align those clauses at the top level required by
+  SQLFluff. No migration behavior, retry, timeout, skip, or lint configuration
+  changed.
+- **Validation:** The exact SQLFluff command and the real-PostgreSQL companion
+  token integration suite pass locally. The replacement exact-head
+  `Test / SQLFluff` job remains the merge gate.
+- **Remaining risk / follow-up:** Confirm the replacement SQLFluff job and the
+  complete exact-head CI matrix pass before merge.
