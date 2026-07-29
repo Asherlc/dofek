@@ -43,4 +43,24 @@ describe("NutritionDataQualityPanel", () => {
 
     expect(screen.getByText("Loading nutrition data quality…")).toBeTruthy();
   });
+
+  it("reports an all-history window without inventing a denominator", () => {
+    render(
+      <NutritionDataQualityPanel
+        dataQuality={{
+          selectedWindowDays: null,
+          daysWithData: 20,
+          usableDays: 20,
+          overlapDays: 0,
+          conflictDays: 0,
+          completenessPercent: null,
+          sourceLabels: ["Manual"],
+          contributingSourceLabels: ["Manual"],
+          excludedSourceLabels: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("20 recorded days are usable.")).toBeTruthy();
+  });
 });

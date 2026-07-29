@@ -35,7 +35,7 @@ export function NutritionDataQualityPanel({
       : `${dataQuality.overlapDays} ${dataQuality.overlapDays === 1 ? "day contains" : "days contain"} overlapping sources; ${dataQuality.conflictDays} ${dataQuality.conflictDays === 1 ? "remains" : "remain"} unresolved.`;
 
   return (
-    <View style={styles.card} accessible accessibilityLabel="Nutrition data quality">
+    <View style={styles.card}>
       <Text style={styles.title}>Nutrition data quality</Text>
       <Text style={styles.body}>
         Nutrition data exists on {dataQuality.daysWithData} selected days.
