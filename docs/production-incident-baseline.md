@@ -7,6 +7,52 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-29: Shared Docker VM AIO exhaustion blocked local integration validation
+
+### Symptoms
+
+The issue-2183 focused router integration test first lost its ClickHouse socket
+during fixture setup. After recreating only that workspace's Compose state,
+Postgres, ClickHouse, and Redis became healthy, but Redpanda restarted with exit
+code 133.
+
+### User Impact
+
+There was no production or end-user impact. Local validation and the prepared
+PR #2297 CI/review follow-up could not be completed in the shared Docker Desktop
+environment.
+
+### Evidence
+
+Redpanda's first fatal line reported that one required asynchronous I/O event
+exceeded `/proc/sys/fs/aio-max-nr` capacity. The Docker VM reported
+`aio-nr=65536` and `aio-max-nr=65536`. Stopping the issue-2183 ClickHouse
+container left both values unchanged, proving that this workspace was not
+holding the saturated capacity. The Linux kernel documents `aio-nr` as the
+current system-wide asynchronous I/O request count and `aio-max-nr` as its
+maximum:
+<https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr>.
+
+### Root Cause
+
+Other workloads in the shared Docker VM consumed the system-wide asynchronous
+I/O request capacity, so the issue-2183 Redpanda process could not allocate even
+one event.
+
+### Fix or Mitigation
+
+The repository Compose wrapper removed and recreated only the disposable
+issue-2183 containers, network, and volumes. No global sysctl, other workspace,
+resource limit, timeout, retry, or application behavior was changed. The issue
+and PR record the external blocker and keep the branch/worktree intact.
+
+### Remaining Risk
+
+Concurrent workspace stacks can exhaust Docker Desktop's shared AIO capacity
+again. Add an AIO-capacity diagnostic to the integration-test runbook and
+decide explicitly whether a focused suite may run with only its actual service
+prerequisites when an unrelated shared dependency cannot start.
+
 ## 2026-07-29: iOS cold-start delay could not be reproduced with phase telemetry
 
 ### Symptoms
