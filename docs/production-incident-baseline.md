@@ -20108,3 +20108,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep package-script-only TypeScript entry
   points in the owning workspace's Knip entry graph when adding or renaming
   repository automation.
+
+## 2026-07-29 — Local-time analytics changes broke fresh CI setup
+
+- **Status:** Root causes fixed locally on PR #2290; fresh exact-head CI
+  validation pending.
+- **Symptoms:** CI run
+  [30472135802](https://github.com/Asherlc/dofek/actions/runs/30472135802)
+  failed all four integration shards and the web E2E job. The representative
+  integration failure is job
+  [90646130994](https://github.com/Asherlc/dofek/actions/runs/30472135802/job/90646130994);
+  the E2E failure is job
+  [90645036251](https://github.com/Asherlc/dofek/actions/runs/30472135802/job/90645036251).
+- **User impact:** No production impact. PR #2290 was blocked from merging.
+- **Evidence:** The integration command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`;
+  its first fatal line was `ClickHouseError: Number of columns doesn't match
+  (source: 19 and result: 16)` while populating the isolated `v_activity`
+  table. The E2E command was
+  `docker compose -f docker-compose.e2e.yml up -d --no-build migrate`;
+  its first fatal line was
+  `ClickHouseError: Could not find table: activity_source_records`.
+- **Root cause:** The isolated activity and sleep analytics fixtures retained
+  their old schemas after three record-local-time columns were added, while
+  migration 0062 unconditionally altered dbt-owned serving tables that do not
+  exist until after migrations during a fresh bootstrap.
+- **Fix / mitigation:** Keep fixture schemas, raw-copy projections, and stored
+  analytics selects aligned with the production activity and sleep models.
+  Migration 0062 now always upgrades the raw mirrors and explicitly queries
+  `system.tables` before upgrading each dbt-owned table, so existing production
+  tables are altered while the supported fresh-bootstrap absence is handled
+  without swallowing query or migration errors. No retry, timeout, fallback,
+  or warn-and-continue behavior was added.
+- **Validation:** Focused fixture and migration tests and root typecheck pass
+  locally. The real ClickHouse-backed integration run was inconclusive because
+  the workspace container restarted and reset the socket before any tests ran;
+  fresh exact-head CI remains the real-engine, full-suite, and clean-bootstrap
+  gate.
+- **Remaining risk / follow-up:** Merge only after all four integration shards
+  and web E2E prove both the stored fixture rebuild and fresh migration order
+  on the new exact head.
