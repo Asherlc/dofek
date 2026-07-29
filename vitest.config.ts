@@ -67,7 +67,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          setupFiles: ["./packages/web/test-setup.ts"],
+          setupFiles: [path.resolve(dirname, "packages/web/test-setup.ts")],
           include: [
             ".github/workflows/**/*.test.ts",
             "entrypoint.test.ts",
