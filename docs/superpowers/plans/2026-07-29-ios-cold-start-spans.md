@@ -1,7 +1,5 @@
 # iOS Cold-Start Spans TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Attribute iOS cold-start time across native OTA launch, JavaScript readiness, authentication, and deferred service bootstrap, then remove only the measured splash-path bottleneck.
 
 **Behavior:** Every Release cold start emits one correlated startup trace with phase durations and launch context; the native splash stops waiting on network update delivery when measured evidence confirms the configured launch wait dominates startup.
@@ -16,7 +14,10 @@
 
 - The audit observed roughly seven seconds of native splash on a Release cold start at source `e4c429ea2`.
 - `packages/mobile/app.json` sets `updates.checkAutomatically` to `ON_LOAD` and `updates.fallbackToCacheTimeout` to `5000`, allowing the native OTA procedure to hold launch for five seconds before using cached assets.
-- Expo documents `fallbackToCacheTimeout` as the launch-time wait before falling back to the newest local update and exposes `Updates.launchDuration` for the measured native launch time.
+- [Expo documents](https://docs.expo.dev/versions/latest/sdk/updates/)
+  `fallbackToCacheTimeout` as the launch-time wait before falling back to the
+  newest local update and exposes `Updates.launchDuration` for the measured
+  native launch time.
 - `packages/mobile/app/_layout.tsx` keeps the splash visible until `AuthProvider` finishes SecureStore restore and, when a token exists, `auth.me`.
 - Authenticated HealthKit, accelerometer, Watch, and WHOOP services are already gated behind `runAfterUiIdle()`, so checked-in code places them after splash hide; instrumentation must confirm that ordering rather than assume it.
 - A seven-day Sentry span query for startup/app-start/cold-start names returned no results, so current production telemetry cannot allocate the delay.

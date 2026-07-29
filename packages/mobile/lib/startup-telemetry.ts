@@ -59,7 +59,7 @@ function expoLaunchDurationMs(): number {
 
 function startPhaseAt(phase: StartupPhase, startedAtMs: number): PhaseRecord {
   const existing = phases.get(phase);
-  if (existing) {
+  if (existing && (!existing.finished || phase !== "authentication")) {
     return existing;
   }
 

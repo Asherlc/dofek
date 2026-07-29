@@ -132,6 +132,33 @@ describe("startup telemetry", () => {
     );
   });
 
+  it("records a new authentication attempt after a deferred restore", async () => {
+    const { finishStartupPhase, startStartupPhase, startStartupTelemetry } = await import(
+      "./startup-telemetry"
+    );
+    startStartupTelemetry();
+    startStartupPhase("authentication");
+    vi.advanceTimersByTime(20);
+    finishStartupPhase("authentication", "deferred");
+
+    startStartupPhase("authentication");
+    vi.advanceTimersByTime(30);
+    finishStartupPhase("authentication", "authenticated");
+
+    const authSpans = mocks.spans.filter(
+      ({ options }) => options.op === "app.start.authentication",
+    );
+    expect(authSpans).toHaveLength(2);
+    expect(authSpans[0]?.setAttributes).toHaveBeenCalledWith({
+      "app.start.duration_ms": 20,
+      "app.start.outcome": "deferred",
+    });
+    expect(authSpans[1]?.setAttributes).toHaveBeenCalledWith({
+      "app.start.duration_ms": 30,
+      "app.start.outcome": "authenticated",
+    });
+  });
+
   it("marks the app interactive but waits for deferred services before closing the lifecycle", async () => {
     const { finishStartupPhase, markAppInteractive, startStartupPhase, startStartupTelemetry } =
       await import("./startup-telemetry");
