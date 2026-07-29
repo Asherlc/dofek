@@ -37,6 +37,16 @@ const creatineEvent = {
   notes: "5 g daily",
 };
 
+const travelWeekEvent = {
+  id: "event-travel-week",
+  label: "Travel Week",
+  started_at: "2026-07-20",
+  ended_at: "2026-07-27",
+  category: "lifestyle",
+  ongoing: false,
+  notes: null,
+};
+
 const defaultScenario: LifeEventStoryScenario = {
   events: [
     creatineEvent,
@@ -65,6 +75,11 @@ const defaultScenario: LifeEventStoryScenario = {
       { period: "after", measurements: 7, avg_weight: 79.5, avg_body_fat: 20.8 },
     ],
   },
+};
+
+const travelWeekScenario: LifeEventStoryScenario = {
+  events: [travelWeekEvent],
+  analysis: null,
 };
 
 const emptyScenario: LifeEventStoryScenario = {
@@ -119,7 +134,7 @@ function LifeEventsStoryFrame({ scenario }: { scenario: LifeEventStoryScenario }
         <UnitContext.Provider
           value={{ unitSystem: scenario.unitSystem ?? "metric", setUnitSystem: () => {} }}
         >
-          <div className="w-[760px] p-4">
+          <div className="w-full max-w-[760px] p-2 sm:p-4">
             <LifeEventsPanel />
           </div>
         </UnitContext.Provider>
@@ -148,4 +163,11 @@ export const Imperial: Story = {
 
 export const Empty: Story = {
   render: () => <LifeEventsStoryFrame scenario={emptyScenario} />,
+};
+
+export const TravelWeek: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  render: () => <LifeEventsStoryFrame scenario={travelWeekScenario} />,
 };

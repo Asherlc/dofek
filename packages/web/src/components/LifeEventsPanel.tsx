@@ -110,8 +110,8 @@ export function LifeEventsPanel() {
       ) : null}
 
       {/* Event list + add button */}
-      <div className="flex items-center justify-between">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-wrap gap-2">
           {visibleEvents?.map((e) => (
             <button
               key={e.id}
@@ -135,7 +135,7 @@ export function LifeEventsPanel() {
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors"
+          className="w-full shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors sm:w-auto"
         >
           + Add event
         </button>
@@ -230,8 +230,8 @@ function AddEventForm({
 
   return (
     <div className="card p-4 space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
           <label htmlFor="life-event-label" className="text-xs text-subtle block mb-1">
             Label
           </label>
@@ -247,7 +247,7 @@ function AddEventForm({
 
         <div>
           <span className="text-xs text-subtle block mb-1">Type</span>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             {(["point", "range", "ongoing"] as const).map((t) => (
               <button
                 key={t}
@@ -312,7 +312,7 @@ function AddEventForm({
           </div>
         )}
 
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <label htmlFor="life-event-notes" className="text-xs text-subtle block mb-1">
             Notes (optional)
           </label>
@@ -327,7 +327,7 @@ function AddEventForm({
         </div>
       </div>
 
-      <div className="flex gap-2 justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <button
           type="button"
           onClick={onCancel}
