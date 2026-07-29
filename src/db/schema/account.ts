@@ -100,7 +100,7 @@ export const companionToken = fitness.table(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => userProfile.id),
+      .references(() => userProfile.id, { onDelete: "cascade" }),
     connectionType: text("connection_type").notNull().default("zepp-main"),
     tokenHash: text("token_hash").notNull().unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

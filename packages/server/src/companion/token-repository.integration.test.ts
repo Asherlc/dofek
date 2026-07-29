@@ -126,6 +126,15 @@ describe("companion token repository (integration)", () => {
     ]);
   });
 
+  it("deletes companion tokens when their user is deleted", async () => {
+    const token = await createOrGetCompanionToken(ctx.db, testUserId, "zepp-main");
+    if (!token.token) throw new Error("Failed to create companion token");
+
+    await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE id = ${testUserId}`);
+
+    expect(await validateCompanionToken(ctx.db, token.token)).toBeNull();
+  });
+
   it("returns a conflict result when regenerations contend", async () => {
     await createOrGetCompanionToken(ctx.db, testUserId);
 

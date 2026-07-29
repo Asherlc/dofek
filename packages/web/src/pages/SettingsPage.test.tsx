@@ -185,9 +185,10 @@ describe("SettingsPage tabs", () => {
 
     expect(screen.getByText("Zepp app: Connected")).toBeTruthy();
     expect(screen.getByText("Workout extension: Connected")).toBeTruthy();
-    const disconnectButtons = screen.getAllByText("Disconnect");
-    const workoutDisconnectButton = disconnectButtons[1];
-    if (!workoutDisconnectButton) throw new Error("Workout disconnect button was not rendered");
+    expect(screen.getByRole("button", { name: "Disconnect Zepp app" })).toBeTruthy();
+    const workoutDisconnectButton = screen.getByRole("button", {
+      name: "Disconnect Workout extension",
+    });
     fireEvent.click(workoutDisconnectButton);
     expect(mockMutation.mutate).toHaveBeenCalledWith({
       connectionType: "zepp-workout",

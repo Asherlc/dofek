@@ -6,6 +6,7 @@ import { colors } from "../theme";
 interface ZeppPairingCardBodyProps {
   connections: Array<{ connectionType: "zepp-main" | "zepp-workout" }>;
   connectionsError: string | null;
+  disconnectError: string | null;
   isConnectionsLoading: boolean;
   pairingCode: string;
   pairingMessage: string;
@@ -51,9 +52,8 @@ export function ZeppPairingCard() {
   return (
     <ZeppPairingCardBody
       connections={connectionsQuery.data ?? []}
-      connectionsError={
-        connectionsQuery.error?.message ?? disconnectMutation.error?.message ?? null
-      }
+      connectionsError={connectionsQuery.error?.message ?? null}
+      disconnectError={disconnectMutation.error?.message ?? null}
       isConnectionsLoading={connectionsQuery.isLoading}
       pairingCode={pairingCode}
       pairingMessage={pairingMessage}
@@ -74,6 +74,7 @@ export function ZeppPairingCard() {
 export function ZeppPairingCardBody({
   connections,
   connectionsError,
+  disconnectError,
   isConnectionsLoading,
   pairingCode,
   pairingMessage,
@@ -115,6 +116,7 @@ export function ZeppPairingCardBody({
         ) : (
           <Text style={styles.notConnectedText}>No Zepp apps connected</Text>
         )}
+        {disconnectError ? <Text style={styles.errorText}>{disconnectError}</Text> : null}
         <TextInput
           style={styles.input}
           value={pairingCode}

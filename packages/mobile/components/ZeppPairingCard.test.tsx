@@ -5,6 +5,7 @@ import { ZeppPairingCardBody } from "./ZeppPairingCard";
 const defaultProps = {
   connections: [],
   connectionsError: null,
+  disconnectError: null,
   isConnectionsLoading: false,
   pairingCode: "",
   pairingMessage: "",
@@ -41,5 +42,18 @@ describe("ZeppPairingCardBody", () => {
     expect(screen.getByText("Workout extension: Connected")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Disconnect Workout extension" }));
     expect(onDisconnect).toHaveBeenCalledWith("zepp-workout");
+  });
+
+  it("keeps active connections visible when disconnecting fails", () => {
+    render(
+      <ZeppPairingCardBody
+        {...defaultProps}
+        connections={[{ connectionType: "zepp-main" }]}
+        disconnectError="Could not disconnect the Zepp app"
+      />,
+    );
+
+    expect(screen.getByText("Zepp app: Connected")).toBeTruthy();
+    expect(screen.getByText("Could not disconnect the Zepp app")).toBeTruthy();
   });
 });

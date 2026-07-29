@@ -1591,7 +1591,7 @@ ref medication_dose_event_user_id_user_profile_id_fk: fitness.medication_dose_ev
 
 ref auth_account_user_id_user_profile_id_fk: fitness.auth_account.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
-ref companion_token_user_id_user_profile_id_fk: fitness.companion_token.user_id > fitness.user_profile.id [delete: no action, update: no action]
+ref companion_token_user_id_user_profile_id_fk: fitness.companion_token.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref data_export_user_id_user_profile_id_fk: fitness.data_export.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

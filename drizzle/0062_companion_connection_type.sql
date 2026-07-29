@@ -10,7 +10,7 @@ CREATE TABLE fitness.companion_token (
   revoked_at timestamptz,
   CONSTRAINT companion_token_new_pkey PRIMARY KEY (id),
   CONSTRAINT companion_token_new_user_id_fkey
-  FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id),
+  FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id) ON DELETE CASCADE,
   CONSTRAINT companion_token_new_token_hash_key UNIQUE (token_hash),
   CONSTRAINT companion_token_connection_type_check
   CHECK (connection_type IN ('zepp-main', 'zepp-workout'))

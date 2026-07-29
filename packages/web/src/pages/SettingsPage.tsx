@@ -250,30 +250,30 @@ export function SettingsPage() {
                 ) : zeppConnections.error ? (
                   <p className="text-xs text-red-400">{zeppConnections.error.message}</p>
                 ) : zeppConnections.data?.length ? (
-                  zeppConnections.data.map((connection) => (
-                    <div
-                      key={connection.connectionType}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <span className="text-xs text-accent">
-                        {connection.connectionType === "zepp-main"
-                          ? "Zepp app"
-                          : "Workout extension"}
-                        : Connected
-                      </span>
-                      <button
-                        type="button"
-                        className="text-xs text-red-400 hover:text-red-300"
-                        onClick={() =>
-                          revokeZeppConnection.mutate({
-                            connectionType: connection.connectionType,
-                          })
-                        }
+                  zeppConnections.data.map((connection) => {
+                    const connectionLabel =
+                      connection.connectionType === "zepp-main" ? "Zepp app" : "Workout extension";
+                    return (
+                      <div
+                        key={connection.connectionType}
+                        className="flex items-center justify-between gap-3"
                       >
-                        Disconnect
-                      </button>
-                    </div>
-                  ))
+                        <span className="text-xs text-accent">{connectionLabel}: Connected</span>
+                        <button
+                          type="button"
+                          aria-label={`Disconnect ${connectionLabel}`}
+                          className="text-xs text-red-400 hover:text-red-300"
+                          onClick={() =>
+                            revokeZeppConnection.mutate({
+                              connectionType: connection.connectionType,
+                            })
+                          }
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    );
+                  })
                 ) : (
                   <p className="text-xs text-subtle">No Zepp apps connected</p>
                 )}
