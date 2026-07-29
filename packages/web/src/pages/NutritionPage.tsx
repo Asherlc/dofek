@@ -2,7 +2,6 @@ import {
   formatCalories,
   formatDateForDisplay,
   formatDateYmd as formatDateForQuery,
-  formatGrams,
   isToday,
 } from "@dofek/format/format";
 import {
@@ -405,22 +404,32 @@ export function NutritionPage() {
 
                 {/* Macro bars */}
                 <div className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
+                    <p className="text-xs text-subtle">Logged grams are shown separately.</p>
+                  </div>
                   <MacroBar
                     label="Protein"
-                    grams={formatGrams(selectedDateFood.summary.macros.protein.grams)}
-                    percentage={selectedDateFood.summary.macros.protein.percentage}
+                    grams={selectedDateFood.summary.macros.protein.grams}
+                    energySharePercentage={
+                      selectedDateFood.summary.macros.protein.energySharePercentage
+                    }
                     color="blue"
                   />
                   <MacroBar
                     label="Carbs"
-                    grams={formatGrams(selectedDateFood.summary.macros.carbs.grams)}
-                    percentage={selectedDateFood.summary.macros.carbs.percentage}
+                    grams={selectedDateFood.summary.macros.carbs.grams}
+                    energySharePercentage={
+                      selectedDateFood.summary.macros.carbs.energySharePercentage
+                    }
                     color="purple"
                   />
                   <MacroBar
                     label="Fat"
-                    grams={formatGrams(selectedDateFood.summary.macros.fat.grams)}
-                    percentage={selectedDateFood.summary.macros.fat.percentage}
+                    grams={selectedDateFood.summary.macros.fat.grams}
+                    energySharePercentage={
+                      selectedDateFood.summary.macros.fat.energySharePercentage
+                    }
                     color="teal"
                   />
                 </div>
