@@ -55,7 +55,7 @@ function MetricSelect({
   label: string;
 }) {
   return (
-    <label className="flex-1 min-w-0 block">
+    <label className="block min-w-0">
       <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">{label}</span>
       <select
         value={value}
@@ -111,14 +111,14 @@ export function CorrelationExplorerPage() {
         {/* Controls */}
         {metricsQuery.data && (
           <div className="space-y-3">
-            <div className="flex gap-3 items-end">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
               <MetricSelect
                 value={metricX}
                 onChange={setMetricX}
                 grouped={grouped}
                 label="X axis"
               />
-              <span className="text-dim text-sm pb-2">vs</span>
+              <span className="justify-self-center text-sm text-dim sm:pb-2">vs</span>
               <MetricSelect
                 value={metricY}
                 onChange={setMetricY}
@@ -128,15 +128,15 @@ export function CorrelationExplorerPage() {
             </div>
 
             {/* Lag selector */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
               <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
-              <div className="flex gap-1">
+              <div className="grid grid-cols-2 gap-1 sm:flex">
                 {LAG_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
                     onClick={() => setLag(opt.value)}
-                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                    className={`w-full px-2.5 py-1 text-xs rounded-md transition-colors sm:w-auto ${
                       lag === opt.value
                         ? "bg-accent/15 text-foreground"
                         : "text-subtle hover:text-foreground"
@@ -146,7 +146,7 @@ export function CorrelationExplorerPage() {
                   </button>
                 ))}
               </div>
-              <span className="text-[10px] text-dim ml-1">
+              <span className="w-full min-w-0 text-[10px] text-dim sm:ml-1 sm:w-auto">
                 {formatCorrelationComparison({
                   xLabel: xMetric?.label ?? "X",
                   yLabel: yMetric?.label ?? "Y",
@@ -159,7 +159,7 @@ export function CorrelationExplorerPage() {
               <Link
                 to="/experiments"
                 search={{ outcomeMetricId: metricY, lagDays: lag }}
-                className="inline-flex px-3 py-1.5 text-xs rounded-md bg-accent/15 text-foreground hover:bg-accent/25 transition-colors"
+                className="inline-flex w-full justify-center px-3 py-1.5 text-center text-xs rounded-md bg-accent/15 text-foreground hover:bg-accent/25 transition-colors sm:w-auto"
               >
                 Start experiment with {yMetric?.label ?? "this outcome"}
               </Link>

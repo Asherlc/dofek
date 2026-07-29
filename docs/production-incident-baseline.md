@@ -7,6 +7,51 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-29: Shared Docker disk pressure blocked local web E2E validation
+
+### Symptoms
+
+The issue #2187 web E2E stack stopped making progress during its BuildKit
+image build, and subsequent Docker API commands did not return within 15
+seconds. Repository lint separately could not reach the local ClickHouse
+service on `127.0.0.1:8123`.
+
+### User Impact
+
+There was no production or end-user impact. The incident blocked local SQL lint
+and Cypress validation in a Docker Desktop environment shared by several
+concurrent Conductor workspaces.
+
+### Evidence
+
+The host data volume was at 100% capacity with only 8.7 GiB available. A build
+owned by another workspace had remained active for about 58 minutes, while
+`docker info` timed out after 15 seconds and multiple other workspace Docker
+commands remained queued. The issue #2187 E2E command was stopped without
+touching another workspace's containers, volumes, or build process.
+
+### Root Cause
+
+Shared host disk pressure and a saturated Docker daemon prevented the current
+workspace from creating or inspecting containers. The responsive web changes
+build successfully outside Docker, so the failure did not originate in the
+changed application code.
+
+### Fix or Mitigation
+
+The incident remains unresolved locally. Validation moved to the isolated CI
+runner without adding retries, timeouts, or application workarounds. When the
+daemon responds, recovery is limited to removing the current workspace's
+default and E2E Compose resources and pruning rebuildable builder cache, as
+described in [`docs/testing.md`](testing.md#docker-disk-recovery) and Docker's
+[resource-pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+
+### Remaining Risk
+
+Local SQL lint and Cypress remain blocked until the shared daemon responds and
+the approved workspace-scoped cleanup completes. Other workspace resources
+must remain intact.
+
 ## 2026-07-25: Locked-device workout route queries generated Sentry errors
 
 ### Symptoms

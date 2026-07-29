@@ -26,8 +26,10 @@ vi.mock("@dofek/format/format", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a href={typeof to === "string" ? to : "/experiments"}>{children}</a>
+  Link: ({ children, className, to }: { children: ReactNode; className?: string; to: string }) => (
+    <a className={className} href={typeof to === "string" ? to : "/experiments"}>
+      {children}
+    </a>
   ),
 }));
 
@@ -326,5 +328,45 @@ describe("CorrelationExplorerPage", () => {
     expect(
       screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
     ).toBeTruthy();
+  });
+
+  it("stacks correlation controls on narrow screens and restores rows at the small breakpoint", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    const xMetricField = screen.getByText("X axis").parentElement;
+    const yMetricField = screen.getByText("Y axis").parentElement;
+    const metricControls = xMetricField?.parentElement;
+    const lagChoices = screen.getByRole("button", { name: "Same day" }).parentElement;
+    const lagControls = lagChoices?.parentElement;
+    const comparison = screen.getByText(
+      "Protein vs Heart Rate Variability on the same calendar day",
+    );
+    const experimentAction = screen.getByRole("link", {
+      name: "Start experiment with Heart Rate Variability",
+    });
+
+    if (
+      !(xMetricField instanceof HTMLElement) ||
+      !(yMetricField instanceof HTMLElement) ||
+      !(metricControls instanceof HTMLElement) ||
+      !(lagChoices instanceof HTMLElement) ||
+      !(lagControls instanceof HTMLElement)
+    ) {
+      throw new Error("Expected responsive correlation controls");
+    }
+
+    expect(metricControls.classList).toContain("grid-cols-1");
+    expect(metricControls.classList).toContain("sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
+    expect(xMetricField.classList).toContain("min-w-0");
+    expect(yMetricField.classList).toContain("min-w-0");
+    expect(lagControls.classList).toContain("flex-col");
+    expect(lagControls.classList).toContain("sm:flex-row");
+    expect(lagChoices.classList).toContain("grid-cols-2");
+    expect(lagChoices.classList).toContain("sm:flex");
+    expect(comparison.classList).toContain("w-full");
+    expect(comparison.classList).toContain("sm:w-auto");
+    expect(experimentAction.classList).toContain("w-full");
+    expect(experimentAction.classList).toContain("sm:w-auto");
   });
 });

@@ -170,3 +170,10 @@ export const Available: Story = {
 export const Insufficient: Story = {
   render: () => <CorrelationStoryFrame scenario="insufficient" />,
 };
+
+export const MobileControls: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  render: () => <CorrelationStoryFrame scenario="available" />,
+};
