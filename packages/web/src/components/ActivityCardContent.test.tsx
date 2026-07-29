@@ -33,7 +33,9 @@ describe("ActivityCardContent", () => {
       />,
     );
 
-    expect(screen.getByTestId("activity-card-layout").className).not.toContain("sm:grid-cols");
+    expect(screen.getByTestId("activity-card-layout")).not.toHaveClass(
+      "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
+    );
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByTestId("activity-secondary-panel")).toBeNull();
     expect(screen.queryByText("Route")).toBeNull();
@@ -64,7 +66,7 @@ describe("ActivityCardContent", () => {
       />,
     );
 
-    expect(screen.getByTestId("activity-card-layout").className).toContain(
+    expect(screen.getByTestId("activity-card-layout")).toHaveClass(
       "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
     );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
