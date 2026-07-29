@@ -38,7 +38,7 @@ function formatDuration(minutes: number): string {
   const parts: string[] = [];
   if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
   if (remainder > 0) parts.push(`${remainder} ${remainder === 1 ? "minute" : "minutes"}`);
-  return parts.join(" ");
+  return parts.length === 0 ? "0 minutes" : parts.join(" ");
 }
 
 function relativeChange(current: number, previous: number): number | null {
@@ -194,10 +194,12 @@ function confidenceAndMissingData(
   const confidence =
     periodCount >= 4 && missing.length === 0
       ? `Confidence is moderate because ${periodCount} ${periodLabel} are available and the current period includes sleep and recovery data.`
-      : `Confidence is ${periodCount === 1 ? "low" : "limited"} because only ${periodCount} ${periodLabel.slice(
-          0,
-          -1,
-        )}${periodCount === 1 ? "" : "s"} ${periodCount === 1 ? "is" : "are"} available.`;
+      : periodCount >= 4
+        ? "Confidence is limited because current-period recovery data is incomplete."
+        : `Confidence is ${periodCount === 1 ? "low" : "limited"} because only ${periodCount} ${periodLabel.slice(
+            0,
+            -1,
+          )}${periodCount === 1 ? "" : "s"} ${periodCount === 1 ? "is" : "are"} available.`;
   const result = [
     confidence,
     "These period averages can show co-movement, but they cannot establish cause and effect.",

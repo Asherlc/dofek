@@ -127,6 +127,16 @@ describe("buildWeeklyDecisionSynthesis", () => {
     );
   });
 
+  it("renders positive sub-minute sleep values without an empty duration", () => {
+    const synthesis = buildWeeklyDecisionSynthesis(weeklyPeriod({ avgSleepMinutes: 0.4 }), [
+      weeklyPeriod({ avgSleepMinutes: 1.4 }),
+    ]);
+
+    expect(synthesis.whatChanged[1]).toBe(
+      "Average nightly sleep was 0 minutes, 1 minute less than the previous week.",
+    );
+  });
+
   it("formats fractional, grouped, and lower training values at display precision", () => {
     const synthesis = buildWeeklyDecisionSynthesis(
       weeklyPeriod({ trainingHours: 1_234.56, avgSleepMinutes: 61 }),
@@ -371,7 +381,7 @@ describe("buildWeeklyDecisionSynthesis", () => {
     ).toContain("Missing current-period data: resting heart rate and heart rate variability.");
   });
 
-  it("does not report moderate confidence when current recovery data is missing", () => {
+  it("names missing recovery data as the confidence limit when history is sufficient", () => {
     const synthesis = buildWeeklyDecisionSynthesis(weeklyPeriod({ avgHrv: null }), [
       weeklyPeriod(),
       weeklyPeriod(),
@@ -379,7 +389,7 @@ describe("buildWeeklyDecisionSynthesis", () => {
     ]);
 
     expect(synthesis.confidenceAndMissingData[0]).toBe(
-      "Confidence is limited because only 4 weekly periods are available.",
+      "Confidence is limited because current-period recovery data is incomplete.",
     );
   });
 

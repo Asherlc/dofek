@@ -43,3 +43,15 @@ export const MissingData: Story = {
     },
   },
 };
+
+export const Empty: Story = {
+  args: {
+    synthesis: {
+      whatChanged: [],
+      likelyAssociations: [],
+      whatWorked: [],
+      whatToTryNext: [],
+      confidenceAndMissingData: [],
+    },
+  },
+};

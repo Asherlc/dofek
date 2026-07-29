@@ -2,7 +2,7 @@
 
 **Goal:** Make weekly and monthly reports explain what the available data supports doing next instead of only repeating dashboard metrics.
 
-**Behavior:** The server adds a deterministic decision synthesis to every non-empty weekly and monthly report. The synthesis covers what changed, descriptive associations, what appears to have worked, one next experiment, and evidence limitations or missing data. Web, iOS, and new shared-report snapshots render the same server-owned synthesis without recomputing health meaning.
+**Behavior:** The server adds a deterministic decision synthesis to every non-empty weekly and monthly report. The synthesis covers what changed, descriptive associations, what appears to have worked, one next experiment, and evidence limitations or missing data. Web, mobile, and new shared-report snapshots render the same server-owned synthesis without recomputing health meaning.
 
 **Scope:** Use the period summaries already returned by the report repositories. Keep the existing metric snapshots and sharing flow, avoid causal claims or a new analytics query, and preserve compatibility with shared snapshots created before the synthesis field existed.
 
@@ -13,7 +13,7 @@
 ## Current Evidence
 
 - `WeeklyReportRepository` and `MonthlyReportRepository` return current and historical metric aggregates but no decision synthesis.
-- `WeeklyReportCard`, `MonthlyReportContent`, and the iOS reports screen render metric grids independently.
+- `WeeklyReportCard`, `MonthlyReportContent`, and the mobile reports screen render metric grids independently.
 - Shared reports persist the same server response as JSON; the web shared-report route validates old snapshots at runtime.
 
 ## Test Strategy
@@ -27,8 +27,8 @@
 
 - Create `packages/server/src/repositories/report-decision-synthesis.ts` and its colocated test for the shared server domain model.
 - Modify weekly/monthly report repositories and tests to attach synthesis.
-- Create web and mobile report-synthesis components with colocated tests and stories.
-- Modify weekly/monthly web report components, the shared-report parser, and the mobile reports screen to render the server response.
+- Create `packages/web/src/components/ReportDecisionSynthesis.tsx` and `packages/mobile/components/ReportDecisionSynthesis.tsx` with colocated tests and representative stories.
+- Modify the weekly/monthly web report components, `packages/web/src/routes/health-report.tsx`, and `packages/mobile/app/reports.tsx` to render the server response.
 
 ## Tasks
 
@@ -47,13 +47,13 @@
 
 ### Task 3: Add Failing Client Tests
 
-- [ ] Require all five server-provided sections on web weekly/monthly reports and iOS.
+- [ ] Require all five server-provided sections on web weekly/monthly reports and mobile.
 - [ ] Require shared-report parsing to accept both new synthesis snapshots and legacy snapshots without the field.
 - [ ] Run `pnpm exec vitest run packages/web/src/components/ReportDecisionSynthesis.test.tsx packages/web/src/components/WeeklyReportCard.test.tsx packages/web/src/components/MonthlyReportContent.test.tsx packages/web/src/routes/health-report.test.tsx --project unit`.
 - [ ] Run `pnpm exec vitest run packages/mobile/components/ReportDecisionSynthesis.test.tsx packages/mobile/app/reports.test.tsx --project mobile`.
 - [ ] Confirm the tests fail because the synthesis is not rendered.
 
-### Task 4: Implement Web and iOS Parity
+### Task 4: Implement Web and Mobile Parity
 
 - [ ] Add small render-only synthesis components and representative stories.
 - [ ] Render the server payload on weekly, monthly, mobile, and newly shared reports.

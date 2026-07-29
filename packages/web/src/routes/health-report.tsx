@@ -47,12 +47,13 @@ const weekSummarySchema = z.object({
   avgHrv: z.number().nullable(),
 });
 
+const decisionSupportItemSchema = z.string().trim().min(1);
 const reportDecisionSynthesisSchema = z.object({
-  whatChanged: z.array(z.string()),
-  likelyAssociations: z.array(z.string()),
-  whatWorked: z.array(z.string()),
-  whatToTryNext: z.array(z.string()),
-  confidenceAndMissingData: z.array(z.string()),
+  whatChanged: z.array(decisionSupportItemSchema),
+  likelyAssociations: z.array(decisionSupportItemSchema),
+  whatWorked: z.array(decisionSupportItemSchema),
+  whatToTryNext: z.array(decisionSupportItemSchema),
+  confidenceAndMissingData: z.array(decisionSupportItemSchema),
 });
 
 const weeklyReportSchema = z.object({

@@ -265,6 +265,30 @@ describe("health report route", () => {
     expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
   });
 
+  it("rejects blank decision-support narratives in persisted report data", () => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportData: {
+          ...weeklyReport.reportData,
+          decisionSupport: {
+            whatChanged: ["   "],
+            likelyAssociations: [],
+            whatWorked: [],
+            whatToTryNext: [],
+            confidenceAndMissingData: [],
+          },
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("shared-token");
+
+    expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
+  });
+
   it("keeps owner management without a token on the authenticated query", () => {
     mockMyReports.mockReturnValue({
       data: [],
