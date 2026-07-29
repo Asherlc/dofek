@@ -14,8 +14,7 @@ import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
-import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
-import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
+import { SleepOverviewCards } from "../components/SleepOverviewCards.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
@@ -103,10 +102,12 @@ export function SleepPage() {
             )}
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
-          <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
-        </div>
+        <SleepOverviewCards
+          sleepNeed={sleepNeed.data}
+          sleepNeedLoading={sleepNeed.isLoading}
+          sleepPerformance={sleepPerformance.data}
+          sleepPerformanceLoading={sleepPerformance.isLoading}
+        />
 
         {/* Sleep Stage Chart */}
         <PageSection title="Sleep Stages">
