@@ -9,6 +9,7 @@ import { UnitContext } from "../lib/unitContext.ts";
 import { LifeEventsPanel } from "./LifeEventsPanel.tsx";
 
 interface LifeEventStoryScenario {
+  loading?: boolean;
   unitSystem?: UnitSystem;
   events: Array<{
     id: string;
@@ -82,6 +83,12 @@ const travelWeekScenario: LifeEventStoryScenario = {
   analysis: null,
 };
 
+const loadingScenario: LifeEventStoryScenario = {
+  loading: true,
+  events: [],
+  analysis: null,
+};
+
 const emptyScenario: LifeEventStoryScenario = {
   events: [],
   analysis: null,
@@ -89,8 +96,24 @@ const emptyScenario: LifeEventStoryScenario = {
 
 function createMockLink(scenario: LifeEventStoryScenario): TRPCLink<AppRouter> {
   return () =>
-    ({ op }) =>
-      createMockObservable(resolveOperation(op.path, scenario));
+    ({ op }) => {
+      if (scenario.loading && op.path === "lifeEvents.list") {
+        return createPendingMockObservable();
+      }
+      return createMockObservable(resolveOperation(op.path, scenario));
+    };
+}
+
+function createPendingMockObservable(): OperationResultObservable<AppRouter, unknown> {
+  const result: OperationResultObservable<AppRouter, unknown> = {
+    subscribe() {
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return result;
+    },
+  };
+  return result;
 }
 
 function createMockObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
@@ -163,6 +186,10 @@ export const Imperial: Story = {
 
 export const Empty: Story = {
   render: () => <LifeEventsStoryFrame scenario={emptyScenario} />,
+};
+
+export const Loading: Story = {
+  render: () => <LifeEventsStoryFrame scenario={loadingScenario} />,
 };
 
 export const TravelWeek: Story = {
