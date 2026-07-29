@@ -87,3 +87,20 @@ allowBuilds:
   protobufjs: false
   sharp: true
   ssh2: false
+
+minimumReleaseAgeExclude:
+  - '@expo/log-box@57.0.2'
+  - '@expo/metro-runtime@57.0.8'
+  - '@expo/ui@57.0.8'
+  - expo-build-properties@57.0.8
+  - expo-constants@57.0.8
+  - expo-dev-client@57.0.10
+  - expo-dev-launcher@57.0.10
+  - expo-dev-menu@57.0.10
+  - expo-location@57.0.7
+  - expo-modules-core@57.0.8
+  - expo-notifications@57.0.8
+  - expo-router@57.0.9
+  - expo-sharing@57.0.8
+  - expo-task-manager@57.0.7
+  - expo-updates@57.0.11
