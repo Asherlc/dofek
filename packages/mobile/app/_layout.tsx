@@ -487,6 +487,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="behavior-associations"
+            options={{
+              title: "Behavior Associations",
+            }}
+          />
+          <Stack.Screen
             name="experiments"
             options={{
               title: "Personal Experiments",
