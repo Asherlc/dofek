@@ -287,9 +287,11 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("0 m")).toBeNull();
 
     mockOverviewQuery.data = {
-      ...mockOverviewQuery.data,
+      activityCount: 2,
+      totalMinutes: 90,
       totalDistanceMeters: 0,
       totalElevationGainM: 0,
+      activityTypes: ["running"],
     };
     rerender(<ActivitiesScreen />);
 
