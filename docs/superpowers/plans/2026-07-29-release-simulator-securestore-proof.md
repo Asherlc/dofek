@@ -1,9 +1,5 @@
 # Release Simulator SecureStore Proof TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `ios-simulator-audit` before implementation. Steps use checkbox (`- [ ]`)
-> syntax for tracking.
-
 **Goal:** Make the signed Release-simulator audit workflow prove that the built
 app can persist and restore a real session through SecureStore before the
 artifact is called audit-ready.
@@ -50,7 +46,8 @@ and [XcodeBuildMCP setup](https://www.xcodebuildmcp.com/#get-started).
 - Static entitlement inspection is useful supporting evidence, but Apple
   documents that final entitlements are applied during signing and the
   reported defect is a runtime keychain failure. Only the production
-  write/terminate/read flow is sufficient acceptance evidence.
+  write/terminate/read flow is sufficient acceptance evidence. See
+  [Apple's entitlement documentation](https://developer.apple.com/documentation/bundleresources/entitlements).
 
 ## Test Strategy
 
@@ -102,7 +99,9 @@ and [XcodeBuildMCP setup](https://www.xcodebuildmcp.com/#get-started).
 
 - [ ] Require a clean simulator state and fresh isolated account so an old
   keychain item cannot create a false pass. Expo documents that iOS SecureStore
-  data can persist across uninstall/reinstall for the same bundle identifier.
+  data can persist across uninstall/reinstall for the same bundle identifier;
+  see
+  [Expo's SecureStore data-persistence documentation](https://docs.expo.dev/versions/latest/sdk/securestore/#data-persistence).
 - [ ] Require XcodeBuildMCP to install and launch the exact Release artifact.
 - [ ] Require a native accessibility snapshot of the login screen before the
   write.

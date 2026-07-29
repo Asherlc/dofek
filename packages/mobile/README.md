@@ -175,7 +175,7 @@ SIMULATED_ENTITLEMENTS=.context/ReleaseAuditDerivedData/Build/Intermediates.noin
 
 codesign --verify --deep --strict --verbose=2 "$APP"
 plutil -extract application-identifier raw "$SIMULATED_ENTITLEMENTS"
-otool -arch arm64 -l "$APP/Dofek" | grep -A3 'sectname __entitlements'
+otool -l "$APP/Dofek" | grep -A3 'sectname __entitlements'
 ```
 
 For this ad-hoc Simulator destination, Xcode reports
