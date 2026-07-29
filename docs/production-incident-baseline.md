@@ -20327,8 +20327,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-29 — Expo compatibility metadata invalidated pinned mobile dependencies
 
-- **Status:** Root cause fixed locally for PR #2303; fresh exact-head CI
-  validation pending.
+- **Status:** Root cause fixed on `main` and merged into PR #2303; fresh
+  exact-head CI validation pending.
 - **Symptoms:** `Build Mobile / Metro Bundle` failed during dependency
   validation before Metro started.
 - **User impact:** No production impact. PR #2303 was blocked from merging
@@ -20345,7 +20345,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   previous successful run, so exact pins that had been accepted became stale
   without a repository change.
 - **Fix / mitigation:** Run Expo's canonical `expo install --fix`, retain exact
-  package pins, and commit the resulting coherent lockfile update. Expo
+  package pins, and commit the resulting coherent lockfile update. The final
+  compatible graph, including Expo 57.0.9 and React Native 0.86.2, landed on
+  `main`; PR #2303 merged that canonical package manifest and lockfile instead
+  of preserving its earlier partial refresh. Expo
   documents that `--check` exits nonzero in CI for incompatible versions and
   `--fix` updates invalid versions to the compatible set in its
   [CLI version-validation guidance](https://docs.expo.dev/more/expo-cli/#version-validation).
@@ -20358,3 +20361,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The gate depends on mutable upstream
   compatibility metadata, so future patch publications can invalidate a clean
   head. Merge only after the new exact head passes the same CI step.
+
+## 2026-07-29 — Local Compose network allocation exhausted during PR validation
+
+- **Status:** Unresolved shared-host capacity issue; PR #2303 validation is
+  continuing in isolated GitHub Actions runners.
+- **Symptoms:** The analytics SQL phase of `pnpm lint` could not connect to
+  ClickHouse. Starting the worktree's isolated ClickHouse service then failed
+  before any container was created.
+- **User impact:** No production impact. Local real-engine analytics lint for
+  PR #2303 could not run, while all Docker-free lint, tests, and typechecks
+  completed.
+- **Evidence:** The exact failing startup command was
+  `pnpm compose -- up -d --wait --wait-timeout 180 clickhouse`; the first fatal
+  line was `Network 2180_default Error Error response from daemon: all predefined address pools have been fully subnetted`.
+  Docker reported 33 networks, including six dangling networks owned by other
+  workspaces. This worktree owned no network or container to remove.
+- **Root cause:** The shared Docker daemon had exhausted its configured
+  predefined bridge-network address pools before it could allocate the
+  worktree-specific `2180_default` network.
+- **Fix / mitigation:** No cross-workspace network was removed. The branch
+  retains the repository's worktree-isolated Compose configuration, matching
+  Docker's documented
+  [project-name isolation](https://docs.docker.com/compose/how-tos/project-name/),
+  and exact-head CI remains the required analytics SQL validation.
+- **Validation:** `pnpm lint:sandbox` passed, along with 920 changed tests and
+  root, server, web, and mobile typechecks. The full analytics SQL lint remains
+  delegated to exact-head CI because its local ClickHouse prerequisite could
+  not start.
+- **Remaining risk / follow-up:** Reclaim only stale networks with confirmed
+  ownership, or expand the Docker daemon's configured address pools, before a
+  future local real-engine run. Do not prune active or unowned workspace
+  networks.
