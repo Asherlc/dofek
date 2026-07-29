@@ -51,7 +51,7 @@ describe("HealthStatusBar", () => {
 
     expect(
       screen.getByText(
-        "30d mean 60.0 ± 6.0 · 2.0 SD above baseline · 7d vs prior 28d +5.0 · 24/30 baseline days",
+        "30d baseline 60.0 ± 6.0 · 2.0 SD above baseline · 7d vs prior 28d +5.0 · 24/30 baseline days",
       ),
     ).toBeDefined();
   });

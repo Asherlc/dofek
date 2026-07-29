@@ -4,7 +4,7 @@ import {
   type ReadinessWeights,
 } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
-import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { baselineReadinessComponents, StrainScore } from "@dofek/scoring/scoring";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -488,29 +488,12 @@ export const recoveryRouter = router({
         if (cutoffDate !== undefined && metrics.date <= cutoffDate) continue;
         if (metrics.date > input.endDate) continue;
 
-        const hrvScore =
-          metrics.hrv_z_score != null ? zScoreToRecoveryScore(metrics.hrv_z_score) : 62;
-        const restingHrScore =
-          metrics.resting_hr_z_score != null
-            ? zScoreToRecoveryScore(-metrics.resting_hr_z_score)
-            : 62;
-
-        // Sleep efficiency score: direct mapping (0-100 already)
-        const efficiency = metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null;
-        const sleepScore =
-          efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 62;
-
-        const respiratoryRateScore =
-          metrics.respiratory_rate_z_score != null
-            ? zScoreToRecoveryScore(-metrics.respiratory_rate_z_score)
-            : 62;
-
-        const components: ReadinessComponents = {
-          hrvScore: Math.round(hrvScore),
-          restingHrScore: Math.round(restingHrScore),
-          sleepScore,
-          respiratoryRateScore: Math.round(respiratoryRateScore),
-        };
+        const components: ReadinessComponents = baselineReadinessComponents({
+          hrvZScore: metrics.hrv_z_score,
+          restingHeartRateZScore: metrics.resting_hr_z_score,
+          respiratoryRateZScore: metrics.respiratory_rate_z_score,
+          sleepEfficiency: metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null,
+        });
 
         const readiness = new ReadinessScore(components, weights);
 

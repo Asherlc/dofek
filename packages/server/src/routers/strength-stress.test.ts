@@ -181,26 +181,6 @@ describe("stressRouter", () => {
   const createCaller = createTestCallerFactory(stressRouter);
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
-    const zScore = (
-      row: Record<string, unknown>,
-      valueKey: string,
-      meanKey: string,
-      standardDeviationKey: string,
-    ): number | null => {
-      const value = row[valueKey];
-      const mean = row[meanKey];
-      const standardDeviation = row[standardDeviationKey];
-      if (value == null || mean == null || standardDeviation == null) return null;
-      const numericStandardDeviation = Number(standardDeviation);
-      return numericStandardDeviation === 0
-        ? null
-        : (Number(value) - Number(mean)) / numericStandardDeviation;
-    };
-    const recoveryRows = rows.map((row) => ({
-      ...row,
-      hrv_z_score: zScore(row, "hrv", "hrv_mean_60d", "hrv_sd_60d"),
-      resting_hr_z_score: zScore(row, "resting_hr", "rhr_mean_60d", "rhr_sd_60d"),
-    }));
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
@@ -208,7 +188,7 @@ describe("stressRouter", () => {
       sensorStore: {
         ...makeMockSensorStore([]),
         query: vi.fn(async (_schema: unknown, query: string) => {
-          if (query.includes("analytics.daily_recovery")) return recoveryRows;
+          if (query.includes("analytics.daily_recovery")) return rows;
           return [];
         }),
       },
@@ -230,12 +210,8 @@ describe("stressRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          hrv: 40,
-          resting_hr: 65,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: -2.5,
+          resting_hr_z_score: 10 / 3,
           efficiency_pct: 75,
         },
       ];
@@ -253,12 +229,8 @@ describe("stressRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          hrv: 65,
-          resting_hr: 52,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: 0.625,
+          resting_hr_z_score: -1,
           efficiency_pct: 95,
         },
       ];
@@ -277,12 +249,8 @@ describe("stressRouter", () => {
         date.setDate(date.getDate() + i);
         rows.push({
           date: date.toISOString().slice(0, 10),
-          hrv: 50 - i * 3,
-          resting_hr: 58 + i,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: -2,
+          resting_hr_z_score: 2,
           efficiency_pct: 85,
         });
       }
@@ -302,12 +270,8 @@ describe("stressRouter", () => {
         date.setDate(date.getDate() + i);
         rows.push({
           date: date.toISOString().slice(0, 10),
-          hrv: 35,
-          resting_hr: 68,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: -3,
+          resting_hr_z_score: 4,
           efficiency_pct: 70,
         });
       }
@@ -317,12 +281,8 @@ describe("stressRouter", () => {
         date.setDate(date.getDate() + i);
         rows.push({
           date: date.toISOString().slice(0, 10),
-          hrv: 70,
-          resting_hr: 50,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: 1,
+          resting_hr_z_score: -1,
           efficiency_pct: 95,
         });
       }

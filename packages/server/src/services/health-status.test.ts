@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildBaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   buildDailyMetricHealthStatuses,
+  buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromSummary,
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
@@ -10,25 +11,28 @@ import {
 
 describe("buildDailyMetricHealthStatuses", () => {
   it("uses a layman-readable blood oxygen label", () => {
-    const statuses = buildDailyMetricHealthStatuses({
-      avg_hrv: null,
-      avg_resting_hr: null,
-      avg_spo2: 97,
-      avg_steps: null,
-      avg_skin_temp: null,
-      stddev_hrv: null,
-      stddev_resting_hr: null,
-      stddev_spo2: 1,
-      stddev_steps: null,
-      stddev_skin_temp: null,
-      latest_hrv: null,
-      latest_resting_hr: null,
-      latest_spo2: 98,
-      latest_steps: null,
-      latest_skin_temp: null,
-      latest_date: "2026-07-25",
-      latest_steps_date: null,
-    });
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: null,
+        avg_spo2: 97,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: null,
+        stddev_resting_hr: null,
+        stddev_spo2: 1,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: null,
+        latest_resting_hr: null,
+        latest_spo2: 98,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+      },
+      [],
+    );
 
     expect(statuses.find((status) => status.metric === "spo2")?.label).toBe(
       "Blood Oxygen Saturation (SpO2)",
@@ -79,29 +83,27 @@ describe("buildDailyMetricHealthStatuses", () => {
     });
   });
 
-  it("treats a respiratory rate above baseline as moving against the lower intent", () => {
-    const trends = {
-      avg_hrv: null,
-      avg_resting_hr: null,
-      avg_spo2: null,
-      avg_steps: null,
-      avg_skin_temp: null,
-      stddev_hrv: null,
-      stddev_resting_hr: null,
-      stddev_spo2: null,
-      stddev_steps: null,
-      stddev_skin_temp: null,
-      latest_hrv: null,
-      latest_resting_hr: null,
-      latest_spo2: null,
-      latest_steps: null,
-      latest_skin_temp: null,
-      latest_date: "2026-07-25",
-      latest_steps_date: null,
-    };
-    const respiratoryRate = buildBaselineRelativeMetric({
-      metric: "respiratory_rate",
-      label: "Respiratory Rate",
+  it.each([
+    { metric: "hrv" as const, intent: "higher", statusToken: "moving_as_intended" },
+    {
+      metric: "resting_heart_rate" as const,
+      intent: "lower",
+      statusToken: "far_from_baseline",
+    },
+    {
+      metric: "respiratory_rate" as const,
+      intent: "lower",
+      statusToken: "far_from_baseline",
+    },
+    {
+      metric: "sleep_efficiency" as const,
+      intent: "higher",
+      statusToken: "moving_as_intended",
+    },
+  ])("applies the supported intent for $metric", ({ metric, intent, statusToken }) => {
+    const baselineMetric = buildBaselineRelativeMetric({
+      metric,
+      label: metric,
       value: 16,
       baselineMean: 14,
       baselineStandardDeviation: 1,
@@ -112,12 +114,11 @@ describe("buildDailyMetricHealthStatuses", () => {
       comparisonMean: 14,
     });
 
-    expect(buildDailyMetricHealthStatuses(trends, [respiratoryRate])[0]).toMatchObject({
-      metric: "respiratory_rate",
-      intent: "lower",
+    expect(buildHealthStatusFromBaselineMetric(baselineMetric)).toMatchObject({
+      metric,
+      intent,
       direction: "above",
-      statusToken: "far_from_baseline",
-      statusColor: "danger",
+      statusToken,
     });
   });
 });

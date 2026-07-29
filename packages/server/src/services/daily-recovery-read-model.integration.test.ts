@@ -17,6 +17,7 @@ const tombstoneRowSchema = z.object({
 });
 
 const baselineContextRowSchema = z.object({
+  hrv_score: z.coerce.number(),
   hrv_mean_30d: z.coerce.number().nullable(),
   hrv_sd_30d: z.coerce.number().nullable(),
   hrv_z_score: z.coerce.number().nullable(),
@@ -91,6 +92,24 @@ describe("daily recovery read-model lifecycle", () => {
       { metric: "resting_heart_rate", value: 48 },
       { metric: "respiratory_rate", value: 18 },
       { metric: "sleep_efficiency", value: 100 },
+    ]);
+  });
+
+  it("returns null baseline statistics and the default readiness component with no prior samples", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, targetSchema);
+    await materializeRecoveryInputs(activeClient, targetSchema, false);
+    await materializeRecovery(activeClient, targetSchema, false);
+
+    await expect(readBaselineContext(activeClient, targetSchema)).resolves.toMatchObject([
+      {
+        hrv_baseline_sample_count: 0,
+        hrv_baseline_coverage: 0,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        hrv_z_score: null,
+        hrv_score: 62,
+      },
     ]);
   });
 
@@ -309,6 +328,7 @@ async function readBaselineContext(
 ): Promise<z.infer<typeof baselineContextRowSchema>[]> {
   const result = await client.query({
     query: `SELECT
+        hrv_score,
         hrv_mean_30d,
         hrv_sd_30d,
         hrv_z_score,

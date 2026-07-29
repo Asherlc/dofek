@@ -8,11 +8,12 @@ import {
   computeDailyStress,
   computeStressTrend,
 } from "@dofek/recovery/stress";
-import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { baselineReadinessComponents } from "@dofek/scoring/scoring";
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   type MobileRecoveryTabResult,
   mobileRecoveryTabOutputSchema,
@@ -53,7 +54,7 @@ interface MobileRecoveryTabContext {
   sensorStore: ActivitySensorStore;
 }
 
-function findRecoveryMetric(row: DailyRecoveryBaseline, metric: string) {
+function findRecoveryMetric(row: DailyRecoveryBaseline, metric: BaselineRelativeMetric["metric"]) {
   return row.metrics.find((candidate) => candidate.metric === metric);
 }
 
@@ -68,24 +69,12 @@ function computeReadinessRows(
     const respiratoryRate = findRecoveryMetric(row, "respiratory_rate");
     const sleepEfficiency = findRecoveryMetric(row, "sleep_efficiency");
 
-    const hrvScore = hrv?.baseline.zScore != null ? zScoreToRecoveryScore(hrv.baseline.zScore) : 62;
-    const restingHrScore =
-      restingHeartRate?.baseline.zScore != null
-        ? zScoreToRecoveryScore(-restingHeartRate.baseline.zScore)
-        : 62;
-    const efficiency = sleepEfficiency?.value ?? null;
-    const sleepScore = efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 62;
-    const respiratoryRateScore =
-      respiratoryRate?.baseline.zScore != null
-        ? zScoreToRecoveryScore(-respiratoryRate.baseline.zScore)
-        : 62;
-
-    const components: ReadinessComponents = {
-      hrvScore: Math.round(hrvScore),
-      restingHrScore: Math.round(restingHrScore),
-      sleepScore,
-      respiratoryRateScore: Math.round(respiratoryRateScore),
-    };
+    const components: ReadinessComponents = baselineReadinessComponents({
+      hrvZScore: hrv?.baseline.zScore ?? null,
+      restingHeartRateZScore: restingHeartRate?.baseline.zScore ?? null,
+      respiratoryRateZScore: respiratoryRate?.baseline.zScore ?? null,
+      sleepEfficiency: sleepEfficiency?.value ?? null,
+    });
     const readiness = new ReadinessScore(components, weights);
     results.push({
       date: row.date,

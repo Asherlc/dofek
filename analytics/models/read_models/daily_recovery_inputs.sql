@@ -127,7 +127,7 @@ window_statistics AS (
         resting_hr,
         respiratory_rate,
         efficiency_pct,
-        avg(hrv) OVER (
+        avgOrNull(hrv) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS hrv_mean_30d,
@@ -139,15 +139,15 @@ window_statistics AS (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS hrv_baseline_sample_count,
-        avg(hrv) OVER (
+        avgOrNull(hrv) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
         ) AS hrv_mean_7d,
-        avg(hrv) OVER (
+        avgOrNull(hrv) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
         ) AS hrv_mean_previous_28d,
-        avg(resting_hr) OVER (
+        avgOrNull(resting_hr) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS rhr_mean_30d,
@@ -159,15 +159,15 @@ window_statistics AS (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS rhr_baseline_sample_count,
-        avg(resting_hr) OVER (
+        avgOrNull(resting_hr) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
         ) AS rhr_mean_7d,
-        avg(resting_hr) OVER (
+        avgOrNull(resting_hr) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
         ) AS rhr_mean_previous_28d,
-        avg(respiratory_rate) OVER (
+        avgOrNull(respiratory_rate) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS rr_mean_30d,
@@ -179,15 +179,15 @@ window_statistics AS (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS rr_baseline_sample_count,
-        avg(respiratory_rate) OVER (
+        avgOrNull(respiratory_rate) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
         ) AS rr_mean_7d,
-        avg(respiratory_rate) OVER (
+        avgOrNull(respiratory_rate) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
         ) AS rr_mean_previous_28d,
-        avg(efficiency_pct) OVER (
+        avgOrNull(efficiency_pct) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS efficiency_mean_30d,
@@ -199,11 +199,11 @@ window_statistics AS (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
         ) AS efficiency_baseline_sample_count,
-        avg(efficiency_pct) OVER (
+        avgOrNull(efficiency_pct) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
         ) AS efficiency_mean_7d,
-        avg(efficiency_pct) OVER (
+        avgOrNull(efficiency_pct) OVER (
             PARTITION BY user_id ORDER BY toUInt32(date)
             RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
         ) AS efficiency_mean_previous_28d,

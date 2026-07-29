@@ -256,7 +256,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("54")).toBeTruthy();
     expect(
       screen.getByText(
-        "30d baseline 50.0 ± 5.0 bpm · 1.0 SD above · 7d vs prior 28d +2.0 bpm · 24/30 baseline days",
+        "30d baseline 50.0 bpm ± 5.0 bpm · 1.0 SD above baseline · 7d vs prior 28d +2.0 bpm · 24/30 baseline days",
       ),
     ).toBeTruthy();
 

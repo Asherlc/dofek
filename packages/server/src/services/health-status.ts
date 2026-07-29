@@ -198,12 +198,12 @@ export function buildWeightHealthStatus(
   });
 }
 
-function recoveryMetricIntent(metric: BaselineRelativeMetric): HealthMetricIntent {
-  if (metric.metric === "hrv" || metric.metric === "sleep_efficiency") return "higher";
-  if (metric.metric === "resting_heart_rate" || metric.metric === "respiratory_rate")
-    return "lower";
-  return "neutral";
-}
+const recoveryMetricIntents: Record<BaselineRelativeMetric["metric"], HealthMetricIntent> = {
+  hrv: "higher",
+  resting_heart_rate: "lower",
+  respiratory_rate: "lower",
+  sleep_efficiency: "higher",
+};
 
 export function buildHealthStatusFromBaselineMetric(
   metric: BaselineRelativeMetric,
@@ -214,13 +214,13 @@ export function buildHealthStatusFromBaselineMetric(
     value: metric.value,
     baseline: metric.baseline.mean,
     sampleDeviation: metric.baseline.standardDeviation,
-    intent: recoveryMetricIntent(metric),
+    intent: recoveryMetricIntents[metric.metric],
   });
 }
 
 export function buildDailyMetricHealthStatuses(
   trends: TrendsRow,
-  baselineRelative: BaselineRelativeMetric[] = [],
+  baselineRelative: BaselineRelativeMetric[],
 ): HealthStatusMetric[] {
   return [
     ...baselineRelative.map(buildHealthStatusFromBaselineMetric),

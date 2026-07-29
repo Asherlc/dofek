@@ -574,7 +574,7 @@ describe("createMcpRouter", () => {
       { date: "2026-05-19", hrv: 60, resting_hr: 53, steps: 10_000 },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_health_trends", {
         end_date: "2026-05-19",
@@ -746,6 +746,24 @@ describe("createMcpRouter", () => {
     const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
     expect(parsedResponse.result.isError).toBe(true);
     expect(parsedResponse.result.content[0]?.text).toBe("start_date must be on or before end_date");
+  });
+
+  it("fails health trends explicitly when the analytics store is unavailable", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        end_date: "2026-05-19",
+        start_date: "2026-05-18",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "get_health_trends requires the ClickHouse analytics store",
+    );
   });
 
   it("returns sleep summaries with stages and local sleep times", async () => {

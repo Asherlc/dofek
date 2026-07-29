@@ -20,7 +20,6 @@ import {
 import {
   fetchRestingHeartRateValuesCte,
   localDateString,
-  restingHeartRateValuesCte,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
@@ -320,22 +319,21 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       assertDateRange(start_date, end_date);
       const requestedTimezone = timezone ?? context.timezone;
       const repository = new DailyMetricsRepository(context.db, context.userId, requestedTimezone);
+      if (!context.sensorStore) {
+        throw new Error("get_health_trends requires the ClickHouse analytics store");
+      }
       const [restingHeartRateCte, baselineRows] = await Promise.all([
-        context.sensorStore
-          ? fetchRestingHeartRateValuesCte({
-              sensorStore: context.sensorStore,
-              userId: context.userId,
-              timezone: requestedTimezone,
-              endDate: end_date,
-              days: daysBetween(start_date, end_date) + 1,
-            })
-          : restingHeartRateValuesCte([]),
-        context.sensorStore
-          ? new RecoveryBaselineRepository(context.userId, context.sensorStore).listRange(
-              start_date,
-              end_date,
-            )
-          : [],
+        fetchRestingHeartRateValuesCte({
+          sensorStore: context.sensorStore,
+          userId: context.userId,
+          timezone: requestedTimezone,
+          endDate: end_date,
+          days: daysBetween(start_date, end_date) + 1,
+        }),
+        new RecoveryBaselineRepository(context.userId, context.sensorStore).listRange(
+          start_date,
+          end_date,
+        ),
       ]);
       const rows = await repository.listRange(start_date, end_date, restingHeartRateCte);
       return jsonContent(

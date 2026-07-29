@@ -1,3 +1,4 @@
+import { formatBaselineContext } from "@dofek/format/baseline-context";
 import {
   formatBodyCompositionNumber,
   formatDateShort,
@@ -15,7 +16,6 @@ import {
   scoreLabel,
   trendColor,
 } from "@dofek/scoring/scoring";
-import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -66,32 +66,6 @@ function trendArrow(trend: string | null): string {
   if (trend === "declining") return "\u2193";
   if (trend === "stable") return "\u2192";
   return "";
-}
-
-function formatBaselineContext(metric: BaselineRelativeMetric, unit: string): string {
-  const parts: string[] = [];
-  if (metric.baseline.mean != null) {
-    const deviation =
-      metric.baseline.standardDeviation != null
-        ? ` ± ${formatNumber(metric.baseline.standardDeviation)}`
-        : "";
-    parts.push(
-      `${metric.baseline.windowDays}d baseline ${formatNumber(metric.baseline.mean)}${deviation} ${unit}`,
-    );
-  }
-  if (metric.baseline.zScore != null) {
-    const direction =
-      metric.baseline.zScore > 0 ? "above" : metric.baseline.zScore < 0 ? "below" : "at";
-    parts.push(`${Math.abs(metric.baseline.zScore).toFixed(1)} SD ${direction}`);
-  }
-  if (metric.comparison.delta != null) {
-    const sign = metric.comparison.delta > 0 ? "+" : "";
-    parts.push(
-      `${metric.comparison.recentDays}d vs prior ${metric.comparison.baselineDays}d ${sign}${formatNumber(metric.comparison.delta)} ${unit}`,
-    );
-  }
-  parts.push(`${metric.baseline.sampleCount}/${metric.baseline.windowDays} baseline days`);
-  return parts.join(" · ");
 }
 
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
@@ -397,7 +371,7 @@ export default function RecoveryScreen() {
             value={formatHRV(hrvContext?.value)}
             trend={hrvValues.slice(-14)}
             color={colors.positive}
-            subtitle={hrvContext ? formatBaselineContext(hrvContext, "ms") : undefined}
+            subtitle={hrvContext ? formatBaselineContext(hrvContext, { unit: "ms" }) : undefined}
             trendDirection={
               hrvValues.length >= 2
                 ? computeTrend(
@@ -420,7 +394,7 @@ export default function RecoveryScreen() {
             color={colors.warning}
             subtitle={
               restingHeartRateContext
-                ? formatBaselineContext(restingHeartRateContext, "bpm")
+                ? formatBaselineContext(restingHeartRateContext, { unit: "bpm" })
                 : undefined
             }
             trendDirection={
@@ -443,7 +417,7 @@ export default function RecoveryScreen() {
               }
               unit="breaths/min"
               color={colors.blue}
-              subtitle={formatBaselineContext(respiratoryRateContext, "breaths/min")}
+              subtitle={formatBaselineContext(respiratoryRateContext, { unit: "breaths/min" })}
             />
           ) : null}
 
@@ -457,7 +431,7 @@ export default function RecoveryScreen() {
               }
               unit="%"
               color={colors.teal}
-              subtitle={formatBaselineContext(sleepEfficiencyContext, "%")}
+              subtitle={formatBaselineContext(sleepEfficiencyContext, { unit: "%" })}
             />
           ) : null}
 

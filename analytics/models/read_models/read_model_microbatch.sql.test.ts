@@ -784,6 +784,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("efficiency_baseline_coverage");
     expect(sql).toContain("efficiency_mean_7d");
     expect(sql).toContain("efficiency_mean_previous_28d");
+    expect(sql).toContain("avgOrNull(hrv) OVER");
+    expect(sql).toContain("avgOrNull(resting_hr) OVER");
+    expect(sql).toContain("avgOrNull(respiratory_rate) OVER");
+    expect(sql).toContain("avgOrNull(efficiency_pct) OVER");
     expect(sql).toContain("if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");

@@ -459,6 +459,16 @@ describe("dailyMetricsRouter", () => {
         rhrEndDate: "2024-01-16",
         rhrWindowStart: "2023-12-17",
       });
+      const baselineQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+      const baselineParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+      const baselineOptions = vi.mocked(sensorStore.query).mock.calls[1]?.[3];
+      expect(baselineQuery).not.toContain("maxIf(latest.date, latest.hrv IS NOT NULL)");
+      expect(baselineParams).toMatchObject({
+        userId: "user-1",
+        startDate: "2023-12-18",
+        endDate: "2024-01-16",
+      });
+      expect(baselineOptions).toEqual({ priority: "dashboard" });
     });
 
     it("omits lower bounds for trend aggregation when days is null", async () => {
@@ -540,12 +550,14 @@ describe("dailyMetricsRouter", () => {
 
       const baselineQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
       const baselineParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+      const baselineOptions = vi.mocked(sensorStore.query).mock.calls[1]?.[3];
       expect(baselineQuery).toContain("maxIf(latest.date, latest.hrv IS NOT NULL)");
       expect(baselineQuery).not.toContain("startDate");
       expect(baselineParams).toMatchObject({
         userId: "user-1",
         endDate: "2024-01-16",
       });
+      expect(baselineOptions).toEqual({ priority: "dashboard" });
     });
 
     it("requires a sensor store for resting heart rate trend aggregation", async () => {

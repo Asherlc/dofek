@@ -25,7 +25,7 @@
 - Executable ClickHouse integration: seed sparse, boundary, zero-variance, and complete fixtures; execute both dbt model selects; prove current-day exclusion, calendar-gap handling, mean/standard-deviation availability, z-score, count/coverage, 7/28 delta, incremental replacement, and deletion behavior.
 - Server unit/integration: prove one repository contract maps the four recovery metrics, tRPC returns it, mobile dashboard reuses it for health status/readiness, and MCP daily/weekly trends include it.
 - UI parity: prove web health status and mobile standalone recovery cards render server-provided standard-deviation deviation, direction, 7/28 delta, and sparse coverage without client-side statistics.
-- Stories: update the modified web and mobile component/screen stories with complete, sparse, unavailable, and directional examples.
+- Stories: update the modified web and mobile component/screen stories with default, loading, empty/no-data, complete, sparse, unavailable, and directional examples.
 
 ## File Structure
 
@@ -68,7 +68,7 @@
 - [ ] Add failing web tests showing deviation, 7/28 direction, and coverage in the health-status surface.
 - [ ] Add failing mobile tests showing the same context beside standalone HRV, resting-heart-rate, respiratory-rate, and sleep-efficiency values.
 - [ ] Implement formatting/rendering only; do not calculate statistics in either client.
-- [ ] Update the colocated web stories and mobile recovery stories for default, sparse, unavailable, improving, and declining variants.
+- [ ] Update the colocated web stories and mobile recovery stories for default, loading, empty/no-data, sparse, unavailable, improving, and declining variants.
 - [ ] Run the focused web and mobile tests and confirm they pass.
 
 ### Task 5: Final Verification and Delivery
