@@ -16,6 +16,10 @@ export const breathworkRouter = router({
         durationSeconds: z.number().int().min(1),
         startedAt: z.string(),
         notes: z.string().nullable().default(null),
+        stressBefore: z.number().int().min(0).max(10).nullable().default(null),
+        stressAfter: z.number().int().min(0).max(10).nullable().default(null),
+        dizzinessAfter: z.boolean().nullable().default(null),
+        perceivedEffect: z.enum(["better", "same", "worse"]).nullable().default(null),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -32,4 +36,8 @@ export const breathworkRouter = router({
       const repo = new BreathworkRepository(ctx.db, ctx.userId);
       return (await repo.getHistory(input.days)).map((session) => session.toDetail());
     }),
+  outcomes: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
+    const repo = new BreathworkRepository(ctx.db, ctx.userId);
+    return repo.getOutcomeSummaries();
+  }),
 });

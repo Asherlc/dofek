@@ -20,8 +20,13 @@ interface CompletedSessionInput {
   rounds: number;
   durationSeconds: number;
   startedAt: string;
+  stressBefore: number | null;
+  stressAfter: number | null;
+  dizzinessAfter: boolean | null;
+  perceivedEffect: "better" | "same" | "worse" | null;
 }
 
+const STRESS_RATINGS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 const PHASE_LABELS: Record<SessionPhase, string> = {
   inhale: "Breathe In",
   "hold-in": "Hold",
@@ -29,6 +34,75 @@ const PHASE_LABELS: Record<SessionPhase, string> = {
   "hold-out": "Hold",
 };
 const HISTORY_PAGE_SIZE = 20;
+
+function StressScale({
+  label,
+  accessibilityPrefix,
+  value,
+  onChange,
+}: {
+  label: string;
+  accessibilityPrefix: string;
+  value: number | null;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium text-foreground">{label}</legend>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {STRESS_RATINGS.map((rating) => (
+          <button
+            key={rating}
+            type="button"
+            aria-label={`${accessibilityPrefix} ${rating}`}
+            aria-pressed={value === rating}
+            onClick={() => onChange(rating)}
+            className={`h-9 w-9 rounded border text-sm ${
+              value === rating
+                ? "border-accent bg-accent text-on-accent"
+                : "border-border text-foreground hover:border-border-strong"
+            }`}
+          >
+            {rating}
+          </button>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-xs text-dim">
+        <span>Not stressed</span>
+        <span>Very stressed</span>
+      </div>
+    </fieldset>
+  );
+}
+
+function SessionOutcome({
+  stressBefore,
+  stressAfter,
+  dizzinessAfter,
+  perceivedEffect,
+}: {
+  stressBefore: number | null | undefined;
+  stressAfter: number | null | undefined;
+  dizzinessAfter: boolean | null | undefined;
+  perceivedEffect: "better" | "same" | "worse" | null | undefined;
+}) {
+  const parts: string[] = [];
+  if (
+    stressBefore !== null &&
+    stressBefore !== undefined &&
+    stressAfter !== null &&
+    stressAfter !== undefined
+  ) {
+    parts.push(`Stress ${stressBefore} → ${stressAfter}`);
+  }
+  if (perceivedEffect === "better") parts.push("Felt better");
+  if (perceivedEffect === "same") parts.push("Felt the same");
+  if (perceivedEffect === "worse") parts.push("Felt worse");
+  if (dizzinessAfter === true) parts.push("Dizziness");
+  if (dizzinessAfter === false) parts.push("No dizziness");
+
+  return parts.length > 0 ? <div className="mt-1 text-xs text-dim">{parts.join(" · ")}</div> : null;
+}
 
 function BreathingCircle({ phase, progress }: { phase: SessionPhase; progress: number }) {
   // Circle scales between 0.6 (exhale) and 1.0 (inhale)
@@ -56,6 +130,7 @@ function BreathingCircle({ phase, progress }: { phase: SessionPhase; progress: n
 function BreathworkPage() {
   const techniques = trpc.breathwork.techniques.useQuery();
   const history = trpc.breathwork.history.useQuery({ days: 30 });
+  const outcomes = trpc.breathwork.outcomes.useQuery();
   const utils = trpc.useUtils();
 
   const [selectedTechniqueId, setSelectedTechniqueId] = useState<string>("box-breathing");
@@ -64,14 +139,23 @@ function BreathworkPage() {
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("inhale");
   const [phaseProgress, setPhaseProgress] = useState(0);
   const [pendingSession, setPendingSession] = useState<CompletedSessionInput | null>(null);
+  const [stressBefore, setStressBefore] = useState<number | null>(null);
+  const [stressAfter, setStressAfter] = useState<number | null>(null);
+  const [dizzinessAfter, setDizzinessAfter] = useState<boolean | null>(null);
+  const [perceivedEffect, setPerceivedEffect] = useState<"better" | "same" | "worse" | null>(null);
   const [historyPage, setHistoryPage] = useState(0);
 
   const logMutation = trpc.breathwork.logSession.useMutation({
     meta: locallyReportedErrorMeta,
     onSuccess: () => {
       setPendingSession(null);
+      setStressBefore(null);
+      setStressAfter(null);
+      setDizzinessAfter(null);
+      setPerceivedEffect(null);
       setHistoryPage(0);
       utils.breathwork.history.invalidate();
+      utils.breathwork.outcomes.invalidate();
     },
     onError: (error) => {
       captureException(error, { context: "breathwork-log-session" });
@@ -82,6 +166,9 @@ function BreathworkPage() {
   const startTimeRef = useRef<string | null>(null);
 
   const selectedTechnique = techniques.data?.find((t) => t.id === selectedTechniqueId);
+  const selectedOutcome = outcomes.data?.techniques.find(
+    (summary) => summary.techniqueId === selectedTechniqueId,
+  );
   const historyItems = history.data ?? [];
   const historyPageCount = Math.ceil(historyItems.length / HISTORY_PAGE_SIZE);
   const currentHistoryPage = Math.min(historyPage, Math.max(historyPageCount - 1, 0));
@@ -161,14 +248,32 @@ function BreathworkPage() {
               rounds: technique.defaultRounds,
               durationSeconds: totalSeconds,
               startedAt: startTimeRef.current ?? new Date().toISOString(),
+              stressBefore,
+              stressAfter: null,
+              dizzinessAfter: null,
+              perceivedEffect: null,
             };
             setPendingSession(completedSession);
-            logMutation.mutate(completedSession);
           }
         }
       }
     }, 50);
-  }, [selectedTechnique, logMutation]);
+  }, [selectedTechnique, stressBefore]);
+
+  const saveSession = useCallback(
+    (reports: {
+      stressBefore: number | null;
+      stressAfter: number | null;
+      dizzinessAfter: boolean | null;
+      perceivedEffect: "better" | "same" | "worse" | null;
+    }) => {
+      if (!pendingSession) return;
+      const input = { ...pendingSession, ...reports };
+      setPendingSession(input);
+      logMutation.mutate(input);
+    },
+    [logMutation, pendingSession],
+  );
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -195,13 +300,18 @@ function BreathworkPage() {
                   <button
                     key={technique.id}
                     type="button"
-                    onClick={() => !isRunning && setSelectedTechniqueId(technique.id)}
+                    onClick={() => {
+                      if (!isRunning) {
+                        setSelectedTechniqueId(technique.id);
+                        setStressBefore(null);
+                      }
+                    }}
                     className={`p-4 rounded-lg border text-left transition-colors ${
                       selectedTechniqueId === technique.id
                         ? "border-accent bg-accent/10"
                         : "border-border hover:border-border-strong"
-                    } ${isRunning ? "opacity-50" : ""}`}
-                    disabled={isRunning}
+                    } ${isRunning || pendingSession !== null ? "opacity-50" : ""}`}
+                    disabled={isRunning || pendingSession !== null}
                   >
                     <div className="text-sm font-medium text-foreground">{technique.name}</div>
                     <div className="text-xs text-dim mt-1 line-clamp-2">
@@ -260,6 +370,112 @@ function BreathworkPage() {
                   </button>
                 </div>
               </>
+            ) : pendingSession ? (
+              <section className="space-y-5 py-4" aria-labelledby="post-session-heading">
+                <div className="text-center">
+                  <h3 id="post-session-heading" className="text-base font-semibold text-foreground">
+                    How do you feel now?
+                  </h3>
+                  <p className="mt-1 text-sm text-dim">This check-in is optional.</p>
+                </div>
+                <StressScale
+                  label="Stress right now"
+                  accessibilityPrefix="After-session stress"
+                  value={stressAfter}
+                  onChange={setStressAfter}
+                />
+                <fieldset>
+                  <legend className="text-sm font-medium text-foreground">
+                    Compared with before the session
+                  </legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["better", "Felt better"],
+                        ["same", "Felt the same"],
+                        ["worse", "Felt worse"],
+                      ] as const
+                    ).map(([effect, label]) => (
+                      <button
+                        key={effect}
+                        type="button"
+                        aria-pressed={perceivedEffect === effect}
+                        onClick={() => setPerceivedEffect(effect)}
+                        className={`rounded border px-3 py-2 text-sm ${
+                          perceivedEffect === effect
+                            ? "border-accent bg-accent text-on-accent"
+                            : "border-border text-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend className="text-sm font-medium text-foreground">
+                    Did you feel dizzy?
+                  </legend>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={dizzinessAfter === true}
+                      onClick={() => setDizzinessAfter(true)}
+                      className={`rounded border px-3 py-2 text-sm ${
+                        dizzinessAfter === true
+                          ? "border-accent bg-accent text-on-accent"
+                          : "border-border text-foreground"
+                      }`}
+                    >
+                      Dizziness
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={dizzinessAfter === false}
+                      onClick={() => setDizzinessAfter(false)}
+                      className={`rounded border px-3 py-2 text-sm ${
+                        dizzinessAfter === false
+                          ? "border-accent bg-accent text-on-accent"
+                          : "border-border text-foreground"
+                      }`}
+                    >
+                      No dizziness
+                    </button>
+                  </div>
+                </fieldset>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveSession({
+                        stressBefore,
+                        stressAfter,
+                        dizzinessAfter,
+                        perceivedEffect,
+                      })
+                    }
+                    disabled={logMutation.isPending}
+                    className="rounded bg-accent px-6 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+                  >
+                    {logMutation.isPending ? "Saving..." : "Save session"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveSession({
+                        stressBefore: null,
+                        stressAfter: null,
+                        dizzinessAfter: null,
+                        perceivedEffect: null,
+                      })
+                    }
+                    disabled={logMutation.isPending}
+                    className="rounded border border-border px-6 py-2 text-sm text-foreground disabled:opacity-50"
+                  >
+                    Skip check-in and save
+                  </button>
+                </div>
+              </section>
             ) : (
               <div className="space-y-5 py-4">
                 <div className="text-center">
@@ -282,6 +498,20 @@ function BreathworkPage() {
                     <p>{selectedTechnique.safety.position}</p>
                     <p>{selectedTechnique.safety.stopCriteria}</p>
                     <p>{selectedTechnique.safety.emergency}</p>
+                  </div>
+                </section>
+                <section className="rounded-lg border border-border p-4">
+                  <h3 className="text-sm font-semibold text-foreground">Optional check-in</h3>
+                  <p className="mt-1 text-sm text-dim">
+                    Record how you feel before and after to notice your own patterns.
+                  </p>
+                  <div className="mt-3">
+                    <StressScale
+                      label="Stress right now"
+                      accessibilityPrefix="Before-session stress"
+                      value={stressBefore}
+                      onChange={setStressBefore}
+                    />
                   </div>
                 </section>
                 <div className="flex justify-center">
@@ -314,6 +544,57 @@ function BreathworkPage() {
           </div>
         ) : null}
 
+        <div className="card p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider">
+            Your check-ins
+          </h3>
+          <p className="mt-1 text-xs text-dim">Rolling {outcomes.data?.windowDays ?? 30} days</p>
+          {outcomes.data !== undefined ? (
+            selectedOutcome &&
+            (selectedOutcome.stress.reportCount > 0 ||
+              selectedOutcome.perceivedEffect.reportCount > 0 ||
+              selectedOutcome.dizziness.reportCount > 0) ? (
+              <div className="mt-3 space-y-1 text-sm text-foreground">
+                {selectedOutcome.stress.reportCount > 0 ? (
+                  <p>
+                    Stress after session: {selectedOutcome.stress.lowerCount} lower,{" "}
+                    {selectedOutcome.stress.sameCount} same, {selectedOutcome.stress.higherCount}{" "}
+                    higher ({selectedOutcome.stress.reportCount} paired check-ins)
+                  </p>
+                ) : null}
+                {selectedOutcome.perceivedEffect.reportCount > 0 ? (
+                  <p>
+                    Overall feeling: {selectedOutcome.perceivedEffect.betterCount} better,{" "}
+                    {selectedOutcome.perceivedEffect.sameCount} same,{" "}
+                    {selectedOutcome.perceivedEffect.worseCount} worse (
+                    {selectedOutcome.perceivedEffect.reportCount} responses)
+                  </p>
+                ) : null}
+                {selectedOutcome.dizziness.reportCount > 0 ? (
+                  <p>
+                    Dizziness: {selectedOutcome.dizziness.yesCount} of{" "}
+                    {selectedOutcome.dizziness.reportCount} responses
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-dim">
+                Complete optional check-ins to see your personal pattern.
+              </p>
+            )
+          ) : outcomes.isLoading ? (
+            <QueryStatePanel variant="loading" height={72} />
+          ) : outcomes.error ? (
+            <QueryStatePanel error={outcomes.error} height={72} />
+          ) : null}
+          <p className="mt-3 text-xs text-dim">
+            Patterns in your reports do not prove the breathing technique caused the change.
+          </p>
+          {outcomes.data !== undefined && outcomes.error ? (
+            <QueryStatePanel error={outcomes.error} height={72} />
+          ) : null}
+        </div>
+
         {/* History */}
         <div className="card p-6">
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
@@ -336,6 +617,12 @@ function BreathworkPage() {
                         <span className="text-xs text-dim ml-2">
                           {formatDateMedium(session.startedAt)}
                         </span>
+                        <SessionOutcome
+                          stressBefore={session.stressBefore}
+                          stressAfter={session.stressAfter}
+                          dizzinessAfter={session.dizzinessAfter}
+                          perceivedEffect={session.perceivedEffect}
+                        />
                       </div>
                       <div className="text-right">
                         <span className="text-xs text-muted">

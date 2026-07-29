@@ -1175,11 +1175,18 @@ table fitness.breathwork_session {
   duration_seconds integer [not null]
   started_at "timestamp with time zone" [not null]
   notes text
+  stress_before smallint
+  stress_after smallint
+  dizziness_after boolean
+  perceived_effect text
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     user_id [name: 'breathwork_session_user_idx']
     started_at [name: 'breathwork_session_started_at_idx']
+
+
+
   }
 }
 
