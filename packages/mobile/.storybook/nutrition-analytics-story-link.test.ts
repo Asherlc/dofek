@@ -14,6 +14,16 @@ describe("createNutritionAnalyticsStoryLink", () => {
     });
   });
 
+  it("returns the configured nutrition analytics error", async () => {
+    const client = createTRPCProxyClient<AppRouter>({
+      links: [createNutritionAnalyticsStoryLink("error")],
+    });
+
+    await expect(client.nutritionAnalytics.adaptiveTdee.query()).rejects.toThrow(
+      "Body measurements are unavailable.",
+    );
+  });
+
   it("rejects an unhandled tRPC path", async () => {
     const client = createTRPCProxyClient<AppRouter>({
       links: [createNutritionAnalyticsStoryLink()],
