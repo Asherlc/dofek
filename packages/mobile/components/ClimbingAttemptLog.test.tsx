@@ -7,11 +7,11 @@ import { ClimbingAttemptLog } from "./ClimbingAttemptLog";
 describe("mobile ClimbingAttemptLog", () => {
   it("submits ordered attempt outcomes and reasons", () => {
     const onSubmit = vi.fn();
-    render(
-      <ClimbingAttemptLog errorMessage={null} onSubmit={onSubmit} submitting={false} />,
-    );
+    render(<ClimbingAttemptLog errorMessage={null} onSubmit={onSubmit} submitting={false} />);
 
-    fireEvent.change(screen.getAllByRole("textbox")[0]!, { target: { value: "V5" } });
+    const gradeInput = screen.getAllByRole("textbox")[0];
+    if (!gradeInput) throw new Error("Grade input is required");
+    fireEvent.change(gradeInput, { target: { value: "V5" } });
     fireEvent.click(screen.getByLabelText("Attempt 1 reason Technique"));
     fireEvent.click(screen.getByLabelText("Add climbing attempt"));
     fireEvent.click(screen.getByLabelText("Attempt 2 outcome Sent"));

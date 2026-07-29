@@ -15,9 +15,9 @@ import {
 } from "../../components/FingerLoadingLog.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { captureException } from "../../lib/telemetry.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
-import { captureException } from "../../lib/telemetry.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/climbing")({
@@ -165,9 +165,7 @@ export function ClimbingTab() {
         >
           <ClimbingAttemptLog
             errorMessage={climbingSessionMutation.error?.message ?? null}
-            onSubmit={(input: ClimbingSessionSubmission) =>
-              climbingSessionMutation.mutate(input)
-            }
+            onSubmit={(input: ClimbingSessionSubmission) => climbingSessionMutation.mutate(input)}
             submitting={climbingSessionMutation.isPending}
           />
         </Section>

@@ -1,11 +1,17 @@
 import { useState } from "react";
+import { z } from "zod";
 
-type AttemptOutcome = "sent" | "failed";
-type FailureReason = "fell" | "pumped" | "skin" | "technique" | "fear";
-type HoldType = "crimp" | "sloper" | "pinch" | "pocket" | "jug";
+const attemptOutcomeSchema = z.enum(["sent", "failed"]);
+const climbTypeSchema = z.enum(["boulder", "route"]);
+const failureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
+const holdTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
+type AttemptOutcome = z.infer<typeof attemptOutcomeSchema>;
+type FailureReason = z.infer<typeof failureReasonSchema>;
+type HoldType = z.infer<typeof holdTypeSchema>;
 
 interface AttemptDraft {
   failureReason: FailureReason | null;
+  id: number;
   notes: string;
   outcome: AttemptOutcome;
 }
@@ -45,12 +51,14 @@ export function ClimbingAttemptLog({
   const [routeName, setRouteName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [attempts, setAttempts] = useState<AttemptDraft[]>([
-    { failureReason: "fell", notes: "", outcome: "failed" },
+    { failureReason: "fell", id: 1, notes: "", outcome: "failed" },
   ]);
 
   function updateAttempt(attemptIndex: number, patch: Partial<AttemptDraft>): void {
     setAttempts((current) =>
-      current.map((attempt, index) => (index === attemptIndex ? { ...attempt, ...patch } : attempt)),
+      current.map((attempt, index) =>
+        index === attemptIndex ? { ...attempt, ...patch } : attempt,
+      ),
     );
   }
 
@@ -89,7 +97,7 @@ export function ClimbingAttemptLog({
           <select
             aria-label="Climb type"
             className="input"
-            onChange={(event) => setClimbType(event.target.value as "boulder" | "route")}
+            onChange={(event) => setClimbType(climbTypeSchema.parse(event.target.value))}
             value={climbType}
           >
             <option value="boulder">Boulder</option>
@@ -121,7 +129,7 @@ export function ClimbingAttemptLog({
           <select
             aria-label="Primary hold type"
             className="input"
-            onChange={(event) => setHoldType(event.target.value as HoldType)}
+            onChange={(event) => setHoldType(holdTypeSchema.parse(event.target.value))}
             value={holdType}
           >
             {["crimp", "sloper", "pinch", "pocket", "jug"].map((value) => (
@@ -151,13 +159,13 @@ export function ClimbingAttemptLog({
       </div>
       <div className="space-y-3">
         {attempts.map((attempt, attemptIndex) => (
-          <div className="grid grid-cols-2 gap-3 rounded border border-border p-3" key={attemptIndex}>
+          <div className="grid grid-cols-2 gap-3 rounded border border-border p-3" key={attempt.id}>
             <Field label={`Attempt ${attemptIndex + 1} outcome`}>
               <select
                 aria-label={`Attempt ${attemptIndex + 1} outcome`}
                 className="input"
                 onChange={(event) => {
-                  const outcome = event.target.value as AttemptOutcome;
+                  const outcome = attemptOutcomeSchema.parse(event.target.value);
                   updateAttempt(attemptIndex, {
                     failureReason: outcome === "sent" ? null : (attempt.failureReason ?? "fell"),
                     outcome,
@@ -176,7 +184,7 @@ export function ClimbingAttemptLog({
                 disabled={attempt.outcome === "sent"}
                 onChange={(event) =>
                   updateAttempt(attemptIndex, {
-                    failureReason: event.target.value as FailureReason,
+                    failureReason: failureReasonSchema.parse(event.target.value),
                   })
                 }
                 value={attempt.failureReason ?? ""}
@@ -198,7 +206,7 @@ export function ClimbingAttemptLog({
         onClick={() =>
           setAttempts((current) => [
             ...current,
-            { failureReason: "fell", notes: "", outcome: "failed" },
+            { failureReason: "fell", id: current.length + 1, notes: "", outcome: "failed" },
           ])
         }
         type="button"
@@ -224,9 +232,9 @@ export function ClimbingAttemptLog({
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-muted">
-      {label}
+    <div className="flex flex-col gap-1 text-xs text-muted">
+      <span>{label}</span>
       {children}
-    </label>
+    </div>
   );
 }

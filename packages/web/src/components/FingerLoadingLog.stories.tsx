@@ -32,4 +32,6 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Loading: Story = { args: { loading: true } };
 export const EmptyNoPreviousSession: Story = { args: { latest: null } };
-export const SaveError: Story = { args: { errorMessage: "The finger session could not be saved." } };
+export const SaveError: Story = {
+  args: { errorMessage: "The finger session could not be saved." },
+};

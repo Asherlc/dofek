@@ -324,9 +324,7 @@ describe("climbing router integration", () => {
       startedAt: new Date().toISOString(),
     });
 
-    expect(logged.climbs).toEqual([
-      expect.objectContaining({ attemptCount: 3, sent: true }),
-    ]);
+    expect(logged.climbs).toEqual([expect.objectContaining({ attemptCount: 3, sent: true })]);
     await expect(caller.activityEntries({ id: logged.activityId })).resolves.toEqual([
       expect.objectContaining({
         attempts: [

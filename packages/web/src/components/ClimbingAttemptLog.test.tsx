@@ -7,13 +7,7 @@ import { ClimbingAttemptLog } from "./ClimbingAttemptLog.tsx";
 describe("ClimbingAttemptLog", () => {
   it("adds ordered attempts and submits per-attempt outcomes", () => {
     const onSubmit = vi.fn();
-    render(
-      <ClimbingAttemptLog
-        errorMessage={null}
-        onSubmit={onSubmit}
-        submitting={false}
-      />,
-    );
+    render(<ClimbingAttemptLog errorMessage={null} onSubmit={onSubmit} submitting={false} />);
 
     fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "V5" } });
     fireEvent.change(screen.getByLabelText("Attempt 1 failure reason"), {

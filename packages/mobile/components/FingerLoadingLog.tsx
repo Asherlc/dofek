@@ -3,13 +3,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
-type FingerExercise =
-  | "max_hang"
-  | "repeater"
-  | "min_edge"
-  | "one_arm"
-  | "campus"
-  | "no_hang";
+type FingerExercise = "max_hang" | "repeater" | "min_edge" | "one_arm" | "campus" | "no_hang";
 type GripPosition =
   | "half_crimp"
   | "full_crimp"

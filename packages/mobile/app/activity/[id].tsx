@@ -363,10 +363,18 @@ interface ClimbingEntry {
   grade: string;
   sent: boolean;
   attemptCount: number;
+  attempts: Array<{
+    attemptIndex: number;
+    failureReason: "fell" | "pumped" | "skin" | "technique" | "fear" | null;
+    notes: string | null;
+    outcome: "sent" | "failed";
+  }>;
   ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
+  holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
   routeName: string | null;
   locationName: string | null;
   sourceName: string;
+  wallAngleDegrees: number | null;
 }
 
 function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
@@ -389,6 +397,26 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
             {entry.locationName && (
               <Text style={climbingStyles.locationName}>{entry.locationName}</Text>
             )}
+            {(entry.wallAngleDegrees !== null || entry.holdType !== null) && (
+              <Text style={climbingStyles.locationName}>
+                {[
+                  entry.wallAngleDegrees === null ? null : `${entry.wallAngleDegrees}°`,
+                  entry.holdType === null
+                    ? null
+                    : `${entry.holdType[0]?.toUpperCase()}${entry.holdType.slice(1)}`,
+                ]
+                  .filter((value) => value !== null)
+                  .join(" · ")}
+              </Text>
+            )}
+            {entry.attempts.map((attempt) => (
+              <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
+                {attempt.attemptIndex}:{" "}
+                {attempt.outcome === "sent"
+                  ? "Sent"
+                  : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
+              </Text>
+            ))}
           </View>
           <View style={climbingStyles.resultDetails}>
             {entry.ascentType && <Text style={climbingStyles.sent}>{entry.ascentType}</Text>}
@@ -453,6 +481,10 @@ const climbingStyles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "600",
+  },
+  attemptDetail: {
+    color: colors.textSecondary,
+    fontSize: 11,
   },
   sourceName: {
     color: colors.textTertiary,

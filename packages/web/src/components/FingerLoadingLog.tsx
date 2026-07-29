@@ -1,20 +1,26 @@
 import { useState } from "react";
+import { z } from "zod";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
-type FingerExercise =
-  | "max_hang"
-  | "repeater"
-  | "min_edge"
-  | "one_arm"
-  | "campus"
-  | "no_hang";
-type GripPosition =
-  | "half_crimp"
-  | "full_crimp"
-  | "open_hand"
-  | "three_finger_drag"
-  | "two_finger_pocket";
-type Laterality = "both" | "left" | "right";
+const fingerExerciseSchema = z.enum([
+  "max_hang",
+  "repeater",
+  "min_edge",
+  "one_arm",
+  "campus",
+  "no_hang",
+]);
+const gripPositionSchema = z.enum([
+  "half_crimp",
+  "full_crimp",
+  "open_hand",
+  "three_finger_drag",
+  "two_finger_pocket",
+]);
+const lateralitySchema = z.enum(["both", "left", "right"]);
+type FingerExercise = z.infer<typeof fingerExerciseSchema>;
+type GripPosition = z.infer<typeof gripPositionSchema>;
+type Laterality = z.infer<typeof lateralitySchema>;
 
 export interface FingerLoadingSubmission {
   bodyweightKg: number;
@@ -135,7 +141,7 @@ export function FingerLoadingLog({
           <select
             aria-label="Exercise"
             className="input"
-            onChange={(event) => setExercise(event.target.value as FingerExercise)}
+            onChange={(event) => setExercise(fingerExerciseSchema.parse(event.target.value))}
             value={exercise}
           >
             {exerciseOptions.map((option) => (
@@ -150,7 +156,7 @@ export function FingerLoadingLog({
           <select
             aria-label="Grip position"
             className="input"
-            onChange={(event) => setGripPosition(event.target.value as GripPosition)}
+            onChange={(event) => setGripPosition(gripPositionSchema.parse(event.target.value))}
             value={gripPosition}
           >
             {gripOptions.map((option) => (
@@ -164,7 +170,7 @@ export function FingerLoadingLog({
           <select
             aria-label="Laterality"
             className="input"
-            onChange={(event) => setLaterality(event.target.value as Laterality)}
+            onChange={(event) => setLaterality(lateralitySchema.parse(event.target.value))}
             value={laterality}
           >
             <option value="both">Both hands</option>
@@ -199,7 +205,14 @@ export function FingerLoadingLog({
           value={restIntervalSeconds}
           onChange={setRestIntervalSeconds}
         />
-        <NumberField label="Effort (0–10)" min={0} max={10} step={0.5} value={rpe} onChange={setRpe} />
+        <NumberField
+          label="Effort (0–10)"
+          min={0}
+          max={10}
+          step={0.5}
+          value={rpe}
+          onChange={setRpe}
+        />
       </div>
       <Field label="Notes">
         <textarea
@@ -229,10 +242,10 @@ export function FingerLoadingLog({
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-muted">
-      {label}
+    <div className="flex flex-col gap-1 text-xs text-muted">
+      <span>{label}</span>
       {children}
-    </label>
+    </div>
   );
 }
 

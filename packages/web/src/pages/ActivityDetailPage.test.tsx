@@ -1042,10 +1042,13 @@ describe("ActivityDetailPage", () => {
             grade: "V4",
             sent: true,
             attemptCount: 7,
+            attempts: [],
             ascentType: "Redpoint",
+            holdType: null,
             routeName: "Blue Circuit",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            wallAngleDegrees: null,
           },
           {
             id: "climb-project",
@@ -1054,10 +1057,20 @@ describe("ActivityDetailPage", () => {
             grade: "V5",
             sent: false,
             attemptCount: 1,
+            attempts: [
+              {
+                attemptIndex: 1,
+                failureReason: "technique",
+                notes: null,
+                outcome: "failed",
+              },
+            ],
             ascentType: null,
+            holdType: "crimp",
             routeName: "Project",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            wallAngleDegrees: 35,
           },
         ],
         isLoading: false,
@@ -1074,6 +1087,8 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Sent in 7 attempts")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Attempted 1 time")).toBeDefined();
+      expect(screen.getByText("35° · Crimp")).toBeDefined();
+      expect(screen.getByText("1: Technique")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
 
       Object.assign(mockActivity, originalData);

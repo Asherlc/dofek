@@ -6,8 +6,24 @@ type FailureReason = "fell" | "pumped" | "skin" | "technique" | "fear";
 type HoldType = "crimp" | "sloper" | "pinch" | "pocket" | "jug";
 interface AttemptDraft {
   failureReason: FailureReason | null;
+  id: number;
   outcome: "sent" | "failed";
 }
+
+const holdOptions: Array<{ label: string; value: HoldType }> = [
+  { label: "Crimp", value: "crimp" },
+  { label: "Sloper", value: "sloper" },
+  { label: "Pinch", value: "pinch" },
+  { label: "Pocket", value: "pocket" },
+  { label: "Jug", value: "jug" },
+];
+const failureReasonOptions: Array<{ label: string; value: FailureReason }> = [
+  { label: "Fell", value: "fell" },
+  { label: "Pumped", value: "pumped" },
+  { label: "Skin", value: "skin" },
+  { label: "Technique", value: "technique" },
+  { label: "Fear", value: "fear" },
+];
 
 export interface ClimbingSessionSubmission {
   climbs: Array<{
@@ -44,12 +60,14 @@ export function ClimbingAttemptLog({
   const [routeName, setRouteName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [attempts, setAttempts] = useState<AttemptDraft[]>([
-    { failureReason: "fell", outcome: "failed" },
+    { failureReason: "fell", id: 1, outcome: "failed" },
   ]);
 
   function updateAttempt(attemptIndex: number, patch: Partial<AttemptDraft>): void {
     setAttempts((current) =>
-      current.map((attempt, index) => (index === attemptIndex ? { ...attempt, ...patch } : attempt)),
+      current.map((attempt, index) =>
+        index === attemptIndex ? { ...attempt, ...patch } : attempt,
+      ),
     );
   }
 
@@ -74,14 +92,11 @@ export function ClimbingAttemptLog({
       <OptionGroup
         label="Primary hold"
         onSelect={setHoldType}
-        options={["crimp", "sloper", "pinch", "pocket", "jug"].map((value) => ({
-          label: `${value[0]?.toUpperCase()}${value.slice(1)}`,
-          value: value as HoldType,
-        }))}
+        options={holdOptions}
         selected={holdType}
       />
       {attempts.map((attempt, attemptIndex) => (
-        <View key={attemptIndex} style={styles.attempt}>
+        <View key={attempt.id} style={styles.attempt}>
           <Text style={styles.attemptTitle}>Attempt {attemptIndex + 1}</Text>
           <OptionGroup
             label={`Attempt ${attemptIndex + 1} outcome`}
@@ -103,10 +118,7 @@ export function ClimbingAttemptLog({
               onSelect={(failureReason: FailureReason) =>
                 updateAttempt(attemptIndex, { failureReason })
               }
-              options={["fell", "pumped", "skin", "technique", "fear"].map((value) => ({
-                label: `${value[0]?.toUpperCase()}${value.slice(1)}`,
-                value: value as FailureReason,
-              }))}
+              options={failureReasonOptions}
               selected={attempt.failureReason ?? "fell"}
             />
           ) : null}
@@ -119,7 +131,7 @@ export function ClimbingAttemptLog({
           onPress={() =>
             setAttempts((current) => [
               ...current,
-              { failureReason: "fell", outcome: "failed" },
+              { failureReason: "fell", id: current.length + 1, outcome: "failed" },
             ])
           }
           style={styles.secondaryButton}
@@ -135,7 +147,11 @@ export function ClimbingAttemptLog({
             onSubmit({
               climbs: [
                 {
-                  attempts: attempts.map((attempt) => ({ ...attempt, notes: null })),
+                  attempts: attempts.map((attempt) => ({
+                    failureReason: attempt.failureReason,
+                    notes: null,
+                    outcome: attempt.outcome,
+                  })),
                   climbType,
                   grade,
                   gradeSystem: climbType === "boulder" ? "v_scale" : "yds",

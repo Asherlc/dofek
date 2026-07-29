@@ -4,10 +4,7 @@ import {
   ClimbingAttemptLog,
   type ClimbingSessionSubmission,
 } from "../components/ClimbingAttemptLog";
-import {
-  FingerLoadingLog,
-  type FingerLoadingSubmission,
-} from "../components/FingerLoadingLog";
+import { FingerLoadingLog, type FingerLoadingSubmission } from "../components/FingerLoadingLog";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
