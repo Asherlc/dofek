@@ -16,11 +16,20 @@ function MorePageStory() {
     path: "/more",
     component: MorePage,
   });
-  const destinationRoutes = ["/settings", "/breathwork", "/cycle"].map((path) =>
+  const destinationRoutes = [
+    { path: "/settings", title: "Account & settings" },
+    { path: "/breathwork", title: "Breathwork" },
+    { path: "/cycle", title: "Cycle tracking" },
+  ].map(({ path, title }) =>
     createRoute({
       getParentRoute: () => rootRoute,
       path,
-      component: () => null,
+      component: () => (
+        <main className="p-8">
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          <p className="mt-2 text-muted-foreground">Story destination preview</p>
+        </main>
+      ),
     }),
   );
   const router = createRouter({

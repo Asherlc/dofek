@@ -25,7 +25,7 @@
 - Present exactly three destination entries: Account & settings, Breathwork, and Cycle tracking.
 - Add More to the web navigation list so it appears in the mobile menu and desktop sidebar.
 - Replace the Today-only native Settings header action with a More action in the shared tab header alongside Alerts.
-- Keep each platform's static route metadata local because TanStack Router and Expo Router use different route contracts; three labels do not justify a shared domain abstraction.
+- Keep each platform's static route metadata local; three labels do not justify a shared domain abstraction.
 
 ## Test Strategy
 
