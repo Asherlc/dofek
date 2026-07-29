@@ -9,10 +9,18 @@ interface StorybookPage {
 
 export async function assertStoryRendered(page: StorybookPage, storyId: string): Promise<void> {
   const errorMessage = page.locator("#error-message:visible");
-  if ((await errorMessage.count()) === 0) return;
+  if ((await errorMessage.count()) > 0) {
+    const message = (await errorMessage.textContent())?.trim() || "Unknown Storybook render error";
+    const stack = (await page.locator("#error-stack:visible").textContent())?.trim();
+    const firstFatalLine = stack?.split(/\r?\n/, 1)[0] || message;
+    throw new Error(`Storybook story ${storyId} failed to render: ${firstFatalLine}`);
+  }
 
-  const message = (await errorMessage.textContent())?.trim() || "Unknown Storybook render error";
-  const stack = (await page.locator("#error-stack:visible").textContent())?.trim();
-  const firstFatalLine = stack?.split(/\r?\n/, 1)[0] || message;
-  throw new Error(`Storybook story ${storyId} failed to render: ${firstFatalLine}`);
+  const processingErrorHeading = page.locator('text="Processing status is unavailable"');
+  if ((await processingErrorHeading.count()) > 0) {
+    const fetchError = page.locator('text="Failed to fetch"');
+    const detail =
+      (await fetchError.count()) > 0 ? "Failed to fetch" : "Processing status is unavailable";
+    throw new Error(`Storybook story ${storyId} contains a processing error: ${detail}`);
+  }
 }

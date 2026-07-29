@@ -8,13 +8,25 @@ interface StorybookRenderFailure {
   stack: string | null;
 }
 
-function storybookPage(failure?: StorybookRenderFailure): StorybookPage {
+function storybookPage({
+  renderFailure,
+  processingError,
+}: {
+  renderFailure?: StorybookRenderFailure;
+  processingError?: string;
+} = {}): StorybookPage {
   return {
     locator(selector) {
-      const text =
-        selector === "#error-message:visible" ? failure?.message : (failure?.stack ?? null);
+      const text = {
+        "#error-message:visible": renderFailure?.message,
+        "#error-stack:visible": renderFailure?.stack,
+        'text="Processing status is unavailable"': processingError
+          ? "Processing status is unavailable"
+          : null,
+        'text="Failed to fetch"': processingError ?? null,
+      }[selector];
       return {
-        count: async () => (failure == null ? 0 : 1),
+        count: async () => (text == null ? 0 : 1),
         textContent: async () => text ?? null,
       };
     },
@@ -30,12 +42,22 @@ describe("assertStoryRendered", () => {
 
   it("fails with the story id and first fatal line", async () => {
     const page = storybookPage({
-      message: "LegacyEventEmitter is not a constructor",
-      stack: "TypeError: LegacyEventEmitter is not a constructor\n    at settings.js:1:1",
+      renderFailure: {
+        message: "LegacyEventEmitter is not a constructor",
+        stack: "TypeError: LegacyEventEmitter is not a constructor\n    at settings.js:1:1",
+      },
     });
 
     await expect(assertStoryRendered(page, "pages-settings--default")).rejects.toThrow(
       "Storybook story pages-settings--default failed to render: TypeError: LegacyEventEmitter is not a constructor",
+    );
+  });
+
+  it("fails when a screenshot story visibly reports a processing fetch error", async () => {
+    const page = storybookPage({ processingError: "Failed to fetch" });
+
+    await expect(assertStoryRendered(page, "pages-strain--with-activities")).rejects.toThrow(
+      "Storybook story pages-strain--with-activities contains a processing error: Failed to fetch",
     );
   });
 });

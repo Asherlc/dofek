@@ -1,10 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
 import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { createFixtureDates, type FixtureDates } from "./fixture-dates";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./processing-status-story-fixture";
 import StrainScreen from "./strain";
 
 function createMockWorkloadData(dates: FixtureDates) {
@@ -131,7 +135,13 @@ function createSeededProviders(hasActivities: boolean) {
     fixture.data,
   );
 
-  return { queryClient };
+  const processingStatus = seedReadyProcessingStatus(queryClient, [
+    "activity",
+    "recovery",
+    "training",
+  ]);
+
+  return { processingStatus, queryClient };
 }
 
 function MockProviders({
@@ -141,10 +151,15 @@ function MockProviders({
   children: React.ReactNode;
   withActivities?: boolean;
 }) {
-  const { queryClient } = createSeededProviders(withActivities);
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
-  });
+  const { queryClient, trpcClient } = useMemo(() => {
+    const seededProviders = createSeededProviders(withActivities);
+    return {
+      queryClient: seededProviders.queryClient,
+      trpcClient: trpc.createClient({
+        links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
+      }),
+    };
+  }, [withActivities]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
