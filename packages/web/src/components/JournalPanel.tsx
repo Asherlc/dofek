@@ -400,7 +400,7 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
         visualization: question?.data_type === "boolean" ? ("point" as const) : ("line" as const),
         formatValue:
           question?.data_type === "boolean"
-            ? (value: number) => (value === 1 ? "Yes" : "No")
+            ? (value: number) => (value === 1 ? "Yes" : value === 0 ? "No" : String(value))
             : undefined,
       };
     });

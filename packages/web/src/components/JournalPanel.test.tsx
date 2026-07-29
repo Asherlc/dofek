@@ -341,6 +341,7 @@ describe("JournalPanel", () => {
     });
     expect(alcohol?.formatValue?.(1)).toBe("Yes");
     expect(alcohol?.formatValue?.(0)).toBe("No");
+    expect(alcohol?.formatValue?.(2)).toBe("2");
     expect(energy).toMatchObject({
       data: [["2026-07-24", 8]],
       visualization: "line",
