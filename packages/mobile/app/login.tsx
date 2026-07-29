@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   passwordButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",

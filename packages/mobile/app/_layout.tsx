@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   authErrorButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: "700",
   },

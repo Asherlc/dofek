@@ -173,7 +173,7 @@ export const styles = StyleSheet.create({
   },
   unitButtonSelected: {
     borderColor: colors.accent,
-    backgroundColor: `${colors.accent}15`,
+    backgroundColor: colors.accentSubtle,
   },
   unitLabel: {
     fontSize: 15,

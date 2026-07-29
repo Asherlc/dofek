@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   confirmText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 13,
     fontWeight: "600",
   },
