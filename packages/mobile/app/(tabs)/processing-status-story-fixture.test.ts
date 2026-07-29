@@ -1,6 +1,11 @@
 import { QueryClient } from "@tanstack/react-query";
+import { createTRPCClient } from "@trpc/client";
+import type { AppRouter } from "dofek-server/router";
 import { describe, expect, it } from "vitest";
-import { seedReadyProcessingStatus } from "./processing-status-story-fixture";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./processing-status-story-fixture";
 
 describe("seedReadyProcessingStatus", () => {
   it("seeds the exact processing status query used by screenshot stories", () => {
@@ -24,5 +29,24 @@ describe("seedReadyProcessingStatus", () => {
       ],
       operations: [],
     });
+  });
+
+  it("serves every processing status poll without reaching the network", async () => {
+    const queryClient = new QueryClient();
+    const datasets = ["activity", "sleep", "recovery"] as const;
+    const snapshot = seedReadyProcessingStatus(queryClient, datasets);
+    const client = createTRPCClient<AppRouter>({
+      links: [createProcessingStatusStoryLink(snapshot)],
+    });
+
+    await expect(client.processing.status.query({ datasets: [...datasets] })).resolves.toEqual(
+      snapshot,
+    );
+    await expect(client.processing.status.query({ datasets: [...datasets] })).resolves.toEqual(
+      snapshot,
+    );
+    await expect(
+      client.mobileDashboard.recovery.query({ days: 30, endDate: "2026-07-28" }),
+    ).rejects.toThrow("Unhandled processing-status story tRPC operation: mobileDashboard.recovery");
   });
 });

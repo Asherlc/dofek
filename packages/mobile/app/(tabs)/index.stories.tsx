@@ -2,13 +2,15 @@ import { formatDateYmd } from "@dofek/format/format";
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import TodayScreen from "./index";
-import { seedReadyProcessingStatus } from "./processing-status-story-fixture";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./processing-status-story-fixture";
 
 function localDateString(dayOffset = 0): string {
   const date = new Date();
@@ -23,7 +25,13 @@ function createSeededProviders() {
 
   const todayDate = localDateString();
 
-  seedReadyProcessingStatus(queryClient, ["activity", "sleep", "recovery", "training", "body"]);
+  const processingStatus = seedReadyProcessingStatus(queryClient, [
+    "activity",
+    "sleep",
+    "recovery",
+    "training",
+    "body",
+  ]);
 
   queryClient.setQueryData(
     [["mobileDashboard", "dashboard"], { input: { endDate: todayDate }, type: "query" }],
@@ -190,7 +198,7 @@ function createSeededProviders() {
     { key: PROVIDER_GUIDE_SETTINGS_KEY, value: true },
   );
 
-  return { queryClient };
+  return { processingStatus, queryClient };
 }
 
 function MockProviders({ children }: { children: ReactNode }) {
@@ -199,7 +207,7 @@ function MockProviders({ children }: { children: ReactNode }) {
     return {
       ...seededProviders,
       trpcClient: trpc.createClient({
-        links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
+        links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
       }),
     };
   }, []);
