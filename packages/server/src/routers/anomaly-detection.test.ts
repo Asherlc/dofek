@@ -65,6 +65,7 @@ function sleepRowsForBaseline({
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: null,
+    staging_available: false,
   }));
   return [
     ...baselineRows,
@@ -81,6 +82,7 @@ function sleepRowsForBaseline({
       light_minutes: null,
       awake_minutes: null,
       efficiency_pct: null,
+      staging_available: false,
     },
   ];
 }

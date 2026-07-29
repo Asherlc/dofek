@@ -12,6 +12,7 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 46,
     awakePct: 8,
     efficiency: 92,
+    stagingAvailable: true,
     rollingAvgDuration: 425,
   },
   {
@@ -23,6 +24,7 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 48,
     awakePct: 10,
     efficiency: 90,
+    stagingAvailable: true,
     rollingAvgDuration: 421,
   },
   {
@@ -34,6 +36,7 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 43,
     awakePct: 8,
     efficiency: 92,
+    stagingAvailable: true,
     rollingAvgDuration: 429,
   },
   {
@@ -45,6 +48,7 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 51,
     awakePct: 10,
     efficiency: 90,
+    stagingAvailable: true,
     rollingAvgDuration: 423,
   },
   {
@@ -56,6 +60,7 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 46,
     awakePct: 7,
     efficiency: 93,
+    stagingAvailable: true,
     rollingAvgDuration: 431,
   },
 ];

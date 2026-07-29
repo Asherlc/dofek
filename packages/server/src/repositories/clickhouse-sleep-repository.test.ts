@@ -21,6 +21,7 @@ describe("fetchDailySleepPerformanceNights", () => {
         light_minutes: 260,
         awake_minutes: 30,
         efficiency_pct: 92,
+        staging_available: true,
       },
     ]);
 
@@ -85,6 +86,7 @@ describe("fetchSleepNights", () => {
         light_minutes: 260,
         awake_minutes: 30,
         efficiency_pct: 92,
+        staging_available: true,
       },
     ]);
 
@@ -122,6 +124,7 @@ describe("fetchSleepNights", () => {
         light_minutes: null,
         awake_minutes: null,
         efficiency_pct: 92,
+        staging_available: false,
       },
     ]);
 
@@ -152,6 +155,7 @@ describe("fetchSleepNights", () => {
         light_minutes: null,
         awake_minutes: null,
         efficiency_pct: 92,
+        staging_available: false,
       },
     ]);
 
@@ -218,6 +222,7 @@ describe("fetchSleepNights", () => {
         light_minutes: null,
         awake_minutes: null,
         efficiency_pct: 92,
+        staging_available: false,
       },
     ]);
 

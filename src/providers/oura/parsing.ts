@@ -22,6 +22,7 @@ export interface ParsedOuraSleep {
   remMinutes?: number;
   lightMinutes?: number;
   awakeMinutes?: number;
+  stagingAvailable: boolean;
   efficiencyPct: number;
   sleepType: OuraSleepDocument["type"];
   isNap: boolean;
@@ -47,6 +48,11 @@ function secondsToMinutes(seconds: number | null): number | undefined {
 }
 
 export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
+  const stagingAvailable =
+    sleep.deep_sleep_duration != null &&
+    sleep.rem_sleep_duration != null &&
+    sleep.light_sleep_duration != null &&
+    sleep.awake_time != null;
   return {
     externalId: sleep.id,
     startedAt: new Date(sleep.bedtime_start),
@@ -56,6 +62,7 @@ export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
     remMinutes: secondsToMinutes(sleep.rem_sleep_duration),
     lightMinutes: secondsToMinutes(sleep.light_sleep_duration),
     awakeMinutes: secondsToMinutes(sleep.awake_time),
+    stagingAvailable,
     efficiencyPct: sleep.efficiency,
     sleepType: sleep.type,
     isNap: sleep.type !== "long_sleep" && sleep.type !== "sleep",

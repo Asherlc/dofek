@@ -422,11 +422,12 @@ describe("parseSleep — edge cases", () => {
     const parsed = parseSleep(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("300");
-    expect(parsed?.deepMinutes).toBe(0);
-    expect(parsed?.remMinutes).toBe(0);
-    expect(parsed?.lightMinutes).toBe(0);
-    expect(parsed?.awakeMinutes).toBe(0);
-    expect(parsed?.durationMinutes).toBe(0);
+    expect(parsed?.deepMinutes).toBeUndefined();
+    expect(parsed?.remMinutes).toBeUndefined();
+    expect(parsed?.lightMinutes).toBeUndefined();
+    expect(parsed?.awakeMinutes).toBeUndefined();
+    expect(parsed?.durationMinutes).toBeUndefined();
+    expect(parsed?.stagingAvailable).toBe(false);
     expect(parsed?.efficiencyPct).toBeUndefined();
     expect(parsed?.isNap).toBe(false);
   });

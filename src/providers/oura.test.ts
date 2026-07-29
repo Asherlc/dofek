@@ -738,6 +738,7 @@ describe("Oura Provider", () => {
       expect(result.remMinutes).toBe(95);
       expect(result.lightMinutes).toBe(240);
       expect(result.awakeMinutes).toBe(55);
+      expect(result.stagingAvailable).toBe(true);
       expect(result.efficiencyPct).toBe(87);
       expect(result.isNap).toBe(false);
     });
@@ -779,6 +780,7 @@ describe("Oura Provider", () => {
       expect(result.lightMinutes).toBeUndefined();
       expect(result.awakeMinutes).toBeUndefined();
       expect(result.durationMinutes).toBeUndefined();
+      expect(result.stagingAvailable).toBe(false);
     });
 
     it("rounds seconds to nearest minute", () => {
@@ -1768,6 +1770,7 @@ describe("OuraProvider.sync()", () => {
     expect(sleepValues.remMinutes).toBe(95);
     expect(sleepValues.lightMinutes).toBe(240);
     expect(sleepValues.awakeMinutes).toBe(55);
+    expect(sleepValues.stagingAvailable).toBe(true);
     expect(sleepValues.efficiencyPct).toBe(87);
     expect(sleepValues.sleepType).toBe("long_sleep");
     expect(sleepValues.startedAt).toEqual(new Date("2026-02-28T22:30:00+00:00"));

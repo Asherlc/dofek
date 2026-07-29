@@ -9,6 +9,7 @@ export interface SleepDataSourceRow {
   providerId: string | null;
   sourceName: string | null;
   sourceProviders: string[];
+  stagingAvailable: boolean;
 }
 
 interface SleepDataSourcesTableProps {
@@ -49,6 +50,7 @@ export function SleepDataSourcesTable({ rows, loading }: SleepDataSourcesTablePr
               <th className="pb-2 pr-4 font-medium">Night</th>
               <th className="pb-2 pr-4 font-medium">Duration</th>
               <th className="pb-2 pr-4 font-medium">Source</th>
+              <th className="pb-2 pr-4 font-medium">Stage data</th>
               <th className="pb-2 font-medium">Also reported by</th>
             </tr>
           </thead>
@@ -64,6 +66,9 @@ export function SleepDataSourcesTable({ rows, loading }: SleepDataSourcesTablePr
                     {row.durationMinutes != null ? formatDurationMinutes(row.durationMinutes) : "—"}
                   </td>
                   <td className="py-2 pr-4 text-foreground whitespace-nowrap">{primary}</td>
+                  <td className="py-2 pr-4 text-muted whitespace-nowrap">
+                    {row.stagingAvailable ? "Complete" : "Partial"}
+                  </td>
                   <td className="py-2 text-subtle text-xs whitespace-nowrap">{alsoFrom ?? "—"}</td>
                 </tr>
               );

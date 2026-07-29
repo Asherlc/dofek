@@ -301,13 +301,20 @@ export default function TodayScreen() {
               accessibilityLabel="Open last night sleep details"
             >
               <Card title="Last Night">
-                <SleepBar
-                  durationMinutes={lastNight.durationMinutes}
-                  deepPercentage={lastNight.deepPct}
-                  remPercentage={lastNight.remPct}
-                  lightPercentage={lastNight.lightPct}
-                  awakePercentage={lastNight.awakePct}
-                />
+                {lastNight.stagingAvailable ? (
+                  <SleepBar
+                    durationMinutes={lastNight.durationMinutes}
+                    deepPercentage={lastNight.deepPct ?? 0}
+                    remPercentage={lastNight.remPct ?? 0}
+                    lightPercentage={lastNight.lightPct ?? 0}
+                    awakePercentage={lastNight.awakePct ?? 0}
+                  />
+                ) : (
+                  <Text style={styles.noDataText}>
+                    {formatDurationMinutes(lastNight.durationMinutes)} recorded. Sleep stages were
+                    not reported.
+                  </Text>
+                )}
                 {sleepDebt > 0 && (
                   <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
                 )}

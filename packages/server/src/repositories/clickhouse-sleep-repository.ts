@@ -25,6 +25,7 @@ const clickHouseSleepNightSchema = z
     light_minutes: nullableNumberSchema,
     awake_minutes: nullableNumberSchema,
     efficiency_pct: nullableNumberSchema,
+    staging_available: z.boolean(),
   })
   .transform((row) => ({
     ...row,
@@ -62,6 +63,7 @@ const dailySleepPerformanceRowSchema = z.object({
   light_minutes: nullableNumberSchema,
   awake_minutes: nullableNumberSchema,
   efficiency_pct: nullableNumberSchema,
+  staging_available: z.boolean(),
 });
 
 export type DailySleepPerformanceNight = z.infer<typeof dailySleepPerformanceRowSchema>;
@@ -112,7 +114,8 @@ export async function fetchSleepNights(
       sleep.rem_minutes AS rem_minutes,
       sleep.light_minutes AS light_minutes,
       sleep.awake_minutes AS awake_minutes,
-      sleep.efficiency_pct AS efficiency_pct
+      sleep.efficiency_pct AS efficiency_pct,
+      sleep.staging_available AS staging_available
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
       AND sleep.is_deleted = 0
@@ -149,7 +152,8 @@ export async function fetchDailySleepPerformanceNights(
       sleep.rem_minutes AS rem_minutes,
       sleep.light_minutes AS light_minutes,
       sleep.awake_minutes AS awake_minutes,
-      sleep.efficiency_pct AS efficiency_pct
+      sleep.efficiency_pct AS efficiency_pct,
+      sleep.staging_available AS staging_available
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
       AND sleep.is_deleted = 0
@@ -191,7 +195,8 @@ export async function fetchLatestSleepNight(input: {
       sleep.rem_minutes AS rem_minutes,
       sleep.light_minutes AS light_minutes,
       sleep.awake_minutes AS awake_minutes,
-      sleep.efficiency_pct AS efficiency_pct
+      sleep.efficiency_pct AS efficiency_pct,
+      sleep.staging_available AS staging_available
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
       AND sleep.is_deleted = 0

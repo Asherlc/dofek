@@ -32,7 +32,9 @@ describe("sleep router integration", () => {
     // Insert provider (foreign key for sleep_session)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
+          VALUES
+            ('test_provider', 'Test Provider', ${TEST_USER_ID}),
+            ('partial_provider', 'Partial Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -41,13 +43,13 @@ describe("sleep router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
             provider_id, user_id, started_at, ended_at,
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-            efficiency_pct, sleep_type
+            efficiency_pct, staging_available, sleep_type
           ) VALUES (
             'test_provider', ${TEST_USER_ID},
             NOW() - INTERVAL '6 hours',
             NOW(),
             360, 54, 79, 200, 27,
-            92.5, 'sleep'
+            92.5, true, 'sleep'
           )`,
     );
 
@@ -129,6 +131,79 @@ describe("sleep router integration", () => {
         expect(typeof row.efficiency_pct).toBe("number");
       }
     }
+  });
+
+  it("recovery.sleepAnalytics excludes unreported efficiency from mixed-provider averages", async () => {
+    await testCtx.db.execute(sql`
+      INSERT INTO fitness.sleep_session (
+        provider_id,
+        user_id,
+        started_at,
+        ended_at,
+        duration_minutes,
+        deep_minutes,
+        rem_minutes,
+        light_minutes,
+        awake_minutes,
+        efficiency_pct,
+        staging_available,
+        sleep_type
+      )
+      VALUES
+        (
+          'test_provider',
+          ${TEST_USER_ID},
+          NOW() - INTERVAL '54 hours',
+          NOW() - INTERVAL '46 hours',
+          480,
+          90,
+          100,
+          250,
+          40,
+          80,
+          true,
+          'sleep'
+        ),
+        (
+          'partial_provider',
+          ${TEST_USER_ID},
+          NOW() - INTERVAL '78 hours',
+          NOW() - INTERVAL '70 hours',
+          480,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          false,
+          'sleep'
+        )
+    `);
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
+    const result = await query<{
+      nightly: Array<{
+        stagingAvailable: boolean;
+        deepPct: number | null;
+        efficiency: number | null;
+      }>;
+      averageEfficiencyPercent: number | null;
+    }>("recovery.sleepAnalytics", {
+      days: 30,
+      endDate: new Date().toISOString().slice(0, 10),
+    });
+
+    expect(result.averageEfficiencyPercent).toBe(86.3);
+    expect(result.nightly).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stagingAvailable: false,
+          deepPct: null,
+          efficiency: null,
+        }),
+      ]),
+    );
   });
 
   it("sleep.latestStages falls back to overlapping session when winning provider has no stages", async () => {

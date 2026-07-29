@@ -58,6 +58,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
               remPct: 24,
               lightPct: 47,
               awakePct: 8,
+              stagingAvailable: true,
             },
         sleepDebt: sleepDataUnavailable ? 0 : 18,
       },

@@ -2984,7 +2984,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain(",480,");
     });
 
-    it("handles asleepUnspecified as light sleep (kills break removal and += to -= mutations)", async () => {
+    it("keeps generic asleep intervals out of the canonical stage bundle", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -3017,8 +3017,8 @@ describe("healthKitSyncRouter", () => {
       });
       expect(sleepInsert).toBeDefined();
       const serialized = JSON.stringify(sleepInsert?.[0]);
-      // light_minutes should be 120 (from asleepUnspecified), not 0 or -120
-      expect(serialized).toContain(",120,");
+      expect(serialized).toContain("staging_available");
+      expect(serialized).not.toContain(",120,");
     });
 
     it("handles inBed-only session with no stages (kills stagesBySource.size > 0 ArrayDeclaration mutation)", async () => {
@@ -3047,9 +3047,8 @@ describe("healthKitSyncRouter", () => {
       });
       expect(sleepInsert).toBeDefined();
       const serialized = JSON.stringify(sleepInsert?.[0]);
-      // All stage minutes should be 0
-      // The pattern should be deep=0, rem=0, light=0, awake=0
-      expect(serialized).toContain(",0,");
+      expect(serialized).toContain("staging_available");
+      expect(serialized).not.toContain(",0,");
     });
 
     it("filters out stages outside the inBed session (kills overlap check mutations >= to >, <= to <, && to ||)", async () => {

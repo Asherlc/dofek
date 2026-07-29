@@ -91,6 +91,7 @@ Cross-provider reverse-engineering references:
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
 | [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the Redpanda sink and ClickHouse analytics layers. |
+| [sleep-quality-backfill-runbook.md](sleep-quality-backfill-runbook.md) | Conservatively repairing historical sleep stage availability and sentinel-zero fields in bounded windows. |
 | [processing-status-runbook.md](processing-status-runbook.md) | Deploying and diagnosing provider/import processing across Postgres, Redpanda, PeerDB, ClickHouse, dbt, and cache refresh. |
 | [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Current Redpanda ingest and R2 archive health, plus the unimplemented bounded-replay gap. |
 | [metric-stream-postgres-retirement.md](metric-stream-postgres-retirement.md) | Completed Postgres metric-stream retirement and current ownership boundaries. |

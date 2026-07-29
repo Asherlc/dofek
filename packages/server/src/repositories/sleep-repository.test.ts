@@ -11,7 +11,9 @@ describe("SleepRepository", () => {
     clickHouseRows?: Record<string, unknown>[];
   } = {}) {
     const execute = vi.fn().mockResolvedValue(postgresRows);
-    const sensorStore = makeMockSensorStore(clickHouseRows);
+    const sensorStore = makeMockSensorStore(
+      clickHouseRows.map((row) => ({ staging_available: false, ...row })),
+    );
     const repo = new SleepRepository(
       { execute },
       "user-1",

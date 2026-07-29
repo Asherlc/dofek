@@ -669,6 +669,7 @@ describe("createMcpRouter", () => {
         light_minutes: 240,
         provider_id: "whoop",
         rem_minutes: 100,
+        staging_available: true,
         started_at: "2026-05-19T06:00:00.000Z",
       },
     ]);
@@ -688,6 +689,7 @@ describe("createMcpRouter", () => {
         onset_time: "23:00",
         respiratory_rate_avg: 14.2,
         sleep_consistency_pct: null,
+        staging_available: true,
         source_provider: "whoop",
         stages: { awake_minutes: 30, light_minutes: 240, rem_minutes: 100, sws_minutes: 80 },
         sleep_efficiency_pct: 90,

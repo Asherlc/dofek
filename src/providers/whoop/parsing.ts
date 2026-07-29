@@ -80,11 +80,12 @@ export interface ParsedSleep {
   externalId: string;
   startedAt: Date;
   endedAt: Date;
-  durationMinutes: number;
-  deepMinutes: number;
-  remMinutes: number;
-  lightMinutes: number;
-  awakeMinutes: number;
+  durationMinutes?: number;
+  deepMinutes?: number;
+  remMinutes?: number;
+  lightMinutes?: number;
+  awakeMinutes?: number;
+  stagingAvailable: boolean;
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
@@ -205,6 +206,7 @@ export function parseInlineSleep(
     remMinutes: milliToMinutes(record.rem_sleep_duration),
     lightMinutes: milliToMinutes(record.light_sleep_duration),
     awakeMinutes: milliToMinutes(record.wake_duration),
+    stagingAvailable: true,
     efficiencyPct: normalizeEfficiencyPct(record.in_sleep_efficiency),
     sleepType: record.significant === false ? "nap" : "sleep",
     isNap: record.significant === false,
@@ -238,19 +240,21 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
   }
 
   const stages = record.score?.stage_summary;
-  const totalSleepMilli =
-    (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
+  const totalSleepMilli = stages
+    ? stages.total_in_bed_time_milli - stages.total_awake_time_milli
+    : undefined;
   const sleepNeeded = record.score?.sleep_needed;
 
   return {
     externalId: String(record.id),
     startedAt,
     endedAt,
-    durationMinutes: milliToMinutes(totalSleepMilli),
-    deepMinutes: milliToMinutes(stages?.total_slow_wave_sleep_time_milli ?? 0),
-    remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
-    lightMinutes: milliToMinutes(stages?.total_light_sleep_time_milli ?? 0),
-    awakeMinutes: milliToMinutes(stages?.total_awake_time_milli ?? 0),
+    durationMinutes: totalSleepMilli == null ? undefined : milliToMinutes(totalSleepMilli),
+    deepMinutes: stages ? milliToMinutes(stages.total_slow_wave_sleep_time_milli) : undefined,
+    remMinutes: stages ? milliToMinutes(stages.total_rem_sleep_time_milli) : undefined,
+    lightMinutes: stages ? milliToMinutes(stages.total_light_sleep_time_milli) : undefined,
+    awakeMinutes: stages ? milliToMinutes(stages.total_awake_time_milli) : undefined,
+    stagingAvailable: stages != null,
     efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,

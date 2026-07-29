@@ -60,6 +60,7 @@ type SleepNightTestRow = {
   light_minutes: number | null;
   awake_minutes: number | null;
   efficiency_pct: number | null;
+  staging_available: boolean;
 };
 
 function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTestRow {
@@ -75,6 +76,7 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
     light_minutes: 255,
     awake_minutes: 30,
     efficiency_pct: 93.75,
+    staging_available: true,
     ...overrides,
   };
 }
@@ -713,6 +715,48 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
     expect(result.averageSleepMinutes).toBe(405);
     expect(result.averageEfficiencyPercent).toBe(85);
+  });
+
+  it("excludes an incomplete provider row from stage and efficiency averages", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "apple_health",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageEfficiencyPercent).toBe(90);
+    expect(result.nightly[1]).toMatchObject({
+      stagingAvailable: false,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      efficiency: null,
+    });
   });
 
   it("computes positive sleep debt when sleep is below target", async () => {

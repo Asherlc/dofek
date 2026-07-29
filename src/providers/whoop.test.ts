@@ -788,18 +788,19 @@ describe("WHOOP Provider — parsing", () => {
       expect(result?.isNap).toBe(false);
     });
 
-    it("defaults all stage times to 0 when score is missing", () => {
+    it("leaves sleep details unavailable when score is missing", () => {
       const noScore: WhoopSleepRecord = {
         ...sampleSleep,
         score: undefined,
       };
       const result = parseSleep(noScore);
       expect(result).not.toBeNull();
-      expect(result?.durationMinutes).toBe(0);
-      expect(result?.deepMinutes).toBe(0);
-      expect(result?.remMinutes).toBe(0);
-      expect(result?.lightMinutes).toBe(0);
-      expect(result?.awakeMinutes).toBe(0);
+      expect(result?.durationMinutes).toBeUndefined();
+      expect(result?.deepMinutes).toBeUndefined();
+      expect(result?.remMinutes).toBeUndefined();
+      expect(result?.lightMinutes).toBeUndefined();
+      expect(result?.awakeMinutes).toBeUndefined();
+      expect(result?.stagingAvailable).toBe(false);
       expect(result?.efficiencyPct).toBeUndefined();
     });
 

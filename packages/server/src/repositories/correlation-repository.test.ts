@@ -566,7 +566,11 @@ function makeDb() {
 
 function makeSensorStore() {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (query.includes("analytics.daily_sleep")) return [];
+      if (query.includes("analytics.v_body_measurement")) return [];
+      return [{ date: "2024-01-01", resting_hr: 52 }];
+    }),
   };
 }
 

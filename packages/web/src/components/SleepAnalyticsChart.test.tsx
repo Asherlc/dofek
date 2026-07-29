@@ -21,6 +21,7 @@ const night: SleepNightlyRow = {
   lightPct: 50,
   awakePct: 10,
   efficiency: 93.8,
+  stagingAvailable: true,
   rollingAvgDuration: 450,
 };
 

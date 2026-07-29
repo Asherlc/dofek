@@ -212,6 +212,7 @@ describe("TodayScreen independent loading states", () => {
           remPct: 20,
           lightPct: 50,
           awakePct: 10,
+          stagingAvailable: true,
         },
         sleepDebt: 0,
       },
@@ -383,12 +384,30 @@ describe("TodayScreen independent loading states", () => {
       remPct: 25,
       lightPct: 45,
       awakePct: 10,
+      stagingAvailable: true,
     };
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+  });
+
+  it("keeps reported duration visible when last night's stages are unavailable", async () => {
+    mockDashboardData.sleep.lastNight = {
+      date: "2026-03-20",
+      durationMinutes: 480,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stagingAvailable: false,
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("8h 0m recorded. Sleep stages were not reported.")).toBeTruthy();
   });
 
   it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {

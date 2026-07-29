@@ -343,6 +343,7 @@ describe("SleepAnalyticsChart option builder", () => {
       lightPct: 52,
       awakePct: 8,
       efficiency: 91,
+      stagingAvailable: true,
       rollingAvgDuration: 440,
     },
     {
@@ -354,6 +355,7 @@ describe("SleepAnalyticsChart option builder", () => {
       lightPct: 51,
       awakePct: 9,
       efficiency: 89,
+      stagingAvailable: true,
       rollingAvgDuration: 436,
     },
   ];
@@ -392,5 +394,36 @@ describe("SleepAnalyticsChart option builder", () => {
     expect(firstGraphic.style.text).toContain("14d Sleep Debt:");
     expect(firstGraphic.style.text).toContain("deficit");
     expect(firstGraphic.style.fill).toBe(statusColors.danger);
+  });
+
+  it("identifies partial records in the chart tooltip", () => {
+    const [sampleNight] = sampleNightly;
+    if (!sampleNight) throw new Error("Expected a sample sleep night");
+    const option = buildSleepAnalyticsOption(
+      [
+        {
+          ...sampleNight,
+          deepPct: null,
+          remPct: null,
+          lightPct: null,
+          awakePct: null,
+          efficiency: null,
+          stagingAvailable: false,
+        },
+      ],
+      0,
+    );
+    const formatter = getTooltipFormatter(option);
+    const html = formatter([
+      {
+        dataIndex: 0,
+        seriesName: "Deep",
+        value: ["2026-03-10", null],
+        color: "#123456",
+        marker: "",
+      },
+    ]);
+
+    expect(html).toContain("Partial record: sleep stages were not reported");
   });
 });

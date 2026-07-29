@@ -408,6 +408,7 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+      stagingAvailable: true,
     });
     expect(parsed.heartRateSamples).toHaveLength(2);
   });
@@ -437,6 +438,7 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+      stagingAvailable: true,
     });
   });
 
@@ -479,6 +481,7 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: undefined,
       remMinutes: undefined,
       awakeMinutes: undefined,
+      stagingAvailable: false,
     });
   });
 

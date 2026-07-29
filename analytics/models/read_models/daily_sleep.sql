@@ -35,6 +35,7 @@ current_rows AS (
         light_minutes,
         awake_minutes,
         efficiency_pct,
+        staging_available,
         is_deleted
     FROM {{ this }} FINAL
 ),
@@ -73,7 +74,8 @@ live_sleep AS (
         sleep.rem_minutes AS rem_minutes,
         sleep.light_minutes AS light_minutes,
         sleep.awake_minutes AS awake_minutes,
-        sleep.efficiency_pct AS efficiency_pct
+        sleep.efficiency_pct AS efficiency_pct,
+        sleep.staging_available AS staging_available
     FROM analytics.v_sleep AS sleep
     INNER JOIN changed_users
         ON changed_users.user_id = sleep.user_id
@@ -112,6 +114,7 @@ ranked_sleep AS (
         live_sleep.light_minutes AS light_minutes,
         live_sleep.awake_minutes AS awake_minutes,
         live_sleep.efficiency_pct AS efficiency_pct,
+        live_sleep.staging_available AS staging_available,
         row_number() OVER (
             PARTITION BY live_sleep.user_id, live_sleep.date
             ORDER BY live_sleep.duration_minutes DESC NULLS LAST, live_sleep.started_at DESC
@@ -133,7 +136,8 @@ selected_sleep AS (
         rem_minutes,
         light_minutes,
         awake_minutes,
-        efficiency_pct
+        efficiency_pct,
+        staging_available
     FROM ranked_sleep
     WHERE row_number = 1
 ),
@@ -198,6 +202,11 @@ rows_to_write AS (
             current_rows.efficiency_pct,
             selected_sleep.efficiency_pct
         ) AS efficiency_pct,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.staging_available,
+            selected_sleep.staging_available
+        ) AS staging_available,
         if(selected_sleep.user_id IS NULL, 1, 0) AS is_deleted
     FROM dirty_dates
     LEFT JOIN selected_sleep
@@ -221,6 +230,7 @@ rows_to_write AS (
         selected_sleep.light_minutes AS light_minutes,
         selected_sleep.awake_minutes AS awake_minutes,
         selected_sleep.efficiency_pct AS efficiency_pct,
+        selected_sleep.staging_available AS staging_available,
         0 AS is_deleted
     FROM selected_sleep
     {% endif %}
@@ -246,6 +256,7 @@ SELECT
     rows_to_write.light_minutes AS light_minutes,
     rows_to_write.awake_minutes AS awake_minutes,
     rows_to_write.efficiency_pct AS efficiency_pct,
+    rows_to_write.staging_available AS staging_available,
     refresh_clock.refresh_version AS refresh_version,
     rows_to_write.is_deleted AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at

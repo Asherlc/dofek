@@ -100,6 +100,7 @@ describe("SleepScreen", () => {
           lightPct: 50,
           awakePct: 10,
           efficiency: 50,
+          stagingAvailable: true,
           rollingAvgDuration: 300,
         },
       ],
@@ -118,5 +119,34 @@ describe("SleepScreen", () => {
     expect(screen.getByText("91%")).toBeTruthy();
     expect(screen.queryByText("5h 0m")).toBeNull();
     expect(screen.queryByText("50%")).toBeNull();
+  });
+
+  it("identifies the most recent night when sleep stages were not reported", async () => {
+    mockSleepData = {
+      nightly: [
+        {
+          date: new Date().toISOString().slice(0, 10),
+          durationMinutes: 480,
+          sleepMinutes: 480,
+          deepPct: null,
+          remPct: null,
+          lightPct: null,
+          awakePct: null,
+          efficiency: null,
+          stagingAvailable: false,
+          rollingAvgDuration: 480,
+        },
+      ],
+      sleepDebt: 0,
+      averageSleepMinutes: 480,
+      averageEfficiencyPercent: null,
+    };
+
+    const { default: SleepScreen } = await import("./sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getByText("Partial sleep record")).toBeTruthy();
+    expect(screen.getByText("8h 0m recorded")).toBeTruthy();
+    expect(screen.getByText("Sleep stages were not reported for this night.")).toBeTruthy();
   });
 });
