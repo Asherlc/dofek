@@ -59,13 +59,20 @@ describe("refitAllParams", () => {
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
     expect(result).not.toBeNull();
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
     expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
     expect(result.trainingImpulseConstants).toBeNull();
     expect(result.fittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(result.successfulFitAt).toEqual({
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    });
   });
 
   it("calls execute for data queries and save", async () => {
@@ -114,7 +121,7 @@ describe("refitAllParams", () => {
     // Should not throw — individual failures are caught
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
     expect(result).not.toBeNull();
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
   });
 
   it("fittedAt is a valid ISO timestamp", async () => {
@@ -143,14 +150,21 @@ describe("refitAllParams", () => {
 
     // Should still return params despite save failure
     expect(result).not.toBeNull();
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Failed to save params"));
   });
 
   it("preserves existing fitted params when a refit has insufficient data", async () => {
     const existingParams = {
-      version: 1,
+      version: 2,
       fittedAt: "2026-01-01T00:00:00.000Z",
+      successfulFitAt: {
+        exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
+        readinessWeights: null,
+        sleepTarget: "2025-12-20T00:00:00.000Z",
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      },
       exponentialMovingAverage: {
         chronicTrainingLoadDays: 35,
         acuteTrainingLoadDays: 8,
@@ -169,6 +183,25 @@ describe("refitAllParams", () => {
     expect(result.exponentialMovingAverage).toEqual(existingParams.exponentialMovingAverage);
     expect(result.sleepTarget).toEqual(existingParams.sleepTarget);
     expect(result.fittedAt).not.toBe(existingParams.fittedAt);
+    expect(result.successfulFitAt?.exponentialMovingAverage).toBe(
+      existingParams.successfulFitAt.exponentialMovingAverage,
+    );
+    expect(result.successfulFitAt?.sleepTarget).toBe(existingParams.successfulFitAt.sleepTarget);
+  });
+
+  it("records the attempt timestamp for a newly accepted fit", async () => {
+    const exponentialMovingAverageRows = generateExponentialMovingAverageRows(180);
+    const db = createMockDb([[], [], [], [], [], []]);
+
+    const result = await refitAllParams(
+      db,
+      "user-1",
+      createMockSensorStore([exponentialMovingAverageRows]),
+    );
+
+    expect(result.exponentialMovingAverage).not.toBeNull();
+    expect(result.successfulFitAt?.exponentialMovingAverage).toBe(result.fittedAt);
+    expect(result.successfulFitAt?.readinessWeights).toBeNull();
   });
 
   it("handles all fitters rejecting simultaneously", async () => {
@@ -178,7 +211,7 @@ describe("refitAllParams", () => {
 
     // Promise.allSettled catches all rejections
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
     expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
@@ -206,12 +239,30 @@ describe("refitAllParams", () => {
     expect(result.trainingImpulseConstants).toBeNull();
   });
 
-  it("version is always 1", async () => {
+  it("writes the current personalization schema version", async () => {
     const db = createMockDb([[], [], [], [], []]);
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
   });
 });
+
+function generateExponentialMovingAverageRows(count: number): Record<string, unknown>[] {
+  let chronicLoad = 0;
+  let acuteLoad = 0;
+
+  return Array.from({ length: count }, (_, index) => {
+    const dailyLoad = 50 + 30 * Math.sin(index / 14) + ((index * 17) % 20);
+    chronicLoad += (dailyLoad - chronicLoad) / 42;
+    acuteLoad += (dailyLoad - acuteLoad) / 7;
+    const trainingStressBalance = chronicLoad - acuteLoad;
+
+    return {
+      date: new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10),
+      daily_load: dailyLoad,
+      avg_performance: 200 + trainingStressBalance * 2,
+    };
+  });
+}
 
 // --- parseExponentialMovingAverageRows ---
 
