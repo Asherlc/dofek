@@ -20,14 +20,16 @@ function storybookPage({
       const text = {
         "#error-message:visible": renderFailure?.message,
         "#error-stack:visible": renderFailure?.stack,
-        'text="Processing status is unavailable"': processingError
-          ? "Processing status is unavailable"
-          : null,
-        'text="Failed to fetch"': processingError ?? null,
+        'text="Processing status is unavailable"':
+          processingError !== undefined ? "Processing status is unavailable" : null,
+        'text="Failed to fetch"': processingError || null,
       }[selector];
       return {
         count: async () => (text == null ? 0 : 1),
-        textContent: async () => text ?? null,
+        textContent: async () => {
+          if (text == null) throw new Error(`Locator not found: ${selector}`);
+          return text;
+        },
       };
     },
   };
@@ -53,11 +55,32 @@ describe("assertStoryRendered", () => {
     );
   });
 
+  it("uses the visible fatal message when Storybook does not render a stack", async () => {
+    const page = storybookPage({
+      renderFailure: {
+        message: "LegacyEventEmitter is not a constructor",
+        stack: null,
+      },
+    });
+
+    await expect(assertStoryRendered(page, "pages-settings--default")).rejects.toThrow(
+      "Storybook story pages-settings--default failed to render: LegacyEventEmitter is not a constructor",
+    );
+  });
+
   it("fails when a screenshot story visibly reports a processing fetch error", async () => {
     const page = storybookPage({ processingError: "Failed to fetch" });
 
     await expect(assertStoryRendered(page, "pages-strain--with-activities")).rejects.toThrow(
       "Storybook story pages-strain--with-activities contains a processing error: Failed to fetch",
+    );
+  });
+
+  it("uses the processing heading when the visible error has no fetch detail", async () => {
+    const page = storybookPage({ processingError: "" });
+
+    await expect(assertStoryRendered(page, "pages-strain--with-activities")).rejects.toThrow(
+      "Storybook story pages-strain--with-activities contains a processing error: Processing status is unavailable",
     );
   });
 });

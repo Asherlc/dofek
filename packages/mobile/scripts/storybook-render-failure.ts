@@ -11,7 +11,8 @@ export async function assertStoryRendered(page: StorybookPage, storyId: string):
   const errorMessage = page.locator("#error-message:visible");
   if ((await errorMessage.count()) > 0) {
     const message = (await errorMessage.textContent())?.trim() || "Unknown Storybook render error";
-    const stack = (await page.locator("#error-stack:visible").textContent())?.trim();
+    const errorStack = page.locator("#error-stack:visible");
+    const stack = (await errorStack.count()) > 0 ? (await errorStack.textContent())?.trim() : null;
     const firstFatalLine = stack?.split(/\r?\n/, 1)[0] || message;
     throw new Error(`Storybook story ${storyId} failed to render: ${firstFatalLine}`);
   }
