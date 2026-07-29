@@ -416,6 +416,7 @@ describe("RootLayout background cleanup", () => {
     expect(mutationCondition({ type: "mutation" })).toBe(true);
     expect(mutationCondition({ type: "query" })).toBe(false);
     expect(queryCondition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
     expect(queryCondition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
     expect(queryCondition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
     expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);

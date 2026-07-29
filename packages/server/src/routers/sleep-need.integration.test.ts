@@ -5,8 +5,11 @@ import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
-import type { SleepNeedResult, SleepPerformanceInfo } from "./sleep-need.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
+import type { SleepNeedResult, SleepNeedV2, SleepPerformanceInfo } from "./sleep-need.ts";
 import type { WeeklyReportResult } from "./weekly-report.ts";
 
 /**
@@ -120,6 +123,121 @@ describe("sleep-need router integration", () => {
       expect(night.sourceName).toBeNull();
       expect(night.sourceProviders).toEqual(["apple_health"]);
     }
+  });
+
+  it("calculateV2 returns no recommendation fields when the real read model has no prior night", async () => {
+    await queryCache.invalidateAll();
+    const endDate = new Date();
+    endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result).not.toHaveProperty("totalNeedMinutes");
+    expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 returns no recommendation fields when prior-night duration is null", async () => {
+    const endDate = new Date();
+    endDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 10);
+    const startedAt = new Date(endDate);
+    startedAt.setUTCDate(startedAt.getUTCDate() - 1);
+    startedAt.setUTCHours(22);
+    const endedAt = new Date(endDate);
+    endedAt.setUTCHours(6);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, external_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, sleep_type
+          ) VALUES (
+            'apple_health', ${TEST_USER_ID}, 'null-duration-prior-night',
+            ${startedAt}, ${endedAt},
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          )`,
+    );
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
+    const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result).not.toHaveProperty("totalNeedMinutes");
+    expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 excludes an older null duration when the prior night is available", async () => {
+    const endDate = new Date();
+    endDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const missingNightDate = new Date(endDate);
+    missingNightDate.setUTCDate(missingNightDate.getUTCDate() - 2);
+    const missingNightStartedAt = new Date(missingNightDate);
+    missingNightStartedAt.setUTCHours(22);
+    const missingNightEndedAt = new Date(missingNightDate);
+    missingNightEndedAt.setUTCDate(missingNightEndedAt.getUTCDate() + 1);
+    missingNightEndedAt.setUTCHours(6);
+    const priorNightStartedAt = new Date(endDate);
+    priorNightStartedAt.setUTCDate(priorNightStartedAt.getUTCDate() - 1);
+    priorNightStartedAt.setUTCHours(22);
+    const priorNightEndedAt = new Date(endDate);
+    priorNightEndedAt.setUTCHours(6);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, external_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, sleep_type
+          ) VALUES
+          (
+            'apple_health', ${TEST_USER_ID}, 'older-null-duration',
+            ${missingNightStartedAt}, ${missingNightEndedAt},
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          ),
+          (
+            'apple_health', ${TEST_USER_ID}, 'available-prior-night',
+            ${priorNightStartedAt}, ${priorNightEndedAt},
+            480, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          )`,
+    );
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
+    const result = await query<SleepNeedV2>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 480,
+    });
+    if (result.availability !== "available") {
+      throw new Error("Expected available sleep need");
+    }
+    expect(
+      result.recentNights.find(
+        (night) => night.date === missingNightDate.toISOString().slice(0, 10),
+      ),
+    ).toMatchObject({
+      actualMinutes: null,
+      debtMinutes: null,
+    });
   });
 
   it("performance returns deduped sleep data from v_sleep", async () => {

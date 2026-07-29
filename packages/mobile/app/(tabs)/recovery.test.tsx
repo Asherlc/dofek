@@ -123,6 +123,15 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/breathwork");
   });
 
+  it("opens behavior associations from recovery tools", async () => {
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior Associations" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/behavior-associations");
+  });
+
   it("keeps day selector visible while recovery data is loading", async () => {
     mockRecoveryLoading = true;
 

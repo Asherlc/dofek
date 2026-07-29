@@ -261,6 +261,14 @@ export function formatSigned(value: number, decimals = 1): string {
   return formatted;
 }
 
+/** Format a readiness percentage difference with a neutral direction label. */
+export function formatReadinessDifference(value: number): string {
+  if (!Number.isFinite(value)) return "--";
+  if (value > 0) return `${formatNumber(Math.abs(value), 1)}% higher`;
+  if (value < 0) return `${formatNumber(Math.abs(value), 1)}% lower`;
+  return "0.0% difference";
+}
+
 export type NullableNumber = number | null | undefined;
 
 export interface FormattedMeasurementPart {

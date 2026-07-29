@@ -16,8 +16,8 @@ function BehaviorImpactPage() {
   return (
     <ChartRangeProvider days={days}>
       <PageLayout
-        title="Behavior Impact"
-        subtitle="How your daily behaviors affect next-day readiness"
+        title="Behavior Associations"
+        subtitle="How your daily behaviors are associated with next-day readiness"
         headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
       >
         <BehaviorImpactChart days={days} />
