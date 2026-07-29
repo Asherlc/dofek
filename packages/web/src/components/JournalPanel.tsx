@@ -91,7 +91,10 @@ export function JournalPanel() {
 const entrySchema = z.object({
   id: z.string(),
   date: z.string(),
-  provider_id: z.string(),
+  source: z.object({
+    providerId: z.string(),
+    label: z.string(),
+  }),
   question_slug: z.string(),
   display_name: z.string(),
   category: z.string(),
@@ -273,7 +276,7 @@ function JournalEntryRow({
   entry: JournalEntry;
   onDelete: (id: string) => void;
 }) {
-  const isManual = entry.provider_id === "dofek";
+  const isManual = entry.source.providerId === "dofek";
 
   return (
     <div className="flex items-center justify-between py-1">
@@ -282,7 +285,7 @@ function JournalEntryRow({
         <AnswerDisplay entry={entry} />
       </div>
       <div className="flex items-center gap-2">
-        {!isManual && <span className="text-xs text-dim">{entry.provider_id}</span>}
+        {!isManual && <JournalSourceDetails source={entry.source} />}
         {isManual && (
           <button
             type="button"
@@ -293,6 +296,27 @@ function JournalEntryRow({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function JournalSourceDetails({ source }: { source: JournalEntry["source"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const action = expanded ? "Hide" : "Show";
+
+  return (
+    <div className="text-right text-xs text-dim">
+      <span>{source.label}</span>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${action} technical source details for ${source.label}`}
+        className="ml-1 text-[10px] text-subtle underline decoration-dotted underline-offset-2 hover:text-muted"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        Technical details
+      </button>
+      {expanded && <span className="block text-[10px]">Provider ID: {source.providerId}</span>}
     </div>
   );
 }

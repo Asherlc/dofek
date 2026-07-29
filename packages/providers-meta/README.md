@@ -13,6 +13,9 @@ Metadata and statistics for data providers.
 ### Logos and Branding
 
 - `PROVIDER_LABELS` provides the canonical display name for each provider.
+- `resolveProviderProvenance` pairs that display name with the provider ID for
+  server-authored source details. Clients should render the label by default
+  and reserve the ID for explicit technical diagnostics.
 - `SVG_LOGOS` and `PNG_LOGOS` sets determine the file format for provider icons.
 - `BRAND_COLORS` provides fallback colors for providers without dedicated logos (e.g., `bodyspec` uses `#00B4D8`).
 

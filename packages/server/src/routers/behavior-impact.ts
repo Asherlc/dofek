@@ -1,3 +1,4 @@
+import type { ProviderProvenance } from "@dofek/providers/providers";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { BehaviorImpactRepository } from "../repositories/behavior-impact-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
@@ -9,6 +10,7 @@ export interface BehaviorImpact {
   impactPercent: number;
   yesCount: number;
   noCount: number;
+  sources: ProviderProvenance[];
 }
 
 export const behaviorImpactRouter = router({

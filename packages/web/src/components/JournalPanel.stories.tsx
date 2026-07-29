@@ -15,7 +15,7 @@ const entries = [
   {
     id: "journal-alcohol",
     date: "2026-07-24",
-    provider_id: "whoop",
+    source: { providerId: "manual_review", label: "Manual review" },
     question_slug: "alcohol",
     display_name: "Alcohol",
     category: "substance",
@@ -28,7 +28,7 @@ const entries = [
   {
     id: "journal-energy",
     date: "2026-07-24",
-    provider_id: "dofek",
+    source: { providerId: "dofek", label: "Dofek" },
     question_slug: "energy",
     display_name: "Energy",
     category: "wellness",
@@ -41,7 +41,7 @@ const entries = [
   {
     id: "journal-training",
     date: "2026-07-24",
-    provider_id: "dofek",
+    source: { providerId: "dofek", label: "Dofek" },
     question_slug: "strength_training",
     display_name: "Strength training",
     category: "activity",
@@ -54,7 +54,7 @@ const entries = [
   {
     id: "journal-note",
     date: "2026-07-23",
-    provider_id: "apple_health",
+    source: { providerId: "apple_health", label: "Apple Health" },
     question_slug: "daily_note",
     display_name: "Daily note",
     category: "custom",

@@ -15,6 +15,7 @@ describe("BehaviorImpact", () => {
       avgReadinessNo: 70,
       yesCount: 10,
       noCount: 20,
+      providerIds: ["manual_review"],
       ...overrides,
     };
   }
@@ -73,7 +74,19 @@ describe("BehaviorImpact", () => {
       impactPercent: 25.0,
       yesCount: 15,
       noCount: 12,
+      sources: [{ providerId: "manual_review", label: "Manual review" }],
     });
+  });
+
+  it("sorts and resolves every contributing provider as source provenance", () => {
+    const impact = new BehaviorImpact(
+      makeRow({ providerIds: ["whoop", "manual_review", "manual_review"] }),
+    );
+
+    expect(impact.sources).toEqual([
+      { providerId: "manual_review", label: "Manual review" },
+      { providerId: "whoop", label: "WHOOP (Cloud)" },
+    ]);
   });
 });
 
@@ -102,6 +115,7 @@ describe("BehaviorImpactRepository", () => {
         avg_readiness_no: 60,
         yes_count: 15,
         no_count: 12,
+        provider_ids: ["manual_review"],
       },
     ]);
     const result = await repo.getImpactSummary(90);
@@ -120,6 +134,7 @@ describe("BehaviorImpactRepository", () => {
         avg_readiness_no: 65,
         yes_count: 25,
         no_count: 18,
+        provider_ids: ["manual_review"],
       },
     ]);
     const result = await repo.getImpactSummary(90);
@@ -141,6 +156,7 @@ describe("BehaviorImpactRepository", () => {
         avg_readiness_no: "68.3",
         yes_count: "10",
         no_count: "12",
+        provider_ids: ["manual_review"],
       },
     ]);
     const result = await repo.getImpactSummary(90);
@@ -162,6 +178,7 @@ describe("BehaviorImpactRepository", () => {
         avg_readiness_no: 50,
         yes_count: 5,
         no_count: 5,
+        provider_ids: ["manual_review"],
       },
       {
         question_slug: "b",
@@ -171,6 +188,7 @@ describe("BehaviorImpactRepository", () => {
         avg_readiness_no: 40,
         yes_count: 8,
         no_count: 7,
+        provider_ids: ["whoop", "manual_review"],
       },
     ]);
     const result = await repo.getImpactSummary(90);
@@ -179,6 +197,10 @@ describe("BehaviorImpactRepository", () => {
     expect(result[1]?.questionSlug).toBe("b");
     expect(result[1]?.displayName).toBe("B");
     expect(result[1]?.category).toBe("cat2");
+    expect(result[1]?.sources).toEqual([
+      { providerId: "manual_review", label: "Manual review" },
+      { providerId: "whoop", label: "WHOOP (Cloud)" },
+    ]);
   });
 
   it("calls execute once", async () => {
