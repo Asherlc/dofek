@@ -139,7 +139,10 @@ export const mobileDashboardRouter = router({
       return result;
     }),
 
-  dashboardV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  dashboardV2: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "sleep-need-metadata-v1",
+  })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardV2OutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardV2Result> => {

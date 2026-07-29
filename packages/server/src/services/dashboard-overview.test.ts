@@ -174,4 +174,30 @@ describe("loadDashboardOverview", () => {
       debtMinutes: null,
     });
   });
+
+  it("reports observed sleep-debt inputs from only the latest 14 nights", async () => {
+    const sleepNights = Array.from({ length: 16 }, (_, index) => {
+      const date = new Date("2026-06-15T12:00:00Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return {
+        date: date.toISOString().slice(0, 10),
+        durationMinutes: index < 2 ? 100 : index === 5 ? null : 480,
+      };
+    });
+
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore({ sleepNights }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      estimateMetadata: {
+        debtObservedNightCount: 13,
+      },
+    });
+  });
 });

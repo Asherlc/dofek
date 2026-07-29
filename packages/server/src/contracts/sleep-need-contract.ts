@@ -17,6 +17,32 @@ export const sleepNightSchema = z
 
 export type SleepNight = z.infer<typeof sleepNightSchema>;
 
+const sleepNeedEstimateMetadataSchema = z
+  .object({
+    basis: z.enum(["personalized_high_hrv_average", "generic_eight_hour_default"]),
+    baselineQualifyingNightCount: z.number().int().nonnegative(),
+    debtObservedNightCount: z.number().int().nonnegative(),
+    methodVersion: z.literal("sleep-need-heuristic-v1"),
+    uncertainty: z.literal("not_established"),
+    valueQualifier: z.literal("About"),
+    summaryLabel: z.literal("Heuristic estimate"),
+    componentLabels: z
+      .object({
+        baseline: z.literal("Baseline estimate"),
+        strainDebt: z.literal("Previous-day load adjustment"),
+        debtRecovery: z.literal("Debt recovery"),
+      })
+      .strict(),
+    basisLabel: z.string(),
+    coverageLabel: z.string(),
+    methodLabel: z.literal("Method: sleep-need-heuristic-v1"),
+    uncertaintyLabel: z.literal("Uncertainty: not established"),
+    limitationLabel: z.literal(
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+    ),
+  })
+  .strict();
+
 const sleepNeedRecommendationSchema = z
   .object({
     baselineMinutes: z.number(),
@@ -39,6 +65,7 @@ const availableSleepNeedV2Schema = sleepNeedRecommendationSchema
   .extend({
     availability: z.literal("available"),
     debtRecoveryMinutes: z.number(),
+    estimateMetadata: sleepNeedEstimateMetadataSchema,
   })
   .strict();
 
@@ -62,6 +89,8 @@ export interface SleepNeedComputation {
   accumulatedDebtMinutes: number;
   debtRecoveryMinutes: number;
   totalNeedMinutes: number;
+  baselineQualifyingNightCount: number;
+  debtObservedNightCount: number;
   recentNights: SleepNight[];
   hasPreviousNight: boolean;
 }
@@ -70,6 +99,8 @@ interface BuildSleepNeedComputationInput {
   baselineMinutes: number;
   strainDebtMinutes: number;
   accumulatedDebtMinutes: number;
+  baselineQualifyingNightCount: number;
+  debtObservedNightCount: number;
   recentNights: SleepNight[];
   hasPreviousNight: boolean;
 }
@@ -78,6 +109,8 @@ export function buildSleepNeedComputation({
   baselineMinutes,
   strainDebtMinutes,
   accumulatedDebtMinutes,
+  baselineQualifyingNightCount,
+  debtObservedNightCount,
   recentNights,
   hasPreviousNight,
 }: BuildSleepNeedComputationInput): SleepNeedComputation {
@@ -88,6 +121,8 @@ export function buildSleepNeedComputation({
     accumulatedDebtMinutes,
     debtRecoveryMinutes,
     totalNeedMinutes: baselineMinutes + strainDebtMinutes + debtRecoveryMinutes,
+    baselineQualifyingNightCount,
+    debtObservedNightCount,
     recentNights,
     hasPreviousNight,
   };
@@ -112,6 +147,18 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
     };
   }
 
+  const basis =
+    computation.baselineQualifyingNightCount >= 7
+      ? "personalized_high_hrv_average"
+      : "generic_eight_hour_default";
+  const qualifyingNightNoun = computation.baselineQualifyingNightCount === 1 ? "night" : "nights";
+  const qualifyingNightVerb = computation.baselineQualifyingNightCount === 1 ? "is" : "are";
+  const observedNightNoun = computation.debtObservedNightCount === 1 ? "night" : "nights";
+  const basisLabel =
+    basis === "personalized_high_hrv_average"
+      ? `Baseline uses the average of ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} followed by at-or-above-median heart rate variability.`
+      : `Baseline uses a generic 8-hour default because ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} ${qualifyingNightVerb} below the 7-night minimum.`;
+
   return sleepNeedV2Schema.parse({
     availability: "available",
     baselineMinutes: computation.baselineMinutes,
@@ -119,6 +166,26 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
     accumulatedDebtMinutes: computation.accumulatedDebtMinutes,
     debtRecoveryMinutes: computation.debtRecoveryMinutes,
     totalNeedMinutes: computation.totalNeedMinutes,
+    estimateMetadata: {
+      basis,
+      baselineQualifyingNightCount: computation.baselineQualifyingNightCount,
+      debtObservedNightCount: computation.debtObservedNightCount,
+      methodVersion: "sleep-need-heuristic-v1",
+      uncertainty: "not_established",
+      valueQualifier: "About",
+      summaryLabel: "Heuristic estimate",
+      componentLabels: {
+        baseline: "Baseline estimate",
+        strainDebt: "Previous-day load adjustment",
+        debtRecovery: "Debt recovery",
+      },
+      basisLabel,
+      coverageLabel: `Sleep-debt input uses ${computation.debtObservedNightCount} observed ${observedNightNoun} from the model's recent-night window.`,
+      methodLabel: "Method: sleep-need-heuristic-v1",
+      uncertaintyLabel: "Uncertainty: not established",
+      limitationLabel:
+        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+    },
     recentNights: computation.recentNights,
   });
 }

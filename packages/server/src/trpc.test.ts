@@ -1,11 +1,25 @@
 import { TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { queryCache } from "dofek/lib/cache";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { CacheTTL, publicProcedure, requestCacheKey, requestCacheTtl, router } from "./trpc.ts";
+import {
+  CacheTTL,
+  type Context,
+  cachedProtectedQuery,
+  publicProcedure,
+  requestCacheKey,
+  requestCacheTtl,
+  router,
+} from "./trpc.ts";
 
 const safeInternalErrorMessage =
   "We couldn't complete this request. Please try again. If the problem continues, contact support.";
+
+function testContext(partial: Partial<Context>): Context {
+  const context: Context = partial;
+  return context;
+}
 
 async function serializeTransportError(error: unknown) {
   const observedErrors: TRPCError[] = [];
@@ -128,6 +142,12 @@ describe("tRPC error serialization", () => {
 });
 
 describe("requestCacheKey", () => {
+  it("preserves the exact legacy key when no contract version is provided", () => {
+    expect(requestCacheKey("user-1", "settings.get", { key: "units" }, "UTC")).toBe(
+      'user-1:settings.get:UTC:{"key":"units"}',
+    );
+  });
+
   it("keeps the user and route path prefix stable for invalidation", () => {
     expect(requestCacheKey("user-1", "settings.get", { key: "units" }, "UTC")).toMatch(
       /^user-1:settings\.get:/,
@@ -140,6 +160,53 @@ describe("requestCacheKey", () => {
     expect(requestCacheKey("user-1", "training.rolling", rawInput, "UTC")).not.toBe(
       requestCacheKey("user-1", "training.rolling", rawInput, "America/Los_Angeles"),
     );
+  });
+
+  it("separates cache entries by response contract version", () => {
+    const rawInput = { endDate: "2026-07-28" };
+
+    expect(
+      requestCacheKey(
+        "user-1",
+        "mobileDashboard.dashboardV2",
+        rawInput,
+        "UTC",
+        "sleep-need-metadata-v1",
+      ),
+    ).not.toBe(requestCacheKey("user-1", "mobileDashboard.dashboardV2", rawInput, "UTC"));
+  });
+});
+
+describe("cached query contract versions", () => {
+  afterEach(async () => {
+    await queryCache.invalidateAll();
+  });
+
+  it("bypasses the prior contract key and then hits the versioned cache", async () => {
+    const input = { endDate: "2026-07-28" };
+    const resolver = vi.fn(() => "fresh-contract");
+    const testRouter = router({
+      dashboard: cachedProtectedQuery({
+        maxAge: CacheTTL.SHORT,
+        keyVersion: "sleep-need-metadata-v1",
+      })
+        .input(z.object({ endDate: z.string() }))
+        .query(resolver),
+    });
+    const legacyKey = requestCacheKey("user-1", "dashboard", input, "UTC");
+    await queryCache.set(legacyKey, "legacy-contract", CacheTTL.SHORT);
+    const caller = testRouter.createCaller(
+      testContext({
+        db: {},
+        sensorStore: {},
+        userId: "user-1",
+        timezone: "UTC",
+      }),
+    );
+
+    await expect(caller.dashboard(input)).resolves.toBe("fresh-contract");
+    await expect(caller.dashboard(input)).resolves.toBe("fresh-contract");
+    expect(resolver).toHaveBeenCalledOnce();
   });
 });
 

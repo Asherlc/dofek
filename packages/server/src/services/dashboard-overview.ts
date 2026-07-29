@@ -288,15 +288,17 @@ export async function loadDashboardOverview({
 
   const yesterdayLoad = Number(sleepBaselineRows[0]?.yesterday_load ?? 0);
   const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
-  const accumulatedDebt = sleepBaselineRows
-    .slice(-14)
-    .reduce(
-      (totalDebt, row) =>
-        row.duration_minutes == null
-          ? totalDebt
-          : totalDebt + Math.max(0, baselineMinutes - row.duration_minutes),
-      0,
-    );
+  const recentDebtRows = sleepBaselineRows.slice(-14);
+  const debtObservedNightCount = recentDebtRows.filter(
+    (row) => row.duration_minutes != null,
+  ).length;
+  const accumulatedDebt = recentDebtRows.reduce(
+    (totalDebt, row) =>
+      row.duration_minutes == null
+        ? totalDebt
+        : totalDebt + Math.max(0, baselineMinutes - row.duration_minutes),
+    0,
+  );
   const nightsByDate = new Map(sleepBaselineRows.map((row) => [row.date, row]));
   const recentNights: SleepNight[] = [];
   const anchorDate = new Date(`${endDate}T12:00:00Z`);
@@ -328,6 +330,8 @@ export async function loadDashboardOverview({
     baselineMinutes,
     strainDebtMinutes,
     accumulatedDebtMinutes: Math.round(accumulatedDebt),
+    baselineQualifyingNightCount: goodNightDurations.length,
+    debtObservedNightCount,
     recentNights,
     hasPreviousNight: dashboardSleepRows.some(
       (sleepRow) => sleepRow.date === yesterdayDateString && sleepRow.duration_minutes != null,

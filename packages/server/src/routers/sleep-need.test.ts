@@ -153,7 +153,7 @@ describe("sleepNeedRouter", () => {
       });
     });
 
-    it("returns server-computed debt recovery when prior sleep is available", async () => {
+    it("returns the server-owned heuristic estimate and observed input counts", async () => {
       const caller = createCalculateCaller([
         {
           date: "2026-03-14",
@@ -172,6 +172,13 @@ describe("sleepNeedRouter", () => {
         accumulatedDebtMinutes: 90,
         debtRecoveryMinutes: 23,
         totalNeedMinutes: 523,
+        estimateMetadata: {
+          basis: "generic_eight_hour_default",
+          baselineQualifyingNightCount: 1,
+          debtObservedNightCount: 1,
+          methodVersion: "sleep-need-heuristic-v1",
+          uncertainty: "not_established",
+        },
       });
     });
 
@@ -194,6 +201,12 @@ describe("sleepNeedRouter", () => {
         accumulatedDebtMinutes: 0,
         debtRecoveryMinutes: 0,
         totalNeedMinutes: 480,
+        estimateMetadata: {
+          baselineQualifyingNightCount: 0,
+          debtObservedNightCount: 1,
+          basisLabel:
+            "Baseline uses a generic 8-hour default because 0 qualifying nights are below the 7-night minimum.",
+        },
       });
       if (result.availability !== "available") {
         throw new Error("Expected available sleep need");

@@ -321,41 +321,66 @@ export default function TodayScreen() {
         </Animated.View>
       )}
 
-      {/* Sleep Coach */}
+      {/* Sleep estimate */}
       {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
-          <Card title="Sleep Coach">
+          <Card title="Sleep Estimate">
             {sleepNeed == null ? (
               <Text style={styles.noDataText}>No sleep data</Text>
             ) : sleepNeed.availability === "available" ? (
               <>
                 <Text style={styles.sleepNeedTotal}>
-                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                  {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
-                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                <Text style={styles.sleepNeedSubtitle}>
+                  {sleepNeed.estimateMetadata.summaryLabel}
+                </Text>
                 <View style={styles.sleepNeedBreakdown}>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.baseline}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       {formatDurationMinutes(sleepNeed.baselineMinutes)}
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.strainDebt}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Debt recovery</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.debtRecovery}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
                     </Text>
                   </View>
+                </View>
+                <View style={styles.sleepNeedMetadata}>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.basisLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.coverageLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.methodLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.uncertaintyLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.limitationLabel}
+                  </Text>
                 </View>
               </>
             ) : null}
@@ -582,5 +607,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
     fontVariant: ["tabular-nums"],
+  },
+  sleepNeedMetadata: {
+    gap: 4,
+    marginTop: 8,
+  },
+  sleepNeedMetadataText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
   },
 });

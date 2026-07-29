@@ -1,16 +1,37 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { MISSING_PREVIOUS_NIGHT_MESSAGE } from "dofek-server/sleep-need-contract";
+import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { SleepOverviewCards } from "./SleepOverviewCards";
 
 const availableSleepNeed = {
-  availability: "available" as const,
+  availability: "available",
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
   debtRecoveryMinutes: 21,
   totalNeedMinutes: 513,
+  estimateMetadata: {
+    basis: "personalized_high_hrv_average",
+    baselineQualifyingNightCount: 12,
+    debtObservedNightCount: 11,
+    methodVersion: "sleep-need-heuristic-v1",
+    uncertainty: "not_established",
+    valueQualifier: "About",
+    summaryLabel: "Heuristic estimate",
+    componentLabels: {
+      baseline: "Baseline estimate",
+      strainDebt: "Previous-day load adjustment",
+      debtRecovery: "Debt recovery",
+    },
+    basisLabel:
+      "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
+    coverageLabel: "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
+    methodLabel: "Method: sleep-need-heuristic-v1",
+    uncertaintyLabel: "Uncertainty: not established",
+    limitationLabel:
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+  },
   recentNights: [],
-};
+} satisfies SleepNeedV2;
 
 const sleepPerformance = {
   score: 88,
