@@ -10,7 +10,8 @@
     "./whoop": "./src/whoop.ts",
     "./push-providers": "./src/push-providers.ts",
     "./processing-alerts": "./src/processing-alerts.ts",
-    "./processing-status": "./src/processing-status.ts"
+    "./processing-status": "./src/processing-status.ts",
+    "./sync-actions": "./src/sync-actions.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*"

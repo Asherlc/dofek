@@ -299,6 +299,37 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     expect(result).toBe(newJob);
   });
 
+  it("reports a BullMQ lifecycle-deduplicated job as already queued", async () => {
+    const existingJob = { id: "first-full-job" };
+    const addJob = vi.fn().mockResolvedValue(existingJob);
+    const getJob = vi.fn().mockResolvedValue(undefined);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "strava",
+      {
+        userId: "user-1",
+        providerId: "strava",
+        sinceIso: "1970-01-01T00:00:00.000Z",
+        untilIso: "2026-07-29T17:00:01.000Z",
+        targetRefreshWindow: { type: "full" },
+      },
+      { deduplication: { id: "sync:full:strava:user-1" } },
+      addJob,
+      getJob,
+    );
+
+    expect(addJob).toHaveBeenCalledWith(
+      "sync",
+      expect.anything(),
+      expect.objectContaining({
+        jobId: expect.stringMatching(/^sync-req-strava-user-1-/),
+        deduplication: { id: "sync:full:strava:user-1" },
+      }),
+    );
+    expect(result).toBe(existingJob);
+    expect(result?.alreadyQueued).toBe(true);
+  });
+
   it("returns an existing cooldown-delayed job without enqueueing a duplicate", async () => {
     const existing = { getState: vi.fn(), remove: vi.fn() };
     existing.getState.mockResolvedValue("delayed");

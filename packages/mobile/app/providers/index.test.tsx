@@ -126,9 +126,17 @@ vi.mock("react-native", () => ({
     visible?: boolean;
   } & Record<string, unknown>) => {
     if (!visible) return null;
-    const { animationType: _at, transparent: _t, onRequestClose: _orc, ...rest } = props;
+    const {
+      animationType: _at,
+      transparent: _t,
+      onRequestClose: _orc,
+      onShow: _os,
+      ...rest
+    } = props;
     return React.createElement("div", { role: "dialog", ...rest }, children);
   },
+  AccessibilityInfo: { setAccessibilityFocus: vi.fn() },
+  findNodeHandle: () => 1,
   Image: ({
     source: _source,
     style: _style,
@@ -1054,11 +1062,12 @@ describe("ProvidersScreen", () => {
     expect(stravaCard.queryByText("Full sync")).toBeNull();
   });
 
-  it("renders Full Sync All button alongside Sync All", async () => {
+  it("renders recent sync as primary with full history as the secondary action", async () => {
     await renderProvidersScreen();
 
-    expect(screen.getByText("Sync All")).toBeTruthy();
-    expect(screen.getByText("Full Sync All")).toBeTruthy();
+    expect(screen.getByText("Sync recent data")).toBeTruthy();
+    expect(screen.getByText("Updates the last 7 days for every connected provider.")).toBeTruthy();
+    expect(screen.getByText("Sync full history…")).toBeTruthy();
   });
 
   it("renders dataset-level processing progress on the provider list", async () => {
@@ -1475,12 +1484,24 @@ describe("ProvidersScreen", () => {
     );
 
     const rendered = await renderProvidersScreen();
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
     rendered.unmount();
 
     await act(async () => {
       rejectSync(new Error("Sync failed"));
       await Promise.resolve();
+    });
+  });
+
+  it("shows the exact bulk sync startup error", async () => {
+    const error = new Error("Provider queues unavailable. Try again.");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    await renderProvidersScreen();
+    fireEvent.click(screen.getByText("Sync recent data"));
+
+    await waitFor(() => {
+      expect(screen.getByText(error.message)).toBeTruthy();
     });
   });
 
@@ -1549,9 +1570,9 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     await waitFor(() => {
-      expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
-        true,
-      );
+      expect(
+        screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled"),
+      ).toBe(true);
     });
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
@@ -1560,7 +1581,7 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(wahooCard.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     });
-    expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
+    expect(screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled")).toBe(
       true,
     );
   });
@@ -1588,7 +1609,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("passes sinceDays: 7 when Sync All is clicked", async () => {
+  it("passes sinceDays: 7 when recent sync is clicked", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-3", providerJobs: [] });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",
@@ -1597,7 +1618,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: 7 });
@@ -1620,7 +1641,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     await waitFor(() => {
@@ -1645,7 +1666,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     await waitFor(() => {
@@ -1700,7 +1721,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockSyncStatusFetch).toHaveBeenCalledWith(
@@ -1714,7 +1735,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("passes sinceDays: undefined when Full Sync All is clicked", async () => {
+  it("confirms before passing sinceDays: undefined for full history", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-4", providerJobs: [] });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",
@@ -1723,7 +1744,10 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Full Sync All"));
+    fireEvent.click(screen.getByText("Sync full history…"));
+    expect(screen.getByText(/all history each connected provider makes available/i)).toBeTruthy();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Start full sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: undefined });
@@ -2199,8 +2223,8 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    // Sync All button should not appear when only import-only providers exist
-    expect(screen.queryByText("Sync All")).toBeNull();
+    // Bulk sync controls should not appear when only import-only providers exist.
+    expect(screen.queryByText("Sync recent data")).toBeNull();
   });
 
   it("does not render Sync or Full sync for push-only providers", async () => {
@@ -2226,8 +2250,8 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.queryByText("Sync All")).toBeNull();
-    expect(screen.queryByText("Full Sync All")).toBeNull();
+    expect(screen.queryByText("Sync recent data")).toBeNull();
+    expect(screen.queryByText("Sync full history…")).toBeNull();
   });
 
   it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {

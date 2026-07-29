@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import * as DocumentPicker from "expo-document-picker";
 import { File as ExpoFile } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -52,6 +53,7 @@ import {
   SyncLogRow,
 } from "./provider-card.tsx";
 import { styles } from "./styles.ts";
+import { SyncAllControls } from "./sync-all-controls.tsx";
 
 async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   const file = new ExpoFile(fileUri);
@@ -115,6 +117,7 @@ export default function ProvidersScreen() {
     Record<string, { percentage?: number; message?: string }>
   >({});
   const [anySyncing, setAnySyncing] = useState(false);
+  const [syncAllError, setSyncAllError] = useState<string>();
   const [sharedImportState, setSharedImportState] = useState<ShareImportProgress | null>(null);
   const resumedJobIds = useRef(new Set<string>());
   const pollingJobIds = useRef(new Set<string>());
@@ -439,7 +442,7 @@ export default function ProvidersScreen() {
       try {
         const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
         const providerResult = result.providerResults?.find(
           (entry) => entry.providerId === providerId,
@@ -480,6 +483,7 @@ export default function ProvidersScreen() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
+      setSyncAllError(undefined);
       const enabled = (providers.data ?? []).filter(
         (provider) => provider.authorized && !provider.importOnly && !provider.pushOnly,
       );
@@ -489,7 +493,7 @@ export default function ProvidersScreen() {
       setAnySyncing(true);
       try {
         const result = await syncMutation.mutateAsync({
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
         const providerResults = result.providerResults ?? [];
         const providerJobMap = new Map(
@@ -558,6 +562,7 @@ export default function ProvidersScreen() {
       } catch (error: unknown) {
         captureException(error, { context: "sync-all" });
         if (!isMounted.current) return;
+        setSyncAllError(error instanceof Error ? error.message : "Sync failed");
         setSyncingProviders(new Set());
         setAnySyncing(false);
       }
@@ -702,40 +707,13 @@ export default function ProvidersScreen() {
         />
       }
     >
-      {/* Sync All */}
       {enabledProviders.length > 0 && (
-        <View style={styles.syncAllRow}>
-          <TouchableOpacity
-            style={[
-              styles.syncAllButton,
-              styles.syncAllButtonFlex,
-              anySyncing && styles.syncAllButtonDisabled,
-            ]}
-            onPress={() => handleSyncAll(false)}
-            activeOpacity={0.7}
-            disabled={anySyncing}
-            accessibilityRole="button"
-            accessibilityLabel="Sync All"
-            accessibilityState={{ busy: anySyncing, disabled: anySyncing }}
-          >
-            {anySyncing ? (
-              <ActivityIndicator color={colors.text} size="small" />
-            ) : (
-              <Text style={styles.syncAllButtonText}>Sync All</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.fullSyncAllButton, anySyncing && styles.syncAllButtonDisabled]}
-            onPress={() => handleSyncAll(true)}
-            activeOpacity={0.7}
-            disabled={anySyncing}
-            accessibilityRole="button"
-            accessibilityLabel="Full Sync All"
-            accessibilityState={{ busy: anySyncing, disabled: anySyncing }}
-          >
-            <Text style={styles.fullSyncAllButtonText}>Full Sync All</Text>
-          </TouchableOpacity>
-        </View>
+        <SyncAllControls
+          busy={anySyncing}
+          errorMessage={syncAllError}
+          onRecentSync={() => void handleSyncAll(false)}
+          onFullSync={() => void handleSyncAll(true)}
+        />
       )}
 
       <View style={styles.shareInfoCard}>

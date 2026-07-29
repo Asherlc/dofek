@@ -743,7 +743,10 @@ describe("syncRouter", () => {
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
         }),
-        expect.objectContaining({ attempts: 288 }),
+        expect.objectContaining({
+          attempts: 288,
+          deduplication: { id: "sync:full:strava:user-1" },
+        }),
       );
       expect(mockAdd).toHaveBeenNthCalledWith(
         2,
@@ -755,7 +758,10 @@ describe("syncRouter", () => {
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
         }),
-        expect.objectContaining({ attempts: 288 }),
+        expect.objectContaining({
+          attempts: 288,
+          deduplication: { id: "sync:full:wahoo:user-1" },
+        }),
       );
     });
 
@@ -1078,6 +1084,7 @@ describe("syncRouter", () => {
           backoff: { type: "fixed", delay: 300_000 },
         }),
       );
+      expect(mockAdd.mock.calls[0]?.[2]).not.toHaveProperty("deduplication");
     });
 
     it("uses one sync window for every job in a sync-all fan-out", async () => {

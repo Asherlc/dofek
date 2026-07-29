@@ -502,7 +502,7 @@ describe("DataSourcesPanel", () => {
     });
 
     render(<DataSourcesPanel />);
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const garminCard = within(screen.getByTestId("provider-card-garmin"));
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
@@ -543,7 +543,7 @@ describe("DataSourcesPanel", () => {
     });
 
     render(<DataSourcesPanel />);
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockPollSyncJob).toHaveBeenCalledWith(
@@ -588,17 +588,50 @@ describe("DataSourcesPanel", () => {
     mockSyncMutateAsync.mockRejectedValue(error);
 
     render(<DataSourcesPanel />);
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() =>
       expect(
         within(screen.getByTestId("provider-card-garmin")).getByText(error.message),
       ).toBeTruthy(),
     );
+    expect(screen.getByRole("alert")).toHaveTextContent(error.message);
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
     expect(mockCaptureException).toHaveBeenCalledWith(error, {
       operation: "sync.triggerSync",
     });
+  });
+
+  it("keeps both bulk actions disabled while provider jobs are still polling", async () => {
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "garmin:job-garmin",
+      jobIds: ["garmin:job-garmin"],
+      providerJobs: [
+        { providerId: "garmin", jobId: "garmin:job-garmin", queueName: "sync-garmin" },
+      ],
+      providerResults: [
+        {
+          providerId: "garmin",
+          status: "started",
+          jobId: "garmin:job-garmin",
+          queueName: "sync-garmin",
+        },
+      ],
+    });
+    mockPollSyncJob.mockImplementation(() => new Promise(() => {}));
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByText("Sync recent data"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Sync all providers for the last 7 days" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Sync full history for all providers" }),
+      ).toBeDisabled();
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Follow each provider below");
   });
 
   it("reports polling failures without the job id and skips the global duplicate", async () => {
