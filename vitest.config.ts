@@ -73,6 +73,7 @@ export default defineConfig({
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",
             "src/**/*.test.ts",
+            "packages/web/vite.config.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/zepp/src/**/*.test.ts",
             "packages/zepp/setting/**/*.test.ts",

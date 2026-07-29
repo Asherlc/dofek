@@ -45,8 +45,9 @@ export function createAppQueryClient() {
     defaultOptions: {
       queries: {
         staleTime: 0,
-        gcTime: 0,
+        gcTime: 1000 * 60 * 5,
         refetchOnWindowFocus: false,
+        retry: false,
       },
     },
   });
