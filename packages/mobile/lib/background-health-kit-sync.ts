@@ -7,7 +7,11 @@ import {
 } from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
 import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
-import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync";
+import {
+  BACKGROUND_HEALTH_KIT_TYPES,
+  type HealthKitSyncStage,
+  type SyncTrpcClient,
+} from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
@@ -20,7 +24,7 @@ interface SyncContext {
 let subscription: EventSubscription | null = null;
 let currentSyncContext: SyncContext | undefined;
 let pendingCatchUp: SyncContext | undefined;
-const pendingUpdateIds = new Set<string>();
+const pendingUpdates = new Map<string, string>();
 let syncing: true | undefined;
 
 type BackgroundHealthKitSyncStage =
@@ -63,15 +67,16 @@ function createStageTelemetry() {
 }
 async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
+  typeIdentifiers: readonly string[],
   onSyncComplete?: () => void | Promise<void>,
 ): Promise<boolean> {
   const startedAt = performance.now();
   const stageTelemetry = createStageTelemetry();
   logger.info(TAG, "Starting sync");
-  let result: Awaited<ReturnType<AppleHealthSyncService["sync"]>>;
+  let result: Awaited<ReturnType<AppleHealthSyncService["syncObserverChanges"]>>;
   try {
-    result = await new AppleHealthSyncService({ trpcClient }).sync({
-      syncRangeDays: 1,
+    result = await new AppleHealthSyncService({ trpcClient }).syncObserverChanges({
+      typeIdentifiers,
       onStage: stageTelemetry.start,
     });
   } catch (error) {
@@ -89,12 +94,30 @@ async function performHealthKitSync(
     return false;
   }
 
+  if (result.errors.length > 0) {
+    stageTelemetry.complete("failed");
+    const error = new Error(
+      `HealthKit observer sync completed with ${result.errors.length} error(s): ${result.errors.join("; ")}`,
+    );
+    logger.warn(TAG, error.message);
+    captureException(error, {
+      errorCount: result.errors.length,
+      source: TAG,
+    });
+    return false;
+  }
+
   stageTelemetry.complete("completed");
-  logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`, {
-    durationMs: performance.now() - startedAt,
-    errorCount: result.errors.length,
-    inserted: result.inserted,
-  });
+  logger.info(
+    TAG,
+    `Sync complete: ${result.inserted} inserted, ${result.deleted} deleted, ${result.errors.length} errors`,
+    {
+      deleted: result.deleted,
+      durationMs: performance.now() - startedAt,
+      errorCount: result.errors.length,
+      inserted: result.inserted,
+    },
+  );
   try {
     if (onSyncComplete) {
       stageTelemetry.start({ operation: "postSyncCallback" });
@@ -134,19 +157,23 @@ async function drainSyncQueue(): Promise<void> {
   const catchUp = pendingCatchUp === context;
   if (catchUp) {
     pendingCatchUp = undefined;
-  } else if (pendingUpdateIds.size === 0) {
+  } else if (pendingUpdates.size === 0) {
     return;
   }
 
-  const updateIds = catchUp ? [] : Array.from(pendingUpdateIds);
+  const updateIds = catchUp ? [] : Array.from(pendingUpdates.keys());
+  const typeIdentifiers = catchUp
+    ? BACKGROUND_HEALTH_KIT_TYPES
+    : [...new Set(pendingUpdates.values())];
   if (!catchUp) {
-    pendingUpdateIds.clear();
+    pendingUpdates.clear();
   }
 
   syncing = true;
   try {
     const succeeded = await performHealthKitSync(
       context.trpcClient,
+      typeIdentifiers,
       context.onSyncComplete
         ? async () => {
             if (currentSyncContext === context) {
@@ -205,8 +232,10 @@ export async function initBackgroundHealthKitSync(
     if (currentSyncContext !== context) {
       return;
     }
-    logger.info(TAG, "Sample update event received, queueing sync");
-    pendingUpdateIds.add(event.updateId);
+    logger.info(TAG, "Sample update event received, queueing type-scoped sync", {
+      typeIdentifier: event.typeIdentifier,
+    });
+    pendingUpdates.set(event.updateId, event.typeIdentifier);
     void drainSyncQueue();
   });
 
@@ -236,7 +265,7 @@ export function teardownBackgroundHealthKitSync() {
     subscription = null;
   }
   pendingCatchUp = undefined;
-  pendingUpdateIds.clear();
+  pendingUpdates.clear();
   try {
     teardownBackgroundObservers();
   } catch (error) {
