@@ -19833,3 +19833,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   merging.
 - **Remaining risk / follow-up:** Keep Cypress binary installation explicit and
   cached only in workflows that execute Cypress.
+
+## 2026-07-28 — Image scan build timed out fetching an npm package
+
+- **Status:** Root cause identified on PR #2233; clean exact-head rerun
+  pending.
+- **Symptoms:** CI run
+  [30415322875](https://github.com/Asherlc/dofek/actions/runs/30415322875)
+  failed `Test / Image Vulnerability Scan` in job
+  [90460774781](https://github.com/Asherlc/dofek/actions/runs/30415322875/job/90460774781)
+  before the Grype scan started.
+- **User impact:** No production impact. The otherwise-green PR remained
+  blocked from merging.
+- **Evidence:** The failing step was `Build server image with cache`, whose
+  client-build command ran `cd packages/web && pnpm run build`. npm registry
+  transfers slowed and retried until the first fatal line
+  `[23] The operation was aborted due to timeout` while fetching
+  `expo-modules-core-57.0.7.tgz`; the Docker build then exited 1 and skipped
+  Grype.
+- **Root cause:** The external npm package transfer stalled through pnpm's
+  built-in attempts. The PR did not change package manifests, the lockfile, or
+  the Dockerfile, and the same exact-head web build and dependency installation
+  had already passed outside this image job.
+- **Fix / mitigation:** Do not change application code or add retry, timeout,
+  skip, or fallback behavior for this external transfer failure. Re-run the
+  unchanged exact-head image build after the registry recovers, then require
+  Grype to execute and pass.
+- **Validation:** The replacement exact-head image build and Grype scan must
+  both pass before merge.
+- **Remaining risk / follow-up:** The build also emitted a non-fatal warning
+  because `ghcr.io/${{ github.repository }}` preserved uppercase owner
+  characters in a registry cache reference. Normalize that cache reference in
+  a dedicated CI change so image builds can use both configured cache sources.
