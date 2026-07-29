@@ -41,6 +41,10 @@ describe("MenstrualCycleRepository", () => {
         dayOfCycle: null,
         cycleLength: null,
         estimate: null,
+        availability: {
+          status: "no-history",
+          label: "No periods logged. Add a period start to begin tracking.",
+        },
       });
     });
 
@@ -87,7 +91,7 @@ describe("MenstrualCycleRepository", () => {
       expect(result.dayOfCycle).toBe(20);
     });
 
-    it("uses default 28-day cycle when no average available", async () => {
+    it("withholds a phase model when recorded history has no completed cycle", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
       const { repo } = makeRepository([
         phaseRow({
@@ -100,19 +104,16 @@ describe("MenstrualCycleRepository", () => {
 
       const result = await repo.getCurrentPhase(today);
 
-      expect(result.cycleLength).toBe(28);
-      expect(result.phase).toBe("menstrual");
-      expect(result.estimate).toEqual({
-        basis: "generic-28-day-default",
-        completedCycleCount: 0,
-        observedCycleLengthRange: null,
-        phaseLabel: "Estimated Menstrual phase",
-        cycleDayLabel: "Day 1 of an estimated 28-day cycle",
-        dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
-        methodLabel:
-          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
-        uncertaintyLabel: "No personal cycle-length range is available yet.",
-        limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+      expect(result).toEqual({
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+        availability: {
+          status: "sparse-history",
+          label:
+            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
+        },
       });
     });
 
@@ -147,10 +148,14 @@ describe("MenstrualCycleRepository", () => {
           uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 31 days.",
           limitationLabel: "No calibrated confidence score or next-period forecast is available.",
         },
+        availability: {
+          status: "estimated",
+          label: "Phase estimate available from recorded cycle history.",
+        },
       });
     });
 
-    it("describes a single completed cycle without presenting a range", async () => {
+    it("withholds a phase model when fewer than three completed cycles are recorded", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
       const { repo } = makeRepository([
         phaseRow({
@@ -162,10 +167,15 @@ describe("MenstrualCycleRepository", () => {
 
       const result = await repo.getCurrentPhase(today);
 
-      expect(result.estimate?.methodLabel).toBe(
-        "Phase and cycle length use the average of 1 completed cycle.",
-      );
-      expect(result.estimate?.uncertaintyLabel).toBe("The recorded cycle length was 28 days.");
+      expect(result).toMatchObject({
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+        availability: {
+          status: "sparse-history",
+        },
+      });
     });
 
     it("describes multiple equal completed cycles in the plural", async () => {
@@ -194,6 +204,53 @@ describe("MenstrualCycleRepository", () => {
       expect(result.dayOfCycle).toBeNull();
       expect(result.cycleLength).toBe(28);
       expect(result.estimate).toBeNull();
+      expect(result.availability).toEqual({
+        status: "stale-history",
+        label:
+          "The latest period start is beyond the expected cycle window. Correct it or log a newer period start to resume estimates.",
+      });
+    });
+
+    it("withholds a phase model for irregular recorded cycle lengths", async () => {
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "30",
+          completedCycleCount: 4,
+          minimumCycleLength: 22,
+          maximumCycleLength: 34,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result).toEqual({
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+        availability: {
+          status: "irregular-history",
+          label:
+            "No phase estimate is shown because recorded cycle lengths do not support a regular-cycle model (observed range: 22 to 34 days).",
+        },
+      });
+    });
+
+    it("withholds a phase model when a recorded interval is outside 21 to 35 days", async () => {
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "40",
+          completedCycleCount: 3,
+          minimumCycleLength: 40,
+          maximumCycleLength: 40,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(new Date("2025-01-20T12:00:00Z"));
+
+      expect(result.availability.status).toBe("irregular-history");
+      expect(result.phase).toBeNull();
+      expect(result.cycleLength).toBeNull();
     });
 
     it("rounds average cycle length to nearest integer", async () => {
@@ -392,6 +449,67 @@ describe("MenstrualCycleRepository", () => {
       await repo.getHistory(12);
 
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("updatePeriod", () => {
+    it("rejects an end date before the corrected start date without writing", async () => {
+      const { repo, execute } = makeRepository();
+
+      await expect(
+        repo.updatePeriod("period-1", "2025-02-10", "2025-02-09", null),
+      ).rejects.toThrow("Period end date cannot be before start date.");
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("returns the corrected canonical period", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "period-1",
+          start_date: "2025-02-10",
+          end_date: "2025-02-12",
+          duration_days: 3,
+          notes: "Corrected",
+        },
+      ]);
+
+      const result = await repo.updatePeriod(
+        "period-1",
+        "2025-02-10",
+        "2025-02-12",
+        "Corrected",
+      );
+
+      expect(result).toEqual({
+        id: "period-1",
+        startDate: "2025-02-10",
+        endDate: "2025-02-12",
+        durationDays: 3,
+        durationLabel: "3 days",
+        notes: "Corrected",
+      });
+    });
+
+    it("returns null when the user does not own the period", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(
+        repo.updatePeriod("another-user-period", "2025-02-10", null, null),
+      ).resolves.toBeNull();
+    });
+  });
+
+  describe("deletePeriod", () => {
+    it("returns true when a user-owned period is deleted", async () => {
+      const { repo } = makeRepository([{ id: "period-1" }]);
+
+      await expect(repo.deletePeriod("period-1")).resolves.toBe(true);
+    });
+
+    it("returns false when the user does not own the period", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.deletePeriod("another-user-period")).resolves.toBe(false);
     });
   });
 });
