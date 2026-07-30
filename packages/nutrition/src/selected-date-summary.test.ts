@@ -130,6 +130,25 @@ describe("nutritionSourceResolutionSchema", () => {
       sourceLabels: ["Apple Health", "Cronometer"],
       contributingSourceLabels: [],
       excludedSourceLabels: ["Apple Health", "Cronometer"],
+      contributionGrain: null,
+      contributionLabel: null,
+    };
+
+    expect(nutritionSourceResolutionSchema.parse(resolution)).toEqual(resolution);
+  });
+
+  it("parses a server-authored daily aggregate label", () => {
+    const resolution = {
+      status: "available",
+      message: "Totals use the only available nutrition source.",
+      sourceProviders: ["apple_health"],
+      contributingProviders: ["apple_health"],
+      excludedProviders: [],
+      sourceLabels: ["Cronometer (via Apple Health)"],
+      contributingSourceLabels: ["Cronometer (via Apple Health)"],
+      excludedSourceLabels: [],
+      contributionGrain: "daily_aggregate",
+      contributionLabel: "Cronometer (via Apple Health) daily total",
     };
 
     expect(nutritionSourceResolutionSchema.parse(resolution)).toEqual(resolution);

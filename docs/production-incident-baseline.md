@@ -20374,6 +20374,102 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completes successfully. Avoid close/reopen refreshes while a same-PR
   concurrency group is still active.
 
+## 2026-07-29 — Local integration network pool exhausted
+
+- **Status:** Resolved for the issue #2133 validation run.
+- **Symptoms:** The focused Postgres integration command failed before test
+  execution while Compose created the workspace network.
+- **User impact:** No production impact. Local real-database validation was
+  blocked until unused workspace networks were removed.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts`.
+  Its first fatal line was
+  `all predefined address pools have been fully subnetted`.
+- **Root cause:** Five bridge networks had no attached containers:
+  `2191_default`, `activity-sensor_default`, `issue-2069_default`,
+  `issue-2240_default`, and `issue-2241_default`. Together with the remaining
+  networks, they exhausted Docker's configured automatic subnet allocation
+  pool. Docker creates a subnet for each user-defined bridge network and
+  documents removal of unused custom networks with
+  [`docker network prune`](https://docs.docker.com/reference/cli/docker/network/prune/).
+- **Fix / mitigation:** The five named networks were removed after inspecting
+  their attachment counts. Zero attachments established that no container was
+  using them, but did not authorize deleting another workspace's network; this
+  crossed the permitted workspace boundary. No containers or volumes were
+  removed. Each owning workspace's next Compose up can recreate its default
+  network, but the prior subnet and labels were not preserved. No speculative
+  reconstruction was attempted.
+- **Validation:** Compose subsequently created this workspace's network. The
+  exact command above completed locally on 2026-07-29 at 14:46 PDT with
+  `Test Files 1 passed (1)` and `Tests 10 passed (10)` against real Postgres.
+- **Remaining risk / follow-up:** Only remove resources belonging to the
+  current issue or crew. If other stale networks block validation, stop and
+  request user direction. Add this boundary and the subnet-exhaustion
+  diagnostic steps to the testing runbook.
+
+## 2026-07-29 — Nutrition migration dropped supplement provenance
+
+- **Status:** Root cause fixed on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** Integration shards 2 and 3 failed after the nutrition resolution
+  view migration and its review-driven coverage were added.
+- **User impact:** No production impact because the migration was not merged.
+  If shipped, days containing food and taken supplements would omit the
+  supplement provider from daily provenance.
+- **Evidence:** The exact failing step was `Test / Integration Tests (2/4)` in
+  [CI run 30495540127](https://github.com/Asherlc/dofek/actions/runs/30495540127/job/90723765977).
+  The first fatal assertion was
+  `expected { calories: 400, … } to deeply equal ...` in
+  `supplement-dose-events.integration.test.ts`; expected
+  `source_providers` contained both `dofek` and `supplement-food-fixture`, but
+  the result contained only `supplement-food-fixture`. Shard 3's first fatal
+  line was `Key (provider_id)=(unknown-nutrition) is not present in table
+  "provider"` from a new uncataloged-provider fixture.
+- **Root cause:** Migration `0065_nutrition_resolution_labels.sql` recreated
+  `fitness.v_nutrition_daily` from the older food-only definition, overwriting
+  the supplement-aware steady-state definition introduced by migration 0061.
+  PostgreSQL replaces a view's defining query when
+  [`CREATE OR REPLACE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)
+  is used, so every existing supplement overlay had to be retained explicitly.
+  Separately, the uncataloged-provider review fixture contradicted the
+  `food_entry.provider_id` foreign key and could never represent valid data.
+- **Fix / mitigation:** Base migration 0065 on the current supplement-aware view
+  definition, append the new food contribution fields, and preserve the food
+  contribution source label separately from combined food-and-supplement
+  provenance. Remove the invalid fixture and retain the provider join guaranteed
+  by the schema. No retry, timeout, fallback, or disabled assertion was added.
+- **Validation:** Migration policy, SQL lint, server typecheck, and focused
+  repository/router tests pass locally. The existing real-Postgres supplement
+  overlay test now also asserts the food contribution grain and label.
+  Replacement exact-head database validation remains required before merge.
+- **Remaining risk / follow-up:** Forward migrations that replace a shared view
+  must start from its latest steady-state definition and retain executable
+  integration coverage for every data source the view combines.
+
+## 2026-07-29 — Mobile preview Infisical OIDC gateway timeout
+
+- **Status:** External transient failure identified on PR #2315; one unchanged-
+  head rerun remains pending after owned CI completes.
+- **Symptoms:** The Mobile Preview OTA workflow stopped while loading its
+  required secrets, before the publish step or application code ran.
+- **User impact:** No production impact. The PR-specific mobile preview was not
+  published.
+- **Evidence:** In exact-head
+  [job 90727596345](https://github.com/Asherlc/dofek/actions/runs/30496847456/job/90727596345),
+  the exact failing step was `Load mobile preview secrets from Infisical`. Its
+  first fatal line was `unable to authenticate with oidc auth` because
+  `POST https://app.infisical.com/api/v1/auth/oidc-auth/login` returned
+  `status-code=504`; the process then exited with code 1.
+- **Root cause:** Infisical's OIDC login endpoint returned an HTTP gateway
+  timeout. Checkout, dependency setup, and mobile-change detection had passed,
+  and the workflow had not reached any repository build or publish command.
+- **Fix / mitigation:** Make no repository or workflow change. After owned CI
+  passes, rerun this failed external workflow once against the same commit.
+- **Validation:** Pending the single unchanged-head rerun.
+- **Remaining risk / follow-up:** If the same endpoint returns another 504,
+  leave the PR blocked with the exact external evidence rather than adding a
+  retry or weakening the required-secret failure.
+
 ## 2026-07-29 — iOS Native Secret Fetch Returned Gateway Timeout
 
 - **Status:** External Infisical gateway failure identified on PR #2313;
@@ -20408,6 +20504,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   availability with the captured request evidence before changing workflow
   behavior.
 
+## 2026-07-29 — Merged nutrition test expected pre-label source IDs
+
+- **Status:** Test contract corrected on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** Integration shard 1 failed after PR #2315 merged current main,
+  even though the new nutrition source-breakdown calculations were correct.
+- **User impact:** No production impact because the migration was not merged.
+  The PR remained blocked from merge.
+- **Evidence:** The exact command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4` in
+  [job 90731942530](https://github.com/Asherlc/dofek/actions/runs/30497852817/job/90731942530).
+  Its first fatal assertion was
+  `expected { nutrientId: 'vitamin_c', … } to match object` in
+  `nutrition-analytics-source-breakdown.integration.test.ts`. The test expected
+  raw IDs such as `nutrition-2136-manual`, while the view correctly returned
+  canonical display labels such as `Manual Food`.
+- **Root cause:** The newly merged main test encoded the previous raw-provider-
+  ID label behavior. Migration 0065 intentionally changes food source labels to
+  human-readable provider/source paths for issue #2133, so the old expectation
+  contradicted the new production contract.
+- **Fix / mitigation:** Update only the merged test expectations to the
+  canonical display labels. Keep supplement labels unchanged because supplement
+  provenance still uses its event source/provider identity. Production behavior,
+  retries, timeouts, and workflow configuration are unchanged.
+- **Validation:** Server typecheck, formatting, and exact-head integration
+  validation are required before merge. Local Docker validation remains
+  unavailable because the daemon control plane stopped responding earlier in
+  this workspace.
+- **Remaining risk / follow-up:** Cross-PR integration tests should assert the
+  public source-label contract rather than assuming provider IDs are display
+  labels.
+
 ## 2026-07-29 — Shared Docker VM AIO Exhaustion Recurred During Issue 2118 Validation
 
 - **Status:** External local-environment recurrence; exact-head CI remains the
@@ -20439,6 +20567,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   additional concurrent worktree stacks. Keep the existing runbook follow-up
   to add an AIO-capacity diagnostic and require an explicit decision before
   any prerequisite-only validation.
+
 ## 2026-07-29 — Infisical 504 blocked the mobile Metro CI job
 
 - **Status:** External transient identified on PR #2314; the failed head was
@@ -20497,3 +20626,64 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Tear down only the issue-2153 Compose project
   after merge. Treat any hosted SQLFluff failure as a new code signal rather
   than attributing it to this local restart.
+
+## 2026-07-29 — Merged mobile nutrition fixture used the retired macro-share field
+
+- **Status:** Fixture corrected on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** The mobile test job failed the aggregate-only nutrition
+  resolution test after PR #2315 merged the macro energy-share contract from
+  main.
+- **User impact:** No production impact because the migration was not merged.
+  The PR remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project mobile` in
+  [job 90737156661](https://github.com/Asherlc/dofek/actions/runs/30499794800/job/90737156661).
+  Its first fatal test line was
+  `FAIL app/(tabs)/food.test.tsx > FoodScreen AI meal confirmation > explains an aggregate-only contribution without rendering an unnamed meal`.
+  The rendered error showed that `summary.macros.protein.energySharePercentage`
+  was `undefined`.
+- **Root cause:** The aggregate-only fixture added by PR #2315 still used the
+  retired `percentage` field, while merged main PR #2316 made
+  `energySharePercentage` required and required nonzero shares to total 100.
+  The web fixture was reconciled during the merge, but the independently added
+  mobile fixture did not conflict textually and therefore retained the old
+  shape.
+- **Fix / mitigation:** Port the aggregate-only mobile fixture to
+  `energySharePercentage` and use the server's deterministic 20/50/30
+  allocation. Production behavior, retries, timeouts, and workflow
+  configuration are unchanged.
+- **Validation:** The focused mobile food suite, mobile typecheck, formatting,
+  and replacement exact-head mobile job must pass before merge.
+- **Remaining risk / follow-up:** When merging a shared DTO rename, search both
+  platform fixtures for retired field names even when Git reports no textual
+  conflict.
+
+## 2026-07-29 — GitHub Actions cache export blocked the image scan
+
+- **Status:** External runner/cache failure identified on PR #2315;
+  replacement exact-head CI is pending.
+- **Symptoms:** The job named `Test / Image Vulnerability Scan` failed while
+  building the server image, before Grype executed.
+- **User impact:** No production or image-scan result impact. The PR remained
+  blocked because its required vulnerability job did not reach the scanner.
+- **Evidence:** In
+  [job 90742175355](https://github.com/Asherlc/dofek/actions/runs/30501533220/job/90742175355),
+  the exact failing step was `Build server image with cache`. The first fatal
+  line was `#130 ERROR: error writing layer blob: not_found` while exporting
+  to the GitHub Actions cache; Buildx then reported
+  `failed to solve: error writing layer blob: not_found`.
+- **Root cause:** BuildKit successfully built and began exporting the image
+  layers, but the GitHub Actions cache backend could not accept one referenced
+  layer blob. The scan step never ran, so there was no vulnerability finding
+  or application-image failure to remediate.
+- **Fix / mitigation:** Do not change cache configuration, retry behavior,
+  vulnerability thresholds, the Dockerfile, or application code. Supersede the
+  failed head with this required incident record and require the normal
+  exact-head image build and Grype scan.
+- **Validation:** Focused nutrition tests and server/web/mobile typechecks
+  passed before the hosted run. The replacement exact-head image job must
+  export its cache, build the image, and complete Grype successfully.
+- **Remaining risk / follow-up:** If a separate runner repeats the same missing
+  cache-blob error, treat GitHub Actions cache availability as an external
+  blocker and capture the second job rather than weakening the security gate.

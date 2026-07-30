@@ -187,14 +187,14 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       sourceBreakdown: [
         {
           providerId: "nutrition-2136-manual",
-          sourceLabel: "nutrition-2136-manual",
+          sourceLabel: "Manual Food",
           intakeType: "itemized_food",
           dailyAverageContribution: 30,
           daysTracked: 2,
         },
         {
           providerId: "nutrition-2136-cronometer",
-          sourceLabel: "nutrition-2136-cronometer",
+          sourceLabel: "Cronometer",
           intakeType: "provider_daily_total",
           dailyAverageContribution: 20,
           daysTracked: 1,
@@ -221,21 +221,13 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       conflictDays: 1,
       completenessPercent: 10,
       sourceLabels: [
-        "nutrition-2136-cronometer",
-        "nutrition-2136-manual",
-        "nutrition-2136-other-itemized",
+        "Cronometer",
+        "Manual Food",
+        "Other Itemized Source",
         "nutrition-2136-supplements",
       ],
-      contributingSourceLabels: [
-        "nutrition-2136-cronometer",
-        "nutrition-2136-manual",
-        "nutrition-2136-supplements",
-      ],
-      excludedSourceLabels: [
-        "nutrition-2136-cronometer",
-        "nutrition-2136-manual",
-        "nutrition-2136-other-itemized",
-      ],
+      contributingSourceLabels: ["Cronometer", "Manual Food", "nutrition-2136-supplements"],
+      excludedSourceLabels: ["Cronometer", "Manual Food", "Other Itemized Source"],
     });
   });
 });
