@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 
 interface ModalDialogProps {
+  ariaDescribedBy?: string;
   children: ReactNode;
   closeOnEscape?: boolean;
   closeOnInteractOutside?: boolean;
@@ -13,6 +14,7 @@ interface ModalDialogProps {
 }
 
 export function ModalDialog({
+  ariaDescribedBy,
   children,
   closeOnEscape = true,
   closeOnInteractOutside = false,
@@ -55,7 +57,7 @@ export function ModalDialog({
         <Dialog.Overlay aria-hidden="true" className={`fixed inset-0 z-50 ${overlayClassName}`} />
         <Dialog.Content
           aria-modal="true"
-          aria-describedby={undefined}
+          aria-describedby={ariaDescribedBy}
           className={`fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 ${contentClassName}`}
           onEscapeKeyDown={(event) => {
             if (!closeOnEscape) event.preventDefault();

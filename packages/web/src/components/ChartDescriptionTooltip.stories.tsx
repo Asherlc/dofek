@@ -4,6 +4,14 @@ import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 const meta = {
   title: "Charts/ChartDescriptionTooltip",
   component: ChartDescriptionTooltip,
+  parameters: {
+    docs: {
+      description: {
+        component:
+          "A labeled 44-pixel control that opens a keyboard-accessible, dismissible chart explanation.",
+      },
+    },
+  },
   args: {
     description:
       "This chart compares your current values with the rolling average for the selected period.",
