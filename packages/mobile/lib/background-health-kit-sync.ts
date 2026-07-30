@@ -2,11 +2,15 @@ import type { EventSubscription } from "expo-modules-core";
 import {
   addSampleUpdateListener,
   completeObserverUpdates,
+  setObserverSyncInProgress,
   setupBackgroundObservers,
   teardownBackgroundObservers,
 } from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
-import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
+import {
+  isBackgroundHealthKitTransientNetworkError,
+  isHealthKitDatabaseInaccessible,
+} from "./health-kit-errors";
 import {
   BACKGROUND_HEALTH_KIT_TYPES,
   type HealthKitSyncStage,
@@ -87,6 +91,10 @@ async function performHealthKitSync(
     // not an actionable error, so log it but don't send it to Sentry.
     if (isHealthKitDatabaseInaccessible(error)) {
       logger.info(TAG, "Device locked, skipping sync");
+      return false;
+    }
+    if (isBackgroundHealthKitTransientNetworkError(error)) {
+      logger.info(TAG, "Background HealthKit upload timed out; retrying on next delivery");
       return false;
     }
     logger.warn(TAG, `Sync failed: ${message}`);
@@ -170,6 +178,7 @@ async function drainSyncQueue(): Promise<void> {
   }
 
   syncing = true;
+  setObserverSyncInProgress(true);
   try {
     const succeeded = await performHealthKitSync(
       context.trpcClient,
@@ -195,6 +204,7 @@ async function drainSyncQueue(): Promise<void> {
     }
   } finally {
     syncing = undefined;
+    setObserverSyncInProgress(false);
   }
 
   await drainSyncQueue();

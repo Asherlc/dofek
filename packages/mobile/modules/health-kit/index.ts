@@ -206,6 +206,11 @@ export function completeObserverUpdates(updateIds: string[], succeeded: boolean)
   return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
 }
 
+/** Tell native observers whether JavaScript is still processing a delivery. */
+export function setObserverSyncInProgress(inProgress: boolean): void {
+  HealthKitModule.setObserverSyncInProgress(inProgress);
+}
+
 /** Stop native observer queries and complete every callback that is still pending. */
 export function teardownBackgroundObservers(): number {
   return HealthKitModule.teardownBackgroundObservers();

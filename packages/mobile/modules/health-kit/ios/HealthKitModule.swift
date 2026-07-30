@@ -41,7 +41,22 @@ public class HealthKitModule: Module {
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private let observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
         timeout: 25,
-        reportExpiration: { expiration in
+        reportExpiration: { [weak self] expiration in
+            guard let self else {
+                return
+            }
+            if self.observerSyncInProgress {
+                let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
+                breadcrumb.message =
+                    "Observer update expired while JavaScript sync was still running"
+                breadcrumb.data = [
+                    "updateId": expiration.updateId,
+                    "typeIdentifier": expiration.typeIdentifier,
+                    "ageMilliseconds": expiration.ageMilliseconds,
+                ]
+                SentrySDK.addBreadcrumb(breadcrumb)
+                return
+            }
             SentrySDK.capture(
                 error: NSError(
                     domain: "com.dofek.healthkit-observer",
@@ -58,6 +73,7 @@ public class HealthKitModule: Module {
         }
     )
     private var observerQueries: [HKObserverQuery] = []
+    private var observerSyncInProgress = false
 
     @discardableResult
     private func stopBackgroundObservers() -> Int {
@@ -892,6 +908,10 @@ public class HealthKitModule: Module {
                     )
                 }
             }
+        }
+
+        Function("setObserverSyncInProgress") { (inProgress: Bool) in
+            self.observerSyncInProgress = inProgress
         }
 
         Function("completeObserverUpdates") { (updateIds: [String], succeeded: Bool) -> Int in
