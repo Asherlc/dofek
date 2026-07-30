@@ -456,7 +456,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
   });
 
-  it("shows a Select button when activities are present", () => {
+  it("explains the activity selection action before entering select mode", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],
       isLoading: false,
@@ -466,10 +466,39 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
   });
 
-  it("toggles selected activities instead of navigating in select mode", () => {
+  it("associates each selection control with its own guidance", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(
+      <>
+        <ActivitiesPage />
+        <ActivitiesPage />
+      </>,
+    );
+
+    const selectionButtons = screen.getAllByRole("button", { name: "Select activities" });
+    const guidanceIds = selectionButtons.map((button) => button.getAttribute("aria-describedby"));
+
+    expect(guidanceIds[0]).toBeTruthy();
+    expect(guidanceIds[1]).toBeTruthy();
+    expect(guidanceIds[0]).not.toBe(guidanceIds[1]);
+    for (const guidanceId of guidanceIds) {
+      expect(document.getElementById(guidanceId ?? "")).toHaveTextContent(
+        "Choose one or more activities to delete.",
+      );
+    }
+  });
+
+  it("exposes the selected activity count as an accessible status", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],
       isLoading: false,
@@ -478,10 +507,13 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("status")).toHaveTextContent("0 activities selected");
     fireEvent.click(screen.getByText("Trainer Ride"));
 
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByRole("status")).toHaveTextContent("1 activity selected");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status").getAttribute("aria-atomic")).toBe("true");
     expect(screen.queryByRole("link", { name: /Trainer Ride/i })).toBeNull();
   });
 
@@ -494,7 +526,7 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -516,7 +548,7 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -537,7 +569,7 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -569,12 +601,12 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "running" } });
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.queryByText("Select")).not.toBeNull();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("paginates the activity card history", () => {
@@ -628,9 +660,12 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
     fireEvent.click(screen.getByLabelText("Show hidden activities"));
+    expect(
+      screen.getByText("Choose visible activities to delete or hidden activities to restore."),
+    ).toBeDefined();
     expect(screen.getByText("Removed")).toBeDefined();
     expect(screen.getByText(/Removed from Strava/)).toBeDefined();
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Restore"));
     fireEvent.click(screen.getByText("Confirm Restore"));

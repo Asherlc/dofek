@@ -178,24 +178,28 @@ describe("ActivityList", () => {
     });
   });
 
-  it("toggles selected activities instead of navigating in select mode", () => {
+  it("explains bulk deletion and exposes the selected count as a status", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
 
-    fireEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("status")).toHaveTextContent("0 activities selected");
     const row = screen.getByText("Morning Run").closest("tr");
     if (!row) throw new Error("Row not found");
     fireEvent.click(row);
 
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByRole("status")).toHaveTextContent("1 activity selected");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status").getAttribute("aria-atomic")).toBe("true");
   });
 
   it("confirms bulk delete with selected ids", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
 
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Morning Run"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));

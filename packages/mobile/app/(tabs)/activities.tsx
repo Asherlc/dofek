@@ -18,10 +18,12 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -426,6 +428,16 @@ function ActivityControls({
   onCancelSelection,
   onDeleteSelected,
 }: ActivityControlsProps) {
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
+
+  useEffect(() => {
+    if (selectMode && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(selectedCountLabel);
+    }
+  }, [selectMode, selectedCountLabel]);
+
   return (
     <View style={styles.controlsPanel}>
       <View style={styles.controlsHeader}>
@@ -437,14 +449,20 @@ function ActivityControls({
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Select activities"
+            accessibilityHint="Choose one or more activities to delete"
           >
-            <Text style={styles.selectButtonText}>Select</Text>
+            <Text style={styles.selectButtonText}>Select activities</Text>
           </TouchableOpacity>
         ) : null}
       </View>
+      {canSelect ? (
+        <Text style={styles.selectionGuidance}>Choose one or more activities to delete.</Text>
+      ) : null}
       {selectMode ? (
         <View style={styles.bulkActionRow}>
-          <Text style={styles.selectedCount}>{selectedCount} selected</Text>
+          <Text style={styles.selectedCount} accessibilityLiveRegion="polite">
+            {selectedCountLabel}
+          </Text>
           <TouchableOpacity
             style={[
               styles.deleteSelectionButton,
@@ -767,6 +785,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
+  },
+  selectionGuidance: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   bulkActionRow: {
     alignItems: "center",

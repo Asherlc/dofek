@@ -5,6 +5,7 @@ import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
+import { within } from "storybook/test";
 import { trpc } from "../../lib/trpc";
 import ActivitiesScreen from "./activities";
 
@@ -316,3 +317,11 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const SelectionMode: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", { name: "Select activities" }),
+    );
+  },
+};
