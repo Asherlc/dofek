@@ -902,6 +902,15 @@ describe("mobileDashboard.recovery", () => {
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 0,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "0 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 3 more supported metrics sync successfully.",
+        },
         metrics: [],
         history: [],
         trend: null,
@@ -968,6 +977,15 @@ describe("mobileDashboard.recovery", () => {
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 0,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "0 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 3 more supported metrics sync successfully.",
+        },
         metrics: [],
         history: [],
         trend: null,

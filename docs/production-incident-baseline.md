@@ -20907,6 +20907,59 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   during worktree cleanup. Treat any hosted SQLFluff failure as a new code
   signal rather than attributing it to this local Docker failure.
 
+## 2026-07-29 — Issue 2078 local SQLFluff lacked ClickHouse
+
+- **Status:** Local environment prerequisite unavailable; exact-head hosted CI
+  remains the authoritative SQLFluff validation.
+- **Symptoms:** `pnpm lint` passed every repository code and policy check, then
+  SQLFluff's dbt templater stopped while compiling
+  `activity_aerobic_efficiency.sql`.
+- **User impact:** No production or end-user impact. Only the local full-lint
+  gate for [issue #2078](https://github.com/Asherlc/dofek/issues/2078) was
+  incomplete.
+- **Evidence:** The exact failing command was `pnpm lint`. Its first fatal line
+  was `dbt tried to connect to the database and failed`; the causal error was
+  `HTTPConnection(host='127.0.0.1', port=8123): Failed to establish a new
+  connection: [Errno 61] Connection refused`.
+- **Root cause:** No ClickHouse service was listening at the local dbt profile's
+  configured address. Issue #2078 changes no analytics SQL or dbt model.
+- **Fix / mitigation:** No retry, workaround, timeout, lint suppression, or
+  analytics change was made.
+- **Validation:** Exact versions, Biome, suppression policy, workflow download
+  policy, analytics policy, mobile telemetry, web Storybook coverage, and
+  review-scenario coverage all passed before SQLFluff. Exact-head hosted CI
+  remains required before merge.
+- **Remaining risk / follow-up:** Treat any hosted SQLFluff failure as new code
+  evidence and investigate it independently.
+
+## 2026-07-29 — Host saturation timed out issue 2078 full tests
+
+- **Status:** Local full-suite validation was resource-blocked; no retry was
+  attempted while host pressure remained elevated.
+- **Symptoms:** `pnpm test` completed 961 passing and 2 skipped test files, then
+  reported one failed suite and two Vitest worker RPC errors.
+- **User impact:** No production or end-user impact. The local full Docker-free
+  gate for [issue #2078](https://github.com/Asherlc/dofek/issues/2078) was
+  incomplete.
+- **Evidence:** The exact failing command was `pnpm test`. Its first fatal suite
+  line was `FAIL |unit| packages/web/vite.config.test.ts`; the setup hook at
+  line 22 timed out after 30,000 ms. Vitest also reported
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` twice. The run finished with
+  14,893 passing and 24 skipped tests in 1,344.27 seconds while concurrent
+  workspace validation drove host load to approximately 590.
+- **Root cause:** Host-wide test concurrency saturated the machine, delaying
+  both the unrelated Vite setup hook and Vitest worker RPC messages beyond
+  their fixed limits. Issue #2078 does not change Vite configuration.
+- **Fix / mitigation:** No timeout increase, worker-pool change, test
+  suppression, retry, or application workaround was added. Do not terminate
+  other workspaces' processes.
+- **Validation:** The issue's expanded focused suite passed 188 tests before
+  this run. The branch was reconciled with fresh `origin/main` without conflict;
+  exact-head hosted focused tests, typechecks, and full CI remain required
+  before merge.
+- **Remaining risk / follow-up:** Treat a repeat on an otherwise idle host or
+  any hosted failure as new code evidence and investigate it independently.
+
 ## 2026-07-29 — Independent dependency PRs exposed coupled version pins
 
 - **Status:** Root causes fixed on PRs

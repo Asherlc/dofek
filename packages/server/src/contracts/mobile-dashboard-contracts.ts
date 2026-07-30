@@ -205,6 +205,14 @@ export const mobileRecoveryTabOutputSchema = z.object({
   healthspan: z.object({
     healthspanScore: score100Schema.nullable(),
     yearsDelta: z.number().nullable(),
+    availability: z.object({
+      status: z.enum(["available", "insufficient_data"]),
+      availableMetricCount: z.number().int().min(0).max(9),
+      requiredMetricCount: z.literal(3),
+      missingMetricLabels: z.array(z.string()),
+      summary: z.string(),
+      nextCondition: z.string().nullable(),
+    }),
     metrics: z.array(
       z.object({
         name: z.string(),
