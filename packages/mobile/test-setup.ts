@@ -197,7 +197,7 @@ vi.mock("react-native", () => {
         if (typeof onChangeText === "function") onChangeText(event.target.value);
       },
       style: flattenStyle(style),
-      type: secureTextEntry === true ? "password" : "text",
+      ...(multiline === true ? {} : { type: secureTextEntry === true ? "password" : "text" }),
       value,
     });
   };

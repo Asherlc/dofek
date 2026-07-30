@@ -14,7 +14,11 @@ type ProvidersResponse =
 
 function installProvidersFetch(providersResponse: ProvidersResponse): () => void {
   const previousFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (input, init) => {
+    const requestUrl = input instanceof Request ? input.url : input.toString();
+    if (new URL(requestUrl, "http://localhost").pathname !== "/api/auth/providers") {
+      return previousFetch(input, init);
+    }
     if (providersResponse === "loading") {
       return new Promise<Response>(() => {});
     }

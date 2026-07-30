@@ -74,10 +74,13 @@
 
 ### Task 6: Final Verification
 
-- [ ] Run `rtk pnpm lint`.
-- [ ] Run `rtk pnpm tsc --noEmit`.
-- [ ] Run `rtk pnpm --dir packages/server tsc --noEmit`.
-- [ ] Run `rtk pnpm --dir packages/web tsc --noEmit`.
-- [ ] Run `rtk pnpm test:mobile`, `rtk pnpm test:unit`, and `rtk pnpm test`.
+- [ ] In Codex cloud, initialize with `SANDBOX=1 mise run cloud:init` and run the
+      complete Docker-free verification entrypoint with `mise run test:sandbox`.
+- [ ] Outside Codex cloud, run `pnpm lint`.
+- [ ] Outside Codex cloud, run `pnpm tsc --noEmit`,
+      `(cd packages/server && pnpm tsc --noEmit)`, and
+      `(cd packages/web && pnpm tsc --noEmit)`.
+- [ ] Outside Codex cloud, run `pnpm test:mobile`, `pnpm test:unit`, and
+      `pnpm test`.
 - [ ] Use XcodeBuildMCP for a signed Release Simulator build, launch, native UI snapshot, and screenshot.
 - [ ] Commit and push each meaningful passing chunk, then open a PR with `Fixes #2192`.

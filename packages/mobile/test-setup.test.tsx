@@ -43,4 +43,10 @@ describe("TextInput test mock", () => {
     expect(screen.getByLabelText("React Native label")).toBeTruthy();
     expect(screen.getByLabelText("Direct ARIA label")).toBeTruthy();
   });
+
+  it("does not add an input type to multiline text areas", () => {
+    render(<TextInput accessibilityLabel="Notes" multiline />);
+
+    expect(screen.getByLabelText("Notes").getAttribute("type")).toBeNull();
+  });
 });
