@@ -13,6 +13,8 @@ export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSche
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
 export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
 
+export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v1";
+
 interface HealthStatusSummaryInput {
   metric: HealthStatusMetric["metric"];
   label: string;

@@ -62,5 +62,6 @@
 - [x] Run `rtk pnpm --dir packages/server tsc --noEmit`.
 - [x] Run `rtk pnpm --dir packages/web tsc --noEmit`.
 - [x] Run `rtk pnpm test`.
+- [ ] Run the canonical Docker-free verification entrypoint with `mise run test:sandbox`.
 - [x] Build both Storybook catalogs.
 - [ ] Commit, push, open a linked PR with `Fixes #2106`, and monitor checks and feedback through merge.
