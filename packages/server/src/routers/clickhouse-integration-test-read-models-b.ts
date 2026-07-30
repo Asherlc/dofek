@@ -279,6 +279,7 @@ export function buildTestDailySleepSelectSql(databases: IsolatedClickHouseDataba
     light_minutes,
     awake_minutes,
     efficiency_pct,
+    staging_available,
     row_number() OVER (
       PARTITION BY user_id, toDate(started_at - INTERVAL 6 HOUR)
       ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
@@ -309,6 +310,7 @@ SELECT
   ranked_sleep.light_minutes AS light_minutes,
   ranked_sleep.awake_minutes AS awake_minutes,
   ranked_sleep.efficiency_pct AS efficiency_pct,
+  ranked_sleep.staging_available AS staging_available,
   refresh_clock.refresh_version AS refresh_version,
   toUInt8(0) AS is_deleted,
   refresh_clock.refreshed_at AS refreshed_at

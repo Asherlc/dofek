@@ -73,7 +73,7 @@ describe("backfillSleepQuality integration", () => {
       INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
       SELECT
         id,
-        'deep',
+        'deep'::fitness.sleep_stage_name,
         started_at + INTERVAL '1 hour',
         started_at + INTERVAL '2 hours'
       FROM fitness.sleep_session
@@ -81,7 +81,7 @@ describe("backfillSleepQuality integration", () => {
       UNION ALL
       SELECT
         id,
-        'awake',
+        'awake'::fitness.sleep_stage_name,
         started_at + INTERVAL '6 hours',
         started_at + INTERVAL '6 hours 20 minutes'
       FROM fitness.sleep_session
@@ -89,7 +89,7 @@ describe("backfillSleepQuality integration", () => {
       UNION ALL
       SELECT
         id,
-        'rem',
+        'rem'::fitness.sleep_stage_name,
         started_at + INTERVAL '2 hours',
         started_at + INTERVAL '3 hours'
       FROM fitness.sleep_session
