@@ -77,6 +77,7 @@ export const strengthRouter = router({
       const exercises = await repo.getEstimatedOneRepMax(range.days);
       return exercises.map((exercise) => exercise.toDetail());
     },
+    { keyVersion: "estimated-max-trend-v1" },
   ),
 
   muscleGroupVolume: selectedChartRangeQuery(

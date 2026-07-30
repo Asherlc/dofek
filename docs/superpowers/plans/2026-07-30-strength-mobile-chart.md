@@ -15,7 +15,10 @@
 ## Current Evidence
 
 - `EstimatedMaxChart` places a scroll legend at the top of the same 320px ECharts canvas as every exercise series.
-- The plot reserves only 40px above and the default 30px below, so long exercise names compete with the plot at narrow widths while time-axis labels are eligible for collision suppression.
+- The plot reserves only 40px above and the default 30px below, so long exercise names compete with
+  the plot at narrow widths while time-axis labels may be hidden when space is insufficient; the
+  [Apache ECharts FAQ](https://echarts.apache.org/en/faq.html) documents label-interval controls,
+  explicit first/last-label controls, and grid spacing for legend overlap.
 - The existing story fixes the container at 760px and only includes two short exercise names, so it cannot expose the audited narrow-width failure.
 - `strength.estimatedOneRepMax` returns ordered observations but no server-authored direction/change evidence; a client would have to infer the trend to provide the recommended textual summary.
 
@@ -30,6 +33,9 @@
 
 - Modify: `packages/server/src/repositories/strength-repository.ts` — own estimated-max change evidence.
 - Modify: `packages/server/src/repositories/strength-repository.test.ts` — exercise evidence boundaries.
+- Modify: `packages/server/src/lib/chart-range.ts` — version persisted caches when a response contract
+  changes.
+- Modify: `packages/server/src/lib/chart-range.test.ts` — protect days-only cache versioning.
 - Modify: `packages/server/src/routers/strength.ts` — expose the typed evidence contract.
 - Modify: `packages/server/src/routers/router.integration.test.ts` — verify the real endpoint contract.
 - Create: `packages/web/src/components/EstimatedMaxChart.test.tsx` — reproduce and protect responsive/selectable behavior.
