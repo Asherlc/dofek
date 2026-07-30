@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import { mobileRecoveryFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
@@ -12,7 +14,31 @@ import {
 } from "./processing-status-story-fixture";
 import RecoveryScreen from "./recovery";
 
-function createSeededProviders(healthspanInsufficient = false) {
+function createRecoveryErrorStoryLink(recoveryUnavailable: boolean): TRPCLink<AppRouter> {
+  return () =>
+    ({ op, next }) => {
+      if (!recoveryUnavailable || op.path !== "mobileDashboard.recovery") {
+        return next(op);
+      }
+
+      const result: OperationResultObservable<AppRouter, unknown> = {
+        subscribe(observer) {
+          observer.error?.(
+            TRPCClientError.from<AppRouter>(
+              new Error("Recovery analytics are temporarily unavailable."),
+            ),
+          );
+          return { unsubscribe: () => {} };
+        },
+        pipe() {
+          return result;
+        },
+      };
+      return result;
+    };
+}
+
+function createSeededProviders(healthspanInsufficient = false, recoveryUnavailable = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -255,10 +281,12 @@ function createSeededProviders(healthspanInsufficient = false) {
     },
   });
 
-  queryClient.setQueryData(
-    [["mobileDashboard", "recovery"], { input: { days: 30, endDate }, type: "query" }],
-    fixture.data,
-  );
+  if (!recoveryUnavailable) {
+    queryClient.setQueryData(
+      [["mobileDashboard", "recovery"], { input: { days: 30, endDate }, type: "query" }],
+      fixture.data,
+    );
+  }
 
   return { processingStatus, queryClient };
 }
@@ -266,19 +294,24 @@ function createSeededProviders(healthspanInsufficient = false) {
 function MockProviders({
   children,
   healthspanInsufficient = false,
+  recoveryUnavailable = false,
 }: {
   children: React.ReactNode;
   healthspanInsufficient?: boolean;
+  recoveryUnavailable?: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders(healthspanInsufficient);
+    const seededProviders = createSeededProviders(healthspanInsufficient, recoveryUnavailable);
     return {
       ...seededProviders,
       trpcClient: trpc.createClient({
-        links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
+        links: [
+          createRecoveryErrorStoryLink(recoveryUnavailable),
+          createProcessingStatusStoryLink(seededProviders.processingStatus),
+        ],
       }),
     };
-  }, [healthspanInsufficient]);
+  }, [healthspanInsufficient, recoveryUnavailable]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -295,7 +328,10 @@ const meta = {
   },
   decorators: [
     (Story, context) => (
-      <MockProviders healthspanInsufficient={context.parameters.healthspanInsufficient === true}>
+      <MockProviders
+        healthspanInsufficient={context.parameters.healthspanInsufficient === true}
+        recoveryUnavailable={context.parameters.recoveryUnavailable === true}
+      >
         <View style={{ minHeight: 1400, backgroundColor: colors.background }}>
           <Story />
         </View>
@@ -314,4 +350,11 @@ export const InsufficientHealthspanData: Story = {
   parameters: {
     healthspanInsufficient: true,
   },
+};
+
+export const RecoveryUnavailable: Story = {
+  parameters: {
+    recoveryUnavailable: true,
+  },
+  tags: ["review-scenario-error"],
 };

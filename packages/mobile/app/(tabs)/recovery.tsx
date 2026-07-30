@@ -35,7 +35,7 @@ import { DaySelector } from "../../components/DaySelector";
 import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -289,6 +289,24 @@ export default function RecoveryScreen() {
         loading={processingStatus.isLoading}
       />
 
+      {recoveryQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={
+            recoveryData == null
+              ? "Recovery data is unavailable"
+              : "Recovery data could not refresh"
+          }
+          message={getQueryErrorMessage(recoveryQuery.error)}
+          minHeight={96}
+          onRetry={() => {
+            void recoveryQuery.refetch();
+          }}
+          retryLabel="Retry recovery data"
+          retrying={recoveryQuery.isFetching}
+        />
+      ) : null}
+
       {recoveryData != null && (
         <HealthStatusCards
           metrics={recoveryData.healthStatus}
@@ -319,7 +337,7 @@ export default function RecoveryScreen() {
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : (
+      ) : recoveryData != null ? (
         <>
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
@@ -711,7 +729,7 @@ export default function RecoveryScreen() {
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
         </>
-      )}
+      ) : null}
     </ScrollView>
   );
 }

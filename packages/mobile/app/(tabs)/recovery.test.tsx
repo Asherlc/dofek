@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockRecoveryData: Record<string, unknown> | undefined;
+let mockRecoveryError: Error | null = null;
 let mockRecoveryLoading = false;
 let mockRecoveryFetching = false;
 let mockRecoveryDataDays = 30;
@@ -22,6 +23,7 @@ let mockTimeRangePreference = {
   setDays: vi.fn(),
 };
 const mockRecoveryInvalidate = vi.fn();
+const mockRecoveryRefetch = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
@@ -100,8 +102,11 @@ vi.mock("../../lib/trpc", () => ({
               input.days === mockRecoveryDataDays
                 ? cachedData
                 : options.placeholderData?.(cachedData),
+            error: mockRecoveryError,
+            isError: mockRecoveryError !== null,
             isLoading: mockRecoveryLoading,
             isFetching: mockRecoveryFetching,
+            refetch: mockRecoveryRefetch,
           };
         },
       },
@@ -131,6 +136,10 @@ vi.mock("../../components/charts/SparkLine", () => ({
     sparkLinePropsCalls.push(props);
     return <div data-testid="sparkline-mock" />;
   },
+}));
+
+vi.mock("../../components/ProcessingStatusWidget", () => ({
+  ProcessingStatusWidget: () => <div>Processing status</div>,
 }));
 
 vi.mock("expo-router", () => ({
@@ -179,6 +188,7 @@ vi.mock("../../theme", () => ({
 describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockRecoveryData = undefined;
+    mockRecoveryError = null;
     mockRecoveryLoading = false;
     mockRecoveryFetching = false;
     mockRecoveryDataDays = 30;
@@ -191,9 +201,11 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     };
     sparkLinePropsCalls = [];
     mockRecoveryInvalidate.mockReset();
+    mockRecoveryRefetch.mockReset();
     mockProcessingStatusInvalidate.mockReset();
     mockRouterPush.mockReset();
     mockRecoveryInvalidate.mockResolvedValue(undefined);
+    mockRecoveryRefetch.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
   });
@@ -240,6 +252,8 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("opens breathwork from recovery tools", async () => {
+    mockRecoveryData = {};
+
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
@@ -249,6 +263,8 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("opens behavior associations from recovery tools", async () => {
+    mockRecoveryData = {};
+
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
@@ -290,6 +306,47 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     render(<RecoveryScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(screen.getByText("44 ms")).toBeTruthy();
+  });
+
+  it("shows one actionable server error without rendering false recovery metrics", async () => {
+    mockRecoveryError = new Error("Recovery analytics are temporarily unavailable.");
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByText("Recovery analytics are temporarily unavailable.")).toHaveLength(1);
+    expect(screen.getByText("Processing status")).toBeTruthy();
+    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry recovery data" }));
+    expect(mockRecoveryRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps cached recovery data visible during a background error", async () => {
+    mockRecoveryError = new Error("Recovery refresh failed.");
+    mockRecoveryFetching = true;
+    mockRecoveryData = {
+      hrvVariability: [
+        { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
+        { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
+      ],
+      hrvBaseline: [],
+      baselineRelative: [baselineMetric("hrv", 44)],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getAllByText("Recovery refresh failed.")).toHaveLength(1);
     expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
     expect(screen.getByText("44 ms")).toBeTruthy();
   });
