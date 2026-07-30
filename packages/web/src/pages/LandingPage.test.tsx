@@ -182,7 +182,9 @@ describe("LandingPage", () => {
     expect(screen.getByText("r = 0.72")).toBeTruthy();
     expect(screen.getByText("Strong positive")).toBeTruthy();
     expect(screen.getByText("24 paired days of 30")).toBeTruthy();
-    expect(screen.getByText("Example sources: Oura sleep + Apple Health HRV")).toBeTruthy();
+    expect(
+      screen.getByText("Example sources: Oura sleep + Apple Health heart rate variability (HRV)"),
+    ).toBeTruthy();
     expect(screen.getByText("Confidence: moderate; association, not causation.")).toBeTruthy();
     expect(screen.getByText("Next: compare late meals on the same nights.")).toBeTruthy();
 
@@ -232,7 +234,11 @@ describe("LandingPage", () => {
   it("formats preview units through the unit system", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("bpm average")).toBeTruthy();
+    expect(screen.getAllByText("52 bpm")).toHaveLength(2);
+    expect(screen.getByText("average")).toBeTruthy();
+    expect(screen.queryByText("bpm average")).toBeNull();
+    expect(screen.getByText("68 ms")).toBeTruthy();
+    expect(screen.getByText("98%")).toBeTruthy();
     expect(screen.getByText("Respiratory Rate")).toBeTruthy();
     expect(screen.getByText("14 breaths/min")).toBeTruthy();
     expect(screen.getByText("36.2°C")).toBeTruthy();
