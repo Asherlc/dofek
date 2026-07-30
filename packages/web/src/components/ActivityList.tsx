@@ -5,7 +5,7 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
@@ -78,6 +78,7 @@ export function ActivityList({
   const [selectMode, setSelectMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const selectionGuidanceId = useId();
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
@@ -94,6 +95,9 @@ export function ActivityList({
   const currentPage = page ?? 0;
   const selectedCount = selectedActivityIds.size;
   const selectedIds = [...selectedActivityIds];
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
 
   const toggleSelected = (activityId: string) => {
     setSelectedActivityIds((current) => {
@@ -255,9 +259,18 @@ export function ActivityList({
     <div className="space-y-3">
       {onBulkDelete ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
+          <p id={selectionGuidanceId} className="text-xs text-muted">
+            Choose one or more activities to delete.
+          </p>
           {selectMode ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-subtle tabular-nums">{selectedCount} selected</span>
+              <output
+                aria-live="polite"
+                aria-atomic="true"
+                className="text-xs text-subtle tabular-nums"
+              >
+                {selectedCountLabel}
+              </output>
               {confirmDelete ? (
                 <>
                   <span className="text-xs text-muted">
@@ -295,9 +308,10 @@ export function ActivityList({
             <button
               type="button"
               onClick={() => setSelectMode(true)}
+              aria-describedby={selectionGuidanceId}
               className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
             >
-              Select
+              Select activities
             </button>
           )}
         </div>

@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { within } from "storybook/test";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList.tsx";
 
@@ -206,6 +207,15 @@ export const Default: Story = {};
 export const Selectable: Story = {
   args: {
     onBulkDelete: () => {},
+  },
+};
+
+export const SelectionMode: Story = {
+  args: {
+    onBulkDelete: () => {},
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Select activities" }));
   },
 };
 

@@ -441,11 +441,17 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
+      "polite",
+    );
     fireEvent.click(screen.getByText("Trainer Ride"));
 
     expect(routerPush).not.toHaveBeenCalled();
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByText("1 activity selected").getAttribute("accessibilityliveregion")).toBe(
+      "polite",
+    );
   });
 
   it("bulk deletes selected activities after confirmation", async () => {
@@ -460,7 +466,7 @@ describe("ActivitiesScreen", () => {
     });
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
 
@@ -493,12 +499,12 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Running"));
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("clears selected activities when the date range changes", () => {
@@ -510,12 +516,12 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("8 weeks"));
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("paginates the activity card history", () => {
