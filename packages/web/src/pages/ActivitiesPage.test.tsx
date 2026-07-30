@@ -470,6 +470,34 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
   });
 
+  it("associates each selection control with its own guidance", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(
+      <>
+        <ActivitiesPage />
+        <ActivitiesPage />
+      </>,
+    );
+
+    const selectionButtons = screen.getAllByRole("button", { name: "Select activities" });
+    const guidanceIds = selectionButtons.map((button) => button.getAttribute("aria-describedby"));
+
+    expect(guidanceIds[0]).toBeTruthy();
+    expect(guidanceIds[1]).toBeTruthy();
+    expect(guidanceIds[0]).not.toBe(guidanceIds[1]);
+    for (const guidanceId of guidanceIds) {
+      expect(document.getElementById(guidanceId ?? "")).toHaveTextContent(
+        "Choose one or more activities to delete.",
+      );
+    }
+  });
+
   it("exposes the selected activity count as an accessible status", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],

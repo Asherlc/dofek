@@ -13,7 +13,7 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
@@ -349,6 +349,7 @@ function ActivityControls({
   onConfirmDelete,
   onConfirmRestore,
 }: ActivityControlsProps) {
+  const selectionGuidanceId = useId();
   const selectionGuidance = showHidden
     ? "Choose visible activities to delete or hidden activities to restore."
     : "Choose one or more activities to delete.";
@@ -362,7 +363,7 @@ function ActivityControls({
         <div>
           <p className="text-sm font-semibold">Activity log</p>
           {canSelect ? (
-            <p id="activity-selection-guidance" className="mt-0.5 text-xs text-muted">
+            <p id={selectionGuidanceId} className="mt-0.5 text-xs text-muted">
               {selectionGuidance}
             </p>
           ) : null}
@@ -371,7 +372,7 @@ function ActivityControls({
           <button
             type="button"
             onClick={onSelect}
-            aria-describedby="activity-selection-guidance"
+            aria-describedby={selectionGuidanceId}
             className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
           >
             Select activities
