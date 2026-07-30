@@ -96,7 +96,10 @@ export const strengthRouter = router({
       const overloads = await repo.getProgressiveOverload(range.days);
       return overloads.map((overload) => overload.toDetail());
     },
-    { outputSchema: z.array(progressiveOverloadRowSchema) },
+    {
+      outputSchema: z.array(progressiveOverloadRowSchema),
+      keyVersion: "progressive-overload-evidence-v1",
+    },
   ),
 
   workoutSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })

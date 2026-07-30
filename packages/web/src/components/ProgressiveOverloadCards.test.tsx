@@ -2,6 +2,7 @@
 
 import { chartColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
+import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 
@@ -42,7 +43,7 @@ const evidence = {
     "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
   deloadContext:
     "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
-};
+} satisfies ProgressiveOverloadRow;
 
 describe("ProgressiveOverloadCards", () => {
   it("renders complete server-authored evidence without positive or negative status styling", () => {

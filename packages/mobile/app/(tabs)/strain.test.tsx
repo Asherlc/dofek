@@ -882,6 +882,18 @@ describe("StrainScreen recent activity navigation", () => {
     ).toBeTruthy();
   });
 
+  it("does not present a failed training query as empty exercise trend data", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.queryByText("No exercise volume trends in this period")).toBeNull();
+    expect(screen.getAllByText("Training data failed to load").length).toBeGreaterThan(0);
+  });
+
   it("shows the server error message for climbing data failures", async () => {
     mockTrainingState.data = undefined;
     mockTrainingState.isError = true;

@@ -451,11 +451,20 @@ export default function StrainScreen() {
             </View>
           )}
 
-          <ProgressiveOverloadCards
-            exercises={trainingData?.progressiveOverload ?? []}
-            loading={trainingQuery.isLoading && trainingData == null}
-            units={units}
-          />
+          {shouldShowTrainingQueryError ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Exercise Volume Trends</Text>
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load exercise volume trends."}
+              </Text>
+            </View>
+          ) : (
+            <ProgressiveOverloadCards
+              exercises={trainingData?.progressiveOverload ?? []}
+              loading={trainingQuery.isLoading && trainingData == null}
+              units={units}
+            />
+          )}
 
           <View style={styles.card}>
             <View style={styles.sectionHeader}>
