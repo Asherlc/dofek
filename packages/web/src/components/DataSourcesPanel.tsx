@@ -326,39 +326,39 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (p: SyncProviderSummary) => {
-      if (p.authorized && !p.needsReauth && !p.pushOnly) {
-        handleSync(p.id);
+    (provider: SyncProviderSummary) => {
+      if (provider.authorized && !provider.needsReauth && !provider.pushOnly) {
+        handleSync(provider.id);
         return;
       }
-      if (p.pushOnly) {
+      if (provider.pushOnly) {
         return;
       }
-      switch (p.authType) {
+      switch (provider.authType) {
         case "oauth":
         case "oauth1":
-          window.open(`/auth/provider/${p.id}`, "_blank");
+          window.open(`/auth/provider/${provider.id}`, "_blank");
           break;
         case "credential":
-          setCredentialAuthProvider({ id: p.id, name: p.name });
+          setCredentialAuthProvider({ id: provider.id, name: provider.name });
           break;
         case "token":
-          if (p.tokenAuth) {
+          if (provider.tokenAuth) {
             setTokenAuthProvider({
-              id: p.id,
-              name: p.name,
-              label: p.tokenAuth.label,
-              instructionsUrl: p.tokenAuth.instructionsUrl,
+              id: provider.id,
+              name: provider.name,
+              label: provider.tokenAuth.label,
+              instructionsUrl: provider.tokenAuth.instructionsUrl,
             });
           } else {
             const error = new Error(
-              `${p.name} personal-token authentication is unavailable. Refresh and try again.`,
+              `${provider.name} personal-token authentication is unavailable. Refresh and try again.`,
             );
             captureException(error, {
               operation: "connect-provider",
-              providerId: p.id,
+              providerId: provider.id,
             });
-            updateState(p.id, { status: "error", message: error.message });
+            updateState(provider.id, { status: "error", message: error.message });
           }
           break;
         case "custom:whoop":
@@ -368,7 +368,7 @@ export function DataSourcesPanel() {
           setGarminAuthOpen(true);
           break;
         default:
-          handleSync(p.id);
+          handleSync(provider.id);
       }
     },
     [handleSync, updateState],
