@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createClickHouseTestActivitySensorStore,
+  executeClickHouseTestCommand,
   getClickHouseTestClient,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
@@ -55,6 +56,11 @@ describe("BodyRepository exact local-date range", () => {
         },
       });
     }
+
+    await executeClickHouseTestCommand(
+      testContext,
+      "REBUILD TEST ANALYTICS TABLE analytics.v_body_measurement",
+    );
 
     const repository = new BodyRepository(store, userId, "America/Los_Angeles");
     const rows = await repository.listRange("2026-05-29", "2026-05-29");
