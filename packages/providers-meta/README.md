@@ -37,3 +37,8 @@ authorization as not required.
 
 Processing-status presentation helpers, including dataset-scoped failure messages, live in
 [`processing-status.ts`](src/processing-status.ts).
+
+Provider sync-history entries use
+[`sync-log-presentation.ts`](src/sync-log-presentation.ts) to turn structured status and
+authorization reasons into the same actionable summary on web and mobile. Clients keep the raw
+status, authorization reason, error, and log identifier available separately as diagnostics.
