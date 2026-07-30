@@ -12,7 +12,7 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -38,6 +38,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
@@ -184,7 +185,7 @@ class ClimbingSectionModel {
 export default function StrainScreen() {
   const router = useRouter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, description, setDays } = useTimeRangePreference("training");
   const units = useUnitConverter();
   const endDate = useTodayQueryDate();
 
@@ -304,7 +305,7 @@ export default function StrainScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

@@ -233,7 +233,13 @@ function BodyHarness() {
 
   if (!BodyPage) return null;
   return (
-    <BodyDaysContext.Provider value={{ days, setDays }}>
+    <BodyDaysContext.Provider
+      value={{
+        days,
+        description: "Default: 30 days keeps recent body changes visible.",
+        setDays,
+      }}
+    >
       <BodyPage />
     </BodyDaysContext.Provider>
   );

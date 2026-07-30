@@ -40,6 +40,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
@@ -176,7 +177,7 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, description, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
 
   const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
@@ -268,7 +269,7 @@ export default function RecoveryScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

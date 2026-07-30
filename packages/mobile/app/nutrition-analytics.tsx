@@ -1,7 +1,6 @@
 import { formatCalories, formatNumber, formatNutritionNumber } from "@dofek/format/format";
 import { operationalStatusColors, statusColors } from "@dofek/scoring/colors";
 import { useRouter } from "expo-router";
-import { useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -17,10 +16,12 @@ import type {
   MicronutrientSafetyReviewResult,
 } from "../../server/src/routers/nutrition-analytics";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { DaySelector } from "../components/DaySelector";
 import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
 
 // ── Types ──
@@ -70,7 +71,7 @@ function LoadingText() {
 // ── Main Screen ──
 
 export default function NutritionAnalyticsScreen() {
-  const [days, setDays] = useState(90);
+  const { days, description, setDays } = useTimeRangePreference("nutrition");
   const router = useRouter();
   const { refreshing, onRefresh } = useRefresh();
   const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({
@@ -106,24 +107,7 @@ export default function NutritionAnalyticsScreen() {
         />
       }
     >
-      {/* Days selector */}
-      <View style={styles.daysRow}>
-        {DAY_OPTIONS.map((opt) => (
-          <TouchableOpacity
-            key={opt.value}
-            style={[styles.dayButton, days === opt.value && styles.dayButtonActive]}
-            onPress={() => setDays(opt.value)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={opt.label}
-            accessibilityState={{ selected: days === opt.value }}
-          >
-            <Text style={[styles.dayButtonText, days === opt.value && styles.dayButtonTextActive]}>
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
 
       {firstError ? (
         <View style={styles.recovery}>
@@ -396,31 +380,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-
-  // ── Days selector ──
-  daysRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 16,
-  },
-  dayButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-  },
-  dayButtonActive: {
-    backgroundColor: colors.accent,
-  },
-  dayButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  dayButtonTextActive: {
-    color: colors.text,
-  },
-
   // ── Sections ──
   sectionTitle: {
     fontSize: 18,

@@ -81,7 +81,7 @@ function getBackgroundQueryError(...queries: QueryResultWithData[]): unknown {
 
 export function BodyPage() {
   const units = useUnitConverter();
-  const { days, setDays } = useBodyDays();
+  const { days, description, setDays } = useBodyDays();
   const endDate = useTodayQueryDate();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ ...selectedRangeQueryInput(days), endDate });
@@ -184,7 +184,7 @@ export function BodyPage() {
   return (
     <>
       <div className="flex justify-end">
-        <TimeRangeSelector days={days} onChange={setDays} />
+        <TimeRangeSelector days={days} description={description} onChange={setDays} />
       </div>
 
       {backgroundQueryError ? <QueryStatePanel error={backgroundQueryError} height={72} /> : null}

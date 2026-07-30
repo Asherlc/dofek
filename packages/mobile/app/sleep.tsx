@@ -11,7 +11,6 @@ import {
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
-import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
@@ -24,11 +23,12 @@ import { QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useProcessingStatus } from "../lib/useProcessingStatus";
 import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
 import type { SleepConsistencyRow } from "../types/api";
 
 export default function SleepScreen() {
-  const [days, setDays] = useState(30);
+  const { days, description, setDays } = useTimeRangePreference("sleep");
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const latestStagesQuery = trpc.sleep.latestStages.useQuery();
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
@@ -77,7 +77,7 @@ export default function SleepScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

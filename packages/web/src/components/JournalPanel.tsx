@@ -2,6 +2,7 @@ import { formatDateLong } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
@@ -51,7 +52,7 @@ function JournalQueryError({
 
 export function JournalPanel() {
   const [tab, setTab] = useState<Tab>("log");
-  const [days, setDays] = useState<TimeRangeDays>(30);
+  const { days, description, setDays } = useTimeRangePreference("behavior");
 
   return (
     <ChartRangeProvider days={days}>
@@ -73,7 +74,7 @@ export function JournalPanel() {
               Trends
             </button>
           </div>
-          <TimeRangeSelector days={days} onChange={setDays} />
+          <TimeRangeSelector days={days} description={description} onChange={setDays} />
         </div>
 
         {tab === "log" ? (

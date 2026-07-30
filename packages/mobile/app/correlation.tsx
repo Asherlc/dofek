@@ -19,9 +19,11 @@ import {
 } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { DaySelector } from "../components/DaySelector";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
 
 // ── Constants ──
@@ -52,30 +54,6 @@ type ObservationContributor = PairedObservation["x"]["contributors"][number];
 
 function formatObservationValue(value: number): string {
   return Number.isInteger(value) ? value.toLocaleString() : formatNumber(value);
-}
-
-// ── Selector Components ──
-
-function DaySelector({ days, onChange }: { days: number; onChange: (d: number) => void }) {
-  return (
-    <View style={styles.selectorRow}>
-      {DAY_OPTIONS.map((opt) => (
-        <TouchableOpacity
-          key={opt.value}
-          style={[styles.selectorButton, days === opt.value && styles.selectorButtonActive]}
-          onPress={() => onChange(opt.value)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={opt.label}
-          accessibilityState={{ selected: days === opt.value }}
-        >
-          <Text style={[styles.selectorText, days === opt.value && styles.selectorTextActive]}>
-            {opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
 }
 
 function LagSelector({ lag, onChange }: { lag: number; onChange: (l: number) => void }) {
@@ -488,7 +466,7 @@ function ScatterPlot({
 // ── Main Screen ──
 
 export default function CorrelationScreen() {
-  const [days, setDays] = useState(365);
+  const { days, description, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [lag, setLag] = useState(0);
@@ -542,10 +520,12 @@ export default function CorrelationScreen() {
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector
         days={days}
+        description={description}
         onChange={(nextDays) => {
           setDays(nextDays);
           resetObservationCursor();
         }}
+        options={DAY_OPTIONS}
       />
 
       {/* Metric pickers */}
