@@ -1,10 +1,11 @@
 import { operationalStatusColors } from "@dofek/scoring/colors";
+import type { ReactNode } from "react";
 
 interface QueryStatePanelProps {
   contextLabel?: string;
   error?: unknown;
   variant?: "loading" | "error" | "empty";
-  message?: string;
+  message?: ReactNode;
   height?: number;
   onRetry?: () => void;
   retryLabel?: string;

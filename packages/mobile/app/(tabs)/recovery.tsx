@@ -538,39 +538,54 @@ export default function RecoveryScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null &&
+          {healthspan != null && healthspan.availability.status === "insufficient_data" ? (
+            <Card title="Healthspan Score">
+              <Text style={styles.healthspanAvailabilitySummary}>
+                {healthspan.availability.summary}
+              </Text>
+              {healthspan.availability.nextCondition != null ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  {healthspan.availability.nextCondition}
+                </Text>
+              ) : null}
+              {healthspan.availability.missingMetricLabels.length > 0 ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  Missing supported metrics:{" "}
+                  {healthspan.availability.missingMetricLabels.join(", ")}
+                </Text>
+              ) : null}
+            </Card>
+          ) : healthspan != null &&
             healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 && (
-              <Card title="Healthspan Score">
-                <View style={styles.healthspanRow}>
+            healthspan.metrics.length > 0 ? (
+            <Card title="Healthspan Score">
+              <View style={styles.healthspanRow}>
+                <Text
+                  style={[
+                    styles.healthspanScore,
+                    { color: scoreColor(healthspan.healthspanScore) },
+                  ]}
+                >
+                  {healthspan.healthspanScore}
+                </Text>
+                <View style={styles.healthspanMeta}>
                   <Text
                     style={[
-                      styles.healthspanScore,
+                      styles.healthspanStatus,
                       { color: scoreColor(healthspan.healthspanScore) },
                     ]}
                   >
-                    {healthspan.healthspanScore}
+                    {scoreLabel(healthspan.healthspanScore)}
                   </Text>
-                  <View style={styles.healthspanMeta}>
-                    <Text
-                      style={[
-                        styles.healthspanStatus,
-                        { color: scoreColor(healthspan.healthspanScore) },
-                      ]}
-                    >
-                      {scoreLabel(healthspan.healthspanScore)}
+                  {healthspan.trend != null && (
+                    <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
+                      {trendArrow(healthspan.trend)} {healthspan.trend}
                     </Text>
-                    {healthspan.trend != null && (
-                      <Text
-                        style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}
-                      >
-                        {trendArrow(healthspan.trend)} {healthspan.trend}
-                      </Text>
-                    )}
-                  </View>
+                  )}
                 </View>
-              </Card>
-            )}
+              </View>
+            </Card>
+          ) : null}
 
           {/* Trend Weight */}
           {latestWeight != null && (
@@ -781,6 +796,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     textTransform: "capitalize",
+  },
+  healthspanAvailabilitySummary: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  healthspanAvailabilityDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   weightRow: {
     flexDirection: "row",

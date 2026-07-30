@@ -53,6 +53,32 @@ function baselineMetric(
   };
 }
 
+const insufficientHealthspan = {
+  healthspanScore: null,
+  yearsDelta: null,
+  metrics: [],
+  history: [],
+  trend: null,
+  availability: {
+    status: "insufficient_data",
+    availableMetricCount: 0,
+    requiredMetricCount: 3,
+    missingMetricLabels: [
+      "Sleep Consistency",
+      "Sleep Duration",
+      "Aerobic Activity",
+      "High Intensity",
+      "Strength Training",
+      "Daily Steps",
+      "VO2 Max",
+      "Resting Heart Rate",
+      "Lean Body Mass",
+    ],
+    summary: "0 of 3 required Healthspan metrics are available.",
+    nextCondition: "The score becomes available after 3 more supported metrics sync successfully.",
+  },
+} as const;
+
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
@@ -257,7 +283,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -281,7 +307,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: 24, latest_skin_temp: null },
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -315,7 +341,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -349,7 +375,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -371,7 +397,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: 97, latest_skin_temp: null },
       dailyMetrics: [{ spo2_avg: 96 }, { spo2_avg: 97 }],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -390,7 +416,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: null, latest_skin_temp: 36.8 },
       dailyMetrics: [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -408,7 +434,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: null, latest_skin_temp: null },
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -426,13 +452,53 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: null, latest_skin_temp: null },
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Skin Temperature")).toBeNull();
+  });
+
+  it("shows exact Healthspan progress and the next availability condition", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: {
+        healthspanScore: null,
+        yearsDelta: null,
+        metrics: [],
+        history: [],
+        trend: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 2,
+          requiredMetricCount: 3,
+          missingMetricLabels: ["VO2 Max", "Daily Steps"],
+          summary: "2 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 1 more supported metric syncs successfully.",
+        },
+      },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("HEALTHSPAN SCORE")).toBeTruthy();
+    expect(screen.getByText("2 of 3 required Healthspan metrics are available.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The score becomes available after 1 more supported metric syncs successfully.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Missing supported metrics: VO2 Max, Daily Steps")).toBeTruthy();
   });
 
   it("labels smoothed body weight as Trend Weight and shows the latest scale reading", async () => {
@@ -459,7 +525,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           interpolated: false,
         },
       ],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -498,7 +564,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         goal: null,
         projectionLine: [],
       },
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -539,7 +605,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -588,7 +654,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");

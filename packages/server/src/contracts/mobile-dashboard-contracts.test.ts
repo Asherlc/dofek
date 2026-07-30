@@ -165,6 +165,14 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
       healthspan: {
         healthspanScore: 84,
         yearsDelta: 1.8,
+        availability: {
+          status: "available",
+          availableMetricCount: 3,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "3 of 3 required Healthspan metrics are available.",
+          nextCondition: null,
+        },
         metrics: [],
         history: [],
         trend: "improving" as const,
