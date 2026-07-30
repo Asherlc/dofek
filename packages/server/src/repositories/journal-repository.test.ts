@@ -61,7 +61,7 @@ describe("JournalRepository", () => {
       expect(result).toEqual([]);
     });
 
-    it("returns parsed entry rows with question metadata", async () => {
+    it("returns parsed entry details with resolved source provenance", async () => {
       const { repository } = makeRepository([
         {
           id: "entry-1",
@@ -81,6 +81,36 @@ describe("JournalRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.id).toBe("entry-1");
       expect(result[0]?.question_slug).toBe("caffeine");
+      expect(result[0]?.source).toEqual({
+        providerId: "dofek",
+        label: "Dofek",
+      });
+      expect(result[0]).not.toHaveProperty("provider_id");
+    });
+
+    it("uses the canonical label for review-fixture provenance", async () => {
+      const { repository } = makeRepository([
+        {
+          id: "entry-2",
+          date: "2025-01-15",
+          provider_id: "manual_review",
+          question_slug: "meditation",
+          display_name: "Meditation",
+          category: "wellness",
+          data_type: "boolean",
+          unit: null,
+          answer_text: "yes",
+          answer_numeric: 1,
+          impact_score: null,
+        },
+      ]);
+
+      const result = await repository.listEntries(30);
+
+      expect(result[0]?.source).toEqual({
+        providerId: "manual_review",
+        label: "Manual review",
+      });
     });
 
     it("calls execute once", async () => {
@@ -90,28 +120,53 @@ describe("JournalRepository", () => {
     });
   });
 
-  describe("listTrends", () => {
+  describe("listTrendEntries", () => {
     it("returns empty array when no trend data exists", async () => {
       const { repository } = makeRepository([]);
-      const result = await repository.listTrends("caffeine", 90);
+      const result = await repository.listTrendEntries(90, "2025-01-15");
       expect(result).toEqual([]);
     });
 
-    it("returns parsed trend points", async () => {
+    it("returns exact chartable entries with resolved source provenance", async () => {
       const { repository } = makeRepository([
-        { date: "2025-01-10", value: "3" },
-        { date: "2025-01-11", value: "5" },
+        {
+          id: "entry-1",
+          date: "2025-01-10",
+          provider_id: "manual_review",
+          question_slug: "mood",
+          display_name: "Mood",
+          category: "wellness",
+          data_type: "numeric",
+          unit: "score",
+          answer_text: null,
+          answer_numeric: "3",
+          impact_score: null,
+        },
       ]);
-      const result = await repository.listTrends("mood", 90);
+      const result = await repository.listTrendEntries(90, "2025-01-15");
       expect(result).toEqual([
-        { date: "2025-01-10", value: 3 },
-        { date: "2025-01-11", value: 5 },
+        {
+          id: "entry-1",
+          date: "2025-01-10",
+          question_slug: "mood",
+          display_name: "Mood",
+          category: "wellness",
+          data_type: "numeric",
+          unit: "score",
+          answer_text: null,
+          answer_numeric: 3,
+          impact_score: null,
+          source: {
+            providerId: "manual_review",
+            label: "Manual review",
+          },
+        },
       ]);
     });
 
     it("calls execute once", async () => {
       const { repository, execute } = makeRepository([]);
-      await repository.listTrends("mood", 30);
+      await repository.listTrendEntries(30, "2025-01-15");
       expect(execute).toHaveBeenCalledTimes(1);
     });
   });

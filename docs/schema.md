@@ -161,7 +161,7 @@ tables through ClickHouse replication.
 |-------|---------|
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
-| `fitness.sleep_session` | Sleep sessions with stage breakdown |
+| `fitness.sleep_session` | Sleep sessions with nullable provider-reported measurements and an explicit `staging_available` quality flag; see the [historical repair runbook](sleep-quality-backfill-runbook.md) |
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
 | `fitness.supplement` | Stable per-user supplement schedule identity, ownership, and display order |

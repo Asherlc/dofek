@@ -42,10 +42,11 @@ export interface DashboardOverviewResult {
     lastNight: {
       date: string;
       durationMinutes: number;
-      deepPct: number;
-      remPct: number;
-      lightPct: number;
-      awakePct: number;
+      deepPct: number | null;
+      remPct: number | null;
+      lightPct: number | null;
+      awakePct: number | null;
+      stagingAvailable: boolean;
     } | null;
     sleepDebt: number;
   } | null;
@@ -78,6 +79,7 @@ const sleepSummaryRowSchema = z.object({
   rem_minutes: z.coerce.number().nullable(),
   light_minutes: z.coerce.number().nullable(),
   awake_minutes: z.coerce.number().nullable(),
+  staging_available: z.boolean(),
 });
 
 export function isRecent(dateString: string, anchorDateString: string): boolean {
@@ -192,7 +194,8 @@ export async function loadDashboardOverview({
             deep_minutes,
             rem_minutes,
             light_minutes,
-            awake_minutes
+            awake_minutes,
+            staging_available
           FROM analytics.daily_sleep AS sleep FINAL
           WHERE sleep.user_id = {userId:UUID}
             AND sleep.is_deleted = 0
@@ -240,13 +243,22 @@ export async function loadDashboardOverview({
           date: row.date,
           duration_minutes: row.duration_minutes,
           deep_pct:
-            row.duration_minutes > 0 ? ((row.deep_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.deep_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
           rem_pct:
-            row.duration_minutes > 0 ? ((row.rem_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.rem_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
           light_pct:
-            row.duration_minutes > 0 ? ((row.light_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.light_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
           awake_pct:
-            row.duration_minutes > 0 ? ((row.awake_minutes ?? 0) / row.duration_minutes) * 100 : 0,
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.awake_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
+          staging_available: row.staging_available,
         },
       ];
     });
@@ -375,6 +387,7 @@ export async function loadDashboardOverview({
             remPct: lastNightRow.rem_pct,
             lightPct: lastNightRow.light_pct,
             awakePct: lastNightRow.awake_pct,
+            stagingAvailable: lastNightRow.staging_available,
           }
         : null,
       sleepDebt: Math.round(accumulatedDebt),

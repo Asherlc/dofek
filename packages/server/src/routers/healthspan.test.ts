@@ -526,6 +526,25 @@ describe("healthspanRouter", () => {
       expect(result.metrics).toEqual([]);
       expect(result.history).toEqual([]);
       expect(result.trend).toBeNull();
+      expect(result.availability).toEqual({
+        status: "insufficient_data",
+        availableMetricCount: 0,
+        requiredMetricCount: 3,
+        missingMetricLabels: [
+          "Sleep Consistency",
+          "Sleep Duration",
+          "Aerobic Activity",
+          "High Intensity",
+          "Strength Training",
+          "Daily Steps",
+          "VO2 Max",
+          "Resting Heart Rate",
+          "Lean Body Mass",
+        ],
+        summary: "0 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 3 more supported metrics sync successfully.",
+      });
     });
 
     it("computes exact healthspan score from known metrics", async () => {
@@ -583,6 +602,9 @@ describe("healthspanRouter", () => {
       expect(metricsWithData).toHaveLength(9);
       const totalScore = metricsWithData.reduce((sum, m) => sum + m.score, 0);
       expect(result.healthspanScore).toBe(Math.round(totalScore / metricsWithData.length));
+      expect(result.availability.summary).toBe(
+        "9 supported Healthspan metrics are available; 3 are required for a score.",
+      );
     });
 
     it("uses read-model VO2 max estimates for the current value and weekly history", async () => {
@@ -689,6 +711,23 @@ describe("healthspanRouter", () => {
       expect(result.healthspanScore).toBeNull();
       // Individual metrics are still returned so the UI can show them
       expect(result.metrics).toHaveLength(9);
+      expect(result.availability).toEqual({
+        status: "insufficient_data",
+        availableMetricCount: 2,
+        requiredMetricCount: 3,
+        missingMetricLabels: [
+          "Sleep Consistency",
+          "Sleep Duration",
+          "Aerobic Activity",
+          "High Intensity",
+          "Strength Training",
+          "VO2 Max",
+          "Lean Body Mass",
+        ],
+        summary: "2 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 1 more supported metric syncs successfully.",
+      });
     });
 
     it("computes composite from only metrics with real data when above threshold", async () => {
@@ -713,6 +752,13 @@ describe("healthspanRouter", () => {
       // 3 metrics with real data: sleep duration (100), sleep consistency (78), resting HR (90)
       const expected = Math.round((100 + 78 + 90) / 3);
       expect(result.healthspanScore).toBe(expected);
+      expect(result.availability).toMatchObject({
+        status: "available",
+        availableMetricCount: 3,
+        requiredMetricCount: 3,
+        summary: "3 of 3 required Healthspan metrics are available.",
+        nextCondition: null,
+      });
     });
 
     it("sets correct status based on score", async () => {

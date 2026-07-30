@@ -23,7 +23,15 @@ type SensorStore = import("../repositories/activity-repository.ts").ActivitySens
 
 function makeSensorStore(rows: unknown[] = []): SensorStore {
   return {
-    query: vi.fn().mockResolvedValue(rows),
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (
+        query.includes("analytics.daily_sleep") ||
+        query.includes("analytics.v_body_measurement")
+      ) {
+        return [];
+      }
+      return rows;
+    }),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),

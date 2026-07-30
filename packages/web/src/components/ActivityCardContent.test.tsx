@@ -2,7 +2,7 @@
 
 import { UnitConverter } from "@dofek/format/units";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 
 const units = new UnitConverter("metric");
@@ -20,15 +20,49 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
       source: "provider_offset",
     },
     durationMin: 30,
+    source: {
+      primarySourceLabel: "Strong (via Apple Health)",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: "2026-07-14T08:50:00.000Z",
     location: null,
-    stats: [{ label: "Training Stress Score", value: "8.5" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
     ...overrides,
   };
 }
 
 afterEach(cleanup);
+afterEach(() => vi.useRealTimers());
 
 describe("ActivityCardContent", () => {
+  it("renders server-authored source overlap and processing freshness", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-14T09:00:00.000Z"));
+
+    render(
+      <ActivityCardContent
+        activity={activity({
+          source: {
+            primarySourceLabel: "Wahoo",
+            sourceCount: 2,
+            overlapSummary: "2 matched source records · Wahoo selected by source priority",
+          },
+          lastProcessedAt: "2026-07-14T08:59:00.000Z",
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText("Wahoo")).toBeDefined();
+    expect(
+      screen.getByText("2 matched source records · Wahoo selected by source priority"),
+    ).toBeDefined();
+    expect(screen.getByText("Processed 1m ago")).toBeDefined();
+  });
+
   it("renders the stored record-local clock time", () => {
     render(
       <ActivityCardContent
@@ -61,6 +95,34 @@ describe("ActivityCardContent", () => {
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByText("8.5")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon").getAttribute("style")).toBeNull();
+  });
+
+  it("renders the server-authored unavailable reason instead of a broken dash", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          stats: [
+            {
+              status: "unavailable",
+              label: "Training Stress Score",
+              reason:
+                "Record average power, or record average heart rate and set maximum heart rate.",
+            },
+          ],
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText("Training Stress Score unavailable")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Record average power, or record average heart rate and set maximum heart rate.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
   });
 
   it("gives mapped activities a full-height map pane and keeps metrics with the details", () => {

@@ -1,5 +1,13 @@
+import {
+  getEmailValidationError,
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { PasswordInput } from "../components/PasswordInput.tsx";
 import { ProviderLogo, providerLabel } from "../components/ProviderLogo.tsx";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import {
@@ -23,6 +31,8 @@ function LoginPage() {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
 
   useEffect(() => {
     fetchConfiguredProviders()
@@ -46,6 +56,23 @@ function LoginPage() {
   const showPasswordAuth = providers?.password ?? false;
   const showOAuthProviders = allProviders.length > 0;
   const passwordAuthDisabled = submitting || !email.trim() || !password;
+  const emailValidationError =
+    authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
+  const passwordValidationError = passwordTouched
+    ? password
+      ? authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+      : "Enter your password."
+    : null;
+
+  function changeAuthMode(mode: AuthMode) {
+    setAuthMode(mode);
+    setFormError(null);
+    setEmailTouched(false);
+    setPasswordTouched(false);
+  }
+
   const headerCopy =
     authMode === "register"
       ? {
@@ -64,9 +91,18 @@ function LoginPage() {
 
   async function handlePasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
+    setEmailTouched(true);
+    setPasswordTouched(true);
     setFormError(null);
+    const emailError = getEmailValidationError(email);
+    const passwordError = password
+      ? authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+      : "Enter your password.";
+    if (emailError || passwordError) return;
 
+    setSubmitting(true);
     try {
       const result =
         authMode === "register"
@@ -104,8 +140,15 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center">
+    <div className="min-h-screen bg-page flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm p-8 rounded-2xl bg-surface-solid border border-border shadow-xl">
+        <a
+          href="/"
+          aria-label="Back to Dofek"
+          className="inline-flex mb-6 text-sm text-subtle hover:text-foreground transition-colors"
+        >
+          &larr; Back to Dofek
+        </a>
         <h1 className="text-2xl font-bold text-foreground text-center mb-2">{headerCopy.title}</h1>
         <p className="text-muted text-center mb-8 text-sm">{headerCopy.subtitle}</p>
 
@@ -156,10 +199,7 @@ function LoginPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("login")}
                         className="w-full text-xs text-muted hover:text-foreground transition-colors"
                       >
                         Back to sign in
@@ -171,10 +211,7 @@ function LoginPage() {
                     <div className="flex rounded-lg border border-border overflow-hidden mb-4">
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("login")}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           authMode === "login"
                             ? "bg-accent/15 text-foreground"
@@ -185,10 +222,7 @@ function LoginPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("register");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("register")}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           authMode === "register"
                             ? "bg-accent/15 text-foreground"
@@ -199,13 +233,7 @@ function LoginPage() {
                       </button>
                     </div>
 
-                    {formError ? (
-                      <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
-                        {formError}
-                      </div>
-                    ) : null}
-
-                    <form onSubmit={handlePasswordSubmit} className="space-y-3">
+                    <form onSubmit={handlePasswordSubmit} className="space-y-3" noValidate>
                       {authMode === "register" ? (
                         <div>
                           <label htmlFor="register-name" className="block text-xs text-muted mb-1">
@@ -230,37 +258,82 @@ function LoginPage() {
                           id="auth-email"
                           type="email"
                           value={email}
-                          onChange={(event) => setEmail(event.target.value)}
+                          onChange={(event) => {
+                            setEmail(event.target.value);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setEmailTouched(true)}
                           required
                           autoComplete="email"
+                          aria-invalid={emailValidationError ? true : undefined}
+                          aria-describedby={emailValidationError ? "auth-email-error" : undefined}
                           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                           placeholder="you@example.com"
                         />
+                        {emailValidationError ? (
+                          <p
+                            id="auth-email-error"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {emailValidationError}
+                          </p>
+                        ) : null}
                       </div>
                       <div>
                         <label htmlFor="auth-password" className="block text-xs text-muted mb-1">
                           Password
                         </label>
-                        <input
+                        <PasswordInput
+                          key={authMode}
                           id="auth-password"
-                          type="password"
+                          visibilityLabel="password"
                           value={password}
-                          onChange={(event) => setPassword(event.target.value)}
+                          onChange={(event) => {
+                            setPassword(event.target.value);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setPasswordTouched(true)}
                           required
-                          minLength={8}
+                          minLength={authMode === "register" ? PASSWORD_MIN_LENGTH : undefined}
+                          maxLength={authMode === "register" ? PASSWORD_MAX_LENGTH : undefined}
                           autoComplete={
                             authMode === "register" ? "new-password" : "current-password"
                           }
+                          aria-invalid={passwordValidationError ? true : undefined}
+                          aria-describedby={
+                            passwordValidationError || authMode === "register" || formError
+                              ? "auth-password-message"
+                              : undefined
+                          }
                           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                         />
+                        {passwordValidationError ? (
+                          <p
+                            id="auth-password-message"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {passwordValidationError}
+                          </p>
+                        ) : formError ? (
+                          <p
+                            id="auth-password-message"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {formError}
+                          </p>
+                        ) : authMode === "register" ? (
+                          <p id="auth-password-message" className="mt-1 text-xs text-subtle">
+                            {PASSWORD_REQUIREMENT_TEXT}
+                          </p>
+                        ) : null}
                       </div>
                       {authMode === "login" ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            setAuthMode("reset");
-                            setFormError(null);
-                          }}
+                          onClick={() => changeAuthMode("reset")}
                           className="text-xs text-muted hover:text-accent transition-colors"
                         >
                           Forgot password?
@@ -283,6 +356,25 @@ function LoginPage() {
                             ? "Create account and continue"
                             : "Sign in with email"}
                       </button>
+                      {authMode === "register" ? (
+                        <p className="text-xs text-subtle text-center leading-relaxed">
+                          By creating an account, you agree to the{" "}
+                          <a
+                            href="/terms"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Terms of Service
+                          </a>{" "}
+                          and acknowledge the{" "}
+                          <a
+                            href="/privacy"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Privacy Policy
+                          </a>
+                          .
+                        </p>
+                      ) : null}
                     </form>
                   </>
                 )}

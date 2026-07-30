@@ -332,6 +332,7 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed?.remMinutes).toBe(81); // 4852630 / 60000
     expect(parsed?.lightMinutes).toBe(261); // 15647370 / 60000
     expect(parsed?.awakeMinutes).toBe(51); // 3063020 / 60000
+    expect(parsed?.stagingAvailable).toBe(true);
     expect(parsed?.efficiencyPct).toBe(89.4);
     expect(parsed?.sleepType).toBe("sleep");
     expect(parsed?.isNap).toBe(false);
@@ -422,11 +423,12 @@ describe("parseSleep — edge cases", () => {
     const parsed = parseSleep(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("300");
-    expect(parsed?.deepMinutes).toBe(0);
-    expect(parsed?.remMinutes).toBe(0);
-    expect(parsed?.lightMinutes).toBe(0);
-    expect(parsed?.awakeMinutes).toBe(0);
-    expect(parsed?.durationMinutes).toBe(0);
+    expect(parsed?.deepMinutes).toBeUndefined();
+    expect(parsed?.remMinutes).toBeUndefined();
+    expect(parsed?.lightMinutes).toBeUndefined();
+    expect(parsed?.awakeMinutes).toBeUndefined();
+    expect(parsed?.durationMinutes).toBeUndefined();
+    expect(parsed?.stagingAvailable).toBe(false);
     expect(parsed?.efficiencyPct).toBeUndefined();
     expect(parsed?.isNap).toBe(false);
   });

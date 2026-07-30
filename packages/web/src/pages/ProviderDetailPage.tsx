@@ -465,47 +465,51 @@ export function ProviderDetailPage() {
           <div className="flex flex-wrap items-end gap-3">
             {!health?.requiresReconnect ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => handleSync(false)}
-                  disabled={syncStatus === "syncing"}
-                  className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-                >
-                  {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSync(true)}
-                  disabled={syncStatus === "syncing"}
-                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-                >
-                  Full Sync
-                </button>
-                <div className="flex items-end gap-1.5">
-                  <div>
-                    <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
-                      Days back
-                    </label>
-                    <input
-                      id="since-days"
-                      type="number"
-                      min="1"
-                      max="3650"
-                      value={sinceDays}
-                      onChange={(e) => setSinceDays(e.target.value)}
-                      className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSync(false, Number(sinceDays))}
-                    disabled={syncStatus === "syncing" || !sinceDays}
-                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-                  >
-                    Sync Range
-                  </button>
-                </div>
-                <div className="flex items-end gap-1.5">
+                {providerId !== "whoop" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleSync(false)}
+                      disabled={syncStatus === "syncing"}
+                      className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                    >
+                      {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSync(true)}
+                      disabled={syncStatus === "syncing"}
+                      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                    >
+                      Full Sync
+                    </button>
+                    <div className="flex items-end gap-1.5">
+                      <div>
+                        <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
+                          Days back
+                        </label>
+                        <input
+                          id="since-days"
+                          type="number"
+                          min="1"
+                          max="3650"
+                          value={sinceDays}
+                          onChange={(event) => setSinceDays(event.target.value)}
+                          className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSync(false, Number(sinceDays))}
+                        disabled={syncStatus === "syncing" || !sinceDays}
+                        className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                      >
+                        Sync Range
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+                <div className="flex flex-wrap items-end gap-1.5">
                   <div>
                     <label htmlFor="range-start-date" className="block text-xs text-subtle mb-1">
                       From
@@ -514,7 +518,8 @@ export function ProviderDetailPage() {
                       id="range-start-date"
                       type="date"
                       value={rangeStartDate}
-                      onChange={(e) => setRangeStartDate(e.target.value)}
+                      max={providerId === "whoop" ? rangeEndDate : undefined}
+                      onChange={(event) => setRangeStartDate(event.target.value)}
                       className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
                     />
                   </div>
@@ -526,7 +531,8 @@ export function ProviderDetailPage() {
                       id="range-end-date"
                       type="date"
                       value={rangeEndDate}
-                      onChange={(e) => setRangeEndDate(e.target.value)}
+                      min={providerId === "whoop" ? rangeStartDate : undefined}
+                      onChange={(event) => setRangeEndDate(event.target.value)}
                       className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
                     />
                   </div>
@@ -534,9 +540,17 @@ export function ProviderDetailPage() {
                     type="button"
                     onClick={() => handleSyncDateRange()}
                     disabled={syncStatus === "syncing" || !rangeStartDate || !rangeEndDate}
-                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                    className={
+                      providerId === "whoop"
+                        ? "px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        : "px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                    }
                   >
-                    Sync Dates
+                    {providerId === "whoop"
+                      ? syncStatus === "syncing"
+                        ? "Syncing..."
+                        : "Sync"
+                      : "Sync Dates"}
                   </button>
                 </div>
               </>
@@ -606,7 +620,13 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      {!pushOnly && <SyncHistory key={`sync-history-${providerId}`} providerId={providerId} />}
+      {!pushOnly && (
+        <SyncHistory
+          key={`sync-history-${providerId}`}
+          providerId={providerId}
+          providerName={provider?.name ?? formatProviderName(providerId)}
+        />
+      )}
 
       {/* Records browser */}
       <RecordsBrowser

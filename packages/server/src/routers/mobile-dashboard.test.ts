@@ -6,6 +6,8 @@ import {
   sleepBaselineRow,
 } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -20,7 +22,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -48,6 +53,7 @@ type SleepTestRow = {
   light_minutes?: number | null;
   awake_minutes?: number | null;
   efficiency_pct?: number | null;
+  staging_available?: boolean;
 };
 
 type RecoverySummaryTestRow = {
@@ -70,6 +76,7 @@ function sleepRowsForClickHouse(rows: SleepTestRow[]) {
     light_minutes: row.light_minutes ?? row.duration_minutes,
     awake_minutes: row.awake_minutes ?? 0,
     efficiency_pct: row.efficiency_pct ?? 90,
+    staging_available: row.staging_available ?? true,
   }));
 }
 
@@ -564,6 +571,7 @@ describe("mobileDashboard.dashboard", () => {
       remPct: 20,
       lightPct: 50,
       awakePct: 5,
+      stagingAvailable: true,
     });
     expect(result.sleep?.sleepDebt).toBe(285);
     expect(result.sleepNeed).toEqual(
@@ -902,6 +910,15 @@ describe("mobileDashboard.recovery", () => {
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 0,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "0 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 3 more supported metrics sync successfully.",
+        },
         metrics: [],
         history: [],
         trend: null,
@@ -968,6 +985,15 @@ describe("mobileDashboard.recovery", () => {
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 0,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "0 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 3 more supported metrics sync successfully.",
+        },
         metrics: [],
         history: [],
         trend: null,
@@ -995,6 +1021,13 @@ describe("mobileDashboard.recovery", () => {
 });
 
 describe("mobileDashboard.training", () => {
+  it("uses a versioned cache key for its progressive-overload contract", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "training-progressive-overload-v1",
+    });
+  });
+
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -1110,6 +1143,7 @@ describe("mobileDashboard.training", () => {
       },
       activities: [],
       weeklyVolume: [],
+      progressiveOverload: [],
       verticalAscent: [],
       climbing: {
         gradeProgression: [],
@@ -1186,6 +1220,7 @@ describe("mobileDashboard.training", () => {
       },
       activities: [],
       weeklyVolume: [],
+      progressiveOverload: [],
       verticalAscent: [],
       climbing: {
         gradeProgression: [],

@@ -1,3 +1,4 @@
+import { nutritionSourceResolutionSchema } from "@dofek/nutrition/selected-date-summary";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -10,11 +11,13 @@ import { NutritionAnalyticsRepository } from "./nutrition-analytics-repository.t
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000002059";
+const resolutionStatusSchema = nutritionSourceResolutionSchema.shape.status;
+const contributionGrainSchema = nutritionSourceResolutionSchema.shape.contributionGrain;
 const idRowSchema = z.object({ id: z.string() });
 const dailyNutritionRowSchema = z.object({
   calories: z.coerce.number(),
   protein_g: z.coerce.number(),
-  resolution_status: z.string(),
+  resolution_status: resolutionStatusSchema,
   source_providers: z.array(z.string()),
   contributing_providers: z.array(z.string()),
   excluded_providers: z.array(z.string()),
@@ -22,12 +25,19 @@ const dailyNutritionRowSchema = z.object({
 const aggregateOnlyRowSchema = z.object({
   calories: z.coerce.number(),
   protein_g: z.coerce.number(),
-  resolution_status: z.string(),
+  resolution_status: resolutionStatusSchema,
+  contributing_source_labels: z.array(z.string()),
+  contribution_grain: contributionGrainSchema,
 });
 const conflictRowSchema = z.object({
   calories: z.coerce.number().nullable(),
-  resolution_status: z.string(),
+  resolution_status: resolutionStatusSchema,
   contributing_providers: z.array(z.string()),
+});
+const conflictSourceLabelsRowSchema = z.object({
+  resolution_status: z.literal("source_conflict"),
+  source_labels: z.array(z.string()),
+  excluded_source_labels: z.array(z.string()),
 });
 const classificationRowSchema = z.object({
   provider_id: z.string(),
@@ -52,7 +62,8 @@ describe("canonical nutrition contribution set", () => {
       VALUES
         ('nutrition-itemized', 'Itemized Nutrition'),
         ('nutrition-aggregate', 'Aggregate Nutrition'),
-        ('nutrition-other', 'Other Nutrition')
+        ('nutrition-other', 'Other Nutrition'),
+        ('apple_health', 'Apple Health')
       ON CONFLICT (id) DO NOTHING
     `);
   });
@@ -69,12 +80,13 @@ describe("canonical nutrition contribution set", () => {
     foodName?: string | null;
     meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other" | null;
     confirmed?: boolean;
+    sourceName?: string | null;
     nutrients: Record<string, number>;
   }): Promise<string> {
     const id = crypto.randomUUID();
     await context.db.execute(sql`
       INSERT INTO fitness.food_entry (
-        id, user_id, provider_id, date, nutrition_grain, food_name, meal, confirmed
+        id, user_id, provider_id, date, nutrition_grain, food_name, meal, source_name, confirmed
       )
       VALUES (
         ${id},
@@ -84,6 +96,7 @@ describe("canonical nutrition contribution set", () => {
         ${input.grain ?? null}::fitness.nutrition_entry_grain,
         ${input.foodName ?? null},
         ${input.meal ?? null}::fitness.meal,
+        ${input.sourceName ?? null},
         ${input.confirmed ?? true}
       )
     `);
@@ -95,6 +108,18 @@ describe("canonical nutrition contribution set", () => {
       VALUES ${sql.join(nutrientRows, sql`, `)}
     `);
     return id;
+  }
+
+  async function fetchAggregateRows(date: string) {
+    return executeWithSchema(
+      context.db,
+      aggregateOnlyRowSchema,
+      sql`
+        SELECT calories, protein_g, resolution_status, contributing_source_labels, contribution_grain
+        FROM fitness.v_nutrition_daily
+        WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
+      `,
+    );
   }
 
   it("uses one itemized source and excludes an overlapping aggregate without deleting provenance", async () => {
@@ -193,25 +218,213 @@ describe("canonical nutrition contribution set", () => {
       providerId: "nutrition-aggregate",
       date,
       grain: "daily_aggregate",
+      sourceName: "Imported total",
       nutrients: { calories: 1900 },
     });
     await addEntry({
       providerId: "nutrition-aggregate",
       date,
       grain: "daily_aggregate",
+      sourceName: "Imported total",
       nutrients: { protein: 95 },
+    });
+
+    const rows = await fetchAggregateRows(date);
+    expect(rows).toEqual([
+      {
+        calories: 1900,
+        protein_g: 95,
+        resolution_status: "available",
+        contributing_source_labels: ["Imported total (via Aggregate Nutrition)"],
+        contribution_grain: "daily_aggregate",
+      },
+    ]);
+  });
+
+  it("labels an Apple Health aggregate with its canonical provider source path", async () => {
+    const date = "2026-01-09";
+    await addEntry({
+      providerId: "apple_health",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "Cronometer",
+      nutrients: { calories: 1900, protein: 95 },
+    });
+
+    const rows = await fetchAggregateRows(date);
+
+    expect(rows).toEqual([
+      {
+        calories: 1900,
+        protein_g: 95,
+        resolution_status: "available",
+        contributing_source_labels: ["Cronometer (via Apple Health)"],
+        contribution_grain: "daily_aggregate",
+      },
+    ]);
+  });
+
+  it.each([
+    { date: "2026-01-10", sourceName: "Apple Health" },
+    { date: "2026-01-11", sourceName: "   " },
+  ])("collapses the Apple Health $sourceName subsource to its provider label", async ({
+    date,
+    sourceName,
+  }) => {
+    await addEntry({
+      providerId: "apple_health",
+      date,
+      grain: "daily_aggregate",
+      sourceName,
+      nutrients: { calories: 1900, protein: 95 },
+    });
+
+    const rows = await fetchAggregateRows(date);
+
+    expect(rows).toEqual([
+      {
+        calories: 1900,
+        protein_g: 95,
+        resolution_status: "available",
+        contributing_source_labels: ["Apple Health"],
+        contribution_grain: "daily_aggregate",
+      },
+    ]);
+  });
+
+  it("uses one direct-provider identity for provider-named and blank sources", async () => {
+    const date = "2026-01-12";
+    await addEntry({
+      providerId: "nutrition-aggregate",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "aggregate nutrition",
+      nutrients: { calories: 1900 },
+    });
+    await addEntry({
+      providerId: "nutrition-aggregate",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "   ",
+      nutrients: { protein: 95 },
+    });
+
+    const rows = await fetchAggregateRows(date);
+
+    expect(rows).toEqual([
+      {
+        calories: 1900,
+        protein_g: 95,
+        resolution_status: "available",
+        contributing_source_labels: ["Aggregate Nutrition"],
+        contribution_grain: "daily_aggregate",
+      },
+    ]);
+  });
+
+  it("keeps distinct direct-provider import sources distinguishable", async () => {
+    const date = "2026-01-16";
+    await addEntry({
+      providerId: "nutrition-aggregate",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "Import A",
+      nutrients: { calories: 1900 },
+    });
+    await addEntry({
+      providerId: "nutrition-aggregate",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "Import B",
+      nutrients: { calories: 1850 },
     });
 
     const rows = await executeWithSchema(
       context.db,
-      aggregateOnlyRowSchema,
+      conflictSourceLabelsRowSchema,
       sql`
-      SELECT calories, protein_g, resolution_status
+      SELECT resolution_status, source_labels, excluded_source_labels
       FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
     `,
     );
-    expect(rows).toEqual([{ calories: 1900, protein_g: 95, resolution_status: "available" }]);
+
+    expect(rows).toEqual([
+      {
+        resolution_status: "source_conflict",
+        source_labels: ["Import A (via Aggregate Nutrition)", "Import B (via Aggregate Nutrition)"],
+        excluded_source_labels: [
+          "Import A (via Aggregate Nutrition)",
+          "Import B (via Aggregate Nutrition)",
+        ],
+      },
+    ]);
+  });
+
+  it("uses one Apple Health identity for provider-named and blank sources", async () => {
+    const date = "2026-01-13";
+    await addEntry({
+      providerId: "apple_health",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "Apple Health",
+      nutrients: { calories: 1900 },
+    });
+    await addEntry({
+      providerId: "apple_health",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "   ",
+      nutrients: { protein: 95 },
+    });
+
+    const rows = await fetchAggregateRows(date);
+
+    expect(rows).toEqual([
+      {
+        calories: 1900,
+        protein_g: 95,
+        resolution_status: "available",
+        contributing_source_labels: ["Apple Health"],
+        contribution_grain: "daily_aggregate",
+      },
+    ]);
+  });
+
+  it("keeps a genuine Apple Health upstream app distinct from provider data", async () => {
+    const date = "2026-01-14";
+    await addEntry({
+      providerId: "apple_health",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "Apple Health",
+      nutrients: { calories: 1900 },
+    });
+    await addEntry({
+      providerId: "apple_health",
+      date,
+      grain: "daily_aggregate",
+      sourceName: "Cronometer",
+      nutrients: { calories: 1850 },
+    });
+
+    const rows = await executeWithSchema(
+      context.db,
+      conflictSourceLabelsRowSchema,
+      sql`
+      SELECT resolution_status, source_labels, excluded_source_labels
+      FROM fitness.v_nutrition_daily
+      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
+    `,
+    );
+
+    expect(rows).toEqual([
+      {
+        resolution_status: "source_conflict",
+        source_labels: ["Apple Health", "Cronometer (via Apple Health)"],
+        excluded_source_labels: ["Apple Health", "Cronometer (via Apple Health)"],
+      },
+    ]);
   });
 
   it("rejects aggregate-only totals from multiple sources", async () => {
@@ -256,16 +469,16 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1800, protein: 90 },
     });
 
-    const rows = await executeWithSchema(
-      context.db,
-      aggregateOnlyRowSchema,
-      sql`
-      SELECT calories, protein_g, resolution_status
-      FROM fitness.v_nutrition_daily
-      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `,
-    );
-    expect(rows).toEqual([{ calories: 1800, protein_g: 90, resolution_status: "available" }]);
+    const rows = await fetchAggregateRows(date);
+    expect(rows).toEqual([
+      {
+        calories: 1800,
+        protein_g: 90,
+        resolution_status: "available",
+        contributing_source_labels: ["Aggregate Nutrition"],
+        contribution_grain: "ambiguous",
+      },
+    ]);
   });
 
   it("marks genuinely ambiguous multi-source days unavailable", async () => {
@@ -408,7 +621,13 @@ describe("canonical nutrition contribution set", () => {
     const vitaminC = adequacy.find((nutrient) => nutrient.nutrient === "Vitamin C");
     expect(vitaminC?.avgIntake).toBe(50);
 
-    const tdeeData = await repository.getAdaptiveTdeeData(30);
-    expect(tdeeData).toContainEqual({ date, caloriesIn: 1000, weightKg: null });
+    const tdeeData = await repository.getAdaptiveTdeeData(30, date);
+    expect(tdeeData).toContainEqual({
+      date,
+      caloriesIn: 1000,
+      nutritionStatus: "available",
+      lowerPrioritySourcesExcluded: true,
+      weightKg: null,
+    });
   });
 });

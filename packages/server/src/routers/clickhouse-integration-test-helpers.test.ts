@@ -137,6 +137,14 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_summary") &&
+          command.includes("refreshed_at DateTime64(9)"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".activity_sensor_summary_rows") &&
           command.includes("avg_hr Nullable(Float64)") &&
           command.includes("climbing_seconds Nullable(Int32)"),

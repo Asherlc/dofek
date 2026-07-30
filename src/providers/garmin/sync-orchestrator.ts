@@ -389,6 +389,7 @@ async function runSleepStep(
         lightMinutes: parsed.lightMinutes,
         remMinutes: parsed.remMinutes,
         awakeMinutes: parsed.awakeMinutes,
+        stagingAvailable: parsed.stagingAvailable,
       })
       .onConflictDoUpdate({
         target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -400,6 +401,7 @@ async function runSleepStep(
           lightMinutes: parsed.lightMinutes,
           remMinutes: parsed.remMinutes,
           awakeMinutes: parsed.awakeMinutes,
+          stagingAvailable: parsed.stagingAvailable,
         },
       })
       .returning({ id: sleepSession.id });

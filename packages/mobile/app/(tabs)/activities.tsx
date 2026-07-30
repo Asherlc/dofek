@@ -6,6 +6,7 @@ import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
+  formatRelativeTime,
   isToday,
   isYesterday,
   parseValidDate,
@@ -17,10 +18,12 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -29,6 +32,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
+import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
@@ -358,6 +362,18 @@ export default function ActivitiesScreen() {
                         {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
                         {formatDurationMinutes(activity.durationMin)}
                       </Text>
+                      <View style={styles.provenanceRow}>
+                        <Text style={styles.sourcePill}>{activity.source.primarySourceLabel}</Text>
+                        {activity.lastProcessedAt &&
+                        formatRelativeTime(activity.lastProcessedAt) ? (
+                          <Text style={styles.processedAt}>
+                            Processed {formatRelativeTime(activity.lastProcessedAt)}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {activity.source.overlapSummary ? (
+                        <Text style={styles.overlapSummary}>{activity.source.overlapSummary}</Text>
+                      ) : null}
                       <ActivityMetricStrip activity={activity} units={units} />
                     </View>
                     {activity.location ? (
@@ -412,6 +428,16 @@ function ActivityControls({
   onCancelSelection,
   onDeleteSelected,
 }: ActivityControlsProps) {
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
+
+  useEffect(() => {
+    if (selectMode && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(selectedCountLabel);
+    }
+  }, [selectMode, selectedCountLabel]);
+
   return (
     <View style={styles.controlsPanel}>
       <View style={styles.controlsHeader}>
@@ -423,14 +449,20 @@ function ActivityControls({
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Select activities"
+            accessibilityHint="Choose one or more activities to delete"
           >
-            <Text style={styles.selectButtonText}>Select</Text>
+            <Text style={styles.selectButtonText}>Select activities</Text>
           </TouchableOpacity>
         ) : null}
       </View>
+      {canSelect ? (
+        <Text style={styles.selectionGuidance}>Choose one or more activities to delete.</Text>
+      ) : null}
       {selectMode ? (
         <View style={styles.bulkActionRow}>
-          <Text style={styles.selectedCount}>{selectedCount} selected</Text>
+          <Text style={styles.selectedCount} accessibilityLiveRegion="polite">
+            {selectedCountLabel}
+          </Text>
           <TouchableOpacity
             style={[
               styles.deleteSelectionButton,
@@ -694,53 +726,6 @@ function ActivityRouteOverlay({
   );
 }
 
-function ActivityMetricStrip({
-  activity,
-  units,
-}: {
-  activity: {
-    location: {
-      distanceMeters: number | null;
-      elevationGainM: number | null;
-    } | null;
-    stats: { label: string; value: string }[];
-  };
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const stats =
-    activity.location != null
-      ? [
-          {
-            label: "Distance",
-            value:
-              activity.location.distanceMeters != null
-                ? formatMeasurementText(
-                    units.formatDistance(activity.location.distanceMeters / 1000),
-                  )
-                : "—",
-          },
-          {
-            label: "Elevation",
-            value:
-              activity.location.elevationGainM != null
-                ? formatMeasurementText(units.formatElevation(activity.location.elevationGainM))
-                : "—",
-          },
-        ]
-      : activity.stats;
-
-  return (
-    <View style={styles.statsRow}>
-      {stats.slice(0, 2).map((stat) => (
-        <View key={stat.label} style={styles.statBadge}>
-          <Text style={styles.statValue}>{stat.value}</Text>
-          <Text style={styles.statLabel}>{stat.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 function formatDayHeader(dateStr: string): string {
   const date = parseValidDate(`${dateStr}T00:00:00`);
   if (!date) return dateStr;
@@ -800,6 +785,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
+  },
+  selectionGuidance: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   bulkActionRow: {
     alignItems: "center",
@@ -968,6 +957,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  provenanceRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  sourcePill: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.sm,
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  processedAt: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  overlapSummary: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: spacing.xs,
+  },
   tileContainer: {
     borderRadius: radius.md,
     height: TILE_SIZE,
@@ -999,28 +1015,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  statBadge: {
-    flex: 1,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-  },
-  statValue: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  statLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
   },
 });

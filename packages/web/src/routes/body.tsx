@@ -1,9 +1,8 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useState } from "react";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
-import type { TimeRangeDays } from "../lib/timeRange.ts";
 
 const subtabs = [
   { to: "/body", label: "Overview", exact: true },
@@ -15,10 +14,10 @@ export const Route = createFileRoute("/body")({
 });
 
 function BodyLayout() {
-  const [days, setDays] = useState<TimeRangeDays>(30);
+  const { days, description, setDays } = useTimeRangePreference("body");
 
   return (
-    <BodyDaysContext.Provider value={{ days, setDays }}>
+    <BodyDaysContext.Provider value={{ days, description, setDays }}>
       <ChartRangeProvider days={days}>
         <PageLayout
           title="Body"

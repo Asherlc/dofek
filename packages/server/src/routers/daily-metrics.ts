@@ -16,6 +16,7 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import {
   buildDailyMetricHealthStatuses,
+  HEALTH_STATUS_CACHE_KEY_VERSION,
   healthStatusMetricSchema,
 } from "../services/health-status.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -105,6 +106,7 @@ export const dailyMetricsRouter = router({
         : null;
     },
     {
+      keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
       outputSchema: trendsRowSchema
         .extend({
           baselineRelative: z.array(baselineRelativeMetricSchema),

@@ -157,7 +157,7 @@ describe("WeeklyReportRepository", () => {
   it("returns null current and empty history for empty rows", async () => {
     const { repo } = makeRepository([]);
     const result = await repo.getReport(4, "2026-03-28");
-    expect(result).toEqual({ current: null, history: [] });
+    expect(result).toEqual({ current: null, history: [], decisionSupport: null });
   });
 
   it("returns single week as current with no history", async () => {
@@ -179,6 +179,7 @@ describe("WeeklyReportRepository", () => {
     expect(result.history).toHaveLength(2);
     expect(result.history[0]?.weekStart).toBe("2026-03-09");
     expect(result.history[1]?.weekStart).toBe("2026-03-16");
+    expect(result.decisionSupport?.whatChanged).toHaveLength(2);
   });
 
   it("trims to the requested number of weeks", async () => {

@@ -13,7 +13,7 @@ import { UnitProvider } from "../components/UnitProvider.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password", "/terms"]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",

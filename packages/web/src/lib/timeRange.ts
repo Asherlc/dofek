@@ -1,4 +1,6 @@
-export type TimeRangeDays = number | null;
+import type { TimeRangeDays } from "@dofek/stats/time-range";
+
+export type { TimeRangeDays } from "@dofek/stats/time-range";
 
 export const TIME_RANGE_OPTIONS: ReadonlyArray<{ label: string; days: TimeRangeDays }> = [
   { label: "7d", days: 7 },

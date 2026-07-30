@@ -274,6 +274,7 @@ entity "sleep_session" {
   light_minutes : integer
   awake_minutes : integer
   efficiency_pct : real
+  staging_available : boolean
   sleep_type : text
   is_nap : boolean
   sleep_need_baseline_minutes : integer

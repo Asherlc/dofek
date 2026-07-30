@@ -28,7 +28,8 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "hiking.walkingBiomechanics",
     "hiking.activityComparison",
   ],
-  journal: ["journal.entries"],
+  journalLog: ["journal.entries"],
+  journalTrends: ["journal.trends"],
   nutritionAnalytics: [
     "nutritionAnalytics.micronutrientAdequacyV2",
     "nutritionAnalytics.adaptiveTdee",

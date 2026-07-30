@@ -26,6 +26,27 @@ const peerDbMetadataExpressions = [
 
 const seedProviderIds = ["whoop", "apple_health", "strava", "bodyspec", "manual_review"];
 const seedProviderList = seedProviderIds.map(clickHouseStringLiteral).join(", ");
+const reviewUserId = clickHouseStringLiteral(USER_ID);
+const reviewBodyWeightPrefix = "review-seed-body-weight-";
+const metricStreamTargetColumns = `(
+  id,
+  activity_id,
+  user_id,
+  recorded_at,
+  channel,
+  provider_id,
+  external_id,
+  device_id,
+  source_type,
+  scalar,
+  vector,
+  point,
+  metadata,
+  ingested_at,
+  is_deleted,
+  version,
+  generation
+)`;
 
 const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
   {
@@ -211,7 +232,62 @@ export function buildReviewClickHouseCopyStatements(postgresConnectionString: st
     ...reviewRawTableCopies.map((tableCopy) =>
       buildCopyStatement(postgresConnectionString, tableCopy),
     ),
+    buildReviewBodyWeightTombstoneStatement(),
+    buildReviewBodyWeightInsertStatement(),
   ];
+}
+
+function buildReviewBodyWeightTombstoneStatement(): string {
+  return `INSERT INTO ingest.metric_stream ${metricStreamTargetColumns}
+SELECT
+  id,
+  activity_id,
+  user_id,
+  recorded_at,
+  channel,
+  provider_id,
+  external_id,
+  device_id,
+  source_type,
+  scalar,
+  vector,
+  point,
+  metadata,
+  now64(9),
+  1,
+  toInt64(toUnixTimestamp64Nano(now64(9))),
+  generation
+FROM ingest.metric_stream FINAL
+WHERE user_id = toUUID(${reviewUserId})
+  AND provider_id = 'manual_review'
+  AND channel = 'body_weight'
+  AND startsWith(ifNull(external_id, ''), '${reviewBodyWeightPrefix}')
+  AND is_deleted = 0`;
+}
+
+function buildReviewBodyWeightInsertStatement(): string {
+  return `INSERT INTO ingest.metric_stream ${metricStreamTargetColumns}
+SELECT
+  reinterpretAsUUID(
+    MD5(concat('${reviewBodyWeightPrefix}', toString(today() - toIntervalDay(number))))
+  ),
+  NULL,
+  toUUID(${reviewUserId}),
+  toDateTime64(today() - toIntervalDay(number), 6, 'UTC') + toIntervalHour(8),
+  'body_weight',
+  'manual_review',
+  concat('${reviewBodyWeightPrefix}', toString(today() - toIntervalDay(number))),
+  'Review scale',
+  'review_seed',
+  toFloat32(78 + number * 0.012),
+  [],
+  '',
+  '{"fixture":"review"}',
+  now64(9),
+  0,
+  toInt64(toUnixTimestamp64Nano(now64(9))),
+  0
+FROM numbers(90)`;
 }
 
 async function main(): Promise<void> {

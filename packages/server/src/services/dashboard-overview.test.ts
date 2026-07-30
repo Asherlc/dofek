@@ -10,7 +10,11 @@ function makeSensorStore({
 }: {
   metricDate?: string | Date;
   sleepDurationMinutes?: number | null;
-  sleepNights?: Array<{ date: string; durationMinutes: number | null }>;
+  sleepNights?: Array<{
+    date: string;
+    durationMinutes: number | null;
+    stagingAvailable?: boolean;
+  }>;
 } = {}): ActivitySensorStore {
   return {
     query: vi.fn(async <TSchema extends z.ZodType>(schema: TSchema, queryText: string) => {
@@ -39,6 +43,7 @@ function makeSensorStore({
             rem_minutes: 95,
             light_minutes: 260,
             awake_minutes: 30,
+            staging_available: night.stagingAvailable ?? true,
           }),
         );
       } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
@@ -127,6 +132,31 @@ describe("loadDashboardOverview", () => {
     });
     expect(result.sleep.lastNight).toBeNull();
     expect(result.sleep.sleepDebt).toBe(0);
+  });
+
+  it("does not manufacture stage percentages when the provider omitted staging", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({
+        sleepNights: [
+          {
+            date: "2026-06-29",
+            durationMinutes: 480,
+            stagingAvailable: false,
+          },
+        ],
+      }),
+      userId: "user-1",
+    });
+
+    expect(result.sleep.lastNight).toMatchObject({
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stagingAvailable: false,
+    });
   });
 
   it("provides server-computed debt recovery in the available V2 state", async () => {

@@ -14,8 +14,10 @@ export interface TodayPlanCardProps {
 export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardProps) {
   if (loading && plan == null) {
     return (
-      <section className="card p-4 space-y-3" aria-label="Today Plan">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Today Plan</h2>
+      <section className="card p-4 space-y-3" aria-label="What matters today">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
+          What matters today
+        </h2>
         <QueryStatePanel variant="loading" height={120} />
       </section>
     );
@@ -23,8 +25,10 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
 
   if (error != null && plan == null) {
     return (
-      <section className="card p-4 space-y-3" aria-label="Today Plan">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Today Plan</h2>
+      <section className="card p-4 space-y-3" aria-label="What matters today">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
+          What matters today
+        </h2>
         <QueryStatePanel error={error} height={120} />
       </section>
     );
@@ -38,8 +42,10 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
 
   if (plan.status === "insufficient_data") {
     return (
-      <section className="card p-4 space-y-3" aria-label="Today Plan">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Today Plan</h2>
+      <section className="card p-4 space-y-3" aria-label="What matters today">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
+          What matters today
+        </h2>
         {refreshWarning}
         <p className="text-sm text-foreground leading-snug">{plan.message}</p>
         <p className="text-[11px] text-dim">{formatTodayPlanConfidence(plan.confidence)}</p>
@@ -50,9 +56,11 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
   const freshness = formatTodayPlanFreshness(plan.freshness);
 
   return (
-    <section className="card p-4 space-y-3" aria-label="Today Plan">
+    <section className="card p-4 space-y-3" aria-label="What matters today">
       <div className="flex items-start justify-between gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Today Plan</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
+          What matters today
+        </h2>
         <span className="shrink-0 text-[10px] px-2 py-0.5 rounded border border-border-strong text-muted uppercase">
           {plan.action.zone}
         </span>

@@ -2,6 +2,10 @@ import { z } from "zod";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildWeeklyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +37,8 @@ export interface WeeklyReportResult {
   current: WeekSummary | null;
   /** Previous weeks for comparison */
   history: WeekSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +249,10 @@ export class WeeklyReportRepository {
     const current = cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
     const history = cutoffWeeks.slice(0, -1);
 
-    return { current, history };
+    return {
+      current,
+      history,
+      decisionSupport: current ? buildWeeklyDecisionSynthesis(current, history) : null,
+    };
   }
 }
