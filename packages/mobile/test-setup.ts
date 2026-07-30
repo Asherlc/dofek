@@ -135,16 +135,35 @@ vi.mock("react-native", () => {
     accessibilityHint,
     style,
     ...props
-  }: Record<string, unknown>) =>
-    React.createElement(
+  }: Record<string, unknown>) => {
+    const pressActiveRef = React.useRef(false);
+
+    const beginPress = (event: unknown) => {
+      pressActiveRef.current = true;
+      if (typeof onPressIn === "function") {
+        onPressIn(event);
+      }
+    };
+    const endPress = (event: unknown) => {
+      if (!pressActiveRef.current) {
+        return;
+      }
+
+      pressActiveRef.current = false;
+      if (typeof onPressOut === "function") {
+        onPressOut(event);
+      }
+    };
+
+    return React.createElement(
       "button",
       {
         ...props,
         ...ariaPropsFromAccessibilityState(accessibilityState),
         onClick: onPress,
-        onMouseDown: onPressIn,
-        onMouseLeave: onPressOut,
-        onMouseUp: onPressOut,
+        onMouseDown: beginPress,
+        onMouseLeave: endPress,
+        onMouseUp: endPress,
         role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
         "aria-description": accessibilityHint,
@@ -153,6 +172,7 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   Pressable.displayName = "Pressable";
   const TextInput = ({
     multiline,

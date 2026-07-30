@@ -33,6 +33,7 @@
 - Modify: `packages/mobile/components/ChartDescriptionTooltip.tsx`
 - Modify: `packages/mobile/components/MetricCard.test.tsx`
 - Modify: `packages/mobile/test-setup.ts`
+- Add: `packages/mobile/test-setup.test.tsx`
 - Add: `packages/mobile/components/ChartDescriptionTooltip.stories.tsx`
 
 ## Tasks
