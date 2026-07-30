@@ -97,7 +97,15 @@ function createErrorObservable(): OperationResultObservable<AppRouter, unknown> 
   return result;
 }
 
-function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
+function ActivitiesStory({
+  scenario,
+  activityTypes,
+  emptyMessage,
+}: {
+  scenario: ActivitiesScenario;
+  activityTypes?: readonly string[];
+  emptyMessage?: string;
+}) {
   const queryClient = useMemo(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     [],
@@ -111,7 +119,9 @@ function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
     const homeRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: "/",
-      component: RecentActivitiesSection,
+      component: () => (
+        <RecentActivitiesSection activityTypes={activityTypes} emptyMessage={emptyMessage} />
+      ),
     });
     const activityRoute = createRoute({
       getParentRoute: () => rootRoute,
@@ -122,7 +132,7 @@ function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
       routeTree: rootRoute.addChildren([homeRoute, activityRoute]),
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
-  }, []);
+  }, [activityTypes, emptyMessage]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -167,6 +177,16 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <ActivitiesStory scenario={{ items: [], totalCount: 0 }} />,
+};
+
+export const ScopedStrengthEmpty: Story = {
+  render: () => (
+    <ActivitiesStory
+      scenario={{ items: [], totalCount: 0 }}
+      activityTypes={["strength", "strength_training", "functional_strength", "functional_fitness"]}
+      emptyMessage="No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness."
+    />
+  ),
 };
 
 export const ErrorState: Story = {

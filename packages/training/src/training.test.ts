@@ -17,6 +17,7 @@ import {
   POLAR_SPORT_MAP,
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
   STRAVA_ACTIVITY_TYPE_MAP,
+  STRENGTH_ACTIVITY_TYPES,
   selectRecentDailyLoad,
   WAHOO_WORKOUT_TYPE_MAP,
 } from "./training";
@@ -55,6 +56,17 @@ describe("CANONICAL_ACTIVITY_TYPES", () => {
   it("has no duplicates", () => {
     const set = new Set(CANONICAL_ACTIVITY_TYPES);
     expect(set.size).toBe(CANONICAL_ACTIVITY_TYPES.length);
+  });
+});
+
+describe("STRENGTH_ACTIVITY_TYPES", () => {
+  it("defines the provider-neutral activity scope for structured strength work", () => {
+    expect(STRENGTH_ACTIVITY_TYPES).toEqual([
+      "strength",
+      "strength_training",
+      "functional_strength",
+      "functional_fitness",
+    ]);
   });
 });
 
