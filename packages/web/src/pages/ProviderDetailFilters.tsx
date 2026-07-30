@@ -84,41 +84,6 @@ function FilterField({
   );
 }
 
-export function TableFilterRow({
-  columns,
-  filters,
-  onFilterChange,
-  getOptions,
-  align = "left",
-  trailingCells = 0,
-}: {
-  columns: ReadonlyArray<{ key: string; label: string }>;
-  filters: Record<string, string>;
-  onFilterChange: (key: string, value: string) => void;
-  getOptions?: (columnKey: string) => readonly FilterOption[] | undefined;
-  align?: "left" | "right";
-  trailingCells?: number;
-}) {
-  return (
-    <tr className="border-b border-border/50 bg-page/40">
-      {columns.map((column) => (
-        <th key={column.key} scope="col" className="px-2 py-1.5 font-normal">
-          <FilterField
-            column={column}
-            filters={filters}
-            options={getOptions?.(column.key)}
-            inputType={getFilterInputType(column.key)}
-            onFilterChange={onFilterChange}
-            align={align}
-            className={`${FILTER_CONTROL_CLASS} min-w-[5rem] py-1`}
-          />
-        </th>
-      ))}
-      {trailingCells > 0 && <th key="raw-data-column" scope="col" className="px-2 py-1.5" />}
-    </tr>
-  );
-}
-
 export function RecordFiltersGrid({
   columns,
   filters,

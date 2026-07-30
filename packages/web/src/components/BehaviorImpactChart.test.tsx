@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BehaviorImpactChart } from "./BehaviorImpactChart.tsx";
 
@@ -16,6 +16,7 @@ const associationData = [
     impactPercent: 18.6,
     yesCount: 18,
     noCount: 24,
+    sources: [{ providerId: "manual_review", label: "Manual review" }],
   },
   {
     questionSlug: "late-meal",
@@ -24,6 +25,10 @@ const associationData = [
     impactPercent: -12.4,
     yesCount: 14,
     noCount: 28,
+    sources: [
+      { providerId: "manual_review", label: "Manual review" },
+      { providerId: "whoop", label: "WHOOP (Cloud)" },
+    ],
   },
 ];
 
@@ -79,6 +84,22 @@ describe("BehaviorImpactChart", () => {
     render(<BehaviorImpactChart days={null} />);
 
     expect(screen.getByText("Selected window: all available history")).toBeDefined();
+  });
+
+  it("shows source labels and reveals raw IDs only through accessible technical details", () => {
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Source: Manual review")).toBeDefined();
+    expect(screen.getByText("Sources: Manual review, WHOOP (Cloud)")).toBeDefined();
+    expect(screen.queryByText("Provider ID: manual_review")).toBeNull();
+
+    const technicalDetailsButton = screen.getAllByRole("button", {
+      name: "Show technical source details for Manual review",
+    })[0];
+    if (!technicalDetailsButton) throw new Error("Technical source details button is missing");
+    fireEvent.click(technicalDetailsButton);
+
+    expect(screen.getByText("Provider ID: manual_review")).toBeDefined();
   });
 
   it("stacks association details at narrow widths and adds columns at the small breakpoint", () => {

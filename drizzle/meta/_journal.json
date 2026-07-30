@@ -533,6 +533,20 @@
       "when": 1785353502000,
       "tag": "0065_breathwork_outcome_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1785360600000,
+      "tag": "0065_nutrition_resolution_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785360700000,
+      "tag": "0066_sleep_staging_available",
+      "breakpoints": true
     }
   ]
 }

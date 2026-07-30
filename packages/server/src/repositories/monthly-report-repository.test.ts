@@ -123,7 +123,7 @@ describe("MonthlyReportRepository", () => {
   it("returns null current and empty history for empty rows", async () => {
     const { repo } = makeRepository([]);
     const result = await repo.getReport(6);
-    expect(result).toEqual({ current: null, history: [] });
+    expect(result).toEqual({ current: null, history: [], decisionSupport: null });
   });
 
   it("binds the requested user and month window", async () => {
@@ -145,6 +145,9 @@ describe("MonthlyReportRepository", () => {
     expect(result.current?.trainingHoursTrend).toBeNull();
     expect(result.current?.avgSleepTrend).toBeNull();
     expect(result.history).toEqual([]);
+    expect(result.decisionSupport?.whatChanged).toEqual([
+      "This is the first observed month, so month-over-month changes are not available yet.",
+    ]);
   });
 
   it("returns multiple months with trends computed correctly", async () => {

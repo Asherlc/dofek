@@ -17,6 +17,7 @@ const impacts = [
     impactPercent: 18.6,
     yesCount: 18,
     noCount: 24,
+    sources: [{ providerId: "manual_review", label: "Manual review" }],
   },
   {
     questionSlug: "late-meal",
@@ -25,6 +26,10 @@ const impacts = [
     impactPercent: -12.4,
     yesCount: 14,
     noCount: 28,
+    sources: [
+      { providerId: "manual_review", label: "Manual review" },
+      { providerId: "whoop", label: "WHOOP (Cloud)" },
+    ],
   },
   {
     questionSlug: "morning-sunlight",
@@ -33,6 +38,7 @@ const impacts = [
     impactPercent: 9.8,
     yesCount: 21,
     noCount: 17,
+    sources: [{ providerId: "manual_review", label: "Manual review" }],
   },
   {
     questionSlug: "alcohol",
@@ -41,6 +47,7 @@ const impacts = [
     impactPercent: -24.1,
     yesCount: 9,
     noCount: 33,
+    sources: [{ providerId: "whoop", label: "WHOOP (Cloud)" }],
   },
 ];
 

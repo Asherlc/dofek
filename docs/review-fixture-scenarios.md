@@ -24,3 +24,14 @@ creates realistic data for route and API review, while Storybook isolates
 states such as request errors and active processing without making the default
 review login unusable. See [the seed source](../scripts/seed-dev-db.ts) and
 [scripts documentation](../scripts/README.md).
+
+After the Postgres seed, `pnpm review:seed-clickhouse` supplies the canonical
+ClickHouse dependencies used by full-stack review, including deterministic
+daily body-weight samples for adaptive TDEE. The seed preserves unrelated
+metric-stream rows; see the
+[ClickHouse review seed](../scripts/seed-review-clickhouse.ts) and its
+[real-engine preservation test](../scripts/seed-review-clickhouse.integration.test.ts).
+Adaptive TDEE unavailable states remain explicit, isolated stories on both
+platforms:
+[web](../packages/web/src/components/AdaptiveTdeeChart.stories.tsx) and
+[mobile](../packages/mobile/app/nutrition-analytics.stories.tsx).

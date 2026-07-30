@@ -6,10 +6,12 @@
   "exports": {
     "./block-bootstrap": "./src/block-bootstrap.ts",
     "./correlation": "./src/correlation.ts",
-    "./correlation-lag": "./src/correlation-lag.ts"
+    "./correlation-lag": "./src/correlation-lag.ts",
+    "./time-range": "./src/time-range.ts"
   },
   "dependencies": {
-    "@dofek/scoring": "workspace:*"
+    "@dofek/scoring": "workspace:*",
+    "zod": "4.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

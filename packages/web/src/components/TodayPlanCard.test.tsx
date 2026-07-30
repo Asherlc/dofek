@@ -45,7 +45,7 @@ describe("TodayPlanCard", () => {
   it("renders the server action and supporting facts", () => {
     render(<TodayPlanCard plan={readyPlan} />);
 
-    expect(screen.getByText("Today Plan")).toBeTruthy();
+    expect(screen.getByText("What matters today")).toBeTruthy();
     expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
     expect(screen.getByText(/Recovery is strong/)).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
@@ -59,7 +59,7 @@ describe("TodayPlanCard", () => {
   it("renders the insufficient-data message from the server", () => {
     render(<TodayPlanCard plan={insufficientPlan} />);
 
-    expect(screen.getByText("Today Plan")).toBeTruthy();
+    expect(screen.getByText("What matters today")).toBeTruthy();
     expect(
       screen.getByText(
         "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
@@ -70,11 +70,13 @@ describe("TodayPlanCard", () => {
 
   it("renders a loading state", () => {
     render(<TodayPlanCard plan={undefined} loading />);
+    expect(screen.getByRole("region", { name: "What matters today" })).toBeTruthy();
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
   });
 
   it("renders a server error message", () => {
     render(<TodayPlanCard plan={undefined} error={new Error("Today plan unavailable")} />);
+    expect(screen.getByRole("region", { name: "What matters today" })).toBeTruthy();
     expect(screen.getByText("Today plan unavailable")).toBeTruthy();
   });
 

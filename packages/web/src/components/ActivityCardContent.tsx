@@ -1,4 +1,4 @@
-import { formatDurationMinutes } from "@dofek/format/format";
+import { formatDurationMinutes, formatRelativeTime } from "@dofek/format/format";
 import {
   formatRecordLocalTime,
   type RecordLocalTimeContext,
@@ -20,13 +20,23 @@ export interface ActivityCardData {
   startedAt: string;
   localTimeContext: RecordLocalTimeContext;
   durationMin: number;
+  source: {
+    primarySourceLabel: string;
+    sourceCount: number;
+    overlapSummary: string | null;
+  };
+  lastProcessedAt: string | null;
   isProviderAbsent?: boolean;
   providerId?: string;
   providerAbsentAt?: string | null;
   partialAbsentSources?: ProviderAbsentSource[];
   location: ActivityMapLocation | null;
-  stats: { label: string; value: string }[];
+  stats: ActivityCardStat[];
 }
+
+export type ActivityCardStat =
+  | { status: "available"; label: string; value: string }
+  | { status: "unavailable"; label: string; reason: string };
 
 interface ActivityCardContentProps {
   activity: ActivityCardData;
@@ -55,6 +65,9 @@ export function ActivityCardContent({
     activity.localTimeContext,
     "start",
   );
+  const processedRelative = activity.lastProcessedAt
+    ? formatRelativeTime(activity.lastProcessedAt)
+    : null;
 
   return (
     <div
@@ -96,6 +109,15 @@ export function ActivityCardContent({
         {partialAbsenceSummary ? (
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{partialAbsenceSummary}</p>
         ) : null}
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span className="rounded-full border border-border bg-surface-secondary px-2 py-0.5 font-medium text-foreground">
+            {activity.source.primarySourceLabel}
+          </span>
+          {processedRelative ? <span>Processed {processedRelative}</span> : null}
+        </div>
+        {activity.source.overlapSummary ? (
+          <p className="mt-1.5 text-xs text-muted">{activity.source.overlapSummary}</p>
+        ) : null}
         <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
           <ActivityMetricGrid activity={activity} units={units} />
         </div>
@@ -125,9 +147,10 @@ function ActivityMetricGrid({
   activity: Pick<ActivityCardData, "location" | "stats">;
   units: UnitConverter;
 }) {
-  const metrics = activity.location
+  const metrics: ActivityCardStat[] = activity.location
     ? [
         {
+          status: "available",
           label: "Distance",
           value:
             activity.location.distanceMeters != null
@@ -135,6 +158,7 @@ function ActivityMetricGrid({
               : "—",
         },
         {
+          status: "available",
           label: "Elevation",
           value:
             activity.location.elevationGainM != null
@@ -146,12 +170,19 @@ function ActivityMetricGrid({
 
   return (
     <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-      {metrics.slice(0, 2).map((metric) => (
-        <div key={metric.label} className="min-w-0">
-          <div className="text-lg font-semibold tabular-nums">{metric.value}</div>
-          <div className="mt-1 text-[11px] leading-tight text-muted">{metric.label}</div>
-        </div>
-      ))}
+      {metrics.slice(0, 2).map((metric) =>
+        metric.status === "available" ? (
+          <div key={metric.label} className="min-w-0">
+            <div className="text-lg font-semibold tabular-nums">{metric.value}</div>
+            <div className="mt-1 text-[11px] leading-tight text-muted">{metric.label}</div>
+          </div>
+        ) : (
+          <div key={metric.label} className="col-span-2 min-w-0">
+            <div className="text-sm font-semibold">{metric.label} unavailable</div>
+            <div className="mt-1 text-xs leading-relaxed text-muted">{metric.reason}</div>
+          </div>
+        ),
+      )}
     </div>
   );
 }

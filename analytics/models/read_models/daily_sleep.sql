@@ -27,6 +27,8 @@ current_rows AS (
         provider_id,
         source_name,
         source_providers,
+        selected_session_id,
+        overlapping_sessions,
         timezone,
         start_utc_offset_minutes,
         end_utc_offset_minutes,
@@ -39,6 +41,7 @@ current_rows AS (
         light_minutes,
         awake_minutes,
         efficiency_pct,
+        staging_available,
         is_deleted
     FROM {{ this }} FINAL
 ),
@@ -65,6 +68,7 @@ changed_users AS (
 
 live_sleep AS (
     SELECT
+        sleep.id AS id,
         sleep.user_id AS user_id,
         toDate(sleep.started_at - INTERVAL 6 HOUR) AS date,
         sleep.provider_id AS provider_id,
@@ -81,7 +85,8 @@ live_sleep AS (
         sleep.rem_minutes AS rem_minutes,
         sleep.light_minutes AS light_minutes,
         sleep.awake_minutes AS awake_minutes,
-        sleep.efficiency_pct AS efficiency_pct
+        sleep.efficiency_pct AS efficiency_pct,
+        sleep.staging_available AS staging_available
     FROM analytics.v_sleep AS sleep
     INNER JOIN changed_users
         ON changed_users.user_id = sleep.user_id
@@ -107,6 +112,7 @@ dirty_dates AS (
 
 ranked_sleep AS (
     SELECT
+        live_sleep.id AS id,
         live_sleep.user_id AS user_id,
         live_sleep.date AS date,
         live_sleep.provider_id AS provider_id,
@@ -124,6 +130,7 @@ ranked_sleep AS (
         live_sleep.light_minutes AS light_minutes,
         live_sleep.awake_minutes AS awake_minutes,
         live_sleep.efficiency_pct AS efficiency_pct,
+        live_sleep.staging_available AS staging_available,
         row_number() OVER (
             PARTITION BY live_sleep.user_id, live_sleep.date
             ORDER BY live_sleep.duration_minutes DESC NULLS LAST, live_sleep.started_at DESC
@@ -131,8 +138,9 @@ ranked_sleep AS (
     FROM live_sleep
 ),
 
-selected_sleep AS (
+nightly_winner AS (
     SELECT
+        id,
         user_id,
         date,
         provider_id,
@@ -149,9 +157,88 @@ selected_sleep AS (
         rem_minutes,
         light_minutes,
         awake_minutes,
-        efficiency_pct
+        efficiency_pct,
+        staging_available
     FROM ranked_sleep
     WHERE row_number = 1
+),
+
+nightly_overlaps AS (
+    SELECT
+        nightly_winner.user_id AS user_id,
+        nightly_winner.date AS date,
+        arraySort(
+            groupArray(CAST(
+                (
+                    candidate.id,
+                    candidate.provider_id,
+                    candidate.source_name,
+                    candidate.source_providers,
+                    candidate.timezone,
+                    candidate.start_utc_offset_minutes,
+                    candidate.end_utc_offset_minutes,
+                    candidate.local_time_source,
+                    candidate.started_at,
+                    candidate.ended_at,
+                    candidate.duration_minutes
+                ),
+                'Tuple(
+                    session_id UUID,
+                    provider_id String,
+                    source_name Nullable(String),
+                    source_providers Array(String),
+                    timezone Nullable(String),
+                    start_utc_offset_minutes Nullable(Int16),
+                    end_utc_offset_minutes Nullable(Int16),
+                    local_time_source String,
+                    started_at DateTime64(6, ''UTC''),
+                    ended_at Nullable(DateTime64(6, ''UTC'')),
+                    duration_minutes Nullable(Int32)
+                )'
+            ))
+        ) AS overlapping_sessions
+    FROM nightly_winner
+    INNER JOIN live_sleep AS candidate
+        ON candidate.user_id = nightly_winner.user_id
+        AND candidate.date = nightly_winner.date
+        AND candidate.id != nightly_winner.id
+        AND greatest(candidate.started_at, nightly_winner.started_at)
+            < least(
+                coalesce(candidate.ended_at, candidate.started_at + INTERVAL 8 HOUR),
+                coalesce(nightly_winner.ended_at, nightly_winner.started_at + INTERVAL 8 HOUR)
+            )
+    GROUP BY
+        nightly_winner.user_id,
+        nightly_winner.date
+),
+
+selected_sleep AS (
+    SELECT
+        nightly_winner.*,
+        nightly_winner.id AS selected_session_id,
+        coalesce(
+            nightly_overlaps.overlapping_sessions,
+            CAST(
+                [],
+                'Array(Tuple(
+                    session_id UUID,
+                    provider_id String,
+                    source_name Nullable(String),
+                    source_providers Array(String),
+                    timezone Nullable(String),
+                    start_utc_offset_minutes Nullable(Int16),
+                    end_utc_offset_minutes Nullable(Int16),
+                    local_time_source String,
+                    started_at DateTime64(6, ''UTC''),
+                    ended_at Nullable(DateTime64(6, ''UTC'')),
+                    duration_minutes Nullable(Int32)
+                ))'
+            )
+        ) AS overlapping_sessions
+    FROM nightly_winner
+    LEFT JOIN nightly_overlaps
+        ON nightly_overlaps.user_id = nightly_winner.user_id
+        AND nightly_overlaps.date = nightly_winner.date
 ),
 
 rows_to_write AS (
@@ -174,6 +261,16 @@ rows_to_write AS (
             current_rows.source_providers,
             selected_sleep.source_providers
         ) AS source_providers,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.selected_session_id,
+            selected_sleep.selected_session_id
+        ) AS selected_session_id,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.overlapping_sessions,
+            selected_sleep.overlapping_sessions
+        ) AS overlapping_sessions,
         if(
             selected_sleep.user_id IS NULL,
             current_rows.timezone,
@@ -234,6 +331,11 @@ rows_to_write AS (
             current_rows.efficiency_pct,
             selected_sleep.efficiency_pct
         ) AS efficiency_pct,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.staging_available,
+            selected_sleep.staging_available
+        ) AS staging_available,
         if(selected_sleep.user_id IS NULL, 1, 0) AS is_deleted
     FROM dirty_dates
     LEFT JOIN selected_sleep
@@ -249,6 +351,8 @@ rows_to_write AS (
         selected_sleep.provider_id AS provider_id,
         selected_sleep.source_name AS source_name,
         selected_sleep.source_providers AS source_providers,
+        selected_sleep.selected_session_id AS selected_session_id,
+        selected_sleep.overlapping_sessions AS overlapping_sessions,
         selected_sleep.timezone AS timezone,
         selected_sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
         selected_sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -261,6 +365,7 @@ rows_to_write AS (
         selected_sleep.light_minutes AS light_minutes,
         selected_sleep.awake_minutes AS awake_minutes,
         selected_sleep.efficiency_pct AS efficiency_pct,
+        selected_sleep.staging_available AS staging_available,
         0 AS is_deleted
     FROM selected_sleep
     {% endif %}
@@ -278,6 +383,8 @@ SELECT
     rows_to_write.provider_id AS provider_id,
     rows_to_write.source_name AS source_name,
     rows_to_write.source_providers AS source_providers,
+    rows_to_write.selected_session_id AS selected_session_id,
+    rows_to_write.overlapping_sessions AS overlapping_sessions,
     rows_to_write.timezone AS timezone,
     rows_to_write.start_utc_offset_minutes AS start_utc_offset_minutes,
     rows_to_write.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -290,6 +397,7 @@ SELECT
     rows_to_write.light_minutes AS light_minutes,
     rows_to_write.awake_minutes AS awake_minutes,
     rows_to_write.efficiency_pct AS efficiency_pct,
+    rows_to_write.staging_available AS staging_available,
     refresh_clock.refresh_version AS refresh_version,
     rows_to_write.is_deleted AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at

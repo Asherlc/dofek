@@ -13,6 +13,9 @@ Metadata and statistics for data providers.
 ### Logos and Branding
 
 - `PROVIDER_LABELS` provides the canonical display name for each provider.
+- `resolveProviderProvenance` pairs that display name with the provider ID for
+  server-authored source details. Clients should render the label by default
+  and reserve the ID for explicit technical diagnostics.
 - `SVG_LOGOS` and `PNG_LOGOS` sets determine the file format for provider icons.
 - `BRAND_COLORS` provides fallback colors for providers without dedicated logos (e.g., `bodyspec` uses `#00B4D8`).
 
@@ -34,3 +37,8 @@ authorization as not required.
 
 Processing-status presentation helpers, including dataset-scoped failure messages, live in
 [`processing-status.ts`](src/processing-status.ts).
+
+Provider sync-history entries use
+[`sync-log-presentation.ts`](src/sync-log-presentation.ts) to turn structured status and
+authorization reasons into the same actionable summary on web and mobile. Clients keep the raw
+status, authorization reason, error, and log identifier available separately as diagnostics.

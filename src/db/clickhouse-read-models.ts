@@ -461,6 +461,7 @@ ranked AS (
     active_sleep.light_minutes AS light_minutes,
     active_sleep.awake_minutes AS awake_minutes,
     active_sleep.efficiency_pct AS efficiency_pct,
+    active_sleep.staging_available AS staging_available,
     active_sleep.sleep_type AS sleep_type,
     active_sleep.source_name AS source_name,
     active_sleep.timezone AS timezone,
@@ -550,6 +551,7 @@ best AS (
       ranked.light_minutes AS light_minutes,
       ranked.awake_minutes AS awake_minutes,
       ranked.efficiency_pct AS efficiency_pct,
+      ranked.staging_available AS staging_available,
       ranked.sleep_type AS sleep_type,
       ranked.source_name AS source_name,
       ranked.timezone AS timezone,
@@ -575,18 +577,22 @@ SELECT
   best.started_at AS started_at,
   best.ended_at AS ended_at,
   best.duration_minutes AS duration_minutes,
-  best.deep_minutes AS deep_minutes,
-  best.rem_minutes AS rem_minutes,
-  best.light_minutes AS light_minutes,
-  best.awake_minutes AS awake_minutes,
+  if(best.staging_available, best.deep_minutes, NULL) AS deep_minutes,
+  if(best.staging_available, best.rem_minutes, NULL) AS rem_minutes,
+  if(best.staging_available, best.light_minutes, NULL) AS light_minutes,
+  if(best.staging_available, best.awake_minutes, NULL) AS awake_minutes,
+  best.staging_available AS staging_available,
   coalesce(
     best.efficiency_pct,
     multiIf(
-      best.provider_id = 'apple_health'
-        AND best.duration_minutes > 0
-        AND (best.deep_minutes IS NOT NULL OR best.rem_minutes IS NOT NULL OR best.light_minutes IS NOT NULL),
+      best.staging_available
+        AND best.provider_id = 'apple_health'
+        AND best.duration_minutes > 0,
       round((coalesce(best.deep_minutes, 0) + coalesce(best.rem_minutes, 0) + coalesce(best.light_minutes, 0)) / best.duration_minutes * 100, 1),
-      best.provider_id IN ('eight-sleep', 'polar') AND best.duration_minutes > 0 AND best.awake_minutes IS NOT NULL,
+      best.staging_available
+        AND best.provider_id IN ('eight-sleep', 'polar')
+        AND best.duration_minutes > 0
+        AND best.awake_minutes IS NOT NULL,
       round(best.duration_minutes / (best.duration_minutes + best.awake_minutes) * 100, 1),
       NULL
     )
@@ -615,6 +621,7 @@ GROUP BY
   best.rem_minutes,
   best.light_minutes,
   best.awake_minutes,
+  best.staging_available,
   best.efficiency_pct,
   best.sleep_type,
   best.is_nap,
@@ -912,6 +919,15 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildSleepReadModelSql(),
     buildDailyMetricsReadModelSql(),
     ...buildProviderStatsCreateReadModelStatements(),
+  ];
+}
+
+export function buildSleepQualityMigrationStatements(): string[] {
+  return [
+    "ALTER TABLE postgres_fitness.sleep_session ADD COLUMN IF NOT EXISTS staging_available Bool DEFAULT false AFTER efficiency_pct",
+    "ALTER TABLE analytics.daily_sleep ADD COLUMN IF NOT EXISTS staging_available Bool DEFAULT false AFTER efficiency_pct",
+    "DROP VIEW IF EXISTS analytics.v_sleep",
+    buildSleepReadModelSql(),
   ];
 }
 

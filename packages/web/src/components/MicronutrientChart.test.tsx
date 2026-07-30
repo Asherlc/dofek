@@ -30,9 +30,19 @@ describe("MicronutrientChart", () => {
           intake: {
             totalDailyAverage: 5,
             foodDailyAverage: 5,
+            providerDailyTotalAverage: 0,
             supplementDailyAverage: 0,
             daysTracked: 7,
           },
+          sourceBreakdown: [
+            {
+              providerId: "unsafe",
+              sourceLabel: '<img src=x onerror="alert(2)">',
+              intakeType: "itemized_food",
+              dailyAverageContribution: 5,
+              daysTracked: 7,
+            },
+          ],
           adequacy: {
             status: "below_daily_value",
             percentDailyValue: 50,
@@ -69,6 +79,7 @@ describe("MicronutrientChart", () => {
 
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(html).toContain("&lt;svg onload=&quot;alert(1)&quot;&gt;");
+    expect(html).toContain("&lt;img src=x onerror=&quot;alert(2)&quot;&gt;");
     expect(html).not.toContain("<img ");
     expect(html).not.toContain("<svg ");
   });
@@ -83,9 +94,19 @@ describe("MicronutrientChart", () => {
           intake: {
             totalDailyAverage: 12,
             foodDailyAverage: 12,
+            providerDailyTotalAverage: 0,
             supplementDailyAverage: 0,
             daysTracked: 7,
           },
+          sourceBreakdown: [
+            {
+              providerId: "manual",
+              sourceLabel: "Manual",
+              intakeType: "itemized_food",
+              dailyAverageContribution: 12,
+              daysTracked: 7,
+            },
+          ],
           adequacy: {
             status: "below_daily_value",
             percentDailyValue: 67,
@@ -124,6 +145,9 @@ describe("MicronutrientChart", () => {
       "67% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)",
     );
     expect(html).toContain("average over 7 recorded days");
+    expect(html).toContain("Itemized food: 12 mg/day");
+    expect(html).toContain("Provider daily totals: 0 mg/day");
+    expect(html).toContain("Manual · Itemized food: 12 mg/day");
     expect(element.props.option.series?.[0]?.markLine?.label?.formatter).toBe(
       "100% U.S. Food and Drug Administration (FDA) Daily Value",
     );

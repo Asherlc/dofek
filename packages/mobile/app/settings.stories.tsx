@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
+import { within } from "storybook/test";
 import { AuthProvider } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
 import SettingsScreen from "./settings";
@@ -166,3 +167,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const AccountPassword: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Account" }));
+  },
+};

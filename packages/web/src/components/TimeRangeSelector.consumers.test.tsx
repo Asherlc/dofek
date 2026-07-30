@@ -5,6 +5,7 @@ import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../lib/selectedRangeQueryRegistry.test-helper.ts";
+import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
 
 const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -145,6 +146,11 @@ vi.mock("../lib/trpc.ts", () => {
       correlation: {
         computeV2: recordQuery("correlation.computeV2", null),
         metrics: recordQuery("correlation.metrics", correlationMetrics),
+        observations: recordQuery("correlation.observations", {
+          items: [],
+          totalCount: 0,
+          nextCursor: null,
+        }),
       },
       dailyMetrics: {
         hrvBaseline: recordQuery("dailyMetrics.hrvBaseline"),
@@ -159,12 +165,24 @@ vi.mock("../lib/trpc.ts", () => {
         delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
         questions: recordQuery("journal.questions"),
+        trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),
         macroRatios: recordQuery("nutritionAnalytics.macroRatios"),
         micronutrientAdequacyV2: recordQuery("nutritionAnalytics.micronutrientAdequacyV2", {
           nutrients: [],
+          dataQuality: {
+            selectedWindowDays: 30,
+            daysWithData: 0,
+            usableDays: 0,
+            overlapDays: 0,
+            conflictDays: 0,
+            completenessPercent: 0,
+            sourceLabels: [],
+            contributingSourceLabels: [],
+            excludedSourceLabels: [],
+          },
           professionalReview: null,
         }),
       },
@@ -217,7 +235,13 @@ function BodyHarness() {
 
   if (!BodyPage) return null;
   return (
-    <BodyDaysContext.Provider value={{ days, setDays }}>
+    <BodyDaysContext.Provider
+      value={{
+        days,
+        description: "Recommended default: 30 days keeps recent body changes visible.",
+        setDays,
+      }}
+    >
       <BodyPage />
     </BodyDaysContext.Provider>
   );
@@ -328,6 +352,16 @@ describe("TimeRangeSelector consumers", () => {
         name: "correlation.computeV2",
         input: { metricX: "protein", metricY: "hrv", days: 7, lag: 0 },
       },
+      {
+        name: "correlation.observations",
+        input: {
+          metricX: "protein",
+          metricY: "hrv",
+          days: 7,
+          lag: 0,
+          pageSize: 25,
+        },
+      },
     ]);
     expectRegistryCovered("correlation");
 
@@ -338,6 +372,16 @@ describe("TimeRangeSelector consumers", () => {
       {
         name: "correlation.computeV2",
         input: { metricX: "protein", metricY: "hrv", days: null, lag: 0 },
+      },
+      {
+        name: "correlation.observations",
+        input: {
+          metricX: "protein",
+          metricY: "hrv",
+          days: null,
+          lag: 0,
+          pageSize: 25,
+        },
       },
     ]);
     expectRegistryCovered("correlation");
@@ -370,13 +414,21 @@ describe("TimeRangeSelector consumers", () => {
     fireEvent.click(screen.getByRole("button", { name: "7d" }));
 
     expectCallsContaining([{ name: "journal.entries", input: { days: 7 } }]);
-    expectRegistryCovered("journal");
+    expectRegistryCovered("journalLog");
 
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
     clearQueryCalls();
     fireEvent.click(screen.getByRole("button", { name: "All" }));
 
-    expectCallsContaining([{ name: "journal.entries", input: { days: null } }]);
-    expectRegistryCovered("journal");
+    expectCallsContaining([
+      {
+        name: "journal.trends",
+        input: {
+          days: null,
+          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        },
+      },
+    ]);
+    expectRegistryCovered("journalTrends");
   });
 });

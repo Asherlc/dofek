@@ -16,8 +16,26 @@ const strengthActivity: ActivityCardData = {
     source: "provider_timezone",
   },
   durationMin: 30,
+  source: {
+    primarySourceLabel: "Strong (via Apple Health)",
+    sourceCount: 1,
+    overlapSummary: null,
+  },
+  lastProcessedAt: "2026-07-14T08:50:00-07:00",
   location: null,
-  stats: [{ label: "Training Stress Score", value: "8.5" }],
+  stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
+};
+
+const unavailableTrainingStressActivity: ActivityCardData = {
+  ...strengthActivity,
+  id: "strength-unavailable",
+  stats: [
+    {
+      status: "unavailable",
+      label: "Training Stress Score",
+      reason: "Record average power, or record average heart rate and set maximum heart rate.",
+    },
+  ],
 };
 
 const mappedActivity: ActivityCardData = {
@@ -32,6 +50,12 @@ const mappedActivity: ActivityCardData = {
     source: "device_timezone",
   },
   durationMin: 64,
+  source: {
+    primarySourceLabel: "Garmin Connect",
+    sourceCount: 2,
+    overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+  },
+  lastProcessedAt: "2026-07-14T08:45:00-07:00",
   location: {
     mapPreview: {
       width: 512,
@@ -77,7 +101,7 @@ const mappedActivity: ActivityCardData = {
     distanceMeters: 8530,
     elevationGainM: 493,
   },
-  stats: [{ label: "Training Stress Score", value: "41" }],
+  stats: [{ status: "available", label: "Training Stress Score", value: "41" }],
 };
 
 const meta = {
@@ -124,10 +148,21 @@ export const MappedActivity: Story = {
   ],
 };
 
+export const UnavailableTrainingStress: Story = {
+  args: { activity: unavailableTrainingStressActivity },
+  decorators: [
+    (Story) => (
+      <div className="card overflow-hidden">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
 export const ExampleGrid: Story = {
   render: () => (
     <div className="grid gap-4 lg:grid-cols-2">
-      {[mappedActivity, strengthActivity].map((activity) => (
+      {[mappedActivity, strengthActivity, unavailableTrainingStressActivity].map((activity) => (
         <article key={activity.id} className="card h-full overflow-hidden">
           <ActivityCardContent
             activity={activity}

@@ -1,6 +1,8 @@
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import {
+  type AdaptiveTdeeEvidence,
   type MicronutrientSafetyReview,
+  type NutritionAnalyticsDataQuality,
   NutritionAnalyticsRepository,
   type SupplementMedicationReview,
 } from "../repositories/nutrition-analytics-repository.ts";
@@ -21,19 +23,24 @@ export type MicronutrientSafetyReviewRow = ReturnType<MicronutrientSafetyReview[
 
 export interface MicronutrientSafetyReviewResult {
   nutrients: MicronutrientSafetyReviewRow[];
+  dataQuality: NutritionAnalyticsDataQuality;
   professionalReview: SupplementMedicationReview;
 }
 
 export interface AdaptiveTdeeResult {
+  status: "available" | "unavailable";
   estimatedTdee: number | null;
-  confidence: number;
-  dataPoints: number;
+  estimateRange: { minimum: number; maximum: number } | null;
+  unavailableReason: string | null;
+  evidence: AdaptiveTdeeEvidence;
   dailyData: AdaptiveTdeeRow[];
 }
 
 export interface AdaptiveTdeeRow {
   date: string;
-  caloriesIn: number;
+  caloriesIn: number | null;
+  nutritionStatus: "available" | "source_conflict" | "missing";
+  lowerPrioritySourcesExcluded: boolean;
   weightKg: number | null;
   smoothedWeight: number | null;
   estimatedTdee: number | null;
@@ -77,12 +84,14 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const [nutrients, professionalReview] = await Promise.all([
+      const [nutrients, dataQuality, professionalReview] = await Promise.all([
         repo.getMicronutrientSafetyReview(range.days),
+        repo.getMicronutrientDataQuality(range.days),
         repo.getSupplementMedicationReview(),
       ]);
       return {
         nutrients: nutrients.map((nutrient) => nutrient.toDetail()),
+        dataQuality,
         professionalReview,
       };
     },

@@ -225,7 +225,7 @@ describe("Dashboard", () => {
         date: "2026-05-27",
         action: {
           id: "strain_target",
-          title: "Keep a steady training day — aim for 12 strain",
+          title: "No change needs attention — aim for 12 strain",
           summary: "Stay in range",
           zone: "Maintain",
         },
@@ -252,6 +252,26 @@ describe("Dashboard", () => {
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
     mockDailyOverview.mockClear();
+  });
+
+  it("uses a 90-day evidence window without widening current-day plan lookups", () => {
+    render(<Dashboard />);
+
+    const overviewRange = { days: 90, endDate: "2026-05-27" };
+    const planLookback = { days: 30, endDate: "2026-05-27" };
+    expect(mockReadinessQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockWorkloadQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockStrainTargetQuery).toHaveBeenCalledWith(planLookback);
+    expect(mockTodayPlanQuery).toHaveBeenCalledWith(planLookback);
+    expect(mockTrendsQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      overviewRange,
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ days: 90, endDate: "2026-05-27" }),
+    );
   });
 
   it("shows data readiness when dashboard summaries are stale", () => {
@@ -446,7 +466,7 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 
-  it("renders the daily summary outside and before the 30 day overview", () => {
+  it("renders the daily summary outside and before the 90-day overview", () => {
     render(<Dashboard />);
 
     const dailySummary = screen.getByRole("region", { name: "Daily health summary" });
@@ -689,6 +709,7 @@ describe("buildHealthMetrics", () => {
       statusToken: "moving_as_intended" as const,
       statusColor: "positive" as const,
       statusLabel: "Moving as intended",
+      evaluationRule: "Below your baseline, where lower values support this metric",
       explanation: "Resting Heart Rate is below your baseline.",
     };
     const metrics = buildHealthMetrics({

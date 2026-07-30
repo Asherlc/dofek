@@ -491,6 +491,11 @@ export class CorosProvider implements WebhookProvider {
               // Sleep
               if (raw.sleepDuration) {
                 const externalId = `coros-sleep-${raw.date}`;
+                const stagingAvailable =
+                  raw.deepSleep != null &&
+                  raw.lightSleep != null &&
+                  raw.remSleep != null &&
+                  raw.awakeDuration != null;
                 await db
                   .insert(sleepSession)
                   .values({
@@ -503,6 +508,7 @@ export class CorosProvider implements WebhookProvider {
                     lightMinutes: raw.lightSleep,
                     remMinutes: raw.remSleep,
                     awakeMinutes: raw.awakeDuration,
+                    stagingAvailable,
                   })
                   .onConflictDoUpdate({
                     target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -512,6 +518,7 @@ export class CorosProvider implements WebhookProvider {
                       lightMinutes: raw.lightSleep,
                       remMinutes: raw.remSleep,
                       awakeMinutes: raw.awakeDuration,
+                      stagingAvailable,
                     },
                   });
                 count++;

@@ -7,6 +7,7 @@
     "./providers": "./src/providers.ts",
     "./provider-stats": "./src/provider-stats.ts",
     "./provider-health": "./src/provider-health.ts",
+    "./sync-log-presentation": "./src/sync-log-presentation.ts",
     "./whoop": "./src/whoop.ts",
     "./push-providers": "./src/push-providers.ts",
     "./processing-alerts": "./src/processing-alerts.ts",

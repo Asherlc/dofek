@@ -137,6 +137,7 @@ async function main() {
         "light_minutes",
         "awake_minutes",
         "efficiency_pct",
+        "staging_available",
         "sleep_type",
         "sleep_need_baseline_minutes",
         "sleep_need_from_debt_minutes",

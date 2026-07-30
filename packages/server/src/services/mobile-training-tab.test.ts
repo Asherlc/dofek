@@ -6,6 +6,7 @@ import {
   ClimbingVolumeByGrade,
 } from "../repositories/climbing-repository.ts";
 import { VerticalAscentModel } from "../repositories/cycling-advanced-models.ts";
+import { ProgressiveOverload } from "../repositories/progressive-overload.ts";
 import { loadMobileTrainingTab } from "./mobile-training-tab.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
@@ -56,6 +57,7 @@ describe("loadMobileTrainingTab", () => {
     activities: unknown[] = [],
     weeklyVolume: unknown[] = [],
     verticalAscent: VerticalAscentModel[] = [],
+    progressiveOverload: ProgressiveOverload[] = [],
   ) {
     const trainingSpy = vi
       .spyOn(
@@ -78,7 +80,13 @@ describe("loadMobileTrainingTab", () => {
         verticalAscent: verticalAscent.map((model) => model.toDetail()),
         aerobicEfficiency: { maxHr: null, activities: [] },
       });
-    return { trainingSpy, cyclingSpy };
+    const strengthSpy = vi
+      .spyOn(
+        (await import("../repositories/strength-repository.ts")).StrengthRepository.prototype,
+        "getProgressiveOverload",
+      )
+      .mockResolvedValue(progressiveOverload);
+    return { trainingSpy, cyclingSpy, strengthSpy };
   }
 
   async function mockClimbingRepos() {
@@ -169,6 +177,12 @@ describe("loadMobileTrainingTab", () => {
           elapsedSeconds: 1800,
         }),
       ],
+      [
+        new ProgressiveOverload("Back Squat", [
+          { week: "2026-03-09", totalVolumeKg: 1_000 },
+          { week: "2026-03-23", totalVolumeKg: 1_200 },
+        ]),
+      ],
     );
     await mockClimbingRepos();
 
@@ -182,6 +196,11 @@ describe("loadMobileTrainingTab", () => {
     expect(result.strainTarget.dailyLoad).toBe(50);
     expect(result.activities).toHaveLength(1);
     expect(result.weeklyVolume).toHaveLength(1);
+    expect(result.progressiveOverload[0]).toMatchObject({
+      exerciseName: "Back Squat",
+      slopeKgPerWeek: 100,
+      period: { observationCount: 2, elapsedWeekCount: 3 },
+    });
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(1000);
     expect(result.verticalAscent[0]?.activityType).toBe("road_cycling");
     expect(cyclingSpy).toHaveBeenCalledWith(expect.objectContaining({ days: 30 }), {

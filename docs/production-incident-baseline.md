@@ -1,11 +1,245 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
+
+## 2026-07-29: Sentry React Native upgrade mixed binary and source Cocoa SDKs
+
+### Symptoms
+
+The Sentry React Native dependency upgrade passed TypeScript and Storybook
+validation, but a generated iOS Release build failed while compiling
+`RNSentry`.
+
+### User Impact
+
+There was no production or end-user impact because the dependency update
+remained blocked from merge. Without the native validation, the generated iOS
+application would not have compiled.
+
+### Evidence
+
+The exact failing command was the XcodeBuildMCP Release build for the generated
+`Dofek` workspace and simulator. Its first fatal compiler diagnostic was an
+`Include of non-modular header inside framework module 'RNSentry.RNSentry'`
+error for the Cocoa `Sentry.h` header. The generated Pods state contained
+Sentry React Native's prebuilt Sentry 9.19.1 XCFramework while the Dofek
+HealthKit and watch targets still requested the source-built Sentry 9.13.0 pod.
+Sentry React Native 8.20.0 documents both its default prebuilt XCFramework and
+the `SENTRY_USE_XCFRAMEWORK=0` source-build option in its
+[podspec](https://github.com/getsentry/sentry-react-native/blob/8.20.0/RNSentry.podspec#L76-L100).
+
+### Root Cause
+
+The application linked two incompatible forms and versions of the same native
+Sentry Cocoa SDK: RNSentry's default prebuilt 9.19.1 XCFramework and the custom
+native targets' source-built 9.13.0 CocoaPod.
+
+### Fix or Mitigation
+
+The Expo Podfile plugin now sets `SENTRY_USE_XCFRAMEWORK=0` before pod
+resolution, making the source-built CocoaPod the single native Sentry
+implementation. The watch target pin was aligned to 9.19.1. No compiler
+warning suppression, duplicate-framework workaround, retry, or timeout was
+added.
+
+### Validation
+
+Expo prebuild generated one source-built Sentry 9.19.1 dependency and no Sentry
+XCFramework search path. The same Release simulator build then completed
+successfully with the required public build settings.
+
+### Remaining Risk
+
+Future Sentry React Native upgrades can change the bundled Cocoa SDK version.
+Keep the watch-target pin aligned and retain the generated Release build as the
+native compatibility gate.
+
+## 2026-07-29: Responsive E2E selected the wrong 14-day control
+
+### Symptoms
+
+PR #2284 CI run
+[30464833420](https://github.com/Asherlc/dofek/actions/runs/30464833420)
+failed all four selected-life-event scenarios in
+`responsive-controls.cy.ts`, while the four Correlation scenarios and the
+remaining web E2E specs passed.
+
+### User Impact
+
+There was no production or end-user impact. The selector defect blocked merge
+validation of the responsive life-event controls.
+
+### Evidence
+
+The exact failing command was the Cypress run in `Test / E2E Tests (Web)`.
+Its first fatal line was
+`AssertionError: Timed out retrying after 10000ms: Too many elements found. Found '6', expected '4'.`
+at `responsive-controls.cy.ts:108`. The failure screenshot showed Cypress
+resolving `cy.contains("button", "14d")` to the Journal range selector above
+the life-event panel; that control's parent correctly contains six range
+buttons. The selected life-event analysis card contains the intended separate
+14/30/60/90-day window group.
+
+### Root Cause
+
+The acceptance test used a page-global text selector for a label shared by the
+Journal range selector and the selected life-event analysis window. Cypress
+matched the first visible `14d` button, so the four-button assertion inspected
+the wrong control group.
+
+### Fix or Mitigation
+
+Scope the analysis-window and Delete assertions to the card headed by the
+seeded life-event label before selecting its buttons. No production behavior,
+timeout, retry, or test-runner configuration changed. Cypress documents
+`.within()` as the mechanism for scoping subsequent queries to a selected
+element:
+<https://docs.cypress.io/api/commands/within>.
+
+### Remaining Risk
+
+Fresh exact-head E2E CI must confirm that all eight responsive scenarios pass
+against the production build.
+
+## 2026-07-29: Shared Docker disk pressure blocked local web E2E validation
+
+### Symptoms
+
+The issue #2187 web E2E stack stopped making progress during its BuildKit
+image build, and subsequent Docker API commands did not return within 15
+seconds. Repository lint separately could not reach the local ClickHouse
+service on `127.0.0.1:8123`.
+
+### User Impact
+
+There was no production or end-user impact. The incident blocked local SQL lint
+and Cypress validation in a Docker Desktop environment shared by several
+concurrent Conductor workspaces.
+
+### Evidence
+
+The host data volume was at 100% capacity with only 8.7 GiB available. A build
+owned by another workspace remained active for more than 65 minutes, while
+`docker info` timed out and multiple other workspace Docker commands remained
+queued. The issue #2187 E2E command was stopped without touching another
+workspace's containers, volumes, or build process.
+
+### Root Cause
+
+Shared host disk pressure and a saturated Docker daemon prevented the current
+workspace from creating or inspecting containers. The responsive web changes
+build successfully outside Docker, so the failure did not originate in the
+changed application code.
+
+### Fix or Mitigation
+
+The current workspace's default and E2E Compose cleanup completed successfully.
+The subsequent rebuildable-cache prune blocked behind the unrelated active
+build and was canceled after more than three minutes when the daemon stopped
+responding again. Validation moved to the isolated CI runner without adding
+retries, timeouts, or application workarounds. The recovery order follows
+[`docs/testing.md`](testing.md#docker-disk-recovery) and Docker's
+[resource-pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+
+### Remaining Risk
+
+Local SQL lint and Cypress remain blocked until the unrelated build releases
+the daemon and the rebuildable-cache prune can complete. Other workspace
+resources must remain intact.
+
+## 2026-07-29: E2E image build timed out downloading npm packages
+
+### Symptoms
+
+The web E2E job for PR #2284 failed in `Build E2E images with cache` before
+starting its Compose dependencies or Cypress.
+
+### User Impact
+
+There was no production or end-user impact. The failure delayed CI validation
+of a responsive web fix.
+
+### Evidence
+
+Inside the Docker `client-build` stage, pnpm downloaded workspace packages at
+unusually low transfer rates and repeatedly logged registry tarball
+`error (23)` failures. The first fatal line was
+`[23] The operation was aborted due to timeout`, followed by
+`TimeoutError: The operation was aborted due to timeout`. The failing command
+was the dependency installation invoked before `packages/web` could build; the
+E2E services and Cypress step remained unstarted.
+
+### Root Cause
+
+Transient npm registry download timeouts exhausted pnpm's existing attempts
+during the isolated E2E image build. The failure occurred before application
+compilation or test execution and was unrelated to the responsive changes.
+
+### Fix or Mitigation
+
+No timeout, retry, cache, or application behavior was changed. The same
+canonical commit is being validated on a fresh GitHub Actions run, using the
+platform's documented rerun workflow:
+<https://docs.github.com/actions/managing-workflow-runs-and-deployments/managing-workflow-runs/re-running-workflows-and-jobs>.
+
+### Remaining Risk
+
+The incident remains unresolved until a fresh E2E job completes. An external
+registry interruption can recur without a repository change.
+
+## 2026-07-29: Shared Docker VM AIO exhaustion blocked local integration validation
+
+### Symptoms
+
+The issue-2183 focused router integration test first lost its ClickHouse socket
+during fixture setup. After recreating only that workspace's Compose state,
+Postgres, ClickHouse, and Redis became healthy, but Redpanda restarted with exit
+code 133. The same Redpanda startup failure recurred when issue-2123 started its
+isolated integration dependencies.
+
+### User Impact
+
+There was no production or end-user impact. Local real-database validation for
+issues 2183 and 2123 was blocked in the shared Docker Desktop environment;
+clean exact-head CI remains the integration gate.
+
+### Evidence
+
+Both recurrences reached the same first fatal line:
+`Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536.`
+During the issue-2183 investigation, the Docker VM reported `aio-nr=65536` and
+`aio-max-nr=65536`. Stopping the issue-2183 ClickHouse container left both
+values unchanged, proving that workspace was not holding the saturated
+capacity. The Linux kernel documents `aio-nr` as the current system-wide
+asynchronous I/O request count and `aio-max-nr` as its maximum:
+<https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr>.
+
+### Root Cause
+
+Other workloads in the shared Docker VM consumed the system-wide asynchronous
+I/O request capacity, so the affected Redpanda processes could not allocate
+even one event.
+
+### Fix or Mitigation
+
+The repository Compose wrapper removed only each affected workspace's
+disposable containers, network, and volumes. Issue 2123 briefly tried starting
+only Postgres and ClickHouse, but stopped that prerequisite-only tactic before
+running tests because omitting Redpanda from the repository integration setup
+was not approved. No global sysctl, other workspace, resource limit, timeout,
+retry, or application behavior was changed.
+
+### Remaining Risk
+
+Concurrent workspace stacks can exhaust Docker Desktop's shared AIO capacity
+again. Add an AIO-capacity diagnostic to the integration-test runbook and
+decide explicitly whether a focused suite may run with only its actual service
+prerequisites when an unrelated shared dependency cannot start.
 
 ## 2026-07-29: iOS cold-start delay could not be reproduced with phase telemetry
 
@@ -20324,3 +20558,558 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge only after every exact-head attempt
   completes successfully. Avoid close/reopen refreshes while a same-PR
   concurrency group is still active.
+
+## 2026-07-29 — Local integration network pool exhausted
+
+- **Status:** Resolved for the issue #2133 validation run.
+- **Symptoms:** The focused Postgres integration command failed before test
+  execution while Compose created the workspace network.
+- **User impact:** No production impact. Local real-database validation was
+  blocked until unused workspace networks were removed.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts`.
+  Its first fatal line was
+  `all predefined address pools have been fully subnetted`.
+- **Root cause:** Five bridge networks had no attached containers:
+  `2191_default`, `activity-sensor_default`, `issue-2069_default`,
+  `issue-2240_default`, and `issue-2241_default`. Together with the remaining
+  networks, they exhausted Docker's configured automatic subnet allocation
+  pool. Docker creates a subnet for each user-defined bridge network and
+  documents removal of unused custom networks with
+  [`docker network prune`](https://docs.docker.com/reference/cli/docker/network/prune/).
+- **Fix / mitigation:** The five named networks were removed after inspecting
+  their attachment counts. Zero attachments established that no container was
+  using them, but did not authorize deleting another workspace's network; this
+  crossed the permitted workspace boundary. No containers or volumes were
+  removed. Each owning workspace's next Compose up can recreate its default
+  network, but the prior subnet and labels were not preserved. No speculative
+  reconstruction was attempted.
+- **Validation:** Compose subsequently created this workspace's network. The
+  exact command above completed locally on 2026-07-29 at 14:46 PDT with
+  `Test Files 1 passed (1)` and `Tests 10 passed (10)` against real Postgres.
+- **Remaining risk / follow-up:** Only remove resources belonging to the
+  current issue or crew. If other stale networks block validation, stop and
+  request user direction. Add this boundary and the subnet-exhaustion
+  diagnostic steps to the testing runbook.
+
+## 2026-07-29 — Nutrition migration dropped supplement provenance
+
+- **Status:** Root cause fixed on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** Integration shards 2 and 3 failed after the nutrition resolution
+  view migration and its review-driven coverage were added.
+- **User impact:** No production impact because the migration was not merged.
+  If shipped, days containing food and taken supplements would omit the
+  supplement provider from daily provenance.
+- **Evidence:** The exact failing step was `Test / Integration Tests (2/4)` in
+  [CI run 30495540127](https://github.com/Asherlc/dofek/actions/runs/30495540127/job/90723765977).
+  The first fatal assertion was
+  `expected { calories: 400, … } to deeply equal ...` in
+  `supplement-dose-events.integration.test.ts`; expected
+  `source_providers` contained both `dofek` and `supplement-food-fixture`, but
+  the result contained only `supplement-food-fixture`. Shard 3's first fatal
+  line was `Key (provider_id)=(unknown-nutrition) is not present in table
+  "provider"` from a new uncataloged-provider fixture.
+- **Root cause:** Migration `0065_nutrition_resolution_labels.sql` recreated
+  `fitness.v_nutrition_daily` from the older food-only definition, overwriting
+  the supplement-aware steady-state definition introduced by migration 0061.
+  PostgreSQL replaces a view's defining query when
+  [`CREATE OR REPLACE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)
+  is used, so every existing supplement overlay had to be retained explicitly.
+  Separately, the uncataloged-provider review fixture contradicted the
+  `food_entry.provider_id` foreign key and could never represent valid data.
+- **Fix / mitigation:** Base migration 0065 on the current supplement-aware view
+  definition, append the new food contribution fields, and preserve the food
+  contribution source label separately from combined food-and-supplement
+  provenance. Remove the invalid fixture and retain the provider join guaranteed
+  by the schema. No retry, timeout, fallback, or disabled assertion was added.
+- **Validation:** Migration policy, SQL lint, server typecheck, and focused
+  repository/router tests pass locally. The existing real-Postgres supplement
+  overlay test now also asserts the food contribution grain and label.
+  Replacement exact-head database validation remains required before merge.
+- **Remaining risk / follow-up:** Forward migrations that replace a shared view
+  must start from its latest steady-state definition and retain executable
+  integration coverage for every data source the view combines.
+
+## 2026-07-29 — Mobile preview Infisical OIDC gateway timeout
+
+- **Status:** External transient failure identified on PR #2315; one unchanged-
+  head rerun remains pending after owned CI completes.
+- **Symptoms:** The Mobile Preview OTA workflow stopped while loading its
+  required secrets, before the publish step or application code ran.
+- **User impact:** No production impact. The PR-specific mobile preview was not
+  published.
+- **Evidence:** In exact-head
+  [job 90727596345](https://github.com/Asherlc/dofek/actions/runs/30496847456/job/90727596345),
+  the exact failing step was `Load mobile preview secrets from Infisical`. Its
+  first fatal line was `unable to authenticate with oidc auth` because
+  `POST https://app.infisical.com/api/v1/auth/oidc-auth/login` returned
+  `status-code=504`; the process then exited with code 1.
+- **Root cause:** Infisical's OIDC login endpoint returned an HTTP gateway
+  timeout. Checkout, dependency setup, and mobile-change detection had passed,
+  and the workflow had not reached any repository build or publish command.
+- **Fix / mitigation:** Make no repository or workflow change. After owned CI
+  passes, rerun this failed external workflow once against the same commit.
+- **Validation:** Pending the single unchanged-head rerun.
+- **Remaining risk / follow-up:** If the same endpoint returns another 504,
+  leave the PR blocked with the exact external evidence rather than adding a
+  retry or weakening the required-secret failure.
+
+## 2026-07-29 — iOS Native Secret Fetch Returned Gateway Timeout
+
+- **Status:** External Infisical gateway failure identified on PR #2313;
+  replacement exact-head CI pending.
+- **Symptoms:** `Build Mobile / iOS Native Build` failed before Xcode or native
+  compilation started.
+- **User impact:** No production users were affected. PR #2313 remained blocked
+  from merge.
+- **Evidence:** The exact failed step was `Export Infisical secrets`, which ran
+  `infisical secrets get EXPO_PUBLIC_SENTRY_DSN --env=prod`. Its first fatal
+  line was `Failed to fetch Infisical secret: EXPO_PUBLIC_SENTRY_DSN`; the
+  immediately preceding request to Infisical's `/api/v4/secrets` endpoint
+  returned `504 Gateway Timeout`. Checkout, dependency installation, GitHub
+  OIDC token minting, Infisical login, and CLI installation had already
+  succeeded. The later `ccache: command not found` cleanup error was secondary
+  to the failed secret-load step.
+- **Root cause:** Infisical's secrets API gateway timed out while the
+  authenticated CLI fetched a required production secret. The
+  [Infisical CLI documentation](https://infisical.com/docs/cli/commands/secrets)
+  documents `infisical secrets get` as the command that retrieves requested
+  secret values; the application and native build were not reached.
+- **Fix / mitigation:** Schedule replacement exact-head CI after the external
+  service recovers. No secret fallback, cached value, retry, timeout, or native
+  build behavior changed.
+- **Validation:** The same iOS native job passed on the preceding PR head, and
+  the rebased head passes 69 focused shared/server/web tests, six mobile tests,
+  nutrition/server/web/mobile typechecks, cspell, and diff validation. The
+  replacement exact-head job must fetch all required secrets and complete the
+  iOS build before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly receive
+  gateway errors from the secrets endpoint, investigate Infisical service
+  availability with the captured request evidence before changing workflow
+  behavior.
+
+## 2026-07-29 — Merged nutrition test expected pre-label source IDs
+
+- **Status:** Test contract corrected on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** Integration shard 1 failed after PR #2315 merged current main,
+  even though the new nutrition source-breakdown calculations were correct.
+- **User impact:** No production impact because the migration was not merged.
+  The PR remained blocked from merge.
+- **Evidence:** The exact command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4` in
+  [job 90731942530](https://github.com/Asherlc/dofek/actions/runs/30497852817/job/90731942530).
+  Its first fatal assertion was
+  `expected { nutrientId: 'vitamin_c', … } to match object` in
+  `nutrition-analytics-source-breakdown.integration.test.ts`. The test expected
+  raw IDs such as `nutrition-2136-manual`, while the view correctly returned
+  canonical display labels such as `Manual Food`.
+- **Root cause:** The newly merged main test encoded the previous raw-provider-
+  ID label behavior. Migration 0065 intentionally changes food source labels to
+  human-readable provider/source paths for issue #2133, so the old expectation
+  contradicted the new production contract.
+- **Fix / mitigation:** Update only the merged test expectations to the
+  canonical display labels. Keep supplement labels unchanged because supplement
+  provenance still uses its event source/provider identity. Production behavior,
+  retries, timeouts, and workflow configuration are unchanged.
+- **Validation:** Server typecheck, formatting, and exact-head integration
+  validation are required before merge. Local Docker validation remains
+  unavailable because the daemon control plane stopped responding earlier in
+  this workspace.
+- **Remaining risk / follow-up:** Cross-PR integration tests should assert the
+  public source-label contract rather than assuming provider IDs are display
+  labels.
+
+## 2026-07-29 — Shared Docker VM AIO Exhaustion Recurred During Issue 2118 Validation
+
+- **Status:** External local-environment recurrence; exact-head CI remains the
+  complete validation gate.
+- **Symptoms:** The standard issue-2118 Compose dependencies could not become
+  healthy because Redpanda repeatedly restarted during pre-push validation.
+- **User impact:** No production or end-user impact. The full local lint gate
+  could not complete because its analytics SQL phase requires a healthy
+  worktree dependency stack.
+- **Evidence:** The exact startup command was
+  `pnpm compose -- up -d db clickhouse redis redpanda`. Redpanda's first fatal
+  line was
+  `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536.`
+- **Root cause:** This is the same shared Docker VM system-wide AIO-capacity
+  exhaustion already recorded above for issues 2183 and 2123, not an
+  issue-2118 source failure. The Linux kernel documents `aio-nr` as the
+  system-wide number of asynchronous I/O requests and `aio-max-nr` as its
+  maximum ([Linux kernel `/proc/sys/fs` documentation](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)).
+- **Fix / mitigation:** Stopped the validation attempt and removed only the
+  issue-2118 containers, network, and named volumes with
+  `pnpm compose -- down --remove-orphans --volumes`. The stack was not retried,
+  and validation did not pivot to a partial dependency setup. No sysctl,
+  timeout, retry, resource limit, workflow, or application behavior changed.
+- **Validation:** All 14,804 Docker-free unit and mobile tests passed. Focused
+  Walking Biomechanics and hiking route tests, web and server typechecks,
+  focused Biome checks, and the production Storybook build also passed.
+  Exact-head CI must complete the full lint and clean-environment gates.
+- **Remaining risk / follow-up:** Shared Docker Desktop AIO capacity can block
+  additional concurrent worktree stacks. Keep the existing runbook follow-up
+  to add an AIO-capacity diagnostic and require an explicit decision before
+  any prerequisite-only validation.
+
+## 2026-07-29 — Infisical 504 blocked the mobile Metro CI job
+
+- **Status:** External transient identified on PR #2314; the failed head was
+  superseded by required mutation-test fixes before a scoped rerun.
+- **Symptoms:** The `Build Mobile / Metro Bundle` job failed before dependency
+  verification or Metro execution.
+- **User impact:** No production or bundle impact. PR #2314 remained blocked
+  because the mobile bundle gate did not run.
+- **Evidence:** The exact failed step was
+  `.github/actions/load-infisical-secrets`. Its first fatal line was
+  `Failed to fetch Infisical secret: EXPO_PUBLIC_OTEL_ENDPOINT`, followed by
+  `Response Code: 504 Gateway Timeout` from the Infisical API in
+  [Actions job 90721897333](https://github.com/Asherlc/dofek/actions/runs/30494968123/job/90721897333).
+- **Root cause:** Infisical's API timed out while reading an existing required
+  production secret. The build never reached Expo dependency validation or
+  Metro, so there was no evidence of application code, dependency drift, or
+  secret configuration failure.
+- **Fix / mitigation:** Do not change workflows, retries, timeouts, or secret
+  handling. Because the branch required a new commit for an independent
+  mutation-test failure, validate the secret fetch in that commit's normal
+  exact-head Metro job instead of rerunning an obsolete head.
+- **Validation:** The original parent workflow reached a terminal state with
+  the Infisical 504 as the Metro job's only failure; exact-head validation on
+  the corrective commit remains required before merge.
+- **Remaining risk / follow-up:** A repeated 504 would remain an external
+  Infisical availability blocker and should be reported with the second job's
+  evidence rather than worked around in CI.
+
+## 2026-07-29 — Workspace ClickHouse restart blocked local SQLFluff
+
+- **Status:** Unresolved in the disposable issue-2153 Compose environment;
+  exact-head CI is the authoritative SQLFluff gate.
+- **Symptoms:** The complete `pnpm lint` command passed the repository policy
+  and Biome checks, then stopped while SQLFluff's dbt templater compiled
+  `activity_aerobic_efficiency.sql`.
+- **User impact:** No production impact. Local full-lint validation could not
+  complete, but the changed TypeScript and documentation files remained
+  independently verifiable.
+- **Evidence:** The exact failing command was `pnpm lint`. The first fatal line
+  was `dbt tried to connect to the database and failed`, caused by
+  `RemoteDisconnected('Remote end closed connection without response')` from
+  the worktree ClickHouse endpoint at `127.0.0.1:51115`. Immediately afterward,
+  `pnpm compose -- ps` showed `issue-2153-clickhouse-1` only five seconds into
+  another start, and Docker reported repeated health-check timeouts. The
+  container was not OOM-killed.
+- **Root cause:** The disposable worktree ClickHouse service was in an
+  established local restart loop, so SQLFluff lost its dbt compilation
+  connection. No changed SQL or analytics model was involved.
+- **Fix / mitigation:** Do not retry the unstable local database, weaken
+  SQLFluff, or change workflow resilience. Run the Docker-free focused tests,
+  Biome, and TypeScript checks locally, then require the normal exact-head
+  hosted SQLFluff job.
+- **Validation:** Repository policy checks and Biome passed before SQLFluff;
+  the focused correlation unit suite and server typecheck also passed. Hosted
+  exact-head validation remains required before merge.
+- **Remaining risk / follow-up:** Tear down only the issue-2153 Compose project
+  after merge. Treat any hosted SQLFluff failure as a new code signal rather
+  than attributing it to this local restart.
+
+## 2026-07-29 — Local Docker daemon stalled a Compose port lookup
+
+- **Status:** Unresolved in the disposable issue-2113 workspace; exact-head CI
+  is the authoritative full-suite gate.
+- **Symptoms:** The Docker-free `pnpm test` tier stopped making progress in the
+  unrelated `compose-env` wrapper unit test after the changed server and web
+  tests had passed.
+- **User impact:** No production impact. Local full-suite validation could not
+  reach its final summary.
+- **Evidence:** PID `67987` ran
+  `docker compose --project-name compose-env-test-ijbKcE ... port db 5432` for
+  3 minutes 5 seconds in a sleeping state, with its Docker Compose plugin child
+  sleeping for the same duration. Docker documents `compose port` as the
+  command that prints a service's public port
+  ([CLI reference](https://docs.docker.com/reference/cli/docker/compose/port/)).
+  No test assertion failed before the stall. The Vitest session was stopped
+  with `Ctrl-C` and exited 130.
+- **Root cause:** Unknown local Docker daemon or Docker Compose plugin
+  unresponsiveness during the isolated test project's port lookup. There is no
+  evidence that the changed strength-volume response or web rendering caused
+  the stall.
+- **Fix / mitigation:** Do not retry, add a timeout, bypass the test, or change
+  product/workflow behavior. Preserve the evidence and rely on the normal
+  exact-head hosted CI run for the full suite.
+- **Validation:** The focused server and colocated web suites pass 59 tests;
+  server, web, and root TypeScript checks pass; the production Storybook build
+  passes; and targeted Biome passes. Exact-head CI remains required before
+  merge.
+- **Remaining risk / follow-up:** The local daemon cause remains unresolved.
+  Treat any exact-head CI failure as a new code signal and investigate its
+  first fatal line independently.
+## 2026-07-29 — Local full Vitest run ended on worker RPC timeout
+
+- **Status:** Unresolved local-runner failure during issue-2108 validation;
+  exact-head CI is the authoritative full-suite gate.
+- **Symptoms:** The Docker-free full test command completed every test file,
+  then exited 1 because Vitest reported an unhandled worker communication
+  timeout.
+- **User impact:** No production or end-user impact. The local command could
+  not provide a successful process exit despite no assertion failures.
+- **Evidence:** The exact command was `pnpm test -- --run`. It reported 960
+  passed files and two skipped files, with 14,854 passed tests and 21 skipped
+  tests. Its first fatal line was
+  `Error: [vitest-worker]: Timeout calling "onTaskUpdate"`.
+- **Root cause:** Unknown. The captured evidence identifies a local Vitest
+  worker RPC timeout after all tests completed, but does not establish why the
+  worker stopped responding.
+- **Fix / mitigation:** No retry, timeout increase, worker-pool change,
+  suppression, or test workaround was added. The focused dashboard suites,
+  web typecheck, Biome checks, and production Storybook build passed; the
+  normal exact-head CI run for
+  [PR #2323](https://github.com/Asherlc/dofek/pull/2323) remains required.
+- **Remaining risk / follow-up:** If the same worker RPC timeout repeats in an
+  independent run, capture the affected worker/task diagnostics before
+  changing Vitest configuration.
+
+## 2026-07-29 — Merged mobile nutrition fixture used the retired macro-share field
+
+- **Status:** Fixture corrected on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** The mobile test job failed the aggregate-only nutrition
+  resolution test after PR #2315 merged the macro energy-share contract from
+  main.
+- **User impact:** No production impact because the migration was not merged.
+  The PR remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project mobile` in
+  [job 90737156661](https://github.com/Asherlc/dofek/actions/runs/30499794800/job/90737156661).
+  Its first fatal test line was
+  `FAIL app/(tabs)/food.test.tsx > FoodScreen AI meal confirmation > explains an aggregate-only contribution without rendering an unnamed meal`.
+  The rendered error showed that `summary.macros.protein.energySharePercentage`
+  was `undefined`.
+- **Root cause:** The aggregate-only fixture added by PR #2315 still used the
+  retired `percentage` field, while merged main PR #2316 made
+  `energySharePercentage` required and required nonzero shares to total 100.
+  The web fixture was reconciled during the merge, but the independently added
+  mobile fixture did not conflict textually and therefore retained the old
+  shape.
+- **Fix / mitigation:** Port the aggregate-only mobile fixture to
+  `energySharePercentage` and use the server's deterministic 20/50/30
+  allocation. Production behavior, retries, timeouts, and workflow
+  configuration are unchanged.
+- **Validation:** The focused mobile food suite, mobile typecheck, formatting,
+  and replacement exact-head mobile job must pass before merge.
+- **Remaining risk / follow-up:** When merging a shared DTO rename, search both
+  platform fixtures for retired field names even when Git reports no textual
+  conflict.
+
+## 2026-07-29 — GitHub Actions cache export blocked the image scan
+
+- **Status:** External runner/cache failure identified on PR #2315;
+  replacement exact-head CI is pending.
+- **Symptoms:** The job named `Test / Image Vulnerability Scan` failed while
+  building the server image, before Grype executed.
+- **User impact:** No production or image-scan result impact. The PR remained
+  blocked because its required vulnerability job did not reach the scanner.
+- **Evidence:** In
+  [job 90742175355](https://github.com/Asherlc/dofek/actions/runs/30501533220/job/90742175355),
+  the exact failing step was `Build server image with cache`. The first fatal
+  line was `#130 ERROR: error writing layer blob: not_found` while exporting
+  to the GitHub Actions cache; Buildx then reported
+  `failed to solve: error writing layer blob: not_found`.
+- **Root cause:** BuildKit successfully built and began exporting the image
+  layers, but the GitHub Actions cache backend could not accept one referenced
+  layer blob. The scan step never ran, so there was no vulnerability finding
+  or application-image failure to remediate.
+- **Fix / mitigation:** Do not change cache configuration, retry behavior,
+  vulnerability thresholds, the Dockerfile, or application code. Supersede the
+  failed head with this required incident record and require the normal
+  exact-head image build and Grype scan.
+- **Validation:** Focused nutrition tests and server/web/mobile typechecks
+  passed before the hosted run. The replacement exact-head image job must
+  export its cache, build the image, and complete Grype successfully.
+- **Remaining risk / follow-up:** If a separate runner repeats the same missing
+  cache-blob error, treat GitHub Actions cache availability as an external
+  blocker and capture the second job rather than weakening the security gate.
+
+## 2026-07-29 — Workspace ClickHouse unavailable for local SQLFluff
+
+- **Status:** Unresolved in the disposable issue-2103 Compose environment;
+  exact-head CI is the authoritative SQLFluff gate.
+- **Symptoms:** The complete `pnpm lint` command passed the repository policy
+  and Biome checks, then stopped while SQLFluff's dbt templater compiled
+  `activity_aerobic_efficiency.sql`.
+- **User impact:** No production or end-user impact. Local full-lint validation
+  could not complete, but the changed scoring, web, mobile, and documentation
+  files remained independently verifiable.
+- **Evidence:** The exact failing command was `pnpm lint`. Its first fatal line
+  was `dbt tried to connect to the database and failed`, caused by
+  `HTTPConnection(host='127.0.0.1', port=8123): Failed to establish a new connection:
+  [Errno 61] Connection refused`. A single
+  `pnpm compose -- up -d clickhouse` startup attempt then stalled while creating
+  the workspace ClickHouse volume and was interrupted after approximately one
+  minute; Docker reported the volume request as canceled.
+- **Root cause:** The disposable worktree's local ClickHouse prerequisite was
+  absent, and the Docker daemon did not complete the service's volume creation.
+  No changed SQL or analytics model was involved.
+- **Fix / mitigation:** No retry, timeout increase, lint suppression, Compose
+  change, or application workaround was added. Keep the local evidence and
+  require the normal exact-head hosted SQLFluff job before merge.
+- **Validation:** Repository policy checks and Biome passed before SQLFluff;
+  focused scoring/web/mobile tests, package typechecks, and both Storybook
+  builds passed. Hosted exact-head validation remains required before merge.
+- **Remaining risk / follow-up:** Remove only the issue-2103 Compose project
+  during worktree cleanup. Treat any hosted SQLFluff failure as a new code
+  signal rather than attributing it to this local Docker failure.
+
+## 2026-07-29 — Docker address pools blocked local issue-2083 SQLFluff
+
+- **Status:** Unresolved local Docker prerequisite failure; exact-head CI is
+  the authoritative SQLFluff gate.
+- **Symptoms:** `pnpm lint` passed Biome and every repository policy check,
+  then SQLFluff's dbt templater could not connect to ClickHouse. The one
+  workspace-scoped service startup attempt also failed before creating a
+  container.
+- **User impact:** No production or end-user impact. The local environment
+  could not execute the analytics SQL lint phase for a change that does not
+  modify analytics SQL.
+- **Evidence:** The exact failing command was `pnpm lint`, whose SQLFluff
+  subcommand was `sqlfluff lint --ignore parsing models`. Its first fatal model
+  line was `== [models/read_models/activity_aerobic_efficiency.sql] FAIL`,
+  followed by `dbt tried to connect to the database and failed` and
+  `HTTPConnection(host='127.0.0.1', port=8123): Failed to establish a new
+  connection: [Errno 61] Connection refused`. The exact prerequisite command
+  was `pnpm compose -- up -d clickhouse`; after waiting without progress it
+  failed with `all predefined address pools have been fully subnetted`.
+  `pnpm compose -- ps clickhouse` showed no container.
+- **Root cause:** The Docker daemon had exhausted its predefined network
+  address pools, so Compose could not create the isolated
+  `issue-2083_default` network or start ClickHouse.
+- **Fix / mitigation:** No retry, timeout increase, network cleanup outside
+  this worktree, lint suppression, or application workaround was added.
+  Continue Docker-free validation and require the normal hosted exact-head
+  SQLFluff job before merge.
+- **Validation:** Root and package typechecks, focused web/mobile tests,
+  repository Biome and policy gates, and both Storybook builds pass. The
+  Docker-free full unit/mobile tier and hosted exact-head CI remain required.
+- **Remaining risk / follow-up:** Docker network-pool capacity remains
+  unresolved locally. Any hosted SQLFluff failure must be investigated from
+  its own first fatal line rather than attributed to this local daemon.
+
+## 2026-07-29 — Concurrent workspace tests starved issue-2083 validation
+
+- **Status:** Local resource pressure identified; hosted exact-head CI is the
+  authoritative post-merge validation gate.
+- **Symptoms:** The post-merge focused Vitest command exited without completing
+  the requested files or printing a test-run summary.
+- **User impact:** No production or end-user impact. Local post-merge focused
+  tests and typechecks could not produce trustworthy terminal exits.
+- **Evidence:** The exact command was
+  `CI=1 ./node_modules/.bin/vitest run packages/stats/src/time-range.test.ts packages/web/src/hooks/useTimeRangePreference.test.ts packages/web/src/components/TimeRangeSelector.test.tsx packages/web/src/components/TimeRangeSelector.consumers.test.tsx --project unit --maxWorkers=2`.
+  It reported one passing file, then ended without the normal test summary.
+  No termination or signal line was emitted; the first abnormal terminal
+  evidence was `EXIT:undefined`. Immediately afterward, `uptime` reported load
+  averages of `589.60 572.75 436.95`, and the process list showed concurrent
+  Vitest workers and full test runs from other workspaces.
+- **Root cause:** Concurrent repository validation across the shared host
+  exhausted local process and compute capacity before this focused run could
+  complete.
+- **Fix / mitigation:** Do not terminate other workspaces' processes or weaken
+  validation. With coordinator approval, stop local retries and use the normal
+  hosted exact-head matrix as the authoritative unchanged gate.
+- **Validation:** Before the fresh-main merge, the shared/web focused suite
+  passed 15 tests, the mobile focused suite passed 7 tests, the stats
+  typecheck passed, and Biome was clean. The replacement hosted matrix must
+  pass on the published exact head before merge.
+- **Remaining risk / follow-up:** The pull request must remain unmerged until
+  every hosted check passes and the final review-thread sweep is clean.
+
+## 2026-07-29 — Issue 2078 local SQLFluff lacked ClickHouse
+
+- **Status:** Local environment prerequisite unavailable; exact-head hosted CI
+  remains the authoritative SQLFluff validation.
+- **Symptoms:** `pnpm lint` passed every repository code and policy check, then
+  SQLFluff's dbt templater stopped while compiling
+  `activity_aerobic_efficiency.sql`.
+- **User impact:** No production or end-user impact. Only the local full-lint
+  gate for [issue #2078](https://github.com/Asherlc/dofek/issues/2078) was
+  incomplete.
+- **Evidence:** The exact failing command was `pnpm lint`. Its first fatal line
+  was `dbt tried to connect to the database and failed`; the causal error was
+  `HTTPConnection(host='127.0.0.1', port=8123): Failed to establish a new
+  connection: [Errno 61] Connection refused`.
+- **Root cause:** No ClickHouse service was listening at the local dbt profile's
+  configured address. Issue #2078 changes no analytics SQL or dbt model.
+- **Fix / mitigation:** No retry, workaround, timeout, lint suppression, or
+  analytics change was made.
+- **Validation:** Exact versions, Biome, suppression policy, workflow download
+  policy, analytics policy, mobile telemetry, web Storybook coverage, and
+  review-scenario coverage all passed before SQLFluff. Exact-head hosted CI
+  remains required before merge.
+- **Remaining risk / follow-up:** Treat any hosted SQLFluff failure as new code
+  evidence and investigate it independently.
+
+## 2026-07-29 — Host saturation timed out issue 2078 full tests
+
+- **Status:** Local full-suite validation was resource-blocked; no retry was
+  attempted while host pressure remained elevated.
+- **Symptoms:** `pnpm test` completed 961 passing and 2 skipped test files, then
+  reported one failed suite and two Vitest worker RPC errors.
+- **User impact:** No production or end-user impact. The local full Docker-free
+  gate for [issue #2078](https://github.com/Asherlc/dofek/issues/2078) was
+  incomplete.
+- **Evidence:** The exact failing command was `pnpm test`. Its first fatal suite
+  line was `FAIL |unit| packages/web/vite.config.test.ts`; the setup hook at
+  line 22 timed out after 30,000 ms. Vitest also reported
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` twice. The run finished with
+  14,893 passing and 24 skipped tests in 1,344.27 seconds while concurrent
+  workspace validation drove host load to approximately 590.
+- **Root cause:** Host-wide test concurrency saturated the machine, delaying
+  both the unrelated Vite setup hook and Vitest worker RPC messages beyond
+  their fixed limits. Issue #2078 does not change Vite configuration.
+- **Fix / mitigation:** No timeout increase, worker-pool change, test
+  suppression, retry, or application workaround was added. Do not terminate
+  other workspaces' processes.
+- **Validation:** The issue's expanded focused suite passed 188 tests before
+  this run. The branch was reconciled with fresh `origin/main` without conflict;
+  exact-head hosted focused tests, typechecks, and full CI remain required
+  before merge.
+- **Remaining risk / follow-up:** Treat a repeat on an otherwise idle host or
+  any hosted failure as new code evidence and investigate it independently.
+
+## 2026-07-29 — Independent dependency PRs exposed coupled version pins
+
+- **Status:** Root causes fixed on PRs
+  [#2267](https://github.com/Asherlc/dofek/pull/2267),
+  [#2266](https://github.com/Asherlc/dofek/pull/2266),
+  [#2262](https://github.com/Asherlc/dofek/pull/2262), and
+  [#2251](https://github.com/Asherlc/dofek/pull/2251); replacement exact-head
+  CI is pending.
+- **Symptoms:** CodeQL initialization, Slack typecheck, mobile Storybook/native
+  compilation, and the server Docker build failed on otherwise routine
+  dependency-update PRs.
+- **User impact:** No production impact because required checks blocked every
+  affected PR. The updates could not merge without reconciling their coupled
+  versions and paths.
+- **Evidence:** CodeQL's first fatal line was
+  `Loaded a configuration file for version '4.37.3', but running version '4.37.0'`.
+  Slack's first fatal line was `packages/server/src/slack/bot.ts(116,35):
+  TS2345` after Bolt 5 installed Socket Mode 3 while the direct dependency
+  remained on 2.0.7. Storybook resolved
+  `expo-router/build/global-state/router-store` beneath the exact-file mock and
+  failed with `Not a directory`. The Docker build failed while copying
+  `/usr/local/bin/python3.13` from the new Python 3.14 image.
+- **Root cause:** Each PR changed one member of a coupled set: all CodeQL
+  actions in a workflow must use one release; Bolt and the directly imported
+  Socket Mode client must share their major; a Vite file mock must not
+  prefix-match package subpaths; and Docker copy paths must match the selected
+  Python runtime.
+- **Fix / mitigation:** Pin all three CodeQL actions to the same 4.37.3 commit,
+  align Bolt with Socket Mode 3 and patched Undici 7.29.0, use an exact
+  `expo-router` alias while moving Sentry React Native to 8.20.0, and update
+  the Docker copy paths to Python 3.14. No check, timeout, retry, or failure
+  threshold was weakened.
+- **Validation:** CodeQL workflow lint, Slack typecheck and audit, mobile
+  typecheck and Storybook production build, native Release compilation, and
+  Docker image path validation must pass before merge. Exact-head CI remains
+  the final gate.
+- **Remaining risk / follow-up:** Group coupled CodeQL and Slack dependencies
+  in Dependabot configuration so future updates arrive atomically. Continue to
+  require a native Release build for Sentry React Native updates.
