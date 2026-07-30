@@ -131,6 +131,7 @@ describe("MonthlyReportRepository", () => {
         minimumObservedDays: 1,
       }),
     );
+    expect(result.decisionSupport).toBeNull();
   });
 
   it("binds the requested user and month window", async () => {
@@ -152,6 +153,9 @@ describe("MonthlyReportRepository", () => {
     expect(result.current?.trainingHoursTrend).toBeNull();
     expect(result.current?.avgSleepTrend).toBeNull();
     expect(result.history).toEqual([]);
+    expect(result.decisionSupport?.whatChanged).toEqual([
+      "This is the first observed month, so month-over-month changes are not available yet.",
+    ]);
   });
 
   it("returns multiple months with trends computed correctly", async () => {

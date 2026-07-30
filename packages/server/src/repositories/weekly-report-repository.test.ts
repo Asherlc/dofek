@@ -165,6 +165,7 @@ describe("WeeklyReportRepository", () => {
         minimumObservedDays: 1,
       }),
     );
+    expect(result.decisionSupport).toBeNull();
   });
 
   it("returns single week as current with no history", async () => {
@@ -186,6 +187,7 @@ describe("WeeklyReportRepository", () => {
     expect(result.history).toHaveLength(2);
     expect(result.history[0]?.weekStart).toBe("2026-03-09");
     expect(result.history[1]?.weekStart).toBe("2026-03-16");
+    expect(result.decisionSupport?.whatChanged).toHaveLength(2);
   });
 
   it("trims to the requested number of weeks", async () => {

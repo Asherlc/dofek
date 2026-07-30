@@ -199,30 +199,43 @@ describe("nutritionAnalyticsRouter", () => {
 
   describe("adaptiveTdee", () => {
     it("returns null TDEE when insufficient data", async () => {
-      const rows = [{ date: "2024-01-15", calories_in: 2200, weight_kg: 75 }];
+      const rows = [
+        {
+          date: new Date().toISOString().slice(0, 10),
+          calories_in: 2200,
+          resolution_status: "available",
+          excluded_source_labels: [],
+          weight_kg: 75,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
       expect(result.estimatedTdee).toBeNull();
-      expect(result.confidence).toBe(0);
+      expect(result.status).toBe("unavailable");
+      expect(result.evidence.acceptedWindows).toBe(0);
     });
 
     it("estimates TDEE from calorie and weight data", async () => {
       // Create 35 days of data (enough for 28-day window)
       const rows = [];
       for (let i = 0; i < 35; i++) {
-        const date = new Date("2024-01-01");
-        date.setDate(date.getDate() + i);
+        const date = new Date();
+        date.setDate(date.getDate() - (34 - i));
         rows.push({
           date: date.toISOString().slice(0, 10),
           calories_in: 2200,
+          resolution_status: "available",
+          excluded_source_labels: [],
           weight_kg: i < 10 || i > 25 ? 75 - i * 0.01 : null,
         });
       }
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
-      expect(result.dailyData).toHaveLength(35);
+      expect(result.dailyData).toHaveLength(90);
+      expect(result.status).toBe("available");
+      expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
     });
   });
 

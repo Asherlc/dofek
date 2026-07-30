@@ -96,6 +96,7 @@ describe("recoveryRouter", () => {
           light_minutes: durationMinutes,
           awake_minutes: 0,
           efficiency_pct: null,
+          staging_available: Boolean(row.staging_available ?? true),
         };
       }
 
@@ -123,6 +124,7 @@ describe("recoveryRouter", () => {
         light_minutes: lightMinutes,
         awake_minutes: awakeMinutes,
         efficiency_pct: row.efficiency ?? row.efficiency_pct ?? null,
+        staging_available: Boolean(row.staging_available ?? true),
       };
     });
   }
@@ -802,6 +804,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -826,6 +829,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: 60,
           good_recovery: true,
           yesterday_load: 50,
+          staging_available: false,
         });
       }
       const hrvRows = rows.map((row) => {
@@ -852,6 +856,7 @@ describe("sleepNeedRouter", () => {
             light_minutes: row.duration_minutes,
             awake_minutes: 0,
             efficiency_pct: null,
+            staging_available: false,
           })),
         ]),
       });
@@ -891,6 +896,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: 55,
           good_recovery: true,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -919,6 +925,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -942,6 +949,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({

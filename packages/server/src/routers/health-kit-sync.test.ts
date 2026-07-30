@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -2935,6 +2936,61 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushSleepSamples - mutation killers", () => {
+    async function getStoredSleepStageParams(stageValue?: string): Promise<unknown[]> {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const samples: SleepSample[] = [
+        {
+          uuid: "inbed-quality",
+          startDate: "2024-01-15T22:00:00Z",
+          endDate: "2024-01-16T06:00:00Z",
+          value: "inBed",
+          sourceName: "Apple Watch",
+        },
+      ];
+      if (stageValue) {
+        samples.push({
+          uuid: `stage-${stageValue}`,
+          startDate: "2024-01-15T22:00:00Z",
+          endDate: "2024-01-15T23:00:00Z",
+          value: stageValue,
+          sourceName: "Apple Watch",
+        });
+      }
+
+      await caller.pushSleepSamples({ samples });
+      const sleepInsert = execute.mock.calls.find((call) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
+      });
+      if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+      return new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+    }
+
+    it.each([
+      ["asleepCore", [0, 0, 60, 0, true]],
+      ["asleepDeep", [60, 0, 0, 0, true]],
+      ["asleepREM", [0, 60, 0, 0, true]],
+    ] as const)("stores %s as an available canonical stage bundle", async (stage, expected) => {
+      expect(await getStoredSleepStageParams(stage)).toEqual(expected);
+    });
+
+    it("does not treat a generic asleep interval as a canonical stage bundle", async () => {
+      expect(await getStoredSleepStageParams("asleep")).toEqual([null, null, null, null, false]);
+    });
+
+    it("preserves an awake-only measurement without claiming a stage bundle", async () => {
+      expect(await getStoredSleepStageParams("awake")).toEqual([null, null, null, 60, false]);
+    });
+
+    it("stores missing stages as null when no stage samples exist", async () => {
+      expect(await getStoredSleepStageParams()).toEqual([null, null, null, null, false]);
+    });
+
     it("filters inBed from stage samples (kills filter identity/true mutations on stageSamples)", async () => {
       const execute = vi.fn().mockImplementation((...args: unknown[]) => {
         const serialized = JSON.stringify(args[0]);
@@ -3017,7 +3073,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain(",480,");
     });
 
-    it("handles asleepUnspecified as light sleep (kills break removal and += to -= mutations)", async () => {
+    it("keeps generic asleep intervals out of the canonical stage bundle", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -3050,8 +3106,8 @@ describe("healthKitSyncRouter", () => {
       });
       expect(sleepInsert).toBeDefined();
       const serialized = JSON.stringify(sleepInsert?.[0]);
-      // light_minutes should be 120 (from asleepUnspecified), not 0 or -120
-      expect(serialized).toContain(",120,");
+      expect(serialized).toContain("staging_available");
+      expect(serialized).not.toContain(",120,");
     });
 
     it("handles inBed-only session with no stages (kills stagesBySource.size > 0 ArrayDeclaration mutation)", async () => {
@@ -3078,11 +3134,9 @@ describe("healthKitSyncRouter", () => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
-      expect(sleepInsert).toBeDefined();
-      const serialized = JSON.stringify(sleepInsert?.[0]);
-      // All stage minutes should be 0
-      // The pattern should be deep=0, rem=0, light=0, awake=0
-      expect(serialized).toContain(",0,");
+      if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+      const stageParams = new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+      expect(stageParams).toEqual([null, null, null, null, false]);
     });
 
     it("filters out stages outside the inBed session (kills overlap check mutations >= to >, <= to <, && to ||)", async () => {

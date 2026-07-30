@@ -610,6 +610,7 @@ function createDailySleepTableSql(targetSchema: string): string {
     rem_minutes Nullable(Int32),
     light_minutes Nullable(Int32),
     awake_minutes Nullable(Int32),
+    staging_available Bool,
     is_deleted UInt8,
     refresh_version UInt64
   )

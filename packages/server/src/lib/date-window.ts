@@ -25,6 +25,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "calendar.calendarData": { defaultDays: 365, routerFile: "calendar.ts", input: "days" },
   "correlation.compute": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "correlation.computeV2": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
+  "correlation.observations": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "cyclingAdvanced.activityVariability": {
     defaultDays: 90,
     routerFile: "cycling-advanced.ts",
@@ -90,6 +91,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "hiking.walkingBiomechanics": { defaultDays: 90, routerFile: "hiking.ts", input: "days" },
   "insights.compute": { defaultDays: 90, routerFile: "insights.ts", input: "dateRange" },
   "journal.entries": { defaultDays: 30, routerFile: "journal.ts", input: "days" },
+  "journal.trends": { defaultDays: 30, routerFile: "journal.ts", input: "dateRange" },
   "nutritionAnalytics.adaptiveTdee": {
     defaultDays: 90,
     routerFile: "nutrition-analytics.ts",

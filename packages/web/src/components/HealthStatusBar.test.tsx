@@ -15,6 +15,7 @@ const serverMetric = {
   statusToken: "near_baseline" as const,
   statusColor: "positive" as const,
   statusLabel: "Near baseline",
+  evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
   explanation: "Skin Temperature is close to your usual range.",
 };
 
@@ -77,7 +78,11 @@ describe("HealthStatusBar", () => {
     expect(container.querySelector(".font-semibold")?.textContent).toContain("94.0°F");
     expect(screen.getByText(/baseline 94.0°F/)).toBeDefined();
     expect(screen.getByText(/Near baseline/)).toBeDefined();
-    expect(screen.getByTitle("Skin Temperature is close to your usual range.")).toBeDefined();
+    expect(
+      screen.getByText("Within your usual range: less than 1 standard deviation from baseline"),
+    ).toBeDefined();
+    expect(screen.getByText("Skin Temperature is close to your usual range.")).toBeDefined();
+    expect(screen.getByLabelText("Near baseline status").textContent).toBe("✓");
   });
 
   it("does not recalculate or rename the status returned by the server", () => {
@@ -100,7 +105,7 @@ describe("HealthStatusBar", () => {
     );
 
     expect(screen.getByText(/Server-selected label/)).toBeDefined();
-    expect(screen.getByTitle("Server-selected explanation.")).toBeDefined();
+    expect(screen.getByText("Server-selected explanation.")).toBeDefined();
     expect(screen.queryByText(/abnormal/i)).toBeNull();
   });
 
@@ -118,6 +123,7 @@ describe("HealthStatusBar", () => {
             statusToken: "insufficient_data",
             statusColor: "muted",
             statusLabel: "Not enough data",
+            evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
             explanation: "Not enough varied data yet to compare this value with your usual range.",
           },
         ]}
@@ -125,6 +131,22 @@ describe("HealthStatusBar", () => {
     );
 
     expect(screen.getByText(/Not enough data/)).toBeDefined();
+  });
+
+  it.each([
+    { statusToken: "insufficient_data" as const, statusLabel: "Not enough data", symbol: "?" },
+    { statusToken: "near_baseline" as const, statusLabel: "Near baseline", symbol: "✓" },
+    { statusToken: "moving_as_intended" as const, statusLabel: "Moving as intended", symbol: "✓" },
+    { statusToken: "notable_deviation" as const, statusLabel: "Notable deviation", symbol: "!" },
+    { statusToken: "far_from_baseline" as const, statusLabel: "Far from baseline", symbol: "×" },
+  ])("renders $statusToken as the non-color symbol $symbol", ({
+    statusToken,
+    statusLabel,
+    symbol,
+  }) => {
+    render(<HealthStatusBar metrics={[{ ...serverMetric, statusToken, statusLabel }]} />);
+
+    expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
   });
 
   it("renders a distinct empty state when no metrics are available", () => {

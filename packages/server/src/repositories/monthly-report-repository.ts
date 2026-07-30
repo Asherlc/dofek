@@ -5,6 +5,10 @@ import {
 } from "../contracts/report-empty-state.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildMonthlyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -23,17 +27,14 @@ export interface MonthSummary {
   avgSleepTrend: number | null;
 }
 
-export type MonthlyReportResult =
-  | {
-      current: MonthSummary;
-      history: MonthSummary[];
-    }
-  | {
-      current: null;
-      history: [];
-      /** Canonical readiness and value-free preview when no report exists. */
-      emptyState: MonthlyReportEmptyState;
-    };
+export interface MonthlyReportResult {
+  current: MonthSummary | null;
+  history: MonthSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
+  /** Canonical readiness and value-free preview when no report exists. */
+  emptyState: MonthlyReportEmptyState;
+}
 
 // ---------------------------------------------------------------------------
 // Zod schema for raw DB rows
@@ -225,14 +226,8 @@ export class MonthlyReportRepository {
     const current = summaries.length > 0 ? (summaries[summaries.length - 1] ?? null) : null;
     const history = summaries.slice(0, -1);
 
-    if (current === null) {
-      return {
-        current: null,
-        history: [],
-        emptyState: createReportEmptyState("monthly"),
-      };
-    }
-
-    return { current, history };
+    const emptyState = createReportEmptyState("monthly");
+    const decisionSupport = current ? buildMonthlyDecisionSynthesis(current, history) : null;
+    return { current, history, decisionSupport, emptyState };
   }
 }

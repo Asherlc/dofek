@@ -1,3 +1,4 @@
+import { type ProviderProvenance, resolveProviderProvenance } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -22,6 +23,7 @@ export interface BehaviorImpactRow {
   avgReadinessNo: number;
   yesCount: number;
   noCount: number;
+  providerIds: string[];
 }
 
 /** A descriptive association between a boolean journal behavior and next-day readiness. */
@@ -52,6 +54,12 @@ export class BehaviorImpact {
     return this.#row.noCount;
   }
 
+  get sources(): ProviderProvenance[] {
+    return [...new Set(this.#row.providerIds)]
+      .sort((left, right) => left.localeCompare(right))
+      .map(resolveProviderProvenance);
+  }
+
   /** Relative difference in mean next-day readiness when behavior=yes versus no. */
   get impactPercent(): number {
     if (this.#row.avgReadinessNo === 0) return 0;
@@ -70,6 +78,7 @@ export class BehaviorImpact {
       impactPercent: this.impactPercent,
       yesCount: this.yesCount,
       noCount: this.noCount,
+      sources: this.sources,
     };
   }
 }
@@ -86,6 +95,7 @@ const impactDbSchema = z.object({
   avg_readiness_no: z.coerce.number(),
   yes_count: z.coerce.number(),
   no_count: z.coerce.number(),
+  provider_ids: z.array(z.string()).min(1),
 });
 
 // ---------------------------------------------------------------------------
@@ -129,6 +139,7 @@ export class BehaviorImpactRepository {
             SELECT
               je.date,
               je.question_slug,
+              je.provider_id,
               jq.display_name,
               jq.category,
               CASE
@@ -166,6 +177,7 @@ export class BehaviorImpactRepository {
           joined AS (
             SELECT
               be.question_slug,
+              be.provider_id,
               be.display_name,
               be.category,
               be.answer_bool,
@@ -182,7 +194,8 @@ export class BehaviorImpactRepository {
             AVG(CASE WHEN answer_bool = true THEN readiness_score END) AS avg_readiness_yes,
             AVG(CASE WHEN answer_bool = false THEN readiness_score END) AS avg_readiness_no,
             COUNT(CASE WHEN answer_bool = true THEN 1 END)::int AS yes_count,
-            COUNT(CASE WHEN answer_bool = false THEN 1 END)::int AS no_count
+            COUNT(CASE WHEN answer_bool = false THEN 1 END)::int AS no_count,
+            ARRAY_AGG(DISTINCT provider_id ORDER BY provider_id) AS provider_ids
           FROM joined
           GROUP BY question_slug, display_name, category
           HAVING COUNT(CASE WHEN answer_bool = true THEN 1 END) >= 5
@@ -201,6 +214,7 @@ export class BehaviorImpactRepository {
           avgReadinessNo: Number(row.avg_readiness_no),
           yesCount: Number(row.yes_count),
           noCount: Number(row.no_count),
+          providerIds: row.provider_ids,
         }),
     );
   }

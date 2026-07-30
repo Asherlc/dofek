@@ -9,6 +9,7 @@ export interface ParsedEightSleepSession {
   remMinutes: number;
   lightMinutes: number;
   awakeMinutes: number;
+  stagingAvailable: true;
   sleepType: null;
   isNap: boolean;
 }
@@ -40,6 +41,7 @@ export function parseEightSleepTrendDay(day: EightSleepTrendDay): ParsedEightSle
     remMinutes: secondsToMinutes(day.remDuration),
     lightMinutes: secondsToMinutes(day.lightDuration),
     awakeMinutes: secondsToMinutes(day.presenceDuration - day.sleepDuration),
+    stagingAvailable: true,
     sleepType: null,
     isNap: false,
   };

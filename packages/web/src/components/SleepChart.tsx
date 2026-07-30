@@ -31,6 +31,7 @@ interface SleepData {
   provider_id?: string | null;
   source_name?: string | null;
   source_providers?: string[];
+  staging_available: boolean;
 }
 
 interface SleepChartProps {
@@ -52,12 +53,17 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         if (!firstParam) return "";
         const date = formatDateMedium(firstParam.value[0]);
         let total = 0;
-        const lines = params.map((p) => {
-          const val = p.value[1] ?? 0;
+        const lines = params.flatMap((p) => {
+          const val = p.value[1];
+          if (val == null) return [];
           total += val;
-          return `<span style="color:${escapeTooltipHtml(p.color)}">\u25CF</span> ${escapeTooltipHtml(p.seriesName)}: ${val}m`;
+          return [
+            `<span style="color:${escapeTooltipHtml(p.color)}">\u25CF</span> ${escapeTooltipHtml(p.seriesName)}: ${val}m`,
+          ];
         });
         const sourceRow = sourceByStartedAt.get(String(firstParam.value[0]));
+        const displayedDuration =
+          sourceRow?.staging_available === false ? (sourceRow.duration_minutes ?? 0) : total;
         const timingLine = sourceRow
           ? (() => {
               const context = {
@@ -88,7 +94,12 @@ export function SleepChart({ data, loading }: SleepChartProps) {
               }</span>`;
             })()
           : "";
-        return `<strong>${escapeTooltipHtml(date)}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}${timingLine}${sourceLine}`;
+        const qualityLine =
+          sourceRow?.staging_available === false
+            ? '<br/><span style="color:#d97706">Partial record: sleep stages were not reported</span>'
+            : "";
+        const stageLines = lines.length > 0 ? `<br/>${lines.join("<br/>")}` : "";
+        return `<strong>${escapeTooltipHtml(date)}</strong> (${Math.floor(displayedDuration / 60)}h ${displayedDuration % 60}m)${stageLines}${timingLine}${sourceLine}${qualityLine}`;
       },
     }),
     xAxis: dofekAxis.time(),

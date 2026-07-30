@@ -6,6 +6,10 @@ import {
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildWeeklyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,19 +36,16 @@ export interface WeekSummary {
   avgHrv: number | null;
 }
 
-export type WeeklyReportResult =
-  | {
-      /** Current week's summary */
-      current: WeekSummary;
-      /** Previous weeks for comparison */
-      history: WeekSummary[];
-    }
-  | {
-      current: null;
-      history: [];
-      /** Canonical readiness and value-free preview when no report exists. */
-      emptyState: WeeklyReportEmptyState;
-    };
+export interface WeeklyReportResult {
+  /** Current week's summary */
+  current: WeekSummary | null;
+  /** Previous weeks for comparison */
+  history: WeekSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
+  /** Canonical readiness and value-free preview when no report exists. */
+  emptyState: WeeklyReportEmptyState;
+}
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -254,14 +255,8 @@ export class WeeklyReportRepository {
     const current = cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
     const history = cutoffWeeks.slice(0, -1);
 
-    if (current === null) {
-      return {
-        current: null,
-        history: [],
-        emptyState: createReportEmptyState("weekly"),
-      };
-    }
-
-    return { current, history };
+    const emptyState = createReportEmptyState("weekly");
+    const decisionSupport = current ? buildWeeklyDecisionSynthesis(current, history) : null;
+    return { current, history, decisionSupport, emptyState };
   }
 }

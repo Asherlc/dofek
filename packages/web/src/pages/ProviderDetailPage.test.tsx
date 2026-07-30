@@ -407,8 +407,42 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Sync history refresh failed")).toBeTruthy();
-    expect(screen.getByText("activities")).toBeTruthy();
-    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Activities data synced" })).toBeTruthy();
+    expect(screen.getByText("12 records")).toBeTruthy();
+  });
+
+  it("explains an expired provider authorization before exposing diagnostics", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: false,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+    mockDetailLogs.data = [
+      {
+        id: "raw-log-123",
+        syncedAt: "2026-07-24T12:00:00.000Z",
+        dataType: "strength",
+        status: "error",
+        recordCount: null,
+        durationMs: 1250,
+        errorMessage: "OAuth token refresh returned invalid_grant",
+        authFailureReason: "refresh_token_revoked",
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Authorization expired" })).toBeTruthy();
+    expect(screen.getByText("Reconnect WHOOP to resume Strength data.")).toBeTruthy();
+    expect(screen.getByText("Diagnostics").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("shows 'Import only' instead of 'Connected' for import-only providers", async () => {

@@ -9,6 +9,7 @@ import { Card } from "../components/Card";
 import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { HealthReportShareButton } from "../components/HealthReportShareButton";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { ReportDecisionSynthesis } from "../components/ReportDecisionSynthesis";
 import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors, spacing } from "../theme";
@@ -35,7 +36,7 @@ export default function ReportsScreen() {
       <View style={styles.intro}>
         <Text style={styles.title}>Health Reports</Text>
         <Text style={styles.subtitle}>
-          Create shareable snapshots from the health data calculated by Dofek.
+          See what changed, what the data suggests, and what to compare next.
         </Text>
       </View>
 
@@ -53,33 +54,38 @@ export default function ReportsScreen() {
         ) : weeklyReport.isLoading ? (
           <QueryStatePanel variant="loading" />
         ) : weeklyReport.data?.current ? (
-          <Card>
-            <Text style={styles.periodLabel}>
-              Week of {formatDateShort(weeklyReport.data.current.weekStart)}
-            </Text>
-            <View style={styles.metricGrid}>
-              <ReportMetric
-                label="Training"
-                value={formatDurationMinutes(weeklyReport.data.current.trainingHours * 60)}
-              />
-              <ReportMetric
-                label="Activities"
-                value={`${weeklyReport.data.current.activityCount}`}
-              />
-              <ReportMetric
-                label="Avg nightly sleep"
-                value={
-                  weeklyReport.data.current.avgSleepMinutes > 0
-                    ? formatDurationMinutes(weeklyReport.data.current.avgSleepMinutes)
-                    : "Not tracked"
-                }
-              />
-              <ReportMetric
-                label="Average Heart Rate Variability (HRV)"
-                value={formatHRV(weeklyReport.data.current.avgHrv)}
-              />
-            </View>
-          </Card>
+          <>
+            {weeklyReport.data.decisionSupport ? (
+              <ReportDecisionSynthesis synthesis={weeklyReport.data.decisionSupport} />
+            ) : null}
+            <Card>
+              <Text style={styles.periodLabel}>
+                Week of {formatDateShort(weeklyReport.data.current.weekStart)}
+              </Text>
+              <View style={styles.metricGrid}>
+                <ReportMetric
+                  label="Training"
+                  value={formatDurationMinutes(weeklyReport.data.current.trainingHours * 60)}
+                />
+                <ReportMetric
+                  label="Activities"
+                  value={`${weeklyReport.data.current.activityCount}`}
+                />
+                <ReportMetric
+                  label="Avg nightly sleep"
+                  value={
+                    weeklyReport.data.current.avgSleepMinutes > 0
+                      ? formatDurationMinutes(weeklyReport.data.current.avgSleepMinutes)
+                      : "Not tracked"
+                  }
+                />
+                <ReportMetric
+                  label="Average Heart Rate Variability (HRV)"
+                  value={formatHRV(weeklyReport.data.current.avgHrv)}
+                />
+              </View>
+            </Card>
+          </>
         ) : weeklyReport.data ? (
           <EmptyStatePreview content={weeklyReport.data.emptyState} />
         ) : (
@@ -99,29 +105,34 @@ export default function ReportsScreen() {
         ) : monthlyReport.isLoading ? (
           <QueryStatePanel variant="loading" />
         ) : monthlyReport.data?.current ? (
-          <Card>
-            <Text style={styles.periodLabel}>
-              {formatMonthYear(monthlyReport.data.current.monthStart)}
-            </Text>
-            <View style={styles.metricGrid}>
-              <ReportMetric
-                label="Training"
-                value={formatDurationMinutes(monthlyReport.data.current.trainingHours * 60)}
-              />
-              <ReportMetric
-                label="Activities"
-                value={`${monthlyReport.data.current.activityCount}`}
-              />
-              <ReportMetric
-                label="Avg sleep"
-                value={formatDurationMinutes(monthlyReport.data.current.avgSleepMinutes)}
-              />
-              <ReportMetric
-                label="Average Heart Rate Variability (HRV)"
-                value={formatHRV(monthlyReport.data.current.avgHrv)}
-              />
-            </View>
-          </Card>
+          <>
+            {monthlyReport.data.decisionSupport ? (
+              <ReportDecisionSynthesis synthesis={monthlyReport.data.decisionSupport} />
+            ) : null}
+            <Card>
+              <Text style={styles.periodLabel}>
+                {formatMonthYear(monthlyReport.data.current.monthStart)}
+              </Text>
+              <View style={styles.metricGrid}>
+                <ReportMetric
+                  label="Training"
+                  value={formatDurationMinutes(monthlyReport.data.current.trainingHours * 60)}
+                />
+                <ReportMetric
+                  label="Activities"
+                  value={`${monthlyReport.data.current.activityCount}`}
+                />
+                <ReportMetric
+                  label="Avg sleep"
+                  value={formatDurationMinutes(monthlyReport.data.current.avgSleepMinutes)}
+                />
+                <ReportMetric
+                  label="Average Heart Rate Variability (HRV)"
+                  value={formatHRV(monthlyReport.data.current.avgHrv)}
+                />
+              </View>
+            </Card>
+          </>
         ) : monthlyReport.data ? (
           <EmptyStatePreview content={monthlyReport.data.emptyState} />
         ) : (

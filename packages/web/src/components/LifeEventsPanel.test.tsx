@@ -171,6 +171,41 @@ describe("LifeEventsPanel", () => {
     expect(formActions.classList).toContain("sm:flex-row");
   });
 
+  it("stacks selected-event analysis controls on narrow screens", () => {
+    mocks.analyzeUseQuery.mockReturnValue({ data: analysisData, error: null, isLoading: false });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Started creatine/i }));
+
+    const eventHeading = screen.getByRole("heading", { name: /Started creatine/i });
+    const eventMetadata = eventHeading.parentElement;
+    const analysisHeader = eventMetadata?.parentElement;
+    const windowChoices = screen.getByRole("button", { name: "14d" }).parentElement;
+    const windowControls = windowChoices?.parentElement;
+    const deleteButton = screen.getByRole("button", { name: "Delete" });
+    const analysisControls = windowControls?.parentElement;
+
+    if (
+      !(eventMetadata instanceof HTMLElement) ||
+      !(analysisHeader instanceof HTMLElement) ||
+      !(windowChoices instanceof HTMLElement) ||
+      !(windowControls instanceof HTMLElement) ||
+      !(analysisControls instanceof HTMLElement)
+    ) {
+      throw new Error("Expected responsive selected-event analysis controls");
+    }
+
+    expect(analysisHeader.classList).toContain("flex-col");
+    expect(analysisHeader.classList).toContain("sm:flex-row");
+    expect(eventMetadata.classList).toContain("min-w-0");
+    expect(analysisControls.classList).toContain("flex-col");
+    expect(analysisControls.classList).toContain("sm:flex-row");
+    expect(windowChoices.classList).toContain("grid-cols-4");
+    expect(windowChoices.classList).toContain("sm:flex");
+    expect(deleteButton.classList).toContain("w-full");
+    expect(deleteButton.classList).toContain("sm:w-auto");
+  });
+
   it("paginates life events", () => {
     mocks.listUseQuery.mockReturnValue({
       data: Array.from({ length: 21 }, (_, index) => ({

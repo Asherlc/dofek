@@ -4,7 +4,7 @@ import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scorin
 import type { HealthspanResult } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface HealthspanScoreCardProps {
   data: HealthspanResult | undefined;
@@ -25,14 +25,38 @@ function TrendBadge({ trend }: { trend: "improving" | "declining" | "stable" }) 
 
 export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps) {
   if (loading) {
-    return <ChartLoadingSkeleton height={400} />;
+    return <QueryStatePanel variant="loading" height={400} />;
   }
 
-  if (!data || data.healthspanScore == null || data.metrics.length === 0) {
+  if (!data) {
     return (
-      <div className="bg-page border border-border rounded-xl p-6 flex items-center justify-center h-[400px]">
-        <span className="text-dim text-sm">Insufficient data for healthspan analysis</span>
-      </div>
+      <QueryStatePanel
+        variant="empty"
+        message="Healthspan availability is unavailable."
+        height={400}
+      />
+    );
+  }
+
+  if (data.healthspanScore == null || data.metrics.length === 0) {
+    return (
+      <QueryStatePanel
+        variant="empty"
+        height={400}
+        message={
+          <span className="flex flex-col items-center gap-2 text-center">
+            <span className="text-muted text-sm font-medium">{data.availability.summary}</span>
+            {data.availability.nextCondition != null ? (
+              <span className="text-dim text-sm">{data.availability.nextCondition}</span>
+            ) : null}
+            {data.availability.missingMetricLabels.length > 0 ? (
+              <span className="text-subtle text-xs">
+                Missing supported metrics: {data.availability.missingMetricLabels.join(", ")}
+              </span>
+            ) : null}
+          </span>
+        }
+      />
     );
   }
 

@@ -148,6 +148,59 @@ describe("parseConnectSleep", () => {
     expect(parsed?.lightMinutes).toBe(240);
     expect(parsed?.remMinutes).toBe(120);
     expect(parsed?.awakeMinutes).toBe(30);
+    expect(parsed?.stagingAvailable).toBe(true);
+  });
+
+  it("preserves absent stage summaries as missing values", () => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        id: 98766,
+        userProfilePK: 111,
+        calendarDate: "2024-01-16",
+        sleepStartTimestampGMT: 1705363200000,
+        sleepEndTimestampGMT: 1705392000000,
+        sleepTimeSeconds: 28800,
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      durationMinutes: 480,
+      deepMinutes: undefined,
+      lightMinutes: undefined,
+      remMinutes: undefined,
+      awakeMinutes: undefined,
+      stagingAvailable: false,
+    });
+  });
+
+  it.each([
+    "deepSleepSeconds",
+    "lightSleepSeconds",
+    "remSleepSeconds",
+    "awakeSleepSeconds",
+  ] as const)("marks staging unavailable when %s is absent", (missingStage) => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        ...sampleSleep.dailySleepDTO,
+        [missingStage]: undefined,
+      },
+    });
+
+    expect(parsed?.stagingAvailable).toBe(false);
+  });
+
+  it("preserves an absent sleep duration as missing", () => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        id: 98767,
+        userProfilePK: 111,
+        calendarDate: "2024-01-17",
+        sleepStartTimestampGMT: 1705449600000,
+        sleepEndTimestampGMT: 1705478400000,
+      },
+    });
+
+    expect(parsed?.durationMinutes).toBeUndefined();
   });
 
   it("parses sleep score from sleepScores.overall", () => {

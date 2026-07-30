@@ -9,6 +9,7 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Bluetooth Heart-Rate Monitors**: Live heart rate + R-R intervals from any standard Bluetooth heart-rate strap via `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/) (`0x180D`) / Heart Rate Measurement (`0x2A37`) GATT profile. See `../../docs/ble-heart-rate.md`.
 - **Activity Recording**: Real-time GPS and sensor recording for workouts, utilizing native `CoreMotion` and `WatchMotion` modules.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
+- **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
 - **Nutrition Logging**: Rapid meal entry, barcode scanning, and natural-language AI meal input that splits a single message into multiple food items.
 
 See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
@@ -120,10 +121,82 @@ background modes.
 
 Install and launch the resulting
 `.context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app`,
-then verify visible UI, native accessibility targets, app logs, and server logs.
+then complete the SecureStore acceptance check below before inspecting any
+other UI. A successful build or process launch is not an audit-ready result.
 Expo's local production-build guide is the upstream reference for using
 Release configuration locally:
 <https://docs.expo.dev/guides/local-app-production/>.
+
+#### Required SecureStore acceptance check
+
+Use an isolated local API stack with password authentication enabled and a
+simulator reserved for this audit. Start with a simulator whose contents have
+been erased; deleting and reinstalling the app is not sufficient because
+SecureStore uses the iOS keychain, whose values can persist across an app
+uninstall for the same bundle identifier:
+<https://docs.expo.dev/versions/latest/sdk/securestore/#data-persistence>.
+Only erase a simulator after confirming that no other workspace uses its UDID.
+
+Use XcodeBuildMCP for the simulator lifecycle and native accessibility
+snapshots. The repository pins its setup in
+[`docs/mcp.md`](../../docs/mcp.md#local-xcodebuildmcp). Before the first build,
+run, or test action, inspect and set the session defaults to the generated
+workspace, `Dofek` scheme, `Release` configuration, reserved simulator UDID,
+`com.dofek.app` bundle identifier, and `.context/ReleaseAuditDerivedData`.
+Then:
+
+1. Install the exact `Dofek.app` produced by the command above and launch it
+   with XcodeBuildMCP. Retain the launch log path returned by the tool.
+2. Capture a native accessibility snapshot showing the signed Release app's
+   login screen.
+3. Through the production password UI, create a fresh, uniquely named audit
+   account. Do not inject a session token or seed client storage. Account
+   creation calls the production session-save path that writes the returned
+   token to SecureStore.
+4. Wait for the UI to settle, then capture a native accessibility snapshot of
+   the authenticated onboarding screen.
+5. Hard-stop `com.dofek.app` with XcodeBuildMCP. This must terminate the app
+   process, not merely background it, so the in-memory token cache cannot
+   satisfy the next launch.
+6. Launch the same installed artifact again, wait for the UI to settle, and
+   capture a new native accessibility snapshot. It must show an authenticated
+   screen such as onboarding or the `Today` tab, not the login screen.
+7. Inspect both XcodeBuildMCP launch logs and the isolated server logs. There
+   must be no SecureStore, keychain, missing-entitlement, or session-bootstrap
+   error.
+
+The post-termination authenticated screen is the required read proof:
+`AuthProvider` can render it only after the new process restores the session
+token through SecureStore and verifies it with the server. Static signature
+inspection can support the evidence:
+
+```bash
+APP=.context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app
+SIMULATED_ENTITLEMENTS=.context/ReleaseAuditDerivedData/Build/Intermediates.noindex/Dofek.build/Release-iphonesimulator/Dofek.build/Dofek.app-Simulated.xcent
+
+codesign --verify --deep --strict --verbose=2 "$APP"
+plutil -extract application-identifier raw "$SIMULATED_ENTITLEMENTS"
+otool -l "$APP/Dofek" | grep -A3 'sectname __entitlements'
+```
+
+For this ad-hoc Simulator destination, Xcode reports
+`ENTITLEMENTS_DESTINATION=__entitlements` and embeds the generated simulated
+entitlements in the Mach-O `__TEXT,__entitlements` section. Consequently,
+`codesign -d --entitlements :- "$APP"` can display an empty dictionary even
+when the installed Simulator executable contains the application identifier;
+do not use that output alone to diagnose a missing entitlement. Apple's Mach-O
+overview documents the segment and section structure:
+<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/CodeFootprint/Articles/MachOOverview.html>.
+Apple also documents that an app identifier supplies the default keychain
+access group:
+<https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps>.
+
+Static inspection cannot replace the write, hard-stop, relaunch, and read
+sequence. Treat the artifact as **not audit-ready** if registration reports a
+keychain error, the relaunched app returns to login, either native snapshot is
+missing, or the logs contain a SecureStore/keychain failure. Record the
+simulator UDID, artifact path, simulated-entitlement output, both authenticated
+snapshot results, and app/server log paths with the audit evidence.
 
 ### Physical-device release gate
 

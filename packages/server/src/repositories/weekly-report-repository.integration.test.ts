@@ -286,6 +286,7 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
         minimumObservedDays: 1,
       }),
     );
+    expect(emptyReport.decisionSupport).toBeNull();
 
     await executeClickHouseTestCommand(
       testContext,

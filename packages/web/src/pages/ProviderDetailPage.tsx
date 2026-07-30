@@ -647,7 +647,13 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      {!pushOnly && <SyncHistory key={`sync-history-${providerId}`} providerId={providerId} />}
+      {!pushOnly && (
+        <SyncHistory
+          key={`sync-history-${providerId}`}
+          providerId={providerId}
+          providerName={provider?.name ?? formatProviderName(providerId)}
+        />
+      )}
 
       {/* Records browser */}
       <RecordsBrowser

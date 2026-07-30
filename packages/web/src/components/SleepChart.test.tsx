@@ -38,6 +38,7 @@ describe("SleepChart", () => {
           provider_id: "oura",
           source_name: '<a href="javascript:alert(1)" onclick="alert(1)">ring</a>',
           source_providers: ["oura", '<img src=x onerror="alert(1)">'],
+          staging_available: true,
         },
       ],
     });
@@ -66,5 +67,46 @@ describe("SleepChart", () => {
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<a ");
     expect(html).not.toContain("<img ");
+  });
+
+  it("identifies a night without a complete stage breakdown", () => {
+    const startedAt = "2026-04-02T22:00:00.000Z";
+    const element = SleepChart({
+      data: [
+        {
+          started_at: startedAt,
+          ended_at: null,
+          timezone: null,
+          start_utc_offset_minutes: null,
+          end_utc_offset_minutes: null,
+          local_time_source: "unknown",
+          duration_minutes: 480,
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: null,
+          awake_minutes: null,
+          staging_available: false,
+        },
+      ],
+    });
+    if (!isValidElement<ChartElementProps>(element)) {
+      throw new Error("Expected SleepChart to return a chart element");
+    }
+    const formatter = element.props.option.tooltip?.formatter;
+    if (!formatter) throw new Error("Expected tooltip formatter");
+
+    const html = String(
+      formatter([
+        {
+          seriesName: "Deep",
+          value: [startedAt, null],
+          color: "#123456",
+        },
+      ]),
+    );
+
+    expect(html).toContain("Partial record: sleep stages were not reported");
+    expect(html).toContain("(8h 0m)");
+    expect(html).not.toContain("Deep: 0m");
   });
 });

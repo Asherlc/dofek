@@ -13,6 +13,11 @@ vi.mock("./DofekChart.tsx", () => ({
 import { SleepAnalyticsChart } from "./SleepAnalyticsChart.tsx";
 
 const night: SleepNightlyRow = {
+  providerId: null,
+  sourceName: null,
+  sourceProviders: [],
+  selectedSessionId: null,
+  overlappingSessions: [],
   date: "2026-07-20",
   startedAt: "2026-07-21T05:00:00Z",
   endedAt: "2026-07-21T13:00:00Z",
@@ -29,6 +34,7 @@ const night: SleepNightlyRow = {
   lightPct: 50,
   awakePct: 10,
   efficiency: 93.8,
+  stagingAvailable: true,
   rollingAvgDuration: 450,
 };
 

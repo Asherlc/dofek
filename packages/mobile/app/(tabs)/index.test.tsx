@@ -185,7 +185,7 @@ describe("TodayScreen independent loading states", () => {
       date: "2026-03-21",
       action: {
         id: "strain_target",
-        title: "Keep a steady training day — aim for 12 strain",
+        title: "No change needs attention — aim for 12 strain",
         summary: "Moderate recovery (60). Aim for a steady training day.",
         zone: "Maintain",
       },
@@ -212,6 +212,7 @@ describe("TodayScreen independent loading states", () => {
           remPct: 20,
           lightPct: 50,
           awakePct: 10,
+          stagingAvailable: true,
         },
         sleepDebt: 0,
       },
@@ -383,12 +384,30 @@ describe("TodayScreen independent loading states", () => {
       remPct: 25,
       lightPct: 45,
       awakePct: 10,
+      stagingAvailable: true,
     };
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+  });
+
+  it("keeps reported duration visible when last night's stages are unavailable", async () => {
+    mockDashboardData.sleep.lastNight = {
+      date: "2026-03-20",
+      durationMinutes: 480,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stagingAvailable: false,
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("8h 0m recorded. Sleep stages were not reported.")).toBeTruthy();
   });
 
   it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {

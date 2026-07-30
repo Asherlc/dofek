@@ -787,6 +787,9 @@ export async function upsertSleepBatch(
       (s) => s.startDate >= bed.startDate && s.endDate <= bed.endDate,
     );
 
+    const stagingAvailable = stages.some(
+      (stage) => stage.stage === "deep" || stage.stage === "rem" || stage.stage === "core",
+    );
     let deepMinutes = 0;
     let remMinutes = 0;
     let lightMinutes = 0;
@@ -818,6 +821,7 @@ export async function upsertSleepBatch(
       remMinutes,
       lightMinutes,
       awakeMinutes,
+      stagingAvailable,
       externalId,
     };
   });
@@ -829,10 +833,14 @@ export async function upsertSleepBatch(
     startedAt: s.bed.startDate,
     endedAt: s.bed.endDate,
     durationMinutes: s.bed.durationMinutes,
-    deepMinutes: s.deepMinutes,
-    remMinutes: s.remMinutes,
-    lightMinutes: s.lightMinutes,
-    awakeMinutes: s.awakeMinutes,
+    deepMinutes: s.stagingAvailable ? s.deepMinutes : null,
+    remMinutes: s.stagingAvailable ? s.remMinutes : null,
+    lightMinutes: s.stagingAvailable ? s.lightMinutes : null,
+    awakeMinutes:
+      s.stagingAvailable || s.stages.some((stage) => stage.stage === "awake")
+        ? s.awakeMinutes
+        : null,
+    stagingAvailable: s.stagingAvailable,
     sleepType: null,
     sourceName: s.bed.sourceName,
   }));
@@ -856,6 +864,7 @@ export async function upsertSleepBatch(
               remMinutes: sql`excluded.rem_minutes`,
               lightMinutes: sql`excluded.light_minutes`,
               awakeMinutes: sql`excluded.awake_minutes`,
+              stagingAvailable: sql`excluded.staging_available`,
               sleepType: sql`excluded.sleep_type`,
               sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
             },
