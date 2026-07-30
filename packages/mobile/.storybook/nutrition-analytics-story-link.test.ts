@@ -24,6 +24,18 @@ describe("createNutritionAnalyticsStoryLink", () => {
     );
   });
 
+  it("returns the adaptive TDEE evidence-unavailable scenario", async () => {
+    const client = createTRPCProxyClient<AppRouter>({
+      links: [createNutritionAnalyticsStoryLink("unavailable")],
+    });
+
+    await expect(client.nutritionAnalytics.adaptiveTdee.query()).resolves.toMatchObject({
+      status: "unavailable",
+      unavailableReason: "No body-weight measurements are available in the selected period.",
+      evidence: { calorieDays: 90, weightDays: 0 },
+    });
+  });
+
   it("rejects an unhandled tRPC path", async () => {
     const client = createTRPCProxyClient<AppRouter>({
       links: [createNutritionAnalyticsStoryLink()],

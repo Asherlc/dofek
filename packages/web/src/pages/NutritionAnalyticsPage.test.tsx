@@ -93,8 +93,6 @@ describe("NutritionAnalyticsPage", () => {
       queryResult(mocks.adaptiveTdeeRefetch, {
         data: {
           estimatedTdee: 2_250,
-          confidence: 82,
-          dataPoints: 30,
           dailyData: [],
         },
       }),
@@ -163,8 +161,6 @@ describe("NutritionAnalyticsPage", () => {
       queryResult(mocks.adaptiveTdeeRefetch, {
         data: {
           estimatedTdee: 2_250,
-          confidence: 82,
-          dataPoints: 30,
           dailyData: [],
         },
         error: new Error("Nutrition analytics refresh failed."),

@@ -22,4 +22,20 @@ describe("seed-review-clickhouse", () => {
       "WHERE user_id = '00000000-0000-4000-8000-000000000001'",
     );
   });
+
+  it("adds deterministic body-weight samples through the canonical metric stream", () => {
+    const statements = buildReviewClickHouseCopyStatements(
+      "postgres://health:health@db:5432/health",
+    );
+    const seedStatement = statements.find(
+      (statement) =>
+        statement.startsWith("INSERT INTO ingest.metric_stream") &&
+        statement.includes("numbers(90)"),
+    );
+
+    expect(seedStatement).toContain("'body_weight'");
+    expect(seedStatement).toContain("'review-seed-body-weight-'");
+    expect(seedStatement).toContain("numbers(90)");
+    expect(statements.join("\n")).not.toContain("TRUNCATE TABLE IF EXISTS ingest.metric_stream");
+  });
 });

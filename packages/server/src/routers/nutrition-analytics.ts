@@ -1,5 +1,6 @@
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import {
+  type AdaptiveTdeeEvidence,
   type MicronutrientSafetyReview,
   type NutritionAnalyticsDataQuality,
   NutritionAnalyticsRepository,
@@ -27,15 +28,19 @@ export interface MicronutrientSafetyReviewResult {
 }
 
 export interface AdaptiveTdeeResult {
+  status: "available" | "unavailable";
   estimatedTdee: number | null;
-  confidence: number;
-  dataPoints: number;
+  estimateRange: { minimum: number; maximum: number } | null;
+  unavailableReason: string | null;
+  evidence: AdaptiveTdeeEvidence;
   dailyData: AdaptiveTdeeRow[];
 }
 
 export interface AdaptiveTdeeRow {
   date: string;
-  caloriesIn: number;
+  caloriesIn: number | null;
+  nutritionStatus: "available" | "source_conflict" | "missing";
+  lowerPrioritySourcesExcluded: boolean;
   weightKg: number | null;
   smoothedWeight: number | null;
   estimatedTdee: number | null;

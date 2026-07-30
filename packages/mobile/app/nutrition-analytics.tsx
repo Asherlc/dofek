@@ -182,21 +182,53 @@ function AdaptiveTdeeSection({
         description="Estimated from logged calorie intake and observed body-weight change."
         textStyle={styles.cardTitle}
       />
-      {data == null || data.estimatedTdee == null ? (
+      {data == null ? (
         <Text style={styles.emptyText}>
           Not enough data to estimate Total Daily Energy Expenditure (TDEE)
         </Text>
       ) : (
         <>
-          <Text style={styles.bigValue}>{formatCalories(data.estimatedTdee)}/day</Text>
-          <View style={styles.tdeeDetails}>
-            <Text style={styles.cardSubtext}>
-              Confidence: {formatNutritionNumber(data.confidence)}%
-            </Text>
-            <Text style={styles.cardSubtext}>Based on {data.dataPoints} data points</Text>
-          </View>
+          {data.estimatedTdee != null ? (
+            <>
+              <Text style={styles.bigValue}>{formatCalories(data.estimatedTdee)}/day</Text>
+              {data.estimateRange ? (
+                <Text style={styles.cardSubtext}>
+                  Observed rolling range: {formatNutritionNumber(data.estimateRange.minimum)}–
+                  {formatNutritionNumber(data.estimateRange.maximum)} kcal/day
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.emptyText}>{data.unavailableReason}</Text>
+          )}
+          <AdaptiveTdeeEvidence data={data} />
         </>
       )}
+    </View>
+  );
+}
+
+function AdaptiveTdeeEvidence({ data }: { data: AdaptiveTdeeResult }) {
+  const evidence = data.evidence;
+  const exclusions = evidence.excludedDays;
+  return (
+    <View style={styles.tdeeDetails}>
+      <Text style={styles.cardSubtext}>
+        {evidence.fitWindowDays}-day fit · at least {evidence.minimumCalorieDays} usable calorie
+        days
+      </Text>
+      <Text style={styles.cardSubtext}>
+        {evidence.calorieDays} calorie days · {evidence.weightDays} weight days ·{" "}
+        {evidence.acceptedWindows} accepted windows
+      </Text>
+      {exclusions.missingCalories > 0 ||
+      exclusions.sourceConflict > 0 ||
+      exclusions.lowerPrioritySources > 0 ? (
+        <Text style={styles.cardSubtext}>
+          Excluded: {exclusions.missingCalories} missing calorie days · {exclusions.sourceConflict}{" "}
+          source-conflict days · {exclusions.lowerPrioritySources} days with lower-priority sources
+        </Text>
+      ) : null}
     </View>
   );
 }

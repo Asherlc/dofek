@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import {
   type DailyValueReference,
   evaluateNutrientUpperLimit,
@@ -237,22 +238,43 @@ export interface SupplementMedicationReview {
 
 export interface AdaptiveTdeeDataPoint {
   date: string;
-  caloriesIn: number;
+  caloriesIn: number | null;
+  nutritionStatus: "available" | "source_conflict" | "missing";
+  lowerPrioritySourcesExcluded: boolean;
   weightKg: number | null;
 }
 
 export interface AdaptiveTdeeDailyRowData {
   date: string;
-  caloriesIn: number;
+  caloriesIn: number | null;
+  nutritionStatus: "available" | "source_conflict" | "missing";
+  lowerPrioritySourcesExcluded: boolean;
   weightKg: number | null;
   smoothedWeight: number | null;
   estimatedTdee: number | null;
 }
 
+export interface AdaptiveTdeeEvidence {
+  selectedWindowDays: RangeDays;
+  fitWindowDays: number;
+  minimumCalorieDays: number;
+  observedDays: number;
+  calorieDays: number;
+  weightDays: number;
+  acceptedWindows: number;
+  excludedDays: {
+    missingCalories: number;
+    sourceConflict: number;
+    lowerPrioritySources: number;
+  };
+}
+
 export interface AdaptiveTdeeResultData {
+  status: "available" | "unavailable";
   estimatedTdee: number | null;
-  confidence: number;
-  dataPoints: number;
+  estimateRange: { minimum: number; maximum: number } | null;
+  unavailableReason: string | null;
+  evidence: AdaptiveTdeeEvidence;
   dailyData: AdaptiveTdeeDailyRowData[];
 }
 
@@ -268,19 +290,21 @@ export class AdaptiveTdeeEstimate {
     return this.#data.estimatedTdee;
   }
 
-  get confidence(): number {
-    return this.#data.confidence;
+  get status(): "available" | "unavailable" {
+    return this.#data.status;
   }
 
-  get dataPoints(): number {
-    return this.#data.dataPoints;
+  get estimateRange(): { minimum: number; maximum: number } | null {
+    return this.#data.estimateRange;
   }
 
   toDetail() {
     return {
+      status: this.#data.status,
       estimatedTdee: this.#data.estimatedTdee,
-      confidence: this.#data.confidence,
-      dataPoints: this.#data.dataPoints,
+      estimateRange: this.#data.estimateRange,
+      unavailableReason: this.#data.unavailableReason,
+      evidence: this.#data.evidence,
       dailyData: this.#data.dailyData,
     };
   }
@@ -340,6 +364,81 @@ const macroRatioRowSchema = z.object({
 
 const KCAL_PER_KG = 7700;
 const TDEE_WINDOW = 28;
+const MINIMUM_CALORIE_DAYS = Math.ceil(TDEE_WINDOW * 0.7);
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+function parseDateYmd(date: string): Date {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new RangeError(`Invalid adaptive TDEE date: ${date}`);
+  }
+  return parsed;
+}
+
+function shiftDateYmd(date: string, days: number): string {
+  const shifted = parseDateYmd(date);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function laterDate(first: string, second: string): string {
+  return first > second ? first : second;
+}
+
+function earlierDate(first: string, second: string): string {
+  return first < second ? first : second;
+}
+
+/**
+ * Build one row per accessible calendar day so missing/conflict nutrition
+ * dates count against the rolling fit requirement.
+ */
+export function buildAdaptiveTdeeCalendar(
+  sourceDays: AdaptiveTdeeDataPoint[],
+  selectedWindowDays: RangeDays,
+  today: string,
+  accessWindow: AccessWindow,
+): AdaptiveTdeeDataPoint[] {
+  const sourceByDate = new Map(sourceDays.map((day) => [day.date, day]));
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+
+  if (selectedWindowDays == null) {
+    const observedDates = [...sourceByDate.keys()].sort();
+    startDate = observedDates[0];
+    endDate = observedDates.at(-1);
+  } else {
+    startDate = shiftDateYmd(today, -(selectedWindowDays - 1));
+    endDate = today;
+  }
+
+  if (accessWindow.kind === "limited") {
+    startDate =
+      startDate == null ? accessWindow.startDate : laterDate(startDate, accessWindow.startDate);
+    const accessEnd = shiftDateYmd(accessWindow.endDateExclusive, -1);
+    endDate = endDate == null ? accessEnd : earlierDate(endDate, accessEnd);
+  }
+
+  if (startDate == null || endDate == null || startDate > endDate) return [];
+
+  const numberOfDays =
+    Math.floor(
+      (parseDateYmd(endDate).getTime() - parseDateYmd(startDate).getTime()) / MILLISECONDS_PER_DAY,
+    ) + 1;
+
+  return Array.from({ length: numberOfDays }, (_, index) => {
+    const date = shiftDateYmd(startDate, index);
+    return (
+      sourceByDate.get(date) ?? {
+        date,
+        caloriesIn: null,
+        nutritionStatus: "missing",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: null,
+      }
+    );
+  });
+}
 
 /** Apply EWMA smoothing to weight data and prepare daily data array. */
 export function smoothWeightData(data: AdaptiveTdeeDataPoint[]): AdaptiveTdeeDailyRowData[] {
@@ -357,6 +456,8 @@ export function smoothWeightData(data: AdaptiveTdeeDataPoint[]): AdaptiveTdeeDai
     smoothedData.push({
       date: day.date,
       caloriesIn: day.caloriesIn,
+      nutritionStatus: day.nutritionStatus,
+      lowerPrioritySourcesExcluded: day.lowerPrioritySourcesExcluded,
       weightKg: day.weightKg,
       smoothedWeight:
         lastSmoothedWeight != null ? Math.round(lastSmoothedWeight * 100) / 100 : null,
@@ -368,9 +469,25 @@ export function smoothWeightData(data: AdaptiveTdeeDataPoint[]): AdaptiveTdeeDai
 }
 
 /** Estimate TDEE using rolling 28-day windows on smoothed data. */
-export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): AdaptiveTdeeResultData {
+function maximumWindowCalorieDays(smoothedData: AdaptiveTdeeDailyRowData[]): number {
+  let maximum = 0;
+  for (let index = TDEE_WINDOW; index < smoothedData.length; index++) {
+    let calorieDays = 0;
+    for (let windowIndex = index - TDEE_WINDOW + 1; windowIndex <= index; windowIndex++) {
+      const day = smoothedData[windowIndex];
+      if (day?.caloriesIn != null && day.caloriesIn > 0) calorieDays++;
+    }
+    maximum = Math.max(maximum, calorieDays);
+  }
+  return maximum;
+}
+
+export function estimateTdee(
+  smoothedData: AdaptiveTdeeDailyRowData[],
+  selectedWindowDays: RangeDays = null,
+): AdaptiveTdeeResultData {
   let latestTdee: number | null = null;
-  let dataPointsUsed = 0;
+  const rollingEstimates: number[] = [];
 
   for (let index = TDEE_WINDOW; index < smoothedData.length; index++) {
     const windowStart = smoothedData[index - TDEE_WINDOW];
@@ -385,13 +502,13 @@ export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): Adaptive
 
     for (let windowIndex = index - TDEE_WINDOW + 1; windowIndex <= index; windowIndex++) {
       const day = smoothedData[windowIndex];
-      if (day && day.caloriesIn > 0) {
+      if (day?.caloriesIn != null && day.caloriesIn > 0) {
         totalCalories += day.caloriesIn;
         calorieDays++;
       }
     }
 
-    if (calorieDays < TDEE_WINDOW * 0.7) continue;
+    if (calorieDays < MINIMUM_CALORIE_DAYS) continue;
 
     const avgDailyCalories = totalCalories / calorieDays;
     const dailyWeightChangeKcal = (weightChange * KCAL_PER_KG) / TDEE_WINDOW;
@@ -401,18 +518,64 @@ export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): Adaptive
       windowEnd.estimatedTdee = tdee;
     }
     latestTdee = tdee;
-    dataPointsUsed++;
+    rollingEstimates.push(tdee);
   }
 
-  const totalDays = smoothedData.length;
-  const daysWithWeight = smoothedData.filter((day) => day.weightKg != null).length;
-  const confidence =
-    totalDays >= 28 && daysWithWeight >= 10 ? Math.min(daysWithWeight / totalDays, 1) : 0;
+  const calorieDays = smoothedData.filter(
+    (day) => day.nutritionStatus === "available" && day.caloriesIn != null && day.caloriesIn > 0,
+  ).length;
+  const weightDays = smoothedData.filter((day) => day.weightKg != null).length;
+  const sourceConflict = smoothedData.filter(
+    (day) => day.nutritionStatus === "source_conflict",
+  ).length;
+  const missingCalories = smoothedData.filter((day) => day.nutritionStatus === "missing").length;
+  const lowerPrioritySources = smoothedData.filter(
+    (day) => day.nutritionStatus === "available" && day.lowerPrioritySourcesExcluded,
+  ).length;
+  const evidence: AdaptiveTdeeEvidence = {
+    selectedWindowDays,
+    fitWindowDays: TDEE_WINDOW,
+    minimumCalorieDays: MINIMUM_CALORIE_DAYS,
+    observedDays: smoothedData.length,
+    calorieDays,
+    weightDays,
+    acceptedWindows: rollingEstimates.length,
+    excludedDays: {
+      missingCalories,
+      sourceConflict,
+      lowerPrioritySources,
+    },
+  };
+
+  let unavailableReason: string | null = null;
+  if (latestTdee == null) {
+    if (calorieDays === 0) {
+      unavailableReason = "No usable calorie-intake days are available in the selected period.";
+    } else if (weightDays === 0) {
+      unavailableReason = "No body-weight measurements are available in the selected period.";
+    } else if (smoothedData.length <= TDEE_WINDOW) {
+      unavailableReason = `At least ${TDEE_WINDOW + 1} calendar days are required for a ${TDEE_WINDOW}-day fit window.`;
+    } else {
+      const bestWindowCalorieDays = maximumWindowCalorieDays(smoothedData);
+      unavailableReason =
+        bestWindowCalorieDays < MINIMUM_CALORIE_DAYS
+          ? `At least ${MINIMUM_CALORIE_DAYS} usable calorie days are required within one ${TDEE_WINDOW}-day fit window; the best window has ${bestWindowCalorieDays}.`
+          : `Body-weight history does not begin early enough to span an eligible ${TDEE_WINDOW}-day fit window.`;
+    }
+  }
 
   return {
+    status: latestTdee == null ? "unavailable" : "available",
     estimatedTdee: latestTdee,
-    confidence: Math.round(confidence * 100) / 100,
-    dataPoints: dataPointsUsed,
+    estimateRange:
+      rollingEstimates.length === 0
+        ? null
+        : {
+            minimum: Math.min(...rollingEstimates),
+            maximum: Math.max(...rollingEstimates),
+          },
+    unavailableReason,
+    evidence,
     dailyData: smoothedData,
   };
 }
@@ -795,13 +958,13 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       this.query(
         z.object({
           date: dateStringSchema,
-          calories_in: z.coerce.number(),
+          calories_in: z.coerce.number().nullable(),
+          resolution_status: z.enum(["available", "source_conflict"]),
+          excluded_source_labels: z.array(z.string()),
         }),
-        sql`SELECT date, calories AS calories_in
+        sql`SELECT date, calories AS calories_in, resolution_status, excluded_source_labels
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
-              AND resolution_status = 'available'
-              AND calories IS NOT NULL
               ${currentDateRangePredicate(sql`date`, days)}
               ${this.dateAccessPredicate(sql`date`)}
             ORDER BY date ASC`,
@@ -811,24 +974,45 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       }),
     ]);
 
-    const weightByDate = new Map(weightRows.map((row) => [row.date, row.weight_kg]));
-    const rows = nutritionRows.map((row) => ({
-      ...row,
-      weight_kg: weightByDate.get(row.date) ?? null,
-    }));
-
-    return rows.map((row) => ({
-      date: row.date,
-      caloriesIn: Math.round(Number(row.calories_in)),
-      weightKg: row.weight_kg != null ? Number(row.weight_kg) : null,
-    }));
+    const rowsByDate = new Map<string, AdaptiveTdeeDataPoint>(
+      nutritionRows.map((row) => [
+        row.date,
+        {
+          date: row.date,
+          caloriesIn:
+            row.resolution_status === "available" && row.calories_in != null
+              ? Math.round(Number(row.calories_in))
+              : null,
+          nutritionStatus: row.resolution_status,
+          lowerPrioritySourcesExcluded: row.excluded_source_labels.length > 0,
+          weightKg: null,
+        },
+      ]),
+    );
+    for (const weightRow of weightRows) {
+      const existing = rowsByDate.get(weightRow.date);
+      rowsByDate.set(weightRow.date, {
+        date: weightRow.date,
+        caloriesIn: existing?.caloriesIn ?? null,
+        nutritionStatus: existing?.nutritionStatus ?? "missing",
+        lowerPrioritySourcesExcluded: existing?.lowerPrioritySourcesExcluded ?? false,
+        weightKg: Number(weightRow.weight_kg),
+      });
+    }
+    return [...rowsByDate.values()].sort((left, right) => left.date.localeCompare(right.date));
   }
 
   /** Adaptive TDEE estimation using weight smoothing and rolling regression. */
   async getAdaptiveTdee(days: RangeDays): Promise<AdaptiveTdeeEstimate> {
-    const data = await this.getAdaptiveTdeeData(days);
-    const smoothedData = smoothWeightData(data);
-    const result = estimateTdee(smoothedData);
+    const sourceData = await this.getAdaptiveTdeeData(days);
+    const calendar = buildAdaptiveTdeeCalendar(
+      sourceData,
+      days,
+      formatDateYmdInTimeZone(new Date(), this.timezone),
+      this.accessWindow,
+    );
+    const smoothedData = smoothWeightData(calendar);
+    const result = estimateTdee(smoothedData, days);
     return new AdaptiveTdeeEstimate(result);
   }
 

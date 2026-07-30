@@ -3,9 +3,45 @@ import type { AppRouter } from "dofek-server/router";
 
 export const nutritionAnalyticsStoryData = {
   adaptiveTdee: {
+    status: "available",
     estimatedTdee: 2_250,
-    confidence: 0.82,
-    dataPoints: 30,
+    estimateRange: { minimum: 2_180, maximum: 2_320 },
+    unavailableReason: null,
+    evidence: {
+      selectedWindowDays: 90,
+      fitWindowDays: 28,
+      minimumCalorieDays: 20,
+      observedDays: 90,
+      calorieDays: 82,
+      weightDays: 45,
+      acceptedWindows: 30,
+      excludedDays: {
+        missingCalories: 6,
+        sourceConflict: 2,
+        lowerPrioritySources: 3,
+      },
+    },
+    dailyData: [],
+  },
+  adaptiveTdeeUnavailable: {
+    status: "unavailable",
+    estimatedTdee: null,
+    estimateRange: null,
+    unavailableReason: "No body-weight measurements are available in the selected period.",
+    evidence: {
+      selectedWindowDays: 90,
+      fitWindowDays: 28,
+      minimumCalorieDays: 20,
+      observedDays: 90,
+      calorieDays: 90,
+      weightDays: 0,
+      acceptedWindows: 0,
+      excludedDays: {
+        missingCalories: 0,
+        sourceConflict: 0,
+        lowerPrioritySources: 0,
+      },
+    },
     dailyData: [],
   },
   macroRatios: [
@@ -107,7 +143,7 @@ export const nutritionAnalyticsStoryData = {
   },
 } as const;
 
-export type NutritionAnalyticsStoryScenario = "available" | "error";
+export type NutritionAnalyticsStoryScenario = "available" | "error" | "unavailable";
 
 function createStoryObservable(
   path: string,
@@ -124,7 +160,10 @@ function createStoryObservable(
 
       let data: unknown;
       if (path === "nutritionAnalytics.adaptiveTdee") {
-        data = nutritionAnalyticsStoryData.adaptiveTdee;
+        data =
+          scenario === "unavailable"
+            ? nutritionAnalyticsStoryData.adaptiveTdeeUnavailable
+            : nutritionAnalyticsStoryData.adaptiveTdee;
       } else if (path === "nutritionAnalytics.macroRatios") {
         data = nutritionAnalyticsStoryData.macroRatios;
       } else if (path === "nutritionAnalytics.micronutrientAdequacyV2") {

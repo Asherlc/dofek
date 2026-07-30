@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AdaptiveTdeeEstimate,
+  buildAdaptiveTdeeCalendar,
   estimateTdee,
   MacroRatioDay,
   MicronutrientAdequacy,
@@ -8,6 +9,12 @@ import {
   NutritionAnalyticsRepository,
   smoothWeightData,
 } from "./nutrition-analytics-repository.ts";
+
+function dateAtOffset(startDate: string, offset: number): string {
+  const date = new Date(`${startDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -54,13 +61,29 @@ describe("MicronutrientAdequacy", () => {
 describe("AdaptiveTdeeEstimate", () => {
   it("serializes to API shape", () => {
     const model = new AdaptiveTdeeEstimate({
+      status: "available",
       estimatedTdee: 2450,
-      confidence: 0.85,
-      dataPoints: 12,
+      estimateRange: { minimum: 2380, maximum: 2510 },
+      unavailableReason: null,
+      evidence: {
+        selectedWindowDays: 90,
+        fitWindowDays: 28,
+        minimumCalorieDays: 20,
+        observedDays: 90,
+        calorieDays: 82,
+        weightDays: 45,
+        acceptedWindows: 12,
+        excludedDays: {
+          missingCalories: 6,
+          sourceConflict: 2,
+          lowerPrioritySources: 3,
+        },
+      },
       dailyData: [
         {
           date: "2024-01-01",
           caloriesIn: 2300,
+          nutritionStatus: "available",
           weightKg: 80.5,
           smoothedWeight: 80.5,
           estimatedTdee: null,
@@ -68,34 +91,171 @@ describe("AdaptiveTdeeEstimate", () => {
       ],
     });
     const detail = model.toDetail();
+    expect(detail.status).toBe("available");
     expect(detail.estimatedTdee).toBe(2450);
-    expect(detail.confidence).toBe(0.85);
-    expect(detail.dataPoints).toBe(12);
+    expect(detail.estimateRange).toEqual({ minimum: 2380, maximum: 2510 });
+    expect(detail.evidence.acceptedWindows).toBe(12);
     expect(detail.dailyData).toHaveLength(1);
   });
 
   it("handles null estimated TDEE", () => {
     const model = new AdaptiveTdeeEstimate({
+      status: "unavailable",
       estimatedTdee: null,
-      confidence: 0,
-      dataPoints: 0,
+      estimateRange: null,
+      unavailableReason: "No body-weight measurements are available in the selected period.",
+      evidence: {
+        selectedWindowDays: 90,
+        fitWindowDays: 28,
+        minimumCalorieDays: 20,
+        observedDays: 90,
+        calorieDays: 90,
+        weightDays: 0,
+        acceptedWindows: 0,
+        excludedDays: {
+          missingCalories: 0,
+          sourceConflict: 0,
+          lowerPrioritySources: 0,
+        },
+      },
       dailyData: [],
     });
     expect(model.estimatedTdee).toBeNull();
-    expect(model.confidence).toBe(0);
-    expect(model.dataPoints).toBe(0);
+    expect(model.status).toBe("unavailable");
+    expect(model.estimateRange).toBeNull();
   });
 
   it("exposes getters", () => {
     const model = new AdaptiveTdeeEstimate({
+      status: "available",
       estimatedTdee: 2500,
-      confidence: 0.9,
-      dataPoints: 15,
+      estimateRange: { minimum: 2400, maximum: 2550 },
+      unavailableReason: null,
+      evidence: {
+        selectedWindowDays: 90,
+        fitWindowDays: 28,
+        minimumCalorieDays: 20,
+        observedDays: 90,
+        calorieDays: 85,
+        weightDays: 50,
+        acceptedWindows: 15,
+        excludedDays: {
+          missingCalories: 5,
+          sourceConflict: 0,
+          lowerPrioritySources: 0,
+        },
+      },
       dailyData: [],
     });
     expect(model.estimatedTdee).toBe(2500);
-    expect(model.confidence).toBe(0.9);
-    expect(model.dataPoints).toBe(15);
+    expect(model.status).toBe("available");
+    expect(model.estimateRange).toEqual({ minimum: 2400, maximum: 2550 });
+  });
+});
+
+describe("adaptive TDEE evidence", () => {
+  it("densifies sparse nutrition rows into true calendar days and retains conflicts", () => {
+    const calendar = buildAdaptiveTdeeCalendar(
+      [
+        {
+          date: "2026-07-01",
+          caloriesIn: 2_200,
+          nutritionStatus: "available",
+          lowerPrioritySourcesExcluded: false,
+          weightKg: 80,
+        },
+        {
+          date: "2026-07-03",
+          caloriesIn: null,
+          nutritionStatus: "source_conflict",
+          lowerPrioritySourcesExcluded: true,
+          weightKg: null,
+        },
+      ],
+      3,
+      "2026-07-03",
+      { kind: "full", paid: true, reason: "paid_grant" },
+    );
+
+    expect(calendar).toEqual([
+      expect.objectContaining({
+        date: "2026-07-01",
+        caloriesIn: 2_200,
+        nutritionStatus: "available",
+      }),
+      expect.objectContaining({
+        date: "2026-07-02",
+        caloriesIn: null,
+        nutritionStatus: "missing",
+      }),
+      expect.objectContaining({
+        date: "2026-07-03",
+        caloriesIn: null,
+        nutritionStatus: "source_conflict",
+      }),
+    ]);
+  });
+
+  it("reports weight insufficiency instead of a generic empty estimate", () => {
+    const dailyData = smoothWeightData(
+      Array.from({ length: 35 }, (_, index) => ({
+        date: dateAtOffset("2026-06-01", index),
+        caloriesIn: 2_200,
+        nutritionStatus: "available" as const,
+        lowerPrioritySourcesExcluded: false,
+        weightKg: null,
+      })),
+    );
+
+    const result = estimateTdee(dailyData, 35);
+
+    expect(result).toMatchObject({
+      status: "unavailable",
+      estimatedTdee: null,
+      estimateRange: null,
+      unavailableReason: "No body-weight measurements are available in the selected period.",
+      evidence: {
+        fitWindowDays: 28,
+        minimumCalorieDays: 20,
+        calorieDays: 35,
+        weightDays: 0,
+        acceptedWindows: 0,
+      },
+    });
+  });
+
+  it("reports exclusions and the observed range of accepted rolling estimates", () => {
+    const dailyData = smoothWeightData(
+      Array.from({ length: 35 }, (_, index) => ({
+        date: dateAtOffset("2026-06-01", index),
+        caloriesIn: index === 4 || index === 5 ? null : 2_200 + index * 5,
+        nutritionStatus:
+          index === 4
+            ? ("source_conflict" as const)
+            : index === 5
+              ? ("missing" as const)
+              : ("available" as const),
+        lowerPrioritySourcesExcluded: index === 7,
+        weightKg: 80 - index * 0.02,
+      })),
+    );
+
+    const result = estimateTdee(dailyData, 35);
+
+    expect(result.status).toBe("available");
+    expect(result.estimateRange).not.toBeNull();
+    expect(result.estimateRange?.minimum).toBeLessThanOrEqual(result.estimatedTdee ?? 0);
+    expect(result.estimateRange?.maximum).toBeGreaterThanOrEqual(result.estimatedTdee ?? 0);
+    expect(result.evidence).toMatchObject({
+      observedDays: 35,
+      calorieDays: 33,
+      weightDays: 35,
+      excludedDays: {
+        missingCalories: 1,
+        sourceConflict: 1,
+        lowerPrioritySources: 1,
+      },
+    });
   });
 });
 
@@ -147,15 +307,35 @@ describe("MacroRatioDay", () => {
 
 describe("smoothWeightData", () => {
   it("returns first weight as initial smoothed value", () => {
-    const result = smoothWeightData([{ date: "2024-01-01", caloriesIn: 2000, weightKg: 80 }]);
+    const result = smoothWeightData([
+      {
+        date: "2024-01-01",
+        caloriesIn: 2000,
+        nutritionStatus: "available",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: 80,
+      },
+    ]);
     expect(result).toHaveLength(1);
     expect(result[0]?.smoothedWeight).toBe(80);
   });
 
   it("applies EWMA smoothing with alpha=0.1", () => {
     const result = smoothWeightData([
-      { date: "2024-01-01", caloriesIn: 2000, weightKg: 80 },
-      { date: "2024-01-02", caloriesIn: 2100, weightKg: 81 },
+      {
+        date: "2024-01-01",
+        caloriesIn: 2000,
+        nutritionStatus: "available",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: 80,
+      },
+      {
+        date: "2024-01-02",
+        caloriesIn: 2100,
+        nutritionStatus: "available",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: 81,
+      },
     ]);
     // EWMA: 0.1 * 81 + 0.9 * 80 = 80.1
     expect(result[1]?.smoothedWeight).toBeCloseTo(80.1, 2);
@@ -163,15 +343,35 @@ describe("smoothWeightData", () => {
 
   it("carries forward smoothed weight through null days", () => {
     const result = smoothWeightData([
-      { date: "2024-01-01", caloriesIn: 2000, weightKg: 80 },
-      { date: "2024-01-02", caloriesIn: 2100, weightKg: null },
+      {
+        date: "2024-01-01",
+        caloriesIn: 2000,
+        nutritionStatus: "available",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: 80,
+      },
+      {
+        date: "2024-01-02",
+        caloriesIn: 2100,
+        nutritionStatus: "available",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: null,
+      },
     ]);
     expect(result[1]?.smoothedWeight).toBe(80);
     expect(result[1]?.weightKg).toBeNull();
   });
 
   it("returns null smoothed weight when no weight data exists", () => {
-    const result = smoothWeightData([{ date: "2024-01-01", caloriesIn: 2000, weightKg: null }]);
+    const result = smoothWeightData([
+      {
+        date: "2024-01-01",
+        caloriesIn: 2000,
+        nutritionStatus: "available",
+        lowerPrioritySourcesExcluded: false,
+        weightKg: null,
+      },
+    ]);
     expect(result[0]?.smoothedWeight).toBeNull();
   });
 });
@@ -179,22 +379,26 @@ describe("smoothWeightData", () => {
 describe("estimateTdee", () => {
   it("returns null TDEE with insufficient data", () => {
     const smoothedData = Array.from({ length: 10 }, (_, index) => ({
-      date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+      date: dateAtOffset("2024-01-01", index),
       caloriesIn: 2000,
+      nutritionStatus: "available" as const,
+      lowerPrioritySourcesExcluded: false,
       weightKg: 80,
       smoothedWeight: 80,
       estimatedTdee: null,
     }));
     const result = estimateTdee(smoothedData);
     expect(result.estimatedTdee).toBeNull();
-    expect(result.dataPoints).toBe(0);
+    expect(result.evidence.acceptedWindows).toBe(0);
   });
 
   it("computes TDEE when stable weight and enough data", () => {
     // 35 days of stable weight at 80kg eating 2500 cal/day
     const smoothedData = Array.from({ length: 35 }, (_, index) => ({
-      date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+      date: dateAtOffset("2024-01-01", index),
       caloriesIn: 2500,
+      nutritionStatus: "available" as const,
+      lowerPrioritySourcesExcluded: false,
       weightKg: 80,
       smoothedWeight: 80,
       estimatedTdee: null,
@@ -202,14 +406,16 @@ describe("estimateTdee", () => {
     const result = estimateTdee(smoothedData);
     // Stable weight => TDEE should equal calorie intake
     expect(result.estimatedTdee).toBe(2500);
-    expect(result.dataPoints).toBeGreaterThan(0);
+    expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
   });
 
   it("adjusts TDEE for weight gain", () => {
     // Weight increasing from 80 to 81 over 35 days eating 3000 cal/day
     const smoothedData = Array.from({ length: 35 }, (_, index) => ({
-      date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+      date: dateAtOffset("2024-01-01", index),
       caloriesIn: 3000,
+      nutritionStatus: "available" as const,
+      lowerPrioritySourcesExcluded: false,
       weightKg: 80 + index / 35,
       smoothedWeight: 80 + index / 35,
       estimatedTdee: null,
@@ -221,28 +427,34 @@ describe("estimateTdee", () => {
     expect(result.estimatedTdee).toBeLessThan(3000);
   });
 
-  it("sets confidence to 0 when fewer than 28 days", () => {
+  it("reports an unavailable estimate when fewer than 29 calendar days", () => {
     const smoothedData = Array.from({ length: 20 }, (_, index) => ({
-      date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+      date: dateAtOffset("2024-01-01", index),
       caloriesIn: 2000,
+      nutritionStatus: "available" as const,
+      lowerPrioritySourcesExcluded: false,
       weightKg: 80,
       smoothedWeight: 80,
       estimatedTdee: null,
     }));
     const result = estimateTdee(smoothedData);
-    expect(result.confidence).toBe(0);
+    expect(result.status).toBe("unavailable");
+    expect(result.unavailableReason).toContain("29 calendar days");
   });
 
-  it("computes positive confidence with sufficient weight data", () => {
+  it("reports accepted windows with sufficient weight data", () => {
     const smoothedData = Array.from({ length: 35 }, (_, index) => ({
-      date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+      date: dateAtOffset("2024-01-01", index),
       caloriesIn: 2500,
+      nutritionStatus: "available" as const,
+      lowerPrioritySourcesExcluded: false,
       weightKg: 80,
       smoothedWeight: 80,
       estimatedTdee: null,
     }));
     const result = estimateTdee(smoothedData);
-    expect(result.confidence).toBeGreaterThan(0);
+    expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
+    expect(result.estimateRange).not.toBeNull();
   });
 });
 
@@ -736,7 +948,14 @@ describe("NutritionAnalyticsRepository", () => {
 
     it("returns data points with weight", async () => {
       const { repo } = makeRepository(
-        [{ date: "2024-01-01", calories_in: 2300 }],
+        [
+          {
+            date: "2024-01-01",
+            calories_in: 2300,
+            resolution_status: "available",
+            excluded_source_labels: [],
+          },
+        ],
         [{ date: "2024-01-01", weight_kg: 80.5 }],
       );
       const result = await repo.getAdaptiveTdeeData(90);
@@ -746,24 +965,42 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("handles null weight", async () => {
-      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300 }], []);
+      const { repo } = makeRepository(
+        [
+          {
+            date: "2024-01-01",
+            calories_in: 2300,
+            resolution_status: "available",
+            excluded_source_labels: [],
+          },
+        ],
+        [],
+      );
       const result = await repo.getAdaptiveTdeeData(90);
       expect(result[0]?.weightKg).toBeNull();
     });
 
-    it("reads calories from canonical available days", async () => {
+    it("reads canonical nutrition resolution and exclusion context", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.getAdaptiveTdeeData(90);
       const query = JSON.stringify(execute.mock.calls[0]?.[0]);
       expect(query).toContain("fitness.v_nutrition_daily");
-      expect(query).toContain("resolution_status = 'available'");
+      expect(query).toContain("resolution_status");
+      expect(query).toContain("excluded_source_labels");
     });
   });
 
   describe("getAdaptiveTdee", () => {
     it("returns AdaptiveTdeeEstimate", async () => {
       const { repo } = makeRepository(
-        [{ date: "2024-01-01", calories_in: 2000 }],
+        [
+          {
+            date: "2024-01-01",
+            calories_in: 2000,
+            resolution_status: "available",
+            excluded_source_labels: [],
+          },
+        ],
         [{ date: "2024-01-01", weight_kg: 80 }],
       );
       const result = await repo.getAdaptiveTdee(90);
