@@ -9,6 +9,8 @@ import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { PasswordInput } from "./PasswordInput.tsx";
 
+const CURRENT_PASSWORD_REQUIRED_ERROR = "Enter your current password.";
+
 export function PasswordSettingsPanel() {
   const auth = useAuth();
   const utils = trpc.useUtils();
@@ -21,11 +23,16 @@ export function PasswordSettingsPanel() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const hasPassword = status.data?.hasPassword ?? false;
+  const currentPasswordError = localError === CURRENT_PASSWORD_REQUIRED_ERROR;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLocalError(null);
     setSuccess(null);
+    if (hasPassword && !currentPassword) {
+      setLocalError(CURRENT_PASSWORD_REQUIRED_ERROR);
+      return;
+    }
     const passwordError = getNewPasswordValidationError(newPassword);
     if (passwordError) {
       setLocalError(passwordError);
@@ -81,6 +88,8 @@ export function PasswordSettingsPanel() {
             }}
             required
             autoComplete="current-password"
+            aria-invalid={currentPasswordError ? true : undefined}
+            aria-describedby={currentPasswordError ? "password-form-message" : undefined}
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
           />
         </div>
@@ -101,8 +110,8 @@ export function PasswordSettingsPanel() {
           minLength={PASSWORD_MIN_LENGTH}
           maxLength={PASSWORD_MAX_LENGTH}
           autoComplete="new-password"
-          aria-invalid={localError ? true : undefined}
-          aria-describedby="new-password-message"
+          aria-invalid={localError && !currentPasswordError ? true : undefined}
+          aria-describedby="password-form-message"
           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
         />
       </div>
@@ -122,17 +131,19 @@ export function PasswordSettingsPanel() {
           minLength={PASSWORD_MIN_LENGTH}
           maxLength={PASSWORD_MAX_LENGTH}
           autoComplete="new-password"
-          aria-invalid={localError ? true : undefined}
-          aria-describedby={localError ? "new-password-message" : undefined}
+          aria-invalid={localError && !currentPasswordError ? true : undefined}
+          aria-describedby={
+            localError && !currentPasswordError ? "password-form-message" : undefined
+          }
           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
         />
       </div>
       {localError ? (
-        <p id="new-password-message" role="alert" className="text-xs text-red-400">
+        <p id="password-form-message" role="alert" className="text-xs text-red-400">
           {localError}
         </p>
       ) : (
-        <p id="new-password-message" className="text-xs text-subtle">
+        <p id="password-form-message" className="text-xs text-subtle">
           {PASSWORD_REQUIREMENT_TEXT}
         </p>
       )}

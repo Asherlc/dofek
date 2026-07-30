@@ -139,4 +139,27 @@ describe("PasswordSettingsPanel", () => {
     expect(await screen.findByText("Use at least 8 characters.")).toBeTruthy();
     expect(mutateAsync).not.toHaveBeenCalled();
   });
+
+  it("requires the current password before changing an existing credential", async () => {
+    const mutateAsync = vi.fn();
+    mockStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+    mockSetPasswordMutation.mockReturnValue({ mutateAsync, isPending: false, error: null });
+
+    render(<PasswordSettingsPanel />);
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+
+    expect(await screen.findByText("Enter your current password.")).toBeTruthy();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,7 @@
 import {
   getNewPasswordValidationError,
   PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
@@ -51,7 +52,7 @@ const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
   { id: "account", label: "Account" },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
-const IOS_PASSWORD_RULES = "minlength: 8; maxlength: 128;";
+const IOS_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: ${PASSWORD_MAX_LENGTH};`;
 
 interface SettingsPasswordInputProps {
   autoComplete: NonNullable<TextInputProps["autoComplete"]>;
@@ -156,7 +157,7 @@ export default function SettingsScreen() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
+  const [passwordFormError, setPasswordFormError] = useState<string | null>(null);
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
@@ -220,12 +221,16 @@ export default function SettingsScreen() {
   }
 
   function handleSetPassword() {
-    const passwordError = getNewPasswordValidationError(newPassword);
-    if (passwordError) {
-      setNewPasswordError(passwordError);
+    if (passwordStatus.data?.hasPassword && !currentPassword) {
+      setPasswordFormError("Enter your current password.");
       return;
     }
-    setNewPasswordError(null);
+    const passwordError = getNewPasswordValidationError(newPassword);
+    if (passwordError) {
+      setPasswordFormError(passwordError);
+      return;
+    }
+    setPasswordFormError(null);
     if (newPassword !== confirmPassword) {
       Alert.alert("Error", "Passwords do not match");
       return;
@@ -422,7 +427,10 @@ export default function SettingsScreen() {
                 <SettingsPasswordInput
                   label="Current password"
                   value={currentPassword}
-                  onChangeText={setCurrentPassword}
+                  onChangeText={(value) => {
+                    setCurrentPassword(value);
+                    setPasswordFormError(null);
+                  }}
                   autoComplete="current-password"
                 />
               ) : null}
@@ -431,7 +439,7 @@ export default function SettingsScreen() {
                 value={newPassword}
                 onChangeText={(value) => {
                   setNewPassword(value);
-                  setNewPasswordError(null);
+                  setPasswordFormError(null);
                 }}
                 autoComplete="new-password"
                 passwordRules={IOS_PASSWORD_RULES}
@@ -442,18 +450,20 @@ export default function SettingsScreen() {
                 value={confirmPassword}
                 onChangeText={(value) => {
                   setConfirmPassword(value);
-                  setNewPasswordError(null);
+                  setPasswordFormError(null);
                 }}
                 autoComplete="new-password"
                 passwordRules={IOS_PASSWORD_RULES}
                 maxLength={PASSWORD_MAX_LENGTH}
               />
               <Text
-                style={newPasswordError ? styles.passwordErrorText : styles.passwordRequirementText}
+                style={
+                  passwordFormError ? styles.passwordErrorText : styles.passwordRequirementText
+                }
                 accessibilityLiveRegion="polite"
-                accessibilityRole={newPasswordError ? "alert" : undefined}
+                accessibilityRole={passwordFormError ? "alert" : undefined}
               >
-                {newPasswordError ?? PASSWORD_REQUIREMENT_TEXT}
+                {passwordFormError ?? PASSWORD_REQUIREMENT_TEXT}
               </Text>
               <TouchableOpacity
                 style={[
