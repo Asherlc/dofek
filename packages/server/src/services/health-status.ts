@@ -13,6 +13,8 @@ export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSche
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
 export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
 
+export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v1";
+
 interface HealthStatusSummaryInput {
   metric: HealthStatusMetric["metric"];
   label: string;
@@ -43,6 +45,7 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     statusToken: "insufficient_data",
     statusColor: "muted",
     statusLabel: "Not enough data",
+    evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
     explanation: "Not enough varied data yet to compare this value with your usual range.",
   };
 }
@@ -70,6 +73,12 @@ function movingAsIntendedExplanation(
     return `${input.label} is ${direction} your baseline, in line with your weight goal.`;
   }
   return `${input.label} is ${direction} your baseline, in the supported direction for this metric.`;
+}
+
+function movingAsIntendedRule(direction: "above" | "below"): string {
+  return direction === "above"
+    ? "Above your baseline, where higher values support this metric"
+    : "Below your baseline, where lower values support this metric";
 }
 
 function deviationExplanation(
@@ -106,6 +115,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
       statusToken: "moving_as_intended",
       statusColor: "positive",
       statusLabel: "Moving as intended",
+      evaluationRule: movingAsIntendedRule(direction),
       explanation: movingAsIntendedExplanation(input, direction),
     };
   }
@@ -119,6 +129,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
       statusToken: "near_baseline",
       statusColor: "positive",
       statusLabel: "Near baseline",
+      evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
       explanation: `${input.label} is close to your usual range.`,
     };
   }
@@ -131,6 +142,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
       statusToken: "near_baseline",
       statusColor: "positive",
       statusLabel: "Near baseline",
+      evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
       explanation: `${input.label} is close to your usual range.`,
     };
   }
@@ -143,6 +155,9 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
     statusToken: farFromBaseline ? "far_from_baseline" : "notable_deviation",
     statusColor: farFromBaseline ? "danger" : "warning",
     statusLabel: `${farFromBaseline ? "Far" : "Notably"} ${direction} baseline`,
+    evaluationRule: farFromBaseline
+      ? "Well outside your usual range: at least 2 standard deviations from baseline"
+      : "Outside your usual range: 1 to less than 2 standard deviations from baseline",
     explanation: deviationExplanation(input.label, direction, farFromBaseline),
   };
 }

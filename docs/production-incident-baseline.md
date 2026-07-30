@@ -20658,6 +20658,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The local daemon cause remains unresolved.
   Treat any exact-head CI failure as a new code signal and investigate its
   first fatal line independently.
+## 2026-07-29 — Local full Vitest run ended on worker RPC timeout
+
+- **Status:** Unresolved local-runner failure during issue-2108 validation;
+  exact-head CI is the authoritative full-suite gate.
+- **Symptoms:** The Docker-free full test command completed every test file,
+  then exited 1 because Vitest reported an unhandled worker communication
+  timeout.
+- **User impact:** No production or end-user impact. The local command could
+  not provide a successful process exit despite no assertion failures.
+- **Evidence:** The exact command was `pnpm test -- --run`. It reported 960
+  passed files and two skipped files, with 14,854 passed tests and 21 skipped
+  tests. Its first fatal line was
+  `Error: [vitest-worker]: Timeout calling "onTaskUpdate"`.
+- **Root cause:** Unknown. The captured evidence identifies a local Vitest
+  worker RPC timeout after all tests completed, but does not establish why the
+  worker stopped responding.
+- **Fix / mitigation:** No retry, timeout increase, worker-pool change,
+  suppression, or test workaround was added. The focused dashboard suites,
+  web typecheck, Biome checks, and production Storybook build passed; the
+  normal exact-head CI run for
+  [PR #2323](https://github.com/Asherlc/dofek/pull/2323) remains required.
+- **Remaining risk / follow-up:** If the same worker RPC timeout repeats in an
+  independent run, capture the affected worker/task diagnostics before
+  changing Vitest configuration.
+
 ## 2026-07-29 — Merged mobile nutrition fixture used the retired macro-share field
 
 - **Status:** Fixture corrected on PR #2315; replacement exact-head CI is
