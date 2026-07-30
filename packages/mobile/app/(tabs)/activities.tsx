@@ -18,10 +18,12 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -429,6 +431,12 @@ function ActivityControls({
   const selectedCountLabel = `${selectedCount} ${
     selectedCount === 1 ? "activity" : "activities"
   } selected`;
+
+  useEffect(() => {
+    if (selectMode && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(selectedCountLabel);
+    }
+  }, [selectMode, selectedCountLabel]);
 
   return (
     <View style={styles.controlsPanel}>

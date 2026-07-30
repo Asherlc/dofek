@@ -294,6 +294,7 @@ vi.mock("react-native", () => {
   };
 
   const Alert = { alert: vi.fn() };
+  const AccessibilityInfo = { announceForAccessibility: vi.fn() };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
   const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
@@ -349,6 +350,7 @@ vi.mock("react-native", () => {
     StyleSheet,
     Platform,
     Alert,
+    AccessibilityInfo,
     Linking,
     Share,
     AppState,

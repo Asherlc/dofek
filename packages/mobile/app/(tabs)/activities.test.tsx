@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { Alert } from "react-native";
+import { AccessibilityInfo, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
@@ -451,6 +451,30 @@ describe("ActivitiesScreen", () => {
     expect(routerPush).not.toHaveBeenCalled();
     expect(screen.getByText("1 activity selected").getAttribute("accessibilityliveregion")).toBe(
       "polite",
+    );
+  });
+
+  it("announces selected activity count changes on iOS", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
+    const announceForAccessibility = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => undefined);
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    await waitFor(() =>
+      expect(announceForAccessibility).toHaveBeenLastCalledWith("0 activities selected"),
+    );
+    fireEvent.click(screen.getByText("Trainer Ride"));
+
+    await waitFor(() =>
+      expect(announceForAccessibility).toHaveBeenLastCalledWith("1 activity selected"),
     );
   });
 

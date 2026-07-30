@@ -1,8 +1,5 @@
 # Activity Bulk Selection TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `issue-tdd` and `write-tests`
-> before implementation. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make activity-selection controls explain their actual bulk action and announce the current selection count on web and mobile.
 
 **Behavior:** Every activity-selection entry point says “Select activities,” delete-only surfaces explain that selected activities can be deleted, the web hidden-activity state also explains restoration, and count changes are exposed as accessible live status updates.
