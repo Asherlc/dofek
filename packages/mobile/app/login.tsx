@@ -138,6 +138,7 @@ export default function LoginScreen() {
 
   async function openLegalDocument(document: "privacy" | "terms") {
     const documentTitle = document === "privacy" ? "Privacy Policy" : "Terms of Service";
+    setError(null);
     try {
       await Linking.openURL(`${serverUrl}/${document}`);
     } catch (error_: unknown) {
@@ -578,9 +579,9 @@ const styles = StyleSheet.create({
   },
   legalLinks: {
     alignItems: "center",
-    flexDirection: "row",
+    flexDirection: "column",
     justifyContent: "center",
-    gap: 20,
+    gap: 8,
   },
   legalLinkText: {
     color: colors.accent,

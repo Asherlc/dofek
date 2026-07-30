@@ -68,5 +68,5 @@
 - [x] Run root, server, web, and mobile TypeScript checks.
 - [x] Run `pnpm test`.
 - [x] Build the web app and both Storybooks.
-- [ ] Audit responsive web navigation and the signed iOS Simulator registration flow when prerequisites permit.
+- [x] Audit responsive web navigation and the signed iOS Simulator registration flow.
 - [ ] Commit, push, open a PR with `Fixes #2101`, link it from the issue, and monitor all checks and review feedback through merge.

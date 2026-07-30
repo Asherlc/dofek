@@ -189,7 +189,7 @@ describe("LoginScreen", () => {
 
   it("reports a legal-document launch failure and explains it to the user", async () => {
     const openError = new Error("Browser unavailable");
-    mockOpenUrl.mockRejectedValue(openError);
+    mockOpenUrl.mockRejectedValueOnce(openError).mockResolvedValueOnce();
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: [],
       data: [],
@@ -208,6 +208,12 @@ describe("LoginScreen", () => {
       source: "login-screen-open-legal-document",
       document: "privacy",
     });
+
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Could not open the Privacy Policy. Try again.")).not.toBeTruthy(),
+    );
   });
 
   it("shows task-specific password reset guidance", async () => {
