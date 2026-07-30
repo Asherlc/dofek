@@ -1,6 +1,11 @@
-import { formatDateYmd } from "@dofek/format/format";
+import { formatHRVMeasurement, formatPercent, formatSpO2Measurement } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
+import {
+  LandingPreviewLineChart,
+  LandingPreviewScatterPlot,
+} from "../components/LandingPreviewCharts.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -281,8 +286,11 @@ function OverviewPreview() {
     <div className="rounded-xl border border-border bg-surface p-3.5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-accent-secondary">
+            Illustrative example
+          </div>
           <div className="text-sm font-semibold text-foreground">Overview</div>
-          <div className="text-xs text-subtle">Apr 28 - May 27</div>
+          <div className="text-xs text-subtle">Apr 28–May 27, 2026</div>
         </div>
         <div className="rounded-md border border-border bg-surface-solid px-3 py-1 text-xs text-muted">
           30 days
@@ -299,11 +307,20 @@ function OverviewPreview() {
 }
 
 function DailySummaryPreview() {
-  const previewDate = formatDateYmd();
   const rings = [
-    { label: "Recovery", value: "--", caption: "No data", tone: "var(--color-subtle)" },
-    { label: "Strain", value: "0.0", caption: "Light", tone: "var(--color-muted)" },
-    { label: "Sleep", value: "--", caption: "No data", tone: "var(--color-subtle)" },
+    {
+      label: "Recovery",
+      value: formatPercent(0.74),
+      caption: "Near baseline",
+      tone: "var(--color-accent)",
+    },
+    { label: "Strain", value: "8.6", caption: "Moderate", tone: "var(--color-muted)" },
+    {
+      label: "Sleep",
+      value: "7h 42m",
+      caption: `${formatPercent(0.96)} of need`,
+      tone: "var(--color-accent)",
+    },
   ] as const;
 
   return (
@@ -317,7 +334,7 @@ function DailySummaryPreview() {
             Today&apos;s recovery picture
           </div>
         </div>
-        <div className="text-xs text-subtle">{previewDate}</div>
+        <div className="text-right text-xs text-subtle">May 27, 2026 · Example data</div>
       </div>
       <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
         {rings.map((ring) => (
@@ -342,6 +359,15 @@ function DailySummaryPreview() {
 }
 
 function CorrelationPanel() {
+  const units = useUnitConverter();
+  const hrvMeasurement = formatHRVMeasurement(68);
+  const hrvUnit = hrvMeasurement.parts.find((part) => part.type === "unit")?.value;
+  if (hrvUnit == null) {
+    throw new Error("Heart rate variability formatter did not provide a unit");
+  }
+  const sleepConsistencyAxis = `Sleep consistency (${units.percentageLabel})`;
+  const heartRateVariabilityAxis = `Heart rate variability (${hrvUnit})`;
+
   return (
     <div className="rounded-xl border border-border bg-surface-solid p-3.5">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
@@ -353,17 +379,36 @@ function CorrelationPanel() {
           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
             Correlation
           </div>
-          <div className="mt-1 text-3xl font-bold text-accent">0.72</div>
+          <div className="mt-1 text-3xl font-bold text-accent">r = 0.72</div>
           <div className="mt-1 text-xs font-medium text-accent-secondary">Strong positive</div>
-          <div className="text-xs text-subtle">30-day signal</div>
+          <div className="text-xs text-subtle">24 paired days of 30</div>
         </div>
-        <ScatterPlot />
+        <LandingPreviewScatterPlot
+          accessibleName={`Example correlation scatter plot. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
+          xAxisLabel={sleepConsistencyAxis}
+          xTickLabels={["70", "100"]}
+          yAxisLabel={heartRateVariabilityAxis}
+          yTickLabels={["45", "85"]}
+        />
+      </div>
+      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
+        <p>Example sources: Oura sleep + Apple Health heart rate variability (HRV)</p>
+        <p>Confidence: moderate; association, not causation.</p>
+        <p className="font-semibold text-muted">Next: compare late meals on the same nights.</p>
       </div>
     </div>
   );
 }
 
 function TrendPanel() {
+  const units = useUnitConverter();
+  const averageHeartRate = units.formatHeartRate(52);
+  const heartRateUnit = averageHeartRate.parts.find((part) => part.type === "unit")?.value;
+  if (heartRateUnit == null) {
+    throw new Error("Heart rate formatter did not provide a unit");
+  }
+  const heartRateAxis = `Resting heart rate (${heartRateUnit})`;
+
   return (
     <div className="rounded-xl border border-border bg-surface-solid p-3.5">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
@@ -373,25 +418,63 @@ function TrendPanel() {
       <div className="mt-3 grid grid-cols-[0.45fr_1fr] items-end gap-3">
         <div>
           <div className="text-3xl font-bold" style={{ color: activityMetricColors.heartRate }}>
-            52
+            {formatMeasurementText(averageHeartRate)}
           </div>
-          <div className="text-xs text-subtle">bpm average</div>
+          <div className="text-xs text-subtle">average</div>
+          <div className="mt-1 text-xs font-medium text-accent-secondary">
+            +{formatMeasurementText(units.formatHeartRate(3))} vs prior 7 days
+          </div>
+          <div className="text-xs text-subtle">7 of 7 nights</div>
         </div>
-        <LineChart color={activityMetricColors.heartRate} />
+        <LandingPreviewLineChart
+          accessibleName={`Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: ${heartRateAxis}.`}
+          color={activityMetricColors.heartRate}
+          endLabel="May 27"
+          startLabel="May 21"
+          yAxisLabel={heartRateAxis}
+          yTickLabels={["48", "56"]}
+        />
+      </div>
+      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
+        <p>Example source: Oura</p>
+        <p>Confidence: high coverage; not a diagnosis.</p>
+        <p className="font-semibold text-muted">Next: review training and meal timing.</p>
       </div>
     </div>
   );
 }
 
 function ComparisonPanel() {
+  const units = useUnitConverter();
+  const sleepConsistencyAxis = `Sleep consistency (${units.percentageLabel})`;
+
   return (
     <div className="rounded-xl border border-border bg-surface-solid p-3.5">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
         Training load compared with sleep consistency
       </div>
-      <div className="mt-1 text-sm text-muted">Review load beside sleep and recovery.</div>
-      <div className="mt-3">
-        <ScatterPlot descending={true} />
+      <div className="mt-1 text-sm text-muted">Harder weeks align with less consistent sleep.</div>
+      <div className="mt-3 grid grid-cols-[0.45fr_1fr] items-end gap-3">
+        <div>
+          <div className="text-2xl font-bold text-accent">r = -0.46</div>
+          <div className="mt-1 text-xs font-medium text-accent-secondary">Moderate negative</div>
+          <div className="text-xs text-subtle">22 paired days of 30</div>
+        </div>
+        <LandingPreviewScatterPlot
+          accessibleName={`Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: ${sleepConsistencyAxis}.`}
+          descending={true}
+          xAxisLabel="Training load (points)"
+          xTickLabels={["0", "120"]}
+          yAxisLabel={sleepConsistencyAxis}
+          yTickLabels={["65", "95"]}
+        />
+      </div>
+      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
+        <p>Example sources: Garmin load + Oura sleep</p>
+        <p>Confidence: low; descriptive only.</p>
+        <p className="font-semibold text-muted">
+          Next: inspect high-load weeks with lower sleep consistency.
+        </p>
       </div>
     </div>
   );
@@ -400,9 +483,9 @@ function ComparisonPanel() {
 function HealthMonitorPreview() {
   const units = useUnitConverter();
   const metrics = [
-    { label: "Heart Rate Variability", value: "68 ms" },
-    { label: "Resting Heart Rate", value: "-" },
-    { label: "Blood Oxygen", value: "98%" },
+    { label: "Heart Rate Variability", value: formatHRVMeasurement(68).text },
+    { label: "Resting Heart Rate", value: formatMeasurementText(units.formatHeartRate(52)) },
+    { label: "Blood Oxygen", value: formatSpO2Measurement(98).text },
     { label: "Steps", value: "7,640" },
     { label: "Respiratory Rate", value: "14 breaths/min" },
     { label: "Skin Temperature", value: units.formatTemperature(36.2).text },
@@ -426,79 +509,10 @@ function HealthMonitorPreview() {
           </div>
         ))}
       </div>
+      <div className="mt-2 border-t border-border pt-2 text-[10px] text-subtle">
+        Example data · 27 of 30 days · Oura + Apple Health
+      </div>
     </div>
-  );
-}
-
-function ScatterPlot({ descending = false }: { descending?: boolean }) {
-  const points = descending
-    ? [
-        [8, 18],
-        [18, 26],
-        [28, 30],
-        [38, 35],
-        [50, 42],
-        [62, 46],
-        [74, 54],
-        [88, 60],
-        [20, 44],
-        [42, 50],
-        [66, 34],
-        [80, 40],
-      ]
-    : [
-        [8, 58],
-        [16, 50],
-        [24, 47],
-        [34, 42],
-        [42, 38],
-        [54, 30],
-        [66, 28],
-        [76, 22],
-        [88, 18],
-        [26, 30],
-        [48, 24],
-        [70, 40],
-      ];
-
-  return (
-    <svg viewBox="0 0 120 72" className="h-24 w-full" role="img" aria-hidden="true">
-      <path d="M4 64H116" stroke="var(--color-border-strong)" strokeWidth="1" />
-      <path d="M4 8V64" stroke="var(--color-border-strong)" strokeWidth="1" />
-      <path
-        d={descending ? "M8 18 L112 58" : "M8 60 L112 14"}
-        stroke="var(--color-accent-secondary)"
-        strokeWidth="1.5"
-      />
-      {points.map(([xPosition, yPosition]) => (
-        <circle
-          key={`${xPosition}-${yPosition}`}
-          cx={xPosition}
-          cy={yPosition}
-          r="2"
-          fill="var(--color-accent-secondary)"
-          opacity="0.75"
-        />
-      ))}
-    </svg>
-  );
-}
-
-function LineChart({ color }: { color: string }) {
-  return (
-    <svg viewBox="0 0 160 72" className="h-24 w-full" role="img" aria-hidden="true">
-      <path
-        d="M0 18 C18 20 28 38 44 34 C62 30 72 48 90 44 C110 40 122 56 160 52"
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-      />
-      <path
-        d="M0 18 C18 20 28 38 44 34 C62 30 72 48 90 44 C110 40 122 56 160 52 L160 72 L0 72Z"
-        fill={color}
-        opacity="0.08"
-      />
-    </svg>
   );
 }
 
