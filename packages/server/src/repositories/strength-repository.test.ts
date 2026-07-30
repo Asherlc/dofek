@@ -66,25 +66,26 @@ describe("MuscleGroupVolume", () => {
 });
 
 describe("ProgressiveOverload", () => {
-  it("computes positive slope for increasing volumes", () => {
+  it("describes a positive slope as increasing", () => {
     const overload = new ProgressiveOverload("Deadlift", [1000, 1100, 1200, 1300]);
     const detail = overload.toDetail();
     expect(detail.exerciseName).toBe("Deadlift");
     expect(detail.slopeKgPerWeek).toBeGreaterThan(0);
-    expect(detail.isProgressing).toBe(true);
+    expect(detail.trend).toBe("increasing");
   });
 
-  it("computes negative slope for decreasing volumes", () => {
+  it("describes a negative slope as decreasing", () => {
     const overload = new ProgressiveOverload("Curls", [500, 400, 300, 200]);
     const detail = overload.toDetail();
     expect(detail.slopeKgPerWeek).toBeLessThan(0);
-    expect(detail.isProgressing).toBe(false);
+    expect(detail.trend).toBe("decreasing");
   });
 
-  it("returns zero slope for flat volumes", () => {
+  it("describes an exact-zero slope as stable", () => {
     const overload = new ProgressiveOverload("Rows", [500, 500, 500]);
-    expect(overload.slopeKgPerWeek).toBe(0);
-    expect(overload.isProgressing).toBe(false);
+    const detail = overload.toDetail();
+    expect(detail.slopeKgPerWeek).toBe(0);
+    expect(detail.trend).toBe("stable");
   });
 
   it("includes weekly volumes in detail", () => {
@@ -386,7 +387,7 @@ describe("StrengthRepository", () => {
       const result = await repo.getProgressiveOverload(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(ProgressiveOverload);
-      expect(result[0]?.toDetail().isProgressing).toBe(true);
+      expect(result[0]?.toDetail().trend).toBe("increasing");
     });
 
     it("applies finite selected-range lower-bound filters", async () => {
