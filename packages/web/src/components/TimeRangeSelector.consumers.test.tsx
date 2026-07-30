@@ -5,6 +5,7 @@ import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../lib/selectedRangeQueryRegistry.test-helper.ts";
+import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
 
 const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -164,6 +165,7 @@ vi.mock("../lib/trpc.ts", () => {
         delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
         questions: recordQuery("journal.questions"),
+        trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),
@@ -412,13 +414,21 @@ describe("TimeRangeSelector consumers", () => {
     fireEvent.click(screen.getByRole("button", { name: "7d" }));
 
     expectCallsContaining([{ name: "journal.entries", input: { days: 7 } }]);
-    expectRegistryCovered("journal");
+    expectRegistryCovered("journalLog");
 
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
     clearQueryCalls();
     fireEvent.click(screen.getByRole("button", { name: "All" }));
 
-    expectCallsContaining([{ name: "journal.entries", input: { days: null } }]);
-    expectRegistryCovered("journal");
+    expectCallsContaining([
+      {
+        name: "journal.trends",
+        input: {
+          days: null,
+          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        },
+      },
+    ]);
+    expectRegistryCovered("journalTrends");
   });
 });

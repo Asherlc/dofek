@@ -544,6 +544,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="tracking"
+            options={{
+              title: "Journal Trends",
+            }}
+          />
+          <Stack.Screen
             name="experiments"
             options={{
               title: "Personal Experiments",
