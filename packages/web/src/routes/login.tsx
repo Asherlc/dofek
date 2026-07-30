@@ -7,6 +7,7 @@ import {
 } from "@dofek/auth/auth";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { PasswordInput } from "../components/PasswordInput.tsx";
 import { ProviderLogo, providerLabel } from "../components/ProviderLogo.tsx";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import {
@@ -32,7 +33,6 @@ function LoginPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
-  const [passwordVisible, setPasswordVisible] = useState(false);
 
   useEffect(() => {
     fetchConfiguredProviders()
@@ -71,7 +71,6 @@ function LoginPage() {
     setFormError(null);
     setEmailTouched(false);
     setPasswordTouched(false);
-    setPasswordVisible(false);
   }
 
   const headerCopy =
@@ -285,39 +284,30 @@ function LoginPage() {
                         <label htmlFor="auth-password" className="block text-xs text-muted mb-1">
                           Password
                         </label>
-                        <div className="relative">
-                          <input
-                            id="auth-password"
-                            type={passwordVisible ? "text" : "password"}
-                            value={password}
-                            onChange={(event) => {
-                              setPassword(event.target.value);
-                              setFormError(null);
-                            }}
-                            onBlur={() => setPasswordTouched(true)}
-                            required
-                            minLength={authMode === "register" ? PASSWORD_MIN_LENGTH : undefined}
-                            maxLength={authMode === "register" ? PASSWORD_MAX_LENGTH : undefined}
-                            autoComplete={
-                              authMode === "register" ? "new-password" : "current-password"
-                            }
-                            aria-invalid={passwordValidationError ? true : undefined}
-                            aria-describedby={
-                              passwordValidationError || authMode === "register" || formError
-                                ? "auth-password-message"
-                                : undefined
-                            }
-                            className="w-full px-3 py-2 pr-16 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setPasswordVisible((visible) => !visible)}
-                            aria-label={passwordVisible ? "Hide password" : "Show password"}
-                            className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-muted hover:text-foreground transition-colors"
-                          >
-                            {passwordVisible ? "Hide" : "Show"}
-                          </button>
-                        </div>
+                        <PasswordInput
+                          key={authMode}
+                          id="auth-password"
+                          visibilityLabel="password"
+                          value={password}
+                          onChange={(event) => {
+                            setPassword(event.target.value);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setPasswordTouched(true)}
+                          required
+                          minLength={authMode === "register" ? PASSWORD_MIN_LENGTH : undefined}
+                          maxLength={authMode === "register" ? PASSWORD_MAX_LENGTH : undefined}
+                          autoComplete={
+                            authMode === "register" ? "new-password" : "current-password"
+                          }
+                          aria-invalid={passwordValidationError ? true : undefined}
+                          aria-describedby={
+                            passwordValidationError || authMode === "register" || formError
+                              ? "auth-password-message"
+                              : undefined
+                          }
+                          className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+                        />
                         {passwordValidationError ? (
                           <p
                             id="auth-password-message"

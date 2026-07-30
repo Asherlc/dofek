@@ -293,14 +293,35 @@ export const styles = StyleSheet.create({
   },
 
   // ── Password ──
-  passwordInput: {
+  passwordInputContainer: {
+    alignItems: "center",
     backgroundColor: colors.surfaceSecondary,
     borderRadius: 12,
-    color: colors.text,
-    fontSize: 15,
+    flexDirection: "row",
     marginBottom: 10,
+  },
+  passwordInput: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 15,
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  passwordVisibilityButton: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  passwordVisibilityText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  passwordRequirementText: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginBottom: 8,
   },
   passwordErrorText: {
     color: colors.danger,
