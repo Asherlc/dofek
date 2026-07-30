@@ -2,6 +2,21 @@
 
 Statistical analysis engine for finding correlations and trends in health data.
 
+## Time-range policies
+
+`time-range.ts` is the canonical source for selectable web and mobile time-range defaults,
+visible rationale text, and stable preference keys. Screens in the same domain reuse the same
+key: journal and behavior associations share `behavior`, while training and strain share
+`training`.
+
+Web persists the selected value in `localStorage`; mobile uses AsyncStorage. Both restore the
+saved value when their screen remounts and fall back to the domain default when the saved value
+is missing or invalid. The storage adapters follow the platform APIs documented by the
+[Web Storage standard](https://html.spec.whatwg.org/multipage/webstorage.html) and
+[React Native Async Storage](https://react-native-async-storage.github.io/async-storage/docs/api/).
+Server-side support and computation windows are separate from these user-selectable display
+policies.
+
 ## Implementation Details
 
 ### Correlation analysis
@@ -36,6 +51,11 @@ block-length selection literature ([Politis and White
 2004](https://doi.org/10.1081/ETC-120028836)); the replicate and attempt counts are Dofek
 operational choices. Degenerate inputs or runs that cannot supply every requested replicate
 return explicit unavailable metadata instead of interval bounds.
+
+The dependence-aware interval does not remove time trends or establish a direct relationship.
+Current V2 responses therefore warn that autocorrelation or a shared time trend can create an
+apparent correlation; unrelated trending series are the classic spurious-regression case
+([Granger and Newbold 1974](https://doi.org/10.1016/0304-4076(74)90034-7)).
 
 ### Insight generation
 

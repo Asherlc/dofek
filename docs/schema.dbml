@@ -602,6 +602,7 @@ table fitness.sleep_session {
   light_minutes integer
   awake_minutes integer
   efficiency_pct real
+  staging_available boolean [not null, default: false]
   sleep_type text
   is_nap boolean [not null, default: false]
   sleep_need_baseline_minutes integer

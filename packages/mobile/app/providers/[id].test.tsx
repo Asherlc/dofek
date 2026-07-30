@@ -224,6 +224,9 @@ vi.mock("../../theme", () => ({
     green: "#0f0",
     orange: "#f80",
   },
+  fonts: {
+    mono: "monospace",
+  },
   radius: {
     md: 8,
     lg: 12,
@@ -251,6 +254,7 @@ vi.mock("@dofek/format/format", () => ({
       String(resolvedDate.getDate()).padStart(2, "0"),
     ].join("-");
   },
+  formatDurationSeconds: (seconds: number) => `${seconds} seconds`,
   formatRelativeTime: (date: string) => `${date} ago`,
   formatTableCellValue: (value: unknown) => String(value),
   formatTime: (date: string) => date,
@@ -570,6 +574,46 @@ describe("ProviderDetailScreen", () => {
       expect(screen.getByText("Wahoo")).toBeTruthy();
       expect(screen.getByText("Provider inventory refresh failed")).toBeTruthy();
       expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
+    });
+  });
+
+  describe("Sync history", () => {
+    it("explains an expired provider authorization before exposing diagnostics", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop" });
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            ...authorizedProvider,
+            id: "whoop",
+            name: "WHOOP",
+            authorized: false,
+            needsReauth: true,
+          },
+        ],
+        isLoading: false,
+      });
+      mockLogsQuery.mockReturnValue({
+        data: [
+          {
+            id: "raw-log-123",
+            syncedAt: "2026-07-24T12:00:00.000Z",
+            dataType: "strength",
+            status: "error",
+            recordCount: null,
+            durationMs: 1250,
+            errorMessage: "OAuth token refresh returned invalid_grant",
+            authFailureReason: "refresh_token_revoked",
+          },
+        ],
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Authorization expired")).toBeTruthy();
+      expect(screen.getByText("Reconnect WHOOP to resume Strength data.")).toBeTruthy();
+      expect(screen.queryByText("refresh_token_revoked")).toBeNull();
     });
   });
 

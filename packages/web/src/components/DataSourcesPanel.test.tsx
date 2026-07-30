@@ -161,12 +161,10 @@ vi.mock("./SyncProviderCard.tsx", () => ({
     provider,
     state,
     onSync,
-    onFullSync,
   }: {
     provider: { id: string; name: string };
     state: { status: string; message?: string };
     onSync: () => void;
-    onFullSync: () => void;
   }) => (
     <section data-testid={`provider-card-${provider.id}`}>
       <h4>{provider.name}</h4>
@@ -174,9 +172,6 @@ vi.mock("./SyncProviderCard.tsx", () => ({
       {state.message ? <p>{state.message}</p> : null}
       <button type="button" onClick={onSync}>
         Sync
-      </button>
-      <button type="button" onClick={onFullSync}>
-        Full sync
       </button>
     </section>
   ),

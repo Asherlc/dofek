@@ -29,6 +29,7 @@ function makeSleepRow(
     light_minutes: lightMinutes,
     awake_minutes: 0,
     efficiency_pct: efficiencyPct,
+    staging_available: deepMinutes != null && remMinutes != null && lightMinutes != null,
   };
 }
 

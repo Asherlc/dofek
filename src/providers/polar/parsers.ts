@@ -65,6 +65,7 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     deepMinutes,
     remMinutes,
     awakeMinutes,
+    stagingAvailable: true,
   };
 }
 

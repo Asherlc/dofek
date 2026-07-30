@@ -18,6 +18,13 @@ interface ChartElementProps {
       };
     };
     series?: Array<{
+      markLine?: {
+        data?: Array<{ xAxis: string }>;
+        label?: { show?: boolean };
+        lineStyle?: { opacity?: number; type?: string };
+        silent?: boolean;
+        symbol?: string[];
+      };
       name?: string;
       smooth?: boolean;
       symbolSize?: number;
@@ -108,6 +115,8 @@ describe("isSeriesEmpty", () => {
 describe("TimeSeriesChart", () => {
   it("renders boolean observations as accessible Yes/No points beside numeric lines", () => {
     const element = TimeSeriesChart({
+      accessibilityDescription:
+        "Journal trends from April 1, 2026 to April 3, 2026. Missing days are gaps.",
       series: [
         {
           name: "Alcohol",
@@ -117,6 +126,7 @@ describe("TimeSeriesChart", () => {
           ],
           accessibilityDescription: "Alcohol is shown as separate Yes/No points.",
           formatValue: (value) => (value === 1 ? "Yes" : "No"),
+          missingDates: ["2026-04-02"],
           visualization: "point",
         },
         {
@@ -134,14 +144,25 @@ describe("TimeSeriesChart", () => {
     }
 
     expect(element.props.option.series).toMatchObject([
-      { name: "Alcohol", type: "scatter", symbolSize: 10 },
+      {
+        name: "Alcohol",
+        type: "scatter",
+        symbolSize: 10,
+        markLine: {
+          data: [{ xAxis: "2026-04-02" }],
+          label: { show: false },
+          lineStyle: { opacity: 0.35, type: "dotted" },
+          silent: true,
+          symbol: ["none", "none"],
+        },
+      },
       { name: "Energy", type: "line", smooth: true },
     ]);
     expect(element.props.option.aria).toEqual({
       enabled: true,
       label: {
         description:
-          "Time series chart. Alcohol is shown as separate Yes/No points. Energy is shown as a numeric line.",
+          "Time series chart. Journal trends from April 1, 2026 to April 3, 2026. Missing days are gaps. Alcohol is shown as separate Yes/No points. Energy is shown as a numeric line.",
       },
     });
 
@@ -192,5 +213,27 @@ describe("TimeSeriesChart", () => {
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<img src=x");
+  });
+
+  it("omits visual missing-day markers when their density would obscure the chart", () => {
+    const missingDates = Array.from({ length: 61 }, (_, index) => {
+      const date = new Date("2026-01-01T00:00:00.000Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const element = TimeSeriesChart({
+      series: [
+        {
+          name: "Energy",
+          data: [["2026-01-01", 8]],
+          missingDates,
+        },
+      ],
+    });
+    if (!isValidElement<ChartElementProps>(element)) {
+      throw new Error("Expected TimeSeriesChart to return a chart element");
+    }
+
+    expect(element.props.option.series?.[0]?.markLine).toBeUndefined();
   });
 });

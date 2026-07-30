@@ -532,6 +532,7 @@ describe("createIngestZosHealthRouter", () => {
       lightMinutes: 250,
       awakeMinutes: 40,
       efficiencyPct: 91.5,
+      stagingAvailable: true,
       sourceName: "zepp-companion",
     });
     expect(insertedValues[0]?.startedAt).toEqual(new Date("2026-06-27T22:30:00Z"));
@@ -543,6 +544,40 @@ describe("createIngestZosHealthRouter", () => {
     });
     expect(insertedValues[1]?.startedAt).toEqual(new Date("2026-06-27T23:00:00Z"));
     expect(insertedValues[1]?.endedAt).toEqual(new Date("2026-06-28T00:15:00Z"));
+  });
+
+  it.each([
+    "deepMinutes",
+    "remMinutes",
+    "lightMinutes",
+    "awakeMinutes",
+  ] as const)("marks staging unavailable when %s is absent", async (missingStage) => {
+    const { db, insertedValues } = createMockDatabase();
+    const completeStages = {
+      deepMinutes: 90,
+      remMinutes: 100,
+      lightMinutes: 250,
+      awakeMinutes: 40,
+    };
+
+    const response = await post(
+      createTestApp(db),
+      {
+        sleepSessions: [
+          {
+            externalId: `sleep-missing-${missingStage}`,
+            startedAt: "2026-06-27T22:30:00Z",
+            endedAt: "2026-06-28T06:30:00Z",
+            ...completeStages,
+            [missingStage]: undefined,
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(insertedValues[0]).toMatchObject({ stagingAvailable: false });
   });
 
   it("uses an existing sleep session id when the sleep session insert conflicts", async () => {

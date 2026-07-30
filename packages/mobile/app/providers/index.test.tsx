@@ -488,7 +488,7 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
-  it("exposes provider detail and sync controls as named accessibility actions", async () => {
+  it("exposes one primary action and one details control", async () => {
     const { ProviderCard } = await import("./provider-card.tsx");
     render(
       <ProviderCard
@@ -497,7 +497,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onPress={noopFn}
       />,
@@ -509,9 +508,7 @@ describe("ProviderCard", () => {
     expect(screen.getByRole("button", { name: "Sync Wahoo" }).getAttribute("aria-label")).toBe(
       "Sync Wahoo",
     );
-    expect(screen.getByRole("button", { name: "Full sync Wahoo" }).getAttribute("aria-label")).toBe(
-      "Full sync Wahoo",
-    );
+    expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
   it("announces a syncing provider action as busy and disabled", async () => {
@@ -523,7 +520,6 @@ describe("ProviderCard", () => {
         syncing
         syncProgress={{ message: "Syncing..." }}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onPress={noopFn}
       />,
@@ -543,7 +539,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onPress={noopFn}
       />,
@@ -562,7 +557,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: 45, message: "Fetching activities..." }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -582,7 +576,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ message: "Preparing sync..." }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -600,7 +593,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: 60 }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -621,7 +613,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -640,7 +631,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -659,7 +649,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -678,7 +667,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -696,7 +684,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -716,7 +703,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: -20 }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -735,7 +721,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: 150 }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -754,7 +739,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onPress={noopFn}
       />,
     );
@@ -772,7 +756,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onImport={importFile}
         onPress={noopFn}
@@ -795,7 +778,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onImportProvider={importProvider}
         onPress={noopFn}
@@ -829,7 +811,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onImportProvider={noopFn}
         onPress={noopFn}
@@ -863,7 +844,6 @@ describe("ProviderCard", () => {
           importing={true}
           syncProgress={{ percentage: 25, message: "Importing file" }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onImport={noopFn}
           onPress={noopFn}
@@ -884,7 +864,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -892,24 +871,6 @@ describe("ProviderCard", () => {
 
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Connect")).toBeNull();
-    });
-
-    it("does not render Full sync link for import-only providers", async () => {
-      const { ProviderCard } = await import("./provider-card.tsx");
-      render(
-        <ProviderCard
-          provider={makeProvider({ importOnly: true, authStatus: "connected" })}
-          stats={undefined}
-          syncing={false}
-          syncProgress={undefined}
-          onSync={noopFn}
-          onFullSync={noopFn}
-          onConnect={noopFn}
-          onPress={noopFn}
-        />,
-      );
-
-      expect(screen.queryByText("Full sync")).toBeNull();
     });
 
     it("shows 'Import only' instead of connection status", async () => {
@@ -921,7 +882,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -988,15 +948,6 @@ describe("ProvidersScreen", () => {
     setupDefaultMocks();
   });
 
-  it("renders Full sync link for connected providers", async () => {
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-      expect(wahooCard.getByText("Full sync")).toBeTruthy();
-    });
-  });
-
   it("scopes pull-to-refresh to provider list query families", async () => {
     await renderProvidersScreen();
 
@@ -1039,19 +990,6 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
     });
-  });
-
-  it("does not render Full sync link for disconnected providers", async () => {
-    mockProvidersQuery.mockReturnValue({
-      data: [disconnectedProvider],
-      isLoading: false,
-      error: null,
-    });
-
-    await renderProvidersScreen();
-
-    const stravaCard = within(screen.getByTestId("provider-card-strava"));
-    expect(stravaCard.queryByText("Full sync")).toBeNull();
   });
 
   it("renders Full Sync All button alongside Sync All", async () => {
@@ -1563,29 +1501,6 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
       true,
     );
-  });
-
-  it("passes sinceDays: undefined when Full sync link is clicked", async () => {
-    mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
-    mockSyncStatusFetch.mockResolvedValue({
-      status: "done",
-      providers: { wahoo: { status: "done" } },
-    });
-
-    await renderProvidersScreen();
-
-    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-    fireEvent.click(wahooCard.getByText("Full sync"));
-
-    await waitFor(() => {
-      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
-        providerId: "wahoo",
-        sinceDays: undefined,
-      });
-    });
-    await waitFor(() => {
-      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-2" }, { staleTime: 0 });
-    });
   });
 
   it("passes sinceDays: 7 when Sync All is clicked", async () => {
@@ -2176,7 +2091,7 @@ describe("ProvidersScreen", () => {
     resolveImport({ providerId: "strong-csv", jobId: "job-1" });
   });
 
-  it("does not render Sync or Full sync for import-only providers", async () => {
+  it("does not render a sync action for import-only providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [importOnlyProvider],
       isLoading: false,
@@ -2188,7 +2103,6 @@ describe("ProvidersScreen", () => {
     expect(strongCard.getByText("Strong")).toBeTruthy();
     expect(strongCard.getByText("Import only")).toBeTruthy();
     expect(strongCard.queryByText("Sync")).toBeNull();
-    expect(strongCard.queryByText("Full sync")).toBeNull();
   });
 
   it("excludes import-only providers from Sync All", async () => {
@@ -2203,7 +2117,7 @@ describe("ProvidersScreen", () => {
     expect(screen.queryByText("Sync All")).toBeNull();
   });
 
-  it("does not render Sync or Full sync for push-only providers", async () => {
+  it("does not render a sync action for push-only providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [pushOnlyProvider],
       isLoading: false,
@@ -2215,7 +2129,6 @@ describe("ProvidersScreen", () => {
     expect(appleHealthCard.getByText("Apple Health")).toBeTruthy();
     expect(appleHealthCard.getByText("Push only")).toBeTruthy();
     expect(appleHealthCard.queryByText("Sync")).toBeNull();
-    expect(appleHealthCard.queryByText("Full sync")).toBeNull();
   });
 
   it("excludes push-only providers from Sync All", async () => {
@@ -2646,25 +2559,6 @@ describe("ProvidersScreen", () => {
           startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
           endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
-      );
-    });
-  });
-
-  it("triggers HealthKit sync with syncRangeDays: null when Full sync is clicked", async () => {
-    await renderProvidersScreen();
-
-    // Wait for async permission check to resolve (connected state)
-    await waitFor(() => {
-      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-      expect(appleCard.getByText("Full sync")).toBeTruthy();
-    });
-
-    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-    fireEvent.click(appleCard.getByText("Full sync"));
-
-    await waitFor(() => {
-      expect(mockSyncHealthKit).toHaveBeenCalledWith(
-        expect.objectContaining({ syncRangeDays: null }),
       );
     });
   });

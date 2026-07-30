@@ -11,7 +11,6 @@ import {
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
-import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
@@ -21,14 +20,16 @@ import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../components/QueryStatePanel";
+import { SleepSourceReview } from "../components/SleepSourceReview";
 import { trpc } from "../lib/trpc";
 import { useProcessingStatus } from "../lib/useProcessingStatus";
 import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
 import type { SleepConsistencyRow } from "../types/api";
 
 export default function SleepScreen() {
-  const [days, setDays] = useState(30);
+  const { days, description, setDays } = useTimeRangePreference("sleep");
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const latestStagesQuery = trpc.sleep.latestStages.useQuery();
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
@@ -56,7 +57,10 @@ export default function SleepScreen() {
       : formatRecordLocalTime(lastNight.endedAt, lastNight.localTimeContext, "end");
 
   const durationTrend = nightly.slice(-14).map((n) => n.sleepMinutes);
-  const efficiencyTrend = nightly.slice(-14).map((n) => n.efficiency);
+  const efficiencyTrend = nightly
+    .slice(-14)
+    .map((night) => night.efficiency)
+    .filter((efficiency): efficiency is number => efficiency != null);
 
   const isLoading = shouldShowBlockingLoading({
     data: nightly,
@@ -77,7 +81,7 @@ export default function SleepScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}
@@ -107,22 +111,38 @@ export default function SleepScreen() {
                 description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
                 textStyle={styles.cardTitle}
               />
-              <SleepBar
-                durationMinutes={lastNight.durationMinutes}
-                deepPercentage={lastNight.deepPct}
-                remPercentage={lastNight.remPct}
-                lightPercentage={lastNight.lightPct}
-                awakePercentage={lastNight.awakePct}
-              />
+              {lastNight.stagingAvailable ? (
+                <SleepBar
+                  durationMinutes={lastNight.durationMinutes}
+                  deepPercentage={lastNight.deepPct ?? 0}
+                  remPercentage={lastNight.remPct ?? 0}
+                  lightPercentage={lastNight.lightPct ?? 0}
+                  awakePercentage={lastNight.awakePct ?? 0}
+                />
+              ) : (
+                <View style={styles.partialRecord}>
+                  <Text style={styles.partialRecordTitle}>Partial sleep record</Text>
+                  <Text style={styles.partialRecordDuration}>
+                    {formatDurationMinutes(lastNight.durationMinutes)} recorded
+                  </Text>
+                  <Text style={styles.partialRecordMessage}>
+                    Sleep stages were not reported for this night.
+                  </Text>
+                </View>
+              )}
               <Text style={styles.sleepTiming}>
                 {lastNightBedtime === "--" || lastNightWake === "--"
                   ? "Local sleep time unavailable"
                   : `${lastNightBedtime} – ${lastNightWake}`}
               </Text>
-              <View style={styles.efficiencyRow}>
-                <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
-                <Text style={styles.efficiencyValue}>{formatIntensity(lastNight.efficiency)}</Text>
-              </View>
+              {lastNight.efficiency != null && (
+                <View style={styles.efficiencyRow}>
+                  <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
+                  <Text style={styles.efficiencyValue}>
+                    {formatIntensity(lastNight.efficiency)}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -150,22 +170,26 @@ export default function SleepScreen() {
           )}
 
           {/* Trends */}
-          {averageSleepMinutes != null && averageEfficiencyPercent != null && (
+          {(averageSleepMinutes != null || averageEfficiencyPercent != null) && (
             <View style={styles.metricsGrid}>
-              <MetricCard
-                title="Average Duration"
-                value={formatDurationMinutes(averageSleepMinutes)}
-                trend={durationTrend}
-                color={colors.blue}
-                subtitle={`Last ${days} nights`}
-              />
-              <MetricCard
-                title="Average Efficiency"
-                value={formatIntensity(averageEfficiencyPercent)}
-                trend={efficiencyTrend}
-                color={colors.purple}
-                subtitle={`Last ${days} nights`}
-              />
+              {averageSleepMinutes != null && (
+                <MetricCard
+                  title="Average Duration"
+                  value={formatDurationMinutes(averageSleepMinutes)}
+                  trend={durationTrend}
+                  color={colors.blue}
+                  subtitle={`Last ${days} nights`}
+                />
+              )}
+              {averageEfficiencyPercent != null && (
+                <MetricCard
+                  title="Average Efficiency"
+                  value={formatIntensity(averageEfficiencyPercent)}
+                  trend={efficiencyTrend}
+                  color={colors.purple}
+                  subtitle={`Last ${days} nights`}
+                />
+              )}
             </View>
           )}
 
@@ -258,20 +282,26 @@ export default function SleepScreen() {
                     <View key={night.date} style={styles.nightlyRow}>
                       <Text style={styles.nightlyDate}>{formatDateLong(night.date)}</Text>
                       <View style={styles.nightlyBarContainer}>
-                        <SleepBar
-                          durationMinutes={night.durationMinutes}
-                          deepPercentage={night.deepPct}
-                          remPercentage={night.remPct}
-                          lightPercentage={night.lightPct}
-                          awakePercentage={night.awakePct}
-                          showLegend={false}
-                        />
+                        {night.stagingAvailable ? (
+                          <SleepBar
+                            durationMinutes={night.durationMinutes}
+                            deepPercentage={night.deepPct ?? 0}
+                            remPercentage={night.remPct ?? 0}
+                            lightPercentage={night.lightPct ?? 0}
+                            awakePercentage={night.awakePct ?? 0}
+                            showLegend={false}
+                          />
+                        ) : (
+                          <Text style={styles.stageUnavailable}>Stages not reported</Text>
+                        )}
                       </View>
                     </View>
                   ))}
               </View>
             </View>
           )}
+
+          <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
         </>
       )}
     </ScrollView>
@@ -331,6 +361,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.purple,
     fontVariant: ["tabular-nums"],
+  },
+  partialRecord: {
+    gap: 4,
+    paddingVertical: 8,
+  },
+  partialRecordTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  partialRecordDuration: {
+    fontSize: 15,
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  partialRecordMessage: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   debtValue: {
     fontSize: 28,
@@ -421,5 +469,10 @@ const styles = StyleSheet.create({
   },
   nightlyBarContainer: {
     flex: 1,
+  },
+  stageUnavailable: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    paddingVertical: 8,
   },
 });

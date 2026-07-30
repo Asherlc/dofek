@@ -10,6 +10,21 @@ const mockPolarizationInvalidate = vi.fn();
 const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
+let mockTrainingDataDays = 90;
+type MockRangeQueryOptions = {
+  enabled?: boolean;
+  placeholderData?: (previousData: unknown) => unknown;
+};
+let mockRangeQueryCalls: Record<
+  "training" | "hrZones" | "polarization" | "monotony",
+  Array<{ input: { days: number; endDate?: string }; options: MockRangeQueryOptions }>
+>;
+let mockTimeRangePreference = {
+  days: 90,
+  description: "Recommended default: 90 days balances recent training changes with enough history.",
+  isHydrated: true,
+  setDays: vi.fn(),
+};
 
 type MockTrainingData = Record<string, unknown>;
 type MockTrainingState = {
@@ -77,6 +92,7 @@ function defaultMockTrainingData(): MockTrainingData {
     strainTarget: undefined,
     activities: [],
     weeklyVolume: [],
+    progressiveOverload: [],
     verticalAscent: [],
     climbing: {
       gradeProgression: [],
@@ -109,28 +125,43 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       training: {
-        useQuery: () => ({
-          data: mockTrainingState.data,
-          isLoading: mockTrainingState.isLoading,
-          isFetching: mockTrainingState.isFetching,
-          isError: mockTrainingState.isError,
-          error: mockTrainingState.error,
-        }),
+        useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.training.push({ input, options });
+          return {
+            data:
+              input.days === mockTrainingDataDays
+                ? mockTrainingState.data
+                : options.placeholderData?.(mockTrainingState.data),
+            isLoading: mockTrainingState.isLoading,
+            isFetching: mockTrainingState.isFetching,
+            isError: mockTrainingState.isError,
+            error: mockTrainingState.error,
+          };
+        },
       },
     },
     training: {
       hrZones: {
-        useQuery: () => ({ ...mockHrZonesState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.hrZones.push({ input, options });
+          return { ...mockHrZonesState };
+        },
       },
     },
     efficiency: {
       polarizationTrend: {
-        useQuery: () => ({ ...mockPolarizationState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.polarization.push({ input, options });
+          return { ...mockPolarizationState };
+        },
       },
     },
     cyclingAdvanced: {
       trainingMonotony: {
-        useQuery: () => ({ ...mockMonotonyState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.monotony.push({ input, options });
+          return { ...mockMonotonyState };
+        },
       },
     },
     processing: {
@@ -158,6 +189,10 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
+vi.mock("../../lib/useTimeRangePreference", () => ({
+  useTimeRangePreference: () => mockTimeRangePreference,
+}));
+
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: (input: { invalidate?: (() => Promise<void> | void) | null }) => {
     mockRefreshInvalidate = input.invalidate;
@@ -179,6 +214,12 @@ vi.mock("../../lib/units", () => ({
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
     distanceLabel: "km",
+    formatWeight: (kg: number) => ({
+      text: `${kg.toFixed(1)} kg`,
+      parts: [{ type: "unit", value: "kg" }],
+    }),
+    convertWeight: (kg: number) => kg,
+    weightLabel: "kg",
   }),
 }));
 
@@ -199,7 +240,53 @@ describe("StrainScreen recent activity navigation", () => {
     mockPolarizationInvalidate.mockResolvedValue(undefined);
     mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
+    mockTrainingDataDays = 90;
+    mockRangeQueryCalls = {
+      training: [],
+      hrZones: [],
+      polarization: [],
+      monotony: [],
+    };
+    mockTimeRangePreference = {
+      days: 90,
+      description:
+        "Recommended default: 90 days balances recent training changes with enough history.",
+      isHydrated: true,
+      setDays: vi.fn(),
+    };
     resetMockTrainingState();
+  });
+
+  it("does not consume cached default-range data during preference hydration", async () => {
+    mockTimeRangePreference.isHydrated = false;
+
+    const { default: StrainScreen } = await import("./strain");
+    const view = render(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.options.enabled).toBe(false);
+    }
+    expect(screen.queryByText("16.0")).toBeNull();
+
+    mockTimeRangePreference.days = 30;
+    mockTimeRangePreference.isHydrated = true;
+    view.rerender(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.input.days).toBe(30);
+      expect(calls.at(-1)?.options.enabled).toBe(true);
+      expect(calls.at(-1)?.options.placeholderData).toBeUndefined();
+    }
+    expect(screen.queryByText("16.0")).toBeNull();
+
+    mockTrainingDataDays = 30;
+    view.rerender(<StrainScreen />);
+    mockTimeRangePreference.days = 90;
+    view.rerender(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.options.placeholderData).toBeTypeOf("function");
+    }
   });
 
   it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
@@ -749,6 +836,62 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("No climbing grade progression")).toBeTruthy();
     expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
     expect(screen.getByText("No climbing sessions")).toBeTruthy();
+  });
+
+  it("renders server-authored exercise trend evidence", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      progressiveOverload: [
+        {
+          exerciseName: "Back Squat",
+          observations: [
+            { week: "2026-03-09", totalVolumeKg: 1_000 },
+            { week: "2026-03-23", totalVolumeKg: 1_200 },
+          ],
+          period: {
+            startWeek: "2026-03-09",
+            endWeek: "2026-03-23",
+            observationCount: 2,
+            elapsedWeekCount: 3,
+          },
+          slopeKgPerWeek: 100,
+          trend: "increasing",
+          uncertainty: {
+            availability: "unavailable",
+            level: 0.95,
+            method: "residual_circular_moving_block_bootstrap",
+            methodLabel: "95% moving-block interval",
+            reason: "insufficient_observations",
+            statement: "Uncertainty needs at least 4 recorded weeks; this estimate has 2.",
+          },
+          interpretation:
+            "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+          deloadContext:
+            "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
+        },
+      ],
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Back Squat")).toBeTruthy();
+    expect(screen.getByText("Increasing 100.0 kg/week")).toBeTruthy();
+    expect(
+      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 2."),
+    ).toBeTruthy();
+  });
+
+  it("does not present a failed training query as empty exercise trend data", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.queryByText("No exercise volume trends in this period")).toBeNull();
+    expect(screen.getAllByText("Training data failed to load").length).toBeGreaterThan(0);
   });
 
   it("shows the server error message for climbing data failures", async () => {

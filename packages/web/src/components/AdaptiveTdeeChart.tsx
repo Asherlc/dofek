@@ -18,7 +18,7 @@ interface AdaptiveTdeeChartProps {
 export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
   const units = useUnitConverter();
 
-  if (!data || data.dailyData.length === 0) {
+  if (!data) {
     return (
       <DofekChart
         option={{}}
@@ -58,7 +58,9 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
     series: [
       dofekSeries.line(
         "Calories In",
-        data.dailyData.filter((d) => d.caloriesIn > 0).map((d) => [d.date, d.caloriesIn]),
+        data.dailyData
+          .filter((d) => d.caloriesIn != null && d.caloriesIn > 0)
+          .map((d) => [d.date, d.caloriesIn]),
         { color: chartColors.blue, width: 1, lineStyle: { opacity: 0.5 } },
       ),
       dofekSeries.line(
@@ -83,19 +85,58 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
     <div className="space-y-3">
       {/* Summary stat */}
       {data.estimatedTdee != null && (
-        <div className="flex items-baseline gap-3">
-          <span className="text-2xl font-bold text-foreground">{data.estimatedTdee}</span>
-          <span className="text-sm text-muted">
-            {units.caloriesPerDayLabel} estimated total daily energy expenditure (TDEE)
-          </span>
-          <span className="text-xs text-dim">
-            ({Math.round(data.confidence * 100)}
-            {units.percentageLabel} confidence, {data.dataPoints} data points)
-          </span>
-        </div>
+        <>
+          <div className="flex items-baseline gap-3">
+            <span className="text-2xl font-bold text-foreground">{data.estimatedTdee}</span>
+            <span className="text-sm text-muted">
+              {units.caloriesPerDayLabel} estimated total daily energy expenditure (TDEE)
+            </span>
+          </div>
+          {data.estimateRange && (
+            <p className="text-xs text-muted">
+              Observed rolling range: {data.estimateRange.minimum}–{data.estimateRange.maximum}{" "}
+              {units.caloriesPerDayLabel}
+            </p>
+          )}
+        </>
       )}
 
-      <DofekChart option={option} loading={loading} />
+      {data.status === "unavailable" && data.unavailableReason && (
+        <p className="text-sm text-muted">{data.unavailableReason}</p>
+      )}
+
+      <AdaptiveTdeeEvidence data={data} />
+
+      {data.dailyData.length > 0 && <DofekChart option={option} loading={loading} />}
+    </div>
+  );
+}
+
+function AdaptiveTdeeEvidence({ data }: { data: AdaptiveTdeeResult }) {
+  const evidence = data.evidence;
+  const exclusions = evidence.excludedDays;
+  return (
+    <div className="space-y-1 text-xs text-dim">
+      <p>
+        {evidence.selectedWindowDays}-day evaluation · {evidence.observedDays} accessible calendar
+        days
+      </p>
+      <p>
+        {evidence.fitWindowDays}-day fit · at least {evidence.minimumCalorieDays} usable calorie
+        days
+      </p>
+      <p>
+        {evidence.calorieDays} calorie days · {evidence.weightDays} weight days ·{" "}
+        {evidence.acceptedWindows} accepted windows
+      </p>
+      {(exclusions.missingCalories > 0 ||
+        exclusions.sourceConflict > 0 ||
+        exclusions.lowerPrioritySources > 0) && (
+        <p>
+          Excluded: {exclusions.missingCalories} missing calorie days · {exclusions.sourceConflict}{" "}
+          source-conflict days · {exclusions.lowerPrioritySources} days with lower-priority sources
+        </p>
+      )}
     </div>
   );
 }

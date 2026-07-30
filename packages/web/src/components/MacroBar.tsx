@@ -1,10 +1,10 @@
-import { formatNutritionNumber } from "@dofek/format/format";
+import { formatGrams, formatNutritionNumber } from "@dofek/format/format";
 import { chartColors } from "@dofek/scoring/colors";
 
 interface MacroBarProps {
   label: string;
-  grams: string;
-  percentage: number;
+  grams: number;
+  energySharePercentage: number;
   color: "blue" | "purple" | "teal";
 }
 
@@ -14,23 +14,32 @@ const colorMap = {
   teal: chartColors.teal,
 } as const;
 
-export function MacroBar({ label, grams, percentage, color }: MacroBarProps) {
-  const visualPercentage = Math.min(100, Math.max(0, percentage));
+export function MacroBar({ label, grams, energySharePercentage, color }: MacroBarProps) {
+  const formattedGrams = formatNutritionNumber(grams);
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-muted">{label}</span>
-        <span className="text-muted tabular-nums">
-          {grams}
-          <span className="ml-1.5 text-subtle">({formatNutritionNumber(percentage)}%)</span>
+        <span className="flex items-baseline gap-2 tabular-nums">
+          <span className="font-medium text-foreground">
+            {formatNutritionNumber(energySharePercentage)}% of energy
+          </span>
+          <span className="text-subtle">{formatGrams(grams)} logged</span>
         </span>
       </div>
-      <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
+      <meter
+        className="sr-only"
+        value={energySharePercentage}
+        min={0}
+        max={100}
+        aria-label={`${label}: ${formatNutritionNumber(energySharePercentage)}% share of energy; ${formattedGrams} grams logged`}
+      />
+      <div className="h-2 rounded-full bg-accent/10 overflow-hidden" aria-hidden="true">
         <div
           className="h-full rounded-full transition-all duration-300"
           data-testid="macro-bar-fill"
-          style={{ backgroundColor: colorMap[color], width: `${visualPercentage}%` }}
+          style={{ backgroundColor: colorMap[color], width: `${energySharePercentage}%` }}
         />
       </div>
     </div>

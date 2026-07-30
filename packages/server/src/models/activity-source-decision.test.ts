@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { SourceLink } from "./activity-source-attribution.ts";
-import { buildActivitySourceDecision } from "./activity-source-decision.ts";
+import {
+  buildActivityListSource,
+  buildActivitySourceDecision,
+} from "./activity-source-decision.ts";
 
 const wahooLink: SourceLink = {
   providerId: "wahoo",
@@ -157,6 +160,53 @@ describe("buildActivitySourceDecision", () => {
       primarySourceLabel: "Strong (via Apple Health)",
       explanation:
         "Strong (via Apple Health) was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
+  });
+});
+
+describe("buildActivityListSource", () => {
+  it("labels a single-source activity without claiming overlap", () => {
+    expect(buildActivityListSource("wahoo", null, [wahooLink])).toEqual({
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    });
+  });
+
+  it("summarizes only the matched source records proved by attribution", () => {
+    expect(buildActivityListSource("wahoo", null, [wahooLink, stravaLink])).toEqual({
+      primarySourceLabel: "Wahoo",
+      sourceCount: 2,
+      overlapSummary: "2 matched source records · Wahoo selected by source priority",
+    });
+  });
+
+  it("uses the same primary source lookup semantics as the detail decision", () => {
+    const customPrimary: SourceLink = {
+      providerId: "apple_health",
+      externalId: "hk:workout:strong",
+      subsource: "Strong",
+      label: "Strong App (custom)",
+      url: null,
+      providerAbsentAt: null,
+    };
+
+    expect(buildActivityListSource("apple_health", "Strong", [customPrimary, wahooLink])).toEqual({
+      primarySourceLabel: "Strong App (custom)",
+      sourceCount: 2,
+      overlapSummary: "2 matched source records · Strong App (custom) selected by source priority",
+    });
+  });
+
+  it("still attributes a canonical activity when no external source link is available", () => {
+    expect(
+      buildActivityListSource("garmin", null, undefined, (id) =>
+        id === "garmin" ? { name: "Garmin Connect Custom" } : undefined,
+      ),
+    ).toEqual({
+      primarySourceLabel: "Garmin Connect Custom",
+      sourceCount: 1,
+      overlapSummary: null,
     });
   });
 });

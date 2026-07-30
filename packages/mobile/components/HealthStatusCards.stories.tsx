@@ -18,6 +18,7 @@ const meta = {
         statusToken: "moving_as_intended",
         statusColor: "positive",
         statusLabel: "Moving as intended",
+        evaluationRule: "Below your baseline, where lower values support this metric",
         explanation: "Trend Weight is below your baseline, in line with your weight goal.",
       },
       {
@@ -32,6 +33,8 @@ const meta = {
         statusToken: "notable_deviation",
         statusColor: "warning",
         statusLabel: "Notably above baseline",
+        evaluationRule:
+          "Outside your usual range: 1 to less than 2 standard deviations from baseline",
         explanation:
           "Body Fat % is above your usual range enough to stand out from recent variation.",
       },
@@ -60,7 +63,32 @@ export const InsufficientData: Story = {
         statusToken: "insufficient_data",
         statusColor: "muted",
         statusLabel: "Not enough data",
+        evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
         explanation: "Not enough varied data yet to compare this value with your usual range.",
+      },
+    ],
+  },
+};
+
+export const FarFromBaseline: Story = {
+  args: {
+    metrics: [
+      {
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        value: 68,
+        baseline: 56,
+        sampleDeviation: 5,
+        deviation: 2.4,
+        direction: "above",
+        intent: "lower",
+        statusToken: "far_from_baseline",
+        statusColor: "danger",
+        statusLabel: "Far above baseline",
+        evaluationRule:
+          "Well outside your usual range: at least 2 standard deviations from baseline",
+        explanation:
+          "Resting Heart Rate is well above your usual range compared with recent variation.",
       },
     ],
   },

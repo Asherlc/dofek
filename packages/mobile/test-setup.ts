@@ -128,18 +128,42 @@ vi.mock("react-native", () => {
     accessibilityState,
     children,
     onPress,
+    onPressIn,
+    onPressOut,
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
     style,
     ...props
-  }: Record<string, unknown>) =>
-    React.createElement(
+  }: Record<string, unknown>) => {
+    const pressActiveRef = React.useRef(false);
+
+    const beginPress = (event: unknown) => {
+      pressActiveRef.current = true;
+      if (typeof onPressIn === "function") {
+        onPressIn(event);
+      }
+    };
+    const endPress = (event: unknown) => {
+      if (!pressActiveRef.current) {
+        return;
+      }
+
+      pressActiveRef.current = false;
+      if (typeof onPressOut === "function") {
+        onPressOut(event);
+      }
+    };
+
+    return React.createElement(
       "button",
       {
         ...props,
         ...ariaPropsFromAccessibilityState(accessibilityState),
         onClick: onPress,
+        onMouseDown: beginPress,
+        onMouseLeave: endPress,
+        onMouseUp: endPress,
         role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
         "aria-description": accessibilityHint,
@@ -148,12 +172,16 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   Pressable.displayName = "Pressable";
   const TextInput = ({
+    accessibilityLabel,
+    "aria-label": ariaLabel,
     multiline,
     numberOfLines: _numberOfLines,
     onChangeText,
     placeholderTextColor: _placeholderTextColor,
+    secureTextEntry,
     style,
     textAlignVertical: _textAlignVertical,
     testID,
@@ -163,11 +191,13 @@ vi.mock("react-native", () => {
     const tagName = multiline === true ? "textarea" : "input";
     return React.createElement(tagName, {
       ...props,
+      "aria-label": accessibilityLabel ?? ariaLabel,
       "data-testid": testID,
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (typeof onChangeText === "function") onChangeText(event.target.value);
       },
       style: flattenStyle(style),
+      ...(multiline === true ? {} : { type: secureTextEntry === true ? "password" : "text" }),
       value,
     });
   };
@@ -264,6 +294,7 @@ vi.mock("react-native", () => {
   };
 
   const Alert = { alert: vi.fn() };
+  const AccessibilityInfo = { announceForAccessibility: vi.fn() };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
   const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
@@ -319,6 +350,7 @@ vi.mock("react-native", () => {
     StyleSheet,
     Platform,
     Alert,
+    AccessibilityInfo,
     Linking,
     Share,
     AppState,

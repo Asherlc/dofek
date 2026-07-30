@@ -3,16 +3,19 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JournalPanel } from "./JournalPanel.tsx";
+import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
 
 interface CapturedJournalSeries {
   data: Array<[string, number | null]>;
   accessibilityDescription?: string;
   formatValue?: (value: number) => string;
+  missingDates?: string[];
   name: string;
   visualization?: "line" | "point";
 }
 
 interface CapturedChartProps {
+  accessibilityDescription?: string;
   series: CapturedJournalSeries[];
 }
 
@@ -25,6 +28,7 @@ const mocks = vi.hoisted(() => {
     entriesInvalidate: vi.fn(),
     entriesQuery: vi.fn(),
     questionsQuery: vi.fn(),
+    trendsQuery: vi.fn(),
   };
 });
 
@@ -47,6 +51,9 @@ vi.mock("../lib/trpc.ts", () => ({
       },
       questions: {
         useQuery: mocks.questionsQuery,
+      },
+      trends: {
+        useQuery: mocks.trendsQuery,
       },
       delete: {
         useMutation: mocks.deleteMutation,
@@ -77,7 +84,7 @@ vi.mock("./TimeSeriesChart.tsx", () => ({
 const entry = {
   id: "entry-1",
   date: "2026-07-25",
-  provider_id: "dofek",
+  source: { providerId: "dofek", label: "Dofek" },
   question_slug: "mood",
   display_name: "Mood",
   category: "wellness",
@@ -99,6 +106,12 @@ describe("JournalPanel", () => {
     mocks.entriesQuery.mockReturnValue({ data: [entry], error: null, isLoading: false });
     mocks.questionsQuery.mockReset();
     mocks.questionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+    mocks.trendsQuery.mockReset();
+    mocks.trendsQuery.mockReturnValue({
+      data: emptyJournalTrendEvidence,
+      error: null,
+      isLoading: false,
+    });
     mocks.deleteMutation.mockReset();
     mocks.deleteMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
   });
@@ -143,7 +156,7 @@ describe("JournalPanel", () => {
         {
           ...entry,
           id: "alcohol",
-          provider_id: "whoop",
+          source: { providerId: "manual_review", label: "Manual review" },
           question_slug: "alcohol",
           display_name: "Alcohol",
           data_type: "boolean",
@@ -154,7 +167,7 @@ describe("JournalPanel", () => {
         {
           ...entry,
           id: "late-meal",
-          provider_id: "whoop",
+          source: { providerId: "whoop", label: "WHOOP (Cloud)" },
           question_slug: "late_meal",
           display_name: "Late meal",
           data_type: "boolean",
@@ -171,14 +184,43 @@ describe("JournalPanel", () => {
 
     const alcoholRow = screen.getByText("Alcohol").parentElement?.parentElement;
     const lateMealRow = screen.getByText("Late meal").parentElement?.parentElement;
-    expect(alcoholRow?.textContent).toMatch(/^Alcohol\s*Yes\s*whoop$/);
-    expect(lateMealRow?.textContent).toMatch(/^Late meal\s*No\s*whoop$/);
+    expect(alcoholRow?.textContent).toContain("Manual review");
+    expect(alcoholRow?.textContent).not.toContain("manual_review");
+    expect(lateMealRow?.textContent).toContain("WHOOP (Cloud)");
+    expect(lateMealRow?.textContent).not.toContain("whoop");
     const yesAnswer = screen.getByText("Yes");
     const noAnswer = screen.getByText("No");
     expect(yesAnswer.classList.contains("bg-surface-hover")).toBe(true);
     expect(yesAnswer.classList.contains("text-muted")).toBe(true);
     expect(noAnswer.classList.contains("bg-surface-hover")).toBe(true);
     expect(noAnswer.classList.contains("text-muted")).toBe(true);
+  });
+
+  it("reveals raw source IDs only through accessible technical details", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: [
+        {
+          ...entry,
+          source: { providerId: "manual_review", label: "Manual review" },
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("Manual review")).toBeDefined();
+    expect(screen.queryByText("manual_review")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show technical source details for Manual review" }),
+    );
+
+    expect(screen.getByText("Provider ID: manual_review")).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Hide technical source details for Manual review" }),
+    ).toBeDefined();
   });
 
   it("paginates journal entries", () => {
@@ -229,10 +271,10 @@ describe("JournalPanel", () => {
     });
   });
 
-  it("shows question failures on the trends tab instead of an empty chart state", () => {
-    mocks.questionsQuery.mockReturnValue({
+  it("shows trend-evidence failures instead of the empty chart state", () => {
+    mocks.trendsQuery.mockReturnValue({
       data: undefined,
-      error: new Error("Journal questions failed to load"),
+      error: new Error("Journal trends failed to load"),
       isFetching: false,
       isLoading: false,
       refetch: vi.fn(),
@@ -241,14 +283,14 @@ describe("JournalPanel", () => {
     render(<JournalPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
 
-    expect(screen.getByText("Journal questions failed to load")).toBeDefined();
+    expect(screen.getByText("Journal trends failed to load")).toBeDefined();
     expect(screen.queryByText("No numeric journal data to chart.")).toBeNull();
   });
 
-  it("retains the trends empty state alongside a background question failure", () => {
-    mocks.questionsQuery.mockReturnValue({
-      data: [],
-      error: new Error("Journal questions refresh failed"),
+  it("retains the trends empty state alongside a background refresh failure", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: emptyJournalTrendEvidence,
+      error: new Error("Journal trends refresh failed"),
       isFetching: false,
       isLoading: false,
       refetch: vi.fn(),
@@ -257,69 +299,83 @@ describe("JournalPanel", () => {
     render(<JournalPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
 
-    expect(screen.getByText("Journal questions refresh failed")).toBeDefined();
+    expect(screen.getByText("Journal trends refresh failed")).toBeDefined();
     expect(screen.getByText("No numeric journal data to chart.")).toBeDefined();
   });
 
-  it("renders boolean observations as Yes/No points and numeric observations as lines", () => {
-    mocks.questionsQuery.mockReturnValue({
-      data: [
-        {
-          slug: "alcohol",
-          display_name: "Alcohol",
-          category: "substance",
-          data_type: "boolean",
-          unit: null,
-          sort_order: 1,
-        },
-        {
-          slug: "energy",
-          display_name: "Energy",
-          category: "wellness",
-          data_type: "numeric",
-          unit: "/10",
-          sort_order: 2,
-        },
-      ],
+  it("shows an unavailable state when the trends query settles without evidence", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: undefined,
       error: null,
       isLoading: false,
     });
-    mocks.entriesQuery.mockReturnValue({
-      data: [
-        {
-          ...entry,
-          id: "alcohol-yes",
-          date: "2026-07-23",
-          question_slug: "alcohol",
-          display_name: "Alcohol",
-          category: "substance",
-          data_type: "boolean",
-          answer_text: "yes",
-          answer_numeric: 1,
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(screen.getByText("Journal trend evidence is unavailable.")).toBeDefined();
+  });
+
+  it("renders server-authored dates, gaps, exact values, and uncertainty evidence", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: {
+        window: {
+          startDate: "2026-07-23",
+          endDate: "2026-07-25",
+          dayCount: 3,
+          gapRepresentation: "explicit_daily",
         },
-        {
-          ...entry,
-          id: "alcohol-no",
-          date: "2026-07-24",
-          question_slug: "alcohol",
-          display_name: "Alcohol",
-          category: "substance",
-          data_type: "boolean",
-          answer_text: "no",
-          answer_numeric: 0,
+        statement:
+          "3 exact observations across 2 of 3 days. Missing days indicate no journal value was recorded.",
+        uncertainty: {
+          status: "unavailable",
+          statement: "Uncertainty interval: not available for raw journal observations.",
         },
-        {
-          ...entry,
-          id: "energy-8",
-          date: "2026-07-24",
-          question_slug: "energy",
-          display_name: "Energy",
-          data_type: "numeric",
-          unit: "/10",
-          answer_text: null,
-          answer_numeric: 8,
-        },
-      ],
+        series: [
+          {
+            questionSlug: "alcohol",
+            displayName: "Alcohol",
+            dataType: "boolean",
+            unit: null,
+            observationCount: 2,
+            observedDayCount: 2,
+            missingDayCount: 1,
+            statement: "2 exact observations across 2 of 3 days; 1 day has no recorded value.",
+            points: [
+              {
+                date: "2026-07-23",
+                value: 1,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+              {
+                date: "2026-07-24",
+                value: 0,
+                source: { providerId: "whoop", label: "WHOOP (Cloud)" },
+              },
+              { date: "2026-07-25", value: null, source: null },
+            ],
+          },
+          {
+            questionSlug: "energy",
+            displayName: "Energy",
+            dataType: "numeric",
+            unit: "/10",
+            observationCount: 1,
+            observedDayCount: 1,
+            missingDayCount: 2,
+            statement: "1 exact observation across 1 of 3 days; 2 days have no recorded value.",
+            points: [
+              { date: "2026-07-23", value: null, source: null },
+              {
+                date: "2026-07-24",
+                value: 8,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+              { date: "2026-07-25", value: null, source: null },
+            ],
+          },
+        ],
+      },
       error: null,
       isLoading: false,
     });
@@ -335,6 +391,7 @@ describe("JournalPanel", () => {
       data: [
         ["2026-07-23", 1],
         ["2026-07-24", 0],
+        ["2026-07-25", null],
       ],
       accessibilityDescription: "Alcohol is shown as separate Yes/No points.",
       visualization: "point",
@@ -343,8 +400,141 @@ describe("JournalPanel", () => {
     expect(alcohol?.formatValue?.(0)).toBe("No");
     expect(alcohol?.formatValue?.(2)).toBe("2");
     expect(energy).toMatchObject({
-      data: [["2026-07-24", 8]],
+      data: [
+        ["2026-07-23", null],
+        ["2026-07-24", 8],
+        ["2026-07-25", null],
+      ],
       visualization: "line",
     });
+    expect(chart?.accessibilityDescription).toContain("Thu, Jul 23, 2026 to Sat, Jul 25, 2026");
+    expect(screen.getByText("Thu, Jul 23, 2026 – Sat, Jul 25, 2026")).toBeDefined();
+    expect(
+      screen.getByText(
+        "3 exact observations across 2 of 3 days. Missing days indicate no journal value was recorded.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText("Uncertainty interval: not available for raw journal observations."),
+    ).toBeDefined();
+    expect(
+      screen.getByText("2 exact observations across 2 of 3 days; 1 day has no recorded value."),
+    ).toBeDefined();
+    expect(screen.getByText("Missing: Sat, Jul 25, 2026")).toBeDefined();
+    expect(screen.getByText("Yes · Dofek")).toBeDefined();
+    expect(screen.getByText("No · WHOOP (Cloud)")).toBeDefined();
+    expect(screen.getByText("8 /10 · Dofek")).toBeDefined();
+  });
+
+  it("renders same-day numeric provider observations as separate points", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: {
+        window: {
+          startDate: "2026-07-24",
+          endDate: "2026-07-25",
+          dayCount: 2,
+          gapRepresentation: "explicit_daily",
+        },
+        statement: "3 exact observations across 2 of 2 days.",
+        uncertainty: {
+          status: "unavailable",
+          statement: "Uncertainty interval: not available for raw journal observations.",
+        },
+        series: [
+          {
+            questionSlug: "energy",
+            displayName: "Energy",
+            dataType: "numeric",
+            unit: "/10",
+            observationCount: 3,
+            observedDayCount: 2,
+            missingDayCount: 0,
+            statement: "3 exact observations across 2 of 2 days; 0 days have no recorded value.",
+            points: [
+              {
+                date: "2026-07-24",
+                value: 7,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+              {
+                date: "2026-07-24",
+                value: 8,
+                source: { providerId: "whoop", label: "WHOOP (Cloud)" },
+              },
+              {
+                date: "2026-07-25",
+                value: 9,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(mocks.chartProps.at(-1)?.series[0]).toMatchObject({
+      accessibilityDescription:
+        "Energy is shown as separate points because multiple sources recorded the same date.",
+      visualization: "point",
+    });
+  });
+
+  it("labels sparse All-history gaps as counts instead of exact missing dates", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: {
+        window: {
+          startDate: "2006-06-28",
+          endDate: "2026-07-05",
+          dayCount: 7313,
+          gapRepresentation: "count_only",
+        },
+        statement:
+          "1 exact observation across 1 of 7313 days. Missing days are summarized by count for the all-history window.",
+        uncertainty: {
+          status: "unavailable",
+          statement: "Uncertainty interval: not available for raw journal observations.",
+        },
+        series: [
+          {
+            questionSlug: "energy",
+            displayName: "Energy",
+            dataType: "numeric",
+            unit: "/10",
+            observationCount: 1,
+            observedDayCount: 1,
+            missingDayCount: 7312,
+            statement:
+              "1 exact observation across 1 of 7313 days; 7312 days have no recorded value.",
+            points: [
+              {
+                date: "2006-06-28",
+                value: 6,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(mocks.chartProps.at(-1)?.series[0]?.missingDates).toEqual([]);
+    expect(mocks.chartProps.at(-1)?.accessibilityDescription).toContain(
+      "Missing days are summarized by count for All history",
+    );
+    expect(
+      screen.getByText(
+        "Missing-day dates are summarized by count for All history: 7312 days. Choose a finite range to inspect exact missing dates.",
+      ),
+    ).toBeDefined();
   });
 });

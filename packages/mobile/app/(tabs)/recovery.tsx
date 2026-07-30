@@ -17,7 +17,7 @@ import {
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -35,11 +35,12 @@ import { DaySelector } from "../../components/DaySelector";
 import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
@@ -176,15 +177,23 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, description, isHydrated, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
+  const hasCommittedHydratedRange = useRef(false);
+  const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
+  useEffect(() => {
+    hasCommittedHydratedRange.current = isHydrated;
+  }, [isHydrated]);
 
   const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
     { days, endDate },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
   );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
-  const recoveryData = recoveryQuery.data;
+  const recoveryData = isHydrated ? recoveryQuery.data : undefined;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
   const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
@@ -256,6 +265,10 @@ export default function RecoveryScreen() {
       ]).then(() => undefined),
   });
 
+  if (!isHydrated) {
+    return <QueryStatePanel variant="loading" minHeight={200} />;
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -268,13 +281,31 @@ export default function RecoveryScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}
         error={processingStatus.error}
         loading={processingStatus.isLoading}
       />
+
+      {recoveryQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={
+            recoveryData == null
+              ? "Recovery data is unavailable"
+              : "Recovery data could not refresh"
+          }
+          message={getQueryErrorMessage(recoveryQuery.error)}
+          minHeight={96}
+          onRetry={() => {
+            void recoveryQuery.refetch();
+          }}
+          retryLabel="Retry recovery data"
+          retrying={recoveryQuery.isFetching}
+        />
+      ) : null}
 
       {recoveryData != null && (
         <HealthStatusCards
@@ -306,7 +337,7 @@ export default function RecoveryScreen() {
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : (
+      ) : recoveryData != null ? (
         <>
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
@@ -525,39 +556,54 @@ export default function RecoveryScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null &&
+          {healthspan != null && healthspan.availability.status === "insufficient_data" ? (
+            <Card title="Healthspan Score">
+              <Text style={styles.healthspanAvailabilitySummary}>
+                {healthspan.availability.summary}
+              </Text>
+              {healthspan.availability.nextCondition != null ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  {healthspan.availability.nextCondition}
+                </Text>
+              ) : null}
+              {healthspan.availability.missingMetricLabels.length > 0 ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  Missing supported metrics:{" "}
+                  {healthspan.availability.missingMetricLabels.join(", ")}
+                </Text>
+              ) : null}
+            </Card>
+          ) : healthspan != null &&
             healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 && (
-              <Card title="Healthspan Score">
-                <View style={styles.healthspanRow}>
+            healthspan.metrics.length > 0 ? (
+            <Card title="Healthspan Score">
+              <View style={styles.healthspanRow}>
+                <Text
+                  style={[
+                    styles.healthspanScore,
+                    { color: scoreColor(healthspan.healthspanScore) },
+                  ]}
+                >
+                  {healthspan.healthspanScore}
+                </Text>
+                <View style={styles.healthspanMeta}>
                   <Text
                     style={[
-                      styles.healthspanScore,
+                      styles.healthspanStatus,
                       { color: scoreColor(healthspan.healthspanScore) },
                     ]}
                   >
-                    {healthspan.healthspanScore}
+                    {scoreLabel(healthspan.healthspanScore)}
                   </Text>
-                  <View style={styles.healthspanMeta}>
-                    <Text
-                      style={[
-                        styles.healthspanStatus,
-                        { color: scoreColor(healthspan.healthspanScore) },
-                      ]}
-                    >
-                      {scoreLabel(healthspan.healthspanScore)}
+                  {healthspan.trend != null && (
+                    <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
+                      {trendArrow(healthspan.trend)} {healthspan.trend}
                     </Text>
-                    {healthspan.trend != null && (
-                      <Text
-                        style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}
-                      >
-                        {trendArrow(healthspan.trend)} {healthspan.trend}
-                      </Text>
-                    )}
-                  </View>
+                  )}
                 </View>
-              </Card>
-            )}
+              </View>
+            </Card>
+          ) : null}
 
           {/* Trend Weight */}
           {latestWeight != null && (
@@ -683,7 +729,7 @@ export default function RecoveryScreen() {
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
         </>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
@@ -768,6 +814,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     textTransform: "capitalize",
+  },
+  healthspanAvailabilitySummary: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  healthspanAvailabilityDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   weightRow: {
     flexDirection: "row",

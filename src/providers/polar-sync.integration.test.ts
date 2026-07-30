@@ -253,6 +253,7 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(sleepRecord.deepMinutes).toBe(85);
     expect(sleepRecord.lightMinutes).toBe(220);
     expect(sleepRecord.remMinutes).toBe(100);
+    expect(sleepRecord.stagingAvailable).toBe(true);
     expect(sleepRecord.awakeMinutes).toBe(40);
 
     // Verify daily metrics (with nightly recharge data merged)

@@ -34,6 +34,13 @@ export const Contextual: Story = {
   },
 };
 
+export const DomainTitle: Story = {
+  args: {
+    title: "Alert status is unavailable",
+    error: new Error("The status service timed out."),
+  },
+};
+
 export const Retrying: Story = {
   args: {
     onRetry: () => {},

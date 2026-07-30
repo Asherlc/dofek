@@ -18,6 +18,7 @@ const associations = [
     impactPercent: 18.6,
     yesCount: 18,
     noCount: 24,
+    sources: [{ providerId: "manual_review", label: "Manual review" }],
   },
   {
     questionSlug: "late-meal",
@@ -26,6 +27,10 @@ const associations = [
     impactPercent: -12.4,
     yesCount: 14,
     noCount: 28,
+    sources: [
+      { providerId: "manual_review", label: "Manual review" },
+      { providerId: "whoop", label: "WHOOP (Cloud)" },
+    ],
   },
 ];
 

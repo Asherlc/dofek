@@ -150,10 +150,15 @@ export function selectedChartRangeQuery<TResult>(
   endpoint: SelectedChartRangeEndpoint,
   ttlMs: number,
   resolve: (args: SelectedChartRangeResolveArgs<{ days: RangeDays }>) => MaybePromise<TResult>,
-  options: { min?: number; max?: number; outputSchema?: z.ZodType<TResult> } = {},
+  options: {
+    min?: number;
+    max?: number;
+    outputSchema?: z.ZodType<TResult>;
+    keyVersion?: string;
+  } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
-  return cachedProtectedQuery({ maxAge: ttlMs })
+  return cachedProtectedQuery({ maxAge: ttlMs, keyVersion: options.keyVersion })
     .input(selectedChartRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())
     .query(({ ctx, input }) =>
@@ -203,10 +208,15 @@ export function selectedChartDateRangeQuery<TResult>(
   resolve: (
     args: SelectedChartRangeResolveArgs<{ days: RangeDays; endDate: string }>,
   ) => MaybePromise<TResult>,
-  options: { min?: number; max?: number; outputSchema?: z.ZodType<TResult> } = {},
+  options: {
+    min?: number;
+    max?: number;
+    outputSchema?: z.ZodType<TResult>;
+    keyVersion?: string;
+  } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "dateRange");
-  return cachedProtectedQuery({ maxAge: ttlMs })
+  return cachedProtectedQuery({ maxAge: ttlMs, keyVersion: options.keyVersion })
     .input(selectedChartDateRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())
     .query(({ ctx, input }) =>

@@ -10,6 +10,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: 250,
     awake_minutes: 38,
     efficiency_pct: 92,
+    staging_available: true,
   },
   {
     started_at: "2026-03-28T12:00:00",
@@ -19,6 +20,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: 270,
     awake_minutes: 40,
     efficiency_pct: 91,
+    staging_available: true,
   },
   {
     started_at: "2026-03-29T12:00:00",
@@ -28,6 +30,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: 245,
     awake_minutes: 38,
     efficiency_pct: 90,
+    staging_available: true,
   },
   {
     started_at: "2026-03-30T12:00:00",
@@ -37,6 +40,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: 260,
     awake_minutes: 34,
     efficiency_pct: 88,
+    staging_available: true,
   },
   {
     started_at: "2026-03-31T12:00:00",
@@ -46,6 +50,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: 250,
     awake_minutes: 36,
     efficiency_pct: 93,
+    staging_available: true,
   },
   {
     started_at: "2026-04-01T12:00:00",
@@ -55,6 +60,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: null,
+    staging_available: false,
   },
   {
     started_at: "2026-04-02T12:00:00",
@@ -64,6 +70,7 @@ const sampleDataWithoutLocalTimeContext = [
     light_minutes: 255,
     awake_minutes: 35,
     efficiency_pct: 94,
+    staging_available: true,
   },
 ];
 

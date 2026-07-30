@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { AuthUser } from "./auth.ts";
-import { logout as doLogout, fetchCurrentUser } from "./auth.ts";
+import { logout as doLogout, fetchCurrentUser, redirectToLogin } from "./auth.ts";
+import { identifyPostHogUser, resetPostHogUser } from "./posthog.ts";
 import { captureException } from "./telemetry.ts";
 
 interface AuthContextValue {
@@ -23,6 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const identifiedUserId = useRef<string | null>(null);
 
   const retryBootstrap = useCallback(async () => {
     setIsLoading(true);
@@ -30,6 +32,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = await fetchCurrentUser();
       setBootstrapError(null);
       setUser(currentUser);
+      if (currentUser) {
+        if (identifiedUserId.current && identifiedUserId.current !== currentUser.id) {
+          resetPostHogUser();
+        }
+        identifyPostHogUser(currentUser);
+        identifiedUserId.current = currentUser.id;
+      } else if (identifiedUserId.current) {
+        resetPostHogUser();
+        identifiedUserId.current = null;
+      }
     } catch (error: unknown) {
       captureException(error, { source: "auth-bootstrap" });
       setBootstrapError(error instanceof Error ? error.message : String(error));
@@ -43,14 +55,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [retryBootstrap]);
 
   const logout = useCallback(async () => {
-    setUser(null);
-    setBootstrapError(null);
     try {
       await doLogout();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
       throw error;
     }
+    setUser(null);
+    setBootstrapError(null);
+    resetPostHogUser();
+    identifiedUserId.current = null;
+    redirectToLogin();
   }, []);
 
   return (

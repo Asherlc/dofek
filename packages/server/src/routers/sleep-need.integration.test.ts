@@ -44,13 +44,13 @@ describe("sleep-need router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
             provider_id, user_id, started_at, ended_at,
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-            efficiency_pct, sleep_type
+            efficiency_pct, staging_available, sleep_type
           ) VALUES (
             'apple_health', ${TEST_USER_ID},
             NOW() - INTERVAL '8 hours',
             NOW(),
             480, 60, 120, 240, 60,
-            NULL, 'sleep'
+            NULL, true, 'sleep'
           )`,
     );
 
@@ -295,13 +295,13 @@ describe("sleep-need router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
             provider_id, user_id, started_at, ended_at,
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-            efficiency_pct, sleep_type
+            efficiency_pct, staging_available, sleep_type
           ) VALUES (
             'test_low_prio', ${TEST_USER_ID},
             NOW() - INTERVAL '7.5 hours',
             NOW() - INTERVAL '30 minutes',
             120, 20, 30, 50, 20,
-            30, 'sleep'
+            30, true, 'sleep'
           )`,
     );
     await queryCache.invalidateAll();

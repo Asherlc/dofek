@@ -119,6 +119,73 @@ describe("Login route", () => {
     expect(signInButton).toHaveProperty("disabled", false);
   });
 
+  it("reveals and hides the current password with an accessible control", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const passwordInput = await screen.findByLabelText("Password");
+    expect(passwordInput.getAttribute("autocomplete")).toBe("current-password");
+    expect(passwordInput.getAttribute("type")).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passwordInput.getAttribute("type")).toBe("text");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(passwordInput.getAttribute("type")).toBe("password");
+  });
+
+  it("warns when Caps Lock is active in the password field", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const passwordInput = await screen.findByLabelText("Password");
+    const capsLockEvent = new KeyboardEvent("keydown", { bubbles: true });
+    Object.defineProperty(capsLockEvent, "getModifierState", {
+      value: (modifier: string) => modifier === "CapsLock",
+    });
+    fireEvent(passwordInput, capsLockEvent);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Caps Lock is on.");
+
+    const capsLockOffEvent = new KeyboardEvent("keyup", { bubbles: true });
+    Object.defineProperty(capsLockOffEvent, "getModifierState", {
+      value: () => false,
+    });
+    fireEvent(passwordInput, capsLockOffEvent);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows the canonical requirements for a new password", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    const passwordInput = screen.getByLabelText("Password");
+    expect(passwordInput.getAttribute("autocomplete")).toBe("new-password");
+    expect(passwordInput.getAttribute("minlength")).toBe("8");
+    expect(passwordInput.getAttribute("maxlength")).toBe("128");
+    expect(screen.getByText("Use 8–128 characters.")).toBeTruthy();
+  });
+
   it("explains the registration task and next step", async () => {
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
     mockFetchConfiguredProviders.mockResolvedValue({
@@ -136,6 +203,75 @@ describe("Login route", () => {
       screen.getByText("Enter your details. Next, you'll connect your health data."),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create account and continue" })).toBeTruthy();
+  });
+
+  it("shows legal context and an existing-account path during registration", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("link", { name: "Terms of Service" }).getAttribute("href")).toBe(
+      "/terms",
+    );
+    expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+      "/privacy",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByRole("heading", { name: "Sign in to Dofek" })).toBeTruthy();
+  });
+
+  it("shows actionable registration errors without sending invalid credentials", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account and continue" }));
+
+    expect(await screen.findByText("Enter a valid email address.")).toBeTruthy();
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(mockRegisterWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Dofek home link visible in every auth mode", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const homeLink = await screen.findByRole("link", { name: "Back to Dofek" });
+    expect(homeLink.getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("link", { name: "Back to Dofek" }).getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByRole("link", { name: "Back to Dofek" }).getAttribute("href")).toBe("/");
   });
 
   it("uses neutral disabled registration styling until required details are entered", async () => {
