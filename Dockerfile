@@ -13,7 +13,8 @@ RUN apk add --no-cache build-base && \
     dbt-core==1.11.12 \
     dbt-clickhouse==1.10.1 \
     sqlfluff==4.2.2 \
-    sqlfluff-templater-dbt==4.2.2
+    sqlfluff-templater-dbt==4.2.2 \
+    mashumaro==3.22
 
 # ── Native FIT decoder: CMake + vcpkg ────────────────────────────────
 FROM alpine:3.24 AS fit-decoder-build
