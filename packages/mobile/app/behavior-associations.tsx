@@ -1,5 +1,7 @@
 import { formatReadinessDifference } from "@dofek/format/format";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import type { ProviderProvenance } from "@dofek/providers/providers";
+import { useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../components/Card";
 import { DaySelector } from "../components/DaySelector";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
@@ -13,6 +15,36 @@ const DAY_OPTIONS = [
   { label: "180d", value: 180 },
   { label: "1y", value: 365 },
 ];
+
+function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const sourceNames = sources.map((source) => source.label).join(", ");
+  const sourceIds = sources.map((source) => source.providerId).join(", ");
+  const sourcePrefix = sources.length === 1 ? "Source" : "Sources";
+  const idPrefix = sources.length === 1 ? "Provider ID" : "Provider IDs";
+  const action = expanded ? "Hide" : "Show";
+
+  return (
+    <View style={styles.sourceDetails}>
+      <Text style={styles.source}>
+        {sourcePrefix}: {sourceNames}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${action} technical source details for ${sourceNames}`}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((current) => !current)}
+      >
+        <Text style={styles.technicalDetails}>Technical details</Text>
+      </Pressable>
+      {expanded ? (
+        <Text style={styles.providerId}>
+          {idPrefix}: {sourceIds}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
 
 export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
@@ -75,6 +107,7 @@ export default function BehaviorAssociationsScreen() {
               <Text style={styles.sample}>
                 Yes n = {association.yesCount} · No n = {association.noCount}
               </Text>
+              <ProviderSourceDetails sources={association.sources} />
             </Card>
           ))}
         </>
@@ -124,5 +157,22 @@ const styles = StyleSheet.create({
   sample: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  sourceDetails: {
+    gap: 2,
+  },
+  source: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  technicalDetails: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    textDecorationLine: "underline",
+  },
+  providerId: {
+    color: colors.textTertiary,
+    fontFamily: "monospace",
+    fontSize: 11,
   },
 });

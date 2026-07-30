@@ -42,6 +42,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "cronometer-csv": "Cronometer",
   bodyspec: "BodySpec",
   dofek: "Dofek",
+  manual_review: "Manual review",
   whoop_ble: "WHOOP (Bluetooth)",
   ble_heart_rate: "Heart Rate Monitor (Bluetooth)",
   "zos-app": "Zepp OS App",
@@ -50,6 +51,20 @@ export const PROVIDER_LABELS: Record<string, string> = {
 /** Human-readable label for a provider ID, falls back to the raw ID */
 export function providerLabel(id: string): string {
   return PROVIDER_LABELS[id] ?? id;
+}
+
+/** Provider identity resolved for user-facing provenance and technical diagnostics. */
+export interface ProviderProvenance {
+  providerId: string;
+  label: string;
+}
+
+/** Resolve one provider ID through the canonical shared display-name map. */
+export function resolveProviderProvenance(providerId: string): ProviderProvenance {
+  return {
+    providerId,
+    label: providerLabel(providerId),
+  };
 }
 
 /** Human-readable label for a provider/source combination. */
