@@ -18,6 +18,11 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  fullSyncLink: {
+    fontSize: 13,
+    color: colors.accent,
+    marginTop: 4,
+  },
   // Sync All buttons
   syncAllRow: {
     flexDirection: "row",
