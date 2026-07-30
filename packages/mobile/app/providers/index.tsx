@@ -163,46 +163,43 @@ export default function ProvidersScreen() {
     }
   }, [appleHealth, healthKitSyncing]);
 
-  const handleHealthKitSync = useCallback(
-    async (fullSync = false) => {
-      setHealthKitSyncing(true);
-      setAnySyncing(true);
-      setHealthKitProgress("Starting HealthKit sync...");
-      try {
-        const result = await appleHealth.sync({
-          syncRangeDays: fullSync ? null : 7,
-          onProgress: setHealthKitProgress,
-        });
-        setHealthKitProgress("Writing Dofek food to Apple Health...");
-        const foodWriteBack = await syncDofekFoodToHealthKit({
-          trpcClient,
-          healthKit: {
-            writeDietarySamples,
-            deleteDietarySamples,
-          },
-          startDate: fullSync ? "1970-01-01" : ymdDaysAgo(7),
-          endDate: todayYmd(),
-        });
-        const foodSummary =
-          foodWriteBack.errors.length > 0
-            ? `${foodWriteBack.written} foods written, ${foodWriteBack.errors.length} food errors`
-            : `${foodWriteBack.written} foods written`;
-        setHealthKitProgress(`Done — ${result.inserted} records synced, ${foodSummary}`);
-        trpcUtils.invalidate();
-      } catch (error: unknown) {
-        if (!isHealthKitDatabaseInaccessible(error)) {
-          captureException(error, { context: "healthkit-manual-sync" });
-          setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
-          return;
-        }
-        setHealthKitProgress(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
-      } finally {
-        setHealthKitSyncing(false);
-        setAnySyncing(false);
+  const handleHealthKitSync = useCallback(async () => {
+    setHealthKitSyncing(true);
+    setAnySyncing(true);
+    setHealthKitProgress("Starting HealthKit sync...");
+    try {
+      const result = await appleHealth.sync({
+        syncRangeDays: 7,
+        onProgress: setHealthKitProgress,
+      });
+      setHealthKitProgress("Writing Dofek food to Apple Health...");
+      const foodWriteBack = await syncDofekFoodToHealthKit({
+        trpcClient,
+        healthKit: {
+          writeDietarySamples,
+          deleteDietarySamples,
+        },
+        startDate: ymdDaysAgo(7),
+        endDate: todayYmd(),
+      });
+      const foodSummary =
+        foodWriteBack.errors.length > 0
+          ? `${foodWriteBack.written} foods written, ${foodWriteBack.errors.length} food errors`
+          : `${foodWriteBack.written} foods written`;
+      setHealthKitProgress(`Done — ${result.inserted} records synced, ${foodSummary}`);
+      trpcUtils.invalidate();
+    } catch (error: unknown) {
+      if (!isHealthKitDatabaseInaccessible(error)) {
+        captureException(error, { context: "healthkit-manual-sync" });
+        setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
+        return;
       }
-    },
-    [appleHealth, trpcClient, trpcUtils],
-  );
+      setHealthKitProgress(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
+    } finally {
+      setHealthKitSyncing(false);
+      setAnySyncing(false);
+    }
+  }, [appleHealth, trpcClient, trpcUtils]);
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -433,13 +430,13 @@ export default function ProvidersScreen() {
   );
 
   const handleSyncProvider = useCallback(
-    async (providerId: string, fullSync = false) => {
+    async (providerId: string) => {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
       setAnySyncing(true);
       try {
         const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: 7,
         });
         const providerResult = result.providerResults?.find(
           (entry) => entry.providerId === providerId,
@@ -800,7 +797,6 @@ export default function ProvidersScreen() {
           (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
         }
         onSync={() => handleHealthKitSync()}
-        onFullSync={() => handleHealthKitSync(true)}
         onConnect={handleHealthKitConnect}
         onImportProvider={handleFileImportProvider}
         onPress={() => router.push("/providers/apple_health")}
@@ -867,7 +863,6 @@ export default function ProvidersScreen() {
             importing={importProgress !== undefined}
             syncProgress={importProgress ?? syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
-            onFullSync={() => handleSyncProvider(provider.id, true)}
             onConnect={() => handleConnect(provider)}
             onImportProvider={handleFileImportProvider}
             onPress={() => router.push(`/providers/${provider.id}`)}
@@ -880,7 +875,6 @@ export default function ProvidersScreen() {
             syncing={syncingProviders.has(provider.id)}
             syncProgress={syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
-            onFullSync={() => handleSyncProvider(provider.id, true)}
             onConnect={() => handleConnect(provider)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />
