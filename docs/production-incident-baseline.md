@@ -20807,3 +20807,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Docker network-pool capacity remains
   unresolved locally. Any hosted SQLFluff failure must be investigated from
   its own first fatal line rather than attributed to this local daemon.
+
+## 2026-07-29 — Concurrent workspace tests starved issue-2083 validation
+
+- **Status:** Local resource pressure identified; hosted exact-head CI is the
+  authoritative post-merge validation gate.
+- **Symptoms:** The post-merge focused Vitest command exited without completing
+  the requested files or printing a test-run summary.
+- **User impact:** No production or end-user impact. Local post-merge focused
+  tests and typechecks could not produce trustworthy terminal exits.
+- **Evidence:** The exact command was
+  `CI=1 ./node_modules/.bin/vitest run packages/stats/src/time-range.test.ts packages/web/src/hooks/useTimeRangePreference.test.ts packages/web/src/components/TimeRangeSelector.test.tsx packages/web/src/components/TimeRangeSelector.consumers.test.tsx --project unit --maxWorkers=2`.
+  It reported one passing file, then ended without the normal test summary.
+  No termination or signal line was emitted; the first abnormal terminal
+  evidence was `EXIT:undefined`. Immediately afterward, `uptime` reported load
+  averages of `589.60 572.75 436.95`, and the process list showed concurrent
+  Vitest workers and full test runs from other workspaces.
+- **Root cause:** Concurrent repository validation across the shared host
+  exhausted local process and compute capacity before this focused run could
+  complete.
+- **Fix / mitigation:** Do not terminate other workspaces' processes or weaken
+  validation. With coordinator approval, stop local retries and use the normal
+  hosted exact-head matrix as the authoritative unchanged gate.
+- **Validation:** Before the fresh-main merge, the shared/web focused suite
+  passed 15 tests, the mobile focused suite passed 7 tests, the stats
+  typecheck passed, and Biome was clean. The replacement hosted matrix must
+  pass on the published exact head before merge.
+- **Remaining risk / follow-up:** The pull request must remain unmerged until
+  every hosted check passes and the final review-thread sweep is clean.
