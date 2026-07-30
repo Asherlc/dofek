@@ -34,6 +34,7 @@ const associationData = [
     impactPercent: 18.6,
     yesCount: 18,
     noCount: 24,
+    sources: [{ providerId: "manual_review", label: "Manual review" }],
   },
   {
     questionSlug: "late-meal",
@@ -42,6 +43,10 @@ const associationData = [
     impactPercent: -12.4,
     yesCount: 14,
     noCount: 28,
+    sources: [
+      { providerId: "manual_review", label: "Manual review" },
+      { providerId: "whoop", label: "WHOOP (Cloud)" },
+    ],
   },
 ];
 
@@ -94,6 +99,23 @@ describe("BehaviorAssociationsScreen", () => {
 
     expect(screen.getByText("Selected window: 30 days")).toBeTruthy();
     expect(mocks.queryInputs.at(-1)).toEqual({ days: 30 });
+  });
+
+  it("shows source labels and reveals raw IDs only through accessible technical details", async () => {
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("Source: Manual review")).toBeTruthy();
+    expect(screen.getByText("Sources: Manual review, WHOOP (Cloud)")).toBeTruthy();
+    expect(screen.queryByText("Provider ID: manual_review")).toBeNull();
+
+    const technicalDetailsButton = screen.getAllByRole("button", {
+      name: "Show technical source details for Manual review",
+    })[0];
+    if (!technicalDetailsButton) throw new Error("Technical source details button is missing");
+    fireEvent.click(technicalDetailsButton);
+
+    expect(screen.getByText("Provider ID: manual_review")).toBeTruthy();
   });
 
   it("uses association language in the insufficient-data state", async () => {
