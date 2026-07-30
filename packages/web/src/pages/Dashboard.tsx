@@ -123,7 +123,7 @@ export function isCoreDashboardReady({
 
 export function Dashboard() {
   const units = useUnitConverter();
-  const days = 30;
+  const days = 90;
   const endDate = useTodayQueryDate();
   const readinessData = trpc.recovery.readinessScore.useQuery({ days, endDate });
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });

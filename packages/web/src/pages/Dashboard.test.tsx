@@ -254,6 +254,25 @@ describe("Dashboard", () => {
     mockDailyOverview.mockClear();
   });
 
+  it("uses the same 90-day overview window as training and mobile", () => {
+    render(<Dashboard />);
+
+    const range = { days: 90, endDate: "2026-05-27" };
+    expect(mockReadinessQuery).toHaveBeenCalledWith(range);
+    expect(mockWorkloadQuery).toHaveBeenCalledWith(range);
+    expect(mockStrainTargetQuery).toHaveBeenCalledWith(range);
+    expect(mockTodayPlanQuery).toHaveBeenCalledWith(range);
+    expect(mockTrendsQuery).toHaveBeenCalledWith(range);
+    expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(range);
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      range,
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ days: 90, endDate: "2026-05-27" }),
+    );
+  });
+
   it("shows data readiness when dashboard summaries are stale", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {
@@ -446,7 +465,7 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 
-  it("renders the daily summary outside and before the 30 day overview", () => {
+  it("renders the daily summary outside and before the 90-day overview", () => {
     render(<Dashboard />);
 
     const dailySummary = screen.getByRole("region", { name: "Daily health summary" });
