@@ -21113,3 +21113,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Group coupled CodeQL and Slack dependencies
   in Dependabot configuration so future updates arrive atomically. Continue to
   require a native Release build for Sentry React Native updates.
+
+## 2026-07-30 — Test Env Mutation Re-Enabled Production Classification for Local Runs
+
+- **Status:** Recurrence fix implemented in test/config paths; production
+  unaffected.
+- **Symptoms:** Every exception ingested into error tracking over the preceding
+  days was a unit-test fixture string (for example `test failure`,
+  `test worker error`, `invalid FIT`, `unrecoverable sync error`,
+  `Redis job log unavailable`) rather than a real failure. The events clustered
+  in a single short window, all attributed to the `dofek-server` distinct id,
+  with stack frames pointing at `@vitest/runner` and a local Conductor
+  workspace path.
+- **User impact:** No production user impact. The blast radius is the error
+  tracking surface itself: fixture noise buries genuine production exceptions
+  and each distinct fixture spawns its own "new issue" alert.
+- **Evidence:** `src/jobs/worker.test.ts` assigned
+  `process.env.DEPLOY_ENVIRONMENT = "prod"` and `process.env.SENTRY_DSN`
+  directly inside `vi.hoisted()`. Those raw assignments were never torn down,
+  so the "prod" classification persisted for the whole vitest fork and defeated
+  the production-only guard in `initProductionSentry()`
+  ([src/lib/sentry.ts](../src/lib/sentry.ts)) for every module that ran in the
+  same fork. `@sentry/node` is mocked in that test, so Sentry stayed clean, but
+  any un-mocked telemetry sink wired to the same guard emitted the fixture
+  errors as real production events.
+- **Root cause:** A recurrence of the failure mode fixed by commit 7eba92d
+  ("Prevent local errors from reaching production Sentry",
+  [#1882](https://github.com/Asherlc/dofek/pull/1882)), which added the
+  `DEPLOY_ENVIRONMENT`-gated guard. The worker test tricked that guard back
+  open by mutating the shared process environment and never restoring it.
+- **Fix / mitigation:** Replace the raw `process.env` assignments with tracked
+  `vi.stubEnv` calls and restore them with `vi.unstubAllEnvs()` in an
+  `afterAll`, so the "prod" classification cannot outlive the test file within
+  a reused fork. Add an explicit non-production `DEPLOY_ENVIRONMENT: "test"`
+  default to the shared test env in
+  [vitest.config.ts](../vitest.config.ts) so no test run is classified as a
+  production deployment unless it opts in. No production code was changed and
+  no `NODE_ENV === "test"` branch was added.
+- **Validation:** `src/jobs/worker.test.ts` and both `sentry.test.ts` suites
+  pass, the full Docker-free unit tier passes, and lint and TypeScript checks
+  pass.
+- **Remaining risk / follow-up:** When a PostHog (`posthog-node`) error
+  exporter lands on `main`, mock it in `worker.test.ts` the same way
+  `@sentry/node` is mocked so no test run can emit real telemetry regardless of
+  environment classification.
