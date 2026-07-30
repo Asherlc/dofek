@@ -150,10 +150,10 @@ describe("dailyMetricsRouter", () => {
     });
 
     it("filters rows by cutoff date derived from endDate param", async () => {
-      // today=2024-01-16, days=30 → cutoff = 2023-12-17
+      // endDate=2024-01-16, days=30 → inclusive start = 2023-12-18
       const rows = [
         {
-          date: "2023-12-16",
+          date: "2023-12-17",
           hrv: 50,
           resting_hr: 57,
           mean_60d: 52,
@@ -162,7 +162,7 @@ describe("dailyMetricsRouter", () => {
           resting_hr_mean_7d: 56,
         },
         {
-          date: "2023-12-17",
+          date: "2023-12-18",
           hrv: 55,
           resting_hr: 56,
           mean_60d: 53,
@@ -183,11 +183,11 @@ describe("dailyMetricsRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.hrvBaseline({ days: 30, endDate: "2024-01-16" });
 
-      // 2023-12-16 is before cutoff (2023-12-17), should be excluded
-      expect(result.some((r) => r.date === "2023-12-16")).toBe(false);
-      // 2023-12-17 is at cutoff, should be included (>=)
-      expect(result.some((r) => r.date === "2023-12-17")).toBe(true);
-      // 2024-01-16 is after cutoff, should be included
+      // 2023-12-17 is one day before the requested range
+      expect(result.some((r) => r.date === "2023-12-17")).toBe(false);
+      // 2023-12-18 is the inclusive start
+      expect(result.some((r) => r.date === "2023-12-18")).toBe(true);
+      // 2024-01-16 is the inclusive end
       expect(result.some((r) => r.date === "2024-01-16")).toBe(true);
     });
 
