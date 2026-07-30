@@ -213,7 +213,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
       )`,
     );
 
-    const report = await repository.getReport(12);
+    const report = await repository.getReport(12, endDate);
 
     expect(report.current).toEqual(
       expect.objectContaining({
