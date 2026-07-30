@@ -41,6 +41,25 @@ const sleepRowSchema = z.object({
   provider_id: z.string().nullable().optional(),
   source_name: z.string().nullable().optional(),
   source_providers: z.array(z.string()).optional().default([]),
+  selected_session_id: z.string().nullable().optional().default(null),
+  overlapping_sessions: z
+    .array(
+      z.object({
+        session_id: z.string(),
+        provider_id: z.string(),
+        source_name: z.string().nullable(),
+        source_providers: z.array(z.string()),
+        timezone: z.string().nullable(),
+        start_utc_offset_minutes: z.number().nullable(),
+        end_utc_offset_minutes: z.number().nullable(),
+        local_time_source: localTimeSourceSchema,
+        started_at: z.string(),
+        ended_at: z.string().nullable(),
+        duration_minutes: z.number().nullable(),
+      }),
+    )
+    .optional()
+    .default([]),
   staging_available: z.boolean(),
 });
 
@@ -78,6 +97,30 @@ export function SleepPage() {
         providerId: row.provider_id ?? null,
         sourceName: row.source_name ?? null,
         sourceProviders: row.source_providers ?? [],
+        selectedSessionId: row.selected_session_id,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        localTimeContext: {
+          timezone: row.timezone,
+          startUtcOffsetMinutes: row.start_utc_offset_minutes,
+          endUtcOffsetMinutes: row.end_utc_offset_minutes,
+          source: row.local_time_source,
+        },
+        overlappingSessions: row.overlapping_sessions.map((session) => ({
+          sessionId: session.session_id,
+          providerId: session.provider_id,
+          sourceName: session.source_name,
+          sourceProviders: session.source_providers,
+          localTimeContext: {
+            timezone: session.timezone,
+            startUtcOffsetMinutes: session.start_utc_offset_minutes,
+            endUtcOffsetMinutes: session.end_utc_offset_minutes,
+            source: session.local_time_source,
+          },
+          startedAt: session.started_at,
+          endedAt: session.ended_at,
+          durationMinutes: session.duration_minutes,
+        })),
         stagingAvailable: row.staging_available,
       })),
     [sleepRows],
@@ -127,7 +170,7 @@ export function SleepPage() {
         {/* Data Sources */}
         <PageSection
           title="Data Sources"
-          subtitle="Which provider and device supplied each night's sleep data"
+          subtitle="Which canonical session was selected and which overlapping sessions disagreed"
         >
           <SleepDataSourcesTable
             key={days ?? "all"}

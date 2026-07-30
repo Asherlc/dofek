@@ -10,6 +10,7 @@ import {
   providerLabel,
   providerLogoId,
   providerLogoType,
+  providerRecordLabel,
   providerSourceLabel,
   resolveProviderProvenance,
   SVG_LOGOS,
@@ -67,6 +68,17 @@ describe("providerSourceLabel", () => {
   it("falls back to the provider label in other cases", () => {
     expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
     expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP (Cloud)");
+  });
+});
+
+describe("providerRecordLabel", () => {
+  it("combines the canonical provider and device labels without duplicating them", () => {
+    expect(providerRecordLabel("whoop", "WHOOP 4.0")).toBe("WHOOP (Cloud) · WHOOP 4.0");
+    expect(providerRecordLabel("whoop", "WHOOP")).toBe("WHOOP (Cloud)");
+    expect(providerRecordLabel("whoop", "whoop (cloud)")).toBe("WHOOP (Cloud)");
+    expect(providerRecordLabel("whoop", "  WHOOP 4.0  ")).toBe("WHOOP (Cloud) · WHOOP 4.0");
+    expect(providerRecordLabel("whoop", "   ")).toBe("WHOOP (Cloud)");
+    expect(providerRecordLabel("apple_health", null)).toBe("Apple Health");
   });
 });
 
