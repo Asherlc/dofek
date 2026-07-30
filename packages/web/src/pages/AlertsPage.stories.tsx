@@ -1,3 +1,4 @@
+import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -14,7 +15,12 @@ import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { AlertsPage } from "./AlertsPage.tsx";
 
-type AlertsScenario = "needs-attention" | "all-clear" | "status-unavailable" | "stale-status";
+type AlertsScenario =
+  | "needs-attention"
+  | "loading"
+  | "all-clear"
+  | "status-unavailable"
+  | "stale-status";
 
 function occurredMinutesAgo(minutes: number): string {
   return new Date(Date.now() - minutes * 60_000).toISOString();
@@ -30,7 +36,7 @@ const activeAlerts = [
     title: "Garmin activities weren’t updated",
     message:
       "Your Garmin data synced, but Dofek couldn’t update activities. Your previously synced data is still available.",
-    action: "retry_sync" as const,
+    action: "retry_sync",
     actionLabel: "Retry Garmin sync",
   },
   {
@@ -42,7 +48,7 @@ const activeAlerts = [
     title: "WHOOP couldn’t sync",
     message:
       "Dofek couldn’t get the latest data from WHOOP. Reconnect WHOOP, then start the sync again.",
-    action: "reconnect" as const,
+    action: "reconnect",
     actionLabel: "Reconnect WHOOP",
   },
   {
@@ -54,15 +60,15 @@ const activeAlerts = [
     title: "Apple Health file wasn’t imported",
     message:
       "Dofek couldn’t finish importing the Apple Health file. Check that you selected the correct file, then import it again.",
-    action: "retry_import" as const,
+    action: "retry_import",
     actionLabel: "Import Apple Health again",
   },
-];
+] satisfies ProcessingAlert[];
 
 function createMockLink(scenario: AlertsScenario): TRPCLink<AppRouter> {
   return () =>
-    ({ op }) =>
-      createMockObservable(op.path, scenario);
+    ({ op: operation }) =>
+      createMockObservable(operation.path, scenario);
 }
 
 function createMockObservable(
@@ -72,6 +78,9 @@ function createMockObservable(
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
       if (path === "processing.alerts") {
+        if (scenario === "loading") {
+          return { unsubscribe: () => {} };
+        }
         if (scenario === "status-unavailable" || scenario === "stale-status") {
           observer.error?.(
             TRPCClientError.from<AppRouter>(new Error("Alert status service timed out.")),
@@ -168,6 +177,10 @@ type Story = StoryObj<typeof meta>;
 export const NeedsAttention: Story = {
   name: "Needs attention",
   render: () => <AlertsStoryFrame scenario="needs-attention" />,
+};
+
+export const Loading: Story = {
+  render: () => <AlertsStoryFrame scenario="loading" />,
 };
 
 export const AllClear: Story = {

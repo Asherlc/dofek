@@ -1,7 +1,5 @@
 # Actionable Alert Status Error TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use test-driven development before implementation. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make alert-status query failures explain their scope and offer one retry without hiding previously loaded alerts.
 
 **Behavior:** Web and mobile distinguish an unavailable initial alert-status check from a failed refresh of cached alerts, state that synced health data remains available and the status check did not pause syncs or imports, preserve cached alerts, show the server error, and expose one `Retry alert status` action.
