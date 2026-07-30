@@ -586,7 +586,7 @@ export function DailyOverview({
       aria-label="Daily health summary"
       className={
         embedded
-          ? "rounded-lg border border-border bg-white/62 p-4 sm:p-5"
+          ? "rounded-lg border border-border bg-surface p-4 sm:p-5"
           : "dashboard-hero card p-5 sm:p-6"
       }
     >

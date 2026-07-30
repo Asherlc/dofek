@@ -29,7 +29,7 @@
 
 ## File Structure
 
-- Modify: `src/db/schema/activity.ts`, `drizzle/0063_sleep_staging_available.sql`, `drizzle/meta/_journal.json` — canonical Postgres column.
+- Modify: `src/db/schema/activity.ts`, `drizzle/0066_sleep_staging_available.sql`, `drizzle/meta/_journal.json` — canonical Postgres column.
 - Modify/create: `scripts/backfill-sleep-quality.ts` and focused tests/docs — bounded existing-row normalization.
 - Modify: current sleep provider parsers/persisters under `src/providers/` plus HealthKit/Zepp ingestion paths — writer correctness.
 - Modify/create: `src/db/clickhouse-raw-tables.ts`, `src/db/clickhouse-read-models.ts`, a new ClickHouse migration, and `analytics/models/read_models/daily_sleep.sql` — projection and serving flag.

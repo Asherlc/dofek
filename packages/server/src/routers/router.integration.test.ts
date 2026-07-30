@@ -83,13 +83,16 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, staging_available, sleep_type
+              awake_minutes, efficiency_pct, sleep_type, timezone,
+              start_utc_offset_minutes, end_utc_offset_minutes, local_time_source,
+              staging_available
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
-	              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, true, 'sleep'
-	            )`,
+              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep',
+              'UTC', 0, 0, 'provider_timezone', true
+            )`,
       );
       const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
@@ -819,13 +822,13 @@ describe("Router coverage", () => {
       }
     });
 
-    it("progressiveOverload returns slope and progression status", async () => {
+    it("progressiveOverload returns slope and descriptive direction", async () => {
       const result = await query<
         {
           exerciseName: string;
           weeklyVolumes: number[];
           slopeKgPerWeek: number;
-          isProgressing: boolean;
+          trend: "increasing" | "decreasing" | "stable";
         }[]
       >("strength.progressiveOverload", { days: 90 });
 
@@ -836,10 +839,7 @@ describe("Router coverage", () => {
         expect(exercise.exerciseName).toBeTruthy();
         expect(exercise.weeklyVolumes.length).toBeGreaterThanOrEqual(2);
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
-        expect(typeof exercise.isProgressing).toBe("boolean");
-        // With progressive overload built in (weight increases by 2.5 each week),
-        // volume should be increasing
-        expect(exercise.isProgressing).toBe(true);
+        expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
       }
     });

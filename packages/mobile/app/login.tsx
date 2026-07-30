@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -135,6 +136,20 @@ export default function LoginScreen() {
     }
   }
 
+  async function openLegalDocument(document: "privacy" | "terms") {
+    const documentTitle = document === "privacy" ? "Privacy Policy" : "Terms of Service";
+    setError(null);
+    try {
+      await Linking.openURL(`${serverUrl}/${document}`);
+    } catch (error_: unknown) {
+      captureException(error_, {
+        source: "login-screen-open-legal-document",
+        document,
+      });
+      setError(`Could not open the ${documentTitle}. Try again.`);
+    }
+  }
+
   const useNativeApple =
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
@@ -151,6 +166,21 @@ export default function LoginScreen() {
   const showOAuthProviders = allProviders.length > 0 || useNativeApple;
   const passwordResetDisabled = loggingIn || !email.trim();
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
+  const headerCopy =
+    authMode === "register"
+      ? {
+          title: "Create your account",
+          subtitle: "Enter your details. Next, you'll connect your health data.",
+        }
+      : authMode === "reset"
+        ? {
+            title: "Reset your password",
+            subtitle: "Enter your email to receive a password reset link.",
+          }
+        : {
+            title: "Sign in to Dofek",
+            subtitle: "View and manage your health data.",
+          };
 
   return (
     <ScrollView
@@ -162,8 +192,8 @@ export default function LoginScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Dofek</Text>
-        <Text style={styles.subtitle}>Sign in to view your health data</Text>
+        <Text style={styles.title}>{headerCopy.title}</Text>
+        <Text style={styles.subtitle}>{headerCopy.subtitle}</Text>
 
         {error ? (
           <View style={styles.errorContainer}>
@@ -206,7 +236,12 @@ export default function LoginScreen() {
                         disabled: passwordResetDisabled,
                       }}
                     >
-                      <Text style={styles.passwordButtonText}>
+                      <Text
+                        style={[
+                          styles.passwordButtonText,
+                          passwordResetDisabled && styles.passwordButtonTextDisabled,
+                        ]}
+                      >
                         {loggingIn ? "Sending..." : "Send reset link"}
                       </Text>
                     </TouchableOpacity>
@@ -332,23 +367,54 @@ export default function LoginScreen() {
                       disabled={passwordAuthDisabled}
                       accessibilityRole="button"
                       accessibilityLabel={
-                        authMode === "register" ? "Create account" : "Sign in with email"
+                        authMode === "register"
+                          ? "Create account and continue"
+                          : "Sign in with email"
                       }
                       accessibilityState={{
                         busy: loggingIn,
                         disabled: passwordAuthDisabled,
                       }}
                     >
-                      <Text style={styles.passwordButtonText}>
+                      <Text
+                        style={[
+                          styles.passwordButtonText,
+                          passwordAuthDisabled && styles.passwordButtonTextDisabled,
+                        ]}
+                      >
                         {loggingIn
                           ? authMode === "register"
                             ? "Creating account..."
                             : "Signing in..."
                           : authMode === "register"
-                            ? "Create account"
+                            ? "Create account and continue"
                             : "Sign in with email"}
                       </Text>
                     </TouchableOpacity>
+                    {authMode === "register" ? (
+                      <View style={styles.legalContext}>
+                        <Text style={styles.legalText}>
+                          By creating an account, you agree to the Terms of Service and acknowledge
+                          the Privacy Policy.
+                        </Text>
+                        <View style={styles.legalLinks}>
+                          <TouchableOpacity
+                            onPress={() => void openLegalDocument("terms")}
+                            accessibilityRole="link"
+                            accessibilityLabel="Terms of Service"
+                          >
+                            <Text style={styles.legalLinkText}>Terms of Service</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => void openLegalDocument("privacy")}
+                            accessibilityRole="link"
+                            accessibilityLabel="Privacy Policy"
+                          >
+                            <Text style={styles.legalLinkText}>Privacy Policy</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : null}
                   </>
                 )}
               </View>
@@ -490,13 +556,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   passwordButtonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surfaceSecondary,
   },
   passwordButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",
+  },
+  passwordButtonTextDisabled: {
+    color: colors.textSecondary,
+  },
+  legalContext: {
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  legalText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  legalLinks: {
+    alignItems: "center",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 8,
+  },
+  legalLinkText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   forgotPasswordText: {
     color: colors.textSecondary,

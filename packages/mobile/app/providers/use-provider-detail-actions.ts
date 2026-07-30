@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
@@ -68,12 +69,26 @@ export interface ProviderDetailActionsResult {
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
+  syncDateRange: ProviderSyncDateRange | null;
   shouldShowActions: boolean;
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
   handlePrimaryAction: () => Promise<void>;
   handleFullSync: () => Promise<void>;
   modals: ProviderDetailModals;
+}
+
+export interface ProviderSyncDateRange {
+  sinceDate: string;
+  untilDate: string;
+  onSinceDateChange: (date: string) => void;
+  onUntilDateChange: (date: string) => void;
+}
+
+interface SyncWindowInput {
+  sinceDays?: number;
+  sinceDate?: string;
+  untilDate?: string;
 }
 
 export function useProviderDetailActions(
@@ -87,6 +102,12 @@ export function useProviderDetailActions(
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [rangeSinceDate, setRangeSinceDate] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return formatDateYmd(start);
+  });
+  const [rangeUntilDate, setRangeUntilDate] = useState(() => formatDateYmd());
   const [credentialAuthProvider, setCredentialAuthProvider] =
     useState<CredentialAuthProvider | null>(null);
   const [tokenAuthProvider, setTokenAuthProvider] = useState<TokenAuthProvider | null>(null);
@@ -268,7 +289,7 @@ export function useProviderDetailActions(
   }, [displayProvider, handleHealthKitConnect, isSyncing, serverUrl, sessionToken, trpcUtils]);
 
   const handleSync = useCallback(
-    async (sinceDays: number | undefined) => {
+    async (syncWindow: SyncWindowInput) => {
       if (!providerId || isSyncing) return;
 
       setIsSyncing(true);
@@ -278,7 +299,7 @@ export function useProviderDetailActions(
       try {
         if (providerId === "apple_health") {
           const result = await appleHealth.sync({
-            syncRangeDays: sinceDays ?? null,
+            syncRangeDays: syncWindow.sinceDays ?? null,
             onProgress: setSyncMessage,
           });
 
@@ -291,7 +312,7 @@ export function useProviderDetailActions(
 
         const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays,
+          ...syncWindow,
         });
         const providerResult = result.providerResults?.find(
           (entry) => entry.providerId === providerId,
@@ -326,16 +347,55 @@ export function useProviderDetailActions(
 
   const handlePrimaryAction = useCallback(async () => {
     if (isConnected && !needsReauth) {
-      await handleSync(7);
+      if (providerId === "whoop") {
+        if (rangeSinceDate > rangeUntilDate) {
+          setSyncMessage('"From" date must be on or before "To" date');
+          return;
+        }
+        await handleSync({
+          sinceDate: rangeSinceDate,
+          untilDate: rangeUntilDate,
+        });
+        return;
+      }
+      await handleSync({ sinceDays: 7 });
       return;
     }
 
     await handleConnect();
-  }, [handleConnect, handleSync, isConnected, needsReauth]);
+  }, [
+    handleConnect,
+    handleSync,
+    isConnected,
+    needsReauth,
+    providerId,
+    rangeSinceDate,
+    rangeUntilDate,
+  ]);
 
   const handleFullSync = useCallback(async () => {
-    await handleSync(undefined);
+    await handleSync({ sinceDays: undefined });
   }, [handleSync]);
+
+  const handleRangeSinceDateChange = useCallback(
+    (date: string) => {
+      setRangeSinceDate(date);
+      if (date <= rangeUntilDate) {
+        setSyncMessage(null);
+      }
+    },
+    [rangeUntilDate],
+  );
+
+  const handleRangeUntilDateChange = useCallback(
+    (date: string) => {
+      setRangeUntilDate(date);
+      if (rangeSinceDate <= date) {
+        setSyncMessage(null);
+      }
+    },
+    [rangeSinceDate],
+  );
 
   const closeCredentialAuth = useCallback(() => {
     setCredentialAuthProvider(null);
@@ -383,10 +443,23 @@ export function useProviderDetailActions(
     isSyncing,
     syncMessage,
     syncProgress,
+    syncDateRange:
+      providerId === "whoop" && isConnected && !needsReauth
+        ? {
+            sinceDate: rangeSinceDate,
+            untilDate: rangeUntilDate,
+            onSinceDateChange: handleRangeSinceDateChange,
+            onUntilDateChange: handleRangeUntilDateChange,
+          }
+        : null,
     shouldShowActions: Boolean(
       displayProvider && !displayProvider.importOnly && !displayProvider.pushOnly,
     ),
-    shouldShowFullSync: isConnected && !needsReauth && displayProvider?.pushOnly !== true,
+    shouldShowFullSync:
+      isConnected &&
+      !needsReauth &&
+      displayProvider?.pushOnly !== true &&
+      displayProvider?.id !== "whoop",
     shouldShowAppleHealthPermissionBanner:
       providerId === "apple_health" && appleHealth.model.shouldShowPermissionBanner(),
     handlePrimaryAction,

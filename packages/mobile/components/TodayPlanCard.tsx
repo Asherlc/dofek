@@ -16,8 +16,8 @@ export interface TodayPlanCardProps {
 export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardProps) {
   if (loading && plan == null) {
     return (
-      <View style={styles.card} accessibilityLabel="Today Plan">
-        <Text style={styles.sectionTitle}>TODAY PLAN</Text>
+      <View style={styles.card} accessibilityLabel="What matters today">
+        <Text style={styles.sectionTitle}>WHAT MATTERS TODAY</Text>
         <QueryStatePanel variant="loading" minHeight={96} />
       </View>
     );
@@ -25,8 +25,8 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
 
   if (error != null && plan == null) {
     return (
-      <View style={styles.card} accessibilityLabel="Today Plan">
-        <Text style={styles.sectionTitle}>TODAY PLAN</Text>
+      <View style={styles.card} accessibilityLabel="What matters today">
+        <Text style={styles.sectionTitle}>WHAT MATTERS TODAY</Text>
         <QueryStatePanel
           variant="error"
           message={getQueryErrorMessage(error, "Today plan unavailable")}
@@ -51,8 +51,8 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
 
   if (plan.status === "insufficient_data") {
     return (
-      <View style={styles.card} accessibilityLabel="Today Plan">
-        <Text style={styles.sectionTitle}>TODAY PLAN</Text>
+      <View style={styles.card} accessibilityLabel="What matters today">
+        <Text style={styles.sectionTitle}>WHAT MATTERS TODAY</Text>
         {refreshWarning}
         <Text style={styles.message}>{plan.message}</Text>
         <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
@@ -63,9 +63,9 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
   const freshness = formatTodayPlanFreshness(plan.freshness);
 
   return (
-    <View style={styles.card} accessibilityLabel="Today Plan">
+    <View style={styles.card} accessibilityLabel="What matters today">
       <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>TODAY PLAN</Text>
+        <Text style={styles.sectionTitle}>WHAT MATTERS TODAY</Text>
         <Text style={styles.zone}>{plan.action.zone.toUpperCase()}</Text>
       </View>
       {refreshWarning}

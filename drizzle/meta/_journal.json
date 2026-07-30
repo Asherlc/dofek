@@ -516,8 +516,29 @@
     {
       "idx": 73,
       "version": "7",
-      "when": 1785320000000,
-      "tag": "0063_sleep_staging_available",
+      "when": 1785333000000,
+      "tag": "0063_structured_finger_loading",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785337200000,
+      "tag": "0064_record_local_time_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1785360600000,
+      "tag": "0065_nutrition_resolution_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1785360700000,
+      "tag": "0066_sleep_staging_available",
       "breakpoints": true
     }
   ]

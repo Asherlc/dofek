@@ -84,6 +84,10 @@ describe("recoveryRouter", () => {
         return {
           date: rowDate,
           provider_id: String(row.provider_id ?? "apple_health"),
+          timezone: null,
+          start_utc_offset_minutes: 0,
+          end_utc_offset_minutes: 0,
+          local_time_source: "device_offset",
           started_at: hourTimestamp(rowDate, bedtimeHour),
           ended_at: hourTimestamp(rowDate, waketimeHour),
           duration_minutes: durationMinutes,
@@ -108,6 +112,10 @@ describe("recoveryRouter", () => {
       return {
         date: String(row.date ?? today),
         provider_id: String(row.provider_id ?? "apple_health"),
+        timezone: null,
+        start_utc_offset_minutes: 0,
+        end_utc_offset_minutes: 0,
+        local_time_source: "device_offset",
         started_at: `${String(row.date ?? today)}T04:00:00Z`,
         ended_at: `${String(row.date ?? today)}T12:00:00Z`,
         duration_minutes: durationMinutes,
@@ -457,6 +465,7 @@ describe("recoveryRouter", () => {
           rhr_sd_30d: null,
           rr_mean_30d: 15,
           rr_sd_30d: 1,
+          respiratory_rate_z_score: -1,
           efficiency_pct: null,
         },
       ];

@@ -220,6 +220,17 @@ describe("ActivityList", () => {
     expect(screen.getByText("No recent activities")).toBeDefined();
   });
 
+  it("shows a scoped empty-state message when provided", () => {
+    renderWithUnits(
+      <ActivityList
+        activities={[]}
+        emptyMessage="No strength workouts in the selected 30-day range."
+      />,
+    );
+    expect(screen.getByText("No strength workouts in the selected 30-day range.")).toBeDefined();
+    expect(screen.queryByText("No recent activities")).toBeNull();
+  });
+
   it("shows error message when error prop is set", () => {
     renderWithUnits(<ActivityList activities={[]} error="Failed to load activities." />);
     expect(screen.getByText("Failed to load activities.")).toBeDefined();

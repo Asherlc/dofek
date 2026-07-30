@@ -1,5 +1,6 @@
 import { formatCalories, formatNumber, formatNutritionNumber } from "@dofek/format/format";
 import { operationalStatusColors, statusColors } from "@dofek/scoring/colors";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   RefreshControl,
@@ -10,7 +11,14 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import type {
+  AdaptiveTdeeResult,
+  MacroRatioRow,
+  MicronutrientSafetyReviewResult,
+} from "../../server/src/routers/nutrition-analytics";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -63,7 +71,28 @@ function LoadingText() {
 
 export default function NutritionAnalyticsScreen() {
   const [days, setDays] = useState(90);
+  const router = useRouter();
   const { refreshing, onRefresh } = useRefresh();
+  const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({
+    days: Math.max(days, 90),
+  });
+  const macroRatios = trpc.nutritionAnalytics.macroRatios.useQuery({ days });
+  const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days });
+  const queryStates = [adaptiveTdee, macroRatios, micronutrients] as const;
+  const firstError = queryStates.find((query) => query.error != null)?.error ?? null;
+  const hasSuccessfulData = queryStates.some(
+    (query) => query.isSuccess || query.data !== undefined,
+  );
+  const retrying = queryStates.some((query) => query.isFetching);
+  const blockingError = firstError != null && !hasSuccessfulData;
+  const adaptiveTdeeHasSuccessfulData = adaptiveTdee.isSuccess || adaptiveTdee.data !== undefined;
+  const macroRatiosHaveSuccessfulData = macroRatios.isSuccess || macroRatios.data !== undefined;
+  const micronutrientsHaveSuccessfulData =
+    micronutrients.isSuccess || micronutrients.data !== undefined;
+
+  function retryAnalytics() {
+    void Promise.all([adaptiveTdee.refetch(), macroRatios.refetch(), micronutrients.refetch()]);
+  }
 
   return (
     <ScrollView
@@ -96,21 +125,71 @@ export default function NutritionAnalyticsScreen() {
         ))}
       </View>
 
-      <AdaptiveTdeeSection days={days} />
-      <MacroSummarySection days={days} />
-      <MicronutrientAdequacySection days={days} />
+      {firstError ? (
+        <View style={styles.recovery}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load nutrition analytics"
+            message={getQueryErrorMessage(firstError)}
+            minHeight={blockingError ? 180 : 96}
+            onRetry={retryAnalytics}
+            retryLabel="Retry nutrition analytics"
+            retrying={retrying}
+          />
+          <TouchableOpacity
+            accessibilityLabel="Review data sources"
+            accessibilityRole="link"
+            activeOpacity={0.7}
+            onPress={() => router.push("/providers")}
+            style={styles.dataSourcesLink}
+          >
+            <Text style={styles.dataSourcesLinkText}>Review data sources</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {!blockingError ? (
+        <>
+          {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
+            <NutritionDataQualityPanel
+              dataQuality={micronutrients.data?.dataQuality}
+              loading={micronutrients.isLoading && micronutrients.data === undefined}
+            />
+          ) : null}
+          {adaptiveTdee.error == null || adaptiveTdeeHasSuccessfulData ? (
+            <AdaptiveTdeeSection
+              data={adaptiveTdee.data}
+              loading={adaptiveTdee.isLoading && adaptiveTdee.data === undefined}
+            />
+          ) : null}
+          {macroRatios.error == null || macroRatiosHaveSuccessfulData ? (
+            <MacroSummarySection
+              data={macroRatios.data}
+              loading={macroRatios.isLoading && macroRatios.data === undefined}
+            />
+          ) : null}
+          {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
+            <MicronutrientAdequacySection
+              data={micronutrients.data}
+              loading={micronutrients.isLoading && micronutrients.data === undefined}
+            />
+          ) : null}
+        </>
+      ) : null}
     </ScrollView>
   );
 }
 
 // ── Section 1: Adaptive TDEE ──
 
-function AdaptiveTdeeSection({ days }: { days: number }) {
-  const tdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({ days: Math.max(days, 90) });
-
-  if (tdee.isLoading) return <LoadingText />;
-
-  const data = tdee.data;
+function AdaptiveTdeeSection({
+  data,
+  loading,
+}: {
+  data: AdaptiveTdeeResult | undefined;
+  loading: boolean;
+}) {
+  if (loading) return <LoadingText />;
 
   return (
     <View style={styles.card}>
@@ -140,15 +219,19 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
 
 // ── Section 3: Macro Summary ──
 
-function MacroSummarySection({ days }: { days: number }) {
-  const macros = trpc.nutritionAnalytics.macroRatios.useQuery({ days });
+function MacroSummarySection({
+  data,
+  loading,
+}: {
+  data: MacroRatioRow[] | undefined;
+  loading: boolean;
+}) {
+  if (loading) return <LoadingText />;
 
-  if (macros.isLoading) return <LoadingText />;
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
 
-  const data = macros.data ?? [];
-  if (data.length === 0) return null;
-
-  const latest = data[data.length - 1];
+  const latest = rows[rows.length - 1];
   const proteinPerKg = latest?.proteinPerKg;
 
   return (
@@ -173,20 +256,24 @@ function MacroSummarySection({ days }: { days: number }) {
 
 // ── Section 4: Micronutrient Adequacy ──
 
-function MicronutrientAdequacySection({ days }: { days: number }) {
+function MicronutrientAdequacySection({
+  data,
+  loading,
+}: {
+  data: MicronutrientSafetyReviewResult | undefined;
+  loading: boolean;
+}) {
   const { width: screenWidth } = useWindowDimensions();
   const barMaxWidth = screenWidth - 160;
 
-  const adequacy = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days });
+  if (loading) return <LoadingText />;
 
-  if (adequacy.isLoading) return <LoadingText />;
-
-  const data = (adequacy.data?.nutrients ?? []).filter(
+  const evaluableNutrients = (data?.nutrients ?? []).filter(
     (nutrient) => nutrient.adequacy != null && nutrient.adequacy.status !== "not_evaluable",
   );
-  if (data.length === 0) return null;
+  if (evaluableNutrients.length === 0) return null;
 
-  const sorted = [...data].sort((a, b) => {
+  const sorted = [...evaluableNutrients].sort((a, b) => {
     const first = a.adequacy?.status !== "not_evaluable" ? a.adequacy?.percentDailyValue : 0;
     const second = b.adequacy?.status !== "not_evaluable" ? b.adequacy?.percentDailyValue : 0;
     return (first ?? 0) - (second ?? 0);
@@ -214,35 +301,74 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
         const barColor = nutrientBarColor(nutrient.safetyStatus);
 
         return (
-          <View key={nutrient.nutrient} style={styles.nutrientRow}>
-            <View style={styles.nutrientLabelContainer}>
-              <Text style={styles.nutrientLabel} numberOfLines={1}>
-                {nutrient.nutrient}
-              </Text>
-            </View>
-            <View style={styles.nutrientBarContainer}>
-              <View style={[styles.nutrientBarTrack, { width: barMaxWidth }]}>
-                <View
-                  style={[
-                    styles.nutrientBarFill,
-                    {
-                      width: `${barFraction * 100}%`,
-                      backgroundColor: barColor,
-                    },
-                  ]}
-                />
-                {/* 100% marker */}
-                <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
+          <View key={nutrient.nutrient} style={styles.nutrientGroup}>
+            <View style={styles.nutrientRow}>
+              <View style={styles.nutrientLabelContainer}>
+                <Text style={styles.nutrientLabel} numberOfLines={1}>
+                  {nutrient.nutrient}
+                </Text>
               </View>
-              <Text style={[styles.nutrientPct, { color: barColor }]}>
-                {formatNutritionNumber(percentDailyValue)}%
+              <View style={styles.nutrientBarContainer}>
+                <View style={[styles.nutrientBarTrack, { width: barMaxWidth }]}>
+                  <View
+                    style={[
+                      styles.nutrientBarFill,
+                      {
+                        width: `${barFraction * 100}%`,
+                        backgroundColor: barColor,
+                      },
+                    ]}
+                  />
+                  <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
+                </View>
+                <Text style={[styles.nutrientPct, { color: barColor }]}>
+                  {formatNutritionNumber(percentDailyValue)}%
+                </Text>
+              </View>
+            </View>
+            <View style={styles.nutrientSourceDetails}>
+              <Text style={styles.nutrientSourceText}>
+                Itemized food: {formatNutritionNumber(nutrient.intake.foodDailyAverage)}{" "}
+                {nutrient.unit}/day
               </Text>
+              <Text style={styles.nutrientSourceText}>
+                Provider daily totals:{" "}
+                {formatNutritionNumber(nutrient.intake.providerDailyTotalAverage)} {nutrient.unit}
+                /day
+              </Text>
+              <Text style={styles.nutrientSourceText}>
+                Supplements: {formatNutritionNumber(nutrient.intake.supplementDailyAverage)}{" "}
+                {nutrient.unit}/day
+              </Text>
+              {nutrient.sourceBreakdown.map((source) => (
+                <Text
+                  key={`${source.providerId}:${source.sourceLabel}:${source.intakeType}`}
+                  style={styles.nutrientSourceText}
+                >
+                  {source.sourceLabel} · {intakeTypeLabel(source.intakeType)} ·{" "}
+                  {formatNutritionNumber(source.dailyAverageContribution)} {nutrient.unit}/day ·{" "}
+                  {source.daysTracked} {source.daysTracked === 1 ? "day" : "days"}
+                </Text>
+              ))}
             </View>
           </View>
         );
       })}
     </View>
   );
+}
+
+function intakeTypeLabel(
+  intakeType: "itemized_food" | "provider_daily_total" | "supplement",
+): string {
+  switch (intakeType) {
+    case "itemized_food":
+      return "Itemized food";
+    case "provider_daily_total":
+      return "Provider daily total";
+    case "supplement":
+      return "Supplement";
+  }
 }
 
 // ── Styles ──
@@ -255,6 +381,20 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+  recovery: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  dataSourcesLink: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  dataSourcesLinkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "600",
   },
 
   // ── Days selector ──
@@ -327,10 +467,12 @@ const styles = StyleSheet.create({
   },
 
   // ── Nutrient bars ──
+  nutrientGroup: {
+    marginBottom: 14,
+  },
   nutrientRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
   },
   nutrientLabelContainer: {
     width: 90,
@@ -369,6 +511,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     width: 40,
     textAlign: "right",
+  },
+  nutrientSourceDetails: {
+    gap: 2,
+    marginLeft: 90,
+    marginTop: 4,
+  },
+  nutrientSourceText: {
+    color: colors.textSecondary,
+    fontSize: 11,
   },
 
   // ── Status text ──

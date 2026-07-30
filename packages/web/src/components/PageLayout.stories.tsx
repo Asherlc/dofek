@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { PageLayout } from "./PageLayout.tsx";
 
 const storyPaths = [
@@ -73,7 +74,7 @@ const meta = {
     headerChildren: (
       <button
         type="button"
-        className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white"
+        className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-on-accent"
       >
         Add activity
       </button>
@@ -86,7 +87,13 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", { level: 1, name: "Training" })).toBeInTheDocument();
+    await expect(canvas.queryByRole("heading", { name: "Dofek" })).not.toBeInTheDocument();
+  },
+};
 
 export const WithTabs: Story = {
   args: {
@@ -103,5 +110,23 @@ export const ContentOnly: Story = {
     title: undefined,
     subtitle: undefined,
     headerChildren: undefined,
+  },
+};
+
+export const SystemAppearance: Story = {
+  args: {
+    tabs: [
+      { to: "/dashboard", label: "Overview", exact: true },
+      { to: "/activities", label: "Activities", exact: false },
+      { to: "/training", label: "Insights", exact: false },
+    ],
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Representative application shell for auditing the browser's light and dark system appearances.",
+      },
+    },
   },
 };

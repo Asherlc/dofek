@@ -9,6 +9,7 @@ import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
 import { loadDashboardOverview } from "../services/dashboard-overview.ts";
+import { HEALTH_STATUS_CACHE_KEY_VERSION } from "../services/health-status.ts";
 import {
   loadMobileRecoveryTab,
   mobileRecoveryTabOutputSchema,
@@ -168,7 +169,10 @@ export const mobileDashboardRouter = router({
       };
     }),
 
-  recovery: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  recovery: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
+  })
     .input(dateWindowInput)
     .output(mobileRecoveryTabOutputSchema)
     .query(async ({ ctx, input }) => {

@@ -65,6 +65,20 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Loading: Story = { args: { data: [], loading: true } };
 export const Empty: Story = { args: { data: [] } };
+export const UnavailableSignals: Story = {
+  args: {
+    data: [
+      {
+        date: "2026-05-29",
+        walkingSpeedKmh: null,
+        stepLengthCm: null,
+        doubleSupportPct: null,
+        asymmetryPct: null,
+        steadiness: 0.92,
+      },
+    ],
+  },
+};
 export const PartialSignals: Story = {
   args: {
     data: readings.map((reading, index) =>

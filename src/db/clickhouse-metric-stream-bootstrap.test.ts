@@ -4,6 +4,10 @@ import { buildActivitySummaryReadModelStatements } from "./clickhouse-metric-str
 describe("buildActivitySummaryReadModelStatements", () => {
   const sql = buildActivitySummaryReadModelStatements().join("\n");
 
+  it("provides serving-row freshness to isolated integration tables", () => {
+    expect(sql).toContain("now64(9) AS refreshed_at");
+  });
+
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {
     it("keeps power sample rate safe before ClickHouse applies HAVING", () => {
       expect(sql).toContain("/ greatest(count() - 1, 1)");

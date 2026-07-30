@@ -1247,6 +1247,39 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("sleep_type");
     });
 
+    it.each([
+      ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00", [-480, -420, "device_offset"]],
+      ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
+    ])("stores record-local sleep context for %s to %s", async (startDate, endDate, expectedContext) => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushSleepSamples({
+        samples: [
+          {
+            uuid: "sleep-local-time",
+            startDate,
+            endDate,
+            value: "inBed",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      const sleepCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
+      });
+      const serialized = JSON.stringify(sleepCall?.[0]);
+      for (const expected of expectedContext) {
+        expect(serialized).toContain(JSON.stringify(expected));
+      }
+    });
+
     it("stores null sleep_type for short sessions", async () => {
       const execute = makeExecute();
       const caller = createCaller({
@@ -2935,7 +2968,7 @@ describe("healthKitSyncRouter", () => {
         return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
-      return new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(6, 11);
+      return new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
     }
 
     it.each([
@@ -3101,10 +3134,9 @@ describe("healthKitSyncRouter", () => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
-      expect(sleepInsert).toBeDefined();
-      const serialized = JSON.stringify(sleepInsert?.[0]);
-      expect(serialized).toContain("staging_available");
-      expect(serialized).not.toContain(",0,");
+      if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+      const stageParams = new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+      expect(stageParams).toEqual([null, null, null, null, false]);
     });
 
     it("filters out stages outside the inBed session (kills overlap check mutations >= to >, <= to <, && to ||)", async () => {

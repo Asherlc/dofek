@@ -80,6 +80,10 @@ function addDays(dateString: string, days: number): string {
 function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
   return rows.map((row) => ({
     date: row.date,
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "provider_offset",
     started_at: `${row.date}T22:00:00`,
     ended_at: `${addDays(row.date, 1)}T06:00:00`,
     duration_minutes: row.duration_minutes,

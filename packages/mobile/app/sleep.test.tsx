@@ -93,6 +93,14 @@ describe("SleepScreen", () => {
       nightly: [
         {
           date: "2026-07-20",
+          startedAt: "2026-07-20T05:00:00.000Z",
+          endedAt: "2026-07-20T13:00:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
           durationMinutes: 320,
           sleepMinutes: 300,
           deepPct: 20,
@@ -122,10 +130,19 @@ describe("SleepScreen", () => {
   });
 
   it("identifies the most recent night when sleep stages were not reported", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
     mockSleepData = {
       nightly: [
         {
-          date: new Date().toISOString().slice(0, 10),
+          date: today,
+          startedAt: `${today}T08:00:00.000Z`,
+          endedAt: `${today}T16:00:00.000Z`,
+          localTimeContext: {
+            timezone: "UTC",
+            startUtcOffsetMinutes: 0,
+            endUtcOffsetMinutes: 0,
+            source: "provider_timezone",
+          },
           durationMinutes: 480,
           sleepMinutes: 480,
           deepPct: null,
@@ -148,5 +165,41 @@ describe("SleepScreen", () => {
     expect(screen.getByText("Partial sleep record")).toBeTruthy();
     expect(screen.getByText("8h 0m recorded")).toBeTruthy();
     expect(screen.getByText("Sleep stages were not reported for this night.")).toBeTruthy();
+  });
+
+  it("renders the stored local bedtime and wake time", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockSleepData = {
+      nightly: [
+        {
+          date: today,
+          startedAt: `${today}T08:00:00.000Z`,
+          endedAt: `${today}T16:00:00.000Z`,
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
+          durationMinutes: 480,
+          sleepMinutes: 450,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 90,
+          stagingAvailable: true,
+          rollingAvgDuration: 450,
+        },
+      ],
+      sleepDebt: 0,
+      averageSleepMinutes: 450,
+      averageEfficiencyPercent: 90,
+    };
+
+    const { default: SleepScreen } = await import("./sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getByText("1:00 AM – 9:00 AM")).toBeTruthy();
   });
 });

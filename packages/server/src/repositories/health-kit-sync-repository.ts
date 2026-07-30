@@ -1,3 +1,7 @@
+import {
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -672,6 +676,23 @@ export class HealthKitSyncRepository {
             stage.value === "asleepDeep" ||
             stage.value === "asleepREM",
         );
+        const startUtcOffsetMinutes = offsetMinutesFromTimestamp(session.startDate);
+        const endUtcOffsetMinutes = offsetMinutesFromTimestamp(session.endDate);
+        const localTimeContext =
+          startUtcOffsetMinutes == null || endUtcOffsetMinutes == null
+            ? {
+                timezone: null,
+                startUtcOffsetMinutes: null,
+                endUtcOffsetMinutes: null,
+                source: "unknown" as const,
+              }
+            : resolveRecordLocalTimeContext({
+                startedAt: new Date(session.startDate),
+                endedAt: new Date(session.endDate),
+                startUtcOffsetMinutes,
+                endUtcOffsetMinutes,
+                source: "device_offset",
+              });
         let deepMinutes = 0;
         let remMinutes = 0;
         let lightMinutes = 0;
@@ -710,13 +731,17 @@ export class HealthKitSyncRepository {
         const sessionResult = await executeWithSchema(
           this.#db,
           z.object({ id: z.guid() }),
-          sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, staging_available, sleep_type, source_name)
+          sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, timezone, start_utc_offset_minutes, end_utc_offset_minutes, local_time_source, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, staging_available, sleep_type, source_name)
               VALUES (
                 ${this.#userId},
                 ${PROVIDER_ID},
                 ${externalId},
                 ${session.startDate}::timestamptz,
                 ${session.endDate}::timestamptz,
+                ${localTimeContext.timezone},
+                ${localTimeContext.startUtcOffsetMinutes},
+                ${localTimeContext.endUtcOffsetMinutes},
+                ${localTimeContext.source},
                 ${durationMinutes},
                 ${storedDeepMinutes},
                 ${storedRemMinutes},
@@ -729,6 +754,10 @@ export class HealthKitSyncRepository {
               ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
                 started_at = ${session.startDate}::timestamptz,
                 ended_at = ${session.endDate}::timestamptz,
+                timezone = ${localTimeContext.timezone},
+                start_utc_offset_minutes = ${localTimeContext.startUtcOffsetMinutes},
+                end_utc_offset_minutes = ${localTimeContext.endUtcOffsetMinutes},
+                local_time_source = ${localTimeContext.source},
                 duration_minutes = ${durationMinutes},
                 deep_minutes = ${storedDeepMinutes},
                 rem_minutes = ${storedRemMinutes},

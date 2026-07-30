@@ -20,9 +20,6 @@ config.resolver.nodeModulesPaths = [
 // Enable symlink resolution for pnpm workspace packages
 config.resolver.unstable_enableSymlinks = true;
 
-// Set condition names so Metro can resolve package.json "exports" subpaths
-config.resolver.unstable_conditionNames = ["react-native", "import", "require", "default"];
-
 // Exclude test and story files from the bundle (colocated files in app/
 // would otherwise be picked up as Expo Router routes)
 config.resolver.blockList = [/\.test\.[jt]sx?$/, /\.stories\.[jt]sx?$/];

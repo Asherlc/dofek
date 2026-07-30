@@ -3,7 +3,7 @@ import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0062_sleep_staging_available",
+    id: "0065_sleep_staging_available",
     statements: buildSleepQualityMigrationStatements(),
   };
 }

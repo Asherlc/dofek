@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { sleepStageColors, statusColors, textColors } from "./colors.ts";
 import {
   aggregateWeeklyVolume,
+  baselineReadinessComponents,
+  DEFAULT_READINESS_COMPONENT_SCORE,
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
   FORM_ZONE_GREY,
@@ -27,6 +29,40 @@ import {
   trendDirection,
   zScoreToRecoveryScore,
 } from "./scoring.ts";
+
+describe("baselineReadinessComponents", () => {
+  it("maps the recovery metrics with their intended polarity", () => {
+    expect(
+      baselineReadinessComponents({
+        hrvZScore: 1,
+        restingHeartRateZScore: 1,
+        respiratoryRateZScore: -1,
+        sleepEfficiency: 85.4,
+      }),
+    ).toEqual({
+      hrvScore: 81,
+      restingHrScore: 31,
+      respiratoryRateScore: 81,
+      sleepScore: 85,
+    });
+  });
+
+  it("uses the named default when baseline context is unavailable", () => {
+    expect(
+      baselineReadinessComponents({
+        hrvZScore: null,
+        restingHeartRateZScore: null,
+        respiratoryRateZScore: null,
+        sleepEfficiency: null,
+      }),
+    ).toEqual({
+      hrvScore: DEFAULT_READINESS_COMPONENT_SCORE,
+      restingHrScore: DEFAULT_READINESS_COMPONENT_SCORE,
+      respiratoryRateScore: DEFAULT_READINESS_COMPONENT_SCORE,
+      sleepScore: DEFAULT_READINESS_COMPONENT_SCORE,
+    });
+  });
+});
 
 describe("zScoreToRecoveryScore", () => {
   it("maps z=0 to 62 (Whoop-aligned average)", () => {

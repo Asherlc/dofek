@@ -47,7 +47,26 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
   const query = vi.fn();
   for (const rows of rowSets) {
     query.mockImplementationOnce((schema: { parse: (row: Record<string, unknown>) => unknown }) =>
-      Promise.resolve(rows.map((row) => schema.parse(row))),
+      Promise.resolve(
+        rows.map((row) =>
+          schema.parse(
+            "activity_type" in row && "started_at" in row
+              ? {
+                  timezone: null,
+                  start_utc_offset_minutes: null,
+                  end_utc_offset_minutes: null,
+                  local_time_source: "unknown",
+                  provider_id: "wahoo",
+                  source_name: null,
+                  source_external_ids: [],
+                  absent_source_external_ids: [],
+                  last_processed_at: null,
+                  ...row,
+                }
+              : row,
+          ),
+        ),
+      ),
     );
   }
   query.mockImplementation(() => {
@@ -74,6 +93,16 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
     activity_type: "indoor_cycling",
     started_at: "2026-03-18T07:00:00.000Z",
     ended_at: "2026-03-18T08:00:00.000Z",
+    provider_id: "wahoo",
+    source_name: null,
+    source_external_ids: [
+      {
+        providerId: "wahoo",
+        externalId: "wahoo-activity-1",
+      },
+    ],
+    absent_source_external_ids: [],
+    last_processed_at: "2026-03-18T08:05:00.000Z",
     duration_min: 60,
     avg_hr: null,
     max_hr: null,
@@ -115,7 +144,19 @@ function makeCalendarEntry(
     name: overrides.name ?? overrides.id,
     activityType: overrides.activityType ?? "running",
     endedAt: overrides.endedAt ?? overrides.startedAt,
+    localTimeContext: overrides.localTimeContext ?? {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
+    },
     durationMin: overrides.durationMin ?? 60,
+    source: overrides.source ?? {
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: overrides.lastProcessedAt ?? "2026-03-18T08:05:00.000Z",
     location: overrides.location ?? null,
     tss: overrides.tss ?? null,
     stats: overrides.stats ?? [],
@@ -124,10 +165,60 @@ function makeCalendarEntry(
 }
 
 describe("ActivitiesCalendarRepository", () => {
+  it("returns canonical source attribution and read-model processing freshness", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          provider_id: "wahoo",
+          source_external_ids: [
+            {
+              providerId: "wahoo",
+              externalId: "wahoo-activity-1",
+            },
+            {
+              providerId: "strava",
+              externalId: "strava-activity-1",
+            },
+          ],
+          last_processed_at: "2026-03-18T08:07:00.000Z",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        source: {
+          primarySourceLabel: "Wahoo",
+          sourceCount: 2,
+          overlapSummary: "2 matched source records · Wahoo selected by source priority",
+        },
+        lastProcessedAt: "2026-03-18T08:07:00.000Z",
+      }),
+    );
+    const listQuery = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    expect(normalizeSql(listQuery)).toMatch(
+      /greatest\(\s*activity\.refreshed_at,\s*coalesce\(asum\.refreshed_at, activity\.refreshed_at\)\s*\)/,
+    );
+  });
+
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
-      [makeActivityRow({ avg_power: 251 })],
+      [
+        makeActivityRow({
+          avg_power: 251,
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_timezone",
+        }),
+      ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
     ]);
@@ -142,13 +233,62 @@ describe("ActivitiesCalendarRepository", () => {
           expect.objectContaining({
             id: "activity-1",
             durationMin: 60,
+            localTimeContext: {
+              timezone: "America/Los_Angeles",
+              startUtcOffsetMinutes: -480,
+              endUtcOffsetMinutes: -420,
+              source: "provider_timezone",
+            },
             tss: 100.8,
             location: null,
-            stats: [{ label: "Training Stress Score", value: "100.8" }],
+            stats: [{ status: "available", label: "Training Stress Score", value: "100.8" }],
           }),
         ],
       },
     ]);
+  });
+
+  it("exposes timezone fields only for authoritative timezone provenance", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "offset-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "provider_offset",
+        }),
+        makeActivityRow({
+          id: "device-timezone-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "device_timezone",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+    const contextById = new Map(
+      (result[0]?.activities ?? []).map((entry) => [entry.id, entry.localTimeContext]),
+    );
+
+    expect(contextById.get("offset-context")).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -480,
+      source: "provider_offset",
+    });
+    expect(contextById.get("device-timezone-context")).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -420,
+      source: "device_timezone",
+    });
   });
 
   it("adds a clamped location tile and preserves distance/elevation for outdoor activities", async () => {
@@ -708,7 +848,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).not.toHaveBeenCalled();
   });
 
-  it("returns null and dash stats when activities have no usable stress data", async () => {
+  it("explains every missing prerequisite when activities have no usable stress data", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ avg_power: null, avg_hr: null })],
@@ -722,7 +862,14 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: null,
-        stats: [{ label: "Training Stress Score", value: "—" }],
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Record average power, or record average heart rate and set maximum heart rate.",
+          },
+        ],
       }),
     );
   });
@@ -741,7 +888,13 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: null,
-        stats: [{ label: "Training Stress Score", value: "—" }],
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason: "Record an activity duration greater than zero.",
+          },
+        ],
       }),
     );
   });
@@ -771,7 +924,19 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        tss: null,
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Set functional threshold power, or record average heart rate and set maximum heart rate.",
+          },
+        ],
+      }),
+    );
   });
 
   it("falls back to heart-rate stress when power stress cannot be computed", async () => {
@@ -795,7 +960,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: 45.1,
-        stats: [{ label: "Training Stress Score", value: "45.1" }],
+        stats: [{ status: "available", label: "Training Stress Score", value: "45.1" }],
       }),
     );
   });
@@ -858,7 +1023,19 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        tss: null,
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Record average power and set functional threshold power, or set maximum heart rate.",
+          },
+        ],
+      }),
+    );
   });
 
   it("does not compute heart-rate stress when max heart rate equals resting heart rate", async () => {
@@ -878,7 +1055,19 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        tss: null,
+        stats: [
+          {
+            status: "unavailable",
+            label: "Training Stress Score",
+            reason:
+              "Record average power and set functional threshold power, or set maximum heart rate above resting heart rate.",
+          },
+        ],
+      }),
+    );
   });
 
   it("includes provider-absent activities from ClickHouse when requested", async () => {
@@ -904,6 +1093,10 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "unknown",
         },
       ],
       [],
@@ -928,6 +1121,12 @@ describe("ActivitiesCalendarRepository", () => {
             isProviderAbsent: true,
             providerId: "strava",
             providerAbsentAt: "2026-03-05T14:30:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
           }),
         ],
       },
@@ -1024,6 +1223,10 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "unknown",
         },
         {
           id: "hidden-only",
@@ -1232,10 +1435,22 @@ describe("ActivitiesCalendarRepository", () => {
       activityType: "indoor_cycling",
       startedAt: "2026-03-18T07:00:00.000Z",
       endedAt: "2026-03-18T08:00:00.000Z",
+      localTimeContext: {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "unknown",
+      },
       durationMin: 60,
+      source: {
+        primarySourceLabel: "Strava",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+      lastProcessedAt: null,
       location: null,
       tss: 100,
-      stats: [{ label: "Training Stress Score", value: "100" }],
+      stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
       isProviderAbsent: true,
       providerId: "strava",
       providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -1475,7 +1690,12 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result.map((day) => day.date)).toEqual(["2026-03-18", "2026-03-17"]);
     expect(result[0]?.activities[0]?.tss).toBeNull();
     expect(result[0]?.activities[0]?.stats).toEqual([
-      { label: "Training Stress Score", value: "—" },
+      {
+        status: "unavailable",
+        label: "Training Stress Score",
+        reason:
+          "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+      },
     ]);
   });
 
@@ -1902,7 +2122,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({
         id: "hidden-hr",
         tss: 45.1,
-        stats: [{ label: "Training Stress Score", value: "45.1" }],
+        stats: [{ status: "available", label: "Training Stress Score", value: "45.1" }],
       }),
     );
   });

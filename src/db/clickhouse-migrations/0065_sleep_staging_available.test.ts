@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createMigration } from "./0062_sleep_staging_available.ts";
+import { createMigration } from "./0065_sleep_staging_available.ts";
 
-describe("0062_sleep_staging_available", () => {
+describe("0065_sleep_staging_available", () => {
   it("adds the flag to source and serving tables before recreating the sleep view", () => {
     const migration = createMigration();
 
-    expect(migration.id).toBe("0062_sleep_staging_available");
+    expect(migration.id).toBe("0065_sleep_staging_available");
     expect(migration.statements).toEqual(
       expect.arrayContaining([
         expect.stringContaining(

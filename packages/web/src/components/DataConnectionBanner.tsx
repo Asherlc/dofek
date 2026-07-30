@@ -98,7 +98,7 @@ export function DataConnectionBanner() {
           type="button"
           disabled={!isOnline || isRetrying}
           onClick={() => void retryFailedQueries()}
-          className="rounded-md border border-amber-800/30 bg-white/70 px-3 py-1.5 text-xs font-semibold text-amber-950 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md border border-amber-800/30 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-950 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {retryLabel}
         </button>

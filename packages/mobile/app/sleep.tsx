@@ -8,6 +8,7 @@ import {
   isToday,
   isYesterday,
 } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useState } from "react";
@@ -46,6 +47,13 @@ export default function SleepScreen() {
   })();
   const consistency = consistencyQuery.data ?? [];
   const latestConsistency = consistency[consistency.length - 1];
+  const lastNightBedtime = lastNight
+    ? formatRecordLocalTime(lastNight.startedAt, lastNight.localTimeContext, "start")
+    : "--";
+  const lastNightWake =
+    lastNight?.endedAt == null
+      ? "--"
+      : formatRecordLocalTime(lastNight.endedAt, lastNight.localTimeContext, "end");
 
   const durationTrend = nightly.slice(-14).map((n) => n.sleepMinutes);
   const efficiencyTrend = nightly
@@ -121,6 +129,11 @@ export default function SleepScreen() {
                   </Text>
                 </View>
               )}
+              <Text style={styles.sleepTiming}>
+                {lastNightBedtime === "--" || lastNightWake === "--"
+                  ? "Local sleep time unavailable"
+                  : `${lastNightBedtime} – ${lastNightWake}`}
+              </Text>
               {lastNight.efficiency != null && (
                 <View style={styles.efficiencyRow}>
                   <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
@@ -324,6 +337,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  sleepTiming: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: "center",
   },
   efficiencyRow: {
     flexDirection: "row",

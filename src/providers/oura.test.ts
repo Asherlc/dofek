@@ -9,7 +9,12 @@ import {
 import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
+import {
+  mapOuraActivityType,
+  ouraProviderOffsetColumns,
+  parseOuraDailyMetrics,
+  parseOuraSleep,
+} from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
   type OuraDailyActivity,
@@ -726,6 +731,19 @@ const sampleResilience: OuraDailyResilience = {
 // ============================================================
 
 describe("Oura Provider", () => {
+  describe("ouraProviderOffsetColumns", () => {
+    it("maps independent timestamp offsets to provider-local persistence columns", () => {
+      expect(
+        ouraProviderOffsetColumns("2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00"),
+      ).toEqual({
+        timezone: null,
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_offset",
+      });
+    });
+  });
+
   describe("parseOuraSleep", () => {
     it("maps sleep fields correctly", () => {
       const result = parseOuraSleep(sampleSleep);

@@ -4,6 +4,8 @@ import { colors, radius, spacing } from "../theme";
 type HealthMetricKey =
   | "hrv"
   | "resting_heart_rate"
+  | "respiratory_rate"
+  | "sleep_efficiency"
   | "spo2"
   | "steps"
   | "skin_temperature"
@@ -27,6 +29,7 @@ interface HealthStatusMetric {
     | "far_from_baseline";
   statusColor: "positive" | "warning" | "danger" | "muted";
   statusLabel: string;
+  evaluationRule: string;
   explanation: string;
 }
 
@@ -47,6 +50,13 @@ function defaultFormatValue(metric: HealthStatusMetric): string {
   return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
 }
 
+function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
+  if (status === "insufficient_data") return "?";
+  if (status === "near_baseline" || status === "moving_as_intended") return "✓";
+  if (status === "notable_deviation") return "!";
+  return "×";
+}
+
 export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsProps) {
   if (metrics.length === 0) return null;
 
@@ -56,9 +66,12 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
       {metrics.map((metric) => (
         <View key={metric.metric} style={styles.card}>
           <View style={styles.titleRow}>
-            <View
-              style={[styles.statusDot, { backgroundColor: statusColor(metric.statusColor) }]}
-            />
+            <Text
+              accessibilityLabel={`${metric.statusLabel} status`}
+              style={[styles.statusSymbol, { color: statusColor(metric.statusColor) }]}
+            >
+              {statusSymbol(metric.statusToken)}
+            </Text>
             <Text style={styles.label}>{metric.label}</Text>
           </View>
           <Text style={styles.value}>
@@ -67,6 +80,7 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
           <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
             {metric.statusLabel}
           </Text>
+          <Text style={styles.rule}>{metric.evaluationRule}</Text>
           <Text style={styles.explanation}>{metric.explanation}</Text>
         </View>
       ))}
@@ -95,10 +109,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
   },
-  statusDot: {
-    borderRadius: 4,
-    height: 8,
-    width: 8,
+  statusSymbol: {
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 16,
+    textAlign: "center",
+    width: 16,
   },
   label: {
     color: colors.textSecondary,
@@ -115,6 +131,12 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 13,
     fontWeight: "600",
+  },
+  rule: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
   },
   explanation: {
     color: colors.textSecondary,

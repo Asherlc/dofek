@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useWindowDimensions } from "react-native";
+import { Linking, useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCaptureException } = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ const mockRegisterWithPassword = vi.fn();
 const mockRequestPasswordReset = vi.fn();
 const mockRouterReplace = vi.fn();
 const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+const mockOpenUrl = vi.spyOn(Linking, "openURL");
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -63,6 +64,7 @@ const { default: LoginScreen } = await import("./login");
 describe("LoginScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOpenUrl.mockResolvedValue();
     mockIsNativeAppleSignInAvailable.mockResolvedValue(false);
     mockUseWindowDimensions.mockReturnValue({
       width: 390,
@@ -120,11 +122,113 @@ describe("LoginScreen", () => {
     expect(signInModeButton.parentElement?.style.flexDirection).toBe("row");
   });
 
-  it("shows title and subtitle", () => {
+  it("shows task-specific sign-in title and subtitle", () => {
     mockFetchConfiguredProviders.mockReturnValue(new Promise(() => {}));
     render(<LoginScreen />);
-    expect(screen.getByText("Dofek")).toBeTruthy();
-    expect(screen.getByText("Sign in to view your health data")).toBeTruthy();
+    expect(screen.getByText("Sign in to Dofek")).toBeTruthy();
+    expect(screen.getByText("View and manage your health data.")).toBeTruthy();
+  });
+
+  it("explains the registration task and next step", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByText("Create your account")).toBeTruthy();
+    expect(
+      screen.getByText("Enter your details. Next, you'll connect your health data."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create account and continue" })).toBeTruthy();
+  });
+
+  it("shows legal context and an existing-account path during registration", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByText("Sign in to Dofek")).toBeTruthy();
+  });
+
+  it("opens registration policies on the configured Dofek instance", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() => expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/terms"));
+
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+
+    await waitFor(() =>
+      expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/privacy"),
+    );
+  });
+
+  it("reports a legal-document launch failure and explains it to the user", async () => {
+    const openError = new Error("Browser unavailable");
+    mockOpenUrl.mockRejectedValueOnce(openError).mockResolvedValueOnce();
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Could not open the Privacy Policy. Try again.")).toBeTruthy(),
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(openError, {
+      source: "login-screen-open-legal-document",
+      document: "privacy",
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Could not open the Privacy Policy. Try again.")).not.toBeTruthy(),
+    );
+  });
+
+  it("shows task-specific password reset guidance", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+
+    expect(screen.getByText("Reset your password")).toBeTruthy();
+    expect(screen.getByText("Enter your email to receive a password reset link.")).toBeTruthy();
   });
 
   it("shows provider buttons after loading", async () => {
@@ -306,7 +410,7 @@ describe("LoginScreen", () => {
     fireEvent.change(screen.getByPlaceholderText("Password"), {
       target: { value: "password123" },
     });
-    fireEvent.click(screen.getAllByText("Create account")[1]);
+    fireEvent.click(screen.getByText("Create account and continue"));
 
     await waitFor(() => {
       expect(mockRegisterWithPassword).toHaveBeenCalledWith(
@@ -332,8 +436,10 @@ describe("LoginScreen", () => {
     const signInButton = await screen.findByRole("button", {
       name: "Sign in with email",
     });
+    const disabledBackgroundColor = signInButton.style.backgroundColor;
+    const disabledTextColor = signInButton.firstElementChild?.getAttribute("style");
     expect(signInButton).toHaveProperty("disabled", true);
-    expect(signInButton.style.opacity).toBe("0.5");
+    expect(signInButton.style.opacity).toBe("");
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "user@example.com" },
@@ -343,7 +449,41 @@ describe("LoginScreen", () => {
     });
 
     expect(signInButton).toHaveProperty("disabled", false);
-    expect(signInButton.style.opacity).toBe("");
+    expect(signInButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(signInButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+  });
+
+  it("uses neutral disabled registration styling until required details are entered", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    const createAccountButton = screen.getByRole("button", {
+      name: "Create account and continue",
+    });
+    const disabledBackgroundColor = createAccountButton.style.backgroundColor;
+    const disabledTextColor = createAccountButton.firstElementChild?.getAttribute("style");
+
+    expect(createAccountButton).toHaveProperty("disabled", true);
+    expect(createAccountButton.style.opacity).toBe("");
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "password123" },
+    });
+
+    expect(createAccountButton).toHaveProperty("disabled", false);
+    expect(createAccountButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(createAccountButton.firstElementChild?.getAttribute("style")).not.toBe(
+      disabledTextColor,
+    );
   });
 
   it("shows error when login fails", async () => {

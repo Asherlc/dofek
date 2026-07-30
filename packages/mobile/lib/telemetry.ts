@@ -63,6 +63,8 @@ export function initTelemetry() {
   Sentry.init({
     dsn: SENTRY_DSN,
     debug: __DEV__,
+    tracesSampler: ({ name, inheritOrSampleWith }) =>
+      name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
   });
 
   if (OTEL_ENDPOINT) {

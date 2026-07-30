@@ -191,6 +191,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
+import { PageSection } from "./PageSection.tsx";
 
 afterEach(cleanup);
 
@@ -247,6 +248,17 @@ describe("DataSourcesPanel", () => {
     mockLogsQuery.mockReset();
     mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockCaptureException.mockReset();
+  });
+
+  it("uses the Settings section as its single Data Sources heading", () => {
+    render(
+      <PageSection title="Data Sources" subtitle="Connect and manage health data providers">
+        <DataSourcesPanel />
+      </PageSection>,
+    );
+
+    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
   });
 
   it("reserves one stable provider region while inventory loads", () => {

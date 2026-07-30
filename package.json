@@ -153,6 +153,7 @@
     "backfill:activity-overview-availability": "tsx scripts/with-env.ts -- tsx scripts/backfill-activity-overview-availability.ts",
     "backfill:climbing-attempt-count": "tsx scripts/with-env.ts -- tsx scripts/backfill-climbing-attempt-count.ts",
     "backfill:sleep-quality": "tsx scripts/with-env.ts -- tsx scripts/backfill-sleep-quality.ts",
+    "backfill:record-local-time": "tsx scripts/with-env.ts -- tsx scripts/backfill-record-local-time-context.ts",
     "backfill:provider-connections": "tsx scripts/with-env.ts -- tsx scripts/backfill-provider-connections.ts",
     "test:all": "tsx scripts/run-tests.ts all",
     "test:changed": "vitest run --changed origin/main --project unit --project mobile",

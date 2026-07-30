@@ -119,7 +119,7 @@ describe("strengthRouter", () => {
   });
 
   describe("progressiveOverload", () => {
-    it("computes regression slope for exercises", async () => {
+    it("computes regression slope and descriptive direction for exercises", async () => {
       const rows = [
         { exercise_name: "Squat", week: "2024-01-08", weekly_volume: 3000 },
         { exercise_name: "Squat", week: "2024-01-15", weekly_volume: 3200 },
@@ -129,7 +129,7 @@ describe("strengthRouter", () => {
       const result = await caller.progressiveOverload({ days: 90 });
 
       expect(result).toHaveLength(1);
-      expect(result[0]?.isProgressing).toBe(true);
+      expect(result[0]?.trend).toBe("increasing");
       expect(result[0]?.slopeKgPerWeek).toBeGreaterThan(0);
     });
 
@@ -210,12 +210,8 @@ describe("stressRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          hrv: 40,
-          resting_hr: 65,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: -2.5,
+          resting_hr_z_score: 10 / 3,
           efficiency_pct: 75,
         },
       ];
@@ -233,12 +229,8 @@ describe("stressRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          hrv: 65,
-          resting_hr: 52,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: 0.625,
+          resting_hr_z_score: -1,
           efficiency_pct: 95,
         },
       ];
@@ -257,12 +249,8 @@ describe("stressRouter", () => {
         date.setDate(date.getDate() + i);
         rows.push({
           date: date.toISOString().slice(0, 10),
-          hrv: 50 - i * 3,
-          resting_hr: 58 + i,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: -2,
+          resting_hr_z_score: 2,
           efficiency_pct: 85,
         });
       }
@@ -282,12 +270,8 @@ describe("stressRouter", () => {
         date.setDate(date.getDate() + i);
         rows.push({
           date: date.toISOString().slice(0, 10),
-          hrv: 35,
-          resting_hr: 68,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: -3,
+          resting_hr_z_score: 4,
           efficiency_pct: 70,
         });
       }
@@ -297,12 +281,8 @@ describe("stressRouter", () => {
         date.setDate(date.getDate() + i);
         rows.push({
           date: date.toISOString().slice(0, 10),
-          hrv: 70,
-          resting_hr: 50,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 8,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
+          hrv_z_score: 1,
+          resting_hr_z_score: -1,
           efficiency_pct: 95,
         });
       }

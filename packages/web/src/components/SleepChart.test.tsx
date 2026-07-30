@@ -25,6 +25,11 @@ describe("SleepChart", () => {
       data: [
         {
           started_at: startedAt,
+          ended_at: "2026-04-02T06:00:00.000Z",
+          timezone: null,
+          start_utc_offset_minutes: -420,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_offset",
           duration_minutes: 480,
           deep_minutes: 90,
           rem_minutes: 100,
@@ -58,6 +63,7 @@ describe("SleepChart", () => {
       "&lt;a href=&quot;javascript:alert(1)&quot; onclick=&quot;alert(1)&quot;&gt;ring&lt;/a&gt;",
     );
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+    expect(html).toContain("3:00 PM – 11:00 PM");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<a ");
     expect(html).not.toContain("<img ");
@@ -69,6 +75,11 @@ describe("SleepChart", () => {
       data: [
         {
           started_at: startedAt,
+          ended_at: null,
+          timezone: null,
+          start_utc_offset_minutes: null,
+          end_utc_offset_minutes: null,
+          local_time_source: "unknown",
           duration_minutes: 480,
           deep_minutes: null,
           rem_minutes: null,

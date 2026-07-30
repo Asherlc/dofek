@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { buildBaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   buildDailyMetricHealthStatuses,
+  buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromSummary,
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
@@ -9,29 +11,115 @@ import {
 
 describe("buildDailyMetricHealthStatuses", () => {
   it("uses a layman-readable blood oxygen label", () => {
-    const statuses = buildDailyMetricHealthStatuses({
-      avg_hrv: null,
-      avg_resting_hr: null,
-      avg_spo2: 97,
-      avg_steps: null,
-      avg_skin_temp: null,
-      stddev_hrv: null,
-      stddev_resting_hr: null,
-      stddev_spo2: 1,
-      stddev_steps: null,
-      stddev_skin_temp: null,
-      latest_hrv: null,
-      latest_resting_hr: null,
-      latest_spo2: 98,
-      latest_steps: null,
-      latest_skin_temp: null,
-      latest_date: "2026-07-25",
-      latest_steps_date: null,
-    });
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: null,
+        avg_spo2: 97,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: null,
+        stddev_resting_hr: null,
+        stddev_spo2: 1,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: null,
+        latest_resting_hr: null,
+        latest_spo2: 98,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+      },
+      [],
+    );
 
     expect(statuses.find((status) => status.metric === "spo2")?.label).toBe(
       "Blood Oxygen Saturation (SpO2)",
     );
+  });
+
+  it("uses canonical recovery baselines instead of selected-range aggregates", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: 68,
+        avg_resting_hr: null,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: 1,
+        stddev_resting_hr: null,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: 72,
+        latest_resting_hr: null,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+      },
+      [
+        buildBaselineRelativeMetric({
+          metric: "hrv",
+          label: "Heart Rate Variability (HRV)",
+          value: 72,
+          baselineMean: 60,
+          baselineStandardDeviation: 6,
+          zScore: 2,
+          baselineSampleCount: 24,
+          baselineCoverage: 0.8,
+          recentMean: 66,
+          comparisonMean: 61,
+        }),
+      ],
+    );
+
+    expect(statuses.find((status) => status.metric === "hrv")).toMatchObject({
+      baseline: 60,
+      sampleDeviation: 6,
+      deviation: 2,
+    });
+  });
+
+  it.each([
+    { metric: "hrv" as const, intent: "higher", statusToken: "moving_as_intended" },
+    {
+      metric: "resting_heart_rate" as const,
+      intent: "lower",
+      statusToken: "far_from_baseline",
+    },
+    {
+      metric: "respiratory_rate" as const,
+      intent: "lower",
+      statusToken: "far_from_baseline",
+    },
+    {
+      metric: "sleep_efficiency" as const,
+      intent: "higher",
+      statusToken: "moving_as_intended",
+    },
+  ])("applies the supported intent for $metric", ({ metric, intent, statusToken }) => {
+    const baselineMetric = buildBaselineRelativeMetric({
+      metric,
+      label: metric,
+      value: 16,
+      baselineMean: 14,
+      baselineStandardDeviation: 1,
+      zScore: 2,
+      baselineSampleCount: 30,
+      baselineCoverage: 1,
+      recentMean: 15,
+      comparisonMean: 14,
+    });
+
+    expect(buildHealthStatusFromBaselineMetric(baselineMetric)).toMatchObject({
+      metric,
+      intent,
+      direction: "above",
+      statusToken,
+    });
   });
 });
 
@@ -53,6 +141,7 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "moving_as_intended",
       statusColor: "positive",
       statusLabel: "Moving as intended",
+      evaluationRule: "Above your baseline, where higher values support this metric",
     });
   });
 
@@ -72,7 +161,43 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "notable_deviation",
       statusColor: "warning",
       statusLabel: "Notably below baseline",
+      evaluationRule:
+        "Outside your usual range: 1 to less than 2 standard deviations from baseline",
     });
+  });
+
+  it.each([
+    {
+      value: 59.999,
+      statusToken: "near_baseline",
+      evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
+    },
+    {
+      value: 60,
+      statusToken: "notable_deviation",
+      evaluationRule:
+        "Outside your usual range: 1 to less than 2 standard deviations from baseline",
+    },
+    {
+      value: 70,
+      statusToken: "far_from_baseline",
+      evaluationRule: "Well outside your usual range: at least 2 standard deviations from baseline",
+    },
+  ])("returns the exact evaluated rule at value $value", ({
+    value,
+    statusToken,
+    evaluationRule,
+  }) => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "skin_temperature",
+        label: "Skin Temperature",
+        value,
+        baseline: 50,
+        sampleDeviation: 10,
+        intent: "neutral",
+      }),
+    ).toMatchObject({ statusToken, evaluationRule });
   });
 
   it.each([
@@ -117,6 +242,7 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "insufficient_data",
       statusColor: "muted",
       statusLabel: "Not enough data",
+      evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
     });
   });
 });

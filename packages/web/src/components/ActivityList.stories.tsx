@@ -221,3 +221,11 @@ export const Empty: Story = {
     activities: [],
   },
 };
+
+export const ScopedEmpty: Story = {
+  args: {
+    activities: [],
+    emptyMessage:
+      "No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness.",
+  },
+};

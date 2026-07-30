@@ -65,7 +65,7 @@ export function ProcessingStatusWidget({
   if (loading && !data) {
     return (
       <section
-        className="w-full rounded-lg border border-l-4 border-l-blue-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
+        className="w-full rounded-lg border border-l-4 border-l-blue-500 bg-surface-solid px-3 py-2.5 text-foreground shadow-sm"
         aria-busy="true"
         aria-live="polite"
       >
@@ -108,7 +108,7 @@ export function ProcessingStatusWidget({
   const visibleDatasets = alwaysVisible ? datasetsWithHistory : problemDatasets;
   const datasetDetails =
     visibleDatasets.length > 0 ? (
-      <ul className="mt-2 divide-y divide-slate-200 border-t border-slate-200">
+      <ul className="mt-2 divide-y divide-border border-t border-border">
         {visibleDatasets.map((dataset) => {
           const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
           const datasetError =
@@ -118,12 +118,10 @@ export function ProcessingStatusWidget({
           return (
             <li key={dataset.key} className="py-2 text-xs">
               <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold text-slate-800">{dataset.label}</span>
-                <span className="text-slate-600">
-                  {processingDatasetStatusLabel(dataset.status)}
-                </span>
+                <span className="font-semibold text-foreground">{dataset.label}</span>
+                <span className="text-muted">{processingDatasetStatusLabel(dataset.status)}</span>
               </div>
-              <p className="mt-0.5 text-slate-500">
+              <p className="mt-0.5 text-subtle">
                 {lastReady ? `Last ready: ${lastReady}` : "No completed update recorded"}
               </p>
               {datasetError ? <p className="mt-1 text-red-700">{datasetError}</p> : null}

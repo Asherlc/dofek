@@ -5,6 +5,14 @@ import { SleepAnalyticsChart } from "./SleepAnalyticsChart.tsx";
 const nightly: SleepNightlyRow[] = [
   {
     date: "2026-05-25",
+    startedAt: "2026-05-26T05:00:00Z",
+    endedAt: "2026-05-26T12:50:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 470,
     sleepMinutes: 432,
     deepPct: 22,
@@ -17,6 +25,14 @@ const nightly: SleepNightlyRow[] = [
   },
   {
     date: "2026-05-26",
+    startedAt: "2026-05-27T05:15:00Z",
+    endedAt: "2026-05-27T12:40:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 445,
     sleepMinutes: 401,
     deepPct: 19,
@@ -29,6 +45,14 @@ const nightly: SleepNightlyRow[] = [
   },
   {
     date: "2026-05-27",
+    startedAt: "2026-05-28T04:45:00Z",
+    endedAt: "2026-05-28T13:00:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 495,
     sleepMinutes: 457,
     deepPct: 24,
@@ -41,6 +65,14 @@ const nightly: SleepNightlyRow[] = [
   },
   {
     date: "2026-05-28",
+    startedAt: "2026-05-29T05:30:00Z",
+    endedAt: "2026-05-29T12:40:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 430,
     sleepMinutes: 387,
     deepPct: 18,
@@ -53,6 +85,14 @@ const nightly: SleepNightlyRow[] = [
   },
   {
     date: "2026-05-29",
+    startedAt: "2026-05-30T05:00:00Z",
+    endedAt: "2026-05-30T13:00:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 480,
     sleepMinutes: 446,
     deepPct: 23,

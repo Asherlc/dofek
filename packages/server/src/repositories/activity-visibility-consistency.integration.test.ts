@@ -37,6 +37,11 @@ const preservedBackfillFieldsSchema = z.array(
     sample_count: z.coerce.number(),
   }),
 );
+const activityProcessingFreshnessSchema = z.array(
+  z.object({
+    last_processed_at: z.string(),
+  }),
+);
 
 describe("activity visibility consistency", () => {
   let testContext: TestContext;
@@ -170,12 +175,42 @@ describe("activity visibility consistency", () => {
       activityType: "walking",
     });
     const training = await trainingRepository.getActivityStatsAndWeeklyVolume(null);
+    const authorizedRun = calendar
+      .flatMap((day) => day.activities)
+      .find((activity) => activity.id === AUTHORIZED_RUN_ID);
+    const processingFreshnessResult = await getClickHouseTestClient(testContext).query({
+      query: `SELECT
+          toString(
+            greatest(
+              activity.refreshed_at,
+              coalesce(summary.refreshed_at, activity.refreshed_at)
+            )
+          ) AS last_processed_at
+        FROM analytics.deduped_activities AS activity FINAL
+        LEFT JOIN analytics.activity_summary AS summary
+          ON summary.user_id = activity.user_id
+         AND summary.activity_id = activity.activity_id
+        WHERE activity.activity_id = {activityId:UUID}`,
+      query_params: { activityId: AUTHORIZED_RUN_ID },
+      format: "JSONEachRow",
+    });
+    const processingFreshness = activityProcessingFreshnessSchema.parse(
+      await processingFreshnessResult.json(),
+    );
 
     expect(calendar.flatMap((day) => day.activities.map((activity) => activity.id))).toEqual([
       AUTHORIZED_WALK_ID,
       AUTHORIZED_RUN_ID,
       MEASURED_ZERO_RUN_ID,
     ]);
+    expect(authorizedRun?.source).toEqual({
+      primarySourceLabel: "issue_2060",
+      sourceCount: 1,
+      overlapSummary: null,
+    });
+    expect(new Date(authorizedRun?.lastProcessedAt ?? "").getTime()).toBe(
+      new Date(processingFreshness[0]?.last_processed_at ?? "").getTime(),
+    );
     expect(overview).toEqual({
       activityCount: 3,
       totalMinutes: 90,

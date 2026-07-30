@@ -276,7 +276,7 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
   it("returns the no-data result for an empty user", async () => {
     const report = await new WeeklyReportRepository(emptyUserId, sensorStore).getReport(1, endDate);
 
-    expect(report).toEqual({ current: null, history: [] });
+    expect(report).toEqual({ current: null, history: [], decisionSupport: null });
   });
 
   it("uses the serving-model health-day boundary for non-UTC requests", async () => {

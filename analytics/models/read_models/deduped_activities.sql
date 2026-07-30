@@ -108,7 +108,26 @@ merged AS (
         any(best.source_name) AS source_name,
         argMinIf(ranked.name, ranked.priority, ranked.name IS NOT null) AS name,
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
-        argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT null) AS timezone,
+        argMinIf(
+            ranked.timezone,
+            ranked.priority,
+            ranked.local_time_source IN ('provider_timezone', 'device_timezone')
+        ) AS timezone,
+        argMinIf(
+            ranked.start_utc_offset_minutes,
+            ranked.priority,
+            ranked.local_time_source != 'unknown'
+        ) AS start_utc_offset_minutes,
+        argMinIf(
+            ranked.end_utc_offset_minutes,
+            ranked.priority,
+            ranked.local_time_source != 'unknown'
+        ) AS end_utc_offset_minutes,
+        argMinIf(
+            ranked.local_time_source,
+            ranked.priority,
+            ranked.local_time_source != 'unknown'
+        ) AS local_time_source,
         argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,
         maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
         arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
@@ -154,6 +173,9 @@ current_deduped_activities AS (
         name,
         notes,
         timezone,
+        start_utc_offset_minutes,
+        end_utc_offset_minutes,
+        coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
         raw,
         source_synced_at,
         source_providers,
@@ -178,6 +200,9 @@ existing_deduped_activities AS (
         deduped.name,
         deduped.notes,
         deduped.timezone,
+        deduped.start_utc_offset_minutes,
+        deduped.end_utc_offset_minutes,
+        deduped.local_time_source,
         deduped.raw,
         deduped.source_synced_at,
         deduped.source_providers,
@@ -217,6 +242,9 @@ SELECT
     name,
     notes,
     timezone,
+    start_utc_offset_minutes,
+    end_utc_offset_minutes,
+    local_time_source,
     raw,
     source_synced_at,
     source_providers,
@@ -244,6 +272,9 @@ SELECT
     name,
     notes,
     timezone,
+    start_utc_offset_minutes,
+    end_utc_offset_minutes,
+    local_time_source,
     raw,
     source_synced_at,
     source_providers,

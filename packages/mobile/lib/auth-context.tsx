@@ -20,6 +20,7 @@ import {
 import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { isSecureStoreAccessibilityError } from "./secure-store-access";
 import { SERVER_URL } from "./server";
+import { finishStartupPhase, startStartupPhase } from "./startup-telemetry";
 import { captureException } from "./telemetry";
 
 interface AuthState {
@@ -51,9 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const bootstrapDeferredRef = useRef(false);
 
   const retryBootstrap = useCallback(async () => {
+    startStartupPhase("authentication");
     setIsLoading(true);
     bootstrapDeferredRef.current = false;
     let deferBootstrap = false;
+    let startupOutcome: "authenticated" | "deferred" | "error" | "unauthenticated" = "error";
     try {
       const token = await getSessionToken();
       if (!token) {
@@ -66,12 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
           setSessionToken(null);
           setBootstrapError(null);
+          startupOutcome = "deferred";
           return;
         }
 
         setUser(null);
         setSessionToken(null);
         setBootstrapError(null);
+        startupOutcome = "unauthenticated";
         return;
       }
 
@@ -84,11 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentUser) {
         setUser(currentUser);
         setBootstrapError(null);
+        startupOutcome = "authenticated";
       } else {
         await clearSessionToken();
         setUser(null);
         setSessionToken(null);
         setBootstrapError(null);
+        startupOutcome = "unauthenticated";
       }
     } catch (error: unknown) {
       if (isSecureStoreAccessibilityError(error) && AppState.currentState === "background") {
@@ -100,13 +107,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setSessionToken(null);
         setBootstrapError(null);
+        startupOutcome = "deferred";
         return;
       }
 
       captureException(error, { source: "auth-state-restore" });
       setUser(null);
       setBootstrapError(error instanceof Error ? error.message : String(error));
+      startupOutcome = "error";
     } finally {
+      finishStartupPhase("authentication", startupOutcome);
       if (!deferBootstrap) {
         setIsLoading(false);
       }

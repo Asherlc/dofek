@@ -31,6 +31,9 @@ export function buildPostgresFitnessActivityRawTableStatement(
   perceived_exertion Nullable(Float32),
   source_name Nullable(String),
   timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
   strava_id Nullable(String),
   raw Nullable(String),
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
@@ -92,6 +95,10 @@ export function buildPostgresFitnessRawTableStatements(): string[] {
   sleep_need_from_strain_minutes Nullable(Int32),
   sleep_need_from_nap_minutes Nullable(Int32),
   source_name Nullable(String),
+  timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )

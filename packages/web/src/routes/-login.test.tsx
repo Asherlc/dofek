@@ -88,6 +88,8 @@ describe("Login route", () => {
     renderLoginPage();
 
     await waitFor(() => expect(screen.getByLabelText("Email")).toBeTruthy());
+    expect(screen.getByRole("heading", { name: "Sign in to Dofek" })).toBeTruthy();
+    expect(screen.getByText("View and manage your health data.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign in with email" })).toBeTruthy();
   });
@@ -115,6 +117,117 @@ describe("Login route", () => {
     });
 
     expect(signInButton).toHaveProperty("disabled", false);
+  });
+
+  it("explains the registration task and next step", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("heading", { name: "Create your account" })).toBeTruthy();
+    expect(
+      screen.getByText("Enter your details. Next, you'll connect your health data."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create account and continue" })).toBeTruthy();
+  });
+
+  it("shows legal context and an existing-account path during registration", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("link", { name: "Terms of Service" }).getAttribute("href")).toBe(
+      "/terms",
+    );
+    expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+      "/privacy",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByRole("heading", { name: "Sign in to Dofek" })).toBeTruthy();
+  });
+
+  it("keeps a Dofek home link visible in every auth mode", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const homeLink = await screen.findByRole("link", { name: "Back to Dofek" });
+    expect(homeLink.getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("link", { name: "Back to Dofek" }).getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByRole("link", { name: "Back to Dofek" }).getAttribute("href")).toBe("/");
+  });
+
+  it("uses neutral disabled registration styling until required details are entered", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    const createAccountButton = screen.getByRole("button", {
+      name: "Create account and continue",
+    });
+
+    expect(createAccountButton).toHaveProperty("disabled", true);
+    expect(createAccountButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(createAccountButton).not.toHaveClass("bg-emerald-600", "text-white");
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" },
+    });
+
+    expect(createAccountButton).toHaveProperty("disabled", false);
+    expect(createAccountButton).toHaveClass("bg-emerald-600", "text-white");
+    expect(createAccountButton).not.toHaveClass("bg-surface-hover", "text-muted");
+  });
+
+  it("shows task-specific password reset guidance", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+
+    expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
+    expect(screen.getByText("Enter your email to receive a password reset link.")).toBeTruthy();
   });
 
   it("shows forgot password in email sign-in mode", async () => {
@@ -182,7 +295,7 @@ describe("Login route", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
     const submitButton = screen
-      .getAllByRole("button", { name: "Create account" })
+      .getAllByRole("button", { name: "Create account and continue" })
       .find((button) => button.getAttribute("type") === "submit");
     if (!submitButton) throw new Error("Registration submit button not found");
     fireEvent.click(submitButton);

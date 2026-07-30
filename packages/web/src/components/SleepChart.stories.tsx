@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { SleepChart } from "./SleepChart";
 
-const sampleData = [
+const sampleDataWithoutLocalTimeContext = [
   {
     started_at: "2026-03-27T12:00:00",
     duration_minutes: 488,
@@ -73,6 +73,20 @@ const sampleData = [
     staging_available: true,
   },
 ];
+
+const sampleData = sampleDataWithoutLocalTimeContext.map((row) => ({
+  ...row,
+  ended_at:
+    row.duration_minutes == null
+      ? null
+      : new Date(
+          new Date(`${row.started_at}Z`).getTime() + row.duration_minutes * 60_000,
+        ).toISOString(),
+  timezone: "America/Los_Angeles",
+  start_utc_offset_minutes: -420,
+  end_utc_offset_minutes: -420,
+  local_time_source: "provider_timezone" as const,
+}));
 
 const meta = {
   title: "Sleep/SleepChart",

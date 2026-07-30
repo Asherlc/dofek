@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
@@ -29,6 +30,11 @@ import { assertRows } from "../lib/utils.ts";
 const sleepRowSchema = z.object({
   date: z.string().optional(),
   started_at: z.string(),
+  ended_at: z.string().nullable(),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.number().nullable(),
+  end_utc_offset_minutes: z.number().nullable(),
+  local_time_source: localTimeSourceSchema,
   duration_minutes: z.number().nullable(),
   deep_minutes: z.number().nullable(),
   rem_minutes: z.number().nullable(),

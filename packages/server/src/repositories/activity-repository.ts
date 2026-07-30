@@ -1,3 +1,4 @@
+import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -25,6 +26,10 @@ const activityListRowSchema = z.object({
   ended_at: timestampStringSchema.nullable(),
   name: z.string().nullable(),
   provider_id: z.string(),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.coerce.number().nullable(),
+  end_utc_offset_minutes: z.coerce.number().nullable(),
+  local_time_source: localTimeSourceSchema,
   source_providers: z.array(z.string()),
   member_activity_ids: z.array(z.string()).optional().default([]),
   avg_hr: z.number().nullable(),
@@ -41,6 +46,10 @@ const activityListColumns = sql`
   a.ended_at::text AS ended_at,
   a.name,
   a.provider_id,
+  a.timezone,
+  a.start_utc_offset_minutes,
+  a.end_utc_offset_minutes,
+  a.local_time_source,
   a.source_providers,
   a.member_activity_ids,
   NULL::double precision AS avg_hr,
@@ -58,6 +67,10 @@ const activityDetailRowSchema = z.object({
   name: z.string().nullable(),
   notes: z.string().nullable(),
   provider_id: z.string(),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.coerce.number().nullable(),
+  end_utc_offset_minutes: z.coerce.number().nullable(),
+  local_time_source: localTimeSourceSchema,
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
   source_external_ids: z.array(activitySourceSchema).nullable(),
@@ -512,6 +525,10 @@ export class ActivityRepository extends BaseRepository {
             a.name,
             a.notes,
             a.provider_id,
+            a.timezone,
+            a.start_utc_offset_minutes,
+            a.end_utc_offset_minutes,
+            a.local_time_source,
             a.raw->>'sourceName' AS subsource,
             a.source_providers,
             a.source_external_ids,
@@ -552,6 +569,20 @@ export class ActivityRepository extends BaseRepository {
             a.name,
             a.notes,
             a.provider_id,
+            CASE
+              WHEN a.local_time_source IN ('provider_timezone', 'device_timezone')
+              THEN a.timezone
+              ELSE NULL
+            END AS timezone,
+            CASE
+              WHEN a.local_time_source <> 'unknown' THEN a.start_utc_offset_minutes
+              ELSE NULL
+            END AS start_utc_offset_minutes,
+            CASE
+              WHEN a.local_time_source <> 'unknown' THEN a.end_utc_offset_minutes
+              ELSE NULL
+            END AS end_utc_offset_minutes,
+            a.local_time_source,
             a.raw->>'sourceName' AS subsource,
             ARRAY[a.provider_id] AS source_providers,
             NULL::jsonb AS source_external_ids,

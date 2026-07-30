@@ -183,7 +183,7 @@ export function SettingsPage() {
                       type="button"
                       onClick={() => checkoutSessionMutation.mutate()}
                       disabled={checkoutSessionMutation.isPending}
-                      className="px-3 py-2 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
+                      className="px-3 py-2 rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
                     >
                       {checkoutSessionMutation.isPending
                         ? "Opening checkout..."
@@ -296,7 +296,7 @@ export function SettingsPage() {
                 type="button"
                 onClick={handleClaimZeppPairing}
                 disabled={zeppPairingMutation.isPending || !zeppPairingCode.trim()}
-                className="rounded bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+                className="rounded bg-accent px-3 py-2 text-sm text-on-accent transition-colors hover:bg-accent/90 disabled:opacity-50"
               >
                 {zeppPairingMutation.isPending ? "Connecting..." : "Connect Zepp App"}
               </button>
