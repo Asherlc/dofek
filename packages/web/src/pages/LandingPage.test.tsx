@@ -145,6 +145,15 @@ describe("LandingPage", () => {
     ).toBe(true);
   });
 
+  it("keeps the sign-in path visible in the mobile header", () => {
+    render(<LandingPage />);
+
+    const signInLink = screen.getByRole("link", { name: "Sign in" });
+
+    expect(signInLink).toHaveAttribute("href", "/login");
+    expect(signInLink).not.toHaveClass("hidden");
+  });
+
   it("shows concrete analysis examples in the product preview", () => {
     render(<LandingPage />);
 
