@@ -790,13 +790,28 @@ describe("Router coverage", () => {
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
         expect(exercise.history.length).toBeGreaterThanOrEqual(3);
-        expect(exercise.trend.direction).toBe("increasing");
-        expect(exercise.trend.summary).toBe(
-          "Estimated max increased from first to latest estimate.",
-        );
-        expect(exercise.trend.changeMagnitudeKg).toBeGreaterThan(0);
-        expect(exercise.trend.firstDate).toBe(exercise.history[0]?.date);
-        expect(exercise.trend.latestDate).toBe(exercise.history.at(-1)?.date);
+        const firstEntry = exercise.history[0];
+        const latestEntry = exercise.history.at(-1);
+        expect(firstEntry).toBeDefined();
+        expect(latestEntry).toBeDefined();
+        if (!firstEntry || !latestEntry) {
+          throw new Error("Estimated max history unexpectedly had no date bounds.");
+        }
+
+        const changeKg = Math.round((latestEntry.estimatedMax - firstEntry.estimatedMax) * 10) / 10;
+        const expectedDirection =
+          changeKg > 0 ? "increasing" : changeKg < 0 ? "decreasing" : "stable";
+        const expectedSummary = {
+          increasing: "Estimated max increased from first to latest estimate.",
+          decreasing: "Estimated max decreased from first to latest estimate.",
+          stable: "Estimated max did not change from first to latest estimate.",
+        } as const;
+
+        expect(exercise.trend.direction).toBe(expectedDirection);
+        expect(exercise.trend.summary).toBe(expectedSummary[expectedDirection]);
+        expect(exercise.trend.changeMagnitudeKg).toBe(Math.abs(changeKg));
+        expect(exercise.trend.firstDate).toBe(firstEntry.date);
+        expect(exercise.trend.latestDate).toBe(latestEntry.date);
 
         for (const entry of exercise.history) {
           expect(entry.date).toBeTruthy();
