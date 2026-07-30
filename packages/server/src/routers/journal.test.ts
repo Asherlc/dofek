@@ -142,6 +142,7 @@ describe("journalRouter", () => {
           startDate: "2026-03-26",
           endDate: "2026-03-28",
           dayCount: 3,
+          gapRepresentation: "explicit_daily",
         },
         statement:
           "1 exact observation across 1 of 3 days. Missing days indicate no journal value was recorded.",

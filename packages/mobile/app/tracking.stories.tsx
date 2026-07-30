@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -15,6 +15,7 @@ const trendEvidence = {
     startDate: "2026-07-21",
     endDate: "2026-07-24",
     dayCount: 4,
+    gapRepresentation: "explicit_daily",
   },
   statement:
     "3 exact observations across 2 of 4 days. Missing days indicate no journal value was recorded.",
@@ -87,7 +88,11 @@ function createMockLink(scenario: TrackingScenario): TRPCLink<AppRouter> {
               },
         );
       }
-      return createMockObservable({ ok: true });
+      return createErrorObservable(
+        TRPCClientError.from<AppRouter>(
+          new Error(`Unhandled Storybook tRPC operation: ${op.path}`),
+        ),
+      );
     };
 }
 
@@ -108,6 +113,21 @@ function createMockObservable(data: unknown): OperationResultObservable<AppRoute
 function createLoadingObservable(): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe() {
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return result;
+    },
+  };
+  return result;
+}
+
+function createErrorObservable(
+  error: TRPCClientError<AppRouter>,
+): OperationResultObservable<AppRouter, unknown> {
+  const result: OperationResultObservable<AppRouter, unknown> = {
+    subscribe(observer) {
+      observer.error?.(error);
       return { unsubscribe: () => {} };
     },
     pipe() {

@@ -56,6 +56,7 @@ describe("buildJournalTrendEvidence", () => {
       startDate: "2026-07-01",
       endDate: "2026-07-05",
       dayCount: 5,
+      gapRepresentation: "explicit_daily",
     });
     expect(evidence.statement).toBe(
       "3 exact observations across 3 of 5 days. Missing days indicate no journal value was recorded.",
@@ -140,13 +141,13 @@ describe("buildJournalTrendEvidence", () => {
     });
   });
 
-  it("uses the earliest observation as the start of an all-history window", () => {
+  it("keeps all-history evidence sparse while preserving its full date bounds and counts", () => {
     const evidence = buildJournalTrendEvidence({
       days: null,
       endDate: "2026-07-05",
       entries: [
         entry({
-          date: "2026-06-28",
+          date: "2006-06-28",
           question_slug: "energy",
           answer_numeric: 6,
         }),
@@ -154,11 +155,19 @@ describe("buildJournalTrendEvidence", () => {
     });
 
     expect(evidence.window).toEqual({
-      startDate: "2026-06-28",
+      startDate: "2006-06-28",
       endDate: "2026-07-05",
-      dayCount: 8,
+      dayCount: 7313,
+      gapRepresentation: "count_only",
     });
-    expect(evidence.series[0]?.missingDayCount).toBe(7);
+    expect(evidence.series[0]?.missingDayCount).toBe(7312);
+    expect(evidence.series[0]?.points).toEqual([
+      {
+        date: "2006-06-28",
+        value: 6,
+        source: { providerId: "dofek", label: "Dofek" },
+      },
+    ]);
   });
 
   it("returns an honest empty statement and finite date window", () => {
@@ -173,6 +182,7 @@ describe("buildJournalTrendEvidence", () => {
         startDate: "2026-07-03",
         endDate: "2026-07-05",
         dayCount: 3,
+        gapRepresentation: "explicit_daily",
       },
       statement: "No numeric or Yes/No journal observations in this window.",
       series: [],

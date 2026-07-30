@@ -47,6 +47,7 @@ const trendEvidence = {
     startDate: "2026-07-23",
     endDate: "2026-07-25",
     dayCount: 3,
+    gapRepresentation: "explicit_daily" as const,
   },
   statement:
     "3 exact observations across 2 of 3 days. Missing days indicate no journal value was recorded.",
@@ -145,6 +146,57 @@ describe("TrackingScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "7d" }));
 
     expect(mocks.queryInputs.at(-1)).toMatchObject({ days: 7 });
+  });
+
+  it("does not connect same-day numeric provider observations", async () => {
+    mocks.query.mockReturnValue({
+      data: {
+        ...trendEvidence,
+        series: [
+          {
+            questionSlug: "energy",
+            displayName: "Energy",
+            dataType: "numeric",
+            unit: "/10",
+            observationCount: 3,
+            observedDayCount: 2,
+            missingDayCount: 0,
+            statement: "3 exact observations across 2 of 2 days; 0 days have no recorded value.",
+            points: [
+              {
+                date: "2026-07-24",
+                value: 7,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+              {
+                date: "2026-07-24",
+                value: 8,
+                source: { providerId: "whoop", label: "WHOOP (Cloud)" },
+              },
+              {
+                date: "2026-07-25",
+                value: 9,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    const { default: TrackingScreen } = await import("./tracking");
+    const { container } = render(<TrackingScreen />);
+
+    expect(container.querySelector("path")).toBeNull();
+    expect(
+      screen.getByLabelText(
+        "Energy journal trend from Jul 23, 2026 to Jul 25, 2026. Multiple sources recorded the same date, so observations are shown as separate points. Exact values are listed below.",
+      ),
+    ).toBeTruthy();
   });
 
   it("surfaces the server error and retries it", async () => {

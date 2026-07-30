@@ -8,6 +8,7 @@ interface CapturedJournalSeries {
   data: Array<[string, number | null]>;
   accessibilityDescription?: string;
   formatValue?: (value: number) => string;
+  missingDates?: string[];
   name: string;
   visualization?: "line" | "point";
 }
@@ -22,6 +23,7 @@ const emptyTrendEvidence = {
     startDate: "2026-07-01",
     endDate: "2026-07-30",
     dayCount: 30,
+    gapRepresentation: "explicit_daily" as const,
   },
   statement: "No numeric or Yes/No journal observations in this window.",
   uncertainty: {
@@ -322,6 +324,7 @@ describe("JournalPanel", () => {
           startDate: "2026-07-23",
           endDate: "2026-07-25",
           dayCount: 3,
+          gapRepresentation: "explicit_daily",
         },
         statement:
           "3 exact observations across 2 of 3 days. Missing days indicate no journal value was recorded.",
@@ -422,5 +425,117 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Yes · Dofek")).toBeDefined();
     expect(screen.getByText("No · WHOOP (Cloud)")).toBeDefined();
     expect(screen.getByText("8 /10 · Dofek")).toBeDefined();
+  });
+
+  it("renders same-day numeric provider observations as separate points", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: {
+        window: {
+          startDate: "2026-07-24",
+          endDate: "2026-07-25",
+          dayCount: 2,
+          gapRepresentation: "explicit_daily",
+        },
+        statement: "3 exact observations across 2 of 2 days.",
+        uncertainty: {
+          status: "unavailable",
+          statement: "Uncertainty interval: not available for raw journal observations.",
+        },
+        series: [
+          {
+            questionSlug: "energy",
+            displayName: "Energy",
+            dataType: "numeric",
+            unit: "/10",
+            observationCount: 3,
+            observedDayCount: 2,
+            missingDayCount: 0,
+            statement: "3 exact observations across 2 of 2 days; 0 days have no recorded value.",
+            points: [
+              {
+                date: "2026-07-24",
+                value: 7,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+              {
+                date: "2026-07-24",
+                value: 8,
+                source: { providerId: "whoop", label: "WHOOP (Cloud)" },
+              },
+              {
+                date: "2026-07-25",
+                value: 9,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(mocks.chartProps.at(-1)?.series[0]).toMatchObject({
+      accessibilityDescription:
+        "Energy is shown as separate points because multiple sources recorded the same date.",
+      visualization: "point",
+    });
+  });
+
+  it("labels sparse All-history gaps as counts instead of exact missing dates", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: {
+        window: {
+          startDate: "2006-06-28",
+          endDate: "2026-07-05",
+          dayCount: 7313,
+          gapRepresentation: "count_only",
+        },
+        statement:
+          "1 exact observation across 1 of 7313 days. Missing days are summarized by count for the all-history window.",
+        uncertainty: {
+          status: "unavailable",
+          statement: "Uncertainty interval: not available for raw journal observations.",
+        },
+        series: [
+          {
+            questionSlug: "energy",
+            displayName: "Energy",
+            dataType: "numeric",
+            unit: "/10",
+            observationCount: 1,
+            observedDayCount: 1,
+            missingDayCount: 7312,
+            statement:
+              "1 exact observation across 1 of 7313 days; 7312 days have no recorded value.",
+            points: [
+              {
+                date: "2006-06-28",
+                value: 6,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(mocks.chartProps.at(-1)?.series[0]?.missingDates).toEqual([]);
+    expect(mocks.chartProps.at(-1)?.accessibilityDescription).toContain(
+      "Missing days are summarized by count for All history",
+    );
+    expect(
+      screen.getByText(
+        "Missing-day dates are summarized by count for All history: 7312 days. Choose a finite range to inspect exact missing dates.",
+      ),
+    ).toBeDefined();
   });
 });

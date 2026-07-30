@@ -105,6 +105,7 @@ const trendEvidence = {
     startDate: "2026-07-21",
     endDate: "2026-07-24",
     dayCount: 4,
+    gapRepresentation: "explicit_daily",
   },
   statement:
     "3 exact observations across 2 of 4 days. Missing days indicate no journal value was recorded.",
@@ -169,7 +170,12 @@ function createMockLink(scenario: JournalScenario): TRPCLink<AppRouter> {
       if (op.path === "journal.trends") {
         return createMockObservable(
           scenario.trends ?? {
-            window: { startDate: "2026-07-01", endDate: "2026-07-30", dayCount: 30 },
+            window: {
+              startDate: "2026-07-01",
+              endDate: "2026-07-30",
+              dayCount: 30,
+              gapRepresentation: "explicit_daily",
+            },
             statement: "No numeric or Yes/No journal observations in this window.",
             uncertainty: {
               status: "unavailable",

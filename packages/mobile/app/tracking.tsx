@@ -70,10 +70,14 @@ function JournalTrendChart({
   const observedPoints = series.points.filter(
     (point): point is TrendPoint & { value: number } => point.value !== null,
   );
+  const hasSameDayObservations =
+    new Set(observedPoints.map((point) => point.date)).size !== observedPoints.length;
   const missingDates = series.points
     .filter((point) => point.value === null)
     .map((point) => point.date);
-  const accessibilityLabel = `${series.displayName} journal trend from ${formatDateMedium(startDate)} to ${formatDateMedium(endDate)}. Missing days are marked as hollow circles. Exact values are listed below.`;
+  const accessibilityLabel = hasSameDayObservations
+    ? `${series.displayName} journal trend from ${formatDateMedium(startDate)} to ${formatDateMedium(endDate)}. Multiple sources recorded the same date, so observations are shown as separate points. Exact values are listed below.`
+    : `${series.displayName} journal trend from ${formatDateMedium(startDate)} to ${formatDateMedium(endDate)}. Missing days are marked as hollow circles. Exact values are listed below.`;
 
   return (
     <View accessible accessibilityLabel={accessibilityLabel}>
@@ -86,7 +90,7 @@ function JournalTrendChart({
           stroke={colors.surfaceSecondary}
           strokeWidth={1}
         />
-        {series.dataType === "numeric"
+        {series.dataType === "numeric" && !hasSameDayObservations
           ? segments.map((segment, index) =>
               segment.length > 1 ? (
                 <Path

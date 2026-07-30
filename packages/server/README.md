@@ -86,11 +86,13 @@ The interval design and primary statistical references are documented in
 ### Journal trend evidence contract
 
 `journal.trends` is the canonical web and mobile response for journal trend review. It returns an
-exact inclusive date window, numeric and Yes/No series with explicit null points for unrecorded
-days, raw provider-attributed observations, and server-authored coverage statements. The response
-also explicitly reports that an uncertainty interval is unavailable for these raw observations.
-Clients render that evidence directly and do not infer a directional trend, causal effect, or
-confidence interval. The contract and gap construction live in
+exact inclusive date window, raw provider-attributed numeric and Yes/No observations, and
+server-authored coverage statements. Finite windows include explicit null points for unrecorded
+days; the All-history window keeps points sparse and summarizes missing days by count so response
+size grows with observations instead of calendar age. The response also explicitly reports that an
+uncertainty interval is unavailable for these raw observations. Clients render that evidence
+directly and do not infer a directional trend, causal effect, or confidence interval. The contract
+and gap construction live in
 [`journal-trend-evidence.ts`](./src/services/journal-trend-evidence.ts).
 
 See `../../docs/nutrition-ai-input.md` for full client/server flow details.

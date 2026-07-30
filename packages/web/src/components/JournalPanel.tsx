@@ -379,6 +379,10 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
       const trend = evidence?.series.find((candidate) => candidate.questionSlug === slug);
       const data: [string, number | null][] =
         trend?.points.map((point) => [point.date, point.value]) ?? [];
+      const observedDates =
+        trend?.points.flatMap((point) => (point.value === null ? [] : [point.date])) ?? [];
+      const hasSameDayObservations = new Set(observedDates).size !== observedDates.length;
+      const showAsPoints = trend?.dataType === "boolean" || hasSameDayObservations;
       return {
         name: trend?.displayName ?? slug,
         data,
@@ -388,8 +392,10 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
         accessibilityDescription:
           trend?.dataType === "boolean"
             ? `${trend.displayName} is shown as separate Yes/No points.`
-            : undefined,
-        visualization: trend?.dataType === "boolean" ? ("point" as const) : ("line" as const),
+            : hasSameDayObservations
+              ? `${trend?.displayName ?? slug} is shown as separate points because multiple sources recorded the same date.`
+              : undefined,
+        visualization: showAsPoints ? ("point" as const) : ("line" as const),
         formatValue:
           trend?.dataType === "boolean"
             ? (value: number) => (value === 1 ? "Yes" : value === 0 ? "No" : String(value))
@@ -451,7 +457,10 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
   }
 
   const dateRange = `${formatDateLong(evidence.window.startDate)} – ${formatDateLong(evidence.window.endDate)}`;
-  const chartDescription = `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are gaps in numeric lines and are listed below with exact observations.`;
+  const chartDescription =
+    evidence.window.gapRepresentation === "explicit_daily"
+      ? `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are gaps in numeric lines and are listed below with exact observations.`
+      : `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are summarized by count for All history; choose a finite range to inspect exact missing dates.`;
 
   return (
     <div className="space-y-4">
@@ -525,9 +534,13 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
               </details>
               <details className="text-xs text-muted">
                 <summary className="cursor-pointer font-medium text-foreground">
-                  Missing days ({missingDates.length})
+                  Missing days ({trend.missingDayCount})
                 </summary>
-                <p className="mt-2">Missing: {missingDates.join(", ") || "None"}</p>
+                <p className="mt-2">
+                  {evidence.window.gapRepresentation === "explicit_daily"
+                    ? `Missing: ${missingDates.join(", ") || "None"}`
+                    : `Missing-day dates are summarized by count for All history: ${trend.missingDayCount} days. Choose a finite range to inspect exact missing dates.`}
+                </p>
               </details>
             </section>
           );

@@ -1,15 +1,15 @@
 import { z } from "zod";
 import type { RangeDays } from "../lib/date-window.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { JournalEntryDetail } from "../repositories/journal-repository.ts";
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const providerProvenanceSchema = z.object({
   providerId: z.string(),
   label: z.string(),
 });
 
 export const journalTrendPointSchema = z.object({
-  date: dateSchema,
+  date: dateStringSchema,
   value: z.number().nullable(),
   source: providerProvenanceSchema.nullable(),
 });
@@ -28,9 +28,10 @@ export const journalTrendSeriesSchema = z.object({
 
 export const journalTrendEvidenceSchema = z.object({
   window: z.object({
-    startDate: dateSchema,
-    endDate: dateSchema,
+    startDate: dateStringSchema,
+    endDate: dateStringSchema,
     dayCount: z.number().int().positive(),
+    gapRepresentation: z.enum(["explicit_daily", "count_only"]),
   }),
   statement: z.string(),
   uncertainty: z.object({
@@ -86,7 +87,9 @@ export function buildJournalTrendEvidence(
           .map((entry) => entry.date)
           .sort((left, right) => left.localeCompare(right))[0] ?? input.endDate)
       : addDays(input.endDate, -(input.days - 1));
-  const dates = inclusiveDates(startDate, input.endDate);
+  const gapRepresentation = input.days === null ? "count_only" : "explicit_daily";
+  const dayCount = inclusiveDayCount(startDate, input.endDate);
+  const dates = input.days === null ? null : inclusiveDates(startDate, input.endDate);
   const accumulators = new Map<string, SeriesAccumulator>();
 
   for (const entry of chartableEntries) {
@@ -107,24 +110,36 @@ export function buildJournalTrendEvidence(
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
     .map((accumulator) => {
       const points: JournalTrendEvidence["series"][number]["points"] = [];
-      for (const date of dates) {
-        const observations = accumulator.observationsByDate.get(date);
-        if (!observations) {
-          points.push({ date, value: null, source: null });
-          continue;
+      if (dates === null) {
+        for (const [date, observations] of [...accumulator.observationsByDate.entries()].sort(
+          ([left], [right]) => left.localeCompare(right),
+        )) {
+          points.push(
+            ...observations
+              .sort((left, right) => left.source.providerId.localeCompare(right.source.providerId))
+              .map((observation) => ({ date, ...observation })),
+          );
         }
-        points.push(
-          ...observations
-            .sort((left, right) => left.source.providerId.localeCompare(right.source.providerId))
-            .map((observation) => ({ date, ...observation })),
-        );
+      } else {
+        for (const date of dates) {
+          const observations = accumulator.observationsByDate.get(date);
+          if (!observations) {
+            points.push({ date, value: null, source: null });
+            continue;
+          }
+          points.push(
+            ...observations
+              .sort((left, right) => left.source.providerId.localeCompare(right.source.providerId))
+              .map((observation) => ({ date, ...observation })),
+          );
+        }
       }
       const observationCount = [...accumulator.observationsByDate.values()].reduce(
         (total, observations) => total + observations.length,
         0,
       );
       const observedDayCount = accumulator.observationsByDate.size;
-      const missingDayCount = dates.length - observedDayCount;
+      const missingDayCount = dayCount - observedDayCount;
       return {
         questionSlug: accumulator.questionSlug,
         displayName: accumulator.displayName,
@@ -133,14 +148,14 @@ export function buildJournalTrendEvidence(
         observationCount,
         observedDayCount,
         missingDayCount,
-        statement: `${countLabel(observationCount, "exact observation")} across ${observedDayCount} of ${countLabel(dates.length, "day")}; ${countLabel(missingDayCount, "day")} ${missingDayCount === 1 ? "has" : "have"} no recorded value.`,
+        statement: `${countLabel(observationCount, "exact observation")} across ${observedDayCount} of ${countLabel(dayCount, "day")}; ${countLabel(missingDayCount, "day")} ${missingDayCount === 1 ? "has" : "have"} no recorded value.`,
         points,
       };
     });
 
   if (series.length === 0) {
     return {
-      window: { startDate, endDate: input.endDate, dayCount: dates.length },
+      window: { startDate, endDate: input.endDate, dayCount, gapRepresentation },
       statement: "No numeric or Yes/No journal observations in this window.",
       uncertainty: UNCERTAINTY,
       series,
@@ -149,8 +164,11 @@ export function buildJournalTrendEvidence(
 
   const observedDates = new Set(chartableEntries.map((entry) => entry.date));
   return {
-    window: { startDate, endDate: input.endDate, dayCount: dates.length },
-    statement: `${countLabel(chartableEntries.length, "exact observation")} across ${observedDates.size} of ${countLabel(dates.length, "day")}. Missing days indicate no journal value was recorded.`,
+    window: { startDate, endDate: input.endDate, dayCount, gapRepresentation },
+    statement:
+      gapRepresentation === "explicit_daily"
+        ? `${countLabel(chartableEntries.length, "exact observation")} across ${observedDates.size} of ${countLabel(dayCount, "day")}. Missing days indicate no journal value was recorded.`
+        : `${countLabel(chartableEntries.length, "exact observation")} across ${observedDates.size} of ${countLabel(dayCount, "day")}. Missing days are summarized by count for the all-history window.`,
     uncertainty: UNCERTAINTY,
     series,
   };
@@ -166,6 +184,12 @@ function inclusiveDates(startDate: string, endDate: string): string[] {
     dates.push(date);
   }
   return dates;
+}
+
+function inclusiveDayCount(startDate: string, endDate: string): number {
+  const start = Date.parse(`${startDate}T00:00:00.000Z`);
+  const end = Date.parse(`${endDate}T00:00:00.000Z`);
+  return Math.floor((end - start) / 86_400_000) + 1;
 }
 
 function addDays(dateString: string, days: number): string {
