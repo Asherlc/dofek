@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { providerActionLabel } from "./provider-card.tsx";
 
 const mockPush = vi.fn();
@@ -1005,7 +1006,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("does not render Full sync link for disconnected providers", async () => {
+  it("does not render Sync link for disconnected providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [disconnectedProvider],
       isLoading: false,
@@ -1015,7 +1016,7 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     const stravaCard = within(screen.getByTestId("provider-card-strava"));
-    expect(stravaCard.queryByText("Full sync")).toBeNull();
+    expect(stravaCard.queryByText("Sync")).toBeNull();
   });
 
   it("renders Full Sync All button alongside Sync All", async () => {
@@ -1542,7 +1543,7 @@ describe("ProvidersScreen", () => {
     );
   });
 
-  it("passes sinceDays: undefined when Full sync link is clicked", async () => {
+  it("passes sinceDays: ROUTINE_SYNC_DAYS when Sync link is clicked", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",
@@ -1552,12 +1553,12 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-    fireEvent.click(wahooCard.getByText("Full sync"));
+    fireEvent.click(wahooCard.getByText("Sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
         providerId: "wahoo",
-        sinceDays: undefined,
+        sinceDays: ROUTINE_SYNC_DAYS,
       });
     });
     await waitFor(() => {
