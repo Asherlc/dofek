@@ -50,6 +50,22 @@ power/functional-threshold-power, or heart-rate/maximum-heart-rate prerequisite.
 render this contract without deriving metric availability. The numeric activity `tss` field remains
 nullable for consumers that need the score rather than its compact-card presentation.
 
+### Exercise-volume trend evidence contract
+
+`strength.progressiveOverload` is the canonical web and mobile response for exercise-volume
+trends. It preserves each recorded week and fits the slope against actual elapsed calendar weeks,
+so an unrecorded week is not silently treated as either an adjacent observation or zero volume.
+Each result identifies the exercise, observed period, observation count, elapsed-week count,
+server-authored neutral interpretation, and the limitation that volume alone cannot identify a
+planned deload.
+
+When at least four recorded weeks contain residual variation, the server reports a deterministic
+95% residual circular moving-block interval with the recorded week positions held fixed. Otherwise
+it reports a specific reason that uncertainty is unavailable. This reflects fixed-regressor
+block-bootstrap methods for weakly dependent time-series errors
+([Lahiri et al.](https://doi.org/10.1080/01621459.2011.646929)). Clients only render and
+unit-format this evidence; they do not calculate slopes, intervals, or interpretations.
+
 ### Health-status evidence contract
 
 Health-status values are interpreted only by

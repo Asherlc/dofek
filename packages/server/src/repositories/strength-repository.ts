@@ -6,6 +6,10 @@ import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts
 import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  ProgressiveOverload,
+  type ProgressiveOverloadObservation,
+} from "./progressive-overload.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -80,38 +84,6 @@ export class MuscleGroupVolume {
     return {
       muscleGroup: this.#muscleGroup,
       weeklyData: this.#weeklyData,
-    };
-  }
-}
-
-export type ProgressiveOverloadTrend = "increasing" | "decreasing" | "stable";
-
-/** Weekly volume trend for a single exercise. */
-export class ProgressiveOverload {
-  readonly #exerciseName: string;
-  readonly #weeklyVolumes: number[];
-
-  constructor(exerciseName: string, weeklyVolumes: number[]) {
-    this.#exerciseName = exerciseName;
-    this.#weeklyVolumes = weeklyVolumes;
-  }
-
-  get slopeKgPerWeek(): number {
-    return Math.round(linearRegressionSlope(this.#weeklyVolumes) * 100) / 100;
-  }
-
-  get trend(): ProgressiveOverloadTrend {
-    if (this.slopeKgPerWeek > 0) return "increasing";
-    if (this.slopeKgPerWeek < 0) return "decreasing";
-    return "stable";
-  }
-
-  toDetail() {
-    return {
-      exerciseName: this.#exerciseName,
-      weeklyVolumes: this.#weeklyVolumes,
-      slopeKgPerWeek: this.slopeKgPerWeek,
-      trend: this.trend,
     };
   }
 }
@@ -420,16 +392,16 @@ export class StrengthRepository {
           ORDER BY e.name, week`,
     );
 
-    const exerciseMap = new Map<string, number[]>();
+    const exerciseMap = new Map<string, ProgressiveOverloadObservation[]>();
     for (const row of rows) {
-      const volumes = exerciseMap.get(row.exercise_name) ?? [];
-      volumes.push(row.weekly_volume);
-      exerciseMap.set(row.exercise_name, volumes);
+      const observations = exerciseMap.get(row.exercise_name) ?? [];
+      observations.push({ week: row.week, totalVolumeKg: row.weekly_volume });
+      exerciseMap.set(row.exercise_name, observations);
     }
 
     return Array.from(exerciseMap.entries())
-      .filter(([, volumes]) => volumes.length >= 2)
-      .map(([exerciseName, weeklyVolumes]) => new ProgressiveOverload(exerciseName, weeklyVolumes));
+      .filter(([, observations]) => observations.length >= 2)
+      .map(([exerciseName, observations]) => new ProgressiveOverload(exerciseName, observations));
   }
 
   /** Exercises and sets for a single activity (joins via source_external_ids). */
@@ -568,34 +540,4 @@ function resolveExerciseType(
 
 function isBroadBackOnly(muscleGroups: string[]): boolean {
   return muscleGroups.length === 1 && muscleGroups[0] === "BACK";
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the slope of a simple linear regression (y = a + b*x)
- * where x is the zero-based index (i.e. week number).
- */
-export function linearRegressionSlope(values: number[]): number {
-  const valueCount = values.length;
-  if (valueCount < 2) return 0;
-
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-
-  for (let index = 0; index < valueCount; index++) {
-    sumX += index;
-    sumY += values[index] ?? 0;
-    sumXY += index * (values[index] ?? 0);
-    sumX2 += index * index;
-  }
-
-  const denominator = valueCount * sumX2 - sumX * sumX;
-  if (denominator === 0) return 0;
-
-  return (valueCount * sumXY - sumX * sumY) / denominator;
 }

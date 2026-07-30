@@ -30,6 +30,7 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
+import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { safeParseRows } from "../../lib/safe-parse";
@@ -449,6 +450,12 @@ export default function StrainScreen() {
               <VerticalAscentChart data={verticalAscent} units={units} />
             </View>
           )}
+
+          <ProgressiveOverloadCards
+            exercises={trainingData?.progressiveOverload ?? []}
+            loading={trainingQuery.isLoading && trainingData == null}
+            units={units}
+          />
 
           <View style={styles.card}>
             <View style={styles.sectionHeader}>

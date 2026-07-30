@@ -130,7 +130,17 @@ describe("strengthRouter", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]?.trend).toBe("increasing");
-      expect(result[0]?.slopeKgPerWeek).toBeGreaterThan(0);
+      expect(result[0]?.slopeKgPerWeek).toBe(200);
+      expect(result[0]?.period).toEqual({
+        startWeek: "2024-01-08",
+        endWeek: "2024-01-22",
+        observationCount: 3,
+        elapsedWeekCount: 3,
+      });
+      expect(result[0]?.uncertainty).toMatchObject({
+        availability: "unavailable",
+        reason: "insufficient_observations",
+      });
     });
 
     it("filters exercises with fewer than 2 weeks", async () => {

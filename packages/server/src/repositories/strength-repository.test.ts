@@ -1,12 +1,11 @@
 import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { ProgressiveOverload } from "./progressive-overload.ts";
 import {
   EstimatedOneRepMax,
   ExerciseWithSets,
-  linearRegressionSlope,
   MuscleGroupVolume,
-  ProgressiveOverload,
   StrengthRepository,
   VolumeWeek,
   WorkoutSummary,
@@ -63,36 +62,6 @@ describe("MuscleGroupVolume", () => {
     expect(detail.muscleGroup).toBe("chest");
     expect(detail.weeklyData).toHaveLength(2);
     expect(detail.weeklyData[0]?.sets).toBe(12);
-  });
-});
-
-describe("ProgressiveOverload", () => {
-  it("describes a positive slope as increasing", () => {
-    const overload = new ProgressiveOverload("Deadlift", [1000, 1100, 1200, 1300]);
-    const detail = overload.toDetail();
-    expect(detail.exerciseName).toBe("Deadlift");
-    expect(detail.slopeKgPerWeek).toBeGreaterThan(0);
-    expect(detail.trend).toBe("increasing");
-  });
-
-  it("describes a negative slope as decreasing", () => {
-    const overload = new ProgressiveOverload("Curls", [500, 400, 300, 200]);
-    const detail = overload.toDetail();
-    expect(detail.slopeKgPerWeek).toBeLessThan(0);
-    expect(detail.trend).toBe("decreasing");
-  });
-
-  it("describes an exact-zero slope as stable", () => {
-    const overload = new ProgressiveOverload("Rows", [500, 500, 500]);
-    const detail = overload.toDetail();
-    expect(detail.slopeKgPerWeek).toBe(0);
-    expect(detail.trend).toBe("stable");
-  });
-
-  it("includes weekly volumes in detail", () => {
-    const volumes = [1000, 1100, 1200];
-    const overload = new ProgressiveOverload("Squat", volumes);
-    expect(overload.toDetail().weeklyVolumes).toEqual(volumes);
   });
 });
 
@@ -188,29 +157,6 @@ describe("ExerciseWithSets", () => {
     expect(detail.muscleGroups).toBeNull();
     expect(detail.exerciseType).toBeNull();
     expect(detail.sets).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// linearRegressionSlope
-// ---------------------------------------------------------------------------
-
-describe("linearRegressionSlope", () => {
-  it("returns 0 for fewer than 2 values", () => {
-    expect(linearRegressionSlope([])).toBe(0);
-    expect(linearRegressionSlope([100])).toBe(0);
-  });
-
-  it("computes positive slope for increasing series", () => {
-    expect(linearRegressionSlope([100, 200, 300])).toBeCloseTo(100, 5);
-  });
-
-  it("computes negative slope for decreasing series", () => {
-    expect(linearRegressionSlope([300, 200, 100])).toBeCloseTo(-100, 5);
-  });
-
-  it("returns 0 for constant series", () => {
-    expect(linearRegressionSlope([50, 50, 50, 50])).toBeCloseTo(0, 5);
   });
 });
 

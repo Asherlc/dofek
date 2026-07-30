@@ -92,6 +92,7 @@ function defaultMockTrainingData(): MockTrainingData {
     strainTarget: undefined,
     activities: [],
     weeklyVolume: [],
+    progressiveOverload: [],
     verticalAscent: [],
     climbing: {
       gradeProgression: [],
@@ -213,6 +214,12 @@ vi.mock("../../lib/units", () => ({
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
     distanceLabel: "km",
+    formatWeight: (kg: number) => ({
+      text: `${kg.toFixed(1)} kg`,
+      parts: [{ type: "unit", value: "kg" }],
+    }),
+    convertWeight: (kg: number) => kg,
+    weightLabel: "kg",
   }),
 }));
 
@@ -829,6 +836,50 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("No climbing grade progression")).toBeTruthy();
     expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
     expect(screen.getByText("No climbing sessions")).toBeTruthy();
+  });
+
+  it("renders server-authored exercise trend evidence", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      progressiveOverload: [
+        {
+          exerciseName: "Back Squat",
+          observations: [
+            { week: "2026-03-09", totalVolumeKg: 1_000 },
+            { week: "2026-03-23", totalVolumeKg: 1_200 },
+          ],
+          period: {
+            startWeek: "2026-03-09",
+            endWeek: "2026-03-23",
+            observationCount: 2,
+            elapsedWeekCount: 3,
+          },
+          slopeKgPerWeek: 100,
+          trend: "increasing",
+          uncertainty: {
+            availability: "unavailable",
+            level: 0.95,
+            method: "residual_circular_moving_block_bootstrap",
+            methodLabel: "95% moving-block interval",
+            reason: "insufficient_observations",
+            statement: "Uncertainty needs at least 4 recorded weeks; this estimate has 2.",
+          },
+          interpretation:
+            "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+          deloadContext:
+            "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
+        },
+      ],
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Back Squat")).toBeTruthy();
+    expect(screen.getByText("Increasing 100.0 kg/week")).toBeTruthy();
+    expect(
+      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 2."),
+    ).toBeTruthy();
   });
 
   it("shows the server error message for climbing data failures", async () => {

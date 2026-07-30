@@ -1131,6 +1131,7 @@ describe("mobileDashboard.training", () => {
       },
       activities: [],
       weeklyVolume: [],
+      progressiveOverload: [],
       verticalAscent: [],
       climbing: {
         gradeProgression: [],
@@ -1207,6 +1208,7 @@ describe("mobileDashboard.training", () => {
       },
       activities: [],
       weeklyVolume: [],
+      progressiveOverload: [],
       verticalAscent: [],
       climbing: {
         gradeProgression: [],
