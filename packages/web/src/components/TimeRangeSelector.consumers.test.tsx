@@ -164,6 +164,19 @@ vi.mock("../lib/trpc.ts", () => {
         delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
         questions: recordQuery("journal.questions"),
+        trends: recordQuery("journal.trends", {
+          window: {
+            startDate: "2026-07-01",
+            endDate: "2026-07-30",
+            dayCount: 30,
+          },
+          statement: "No numeric or Yes/No journal observations in this window.",
+          uncertainty: {
+            status: "unavailable",
+            statement: "Uncertainty interval: not available for raw journal observations.",
+          },
+          series: [],
+        }),
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),
@@ -412,13 +425,21 @@ describe("TimeRangeSelector consumers", () => {
     fireEvent.click(screen.getByRole("button", { name: "7d" }));
 
     expectCallsContaining([{ name: "journal.entries", input: { days: 7 } }]);
-    expectRegistryCovered("journal");
+    expectRegistryCovered("journalLog");
 
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
     clearQueryCalls();
     fireEvent.click(screen.getByRole("button", { name: "All" }));
 
-    expectCallsContaining([{ name: "journal.entries", input: { days: null } }]);
-    expectRegistryCovered("journal");
+    expectCallsContaining([
+      {
+        name: "journal.trends",
+        input: {
+          days: null,
+          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        },
+      },
+    ]);
+    expectRegistryCovered("journalTrends");
   });
 });
