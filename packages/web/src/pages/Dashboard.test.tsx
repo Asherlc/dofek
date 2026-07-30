@@ -225,7 +225,7 @@ describe("Dashboard", () => {
         date: "2026-05-27",
         action: {
           id: "strain_target",
-          title: "Keep a steady training day — aim for 12 strain",
+          title: "No change needs attention — aim for 12 strain",
           summary: "Stay in range",
           zone: "Maintain",
         },

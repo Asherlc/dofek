@@ -38,6 +38,21 @@ const insufficientPlan: TodayPlanResult = {
     "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
 };
 
+const noChangePlan: TodayPlanResult = {
+  ...readyPlan,
+  action: {
+    id: "strain_target",
+    title: "No change needs attention — aim for 12 strain",
+    summary: "Moderate recovery (60). Aim for a steady training day.",
+    zone: "Maintain",
+  },
+  supportingFacts: [
+    { label: "Recovery", value: "60/100" },
+    { label: "Sleep performance", value: "82 (Good)" },
+  ],
+  confidence: "moderate",
+};
+
 const meta = {
   title: "Components/TodayPlanCard",
   component: TodayPlanCard,
@@ -51,6 +66,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Ready: Story = {};
+
+export const NoChangeNeedsAttention: Story = {
+  args: {
+    plan: noChangePlan,
+  },
+};
 
 export const InsufficientData: Story = {
   args: {

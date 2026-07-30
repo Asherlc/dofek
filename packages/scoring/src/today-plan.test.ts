@@ -87,7 +87,7 @@ describe("buildTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
 
-    expect(plan.action.title).toBe("Keep a steady training day — aim for 12 strain");
+    expect(plan.action.title).toBe("No change needs attention — aim for 12 strain");
     expect(plan.action.zone).toBe("Maintain");
     expect(plan.supportingFacts).toEqual([
       { label: "Recovery", value: "60/100" },
