@@ -180,7 +180,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
   it("transitions from the preview to a report after one observed day", async () => {
     const transitionUserId = randomUUID();
     const repository = new MonthlyReportRepository(transitionUserId, sensorStore);
-    const emptyReport = await repository.getReport(12);
+    const emptyReport = await repository.getReport(12, endDate);
 
     expect(emptyReport.current).toBeNull();
     expect(emptyReport.history).toEqual([]);
