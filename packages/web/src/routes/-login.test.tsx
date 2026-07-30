@@ -140,6 +140,33 @@ describe("Login route", () => {
     expect(passwordInput.getAttribute("type")).toBe("password");
   });
 
+  it("warns when Caps Lock is active in the password field", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const passwordInput = await screen.findByLabelText("Password");
+    const capsLockEvent = new KeyboardEvent("keydown", { bubbles: true });
+    Object.defineProperty(capsLockEvent, "getModifierState", {
+      value: (modifier: string) => modifier === "CapsLock",
+    });
+    fireEvent(passwordInput, capsLockEvent);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Caps Lock is on.");
+
+    const capsLockOffEvent = new KeyboardEvent("keyup", { bubbles: true });
+    Object.defineProperty(capsLockOffEvent, "getModifierState", {
+      value: () => false,
+    });
+    fireEvent(passwordInput, capsLockOffEvent);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("shows the canonical requirements for a new password", async () => {
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
     mockFetchConfiguredProviders.mockResolvedValue({

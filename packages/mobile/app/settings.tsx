@@ -1,3 +1,9 @@
+import {
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
@@ -10,6 +16,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  type TextInputProps,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -45,6 +52,52 @@ const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
   { id: "account", label: "Account" },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
+const IOS_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: ${PASSWORD_MAX_LENGTH};`;
+
+interface SettingsPasswordInputProps {
+  autoComplete: NonNullable<TextInputProps["autoComplete"]>;
+  label: string;
+  maxLength?: number;
+  onChangeText: (value: string) => void;
+  passwordRules?: string;
+  value: string;
+}
+
+function SettingsPasswordInput({
+  autoComplete,
+  label,
+  maxLength,
+  onChangeText,
+  passwordRules,
+  value,
+}: SettingsPasswordInputProps) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <View style={styles.passwordInputContainer}>
+      <TextInput
+        accessibilityLabel={label}
+        style={styles.passwordInput}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={label}
+        placeholderTextColor={colors.textSecondary}
+        secureTextEntry={!isVisible}
+        autoComplete={autoComplete}
+        passwordRules={passwordRules}
+        maxLength={maxLength}
+      />
+      <TouchableOpacity
+        onPress={() => setIsVisible((visible) => !visible)}
+        accessibilityRole="button"
+        accessibilityLabel={`${isVisible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+        style={styles.passwordVisibilityButton}
+      >
+        <Text style={styles.passwordVisibilityText}>{isVisible ? "Hide" : "Show"}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 function isSettingsTab(value: unknown): value is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === value);
@@ -104,6 +157,7 @@ export default function SettingsScreen() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordFormError, setPasswordFormError] = useState<string | null>(null);
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
@@ -167,6 +221,16 @@ export default function SettingsScreen() {
   }
 
   function handleSetPassword() {
+    if (passwordStatus.data?.hasPassword && !currentPassword) {
+      setPasswordFormError("Enter your current password.");
+      return;
+    }
+    const passwordError = getNewPasswordValidationError(newPassword);
+    if (passwordError) {
+      setPasswordFormError(passwordError);
+      return;
+    }
+    setPasswordFormError(null);
     if (newPassword !== confirmPassword) {
       Alert.alert("Error", "Passwords do not match");
       return;
@@ -360,34 +424,47 @@ export default function SettingsScreen() {
           ) : (
             <View style={styles.card}>
               {passwordStatus.data?.hasPassword ? (
-                <TextInput
-                  style={styles.passwordInput}
+                <SettingsPasswordInput
+                  label="Current password"
                   value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder="Current password"
-                  placeholderTextColor={colors.textSecondary}
-                  secureTextEntry
-                  autoComplete="password"
+                  onChangeText={(value) => {
+                    setCurrentPassword(value);
+                    setPasswordFormError(null);
+                  }}
+                  autoComplete="current-password"
                 />
               ) : null}
-              <TextInput
-                style={styles.passwordInput}
+              <SettingsPasswordInput
+                label="New password"
                 value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="New password"
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry
+                onChangeText={(value) => {
+                  setNewPassword(value);
+                  setPasswordFormError(null);
+                }}
                 autoComplete="new-password"
+                passwordRules={IOS_PASSWORD_RULES}
+                maxLength={PASSWORD_MAX_LENGTH}
               />
-              <TextInput
-                style={styles.passwordInput}
+              <SettingsPasswordInput
+                label="Confirm password"
                 value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm password"
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry
+                onChangeText={(value) => {
+                  setConfirmPassword(value);
+                  setPasswordFormError(null);
+                }}
                 autoComplete="new-password"
+                passwordRules={IOS_PASSWORD_RULES}
+                maxLength={PASSWORD_MAX_LENGTH}
               />
+              <Text
+                style={
+                  passwordFormError ? styles.passwordErrorText : styles.passwordRequirementText
+                }
+                accessibilityLiveRegion="polite"
+                accessibilityRole={passwordFormError ? "alert" : undefined}
+              >
+                {passwordFormError ?? PASSWORD_REQUIREMENT_TEXT}
+              </Text>
               <TouchableOpacity
                 style={[
                   styles.passwordButton,

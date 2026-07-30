@@ -118,6 +118,7 @@ type SetPasswordMutationOptions = {
   onSuccess?: () => Promise<void>;
 };
 let mockSetPasswordMutationOptions: SetPasswordMutationOptions | null = null;
+const mockSetPasswordMutate = vi.fn();
 const mockPasswordCredentialStatusQuery = vi.fn(() => ({
   data: { hasPassword: false },
   isLoading: false,
@@ -185,7 +186,7 @@ vi.mock("../lib/trpc", () => ({
         useMutation: (options: SetPasswordMutationOptions) => {
           mockSetPasswordMutationOptions = options;
           return {
-            mutate: vi.fn(),
+            mutate: mockSetPasswordMutate,
             isPending: false,
           };
         },
@@ -543,6 +544,79 @@ describe("SettingsScreen password", () => {
 
     expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
     expect(await screen.findByText("Change Password")).toBeTruthy();
+  });
+
+  it("shows shared requirements, native semantics, and independent visibility controls", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    const currentPassword = await screen.findByLabelText("Current password");
+    const newPassword = screen.getByLabelText("New password");
+    const confirmPassword = screen.getByLabelText("Confirm password");
+
+    expect(currentPassword.getAttribute("autocomplete")).toBe("current-password");
+    expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 8; maxlength: 128;");
+    expect(confirmPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByText("Use 8–128 characters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show current password" }));
+    expect(currentPassword.getAttribute("type")).toBe("text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide current password" }));
+    expect(currentPassword.getAttribute("type")).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show new password" }));
+    expect(newPassword.getAttribute("type")).toBe("text");
+    expect(confirmPassword.getAttribute("type")).toBe("password");
+  });
+
+  it("blocks an invalid new password before calling the mutation", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: false },
+      isLoading: false,
+      error: null,
+    });
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set Password" }));
+
+    expect(await screen.findByText("Use at least 8 characters.")).toBeTruthy();
+    expect(mockSetPasswordMutate).not.toHaveBeenCalled();
+  });
+
+  it("requires the current password before changing an existing credential", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+
+    expect(await screen.findByText("Enter your current password.")).toBeTruthy();
+    expect(mockSetPasswordMutate).not.toHaveBeenCalled();
   });
 
   it("confirms before logging out after changing an existing password", async () => {
