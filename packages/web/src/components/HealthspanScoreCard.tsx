@@ -28,10 +28,26 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
     return <ChartLoadingSkeleton height={400} />;
   }
 
-  if (!data || data.healthspanScore == null || data.metrics.length === 0) {
+  if (!data) {
     return (
       <div className="bg-page border border-border rounded-xl p-6 flex items-center justify-center h-[400px]">
-        <span className="text-dim text-sm">Insufficient data for healthspan analysis</span>
+        <span className="text-dim text-sm">Healthspan availability is unavailable.</span>
+      </div>
+    );
+  }
+
+  if (data.healthspanScore == null || data.metrics.length === 0) {
+    return (
+      <div className="bg-page border border-border rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center h-[400px]">
+        <p className="text-muted text-sm font-medium">{data.availability.summary}</p>
+        {data.availability.nextCondition != null && (
+          <p className="text-dim text-sm">{data.availability.nextCondition}</p>
+        )}
+        {data.availability.missingMetricLabels.length > 0 && (
+          <p className="text-subtle text-xs">
+            Missing supported metrics: {data.availability.missingMetricLabels.join(", ")}
+          </p>
+        )}
       </div>
     );
   }

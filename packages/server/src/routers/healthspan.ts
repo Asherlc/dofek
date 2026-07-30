@@ -46,6 +46,15 @@ export interface HealthspanMetric {
   yearsDelta: number;
 }
 
+export interface HealthspanAvailability {
+  status: "available" | "insufficient_data";
+  availableMetricCount: number;
+  requiredMetricCount: 3;
+  missingMetricLabels: string[];
+  summary: string;
+  nextCondition: string | null;
+}
+
 export interface HealthspanResult {
   /** Composite healthspan score 0-100, or null when there is no data */
   healthspanScore: number | null;
@@ -57,7 +66,22 @@ export interface HealthspanResult {
   history: { weekStart: string; score: number }[];
   /** Direction of weekly score trend: "improving" | "declining" | "stable" (null if < 4 weeks of data) */
   trend: "improving" | "declining" | "stable" | null;
+  /** Exact server-owned score readiness rendered identically by every client. */
+  availability: HealthspanAvailability;
 }
+
+const HEALTHSPAN_REQUIRED_METRIC_COUNT = 3;
+const HEALTHSPAN_SUPPORTED_METRIC_LABELS = [
+  "Sleep Consistency",
+  "Sleep Duration",
+  "Aerobic Activity",
+  "High Intensity",
+  "Strength Training",
+  "Daily Steps",
+  "VO2 Max",
+  "Resting Heart Rate",
+  "Lean Body Mass",
+] as const;
 
 function toNumberOrNull(value: number | null): number | null {
   return value != null ? Number(value) : null;
@@ -196,6 +220,35 @@ function computeTrend(history: HealthspanResult["history"]): HealthspanResult["t
   return "stable";
 }
 
+function buildAvailability(metrics: HealthspanMetric[]): HealthspanAvailability {
+  const availableMetricCount = metrics.filter((metric) => metric.value != null).length;
+  const missingMetricLabels =
+    metrics.length > 0
+      ? metrics.filter((metric) => metric.value == null).map((metric) => metric.name)
+      : [...HEALTHSPAN_SUPPORTED_METRIC_LABELS];
+  const additionalMetricCount = Math.max(
+    0,
+    HEALTHSPAN_REQUIRED_METRIC_COUNT - availableMetricCount,
+  );
+
+  return {
+    status: additionalMetricCount === 0 ? "available" : "insufficient_data",
+    availableMetricCount,
+    requiredMetricCount: HEALTHSPAN_REQUIRED_METRIC_COUNT,
+    missingMetricLabels,
+    summary:
+      availableMetricCount > HEALTHSPAN_REQUIRED_METRIC_COUNT
+        ? `${availableMetricCount} supported Healthspan metrics are available; ${HEALTHSPAN_REQUIRED_METRIC_COUNT} are required for a score.`
+        : `${availableMetricCount} of ${HEALTHSPAN_REQUIRED_METRIC_COUNT} required Healthspan metrics are available.`,
+    nextCondition:
+      additionalMetricCount === 0
+        ? null
+        : `The score becomes available after ${additionalMetricCount} more supported ${
+            additionalMetricCount === 1 ? "metric syncs" : "metrics sync"
+          } successfully.`,
+  };
+}
+
 export function buildHealthspanResult(row: HealthspanRawRow | null): HealthspanResult {
   if (!row) {
     return {
@@ -204,13 +257,14 @@ export function buildHealthspanResult(row: HealthspanRawRow | null): HealthspanR
       metrics: [],
       history: [],
       trend: null,
+      availability: buildAvailability([]),
     };
   }
 
   const metrics = buildMetrics(row);
   const metricsWithData = metrics.filter((metric) => metric.value != null);
   const healthspanScore =
-    metricsWithData.length >= 3
+    metricsWithData.length >= HEALTHSPAN_REQUIRED_METRIC_COUNT
       ? Math.round(
           metricsWithData.reduce((sum, metric) => sum + metric.score, 0) / metricsWithData.length,
         )
@@ -223,6 +277,7 @@ export function buildHealthspanResult(row: HealthspanRawRow | null): HealthspanR
     metrics,
     history,
     trend: computeTrend(history),
+    availability: buildAvailability(metrics),
   };
 }
 

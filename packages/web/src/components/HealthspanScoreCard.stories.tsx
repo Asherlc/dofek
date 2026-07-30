@@ -6,6 +6,19 @@ const data: HealthspanResult = {
   healthspanScore: 78,
   yearsDelta: -2.1,
   trend: "improving",
+  availability: {
+    status: "available",
+    availableMetricCount: 5,
+    requiredMetricCount: 3,
+    missingMetricLabels: [
+      "Aerobic Activity",
+      "High Intensity",
+      "Strength Training",
+      "Lean Body Mass",
+    ],
+    summary: "5 supported Healthspan metrics are available; 3 are required for a score.",
+    nextCondition: null,
+  },
   history: [
     { weekStart: "2026-03-02", score: 73 },
     { weekStart: "2026-03-09", score: 75 },
@@ -89,6 +102,21 @@ export const Loading: Story = {
 
 export const InsufficientData: Story = {
   args: {
-    data: undefined,
+    data: {
+      healthspanScore: null,
+      yearsDelta: null,
+      metrics: [],
+      history: [],
+      trend: null,
+      availability: {
+        status: "insufficient_data",
+        availableMetricCount: 2,
+        requiredMetricCount: 3,
+        missingMetricLabels: ["VO2 Max", "Daily Steps"],
+        summary: "2 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 1 more supported metric syncs successfully.",
+      },
+    },
   },
 };
