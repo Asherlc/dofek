@@ -343,6 +343,11 @@ export function createIngestZosHealthRouter(deps: {
               lightMinutes: session.lightMinutes ?? null,
               awakeMinutes: session.awakeMinutes ?? null,
               efficiencyPct: session.efficiencyPct ?? null,
+              stagingAvailable:
+                session.deepMinutes != null &&
+                session.remMinutes != null &&
+                session.lightMinutes != null &&
+                session.awakeMinutes != null,
               sourceName: "zepp-companion",
             })
             .onConflictDoNothing({

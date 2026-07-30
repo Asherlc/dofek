@@ -135,6 +135,7 @@ describe("sleepRouter", () => {
     light_minutes: 250,
     awake_minutes: 30,
     efficiency_pct: 93.5,
+    staging_available: true,
   };
 
   describe("list", () => {

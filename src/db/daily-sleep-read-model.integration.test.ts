@@ -15,7 +15,9 @@ type ClickHouseClient = ReturnType<typeof createClient>;
 const liveDailySleepRowSchema = z.object({
   date: z.string(),
   deep_minutes: z.coerce.number().nullable(),
+  rem_minutes: z.coerce.number().nullable(),
   duration_minutes: z.coerce.number(),
+  staging_available: z.boolean(),
   end_utc_offset_minutes: z.coerce.number().nullable(),
   is_deleted: z.coerce.number(),
   local_time_source: z.string(),
@@ -51,7 +53,9 @@ describe("daily_sleep read-model lifecycle", () => {
       {
         date: historicalSleepDate,
         deep_minutes: 90,
+        rem_minutes: 100,
         duration_minutes: 480,
+        staging_available: true,
         end_utc_offset_minutes: -420,
         is_deleted: 0,
         local_time_source: "provider_timezone",
@@ -67,7 +71,9 @@ describe("daily_sleep read-model lifecycle", () => {
       {
         date: historicalSleepDate,
         deep_minutes: null,
+        rem_minutes: null,
         duration_minutes: 420,
+        staging_available: false,
         end_utc_offset_minutes: 600,
         is_deleted: 0,
         local_time_source: "provider_offset",
@@ -178,6 +184,7 @@ async function materializeDailySleep(
     "light_minutes",
     "awake_minutes",
     "efficiency_pct",
+    "staging_available",
     "refresh_version",
     ...(selectSql.includes(" AS is_deleted") ? ["is_deleted"] : []),
     "refreshed_at",
@@ -197,7 +204,9 @@ async function readLiveHistoricalNight(
     query: `SELECT
         toString(date) AS date,
         deep_minutes,
+        rem_minutes,
         duration_minutes,
+        staging_available,
         end_utc_offset_minutes,
         local_time_source,
         start_utc_offset_minutes,
@@ -284,6 +293,7 @@ function createSleepSourceTableSql(targetSchema: string): string {
   light_minutes Nullable(Int32),
   awake_minutes Nullable(Int32),
   efficiency_pct Nullable(Float64),
+  staging_available Bool,
   is_nap Bool,
   _peerdb_synced_at DateTime64(9, 'UTC'),
   _peerdb_is_deleted UInt8
@@ -307,11 +317,12 @@ SELECT
   started_at,
   ended_at,
   duration_minutes,
-  deep_minutes,
-  rem_minutes,
-  light_minutes,
-  awake_minutes,
+  if(staging_available, deep_minutes, NULL) AS deep_minutes,
+  if(staging_available, rem_minutes, NULL) AS rem_minutes,
+  if(staging_available, light_minutes, NULL) AS light_minutes,
+  if(staging_available, awake_minutes, NULL) AS awake_minutes,
   efficiency_pct,
+  staging_available,
   is_nap
 FROM ${targetSchema}.sleep_session FINAL
 WHERE _peerdb_is_deleted = 0`;
@@ -336,6 +347,7 @@ function createDailySleepTableSql(targetSchema: string): string {
   light_minutes Nullable(Int32),
   awake_minutes Nullable(Int32),
   efficiency_pct Nullable(Float64),
+  staging_available Bool DEFAULT false,
   refresh_version UInt64,
   is_deleted UInt8 DEFAULT 0,
   refreshed_at DateTime64(9, 'UTC')
@@ -364,6 +376,7 @@ function insertInitialSleepRowsSql(targetSchema: string): string {
   250,
   40,
   91,
+  true,
   false,
   toDateTime64('2026-01-02 06:01:00', 9, 'UTC'),
   0
@@ -387,6 +400,7 @@ function insertInitialSleepRowsSql(targetSchema: string): string {
   30,
   89,
   false,
+  false,
   toDateTime64('2026-01-02 06:01:00', 9, 'UTC'),
   0
 ),
@@ -408,6 +422,7 @@ function insertInitialSleepRowsSql(targetSchema: string): string {
   250,
   40,
   92,
+  true,
   false,
   toDateTime64('2026-07-01 06:01:00', 9, 'UTC'),
   0
@@ -439,6 +454,7 @@ async function tombstoneSourceSleep(
       NULL,
       NULL,
       NULL,
+      false,
       false,
       now64(9, 'UTC'),
       1

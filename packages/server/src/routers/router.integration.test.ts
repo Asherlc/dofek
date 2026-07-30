@@ -84,13 +84,14 @@ describe("Router coverage", () => {
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
               awake_minutes, efficiency_pct, sleep_type, timezone,
-              start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
+              start_utc_offset_minutes, end_utc_offset_minutes, local_time_source,
+              staging_available
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep',
-              'UTC', 0, 0, 'provider_timezone'
+              'UTC', 0, 0, 'provider_timezone', true
             )`,
       );
       const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
@@ -603,11 +604,12 @@ describe("Router coverage", () => {
           date: string;
           durationMinutes: number;
           sleepMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
-          efficiency: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          efficiency: number | null;
+          stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
         sleepDebt: number;
@@ -621,9 +623,26 @@ describe("Router coverage", () => {
         // For non-Apple Health providers, sleepMinutes should equal durationMinutes
         expect(night.sleepMinutes).toBe(night.durationMinutes);
         // Stage percentages should roughly sum to 100
+        expect(night.stagingAvailable).toBe(true);
+        expect(night.deepPct).not.toBeNull();
+        expect(night.remPct).not.toBeNull();
+        expect(night.lightPct).not.toBeNull();
+        expect(night.awakePct).not.toBeNull();
+        if (
+          night.deepPct == null ||
+          night.remPct == null ||
+          night.lightPct == null ||
+          night.awakePct == null
+        ) {
+          throw new Error("Expected complete stage percentages");
+        }
         const totalPct = night.deepPct + night.remPct + night.lightPct + night.awakePct;
         expect(totalPct).toBeGreaterThan(90);
         expect(totalPct).toBeLessThan(110);
+        expect(night.efficiency).not.toBeNull();
+        if (night.efficiency == null) {
+          throw new Error("Expected provider-reported efficiency");
+        }
         expect(night.efficiency).toBeGreaterThan(0);
       }
 
@@ -656,12 +675,12 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, sleep_type
+              awake_minutes, efficiency_pct, staging_available, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID},
               ${sleepDate}::date + INTERVAL '13 hours',
               ${sleepDate}::date + INTERVAL '21 hours',
-              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
+              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, true, 'sleep'
             )`,
       );
 

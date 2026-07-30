@@ -7,6 +7,7 @@ const firstRow: SleepDataSourceRow = {
   providerId: "apple_health",
   sourceName: "Apple Watch",
   sourceProviders: ["apple_health", "whoop"],
+  stagingAvailable: true,
 };
 
 const rows: SleepDataSourceRow[] = [
@@ -17,6 +18,7 @@ const rows: SleepDataSourceRow[] = [
     providerId: "whoop",
     sourceName: null,
     sourceProviders: ["whoop"],
+    stagingAvailable: false,
   },
 ];
 

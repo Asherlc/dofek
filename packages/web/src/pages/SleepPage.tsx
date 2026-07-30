@@ -41,6 +41,7 @@ const sleepRowSchema = z.object({
   provider_id: z.string().nullable().optional(),
   source_name: z.string().nullable().optional(),
   source_providers: z.array(z.string()).optional().default([]),
+  staging_available: z.boolean(),
 });
 
 function isSleepInsight(metric: string): boolean {
@@ -77,6 +78,7 @@ export function SleepPage() {
         providerId: row.provider_id ?? null,
         sourceName: row.source_name ?? null,
         sourceProviders: row.source_providers ?? [],
+        stagingAvailable: row.staging_available,
       })),
     [sleepRows],
   );

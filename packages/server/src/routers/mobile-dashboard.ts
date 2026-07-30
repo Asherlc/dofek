@@ -86,10 +86,11 @@ const mobileDashboardSharedOutputSchema = z.object({
         .object({
           date: z.string(),
           durationMinutes: z.number(),
-          deepPct: z.number(),
-          remPct: z.number(),
-          lightPct: z.number(),
-          awakePct: z.number(),
+          deepPct: z.number().nullable(),
+          remPct: z.number().nullable(),
+          lightPct: z.number().nullable(),
+          awakePct: z.number().nullable(),
+          stagingAvailable: z.boolean(),
         })
         .nullable(),
       sleepDebt: z.number(),

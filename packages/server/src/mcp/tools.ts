@@ -384,6 +384,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           };
           return {
             date: row.date,
+            staging_available: row.staging_available,
             total_duration_minutes: row.duration_minutes,
             sleep_efficiency_pct: row.efficiency_pct,
             time_in_bed_minutes:

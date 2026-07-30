@@ -1009,10 +1009,14 @@ function makeDb() {
 
 function makeSensorStore() {
   return {
-    query: vi
-      .fn()
-      .mockResolvedValueOnce([{ date: "2024-01-01", resting_hr: 52 }])
-      .mockResolvedValue([]),
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (query.includes("analytics.daily_sleep")) return [];
+      if (query.includes("analytics.v_body_measurement")) return [];
+      if (query.includes("analytics.resting_heart_rate_sleep_window")) {
+        return [{ date: "2024-01-01", resting_hr: 52 }];
+      }
+      return [];
+    }),
   };
 }
 
@@ -1059,6 +1063,7 @@ function makeCorrelationEvidenceSources() {
     light_minutes: 260,
     awake_minutes: 20,
     efficiency_pct: 92,
+    staging_available: true,
   };
   const sensorStore = {
     query: vi
@@ -1437,6 +1442,7 @@ describe("CorrelationRepository", () => {
               light_minutes: null,
               awake_minutes: null,
               efficiency_pct: null,
+              staging_available: false,
             },
           ])
           .mockResolvedValueOnce([])
@@ -1572,6 +1578,7 @@ describe("CorrelationRepository", () => {
               light_minutes: 260,
               awake_minutes: 20,
               efficiency_pct: 92,
+              staging_available: true,
             },
             {
               date: "2026-01-02",
@@ -1590,6 +1597,7 @@ describe("CorrelationRepository", () => {
               light_minutes: 70,
               awake_minutes: 10,
               efficiency_pct: 90,
+              staging_available: true,
             },
           ])
           .mockResolvedValueOnce([])

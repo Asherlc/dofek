@@ -11,6 +11,7 @@ function row(day: number): SleepDataSourceRow {
     providerId: "whoop",
     sourceName: `Source ${day}`,
     sourceProviders: [],
+    stagingAvailable: true,
   };
 }
 
@@ -29,5 +30,11 @@ describe("SleepDataSourcesTable", () => {
     expect(screen.getByText(/Source 1$/)).toBeDefined();
     expect(screen.queryByText(/Source 21/)).toBeNull();
     expect(screen.getByText("2 / 2")).toBeDefined();
+  });
+
+  it("labels nights without a stage breakdown as partial", () => {
+    render(<SleepDataSourcesTable rows={[{ ...row(1), stagingAvailable: false }]} />);
+
+    expect(screen.getByText("Partial")).toBeDefined();
   });
 });

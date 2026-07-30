@@ -48,6 +48,7 @@ type SleepTestRow = {
   light_minutes?: number | null;
   awake_minutes?: number | null;
   efficiency_pct?: number | null;
+  staging_available?: boolean;
 };
 
 type RecoverySummaryTestRow = {
@@ -70,6 +71,7 @@ function sleepRowsForClickHouse(rows: SleepTestRow[]) {
     light_minutes: row.light_minutes ?? row.duration_minutes,
     awake_minutes: row.awake_minutes ?? 0,
     efficiency_pct: row.efficiency_pct ?? 90,
+    staging_available: row.staging_available ?? true,
   }));
 }
 
@@ -564,6 +566,7 @@ describe("mobileDashboard.dashboard", () => {
       remPct: 20,
       lightPct: 50,
       awakePct: 5,
+      stagingAvailable: true,
     });
     expect(result.sleep?.sleepDebt).toBe(285);
     expect(result.sleepNeed).toEqual(

@@ -46,6 +46,9 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         if (!night) return "";
         const dateLabel = formatDateMedium(night.date);
         let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(dateLabel)} (${formatDurationMinutes(night.durationMinutes)})</div>`;
+        if (!night.stagingAvailable) {
+          html += '<div style="color:#d97706">Partial record: sleep stages were not reported</div>';
+        }
         for (const p of params) {
           if (p.seriesName === "7d Avg") {
             if (p.value[1] != null) {
