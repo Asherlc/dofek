@@ -20658,3 +20658,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** When merging a shared DTO rename, search both
   platform fixtures for retired field names even when Git reports no textual
   conflict.
+
+## 2026-07-29 — GitHub Actions cache export blocked the image scan
+
+- **Status:** External runner/cache failure identified on PR #2315;
+  replacement exact-head CI is pending.
+- **Symptoms:** The job named `Test / Image Vulnerability Scan` failed while
+  building the server image, before Grype executed.
+- **User impact:** No production or image-scan result impact. The PR remained
+  blocked because its required vulnerability job did not reach the scanner.
+- **Evidence:** In
+  [job 90742175355](https://github.com/Asherlc/dofek/actions/runs/30501533220/job/90742175355),
+  the exact failing step was `Build server image with cache`. The first fatal
+  line was `#130 ERROR: error writing layer blob: not_found` while exporting
+  to the GitHub Actions cache; Buildx then reported
+  `failed to solve: error writing layer blob: not_found`.
+- **Root cause:** BuildKit successfully built and began exporting the image
+  layers, but the GitHub Actions cache backend could not accept one referenced
+  layer blob. The scan step never ran, so there was no vulnerability finding
+  or application-image failure to remediate.
+- **Fix / mitigation:** Do not change cache configuration, retry behavior,
+  vulnerability thresholds, the Dockerfile, or application code. Supersede the
+  failed head with this required incident record and require the normal
+  exact-head image build and Grype scan.
+- **Validation:** Focused nutrition tests and server/web/mobile typechecks
+  passed before the hosted run. The replacement exact-head image job must
+  export its cache, build the image, and complete Grype successfully.
+- **Remaining risk / follow-up:** If a separate runner repeats the same missing
+  cache-blob error, treat GitHub Actions cache availability as an external
+  blocker and capture the second job rather than weakening the security gate.
