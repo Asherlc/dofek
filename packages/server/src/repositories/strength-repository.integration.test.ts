@@ -2,10 +2,14 @@ import { formatDateYmd } from "@dofek/format/format";
 import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { ActivityRepository } from "./activity-repository.ts";
 import { StrengthRepository } from "./strength-repository.ts";
+
+const idRowSchema = z.object({ id: z.string().uuid() });
 
 describe("StrengthRepository activity scope", () => {
   let testContext: TestContext;
@@ -16,7 +20,9 @@ describe("StrengthRepository activity scope", () => {
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('strength_scope_test', 'Strength Scope Test', ${TEST_USER_ID})`,
     );
-    const exerciseRows = await testContext.db.execute<{ id: string }>(
+    const exerciseRows = await executeWithSchema(
+      testContext.db,
+      idRowSchema,
       sql`INSERT INTO fitness.exercise (name, muscle_groups, equipment)
           VALUES ('Scope Test Press', ARRAY['chest']::text[], 'barbell')
           RETURNING id`,
@@ -25,7 +31,9 @@ describe("StrengthRepository activity scope", () => {
     if (!exerciseId) throw new Error("Strength scope test exercise was not created");
 
     for (const [activityIndex, activityType] of STRENGTH_ACTIVITY_TYPES.entries()) {
-      const activityRows = await testContext.db.execute<{ id: string }>(
+      const activityRows = await executeWithSchema(
+        testContext.db,
+        idRowSchema,
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, external_id, activity_type, started_at, ended_at, name
             ) VALUES (
