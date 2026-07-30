@@ -13,24 +13,33 @@ export function useTimeRangePreference(domain: TimeRangeDomain): {
   days: number;
   defaultDays: number;
   description: string;
+  isHydrated: boolean;
   setDays: (days: number) => void;
 } {
   const policy = TIME_RANGE_POLICIES[domain];
   const storageKey = timeRangePreferenceKey(domain);
   const [days, setDaysState] = useState<number>(policy.defaultDays);
+  const [hydratedDomain, setHydratedDomain] = useState<TimeRangeDomain | null>(null);
 
   useEffect(() => {
     let active = true;
+    setDaysState(policy.defaultDays);
+    setHydratedDomain(null);
 
     void AsyncStorage.getItem(storageKey)
       .then((persistedValue) => {
         const restoredDays = parseTimeRangePreference(persistedValue, policy.defaultDays);
-        if (active && restoredDays !== null) {
-          setDaysState(restoredDays);
+        if (active) {
+          setDaysState(restoredDays ?? policy.defaultDays);
         }
       })
       .catch((error: unknown) => {
         captureException(error, { source: "time-range-preference-read", domain });
+      })
+      .finally(() => {
+        if (active) {
+          setHydratedDomain(domain);
+        }
       });
 
     return () => {
@@ -54,6 +63,7 @@ export function useTimeRangePreference(domain: TimeRangeDomain): {
     days,
     defaultDays: policy.defaultDays,
     description: policy.description,
+    isHydrated: hydratedDomain === domain,
     setDays,
   };
 }

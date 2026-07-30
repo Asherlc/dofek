@@ -57,7 +57,9 @@ describe("time range policy", () => {
   it("round-trips finite and all-history selections", () => {
     expect(serializeTimeRangePreference(90)).toBe("90");
     expect(serializeTimeRangePreference(null)).toBe("all");
-    expect(parseTimeRangePreference("90", 30)).toBe(90);
+    for (const days of [7, 14, 30, 90, 180, 365]) {
+      expect(parseTimeRangePreference(String(days), 30)).toBe(days);
+    }
     expect(parseTimeRangePreference("all", 30)).toBeNull();
   });
 
@@ -66,6 +68,8 @@ describe("time range policy", () => {
     expect(parseTimeRangePreference("", 90)).toBe(90);
     expect(parseTimeRangePreference("0", 90)).toBe(90);
     expect(parseTimeRangePreference("-30", 90)).toBe(90);
+    expect(parseTimeRangePreference("31", 90)).toBe(90);
+    expect(parseTimeRangePreference("9999", 90)).toBe(90);
     expect(parseTimeRangePreference("not-a-range", 90)).toBe(90);
   });
 

@@ -5,9 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { BodyDaysContext, useBodyDays } from "./bodyDaysContext.ts";
 
 describe("bodyDaysContext", () => {
-  it("provides default days value of 30", () => {
-    const { result } = renderHook(() => useBodyDays());
-    expect(result.current.days).toBe(30);
+  it("fails explicitly when the provider is missing", () => {
+    expect(() => renderHook(() => useBodyDays())).toThrow(
+      "useBodyDays must be used within BodyDaysContext.Provider",
+    );
   });
 
   it("returns provided context value", () => {

@@ -4,7 +4,7 @@ export type TimeRangeDays = number | null;
 
 const persistedTimeRangePreferenceSchema = z.union([
   z.literal("all"),
-  z.string().transform(Number).pipe(z.number().int().positive()),
+  z.enum(["7", "14", "30", "90", "180", "365"]).transform(Number),
 ]);
 
 export const TIME_RANGE_POLICIES = {

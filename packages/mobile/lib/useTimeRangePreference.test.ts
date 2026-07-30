@@ -23,9 +23,27 @@ describe("useTimeRangePreference", () => {
     const { result } = renderHook(() => useTimeRangePreference("training"));
 
     expect(result.current.days).toBe(90);
+    expect(result.current.isHydrated).toBe(false);
     expect(result.current.description).toBe(
       "Recommended default: 90 days balances recent training changes with enough history.",
     );
+  });
+
+  it("exposes the restored range only after storage hydration settles", async () => {
+    let resolveStorage: ((value: string | null) => void) | undefined;
+    vi.mocked(AsyncStorage.getItem).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStorage = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useTimeRangePreference("training"));
+
+    expect(result.current).toMatchObject({ days: 90, isHydrated: false });
+
+    act(() => resolveStorage?.("30"));
+
+    await waitFor(() => expect(result.current).toMatchObject({ days: 30, isHydrated: true }));
   });
 
   it("restores and persists one selection across related screens", async () => {
@@ -43,6 +61,14 @@ describe("useTimeRangePreference", () => {
     await waitFor(() => expect(strainScreen.result.current.days).toBe(90));
   });
 
+  it("treats the unsupported mobile all value as corrupt finite-range state", async () => {
+    await AsyncStorage.setItem("dofek.time-range.training", "all");
+    const { result } = renderHook(() => useTimeRangePreference("training"));
+
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    expect(result.current.days).toBe(90);
+  });
+
   it("reports unexpected storage read and write failures", async () => {
     const readError = new Error("storage read failed");
     vi.mocked(AsyncStorage.getItem).mockRejectedValueOnce(readError);
@@ -54,6 +80,7 @@ describe("useTimeRangePreference", () => {
         domain: "sleep",
       }),
     );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
     expect(result.current.days).toBe(30);
 
     const writeError = new Error("storage write failed");
