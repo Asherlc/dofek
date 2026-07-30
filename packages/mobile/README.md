@@ -125,6 +125,23 @@ Expo's local production-build guide is the upstream reference for using
 Release configuration locally:
 <https://docs.expo.dev/guides/local-app-production/>.
 
+### Physical-device release gate
+
+The signed Simulator audit validates production-like UI and software-only
+flows, but it does not exercise Dofek's physical-device acceptance scenarios.
+Apple explicitly requires a device for
+[HealthKit observer background delivery](https://developer.apple.com/documentation/healthkit/executing-observer-queries)
+and a physical iPhone and Watch for its
+[Watch Connectivity transfer sample](https://developer.apple.com/documentation/watchconnectivity/transferring-data-with-watch-connectivity);
+the remaining matrix exercises the real hardware boundaries documented by
+[Core Bluetooth](https://developer.apple.com/documentation/corebluetooth),
+[Core Motion](https://developer.apple.com/documentation/coremotion), and
+[AVFoundation camera authorization](https://developer.apple.com/documentation/avfoundation/requesting-authorization-to-capture-and-save-media).
+Before App Store submission or production approval, run the
+[iOS physical-device release audit](../../docs/ios-physical-device-release-audit.md)
+against the exact TestFlight build using the dedicated synthetic-only account
+and hardware described there.
+
 ## Dependency pins
 
 - `@react-native-async-storage/async-storage@2.2.0` — stay on 2.2.x for Expo SDK 57. AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see [expo/expo#43757](https://github.com/expo/expo/issues/43757).
@@ -137,6 +154,26 @@ Release configuration locally:
 ## Mobile Telemetry
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
+
+Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
+native `App Start` span. The lifecycle attributes time to the Expo
+Updates launch, JavaScript bootstrap, authentication restore, splash dismissal,
+and deferred native-service bootstrap. It also emits the same phase durations
+as structured `app-startup` logs for local Release audits and OTLP correlation.
+Call `Sentry.appLoaded()` only after the splash is dismissed so the native app
+start measurement ends at the first interactive screen, as described by
+[Sentry's React Native custom instrumentation guidance](https://docs.sentry.io/platforms/react-native/tracing/instrumentation/custom-instrumentation/).
+The native OTA duration comes from
+[`Updates.launchDuration`](https://docs.expo.dev/versions/latest/sdk/updates/#updateslaunchduration).
+
+The 2026-07-29 signed Release audit kept the production `ON_LOAD` and 5,000 ms
+fallback policy. Three force-stop launches reached the interactive login screen
+in 713, 968, and 660 ms; a clean reinstall took 864 ms. OTA launch was the
+largest phase at 632–942 ms, while JavaScript, authentication, and splash
+dismissal were each at most 11 ms. Because no controlled launch approached the
+configured fallback, the audit made no launch-policy change. See the
+[incident baseline](../../docs/production-incident-baseline.md#2026-07-29-ios-cold-start-delay-could-not-be-reproduced-with-phase-telemetry)
+for the evidence and remaining production-observability gap.
 
 To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 

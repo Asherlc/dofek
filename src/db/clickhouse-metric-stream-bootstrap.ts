@@ -416,7 +416,8 @@ SELECT
   power_variability_per_activity.normalized_power AS normalized_power,
   power_variability_per_activity.smoothed_avg_power AS smoothed_avg_power,
   climbing_per_activity.climbing_elevation_gain_m AS climbing_elevation_gain_m,
-  climbing_per_activity.climbing_seconds AS climbing_seconds
+  climbing_per_activity.climbing_seconds AS climbing_seconds,
+  now64(9) AS refreshed_at
 FROM activity_bounds
 LEFT JOIN channel_aggs
   ON channel_aggs.activity_id = activity_bounds.activity_id

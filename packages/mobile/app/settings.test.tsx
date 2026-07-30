@@ -408,7 +408,7 @@ describe("SettingsScreen data sources", () => {
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Data Sources")).toBeTruthy();
+    expect(screen.getAllByText("Data Sources")).toHaveLength(1);
     expect(screen.getByText("2 connected")).toBeTruthy();
   });
 

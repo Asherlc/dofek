@@ -7,6 +7,7 @@
     "./daily-metrics": "./src/daily-metrics.ts",
     "./food-entry-nutrition": "./src/food-entry-nutrition.ts",
     "./meal": "./src/meal.ts",
+    "./nutrition-data-quality": "./src/nutrition-data-quality.ts",
     "./nutrient-safety": "./src/nutrient-safety.ts",
     "./nutrients": "./src/nutrients.ts",
     "./open-food-facts": "./src/open-food-facts.ts",

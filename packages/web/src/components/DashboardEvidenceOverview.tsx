@@ -253,7 +253,7 @@ export function DashboardEvidenceOverview({
         </EvidenceCard>
       </div>
 
-      <div className="mt-3 rounded-lg border border-border bg-white/62 p-4">
+      <div className="mt-3 rounded-lg border border-border bg-surface p-4">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-muted">
           Health monitor
         </p>
@@ -265,7 +265,7 @@ export function DashboardEvidenceOverview({
 
 function EvidenceCard({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
   return (
-    <div className="min-h-[15rem] rounded-lg border border-border bg-white/62 p-5">
+    <div className="min-h-[15rem] rounded-lg border border-border bg-surface p-5">
       <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-muted">{eyebrow}</p>
       {children}
     </div>

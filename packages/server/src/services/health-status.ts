@@ -1,5 +1,6 @@
 import { mean, sampleStandardDeviation } from "simple-statistics";
 import type { z } from "zod";
+import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   healthMetricIntentSchema,
   healthMetricKeySchema,
@@ -11,6 +12,8 @@ export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSche
 
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
 export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
+
+export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v1";
 
 interface HealthStatusSummaryInput {
   metric: HealthStatusMetric["metric"];
@@ -42,6 +45,7 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     statusToken: "insufficient_data",
     statusColor: "muted",
     statusLabel: "Not enough data",
+    evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
     explanation: "Not enough varied data yet to compare this value with your usual range.",
   };
 }
@@ -69,6 +73,12 @@ function movingAsIntendedExplanation(
     return `${input.label} is ${direction} your baseline, in line with your weight goal.`;
   }
   return `${input.label} is ${direction} your baseline, in the supported direction for this metric.`;
+}
+
+function movingAsIntendedRule(direction: "above" | "below"): string {
+  return direction === "above"
+    ? "Above your baseline, where higher values support this metric"
+    : "Below your baseline, where lower values support this metric";
 }
 
 function deviationExplanation(
@@ -105,6 +115,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
       statusToken: "moving_as_intended",
       statusColor: "positive",
       statusLabel: "Moving as intended",
+      evaluationRule: movingAsIntendedRule(direction),
       explanation: movingAsIntendedExplanation(input, direction),
     };
   }
@@ -118,6 +129,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
       statusToken: "near_baseline",
       statusColor: "positive",
       statusLabel: "Near baseline",
+      evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
       explanation: `${input.label} is close to your usual range.`,
     };
   }
@@ -130,6 +142,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
       statusToken: "near_baseline",
       statusColor: "positive",
       statusLabel: "Near baseline",
+      evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
       explanation: `${input.label} is close to your usual range.`,
     };
   }
@@ -142,6 +155,9 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
     statusToken: farFromBaseline ? "far_from_baseline" : "notable_deviation",
     statusColor: farFromBaseline ? "danger" : "warning",
     statusLabel: `${farFromBaseline ? "Far" : "Notably"} ${direction} baseline`,
+    evaluationRule: farFromBaseline
+      ? "Well outside your usual range: at least 2 standard deviations from baseline"
+      : "Outside your usual range: 1 to less than 2 standard deviations from baseline",
     explanation: deviationExplanation(input.label, direction, farFromBaseline),
   };
 }
@@ -197,24 +213,32 @@ export function buildWeightHealthStatus(
   });
 }
 
-export function buildDailyMetricHealthStatuses(trends: TrendsRow): HealthStatusMetric[] {
+const recoveryMetricIntents: Record<BaselineRelativeMetric["metric"], HealthMetricIntent> = {
+  hrv: "higher",
+  resting_heart_rate: "lower",
+  respiratory_rate: "lower",
+  sleep_efficiency: "higher",
+};
+
+export function buildHealthStatusFromBaselineMetric(
+  metric: BaselineRelativeMetric,
+): HealthStatusMetric {
+  return buildHealthStatusFromSummary({
+    metric: metric.metric,
+    label: metric.label,
+    value: metric.value,
+    baseline: metric.baseline.mean,
+    sampleDeviation: metric.baseline.standardDeviation,
+    intent: recoveryMetricIntents[metric.metric],
+  });
+}
+
+export function buildDailyMetricHealthStatuses(
+  trends: TrendsRow,
+  baselineRelative: BaselineRelativeMetric[],
+): HealthStatusMetric[] {
   return [
-    buildHealthStatusFromSummary({
-      metric: "hrv",
-      label: "Heart Rate Variability (HRV)",
-      value: trends.latest_hrv,
-      baseline: trends.avg_hrv,
-      sampleDeviation: trends.stddev_hrv,
-      intent: "higher",
-    }),
-    buildHealthStatusFromSummary({
-      metric: "resting_heart_rate",
-      label: "Resting Heart Rate",
-      value: trends.latest_resting_hr,
-      baseline: trends.avg_resting_hr,
-      sampleDeviation: trends.stddev_resting_hr,
-      intent: "lower",
-    }),
+    ...baselineRelative.map(buildHealthStatusFromBaselineMetric),
     buildHealthStatusFromSummary({
       metric: "spo2",
       label: "Blood Oxygen Saturation (SpO2)",

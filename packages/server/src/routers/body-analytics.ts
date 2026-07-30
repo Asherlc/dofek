@@ -10,6 +10,7 @@ import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
+  HEALTH_STATUS_CACHE_KEY_VERSION,
   healthStatusMetricSchema,
 } from "../services/health-status.ts";
 import {
@@ -153,6 +154,7 @@ export const bodyAnalyticsRouter = router({
       };
     },
     {
+      keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
       outputSchema: z.object({
         smoothedWeight: z.array(smoothedWeightOutputSchema),
         prediction: weightPredictionOutputSchema.nullable(),

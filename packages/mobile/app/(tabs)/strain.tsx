@@ -335,10 +335,10 @@ export default function StrainScreen() {
                       {
                         backgroundColor:
                           strainTarget.zone === "Push"
-                            ? `${colors.positive}20`
+                            ? colors.positiveSubtle
                             : strainTarget.zone === "Recovery"
-                              ? `${colors.danger}20`
-                              : `${colors.warning}20`,
+                              ? colors.dangerSubtle
+                              : colors.warningSubtle,
                         color:
                           strainTarget.zone === "Push"
                             ? colors.positive
@@ -429,7 +429,18 @@ export default function StrainScreen() {
           )}
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Climbing</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.cardTitle}>Climbing</Text>
+              <TouchableOpacity
+                accessibilityLabel="Log finger loading or climbing attempts"
+                accessibilityRole="button"
+                activeOpacity={0.7}
+                onPress={() => router.push("/climbing-log")}
+                style={styles.sectionLinkButton}
+              >
+                <Text style={styles.sectionLinkButtonText}>Log session</Text>
+              </TouchableOpacity>
+            </View>
             {shouldShowClimbingError ? (
               <Text style={styles.errorText}>
                 {climbingParsed.error?.message ??

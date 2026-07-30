@@ -1,12 +1,22 @@
+import {
+  localTimeContextUnknown,
+  localTimeSourceSchema,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
+import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
+import {
+  type ActivityListSourceDetail,
+  buildActivityListSource,
+} from "../models/activity-source-decision.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -22,10 +32,17 @@ export interface ActivityLocation {
   elevationGainM: number | null;
 }
 
-export interface ActivityStat {
-  label: string;
-  value: string;
-}
+export type ActivityStat =
+  | {
+      status: "available";
+      label: string;
+      value: string;
+    }
+  | {
+      status: "unavailable";
+      label: string;
+      reason: string;
+    };
 
 export interface CalendarActivityEntry {
   id: string;
@@ -33,7 +50,10 @@ export interface CalendarActivityEntry {
   activityType: string;
   startedAt: string;
   endedAt: string | null;
+  localTimeContext: RecordLocalTimeContext;
   durationMin: number;
+  source: ActivityListSourceDetail;
+  lastProcessedAt: string | null;
   location: ActivityLocation | null;
   tss: number | null;
   stats: ActivityStat[];
@@ -66,6 +86,12 @@ const activityRowSchema = z.object({
   activity_type: z.string(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.coerce.number().nullable(),
+  end_utc_offset_minutes: z.coerce.number().nullable(),
+  local_time_source: localTimeSourceSchema,
   duration_min: z.coerce.number(),
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
@@ -75,6 +101,7 @@ const activityRowSchema = z.object({
   centroid_lat: z.coerce.number().nullable(),
   centroid_lng: z.coerce.number().nullable(),
   local_date: dateStringSchema,
+  last_processed_at: timestampStringSchema.nullable(),
   absent_source_external_ids: z
     .array(z.record(z.string(), z.string().nullable()))
     .optional()
@@ -114,6 +141,27 @@ const activitySummaryMetricsRowSchema = z.object({
   centroid_lat: z.coerce.number().nullable(),
   centroid_lng: z.coerce.number().nullable(),
 });
+
+function authoritativeLocalTimeContext(
+  row: Pick<
+    z.infer<typeof activityRowSchema>,
+    "timezone" | "start_utc_offset_minutes" | "end_utc_offset_minutes" | "local_time_source"
+  >,
+): RecordLocalTimeContext {
+  if (row.local_time_source === "unknown") {
+    return localTimeContextUnknown();
+  }
+  const timezone =
+    row.local_time_source === "provider_timezone" || row.local_time_source === "device_timezone"
+      ? row.timezone
+      : null;
+  return {
+    timezone,
+    startUtcOffsetMinutes: row.start_utc_offset_minutes,
+    endUtcOffsetMinutes: row.end_utc_offset_minutes,
+    source: row.local_time_source,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -166,6 +214,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.activity_type AS activity_type,
             toString(activity.started_at) AS started_at,
             toString(activity.ended_at) AS ended_at,
+            activity.provider_id AS provider_id,
+            activity.source_name AS source_name,
+            activity.timezone AS timezone,
+            activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+            activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+            activity.local_time_source AS local_time_source,
             dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
@@ -176,6 +230,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.centroid_lng AS centroid_lng,
             activity.absent_source_external_ids AS absent_source_external_ids,
             activity.source_external_ids AS source_external_ids,
+            toString(
+              greatest(
+                activity.refreshed_at,
+                coalesce(asum.refreshed_at, activity.refreshed_at)
+              )
+            ) AS last_processed_at,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
@@ -222,7 +282,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
-      const tss = computeActivityTss({
+      const trainingStress = computeActivityTrainingStress({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
         avgHr: row.avg_hr,
@@ -232,11 +292,13 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         ftp: baseline.ftp,
         calculator,
       });
+      const tss = trainingStress.status === "available" ? trainingStress.score : null;
 
       const sourceAttribution = ActivitySourceAttribution.fromClickHouseRow(
         row.source_external_ids,
         row.absent_source_external_ids,
       );
+      const sourceLinks = sourceAttribution.toSourceLinks(getProvider);
 
       const entry: CalendarActivityEntry = {
         id: row.id,
@@ -244,7 +306,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityType: row.activity_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
+        localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
+        source: buildActivityListSource(row.provider_id, row.source_name, sourceLinks, getProvider),
+        lastProcessedAt: row.last_processed_at,
         partialAbsentSources: sourceAttribution.hasPartialAbsence
           ? sourceAttribution.partialAbsentSources()
           : undefined,
@@ -261,7 +326,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss),
+        stats: formatActivityStats(trainingStress),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];
@@ -291,6 +356,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           activity.activity_type AS activity_type,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
+          activity.provider_id AS provider_id,
+          activity.source_name AS source_name,
+          activity.timezone AS timezone,
+          activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+          activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+          activity.local_time_source AS local_time_source,
           dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
           NULL AS avg_hr,
           NULL AS max_hr,
@@ -299,8 +370,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           NULL AS elevation_gain_m,
           NULL AS centroid_lat,
           NULL AS centroid_lng,
+          NULL AS last_processed_at,
           toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
-          activity.provider_id AS provider_id,
           toString(activity.provider_absent_at) AS provider_absent_at
         FROM postgres_fitness.activity AS activity FINAL
         WHERE activity.user_id = {userId:UUID}
@@ -355,7 +426,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of enrichedRows) {
-      const tss = computeActivityTss({
+      const trainingStress = computeActivityTrainingStress({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
         avgHr: row.avg_hr,
@@ -365,6 +436,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         ftp: baseline.ftp,
         calculator,
       });
+      const tss = trainingStress.status === "available" ? trainingStress.score : null;
 
       const entry: CalendarActivityEntry = {
         id: row.id,
@@ -372,7 +444,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityType: row.activity_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
+        localTimeContext: authoritativeLocalTimeContext(row),
         durationMin: Math.round(row.duration_min * 10) / 10,
+        source: buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
+        lastProcessedAt: row.last_processed_at,
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -386,7 +461,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss),
+        stats: formatActivityStats(trainingStress),
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
@@ -597,10 +672,28 @@ interface TssInput {
   calculator: TrainingStressCalculator;
 }
 
-function computeActivityTss(input: TssInput): number | null {
-  if (input.durationMin <= 0) return null;
+type ActivityTrainingStress =
+  | {
+      status: "available";
+      score: number;
+    }
+  | {
+      status: "unavailable";
+      reason: string;
+    };
+
+function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
+  if (input.durationMin <= 0) {
+    return {
+      status: "unavailable",
+      reason: "Record an activity duration greater than zero.",
+    };
+  }
   if (input.avgPower != null && input.avgPower > 0 && input.ftp != null && input.ftp > 0) {
-    return TrainingStressCalculator.computePowerTss(input.avgPower, input.ftp, input.durationMin);
+    return {
+      status: "available",
+      score: TrainingStressCalculator.computePowerTss(input.avgPower, input.ftp, input.durationMin),
+    };
   }
   const effectiveMaxHr = input.baselineMaxHr ?? input.maxHr;
   const effectiveRestingHr = input.baselineRestingHr ?? 60;
@@ -610,22 +703,74 @@ function computeActivityTss(input: TssInput): number | null {
     effectiveMaxHr != null &&
     effectiveMaxHr > effectiveRestingHr
   ) {
-    return input.calculator.computeHrTss(
-      input.durationMin,
-      input.avgHr,
-      effectiveMaxHr,
-      effectiveRestingHr,
-    );
+    return {
+      status: "available",
+      score: input.calculator.computeHrTss(
+        input.durationMin,
+        input.avgHr,
+        effectiveMaxHr,
+        effectiveRestingHr,
+      ),
+    };
   }
-  return null;
+  return {
+    status: "unavailable",
+    reason: formatTrainingStressUnavailableReason(input, effectiveMaxHr, effectiveRestingHr),
+  };
 }
 
-function formatActivityStats(tss: number | null): ActivityStat[] {
-  const roundedTss = tss != null ? Math.round(tss * 10) / 10 : null;
+function formatTrainingStressUnavailableReason(
+  input: TssInput,
+  effectiveMaxHr: number | null,
+  effectiveRestingHr: number,
+): string {
+  const powerActions: string[] = [];
+  if (input.avgPower == null || input.avgPower <= 0) {
+    powerActions.push("record average power");
+  }
+  if (input.ftp == null || input.ftp <= 0) {
+    powerActions.push("set functional threshold power");
+  }
+
+  const heartRateActions: string[] = [];
+  if (input.avgHr == null || input.avgHr <= 0) {
+    heartRateActions.push("record average heart rate");
+  }
+  if (effectiveMaxHr == null || effectiveMaxHr <= 0) {
+    heartRateActions.push("set maximum heart rate");
+  } else if (effectiveMaxHr <= effectiveRestingHr) {
+    heartRateActions.push("set maximum heart rate above resting heart rate");
+  }
+
+  const powerAction = joinActions(powerActions);
+  const heartRateAction = joinActions(heartRateActions);
+  return `${capitalize(powerAction)}, or ${heartRateAction}.`;
+}
+
+function joinActions(actions: string[]): string {
+  return actions.join(" and ");
+}
+
+function capitalize(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
+  if (trainingStress.status === "unavailable") {
+    return [
+      {
+        status: "unavailable",
+        label: "Training Stress Score",
+        reason: trainingStress.reason,
+      },
+    ];
+  }
+  const roundedTss = Math.round(trainingStress.score * 10) / 10;
   return [
     {
+      status: "available",
       label: "Training Stress Score",
-      value: roundedTss != null ? formatStatNumber(roundedTss) : "—",
+      value: formatStatNumber(roundedTss),
     },
   ];
 }

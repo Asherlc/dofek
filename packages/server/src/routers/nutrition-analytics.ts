@@ -1,6 +1,7 @@
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import {
   type MicronutrientSafetyReview,
+  type NutritionAnalyticsDataQuality,
   NutritionAnalyticsRepository,
   type SupplementMedicationReview,
 } from "../repositories/nutrition-analytics-repository.ts";
@@ -21,6 +22,7 @@ export type MicronutrientSafetyReviewRow = ReturnType<MicronutrientSafetyReview[
 
 export interface MicronutrientSafetyReviewResult {
   nutrients: MicronutrientSafetyReviewRow[];
+  dataQuality: NutritionAnalyticsDataQuality;
   professionalReview: SupplementMedicationReview;
 }
 
@@ -77,12 +79,14 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const [nutrients, professionalReview] = await Promise.all([
+      const [nutrients, dataQuality, professionalReview] = await Promise.all([
         repo.getMicronutrientSafetyReview(range.days),
+        repo.getMicronutrientDataQuality(range.days),
         repo.getSupplementMedicationReview(),
       ]);
       return {
         nutrients: nutrients.map((nutrient) => nutrient.toDetail()),
+        dataQuality,
         professionalReview,
       };
     },

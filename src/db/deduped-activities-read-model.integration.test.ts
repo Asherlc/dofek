@@ -24,6 +24,13 @@ interface ActivityTypeRow {
   providerId: string;
 }
 
+interface LocalTimeContextRow {
+  endUtcOffsetMinutes: number | null;
+  localTimeSource: string;
+  startUtcOffsetMinutes: number | null;
+  timezone: string | null;
+}
+
 describe("deduped_activities read model", () => {
   let client: ClickHouseClient | undefined;
   const targetSchema = `analytics_deduped_activities_test_${randomBytes(6).toString("hex")}`;
@@ -66,6 +73,29 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     const rows = await result.json<SourceLinkRow>();
 
     expect(rows).toEqual([{ providerId: "peloton", sourceLinkCount: 1, subsource: "" }]);
+
+    const localTimeResult = await activeClient.query({
+      query: `SELECT
+          timezone,
+          start_utc_offset_minutes AS startUtcOffsetMinutes,
+          end_utc_offset_minutes AS endUtcOffsetMinutes,
+          local_time_source AS localTimeSource
+        FROM ${targetSchema}.deduped_activities FINAL
+        WHERE activity_id = {activityId:UUID}
+          AND is_deleted = 0`,
+      query_params: { activityId },
+      format: "JSONEachRow",
+    });
+    const localTimeRows = await localTimeResult.json<LocalTimeContextRow>();
+
+    expect(localTimeRows).toEqual([
+      {
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_timezone",
+        startUtcOffsetMinutes: -480,
+        timezone: "America/Los_Angeles",
+      },
+    ]);
   }, 180_000);
 
   it("uses a linked rock climbing classification instead of the canonical provider's cardio type", async () => {
@@ -181,6 +211,9 @@ async function seedSpecificActivityTypeFixture(
   CAST(NULL, 'Nullable(String)'),
   CAST(NULL, 'Nullable(String)'),
   'America/Los_Angeles',
+  -480,
+  -420,
+  'provider_timezone',
   CAST(NULL, 'Nullable(String)'),
   toDateTime64('2026-07-05 17:01:00', 9, 'UTC'),
   20,
@@ -218,6 +251,9 @@ function createActivitySourceRecordsTableSql(targetSchema: string): string {
   name Nullable(String),
   notes Nullable(String),
   timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String),
   raw Nullable(String),
   source_synced_at Nullable(DateTime64(9, 'UTC')),
   priority Nullable(Int32),
@@ -269,6 +305,9 @@ function insertActivitySourceRecordSql(targetSchema: string, activityType = "cyc
   'Power Zone Ride',
   CAST(NULL, 'Nullable(String)'),
   'America/Los_Angeles',
+  -480,
+  -420,
+  'provider_timezone',
   '{"classTitle":"Power Zone Ride"}',
   toDateTime64('2026-07-05 17:01:00', 9, 'UTC'),
   10,

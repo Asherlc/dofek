@@ -111,6 +111,8 @@ function makeConflictCaller() {
         source_labels: ["cronometer", "fatsecret"],
         contributing_source_labels: [],
         excluded_source_labels: ["cronometer", "fatsecret"],
+        contribution_grain: null,
+        contribution_source_label: null,
       },
     ]);
   return createCaller({
@@ -176,6 +178,8 @@ describe("foodRouter", () => {
             source_labels: ["apple-health", "cronometer"],
             contributing_source_labels: ["cronometer"],
             excluded_source_labels: ["apple-health"],
+            contribution_grain: "itemized",
+            contribution_source_label: "cronometer",
           },
         ]);
       const caller = createCaller({
@@ -204,9 +208,9 @@ describe("foodRouter", () => {
             progressPercentage: 62.5,
           },
           macros: {
-            protein: { grams: 55, calories: 220, percentage: 22 },
-            carbs: { grams: 105, calories: 420, percentage: 42 },
-            fat: { grams: 40, calories: 360, percentage: 36 },
+            protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+            carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+            fat: { grams: 40, calories: 360, energySharePercentage: 36 },
           },
         },
       });
@@ -261,6 +265,8 @@ describe("foodRouter", () => {
             source_labels: [],
             contributing_source_labels: [],
             excluded_source_labels: [],
+            contribution_grain: null,
+            contribution_source_label: null,
           },
         ]);
       const caller = createCaller({
@@ -307,6 +313,8 @@ describe("foodRouter", () => {
             source_labels: ["Apple Health"],
             contributing_source_labels: ["Apple Health"],
             excluded_source_labels: [],
+            contribution_grain: "daily_aggregate",
+            contribution_source_label: "Apple Health",
           },
         ]);
       const caller = createCaller({
@@ -315,9 +323,13 @@ describe("foodRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.byDateV2({ date: "2024-01-15" });
+      const result = await caller.byDateV2({ date: "2024-01-15" });
 
       expect(infoSpy).not.toHaveBeenCalled();
+      expect(result.resolution).toMatchObject({
+        contributionGrain: "daily_aggregate",
+        contributionLabel: "Apple Health daily total",
+      });
     });
   });
 

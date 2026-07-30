@@ -281,6 +281,12 @@ const baseCyclingActivity = {
   activityType: "cycling",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone",
+  },
   name: "Morning Ride",
   notes: null,
   providerId: "wahoo",
@@ -602,10 +608,13 @@ describe("ActivityDetailScreen", () => {
           grade: "V4",
           sent: true,
           attemptCount: 7,
+          attempts: [],
           ascentType: "Redpoint",
+          holdType: null,
           routeName: "Blue Circuit",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          wallAngleDegrees: null,
         },
         {
           id: "climb-project",
@@ -614,10 +623,20 @@ describe("ActivityDetailScreen", () => {
           grade: "V5",
           sent: false,
           attemptCount: 1,
+          attempts: [
+            {
+              attemptIndex: 1,
+              failureReason: "technique",
+              notes: null,
+              outcome: "failed",
+            },
+          ],
           ascentType: null,
+          holdType: "crimp",
           routeName: "Project",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          wallAngleDegrees: 35,
         },
       ],
       isLoading: false,
@@ -634,6 +653,8 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Sent in 7 attempts")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Attempted 1 time")).toBeTruthy();
+    expect(screen.getByText("35° · Crimp")).toBeTruthy();
+    expect(screen.getByText("1: Technique")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
   });
 

@@ -12,12 +12,42 @@ const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
+function baselineMetric(
+  metric: "hrv" | "resting_heart_rate" | "respiratory_rate" | "sleep_efficiency",
+  value: number,
+) {
+  return {
+    metric,
+    label: metric,
+    value,
+    baseline: {
+      windowDays: 30,
+      mean: 50,
+      standardDeviation: 5,
+      zScore: 1,
+      sampleCount: 24,
+      coverage: 0.8,
+    },
+    comparison: {
+      recentDays: 7,
+      baselineDays: 28,
+      recentMean: 52,
+      baselineMean: 50,
+      delta: 2,
+      direction: "increasing",
+    },
+  };
+}
+
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       recovery: {
         useQuery: () => ({
-          data: mockRecoveryData == null ? undefined : { healthStatus: [], ...mockRecoveryData },
+          data:
+            mockRecoveryData == null
+              ? undefined
+              : { baselineRelative: [], healthStatus: [], ...mockRecoveryData },
           isLoading: mockRecoveryLoading,
           isFetching: mockRecoveryFetching,
         }),
@@ -152,6 +182,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
       ],
       hrvBaseline: [],
+      baselineRelative: [baselineMetric("hrv", 44)],
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
@@ -175,6 +206,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
       ],
       hrvBaseline: [],
+      baselineRelative: [baselineMetric("hrv", 44)],
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: 24, latest_skin_temp: null },
@@ -208,6 +240,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           resting_hr_mean_7d: 55,
         },
       ],
+      baselineRelative: [baselineMetric("resting_heart_rate", 54)],
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
@@ -221,13 +254,43 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
     expect(screen.getByText("54")).toBeTruthy();
-    expect(screen.getByText("7-day baseline: 55 bpm")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "30d baseline 50.0 bpm ± 5.0 bpm · 1.0 SD above baseline · 7d vs prior 28d +2.0 bpm · 24/30 baseline days",
+      ),
+    ).toBeTruthy();
 
     const restingHeartRateSparklineCall = sparkLinePropsCalls.find((sparkLineProps) => {
       const data = sparkLineProps.data;
       return Array.isArray(data) && data[0] === 56 && data[1] === 54;
     });
     expect(restingHeartRateSparklineCall).toBeDefined();
+  });
+
+  it("displays respiratory rate and sleep efficiency with canonical baseline context", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      baselineRelative: [
+        baselineMetric("respiratory_rate", 14),
+        baselineMetric("sleep_efficiency", 90),
+      ],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
+    expect(screen.getByText("14.0")).toBeTruthy();
+    expect(screen.getByText("Sleep Efficiency")).toBeTruthy();
+    expect(screen.getByText("90.0")).toBeTruthy();
+    expect(screen.getAllByText(/24\/30 baseline days/)).toHaveLength(2);
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {

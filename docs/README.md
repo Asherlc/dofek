@@ -28,6 +28,9 @@ the exact section.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
   experiments, goals, and trust roadmap.
 - [personal-experiments.md](personal-experiments.md): N-of-1 experiment setup and schedule slice.
+- [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile
+  Storybook fixtures for empty, partial, conflicting-source, stale-provider,
+  processing, and error review states.
 
 ## Architecture And Product Flows
 
@@ -35,6 +38,7 @@ the exact section.
 |-----|----------------|
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
+| [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
 | [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |
 | [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
 | [exercise-metadata.md](exercise-metadata.md) | Strength exercise metadata source, override format, and upstream refresh workflow. |
@@ -97,8 +101,10 @@ Cross-provider reverse-engineering references:
 | [provider-sync-degradation-runbook.md](provider-sync-degradation-runbook.md) | Querying degraded provider sync rows and correlating pagination fingerprints with metrics and structured logs. |
 | [staging.md](staging.md) | Disabled staging environment notes and re-enable requirements. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
+| [ios-physical-device-release-audit.md](ios-physical-device-release-audit.md) | TestFlight release gate for HealthKit, BLE, motion, Watch, camera, and background behavior on synthetic-only physical hardware. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
 | [database-backup-recovery-runbook.md](database-backup-recovery-runbook.md) | Databasus service health, R2 freshness monitoring, and isolated restore verification. |
+| [record-local-time.md](record-local-time.md) | Dry-run and execute the bounded historical activity local-time context backfill. |
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |

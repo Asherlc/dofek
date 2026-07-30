@@ -36,6 +36,7 @@ interface ActivityListProps {
   additionalColumns?: Array<ActivityTableColumn<Activity>>;
   loading?: boolean;
   error?: string;
+  emptyMessage?: string;
   totalCount?: number;
   page?: number;
   pageSize?: number;
@@ -64,6 +65,7 @@ export function ActivityList({
   additionalColumns = [],
   loading,
   error,
+  emptyMessage = "No recent activities",
   totalCount,
   page,
   pageSize,
@@ -86,7 +88,7 @@ export function ActivityList({
   }
 
   if (activities.length === 0) {
-    return <div className="text-subtle text-sm py-4">No recent activities</div>;
+    return <div className="text-subtle text-sm py-4">{emptyMessage}</div>;
   }
 
   const currentPage = page ?? 0;

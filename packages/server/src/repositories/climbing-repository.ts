@@ -100,6 +100,15 @@ export class ClimbingSessionSummary {
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(["v_scale", "yds"]);
 const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
+const attemptOutcomeSchema = z.enum(["sent", "failed"]);
+const failureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
+const holdTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
+const climbingAttemptDetailSchema = z.object({
+  attemptIndex: z.coerce.number().int().positive(),
+  failureReason: failureReasonSchema.nullable(),
+  notes: z.string().nullable(),
+  outcome: attemptOutcomeSchema,
+});
 
 const activityEntryRowSchema = z.object({
   id: z.string(),
@@ -108,10 +117,13 @@ const activityEntryRowSchema = z.object({
   grade: z.string(),
   sent: z.boolean(),
   attempt_count: z.coerce.number().int().positive(),
+  attempts: z.array(climbingAttemptDetailSchema),
   ascent_type: ascentTypeSchema.nullable(),
+  hold_type: holdTypeSchema.nullable(),
   route_name: z.string().nullable(),
   location_name: z.string().nullable(),
   source_name: z.string(),
+  wall_angle_degrees: z.coerce.number().nullable(),
 });
 type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
 
@@ -122,10 +134,13 @@ export interface ClimbingActivityEntryRow {
   grade: string;
   sent: boolean;
   attemptCount: number;
+  attempts: Array<z.infer<typeof climbingAttemptDetailSchema>>;
   ascentType: ClimbingActivityEntryDatabaseRow["ascent_type"];
+  holdType: z.infer<typeof holdTypeSchema> | null;
   routeName: string | null;
   locationName: string | null;
   sourceName: string;
+  wallAngleDegrees: number | null;
 }
 
 export class ClimbingActivityEntry {
@@ -220,8 +235,18 @@ export class ClimbingRepository extends BaseRepository {
               ) AS grade_rank
             FROM fitness.v_activity a
             JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+            LEFT JOIN LATERAL (
+              SELECT
+                COUNT(*)::int AS attempt_count,
+                BOOL_OR(attempt.outcome = 'sent') AS sent
+              FROM fitness.climbing_attempt AS attempt
+              WHERE attempt.climbing_entry_id = ce.id
+            ) AS detail ON true
             WHERE ${this.#activityWindowPredicate(days)}
-              AND ce.sent = true
+              AND CASE
+                WHEN detail.attempt_count > 0 THEN detail.sent
+                ELSE ce.sent
+              END = true
               AND ${climbingGradeSortSql} IS NOT NULL
           )
           SELECT session_date, climb_type, grade_system, grade, grade_sort_value
@@ -251,10 +276,27 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade,
             ${climbingGradeSortSql} AS grade_sort_value,
-            SUM(ce.attempt_count) AS attempts,
-            COUNT(*) FILTER (WHERE ce.sent)::int AS sends
+            SUM(
+              CASE
+                WHEN detail.attempt_count > 0 THEN detail.attempt_count
+                ELSE ce.attempt_count
+              END
+            ) AS attempts,
+            COUNT(*) FILTER (
+              WHERE CASE
+                WHEN detail.attempt_count > 0 THEN detail.sent
+                ELSE ce.sent
+              END
+            )::int AS sends
           FROM fitness.v_activity a
           JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+          LEFT JOIN LATERAL (
+            SELECT
+              COUNT(*)::int AS attempt_count,
+              BOOL_OR(attempt.outcome = 'sent') AS sent
+            FROM fitness.climbing_attempt AS attempt
+            WHERE attempt.climbing_entry_id = ce.id
+          ) AS detail ON true
           WHERE ${this.#activityWindowPredicate(days)}
             AND ${climbingGradeSortSql} IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value
@@ -284,13 +326,26 @@ export class ClimbingRepository extends BaseRepository {
               (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
               COALESCE(a.name, 'Climbing') AS name,
               ce.location_name,
-              ce.attempt_count,
-              ce.sent,
+              CASE
+                WHEN detail.attempt_count > 0 THEN detail.attempt_count
+                ELSE ce.attempt_count
+              END AS attempt_count,
+              CASE
+                WHEN detail.attempt_count > 0 THEN detail.sent
+                ELSE ce.sent
+              END AS sent,
               ce.climb_type,
               ce.grade,
               ${climbingGradeSortSql} AS grade_sort_value
             FROM fitness.v_activity a
             JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+            LEFT JOIN LATERAL (
+              SELECT
+                COUNT(*)::int AS attempt_count,
+                BOOL_OR(attempt.outcome = 'sent') AS sent
+              FROM fitness.climbing_attempt AS attempt
+              WHERE attempt.climbing_entry_id = ce.id
+            ) AS detail ON true
             WHERE ${this.#activityWindowPredicate(days)}
               AND ${climbingGradeSortSql} IS NOT NULL
           )
@@ -340,14 +395,39 @@ export class ClimbingRepository extends BaseRepository {
             ce.climb_type,
             ce.grade_system,
             ce.grade,
-            ce.sent,
-            ce.attempt_count,
+            CASE
+              WHEN detail.attempt_count > 0 THEN detail.sent
+              ELSE ce.sent
+            END AS sent,
+            CASE
+              WHEN detail.attempt_count > 0 THEN detail.attempt_count
+              ELSE ce.attempt_count
+            END AS attempt_count,
+            COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
             ce.raw->>'ascentType' AS ascent_type,
+            ce.hold_type,
             ce.route_name,
             ce.location_name,
-            ce.source_name
+            ce.source_name,
+            ce.wall_angle_degrees
           FROM fitness.v_activity a
           JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+          LEFT JOIN LATERAL (
+            SELECT
+              COUNT(*)::int AS attempt_count,
+              BOOL_OR(attempt.outcome = 'sent') AS sent,
+              jsonb_agg(
+                jsonb_build_object(
+                  'attemptIndex', attempt.attempt_index,
+                  'failureReason', attempt.failure_reason,
+                  'notes', attempt.notes,
+                  'outcome', attempt.outcome
+                )
+                ORDER BY attempt.attempt_index
+              ) AS attempts
+            FROM fitness.climbing_attempt AS attempt
+            WHERE attempt.climbing_entry_id = ce.id
+          ) AS detail ON true
           WHERE a.user_id = ${this.userId}::uuid
             AND ${activityId}::uuid = ANY(a.member_activity_ids)
             ${this.timestampAccessPredicate(sql`a.started_at`)}
@@ -363,10 +443,13 @@ export class ClimbingRepository extends BaseRepository {
           grade: normalizedGrade(row.grade),
           sent: row.sent,
           attemptCount: row.attempt_count,
+          attempts: row.attempts,
           ascentType: row.ascent_type,
+          holdType: row.hold_type,
           routeName: row.route_name,
           locationName: row.location_name,
           sourceName: row.source_name,
+          wallAngleDegrees: row.wall_angle_degrees,
         }),
     );
   }

@@ -148,10 +148,22 @@ function activity(overrides: Record<string, unknown> = {}) {
     activityType: "indoor_cycling",
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
+    localTimeContext: {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
+    },
     durationMin: 60,
+    source: {
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: "2026-03-18T08:05:00.000Z",
     location: null,
     tss: 100,
-    stats: [{ label: "Training Stress Score", value: "100" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }

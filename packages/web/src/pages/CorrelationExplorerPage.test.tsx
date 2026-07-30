@@ -6,7 +6,11 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{
-  correlationData: Record<string, unknown>;
+  correlationData: Record<string, unknown> | undefined;
+  correlationError: Error | null;
+  observationData: Record<string, unknown>;
+  observationPages: Record<string, Record<string, unknown>>;
+  observationInputs: Array<Record<string, unknown>>;
   metricsData:
     | Array<{
         id: string;
@@ -18,6 +22,10 @@ const state = vi.hoisted<{
     | undefined;
 }>(() => ({
   correlationData: {},
+  correlationError: null,
+  observationData: {},
+  observationPages: {},
+  observationInputs: [],
   metricsData: undefined,
 }));
 
@@ -26,11 +34,15 @@ vi.mock("@dofek/format/format", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, className, to }: { children: ReactNode; className?: string; to: string }) => (
-    <a className={className} href={typeof to === "string" ? to : "/experiments"}>
-      {children}
-    </a>
-  ),
+  Link: ({
+    children,
+    to,
+    params,
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: Record<string, string>;
+  }) => <a href={to === "/activity/$id" ? `/activity/${params?.id ?? ""}` : to}>{children}</a>,
 }));
 
 vi.mock("../components/ChartDescriptionTooltip.tsx", () => ({
@@ -49,7 +61,7 @@ vi.mock("../components/PageLayout.tsx", () => ({
 }));
 
 vi.mock("../components/QueryStatePanel.tsx", () => ({
-  QueryStatePanel: () => null,
+  QueryStatePanel: ({ error }: { error?: Error }) => <div>{error?.message}</div>,
 }));
 
 vi.mock("../components/TimeRangeSelector.tsx", () => ({
@@ -68,9 +80,21 @@ vi.mock("../lib/trpc.ts", () => ({
       computeV2: {
         useQuery: () => ({
           data: state.correlationData,
-          isError: false,
+          error: state.correlationError,
+          isError: state.correlationError !== null,
           isLoading: false,
         }),
+      },
+      observations: {
+        useQuery: (input: Record<string, unknown>) => {
+          state.observationInputs.push(input);
+          const cursor = typeof input.cursor === "string" ? input.cursor : "first";
+          return {
+            data: state.observationPages[cursor] ?? state.observationData,
+            isError: false,
+            isLoading: false,
+          };
+        },
       },
     },
   },
@@ -78,6 +102,7 @@ vi.mock("../lib/trpc.ts", () => ({
 
 describe("CorrelationExplorerPage", () => {
   beforeEach(() => {
+    state.correlationError = null;
     state.metricsData = [
       {
         id: "protein",
@@ -120,7 +145,48 @@ describe("CorrelationExplorerPage", () => {
       },
       insight:
         "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
+      interpretationWarning:
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
     };
+    state.observationData = { items: [], totalCount: 0, nextCursor: null };
+    state.observationPages = {};
+    state.observationInputs = [];
+  });
+
+  it("prevents selecting the metric already used on the opposite axis", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    const proteinOptions = screen.getAllByRole("option", { name: "Protein (g)" });
+    const heartRateVariabilityOptions = screen.getAllByRole("option", {
+      name: "Heart Rate Variability (ms)",
+    });
+
+    expect(proteinOptions[0]).not.toBeDisabled();
+    expect(proteinOptions[1]).toBeDisabled();
+    expect(heartRateVariabilityOptions[0]).toBeDisabled();
+    expect(heartRateVariabilityOptions[1]).not.toBeDisabled();
+  });
+
+  it("renders the server-authored interpretation warning", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(
+      screen.getByText(
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders the specific server error when a request is rejected", async () => {
+    state.correlationData = undefined;
+    state.correlationError = new Error("Choose two different metrics to compare.");
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Choose two different metrics to compare.")).toBeTruthy();
   });
 
   it("shows sample requirements without inferential statistics when data is insufficient", async () => {
@@ -316,12 +382,22 @@ describe("CorrelationExplorerPage", () => {
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
 
-    expect(screen.getByText("Same day")).toBeTruthy();
+    const xAxisSelect = screen.getByLabelText("X axis");
+    const metricControls = xAxisSelect.parentElement?.parentElement;
+    expect(metricControls?.className).toContain("grid");
+    expect(metricControls?.className).toContain("sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
+
+    const sameDayButton = screen.getByRole("button", { name: "Same day" });
+    const lagOptions = sameDayButton.parentElement;
+    expect(lagOptions?.className).toContain("flex-wrap");
+
+    const comparison = screen.getByText(
+      "Protein vs Heart Rate Variability on the same calendar day",
+    );
+    expect(comparison.parentElement).not.toBe(lagOptions?.parentElement);
+
     expect(screen.getByText("+1 calendar day")).toBeTruthy();
     expect(screen.getByText("+2 calendar days")).toBeTruthy();
-    expect(
-      screen.getByText("Protein vs Heart Rate Variability on the same calendar day"),
-    ).toBeTruthy();
 
     fireEvent.click(screen.getByText("+1 calendar day"));
 
@@ -330,43 +406,115 @@ describe("CorrelationExplorerPage", () => {
     ).toBeTruthy();
   });
 
-  it("stacks correlation controls on narrow screens and restores rows at the small breakpoint", async () => {
+  it("renders lagged paired values with honest provenance and record navigation", async () => {
+    state.observationData = {
+      totalCount: 1,
+      nextCursor: null,
+      items: [
+        {
+          x: {
+            metricId: "protein",
+            date: "2025-04-01",
+            value: 120,
+            contributors: [
+              {
+                kind: "aggregate_inputs",
+                label: "Canonical daily nutrition inputs",
+                providerIds: ["apple_health"],
+                target: { type: "metric_family", family: "nutrition" },
+              },
+            ],
+          },
+          y: {
+            metricId: "hrv",
+            date: "2025-04-02",
+            value: 55,
+            contributors: [
+              {
+                kind: "record",
+                label: "Morning run",
+                providerIds: [],
+                target: {
+                  type: "activity",
+                  activityId: "00000000-0000-4000-8000-000000000106",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
 
-    const xMetricField = screen.getByText("X axis").parentElement;
-    const yMetricField = screen.getByText("Y axis").parentElement;
-    const metricControls = xMetricField?.parentElement;
-    const lagChoices = screen.getByRole("button", { name: "Same day" }).parentElement;
-    const lagControls = lagChoices?.parentElement;
-    const comparison = screen.getByText(
-      "Protein vs Heart Rate Variability on the same calendar day",
+    expect(screen.getByRole("table", { name: "Paired observations" })).toBeTruthy();
+    expect(screen.getByText("2025-04-01")).toBeTruthy();
+    expect(screen.getByText("2025-04-02")).toBeTruthy();
+    expect(screen.getByText("120 g")).toBeTruthy();
+    expect(screen.getByText("55 ms")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Canonical daily nutrition inputs" }).getAttribute("href"),
+    ).toBe("/nutrition");
+    expect(screen.getByText("Apple Health")).toBeTruthy();
+    expect(screen.getByText("Aggregate inputs")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Morning run" }).getAttribute("href")).toBe(
+      "/activity/00000000-0000-4000-8000-000000000106",
     );
-    const experimentAction = screen.getByRole("link", {
-      name: "Start experiment with Heart Rate Variability",
-    });
+  });
 
-    if (
-      !(xMetricField instanceof HTMLElement) ||
-      !(yMetricField instanceof HTMLElement) ||
-      !(metricControls instanceof HTMLElement) ||
-      !(lagChoices instanceof HTMLElement) ||
-      !(lagControls instanceof HTMLElement)
-    ) {
-      throw new Error("Expected responsive correlation controls");
-    }
+  it("traverses cursor pages without changing the selected correlation", async () => {
+    state.observationPages = {
+      first: {
+        totalCount: 2,
+        nextCursor: "2025-04-02",
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-03",
+              value: 123,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-03",
+              value: 58,
+              contributors: [],
+            },
+          },
+        ],
+      },
+      "2025-04-02": {
+        totalCount: 2,
+        nextCursor: null,
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-01",
+              value: 120,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-01",
+              value: 55,
+              contributors: [],
+            },
+          },
+        ],
+      },
+    };
 
-    expect(metricControls.classList).toContain("grid-cols-1");
-    expect(metricControls.classList).toContain("sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
-    expect(xMetricField.classList).toContain("min-w-0");
-    expect(yMetricField.classList).toContain("min-w-0");
-    expect(lagControls.classList).toContain("flex-col");
-    expect(lagControls.classList).toContain("sm:flex-row");
-    expect(lagChoices.classList).toContain("grid-cols-2");
-    expect(lagChoices.classList).toContain("sm:flex");
-    expect(comparison.classList).toContain("w-full");
-    expect(comparison.classList).toContain("sm:w-auto");
-    expect(experimentAction.classList).toContain("w-full");
-    expect(experimentAction.classList).toContain("sm:w-auto");
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next observation page" }));
+    expect(screen.getAllByText("2025-04-01")).toHaveLength(2);
+    expect(state.observationInputs.some((input) => input.cursor === "2025-04-02")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous observation page" }));
+    expect(screen.getAllByText("2025-04-03")).toHaveLength(2);
   });
 });

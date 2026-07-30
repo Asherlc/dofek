@@ -1,3 +1,4 @@
+import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivitySource } from "./activity-source.ts";
 import {
   ActivitySourceAttribution,
@@ -26,6 +27,7 @@ export interface ActivityDetail {
   name: string | null;
   notes: string | null;
   providerId: string;
+  localTimeContext: RecordLocalTimeContext;
   subsource: string | null;
   sourceProviders: string[];
   sourceLinks: SourceLink[];
@@ -52,6 +54,10 @@ export interface ActivityRow {
   name: string | null;
   notes: string | null;
   provider_id: string;
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source: RecordLocalTimeContext["source"];
   subsource: string | null;
   source_providers: string[] | null;
   source_external_ids: Array<SourceExternalIdEntry> | null;
@@ -111,6 +117,15 @@ export class Activity {
 
   get providerId(): string {
     return String(this.#row.provider_id);
+  }
+
+  get localTimeContext(): RecordLocalTimeContext {
+    return {
+      timezone: this.#row.timezone,
+      startUtcOffsetMinutes: this.#row.start_utc_offset_minutes,
+      endUtcOffsetMinutes: this.#row.end_utc_offset_minutes,
+      source: this.#row.local_time_source,
+    };
   }
 
   get subsource(): string | null {
@@ -188,6 +203,7 @@ export class Activity {
       name: this.name,
       notes: this.notes,
       providerId: this.providerId,
+      localTimeContext: this.localTimeContext,
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks,

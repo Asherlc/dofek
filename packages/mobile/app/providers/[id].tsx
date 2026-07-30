@@ -635,6 +635,7 @@ function ProviderDetailContent({
     isSyncing,
     syncMessage,
     syncProgress,
+    syncDateRange,
     shouldShowActions,
     shouldShowFullSync,
     shouldShowAppleHealthPermissionBanner,
@@ -796,6 +797,7 @@ function ProviderDetailContent({
           isSyncing={isSyncing}
           syncMessage={syncMessage}
           syncProgress={syncProgress}
+          syncDateRange={syncDateRange}
           shouldShowFullSync={shouldShowFullSync}
           shouldShowAppleHealthPermissionBanner={shouldShowAppleHealthPermissionBanner}
           onPrimaryAction={() => void handlePrimaryAction()}
@@ -879,7 +881,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   backToProvidersButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 14,
     fontWeight: "600",
   },

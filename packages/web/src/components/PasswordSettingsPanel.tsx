@@ -108,7 +108,7 @@ export function PasswordSettingsPanel() {
       <button
         type="submit"
         disabled={setPassword.isPending}
-        className="px-3 py-2 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
+        className="px-3 py-2 rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
       >
         {setPassword.isPending
           ? hasPassword

@@ -1,10 +1,12 @@
 import { formatNumber } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
 } from "@dofek/stats/correlation-lag";
 import { Link } from "@tanstack/react-router";
+import type { AppRouterOutputs } from "dofek-server/router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
@@ -48,14 +50,16 @@ function MetricSelect({
   onChange,
   grouped,
   label,
+  unavailableValue,
 }: {
   value: string;
   onChange: (v: string) => void;
   grouped: MetricsByDomain;
   label: string;
+  unavailableValue: string;
 }) {
   return (
-    <label className="block min-w-0">
+    <label className="min-w-0 block">
       <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">{label}</span>
       <select
         value={value}
@@ -65,7 +69,7 @@ function MetricSelect({
         {Object.entries(grouped).map(([domain, metrics]) => (
           <optgroup key={domain} label={domain}>
             {metrics.map((m) => (
-              <option key={m.id} value={m.id}>
+              <option key={m.id} value={m.id} disabled={m.id === unavailableValue}>
                 {m.label} ({m.unit})
               </option>
             ))}
@@ -81,15 +85,207 @@ function formatValue(v: number): string {
   return formatNumber(v);
 }
 
+type CorrelationObservationsOutput = AppRouterOutputs["correlation"]["observations"];
+type PairedObservation = CorrelationObservationsOutput["items"][number];
+type ObservationValue = PairedObservation["x"];
+type ObservationContributor = ObservationValue["contributors"][number];
+
+const METRIC_FAMILY_ROUTES = {
+  recovery: "/training/recovery",
+  sleep: "/sleep",
+  nutrition: "/nutrition",
+  activity: "/activities",
+  body: "/body",
+} as const;
+
+function ObservationContributors({ contributors }: { contributors: ObservationContributor[] }) {
+  if (contributors.length === 0) return <span className="text-dim">No linked source</span>;
+
+  return (
+    <div className="space-y-1">
+      {contributors.map((contributor) => (
+        <div
+          key={`${contributor.kind}:${contributor.label}:${
+            contributor.target.type === "activity"
+              ? contributor.target.activityId
+              : contributor.target.family
+          }`}
+          className="flex flex-wrap items-center gap-x-2 gap-y-1"
+        >
+          {contributor.target.type === "activity" ? (
+            <Link
+              to="/activity/$id"
+              params={{ id: contributor.target.activityId }}
+              className="text-accent hover:text-accent-secondary"
+            >
+              {contributor.label}
+            </Link>
+          ) : (
+            <Link
+              to={METRIC_FAMILY_ROUTES[contributor.target.family]}
+              className="text-accent hover:text-accent-secondary"
+            >
+              {contributor.label}
+            </Link>
+          )}
+          {contributor.kind === "aggregate_inputs" && (
+            <span className="rounded bg-surface-solid px-1.5 py-0.5 text-[10px] text-dim">
+              Aggregate inputs
+            </span>
+          )}
+          {contributor.providerIds.map((providerId) => (
+            <span key={providerId} className="text-[10px] text-dim">
+              {providerLabel(providerId)}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ObservationValueCell({
+  value,
+  metric,
+}: {
+  value: ObservationValue;
+  metric: { label: string; unit: string } | undefined;
+}) {
+  return (
+    <div className="min-w-44 space-y-1">
+      <div className="text-foreground">
+        {formatValue(value.value)} {metric?.unit ?? ""}
+      </div>
+      <ObservationContributors contributors={value.contributors} />
+    </div>
+  );
+}
+
+function PairedObservationsTable({
+  observations,
+  totalCount,
+  xMetric,
+  yMetric,
+  hasPrevious,
+  hasNext,
+  onPrevious,
+  onNext,
+}: {
+  observations: PairedObservation[];
+  totalCount: number;
+  xMetric: { label: string; unit: string } | undefined;
+  yMetric: { label: string; unit: string } | undefined;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <section className="card p-4 space-y-3" aria-labelledby="paired-observations-heading">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3
+            id="paired-observations-heading"
+            className="text-xs text-subtle uppercase tracking-wider"
+          >
+            Paired Observations
+          </h3>
+          <p className="mt-1 text-[11px] text-dim">
+            {totalCount} complete paired {totalCount === 1 ? "day" : "days"} behind this result
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Previous observation page"
+            disabled={!hasPrevious}
+            onClick={onPrevious}
+            className="rounded border border-border px-2.5 py-1 text-xs text-subtle disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            aria-label="Next observation page"
+            disabled={!hasNext}
+            onClick={onNext}
+            className="rounded border border-border px-2.5 py-1 text-xs text-subtle disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      {observations.length === 0 ? (
+        <p className="text-sm text-dim">No complete paired observations in this range.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table
+            aria-label="Paired observations"
+            className="w-full min-w-[720px] text-left text-xs"
+          >
+            <thead className="text-subtle">
+              <tr className="border-b border-border">
+                <th scope="col" className="px-2 py-2 font-medium">
+                  X date
+                </th>
+                <th scope="col" className="px-2 py-2 font-medium">
+                  {xMetric?.label ?? "X value"}
+                </th>
+                <th scope="col" className="px-2 py-2 font-medium">
+                  Y date
+                </th>
+                <th scope="col" className="px-2 py-2 font-medium">
+                  {yMetric?.label ?? "Y value"}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {observations.map((observation) => (
+                <tr key={`${observation.x.date}:${observation.y.date}`}>
+                  <td className="whitespace-nowrap px-2 py-3 text-muted">{observation.x.date}</td>
+                  <td className="px-2 py-3">
+                    <ObservationValueCell value={observation.x} metric={xMetric} />
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-3 text-muted">{observation.y.date}</td>
+                  <td className="px-2 py-3">
+                    <ObservationValueCell value={observation.y} metric={yMetric} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function CorrelationExplorerPage() {
   const [days, setDays] = useState<TimeRangeDays>(365);
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [lag, setLag] = useState(0);
+  const [observationCursors, setObservationCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const observationCursor = observationCursors.at(-1);
+  const resetObservationCursor = () => setObservationCursors([undefined]);
 
   const metricsQuery = trpc.correlation.metrics.useQuery({});
   const correlationQuery = trpc.correlation.computeV2.useQuery(
     { metricX, metricY, ...selectedRangeQueryInput(days), lag },
+    { enabled: metricX !== metricY },
+  );
+  const observationsQuery = trpc.correlation.observations.useQuery(
+    {
+      metricX,
+      metricY,
+      ...selectedRangeQueryInput(days),
+      lag,
+      pageSize: 25,
+      ...(observationCursor === undefined ? {} : { cursor: observationCursor }),
+    },
     { enabled: metricX !== metricY },
   );
 
@@ -104,55 +300,76 @@ export function CorrelationExplorerPage() {
   return (
     <ChartRangeProvider days={days}>
       <PageLayout
-        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+        headerChildren={
+          <TimeRangeSelector
+            days={days}
+            onChange={(nextDays) => {
+              setDays(nextDays);
+              resetObservationCursor();
+            }}
+          />
+        }
         title="Correlation Explorer"
         subtitle="Pick any two metrics to see how they relate. Correlation does not imply causation."
       >
         {/* Controls */}
         {metricsQuery.data && (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end sm:gap-3">
               <MetricSelect
                 value={metricX}
-                onChange={setMetricX}
+                onChange={(nextMetric) => {
+                  setMetricX(nextMetric);
+                  resetObservationCursor();
+                }}
                 grouped={grouped}
                 label="X axis"
+                unavailableValue={metricY}
               />
-              <span className="justify-self-center text-sm text-dim sm:pb-2">vs</span>
+              <span className="hidden text-dim text-sm pb-2 sm:block">vs</span>
               <MetricSelect
                 value={metricY}
-                onChange={setMetricY}
+                onChange={(nextMetric) => {
+                  setMetricY(nextMetric);
+                  resetObservationCursor();
+                }}
                 grouped={grouped}
                 label="Y axis"
+                unavailableValue={metricX}
               />
             </div>
 
             {/* Lag selector */}
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-              <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
-              <div className="grid grid-cols-2 gap-1 sm:flex">
-                {LAG_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setLag(opt.value)}
-                    className={`w-full px-2.5 py-1 text-xs rounded-md transition-colors sm:w-auto ${
-                      lag === opt.value
-                        ? "bg-accent/15 text-foreground"
-                        : "text-subtle hover:text-foreground"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
+                <div className="flex flex-wrap gap-1">
+                  {LAG_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setLag(opt.value);
+                        resetObservationCursor();
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                        lag === opt.value
+                          ? "bg-accent/15 text-foreground"
+                          : "text-subtle hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <span className="w-full min-w-0 text-[10px] text-dim sm:ml-1 sm:w-auto">
+              <p className="text-[10px] text-dim">
                 {formatCorrelationComparison({
                   xLabel: xMetric?.label ?? "X",
                   yLabel: yMetric?.label ?? "Y",
                   lag,
                 })}
-              </span>
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -241,6 +458,7 @@ export function CorrelationExplorerPage() {
               <div className="card p-4 space-y-3">
                 <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
                 <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
+                <p className="text-[11px] text-dim leading-relaxed">{data.interpretationWarning}</p>
 
                 {data.availability === "available" && hasMetricMetadata && (
                   <div className="grid grid-cols-2 gap-3 pt-1">
@@ -281,6 +499,33 @@ export function CorrelationExplorerPage() {
                 />
               </div>
             )}
+
+            {observationsQuery.isError && (
+              <QueryStatePanel error={observationsQuery.error} height={72} />
+            )}
+            {observationsQuery.isLoading ? (
+              <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
+            ) : observationsQuery.data ? (
+              <PairedObservationsTable
+                observations={observationsQuery.data.items}
+                totalCount={observationsQuery.data.totalCount}
+                xMetric={xMetric}
+                yMetric={yMetric}
+                hasPrevious={observationCursors.length > 1}
+                hasNext={observationsQuery.data.nextCursor !== null}
+                onPrevious={() =>
+                  setObservationCursors((cursors) =>
+                    cursors.length > 1 ? cursors.slice(0, -1) : cursors,
+                  )
+                }
+                onNext={() => {
+                  const nextCursor = observationsQuery.data?.nextCursor;
+                  if (nextCursor !== null && nextCursor !== undefined) {
+                    setObservationCursors((cursors) => [...cursors, nextCursor]);
+                  }
+                }}
+              />
+            ) : null}
           </div>
         )}
       </PageLayout>

@@ -121,6 +121,7 @@ vi.mock("../lib/trpc.ts", () => {
     latest_resting_hr: null,
     stddev_resting_hr: null,
     healthStatus: [],
+    baselineRelative: [],
   };
 
   return {
@@ -138,11 +139,17 @@ vi.mock("../lib/trpc.ts", () => {
           prediction: null,
           recomposition: [],
           healthStatus: [],
+          baselineRelative: [],
         }),
       },
       correlation: {
         computeV2: recordQuery("correlation.computeV2", null),
         metrics: recordQuery("correlation.metrics", correlationMetrics),
+        observations: recordQuery("correlation.observations", {
+          items: [],
+          totalCount: 0,
+          nextCursor: null,
+        }),
       },
       dailyMetrics: {
         hrvBaseline: recordQuery("dailyMetrics.hrvBaseline"),
@@ -163,6 +170,17 @@ vi.mock("../lib/trpc.ts", () => {
         macroRatios: recordQuery("nutritionAnalytics.macroRatios"),
         micronutrientAdequacyV2: recordQuery("nutritionAnalytics.micronutrientAdequacyV2", {
           nutrients: [],
+          dataQuality: {
+            selectedWindowDays: 30,
+            daysWithData: 0,
+            usableDays: 0,
+            overlapDays: 0,
+            conflictDays: 0,
+            completenessPercent: 0,
+            sourceLabels: [],
+            contributingSourceLabels: [],
+            excludedSourceLabels: [],
+          },
           professionalReview: null,
         }),
       },
@@ -326,6 +344,16 @@ describe("TimeRangeSelector consumers", () => {
         name: "correlation.computeV2",
         input: { metricX: "protein", metricY: "hrv", days: 7, lag: 0 },
       },
+      {
+        name: "correlation.observations",
+        input: {
+          metricX: "protein",
+          metricY: "hrv",
+          days: 7,
+          lag: 0,
+          pageSize: 25,
+        },
+      },
     ]);
     expectRegistryCovered("correlation");
 
@@ -336,6 +364,16 @@ describe("TimeRangeSelector consumers", () => {
       {
         name: "correlation.computeV2",
         input: { metricX: "protein", metricY: "hrv", days: null, lag: 0 },
+      },
+      {
+        name: "correlation.observations",
+        input: {
+          metricX: "protein",
+          metricY: "hrv",
+          days: null,
+          lag: 0,
+          pageSize: 25,
+        },
       },
     ]);
     expectRegistryCovered("correlation");

@@ -399,8 +399,7 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-6 items-center justify-between">
-        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
+      <div className="flex min-h-6 items-center justify-end">
         {enabledSyncable.length > 1 && (
           <div className="flex gap-2">
             <button

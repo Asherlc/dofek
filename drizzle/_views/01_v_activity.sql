@@ -261,8 +261,21 @@ merged AS (
      WHERE fg2.group_id = b.group_id AND r.notes IS NOT NULL
      ORDER BY r.prio ASC LIMIT 1) AS notes,
     (SELECT r.timezone FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id AND r.timezone IS NOT NULL
+     WHERE fg2.group_id = b.group_id
+       AND r.local_time_source IN ('provider_timezone', 'device_timezone')
      ORDER BY r.prio ASC LIMIT 1) AS timezone,
+    (SELECT r.start_utc_offset_minutes
+     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
+     ORDER BY r.prio ASC LIMIT 1) AS start_utc_offset_minutes,
+    (SELECT r.end_utc_offset_minutes
+     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
+     ORDER BY r.prio ASC LIMIT 1) AS end_utc_offset_minutes,
+    (SELECT r.local_time_source
+     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
+     ORDER BY r.prio ASC LIMIT 1) AS local_time_source,
     (SELECT jsonb_object_agg(key, value)
      FROM (
        SELECT key, value, ROW_NUMBER() OVER (PARTITION BY key ORDER BY r.prio ASC) AS rn
@@ -320,6 +333,9 @@ SELECT
   m.source_providers,
   m.source_external_ids,
   m.member_activity_ids,
-  m.absent_source_external_ids
+  m.absent_source_external_ids,
+  m.start_utc_offset_minutes,
+  m.end_utc_offset_minutes,
+  COALESCE(m.local_time_source, 'unknown') AS local_time_source
 FROM merged m
 ORDER BY m.started_at DESC;
