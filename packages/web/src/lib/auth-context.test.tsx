@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "./auth-context.tsx";
 const mockCaptureException = vi.hoisted(() => vi.fn());
 const mockIdentifyPostHogUser = vi.hoisted(() => vi.fn());
 const mockResetPostHogUser = vi.hoisted(() => vi.fn());
+const mockRedirectToLogin = vi.hoisted(() => vi.fn());
 
 vi.mock("./telemetry.ts", () => ({
   captureException: mockCaptureException,
@@ -24,6 +25,7 @@ vi.mock("./auth.ts", async (importOriginal) => {
     ...original,
     fetchCurrentUser: vi.fn(() => Promise.resolve(null)),
     logout: vi.fn(() => Promise.resolve()),
+    redirectToLogin: mockRedirectToLogin,
   };
 });
 
@@ -92,6 +94,9 @@ describe("AuthProvider analytics identity", () => {
     expect(vi.mocked(logout).mock.invocationCallOrder[0]).toBeLessThan(
       mockResetPostHogUser.mock.invocationCallOrder[0] ?? 0,
     );
+    expect(mockResetPostHogUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRedirectToLogin.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("preserves the analytics identity when logout fails", async () => {
@@ -116,6 +121,61 @@ describe("AuthProvider analytics identity", () => {
     ).rejects.toThrow("Network unavailable");
 
     expect(mockResetPostHogUser).not.toHaveBeenCalled();
+    expect(mockRedirectToLogin).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "logout" });
+    expect(result.current.user?.id).toBe("user-123");
+  });
+
+  it("resets when an identified session becomes unauthenticated", async () => {
+    const { fetchCurrentUser } = await import("./auth.ts");
+    vi.mocked(fetchCurrentUser)
+      .mockResolvedValueOnce({
+        id: "user-123",
+        name: "Alice Example",
+        email: "alice@example.com",
+      })
+      .mockResolvedValueOnce(null);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe("user-123");
+    });
+
+    await act(async () => {
+      await result.current.retryBootstrap();
+    });
+
+    expect(result.current.user).toBeNull();
+    expect(mockResetPostHogUser).toHaveBeenCalledOnce();
+  });
+
+  it("resets before identifying a different authenticated user", async () => {
+    const { fetchCurrentUser } = await import("./auth.ts");
+    vi.mocked(fetchCurrentUser)
+      .mockResolvedValueOnce({
+        id: "user-123",
+        name: "Alice Example",
+        email: "alice@example.com",
+      })
+      .mockResolvedValueOnce({
+        id: "user-456",
+        name: "Bob Example",
+        email: "bob@example.com",
+      });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe("user-123");
+    });
+
+    await act(async () => {
+      await result.current.retryBootstrap();
+    });
+
+    expect(result.current.user?.id).toBe("user-456");
+    expect(mockResetPostHogUser).toHaveBeenCalledOnce();
+    expect(mockResetPostHogUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockIdentifyPostHogUser.mock.invocationCallOrder[1] ?? 0,
+    );
   });
 });

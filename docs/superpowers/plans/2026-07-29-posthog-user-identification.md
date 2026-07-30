@@ -16,7 +16,7 @@
 
 - `packages/web/src/lib/posthog.ts` initializes PostHog and captures page views but exposes no user identity lifecycle.
 - `packages/web/src/lib/auth-context.tsx` is the canonical web authentication lifecycle and already receives the validated `AuthUser`.
-- The current PostHog guidance says to identify as soon as the frontend knows the authenticated user and to reset on logout.
+- The current [PostHog identification guidance](https://posthog.com/docs/product-analytics/identify) says to identify as soon as the frontend knows the authenticated user and to reset on logout.
 
 ## Test Strategy
 
