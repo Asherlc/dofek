@@ -9,6 +9,29 @@ const nullableNumberSchema = z.preprocess(
   z.coerce.number().nullable(),
 );
 
+const overlappingSleepSessionSchema = z
+  .object({
+    session_id: z.string(),
+    provider_id: z.string(),
+    source_name: z.string().nullable().optional(),
+    source_providers: z
+      .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
+      .optional()
+      .default([]),
+    timezone: z.string().nullable(),
+    start_utc_offset_minutes: nullableNumberSchema,
+    end_utc_offset_minutes: nullableNumberSchema,
+    local_time_source: localTimeSourceSchema,
+    started_at: z.string(),
+    ended_at: z.string().nullable(),
+    duration_minutes: nullableNumberSchema,
+  })
+  .transform((session) => ({
+    ...session,
+    source_name: session.source_name ?? null,
+    source_providers: session.source_providers ?? [],
+  }));
+
 const clickHouseSleepNightSchema = z
   .object({
     date: z.string(),
@@ -16,6 +39,11 @@ const clickHouseSleepNightSchema = z
     source_name: z.string().nullable().optional(),
     source_providers: z
       .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
+      .optional()
+      .default([]),
+    selected_session_id: z.string().nullable().optional().default(null),
+    overlapping_sessions: z
+      .preprocess((value) => (value == null ? [] : value), z.array(overlappingSleepSessionSchema))
       .optional()
       .default([]),
     timezone: z.string().nullable().optional().default(null),
@@ -37,6 +65,8 @@ const clickHouseSleepNightSchema = z
     provider_id: row.provider_id ?? null,
     source_name: row.source_name ?? null,
     source_providers: row.source_providers ?? [],
+    selected_session_id: row.selected_session_id ?? null,
+    overlapping_sessions: row.overlapping_sessions ?? [],
     started_at: row.started_at ?? `${row.date}T12:00:00`,
     ended_at: row.ended_at ?? null,
   }));
@@ -77,6 +107,43 @@ const dailySleepPerformanceRowSchema = z.object({
 
 export type DailySleepPerformanceNight = z.infer<typeof dailySleepPerformanceRowSchema>;
 
+const sleepSelectionProjection = `toString(sleep.selected_session_id) AS selected_session_id,
+      arrayMap(
+        session -> CAST(
+          (
+            toString(session.session_id),
+            session.provider_id,
+            session.source_name,
+            session.source_providers,
+            session.timezone,
+            session.start_utc_offset_minutes,
+            session.end_utc_offset_minutes,
+            session.local_time_source,
+            formatDateTime(session.started_at, '%FT%TZ', 'UTC'),
+            if(
+              isNull(session.ended_at),
+              NULL,
+              formatDateTime(session.ended_at, '%FT%TZ', 'UTC')
+            ),
+            session.duration_minutes
+          ),
+          'Tuple(
+            session_id String,
+            provider_id String,
+            source_name Nullable(String),
+            source_providers Array(String),
+            timezone Nullable(String),
+            start_utc_offset_minutes Nullable(Int16),
+            end_utc_offset_minutes Nullable(Int16),
+            local_time_source String,
+            started_at String,
+            ended_at Nullable(String),
+            duration_minutes Nullable(Int32)
+          )'
+        ),
+        sleep.overlapping_sessions
+      ) AS overlapping_sessions`;
+
 export interface FetchDailySleepPerformanceNightsInput {
   sensorStore: Pick<ActivitySensorStore, "query">;
   userId: string;
@@ -116,6 +183,7 @@ export async function fetchSleepNights(
       sleep.provider_id AS provider_id,
       sleep.source_name AS source_name,
       sleep.source_providers AS source_providers,
+      ${sleepSelectionProjection},
       sleep.timezone AS timezone,
       sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
       sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -205,6 +273,7 @@ export async function fetchLatestSleepNight(input: {
       sleep.provider_id AS provider_id,
       sleep.source_name AS source_name,
       sleep.source_providers AS source_providers,
+      ${sleepSelectionProjection},
       sleep.timezone AS timezone,
       sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
       sleep.end_utc_offset_minutes AS end_utc_offset_minutes,

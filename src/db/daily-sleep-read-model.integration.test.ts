@@ -8,7 +8,11 @@ const testUserId = "00000000-0000-4000-8000-000000001770";
 const selectedSleepId = "00000000-0000-4000-8000-000000001771";
 const fallbackSleepId = "00000000-0000-4000-8000-000000001772";
 const recentSleepId = "00000000-0000-4000-8000-000000001773";
+const conflictSelectedSleepId = "00000000-0000-4000-8000-000000001774";
+const conflictOverlapSleepId = "00000000-0000-4000-8000-000000001775";
+const conflictSplitSleepId = "00000000-0000-4000-8000-000000001776";
 const historicalSleepDate = "2026-01-01";
+const conflictSleepDate = "2026-02-01";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
@@ -23,6 +27,25 @@ const liveDailySleepRowSchema = z.object({
   local_time_source: z.string(),
   start_utc_offset_minutes: z.coerce.number().nullable(),
   timezone: z.string().nullable(),
+});
+
+const overlapEvidenceRowSchema = z.object({
+  selected_session_id: z.string(),
+  overlapping_sessions: z.array(
+    z.object({
+      session_id: z.string(),
+      provider_id: z.string(),
+      source_name: z.string().nullable(),
+      source_providers: z.array(z.string()),
+      timezone: z.string().nullable(),
+      start_utc_offset_minutes: z.coerce.number().nullable(),
+      end_utc_offset_minutes: z.coerce.number().nullable(),
+      local_time_source: z.string(),
+      started_at: z.string(),
+      ended_at: z.string().nullable(),
+      duration_minutes: z.coerce.number().nullable(),
+    }),
+  ),
 });
 
 describe("daily_sleep read-model lifecycle", () => {
@@ -105,6 +128,43 @@ describe("daily_sleep read-model lifecycle", () => {
       { is_deleted: 1 },
     ]);
   }, 180_000);
+
+  it("retains only canonical sessions whose time windows overlap the nightly winner", async () => {
+    const activeClient = requireClient(client);
+    await seedDailySleepFixture(activeClient, targetSchema);
+    await materializeDailySleep(activeClient, targetSchema, false);
+
+    await expect(readConflictEvidence(activeClient, targetSchema)).resolves.toEqual([
+      {
+        selected_session_id: conflictSelectedSleepId,
+        overlapping_sessions: [
+          {
+            session_id: conflictOverlapSleepId,
+            provider_id: "overlap-provider",
+            source_name: "Overlap Device",
+            source_providers: ["overlap-provider"],
+            timezone: null,
+            start_utc_offset_minutes: 0,
+            end_utc_offset_minutes: 0,
+            local_time_source: "provider_offset",
+            started_at: "2026-02-01 23:30:00.000000",
+            ended_at: "2026-02-02 05:00:00.000000",
+            duration_minutes: 330,
+          },
+        ],
+      },
+    ]);
+
+    await tombstoneSourceSleep(activeClient, targetSchema, conflictOverlapSleepId, 330);
+    await materializeDailySleep(activeClient, targetSchema, true);
+
+    await expect(readConflictEvidence(activeClient, targetSchema)).resolves.toEqual([
+      {
+        selected_session_id: conflictSelectedSleepId,
+        overlapping_sessions: [],
+      },
+    ]);
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -172,6 +232,8 @@ async function materializeDailySleep(
     "provider_id",
     "source_name",
     "source_providers",
+    "selected_session_id",
+    "overlapping_sessions",
     "timezone",
     "start_utc_offset_minutes",
     "end_utc_offset_minutes",
@@ -224,6 +286,36 @@ async function readLiveHistoricalNight(
   });
   const rows = await result.json<unknown>();
   return z.array(liveDailySleepRowSchema).parse(rows);
+}
+
+async function readConflictEvidence(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<z.infer<typeof overlapEvidenceRowSchema>[]> {
+  const result = await client.query({
+    query: `SELECT
+        toString(selected_session_id) AS selected_session_id,
+        toJSONString(overlapping_sessions) AS overlapping_sessions
+      FROM ${targetSchema}.daily_sleep FINAL
+      WHERE user_id = {userId:UUID}
+        AND date = toDate({date:String})
+        AND is_deleted = 0`,
+    query_params: {
+      date: conflictSleepDate,
+      userId: testUserId,
+    },
+    format: "JSONEachRow",
+  });
+  const rows = await result.json<{
+    selected_session_id: string;
+    overlapping_sessions: string;
+  }>();
+  return rows.map((row) =>
+    overlapEvidenceRowSchema.parse({
+      ...row,
+      overlapping_sessions: JSON.parse(row.overlapping_sessions),
+    }),
+  );
 }
 
 async function countLiveHistoricalSourceRows(
@@ -335,6 +427,20 @@ function createDailySleepTableSql(targetSchema: string): string {
   provider_id String,
   source_name Nullable(String),
   source_providers Array(String),
+  selected_session_id Nullable(UUID),
+  overlapping_sessions Array(Tuple(
+    session_id UUID,
+    provider_id String,
+    source_name Nullable(String),
+    source_providers Array(String),
+    timezone Nullable(String),
+    start_utc_offset_minutes Nullable(Int16),
+    end_utc_offset_minutes Nullable(Int16),
+    local_time_source String,
+    started_at DateTime64(6, 'UTC'),
+    ended_at Nullable(DateTime64(6, 'UTC')),
+    duration_minutes Nullable(Int32)
+  )),
   timezone Nullable(String),
   start_utc_offset_minutes Nullable(Int16),
   end_utc_offset_minutes Nullable(Int16),
@@ -425,6 +531,75 @@ function insertInitialSleepRowsSql(targetSchema: string): string {
   true,
   false,
   toDateTime64('2026-07-01 06:01:00', 9, 'UTC'),
+  0
+),
+(
+  '${conflictSelectedSleepId}',
+  '${testUserId}',
+  'selected-provider',
+  'Selected Device',
+  ['selected-provider'],
+  'America/Los_Angeles',
+  -480,
+  -420,
+  'provider_timezone',
+  toDateTime64('2026-02-01 22:00:00', 6, 'UTC'),
+  toDateTime64('2026-02-02 06:00:00', 6, 'UTC'),
+  480,
+  90,
+  100,
+  250,
+  40,
+  91,
+  true,
+  false,
+  toDateTime64('2026-02-02 06:01:00', 9, 'UTC'),
+  0
+),
+(
+  '${conflictOverlapSleepId}',
+  '${testUserId}',
+  'overlap-provider',
+  'Overlap Device',
+  ['overlap-provider'],
+  NULL,
+  0,
+  0,
+  'provider_offset',
+  toDateTime64('2026-02-01 23:30:00', 6, 'UTC'),
+  toDateTime64('2026-02-02 05:00:00', 6, 'UTC'),
+  330,
+  50,
+  70,
+  180,
+  30,
+  90,
+  true,
+  false,
+  toDateTime64('2026-02-02 06:01:00', 9, 'UTC'),
+  0
+),
+(
+  '${conflictSplitSleepId}',
+  '${testUserId}',
+  'split-provider',
+  'Split Device',
+  ['split-provider'],
+  NULL,
+  0,
+  0,
+  'provider_offset',
+  toDateTime64('2026-02-01 18:00:00', 6, 'UTC'),
+  toDateTime64('2026-02-01 20:00:00', 6, 'UTC'),
+  120,
+  20,
+  20,
+  70,
+  10,
+  91,
+  true,
+  false,
+  toDateTime64('2026-02-02 06:01:00', 9, 'UTC'),
   0
 )`;
 }

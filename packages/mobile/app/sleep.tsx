@@ -20,6 +20,7 @@ import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../components/QueryStatePanel";
+import { SleepSourceReview } from "../components/SleepSourceReview";
 import { trpc } from "../lib/trpc";
 import { useProcessingStatus } from "../lib/useProcessingStatus";
 import { useRefresh } from "../lib/useRefresh";
@@ -299,6 +300,8 @@ export default function SleepScreen() {
               </View>
             </View>
           )}
+
+          <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
         </>
       )}
     </ScrollView>

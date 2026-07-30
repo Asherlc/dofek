@@ -75,6 +75,18 @@ export function providerSourceLabel(id: string, subsource?: string | null): stri
   return providerLabel(id);
 }
 
+/** Human-readable label for a provider record and its reporting device or app. */
+export function providerRecordLabel(id: string, sourceName?: string | null): string {
+  const label = providerLabel(id);
+  const source = sourceName?.trim();
+  if (!source) return label;
+  const normalizedSource = source.toLowerCase();
+  if (normalizedSource === id.toLowerCase() || normalizedSource === label.toLowerCase()) {
+    return label;
+  }
+  return `${label} · ${source}`;
+}
+
 export interface ProviderAbsentSource {
   providerId: string;
   providerAbsentAt: string | null;

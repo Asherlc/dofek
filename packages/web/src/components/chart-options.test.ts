@@ -333,8 +333,16 @@ describe("RampRateChart option builder", () => {
 });
 
 describe("SleepAnalyticsChart option builder", () => {
+  const sourceEvidence = {
+    providerId: null,
+    sourceName: null,
+    sourceProviders: [],
+    selectedSessionId: null,
+    overlappingSessions: [],
+  };
   const sampleNightly = [
     {
+      ...sourceEvidence,
       date: "2026-03-10",
       startedAt: "2026-03-10T22:00:00Z",
       endedAt: "2026-03-11T05:30:00Z",
@@ -355,6 +363,7 @@ describe("SleepAnalyticsChart option builder", () => {
       rollingAvgDuration: 440,
     },
     {
+      ...sourceEvidence,
       date: "2026-03-11",
       startedAt: "2026-03-11T22:00:00Z",
       endedAt: "2026-03-12T05:10:00Z",

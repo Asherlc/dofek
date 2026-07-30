@@ -82,6 +82,22 @@ describe("fetchSleepNights", () => {
         provider_id: "whoop",
         source_name: "WHOOP 4.0",
         source_providers: ["whoop", "apple_health"],
+        selected_session_id: "00000000-0000-4000-8000-000000001774",
+        overlapping_sessions: [
+          {
+            session_id: "00000000-0000-4000-8000-000000001775",
+            provider_id: "apple_health",
+            source_name: "Apple Watch",
+            source_providers: ["apple_health"],
+            timezone: "America/Los_Angeles",
+            start_utc_offset_minutes: -420,
+            end_utc_offset_minutes: -420,
+            local_time_source: "provider_timezone",
+            started_at: "2026-03-13T23:30:00Z",
+            ended_at: "2026-03-14T05:00:00Z",
+            duration_minutes: 330,
+          },
+        ],
         started_at: "2026-03-13T22:00:00Z",
         ended_at: "2026-03-14T06:00:00Z",
         duration_minutes: 480,
@@ -108,10 +124,28 @@ describe("fetchSleepNights", () => {
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).toContain("source_name");
     expect(queryText).toContain("source_providers");
+    expect(queryText).toContain("selected_session_id");
+    expect(queryText).toContain("overlapping_sessions");
     expect(rows[0]).toMatchObject({
       provider_id: "whoop",
       source_name: "WHOOP 4.0",
       source_providers: ["whoop", "apple_health"],
+      selected_session_id: "00000000-0000-4000-8000-000000001774",
+      overlapping_sessions: [
+        {
+          session_id: "00000000-0000-4000-8000-000000001775",
+          provider_id: "apple_health",
+          source_name: "Apple Watch",
+          source_providers: ["apple_health"],
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -420,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_timezone",
+          started_at: "2026-03-13T23:30:00Z",
+          ended_at: "2026-03-14T05:00:00Z",
+          duration_minutes: 330,
+        },
+      ],
     });
   });
 
@@ -142,6 +176,8 @@ describe("fetchSleepNights", () => {
 
     expect(rows[0]?.source_name).toBeNull();
     expect(rows[0]?.source_providers).toEqual([]);
+    expect(rows[0]?.selected_session_id).toBeNull();
+    expect(rows[0]?.overlapping_sessions).toEqual([]);
   });
 
   it("defaults null provenance fields to null and an empty list", async () => {
