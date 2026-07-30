@@ -1,3 +1,4 @@
+import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -589,7 +590,7 @@ describe("StrengthRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
-      expect(compiledQuery.params).toEqual(["UTC", "user-1"]);
+      expect(compiledQuery.params).toEqual(["UTC", "user-1", ...STRENGTH_ACTIVITY_TYPES]);
     });
   });
 });
