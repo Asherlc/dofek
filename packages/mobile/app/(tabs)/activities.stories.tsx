@@ -5,6 +5,7 @@ import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
+import { within } from "storybook/test";
 import { trpc } from "../../lib/trpc";
 import ActivitiesScreen from "./activities";
 
@@ -147,6 +148,12 @@ function createStoryData() {
             source: "device_timezone",
           },
           durationMin: 90,
+          source: {
+            primarySourceLabel: "Garmin Connect",
+            sourceCount: 2,
+            overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+          },
+          lastProcessedAt: `${today}T09:05:00Z`,
           location: {
             centroidLat: 37.7749,
             centroidLng: -122.4194,
@@ -155,7 +162,7 @@ function createStoryData() {
             elevationGainM: 412,
           },
           tss: 78.4,
-          stats: [{ label: "Training Stress Score", value: "78.4" }],
+          stats: [{ status: "available", label: "Training Stress Score", value: "78.4" }],
         },
       ],
     },
@@ -175,9 +182,22 @@ function createStoryData() {
             source: "unknown",
           },
           durationMin: 45,
+          source: {
+            primarySourceLabel: "Strong (via Apple Health)",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
+          lastProcessedAt: `${yesterday}T17:48:00Z`,
           location: null,
-          tss: 42.1,
-          stats: [{ label: "Training Stress Score", value: "42.1" }],
+          tss: null,
+          stats: [
+            {
+              status: "unavailable",
+              label: "Training Stress Score",
+              reason:
+                "Record average power, or record average heart rate and set maximum heart rate.",
+            },
+          ],
         },
       ],
     },
@@ -297,3 +317,11 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const SelectionMode: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", { name: "Select activities" }),
+    );
+  },
+};

@@ -65,7 +65,6 @@ const meta = {
       },
     ],
     onSync: () => {},
-    onFullSync: () => {},
   },
 } satisfies Meta<typeof SyncProviderCard>;
 

@@ -81,6 +81,7 @@ export interface ParsedPolarSleep {
   deepMinutes: number;
   remMinutes: number;
   awakeMinutes: number;
+  stagingAvailable: true;
 }
 
 export interface ParsedPolarSleepStage {

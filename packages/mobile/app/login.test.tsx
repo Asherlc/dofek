@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useWindowDimensions } from "react-native";
+import { Linking, useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCaptureException } = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ const mockRegisterWithPassword = vi.fn();
 const mockRequestPasswordReset = vi.fn();
 const mockRouterReplace = vi.fn();
 const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+const mockOpenUrl = vi.spyOn(Linking, "openURL");
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -63,6 +64,7 @@ const { default: LoginScreen } = await import("./login");
 describe("LoginScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOpenUrl.mockResolvedValue();
     mockIsNativeAppleSignInAvailable.mockResolvedValue(false);
     mockUseWindowDimensions.mockReturnValue({
       width: 390,
@@ -143,6 +145,75 @@ describe("LoginScreen", () => {
       screen.getByText("Enter your details. Next, you'll connect your health data."),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create account and continue" })).toBeTruthy();
+  });
+
+  it("shows legal context and an existing-account path during registration", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByText("Sign in to Dofek")).toBeTruthy();
+  });
+
+  it("opens registration policies on the configured Dofek instance", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() => expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/terms"));
+
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+
+    await waitFor(() =>
+      expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/privacy"),
+    );
+  });
+
+  it("reports a legal-document launch failure and explains it to the user", async () => {
+    const openError = new Error("Browser unavailable");
+    mockOpenUrl.mockRejectedValueOnce(openError).mockResolvedValueOnce();
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Could not open the Privacy Policy. Try again.")).toBeTruthy(),
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(openError, {
+      source: "login-screen-open-legal-document",
+      document: "privacy",
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Could not open the Privacy Policy. Try again.")).not.toBeTruthy(),
+    );
   });
 
   it("shows task-specific password reset guidance", async () => {
@@ -351,6 +422,72 @@ describe("LoginScreen", () => {
     });
     expect(mockOnLoginSuccess).toHaveBeenCalledWith("new-password-token");
     expect(mockRouterReplace).toHaveBeenCalledWith("/onboarding");
+  });
+
+  it("advertises current and new credentials to password managers", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const emailInput = await screen.findByLabelText("Email");
+    const passwordInput = screen.getByLabelText("Password");
+    expect(emailInput.getAttribute("autocomplete")).toBe("email");
+    expect(passwordInput.getAttribute("autocomplete")).toBe("current-password");
+    expect(passwordInput.getAttribute("type")).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByLabelText("Password").getAttribute("passwordrules")).toBe(
+      "minlength: 8; maxlength: 128;",
+    );
+    expect(screen.getByText("Use 8–128 characters.")).toBeTruthy();
+  });
+
+  it("reveals and hides the password with an accessible control", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const passwordInput = await screen.findByLabelText("Password");
+    fireEvent.change(passwordInput, { target: { value: "password123" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passwordInput.getAttribute("type")).toBe("text");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(passwordInput.getAttribute("type")).toBe("password");
+  });
+
+  it("shows actionable registration errors without sending invalid credentials", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account and continue" }));
+
+    expect(await screen.findByText("Enter a valid email address.")).toBeTruthy();
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(mockRegisterWithPassword).not.toHaveBeenCalled();
   });
 
   it("visually distinguishes disabled email sign-in from the enabled state", async () => {

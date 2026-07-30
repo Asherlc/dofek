@@ -6,7 +6,7 @@ const meta = {
   component: DashboardEvidenceOverview,
   tags: ["autodocs"],
   args: {
-    days: 30,
+    days: 90,
     endDate: "2026-05-27",
     trend: {
       latestRestingHeartRate: 52,

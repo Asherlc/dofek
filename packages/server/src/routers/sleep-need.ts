@@ -333,12 +333,12 @@ export const sleepNeedRouter = router({
         queryOptions: { priority: "dashboard" },
       });
       const lastSleep = performanceRows.at(-1) ?? null;
-      if (!lastSleep || lastSleep.duration_minutes == null) {
+      if (!lastSleep || lastSleep.duration_minutes == null || lastSleep.efficiency_pct == null) {
         return null;
       }
 
       const actualMinutes = lastSleep.duration_minutes;
-      const efficiency = lastSleep.efficiency_pct ?? 85;
+      const efficiency = lastSleep.efficiency_pct;
 
       const durations = performanceRows
         .filter((row) => row.date !== lastSleep.date)

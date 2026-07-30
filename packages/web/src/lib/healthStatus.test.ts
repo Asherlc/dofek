@@ -18,6 +18,7 @@ describe("healthStatusMetricSchema", () => {
         statusToken: "moving_as_intended",
         statusColor: "positive",
         statusLabel: "Moving as intended",
+        evaluationRule: "Above your baseline, where higher values support this metric",
         explanation: "Heart Rate Variability is above your baseline.",
       }),
     ).toEqual({
@@ -32,6 +33,7 @@ describe("healthStatusMetricSchema", () => {
       statusToken: "moving_as_intended",
       statusColor: "positive",
       statusLabel: "Moving as intended",
+      evaluationRule: "Above your baseline, where higher values support this metric",
       explanation: "Heart Rate Variability is above your baseline.",
     });
   });

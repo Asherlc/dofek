@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { PageLayout } from "./PageLayout.tsx";
 
 const storyPaths = [
@@ -86,7 +87,13 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", { level: 1, name: "Training" })).toBeInTheDocument();
+    await expect(canvas.queryByRole("heading", { name: "Dofek" })).not.toBeInTheDocument();
+  },
+};
 
 export const WithTabs: Story = {
   args: {

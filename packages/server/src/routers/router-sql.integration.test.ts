@@ -259,5 +259,13 @@ describe("Router SQL validity", () => {
         days: 30,
         lag: 0,
       }));
+    it("observations", () =>
+      expectValidSql("correlation.observations", {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 30,
+        lag: 0,
+        pageSize: 25,
+      }));
   });
 });

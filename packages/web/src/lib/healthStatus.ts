@@ -28,6 +28,7 @@ export const healthStatusMetricSchema = z.object({
   ]),
   statusColor: z.enum(["positive", "warning", "danger", "muted"]),
   statusLabel: z.string(),
+  evaluationRule: z.string(),
   explanation: z.string(),
 });
 

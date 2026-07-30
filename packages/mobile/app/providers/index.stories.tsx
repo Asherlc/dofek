@@ -26,7 +26,6 @@ const providerCardMeta = {
     syncing: false,
     syncProgress: undefined,
     onSync: () => {},
-    onFullSync: () => {},
     onConnect: () => {},
     onPress: () => {},
   },

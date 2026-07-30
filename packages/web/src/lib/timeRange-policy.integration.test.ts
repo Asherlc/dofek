@@ -28,13 +28,14 @@ function readWebSource(absolutePath: string): string {
 }
 
 describe("time range policy", () => {
-  it("requires TimeRangeSelector consumers to use the central timeRange framework", () => {
+  it("requires TimeRangeSelector consumers to use the central time-range framework", () => {
     const frameworkMarkers = [
       "TimeRangeDays",
       "selectedRangeQueryInput",
       "minimumSelectedRangeQueryInput",
       "useBodyDays",
       "useTrainingDays",
+      "useTimeRangePreference",
     ];
 
     for (const sourceFile of listSourceFiles(webSourceRoot)) {
@@ -46,7 +47,7 @@ describe("time range policy", () => {
       const relativePath = relative(webSourceRoot, sourceFile);
       expect(
         frameworkMarkers.some((marker) => source.includes(marker)),
-        `${relativePath} must route selected chart ranges through timeRange.ts`,
+        `${relativePath} must route selected chart ranges through the central time-range framework`,
       ).toBe(true);
     }
   });

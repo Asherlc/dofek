@@ -200,20 +200,22 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.mean_7d).toBe(44.1);
     });
 
-    it("filters out warmup rows before the cutoff date", async () => {
-      // Request 30 days ending 2025-03-15, cutoff = 2025-02-13
+    it("returns exactly the inclusive requested dates after discarding warmup rows", async () => {
+      // Request 30 days ending 2025-03-15, first included date = 2025-02-14
       // Warmup row on 2025-01-20 should be excluded (before cutoff)
-      // Row on 2025-02-12 should be excluded (before cutoff)
-      // Row on 2025-02-13 is included (>= cutoff)
+      // Row on 2025-02-13 should be excluded (one day before the range)
+      // Row on 2025-02-14 is included (the inclusive start)
+      // Row on 2025-03-16 should be excluded (after the selected end date)
       const { repo } = makeRepository([
         makeHrvBaselineRow({ date: "2025-01-20" }),
-        makeHrvBaselineRow({ date: "2025-02-12" }),
         makeHrvBaselineRow({ date: "2025-02-13" }),
+        makeHrvBaselineRow({ date: "2025-02-14" }),
         makeHrvBaselineRow({ date: "2025-03-15" }),
+        makeHrvBaselineRow({ date: "2025-03-16" }),
       ]);
       const result = await repo.getHrvBaseline(30, "2025-03-15");
       expect(result).toHaveLength(2);
-      expect(result[0]?.date).toBe("2025-02-13");
+      expect(result[0]?.date).toBe("2025-02-14");
       expect(result[1]?.date).toBe("2025-03-15");
     });
 

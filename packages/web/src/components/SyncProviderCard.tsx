@@ -17,7 +17,6 @@ export function SyncProviderCard({
   stats,
   recentLogs,
   onSync,
-  onFullSync,
 }: {
   provider: Pick<
     SyncProviderSummary,
@@ -30,7 +29,6 @@ export function SyncProviderCard({
   stats: ProviderStats | undefined;
   recentLogs: SyncLogEntry[];
   onSync: () => void;
-  onFullSync: () => void;
 }) {
   const lastSyncedRelative = provider.lastSyncedAt
     ? formatRelativeTime(provider.lastSyncedAt)
@@ -41,7 +39,6 @@ export function SyncProviderCard({
     : needsAuth
       ? `Connect ${provider.name}`
       : `Sync ${provider.name} from the last 7 days`;
-  const fullSyncTitle = `Sync all available ${provider.name} data`;
 
   return (
     <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
@@ -73,12 +70,12 @@ export function SyncProviderCard({
         {pushOnly && <span className="text-xs text-subtle">Mobile sync</span>}
         {!pushOnly && needsReauth && (
           <span className="text-xs" style={{ color: operationalStatusColors.warning.foreground }}>
-            Reconnect
+            Authorization expired
           </span>
         )}
         {!pushOnly && needsAuth && !needsReauth && (
           <span className="text-xs" style={{ color: operationalStatusColors.info.foreground }}>
-            Connect
+            Not connected
           </span>
         )}
       </div>
@@ -155,20 +152,10 @@ export function SyncProviderCard({
               {primaryActionLabel}
             </button>
           )}
-          {!pushOnly && !needsAuth && !needsReauth && state.status !== "syncing" && (
-            <button
-              type="button"
-              onClick={onFullSync}
-              title={fullSyncTitle}
-              aria-label={fullSyncTitle}
-              className="text-xs text-dim hover:text-muted transition-colors"
-            >
-              Full sync
-            </button>
-          )}
           <Link
             to="/providers/$id"
             params={{ id: provider.id }}
+            aria-label={`View ${provider.name} details`}
             className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details

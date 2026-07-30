@@ -10,6 +10,9 @@ import CorrelationScreen from "./correlation";
 
 type CorrelationScenario = "available" | "insufficient";
 
+const interpretationWarning =
+  "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.";
+
 const metrics = [
   {
     id: "protein",
@@ -62,6 +65,7 @@ const availableResult = {
   xStats: { mean: 110, median: 110, stddev: 15.81, min: 90, max: 130, n: 5 },
   yStats: { mean: 54, median: 55, stddev: 6.52, min: 46, max: 63, n: 5 },
   insight: "Higher protein intake tended to coincide with higher heart rate variability.",
+  interpretationWarning,
 };
 
 const insufficientResult = {
@@ -90,6 +94,48 @@ const insufficientResult = {
   },
   insight:
     "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
+  interpretationWarning,
+};
+
+const availableObservations = {
+  items: [
+    {
+      x: {
+        metricId: "protein",
+        date: "2026-07-19",
+        value: 130,
+        contributors: [
+          {
+            kind: "aggregate_inputs",
+            label: "Canonical daily nutrition inputs",
+            providerIds: ["manual"],
+            target: { type: "metric_family", family: "nutrition" },
+          },
+        ],
+      },
+      y: {
+        metricId: "hrv",
+        date: "2026-07-18",
+        value: 63,
+        contributors: [
+          {
+            kind: "aggregate_inputs",
+            label: "Daily recovery aggregate inputs",
+            providerIds: ["apple_health"],
+            target: { type: "metric_family", family: "recovery" },
+          },
+        ],
+      },
+    },
+  ],
+  totalCount: 5,
+  nextCursor: null,
+};
+
+const insufficientObservations = {
+  items: [],
+  totalCount: 0,
+  nextCursor: null,
 };
 
 function createMockLink(scenario: CorrelationScenario): TRPCLink<AppRouter> {
@@ -109,6 +155,12 @@ function createMockObservable(
       } else if (path === "correlation.computeV2") {
         observer.next?.({
           result: { data: scenario === "available" ? availableResult : insufficientResult },
+        });
+      } else if (path === "correlation.observations") {
+        observer.next?.({
+          result: {
+            data: scenario === "available" ? availableObservations : insufficientObservations,
+          },
         });
       }
       observer.complete?.();

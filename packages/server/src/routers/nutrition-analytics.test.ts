@@ -86,6 +86,17 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
     expect(result).toMatchObject({
       nutrients: [],
       professionalReview: { status: "no_supplements" },
+      dataQuality: {
+        selectedWindowDays: 30,
+        daysWithData: 0,
+        usableDays: 0,
+        overlapDays: 0,
+        conflictDays: 0,
+        completenessPercent: 0,
+        sourceLabels: [],
+        contributingSourceLabels: [],
+        excludedSourceLabels: [],
+      },
     });
     const queryText = execute.mock.calls
       .map((call) => collectSqlText(call[0]))
@@ -93,29 +104,44 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
     expect(queryText).toContain("AND fen.date > CURRENT_DATE -");
   });
 
-  it("adaptiveTdee uses lower date bounds for finite ranges", async () => {
-    const { caller, execute, sensorStore } = makeCaller();
+  it("adaptiveTdee uses one user-local end date for both data stores", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T15:30:00.000Z"));
+    const { execute, sensorStore } = makeCaller();
 
-    await caller.adaptiveTdee({ days: 90 });
+    try {
+      await createCaller({
+        db: { execute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "Asia/Tokyo",
+      }).adaptiveTdee({ days: 90 });
 
-    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND date > CURRENT_DATE -");
-    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    expect(bodyQueryText).toContain("subtractDays(today(), {days:UInt32})");
-    expect(bodyQueryParams).toMatchObject({ days: 90 });
+      const nutritionQuery = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(nutritionQuery).toContain("AND date >");
+      expect(nutritionQuery).toContain("2026-07-30");
+      expect(nutritionQuery).toContain("AND date <=");
+      expect(nutritionQuery).not.toContain("CURRENT_DATE");
+      const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(bodyQueryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
+      expect(bodyQueryParams).toMatchObject({ days: 90, endDate: "2026-07-30" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("adaptiveTdee omits lower date bounds when days is null", async () => {
+  it("adaptiveTdee bounds an all-time selection to the largest supported fit history", async () => {
     const { caller, execute, sensorStore } = makeCaller();
 
     await caller.adaptiveTdee({ days: null });
 
-    expect(collectSqlText(execute.mock.calls[0]?.[0])).not.toContain("CURRENT_DATE -");
+    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND date >");
     const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(bodyQueryText).toContain("WHERE user_id = {userId:UUID}");
-    expect(bodyQueryText).not.toContain("subtractDays");
-    expect(bodyQueryParams).not.toHaveProperty("days");
+    expect(bodyQueryText).toContain("subtractDays");
+    expect(bodyQueryParams).toMatchObject({ days: 365 });
   });
 
   it("macroRatios uses a lower date bound for finite ranges", async () => {

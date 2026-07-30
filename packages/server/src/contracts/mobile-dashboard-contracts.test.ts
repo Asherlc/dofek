@@ -165,6 +165,14 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
       healthspan: {
         healthspanScore: 84,
         yearsDelta: 1.8,
+        availability: {
+          status: "available",
+          availableMetricCount: 3,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "3 of 3 required Healthspan metrics are available.",
+          nextCondition: null,
+        },
         metrics: [],
         history: [],
         trend: "improving" as const,
@@ -255,6 +263,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
         { week: "2026-07-27", activity_type: "cycling", count: 1, hours: 1.5 },
         { week: "2026-07-20", activity_type: "running", count: 1, hours: 0.75 },
       ],
+      progressiveOverload: [],
       verticalAscent: [],
       climbing: {
         gradeProgression: [],

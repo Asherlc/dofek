@@ -85,6 +85,24 @@ describe("Nutrition analytics data coverage", () => {
             ) AS nutrient_values(nutrient_id, amount)
             ON CONFLICT DO NOTHING`,
       );
+      if (i === 10) {
+        await testCtx.db.execute(
+          sql`WITH new_entry AS (
+                INSERT INTO fitness.food_entry (
+                  user_id, provider_id, date, external_id, nutrition_grain, food_name, source_name,
+                  confirmed
+                ) VALUES (
+                  ${TEST_USER_ID}, 'test_provider',
+                  CURRENT_DATE - ${i}::int,
+                  'daily-nutrition-conflict', 'itemized', 'Conflicting meal',
+                  'Conflicting fixture', true
+                ) RETURNING id
+              )
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, 'calories', 1_900
+              FROM new_entry`,
+        );
+      }
     }
 
     // ── Insert 50 days of body weight metrics (for adaptiveTdee EWMA + macroRatios proteinPerKg) ──
@@ -290,8 +308,8 @@ describe("Nutrition analytics data coverage", () => {
         days: 90,
       });
 
-      // Should have daily data for all 50 days of nutrition data
-      expect(result.dailyData.length).toBeGreaterThanOrEqual(40);
+      expect(result.status).toBe("available");
+      expect(result.dailyData).toHaveLength(90);
 
       // With 50 days of data and weight measurements, TDEE should be estimated
       expect(result.estimatedTdee).not.toBeNull();
@@ -301,11 +319,15 @@ describe("Nutrition analytics data coverage", () => {
         expect(result.estimatedTdee).toBeLessThan(4000);
       }
 
-      // Should have data points from rolling windows
-      expect(result.dataPoints).toBeGreaterThan(0);
-
-      // Confidence should be > 0 with 50 days of data and weight
-      expect(result.confidence).toBeGreaterThan(0);
+      expect(result.estimateRange).not.toBeNull();
+      expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
+      expect(result.evidence.excludedDays.sourceConflict).toBe(1);
+      expect(result.dailyData).toContainEqual(
+        expect.objectContaining({
+          nutritionStatus: "source_conflict",
+          caloriesIn: null,
+        }),
+      );
     });
 
     it("applies EWMA smoothing to weight measurements", async () => {
