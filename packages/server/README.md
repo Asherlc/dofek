@@ -50,6 +50,17 @@ power/functional-threshold-power, or heart-rate/maximum-heart-rate prerequisite.
 render this contract without deriving metric availability. The numeric activity `tss` field remains
 nullable for consumers that need the score rather than its compact-card presentation.
 
+### Health-status evidence contract
+
+Health-status values are interpreted only by
+[`src/services/health-status.ts`](./src/services/health-status.ts). Each result includes a semantic
+`statusToken`, a short `statusLabel`, the exact server-evaluated `evaluationRule`, and a
+metric-specific `explanation`. Web and iOS render those fields directly and may map the semantic
+token to an icon or color, but they do not infer a classification from the numeric value, baseline,
+or deviation. Recovery classifications use the 30-day baseline in `baselineRelative`; its separate
+7-day-versus-prior-28-day comparison is context and does not determine the status, as defined by
+[`baseline-relative-metrics.ts`](./src/contracts/baseline-relative-metrics.ts).
+
 ### Correlation evidence contract
 
 Current web and mobile clients use the versioned `correlation.computeV2` endpoint. The endpoint

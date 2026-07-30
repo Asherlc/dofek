@@ -689,6 +689,7 @@ describe("buildHealthMetrics", () => {
       statusToken: "moving_as_intended" as const,
       statusColor: "positive" as const,
       statusLabel: "Moving as intended",
+      evaluationRule: "Below your baseline, where lower values support this metric",
       explanation: "Resting Heart Rate is below your baseline.",
     };
     const metrics = buildHealthMetrics({
