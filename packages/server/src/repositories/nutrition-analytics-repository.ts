@@ -12,7 +12,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { currentDateRangePredicate, type RangeDays } from "../lib/date-window.ts";
+import {
+  currentDateRangePredicate,
+  dateWindowStartPredicate,
+  type RangeDays,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   type BodyClickHouseStore,
@@ -255,7 +259,7 @@ export interface AdaptiveTdeeDailyRowData {
 }
 
 export interface AdaptiveTdeeEvidence {
-  selectedWindowDays: RangeDays;
+  selectedWindowDays: number;
   fitWindowDays: number;
   minimumCalorieDays: number;
   observedDays: number;
@@ -365,6 +369,8 @@ const macroRatioRowSchema = z.object({
 const KCAL_PER_KG = 7700;
 const TDEE_WINDOW = 28;
 const MINIMUM_CALORIE_DAYS = Math.ceil(TDEE_WINDOW * 0.7);
+/** Bound "All" to the largest explicit chart range to keep the calendar response finite. */
+const MAXIMUM_ADAPTIVE_TDEE_DAYS = 365;
 const MILLISECONDS_PER_DAY = 86_400_000;
 
 function parseDateYmd(date: string): Date {
@@ -395,31 +401,21 @@ function earlierDate(first: string, second: string): string {
  */
 export function buildAdaptiveTdeeCalendar(
   sourceDays: AdaptiveTdeeDataPoint[],
-  selectedWindowDays: RangeDays,
+  selectedWindowDays: number,
   today: string,
   accessWindow: AccessWindow,
 ): AdaptiveTdeeDataPoint[] {
   const sourceByDate = new Map(sourceDays.map((day) => [day.date, day]));
-  let startDate: string | undefined;
-  let endDate: string | undefined;
-
-  if (selectedWindowDays == null) {
-    const observedDates = [...sourceByDate.keys()].sort();
-    startDate = observedDates[0];
-    endDate = observedDates.at(-1);
-  } else {
-    startDate = shiftDateYmd(today, -(selectedWindowDays - 1));
-    endDate = today;
-  }
+  let startDate = shiftDateYmd(today, -(selectedWindowDays - 1));
+  let endDate = today;
 
   if (accessWindow.kind === "limited") {
-    startDate =
-      startDate == null ? accessWindow.startDate : laterDate(startDate, accessWindow.startDate);
+    startDate = laterDate(startDate, accessWindow.startDate);
     const accessEnd = shiftDateYmd(accessWindow.endDateExclusive, -1);
-    endDate = endDate == null ? accessEnd : earlierDate(endDate, accessEnd);
+    endDate = earlierDate(endDate, accessEnd);
   }
 
-  if (startDate == null || endDate == null || startDate > endDate) return [];
+  if (startDate > endDate) return [];
 
   const numberOfDays =
     Math.floor(
@@ -469,14 +465,18 @@ export function smoothWeightData(data: AdaptiveTdeeDataPoint[]): AdaptiveTdeeDai
 }
 
 /** Estimate TDEE using rolling 28-day windows on smoothed data. */
+function hasUsableCalories(
+  day: AdaptiveTdeeDailyRowData,
+): day is AdaptiveTdeeDailyRowData & { caloriesIn: number } {
+  return day.nutritionStatus === "available" && day.caloriesIn != null && day.caloriesIn > 0;
+}
+
 function maximumWindowCalorieDays(smoothedData: AdaptiveTdeeDailyRowData[]): number {
   let maximum = 0;
   for (let index = TDEE_WINDOW; index < smoothedData.length; index++) {
-    let calorieDays = 0;
-    for (let windowIndex = index - TDEE_WINDOW + 1; windowIndex <= index; windowIndex++) {
-      const day = smoothedData[windowIndex];
-      if (day?.caloriesIn != null && day.caloriesIn > 0) calorieDays++;
-    }
+    const calorieDays = smoothedData
+      .slice(index - TDEE_WINDOW + 1, index + 1)
+      .filter(hasUsableCalories).length;
     maximum = Math.max(maximum, calorieDays);
   }
   return maximum;
@@ -484,7 +484,7 @@ function maximumWindowCalorieDays(smoothedData: AdaptiveTdeeDailyRowData[]): num
 
 export function estimateTdee(
   smoothedData: AdaptiveTdeeDailyRowData[],
-  selectedWindowDays: RangeDays = null,
+  selectedWindowDays = 90,
 ): AdaptiveTdeeResultData {
   let latestTdee: number | null = null;
   const rollingEstimates: number[] = [];
@@ -497,20 +497,15 @@ export function estimateTdee(
     if (windowStart.smoothedWeight == null || windowEnd.smoothedWeight == null) continue;
 
     const weightChange = windowEnd.smoothedWeight - windowStart.smoothedWeight;
-    let totalCalories = 0;
-    let calorieDays = 0;
-
-    for (let windowIndex = index - TDEE_WINDOW + 1; windowIndex <= index; windowIndex++) {
-      const day = smoothedData[windowIndex];
-      if (day?.caloriesIn != null && day.caloriesIn > 0) {
-        totalCalories += day.caloriesIn;
-        calorieDays++;
-      }
-    }
+    const calorieWindow = smoothedData
+      .slice(index - TDEE_WINDOW + 1, index + 1)
+      .filter(hasUsableCalories);
+    const calorieDays = calorieWindow.length;
 
     if (calorieDays < MINIMUM_CALORIE_DAYS) continue;
 
-    const avgDailyCalories = totalCalories / calorieDays;
+    const avgDailyCalories =
+      calorieWindow.reduce((total, day) => total + day.caloriesIn, 0) / calorieDays;
     const dailyWeightChangeKcal = (weightChange * KCAL_PER_KG) / TDEE_WINDOW;
     const tdee = Math.round(avgDailyCalories - dailyWeightChangeKcal);
 
@@ -521,9 +516,7 @@ export function estimateTdee(
     rollingEstimates.push(tdee);
   }
 
-  const calorieDays = smoothedData.filter(
-    (day) => day.nutritionStatus === "available" && day.caloriesIn != null && day.caloriesIn > 0,
-  ).length;
+  const calorieDays = smoothedData.filter(hasUsableCalories).length;
   const weightDays = smoothedData.filter((day) => day.weightKg != null).length;
   const sourceConflict = smoothedData.filter(
     (day) => day.nutritionStatus === "source_conflict",
@@ -953,7 +946,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
   }
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */
-  async getAdaptiveTdeeData(days: RangeDays): Promise<AdaptiveTdeeDataPoint[]> {
+  async getAdaptiveTdeeData(days: number, endDate: string): Promise<AdaptiveTdeeDataPoint[]> {
     const [nutritionRows, weightRows] = await Promise.all([
       this.query(
         z.object({
@@ -965,11 +958,12 @@ export class NutritionAnalyticsRepository extends BaseRepository {
         sql`SELECT date, calories AS calories_in, resolution_status, excluded_source_labels
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
-              ${currentDateRangePredicate(sql`date`, days)}
+              ${dateWindowStartPredicate(sql`date`, endDate, days)}
+              AND date <= ${endDate}::date
               ${this.dateAccessPredicate(sql`date`)}
             ORDER BY date ASC`,
       ),
-      fetchBodyWeightRows(this.#requireBodyStore(), this.userId, this.timezone, "now", days, {
+      fetchBodyWeightRows(this.#requireBodyStore(), this.userId, this.timezone, endDate, days, {
         accessWindow: this.accessWindow,
       }),
     ]);
@@ -1004,15 +998,17 @@ export class NutritionAnalyticsRepository extends BaseRepository {
 
   /** Adaptive TDEE estimation using weight smoothing and rolling regression. */
   async getAdaptiveTdee(days: RangeDays): Promise<AdaptiveTdeeEstimate> {
-    const sourceData = await this.getAdaptiveTdeeData(days);
+    const selectedWindowDays = days ?? MAXIMUM_ADAPTIVE_TDEE_DAYS;
+    const endDate = formatDateYmdInTimeZone(new Date(), this.timezone);
+    const sourceData = await this.getAdaptiveTdeeData(selectedWindowDays, endDate);
     const calendar = buildAdaptiveTdeeCalendar(
       sourceData,
-      days,
-      formatDateYmdInTimeZone(new Date(), this.timezone),
+      selectedWindowDays,
+      endDate,
       this.accessWindow,
     );
     const smoothedData = smoothWeightData(calendar);
-    const result = estimateTdee(smoothedData, days);
+    const result = estimateTdee(smoothedData, selectedWindowDays);
     return new AdaptiveTdeeEstimate(result);
   }
 

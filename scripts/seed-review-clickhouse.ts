@@ -28,6 +28,25 @@ const seedProviderIds = ["whoop", "apple_health", "strava", "bodyspec", "manual_
 const seedProviderList = seedProviderIds.map(clickHouseStringLiteral).join(", ");
 const reviewUserId = clickHouseStringLiteral(USER_ID);
 const reviewBodyWeightPrefix = "review-seed-body-weight-";
+const metricStreamTargetColumns = `(
+  id,
+  activity_id,
+  user_id,
+  recorded_at,
+  channel,
+  provider_id,
+  external_id,
+  device_id,
+  source_type,
+  scalar,
+  vector,
+  point,
+  metadata,
+  ingested_at,
+  is_deleted,
+  version,
+  generation
+)`;
 
 const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
   {
@@ -219,7 +238,7 @@ export function buildReviewClickHouseCopyStatements(postgresConnectionString: st
 }
 
 function buildReviewBodyWeightTombstoneStatement(): string {
-  return `INSERT INTO ingest.metric_stream
+  return `INSERT INTO ingest.metric_stream ${metricStreamTargetColumns}
 SELECT
   id,
   activity_id,
@@ -247,25 +266,7 @@ WHERE user_id = toUUID(${reviewUserId})
 }
 
 function buildReviewBodyWeightInsertStatement(): string {
-  return `INSERT INTO ingest.metric_stream (
-  id,
-  activity_id,
-  user_id,
-  recorded_at,
-  channel,
-  provider_id,
-  external_id,
-  device_id,
-  source_type,
-  scalar,
-  vector,
-  point,
-  metadata,
-  ingested_at,
-  is_deleted,
-  version,
-  generation
-)
+  return `INSERT INTO ingest.metric_stream ${metricStreamTargetColumns}
 SELECT
   reinterpretAsUUID(
     MD5(concat('${reviewBodyWeightPrefix}', toString(today() - toIntervalDay(number))))

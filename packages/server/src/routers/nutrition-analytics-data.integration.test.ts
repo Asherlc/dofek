@@ -92,9 +92,10 @@ describe("Nutrition analytics data coverage", () => {
                   user_id, provider_id, date, external_id, nutrition_grain, food_name, source_name,
                   confirmed
                 ) VALUES (
-                  ${TEST_USER_ID}, 'dofek',
+                  ${TEST_USER_ID}, 'test_provider',
                   CURRENT_DATE - ${i}::int,
-                  'daily-nutrition-conflict', 'daily_aggregate', NULL, 'Conflicting fixture', true
+                  'daily-nutrition-conflict', 'itemized', 'Conflicting meal',
+                  'Conflicting fixture', true
                 ) RETURNING id
               )
               INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)

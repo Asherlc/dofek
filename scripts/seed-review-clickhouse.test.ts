@@ -38,4 +38,18 @@ describe("seed-review-clickhouse", () => {
     expect(seedStatement).toContain("numbers(90)");
     expect(statements.join("\n")).not.toContain("TRUNCATE TABLE IF EXISTS ingest.metric_stream");
   });
+
+  it("names every metric-stream target column for seed inserts and tombstones", () => {
+    const statements = buildReviewClickHouseCopyStatements(
+      "postgres://health:health@db:5432/health",
+    ).filter((statement) => statement.startsWith("INSERT INTO ingest.metric_stream"));
+
+    expect(statements).toHaveLength(2);
+    for (const statement of statements) {
+      expect(statement).toMatch(
+        /^INSERT INTO ingest\.metric_stream \(\s*id,\s*activity_id,\s*user_id,/,
+      );
+      expect(statement).toContain("generation\n)");
+    }
+  });
 });

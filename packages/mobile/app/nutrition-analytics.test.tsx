@@ -83,6 +83,10 @@ vi.mock("../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
 }));
 
+vi.mock("../lib/units", () => ({
+  useUnitConverter: () => ({ caloriesPerDayLabel: "energy-rate-unit" }),
+}));
+
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mocks.routerPush }),
 }));
@@ -324,7 +328,8 @@ describe("NutritionAnalyticsScreen", () => {
 
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByText("Nutrition analytics refresh failed.")).toBeTruthy();
-    expect(screen.getByText("Observed rolling range: 2,180–2,320 kcal/day")).toBeTruthy();
+    expect(screen.getByText("Observed rolling range: 2,180–2,320 energy-rate-unit")).toBeTruthy();
+    expect(screen.getByText("90-day evaluation · 90 accessible calendar days")).toBeTruthy();
     expect(screen.getByText("82 calorie days · 45 weight days · 30 accepted windows")).toBeTruthy();
     expect(
       screen.getByText(

@@ -20,6 +20,7 @@ import { DaySelector } from "../components/DaySelector";
 import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
+import { useUnitConverter } from "../lib/units";
 import { useRefresh } from "../lib/useRefresh";
 import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
@@ -173,6 +174,8 @@ function AdaptiveTdeeSection({
   data: AdaptiveTdeeResult | undefined;
   loading: boolean;
 }) {
+  const units = useUnitConverter();
+
   if (loading) return <LoadingText />;
 
   return (
@@ -194,7 +197,7 @@ function AdaptiveTdeeSection({
               {data.estimateRange ? (
                 <Text style={styles.cardSubtext}>
                   Observed rolling range: {formatNutritionNumber(data.estimateRange.minimum)}–
-                  {formatNutritionNumber(data.estimateRange.maximum)} kcal/day
+                  {formatNutritionNumber(data.estimateRange.maximum)} {units.caloriesPerDayLabel}
                 </Text>
               ) : null}
             </>
@@ -213,6 +216,10 @@ function AdaptiveTdeeEvidence({ data }: { data: AdaptiveTdeeResult }) {
   const exclusions = evidence.excludedDays;
   return (
     <View style={styles.tdeeDetails}>
+      <Text style={styles.cardSubtext}>
+        {evidence.selectedWindowDays}-day evaluation · {evidence.observedDays} accessible calendar
+        days
+      </Text>
       <Text style={styles.cardSubtext}>
         {evidence.fitWindowDays}-day fit · at least {evidence.minimumCalorieDays} usable calorie
         days

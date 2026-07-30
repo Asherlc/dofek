@@ -97,6 +97,7 @@ describe("AdaptiveTdeeChart", () => {
     expect(
       screen.getByText("Observed rolling range: 2180–2320 central-calorie-rate-unit"),
     ).toBeTruthy();
+    expect(screen.getByText("90-day evaluation · 90 accessible calendar days")).toBeTruthy();
     expect(screen.getByText("28-day fit · at least 20 usable calorie days")).toBeTruthy();
     expect(screen.getByText("82 calorie days · 45 weight days · 30 accepted windows")).toBeTruthy();
     expect(
