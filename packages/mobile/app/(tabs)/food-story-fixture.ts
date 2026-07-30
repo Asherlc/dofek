@@ -63,6 +63,8 @@ export function seedFoodStoryQuery(queryClient: QueryClient, date: string): void
       sourceLabels: ["dofek"],
       contributingSourceLabels: ["dofek"],
       excludedSourceLabels: [],
+      contributionGrain: "itemized",
+      contributionLabel: "Dofek itemized entries",
     },
     summary: {
       calories: 2220,
