@@ -20658,6 +20658,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   serialization or validation boundary when module-initialization coverage can
   cause Stryker to select a different test than a nearby schema-only test.
 
+## 2026-07-29 — Local integration stack exhausted Docker network pools
+
+- **Status:** Local infrastructure blocker for issue #2170; isolated CI
+  integration validation required.
+- **Symptoms:** The focused monthly-report integration suite could not start
+  its Compose dependencies, and the failed startup left a generated
+  `.env.local` pointing at a ClickHouse port with no running service.
+- **User impact:** No production impact. The real-ClickHouse local validation
+  for #2170 did not execute; Docker-free unit, mobile, lint, and type checks
+  remained available.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/monthly-report-repository.integration.test.ts`.
+  Its first fatal line was
+  `Network 2170_default Error Error response from daemon: all predefined address pools have been fully subnetted`.
+  `pnpm compose -- ps -a` showed no containers for the #2170 workspace. Docker
+  listed 32 networks, including five unused networks owned by other named
+  workspaces. Docker documents that user-defined bridge networks allocate
+  subnets from the daemon's default address pools:
+  <https://docs.docker.com/reference/cli/dockerd/#default-address-pools>.
+- **Root cause:** The shared local Docker daemon had no subnet remaining in its
+  predefined address pools, so it could not create the isolated
+  `2170_default` network. The subsequent analytics lint connection refusal was
+  caused by sourcing the generated environment for services that never
+  started, not by report SQL or application behavior.
+- **Fix / mitigation:** Preserve the failed generated environment under the
+  worktree's ignored `.context` for evidence and rerun Docker-free validation
+  without sourcing it. Do not delete another workspace's networks or change
+  daemon address pools from this issue shard. Use the PR's isolated ClickHouse
+  integration shard as the required real-engine validation substitute.
+- **Validation:** Focused server, web, and mobile suites and root TypeScript
+  passed before the infrastructure attempt. The exact integration suite
+  remains unexecuted locally because its dependency stack could not be
+  created; fresh exact-head CI must prove it before merge.
+- **Remaining risk / follow-up:** Clean up networks only from their owning
+  finished workspaces, or coordinate a daemon-level pool change outside this
+  issue. Do not merge #2170 unless its exact-head integration shard passes.
+
 ## 2026-07-29 — Local integration network pool exhausted
 
 - **Status:** Resolved for the issue #2133 validation run.

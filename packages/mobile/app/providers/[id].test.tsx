@@ -45,6 +45,10 @@ vi.mock("@react-native-community/datetimepicker", () => ({
 }));
 
 vi.mock("react-native", () => ({
+  AccessibilityInfo: {
+    setAccessibilityFocus: vi.fn(),
+  },
+  findNodeHandle: vi.fn().mockReturnValue(1),
   AppState: {
     currentState: "active",
     addEventListener: () => ({ remove: vi.fn() }),
@@ -169,6 +173,7 @@ vi.mock("react-native", () => ({
       transparent: _t,
       presentationStyle: _ps,
       onRequestClose: _orc,
+      onShow: _os,
       ...rest
     } = props;
     return React.createElement("div", { role: "dialog", ...rest }, children);
@@ -1113,11 +1118,22 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Disconnect", () => {
-    it("renders disconnect button when provider is authorized", async () => {
+    it("groups destructive actions in one danger zone with retained-data copy", async () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.getByText("Disconnect Provider")).toBeTruthy();
+      expect(screen.getAllByText("Danger Zone")).toHaveLength(1);
+      expect(screen.getByText("Disconnect Wahoo")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Disconnecting Wahoo removes its saved authorization and stops future syncs. Data already imported into Dofek is kept.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Permanently delete every Wahoo record from Dofek. This does not change whether Wahoo is connected.",
+        ),
+      ).toBeTruthy();
     });
 
     it("does not render disconnect button when provider is not authorized", async () => {
@@ -1127,75 +1143,56 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.queryByText("Disconnect Provider")).toBeNull();
+      expect(screen.queryByText("Disconnect Strava")).toBeNull();
+      expect(screen.getByText("Delete All Data")).toBeTruthy();
     });
 
-    it("shows Alert.alert with correct title when disconnect button is clicked", async () => {
+    it("shows a provider-named confirmation with the safe action first", async () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      fireEvent.click(screen.getByText("Disconnect Provider"));
+      fireEvent.click(screen.getByLabelText("Disconnect Wahoo"));
 
-      expect(mockAlertFn).toHaveBeenCalledWith(
-        "Disconnect Provider",
-        expect.any(String),
-        expect.arrayContaining([
-          expect.objectContaining({ text: "Cancel", style: "cancel" }),
-          expect.objectContaining({ text: "Disconnect", style: "destructive" }),
-        ]),
-      );
+      expect(screen.getByText("Disconnect Wahoo?")).toBeTruthy();
+      const actions = screen.getByLabelText("Cancel disconnect").parentElement;
+      expect(actions?.firstElementChild).toBe(screen.getByLabelText("Cancel disconnect"));
+      expect(screen.getByLabelText("Confirm disconnect Wahoo")).toBeTruthy();
     });
 
-    it("calls disconnect mutation and navigates back when confirmed", async () => {
+    it("disconnects once, invalidates provider state, and stays on the detail screen", async () => {
       mockDisconnectMutateAsync.mockResolvedValue({});
 
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      fireEvent.click(screen.getByText("Disconnect Provider"));
-
-      const alertCall = mockAlertFn.mock.calls[0];
-      if (!alertCall) throw new Error("Disconnect alert was not shown");
-      const buttons: Array<{
-        text: string;
-        style: string;
-        onPress?: () => Promise<void>;
-      }> = alertCall[2];
-      const disconnectButton = buttons.find((b) => b.text === "Disconnect");
-      expect(disconnectButton).toBeDefined();
-      if (!disconnectButton) throw new Error("Disconnect button not found");
-
-      await disconnectButton.onPress?.();
+      fireEvent.click(screen.getByLabelText("Disconnect Wahoo"));
+      const confirm = screen.getByLabelText("Confirm disconnect Wahoo");
+      fireEvent.click(confirm);
+      fireEvent.click(confirm);
 
       await waitFor(() => {
         expect(mockDisconnectMutateAsync).toHaveBeenCalledWith({ providerId: "wahoo" });
-        expect(mockBack).toHaveBeenCalled();
+        expect(mockDisconnectMutateAsync).toHaveBeenCalledTimes(1);
+        expect(mockInvalidateProviders).toHaveBeenCalled();
+        expect(mockInvalidateProviderStats).toHaveBeenCalled();
+        expect(mockBack).not.toHaveBeenCalled();
       });
     });
 
-    it("invalidates providers and providerStats after successful disconnect", async () => {
-      mockDisconnectMutateAsync.mockResolvedValue({});
+    it("shows the exact server disconnect error in the confirmation", async () => {
+      mockDisconnectMutateAsync.mockRejectedValue(
+        new Error("This provider is not connected to your account."),
+      );
 
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      fireEvent.click(screen.getByText("Disconnect Provider"));
-
-      const alertCall = mockAlertFn.mock.calls[0];
-      if (!alertCall) throw new Error("Disconnect alert was not shown");
-      const buttons: Array<{
-        text: string;
-        style: string;
-        onPress?: () => Promise<void>;
-      }> = alertCall[2];
-      const disconnectButton = buttons.find((b) => b.text === "Disconnect");
-      if (!disconnectButton) throw new Error("Disconnect button not found");
-
-      await disconnectButton.onPress?.();
+      fireEvent.click(screen.getByLabelText("Disconnect Wahoo"));
+      fireEvent.click(screen.getByLabelText("Confirm disconnect Wahoo"));
 
       await waitFor(() => {
-        expect(mockInvalidateProviders).toHaveBeenCalled();
-        expect(mockInvalidateProviderStats).toHaveBeenCalled();
+        expect(screen.getByText("This provider is not connected to your account.")).toBeTruthy();
+        expect(mockCaptureException).toHaveBeenCalled();
       });
     });
 

@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
@@ -16,6 +17,9 @@ import {
   loadTokens,
   saveTokens,
 } from "./tokens.ts";
+import { executeWithSchema } from "./typed-sql.ts";
+
+const retainedActivitySchema = z.object({ external_id: z.string() });
 
 describe("Token storage (integration)", () => {
   let ctx: TestContext;
@@ -250,6 +254,12 @@ describe("Token storage (integration)", () => {
       providerName: "Authorization Reset Provider",
       verifyToken: "authorization-reset-verifier",
     });
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity
+            (provider_id, user_id, external_id, activity_type, started_at)
+          VALUES
+            (${providerId}, ${TEST_USER_ID}, 'retained-after-disconnect', 'running', now())`,
+    );
 
     await deleteProviderAuthorization(ctx.db, providerId, TEST_USER_ID);
 
@@ -279,11 +289,20 @@ describe("Token storage (integration)", () => {
       .select({ id: provider.id })
       .from(provider)
       .where(eq(provider.id, providerId));
+    const activityRows = await executeWithSchema(
+      ctx.db,
+      retainedActivitySchema,
+      sql`SELECT external_id
+          FROM fitness.activity
+          WHERE user_id = ${TEST_USER_ID}
+            AND provider_id = ${providerId}`,
+    );
 
     expect(connectionRows).toEqual([]);
     expect(tokenRows).toEqual([]);
     expect(webhookRows).toEqual([]);
     expect(providerRows).toEqual([{ id: providerId }]);
+    expect(activityRows).toEqual([{ external_id: "retained-after-disconnect" }]);
   });
 
   it("rolls back a new provider connection when token persistence fails", async () => {

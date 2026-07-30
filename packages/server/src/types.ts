@@ -63,7 +63,11 @@ export type {
   WalkingBiomechanicsRow,
 } from "./routers/hiking.ts";
 // Monthly report router types
-export type { MonthlyReportResult, MonthSummary } from "./routers/monthly-report.ts";
+export type {
+  MonthlyReportData,
+  MonthlyReportResult,
+  MonthSummary,
+} from "./routers/monthly-report.ts";
 // PMC router types
 export type { PmcChartResult, PmcDataPoint, TssModelInfo } from "./routers/pmc.ts";
 // Power router types
@@ -101,6 +105,7 @@ export type {
 } from "./routers/stress.ts";
 // Weekly report router types
 export type {
+  WeeklyReportData,
   WeeklyReportResult,
   WeekSummary,
 } from "./routers/weekly-report.ts";

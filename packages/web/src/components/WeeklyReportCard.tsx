@@ -1,11 +1,11 @@
 import { formatDateShort, formatDurationMinutes, formatHRV } from "@dofek/format/format";
 import { sleepPerformanceColor } from "@dofek/scoring/scoring";
-import type { WeeklyReportResult } from "dofek-server/types";
+import type { WeeklyReportData } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 import { ReportDecisionSynthesis } from "./ReportDecisionSynthesis.tsx";
 
 interface WeeklyReportCardProps {
-  data: WeeklyReportResult | undefined;
+  data: WeeklyReportData | undefined;
   loading?: boolean;
 }
 

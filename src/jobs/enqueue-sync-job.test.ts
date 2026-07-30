@@ -43,6 +43,65 @@ describe("enqueueSyncJob", () => {
     );
   });
 
+  it("adds lifecycle-scoped deduplication to a user-triggered initial full sync", async () => {
+    await enqueueSyncJob(
+      "garmin",
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        sinceIso: "1970-01-01T00:00:00.000Z",
+        untilIso: "2026-07-29T17:00:00.000Z",
+        targetRefreshWindow: { type: "full" },
+      },
+      { singleFlightFullSync: true },
+    );
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ targetRefreshWindow: { type: "full" } }),
+      expect.objectContaining({
+        deduplication: { id: "sync:full:garmin:user-1" },
+      }),
+    );
+  });
+
+  it("does not reuse the initial full-sync deduplication key for a checkpoint continuation", async () => {
+    await enqueueSyncJob(
+      "garmin",
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        sinceIso: "1970-01-01T00:00:00.000Z",
+        untilIso: "2026-07-29T17:00:00.000Z",
+        targetRefreshWindow: { type: "full" },
+        checkpoint: { phase: "api", stepIndex: 2 },
+      },
+      { singleFlightFullSync: true },
+    );
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ checkpoint: { phase: "api", stepIndex: 2 } }),
+      expect.not.objectContaining({ deduplication: expect.anything() }),
+    );
+  });
+
+  it("does not lifecycle-deduplicate non-user-triggered full sync work", async () => {
+    await enqueueSyncJob("garmin", {
+      userId: "user-1",
+      providerId: "garmin",
+      sinceIso: "1970-01-01T00:00:00.000Z",
+      untilIso: "2026-07-29T17:00:00.000Z",
+      targetRefreshWindow: { type: "full" },
+    });
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ targetRefreshWindow: { type: "full" } }),
+      expect.not.objectContaining({ deduplication: expect.anything() }),
+    );
+  });
+
   it("enqueues with delay when a cooldown is active", async () => {
     mockGetActive.mockResolvedValue({
       providerId: "garmin",
