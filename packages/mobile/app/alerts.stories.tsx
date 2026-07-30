@@ -1,18 +1,13 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRouter,
-  RouterProvider,
-} from "@tanstack/react-router";
 import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import { getQueryKey } from "@trpc/react-query";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
-import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
-import { trpc } from "../lib/trpc.ts";
-import { AlertsPage } from "./AlertsPage.tsx";
+import { View } from "react-native";
+import { trpc } from "../lib/trpc";
+import { colors } from "../theme";
+import AlertsScreen from "./alerts";
 
 type AlertsScenario = "needs-attention" | "all-clear" | "status-unavailable" | "stale-status";
 
@@ -44,18 +39,6 @@ const activeAlerts = [
       "Dofek couldn’t get the latest data from WHOOP. Reconnect WHOOP, then start the sync again.",
     action: "reconnect" as const,
     actionLabel: "Reconnect WHOOP",
-  },
-  {
-    id: "apple-health-import:sleep",
-    providerId: "apple_health",
-    providerLabel: "Apple Health",
-    datasetKey: "sleep",
-    occurredAt: occurredMinutesAgo(42),
-    title: "Apple Health file wasn’t imported",
-    message:
-      "Dofek couldn’t finish importing the Apple Health file. Check that you selected the correct file, then import it again.",
-    action: "retry_import" as const,
-    actionLabel: "Import Apple Health again",
   },
 ];
 
@@ -125,24 +108,13 @@ function AlertsStoryFrame({ scenario }: { scenario: AlertsScenario }) {
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
     [scenario],
   );
-  const router = useMemo(() => {
-    const rootRoute = createRootRoute({
-      component: () => (
-        <ProcessingAlertsProvider>
-          <AlertsPage />
-        </ProcessingAlertsProvider>
-      ),
-    });
-    return createRouter({
-      routeTree: rootRoute,
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-    });
-  }, []);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <AlertsScreen />
+        </View>
       </QueryClientProvider>
     </trpc.Provider>
   );
@@ -150,33 +122,25 @@ function AlertsStoryFrame({ scenario }: { scenario: AlertsScenario }) {
 
 const meta = {
   title: "Pages/Alerts",
-  component: AlertsPage,
-  parameters: {
-    layout: "fullscreen",
-  },
-} satisfies Meta<typeof AlertsPage>;
+  component: AlertsScreen,
+} satisfies Meta<typeof AlertsScreen>;
 
 export default meta;
-
 type Story = StoryObj<typeof meta>;
 
 export const NeedsAttention: Story = {
-  name: "Needs attention",
   render: () => <AlertsStoryFrame scenario="needs-attention" />,
 };
 
 export const AllClear: Story = {
-  name: "All clear",
   render: () => <AlertsStoryFrame scenario="all-clear" />,
 };
 
 export const StatusUnavailable: Story = {
-  name: "Status unavailable",
   tags: ["review-scenario", "review-scenario-error"],
   render: () => <AlertsStoryFrame scenario="status-unavailable" />,
 };
 
 export const StaleAlerts: Story = {
-  name: "Stale alerts after refresh failure",
   render: () => <AlertsStoryFrame scenario="stale-status" />,
 };

@@ -5,6 +5,7 @@ interface QueryStatePanelProps {
   contextLabel?: string;
   error?: unknown;
   variant?: "loading" | "error" | "empty";
+  title?: string;
   message?: ReactNode;
   height?: number;
   onRetry?: () => void;
@@ -26,6 +27,7 @@ export function QueryStatePanel({
   contextLabel,
   error,
   variant = error ? "error" : "empty",
+  title,
   message,
   height = 180,
   onRetry,
@@ -76,9 +78,10 @@ export function QueryStatePanel({
             !
           </span>
           <h2 className="text-sm font-semibold" style={{ color: errorTone.foreground }}>
-            {contextLabel
-              ? `${contextLabel}: Could not load this section`
-              : "Could not load this section"}
+            {title ??
+              (contextLabel
+                ? `${contextLabel}: Could not load this section`
+                : "Could not load this section")}
           </h2>
         </>
       ) : null}

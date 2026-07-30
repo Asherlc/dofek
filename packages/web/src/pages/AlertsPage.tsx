@@ -1,5 +1,8 @@
 import { formatRelativeTime } from "@dofek/format/format";
-import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
+import {
+  type ProcessingAlert,
+  processingAlertsFailurePresentation,
+} from "@dofek/providers/processing-alerts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -30,6 +33,24 @@ export function AlertsPage() {
   const totalPages = Math.ceil(alerts.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
   const visibleAlerts = alerts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const failurePresentation = alertsQuery.error
+    ? processingAlertsFailurePresentation({
+        errorMessage: alertsQuery.error.message,
+        lastCheckedLabel: alertsQuery.data
+          ? formatRelativeTime(alertsQuery.data.generatedAt)
+          : null,
+      })
+    : null;
+  const failurePanel = failurePresentation ? (
+    <QueryStatePanel
+      error={alertsQuery.error}
+      title={failurePresentation.title}
+      message={failurePresentation.message}
+      onRetry={() => void alertsQuery.refetch()}
+      retryLabel={failurePresentation.retryLabel}
+      retrying={alertsQuery.isFetching}
+    />
+  ) : null;
 
   return (
     <PageLayout
@@ -38,11 +59,8 @@ export function AlertsPage() {
     >
       {alertsQuery.isLoading && !alertsQuery.data ? (
         <QueryStatePanel variant="loading" />
-      ) : alertsQuery.error && !alertsQuery.data ? (
-        <QueryStatePanel
-          error={alertsQuery.error}
-          message="Alerts could not be loaded. Refresh the page to try again."
-        />
+      ) : failurePresentation && (!alertsQuery.data || alerts.length === 0) ? (
+        failurePanel
       ) : alertsQuery.data?.alerts.length === 0 ? (
         <section className="rounded-lg border border-border bg-surface px-5 py-8 text-center">
           <h3 className="text-sm font-semibold text-foreground">Nothing needs your attention</h3>
@@ -52,6 +70,7 @@ export function AlertsPage() {
         </section>
       ) : (
         <div className="space-y-3">
+          {failurePanel}
           {visibleAlerts.map((alert) => (
             <article
               key={alert.id}
