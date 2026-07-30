@@ -1,11 +1,63 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
+
+## 2026-07-29: Sentry React Native upgrade mixed binary and source Cocoa SDKs
+
+### Symptoms
+
+The Sentry React Native dependency upgrade passed TypeScript and Storybook
+validation, but a generated iOS Release build failed while compiling
+`RNSentry`.
+
+### User Impact
+
+There was no production or end-user impact because the dependency update
+remained blocked from merge. Without the native validation, the generated iOS
+application would not have compiled.
+
+### Evidence
+
+The exact failing command was the XcodeBuildMCP Release build for the generated
+`Dofek` workspace and simulator. Its first fatal compiler diagnostic was an
+`Include of non-modular header inside framework module 'RNSentry.RNSentry'`
+error for the Cocoa `Sentry.h` header. The generated Pods state contained
+Sentry React Native's prebuilt Sentry 9.19.1 XCFramework while the Dofek
+HealthKit and watch targets still requested the source-built Sentry 9.13.0 pod.
+Sentry React Native 8.20.0 documents both its default prebuilt XCFramework and
+the `SENTRY_USE_XCFRAMEWORK=0` source-build option in its
+[podspec](https://github.com/getsentry/sentry-react-native/blob/8.20.0/RNSentry.podspec#L76-L100).
+
+### Root Cause
+
+The application linked two incompatible forms and versions of the same native
+Sentry Cocoa SDK: RNSentry's default prebuilt 9.19.1 XCFramework and the custom
+native targets' source-built 9.13.0 CocoaPod.
+
+### Fix or Mitigation
+
+The Expo Podfile plugin now sets `SENTRY_USE_XCFRAMEWORK=0` before pod
+resolution, making the source-built CocoaPod the single native Sentry
+implementation. The watch target pin was aligned to 9.19.1. No compiler
+warning suppression, duplicate-framework workaround, retry, or timeout was
+added.
+
+### Validation
+
+Expo prebuild generated one source-built Sentry 9.19.1 dependency and no Sentry
+XCFramework search path. The same Release simulator build then completed
+successfully with the required public build settings.
+
+### Remaining Risk
+
+Future Sentry React Native upgrades can change the bundled Cocoa SDK version.
+Keep the watch-target pin aligned and retain the generated Release build as the
+native compatibility gate.
 
 ## 2026-07-29: Responsive E2E selected the wrong 14-day control
 
