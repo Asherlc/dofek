@@ -167,7 +167,7 @@ describe("BodyPage", () => {
     expect(screen.getAllByText("Body measurements are unavailable.")).toHaveLength(1);
     expect(screen.getByText("Body composition:")).toBeTruthy();
     expect(screen.getByText("Body composition is unavailable. Retry from the notice above.")).toBe(
-      screen.getByRole("status"),
+      screen.getByTestId("query-state-empty").querySelector("p"),
     );
     expect(screen.getByText("Health status bar")).toBeTruthy();
     expect(screen.getByText("Goal weight input")).toBeTruthy();

@@ -71,9 +71,11 @@ function isQueryUnavailable(query: QueryResultWithData): boolean {
 
 function BodySectionUnavailable({ label }: { label: string }) {
   return (
-    <output className="card block px-4 py-3 text-sm text-dim">
-      {label} is unavailable. Retry from the notice above.
-    </output>
+    <QueryStatePanel
+      variant="empty"
+      height={48}
+      message={`${label} is unavailable. Retry from the notice above.`}
+    />
   );
 }
 
