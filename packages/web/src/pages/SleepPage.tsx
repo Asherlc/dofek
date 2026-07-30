@@ -125,6 +125,7 @@ export function SleepPage() {
 
         {/* Data Sources */}
         <PageSection
+          id="sleep-data-sources"
           title="Data Sources"
           subtitle="Which provider and device supplied each night's sleep data"
         >

@@ -20773,3 +20773,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Remove only the issue-2103 Compose project
   during worktree cleanup. Treat any hosted SQLFluff failure as a new code
   signal rather than attributing it to this local Docker failure.
+
+## 2026-07-29 — Docker VM AIO exhaustion blocked the issue-2091 iOS data audit
+
+- **Status:** Unresolved shared-host validation blocker. Issue #2091 remains In
+  progress with its implementation preserved but no PR opened.
+- **Symptoms:** The signed Release app built, installed, and launched, but could
+  not advance past sign-in because the worktree-local API did not start.
+  Redpanda restart-looped before the server could initialize ClickHouse or
+  accept requests on port 3100.
+- **User impact:** No production impact. The issue-2091 web runtime audit,
+  focused tests, typechecks, lint, complete unit/mobile suite, production web
+  build, and both Storybook builds passed, but the data-backed native metric
+  card drilldowns remain unverified in a real app session.
+- **Evidence:** `pnpm compose:up` started the isolated services and
+  `pnpm tsx scripts/with-env.ts -- pnpm seed` applied 76 migrations and created
+  the documented `dev-session`, 180 days of recovery metrics, and 120 sleep
+  sessions. `pnpm review:seed-clickhouse` first failed with
+  `Database postgres_fitness does not exist` because server bootstrap had not
+  run. The exact server command
+  `PORT=3100 pnpm --filter dofek-server dev` then failed first with
+  `Connection error: connect ECONNREFUSED 127.0.0.1:50292`.
+  `pnpm compose -- logs --tail=120 redpanda` showed the causal fatal line:
+  `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds
+  the capacity in /proc/sys/fs/aio-max-nr 65536.` Redpanda documents a
+  production-readiness check for sufficient
+  [maximum AIO events](https://docs.redpanda.com/streaming/25.2/deploy/redpanda/manual/production/production-readiness/).
+  The native accessibility snapshot therefore contained the interactive login
+  screen and `Could not connect to the server`, not the seeded metric cards.
+- **Root cause:** The shared Docker VM had exhausted its kernel asynchronous-I/O
+  event capacity, so this worktree's required Redpanda process exited 133 and
+  the fail-fast server could not connect to its required metric-stream broker.
+  This is outside the issue branch and isolated Compose configuration.
+- **Fix / mitigation:** No kernel tuning, cross-workspace container shutdown,
+  publisher disablement, retry, timeout, fake API, credential injection, or
+  Storybook substitution was used. The issue branch preserves the complete
+  implementation and passing non-native validation while the issue remains
+  visibly active.
+- **Validation:** The ad-hoc signed Release `xcodebuild` completed successfully,
+  and the resulting `Dofek.app` installed and launched on the iOS 26.5 audit
+  simulator. The deterministic Postgres seed also completed and verified its
+  representative row counts. Full data-backed native navigation is still
+  blocked.
+- **Remaining risk / follow-up:** Free or increase AIO capacity in the shared
+  Docker VM, restart this worktree's canonical Compose services, start the
+  server on port 3100, and rerun the Release app audit. The repository documents
+  `dev-session` only as a browser cookie through `/auth/dev-login`; no supported
+  mobile SecureStore or deep-link login path for that seeded account was found,
+  so the rerun also needs a supported synthetic mobile-account sign-in flow.

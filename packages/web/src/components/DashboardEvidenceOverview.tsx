@@ -230,6 +230,13 @@ export function DashboardEvidenceOverview({
               />
             </MiniChartFrame>
           </div>
+          <a
+            aria-label="View resting heart rate data"
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+            href="/body/heart-rate"
+          >
+            View data <span aria-hidden>→</span>
+          </a>
         </EvidenceCard>
 
         <EvidenceCard eyebrow="Training load compared with sleep consistency">

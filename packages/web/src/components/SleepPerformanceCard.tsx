@@ -71,6 +71,13 @@ export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProp
           </div>
         </div>
       </div>
+      <a
+        aria-label="View sleep source data"
+        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+        href="#sleep-data-sources"
+      >
+        View data <span aria-hidden>→</span>
+      </a>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import {
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
@@ -28,6 +28,8 @@ import { colors } from "../theme";
 import type { SleepConsistencyRow } from "../types/api";
 
 export default function SleepScreen() {
+  const scrollViewRef = useRef<ScrollView>(null);
+  const recentNightsYRef = useRef(0);
   const [days, setDays] = useState(30);
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const latestStagesQuery = trpc.sleep.latestStages.useQuery();
@@ -64,9 +66,16 @@ export default function SleepScreen() {
     isFetching: sleepQuery.isFetching,
   });
   const { refreshing, onRefresh } = useRefresh();
+  const scrollToRecentNights = () => {
+    scrollViewRef.current?.scrollTo({
+      animated: true,
+      y: Math.max(recentNightsYRef.current - 16, 0),
+    });
+  };
 
   return (
     <ScrollView
+      ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
@@ -158,6 +167,7 @@ export default function SleepScreen() {
                 trend={durationTrend}
                 color={colors.blue}
                 subtitle={`Last ${days} nights`}
+                onViewData={scrollToRecentNights}
               />
               <MetricCard
                 title="Average Efficiency"
@@ -165,6 +175,7 @@ export default function SleepScreen() {
                 trend={efficiencyTrend}
                 color={colors.purple}
                 subtitle={`Last ${days} nights`}
+                onViewData={scrollToRecentNights}
               />
             </View>
           )}
@@ -244,7 +255,12 @@ export default function SleepScreen() {
 
           {/* Nightly history */}
           {nightly.length > 0 && (
-            <View style={styles.card}>
+            <View
+              style={styles.card}
+              onLayout={(event) => {
+                recentNightsYRef.current = event.nativeEvent.layout.y;
+              }}
+            >
               <ChartTitleWithTooltip
                 title="Recent Nights"
                 description="These stacked bars compare the sleep-stage breakdown for your most recent nights."
