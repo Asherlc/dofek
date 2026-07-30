@@ -1,6 +1,8 @@
 // Activity router types
 
 export type { ActivityHrZone } from "@dofek/zones/zones";
+// Personalization router types
+export type { PersonalizationModelCard } from "dofek/personalization/model-card";
 export type { BaselineRelativeMetric } from "./contracts/baseline-relative-metrics.ts";
 export type { ActivityDetail } from "./models/activity.ts";
 export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";

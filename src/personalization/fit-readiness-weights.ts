@@ -19,8 +19,8 @@ export interface ReadinessWeightsFitResult {
   correlation: number;
 }
 
-const MIN_DAYS = 60;
-const MIN_CORRELATION = 0.15;
+export const MINIMUM_READINESS_DAYS = 60;
+export const MINIMUM_READINESS_CORRELATION = 0.15;
 const MIN_WEIGHT = 0.05;
 const STEP = 0.05;
 
@@ -36,7 +36,7 @@ const STEP = 0.05;
 export function fitReadinessWeights(
   data: ReadinessWeightsInput[],
 ): ReadinessWeightsFitResult | null {
-  if (data.length < MIN_DAYS) return null;
+  if (data.length < MINIMUM_READINESS_DAYS) return null;
 
   let bestCorrelation = 0;
   let bestWeights = { hrv: 0.4, restingHr: 0.2, sleep: 0.2, respiratoryRate: 0.2 };
@@ -64,7 +64,7 @@ export function fitReadinessWeights(
     }
   }
 
-  if (bestCorrelation < MIN_CORRELATION) return null;
+  if (bestCorrelation < MINIMUM_READINESS_CORRELATION) return null;
 
   return {
     ...bestWeights,

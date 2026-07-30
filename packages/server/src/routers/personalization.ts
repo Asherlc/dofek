@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
+import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { PersonalizationRepository } from "../repositories/personalization-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -9,9 +10,11 @@ function requireSensorStore(
   feature: string,
 ): ActivitySensorStore {
   if (!sensorStore) {
+    logger.error(`[personalization] ${feature} requires CLICKHOUSE_URL`);
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+      message:
+        "Personalization is unavailable because activity analytics are not configured. Contact your administrator.",
     });
   }
   return sensorStore;

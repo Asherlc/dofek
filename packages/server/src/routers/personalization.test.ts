@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
-const mockInvalidateUserQueryDomains = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const { mockInvalidateUserQueryDomains, mockLoggerError } = vi.hoisted(() => ({
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+  mockLoggerError: vi.fn(),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
   invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { error: mockLoggerError },
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -64,9 +71,27 @@ const createCaller = createTestCallerFactory(personalizationRouter);
 describe("personalizationRouter", () => {
   beforeEach(() => {
     mockInvalidateUserQueryDomains.mockClear();
+    mockLoggerError.mockClear();
   });
 
   describe("status", () => {
+    it("returns an actionable user-safe error when activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.status()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Personalization is unavailable because activity analytics are not configured. Contact your administrator.",
+      });
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "[personalization] personalization.status requires CLICKHOUSE_URL",
+      );
+    });
+
     it("returns not personalized with defaults when no stored params", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
       const caller = createCaller({
@@ -87,6 +112,8 @@ describe("personalizationRouter", () => {
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
       expect(result.parameters.trainingImpulseConstants).toBeNull();
+      expect(result.modelCards).toHaveLength(5);
+      expect(result.modelCards.every((card) => card.status === "default")).toBe(true);
     });
 
     it("returns isPersonalized=true when at least one sub-param is non-null", async () => {
@@ -118,6 +145,12 @@ describe("personalizationRouter", () => {
       expect(result.fittedAt).toBe("2026-03-18T12:00:00Z");
       expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
       expect(result.parameters.exponentialMovingAverage).not.toBeNull();
+      expect(result.modelCards[0]).toMatchObject({
+        key: "exponentialMovingAverage",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+      });
     });
 
     it("returns isPersonalized=false when all sub-params are null", async () => {

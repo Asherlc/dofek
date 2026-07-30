@@ -20559,6 +20559,105 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completes successfully. Avoid close/reopen refreshes while a same-PR
   concurrency group is still active.
 
+## 2026-07-29 — Expo compatibility metadata invalidated pinned mobile dependencies
+
+- **Status:** Root cause fixed on `main` and merged into PR #2303; fresh
+  exact-head CI validation pending.
+- **Symptoms:** `Build Mobile / Metro Bundle` failed during dependency
+  validation before Metro started.
+- **User impact:** No production impact. PR #2303 was blocked from merging
+  because its mobile build prerequisite no longer matched Expo SDK 57's
+  compatibility recommendations.
+- **Evidence:** The exact failing command was
+  `cd packages/mobile && pnpm expo install --check`. Its first fatal output was
+  `Found outdated dependencies`, after the CLI listed 12 newly expected patch
+  releases, including `expo-router` 57.0.9,
+  `react-native-reanimated` 4.5.1, and `react-native-worklets` 0.10.1. The
+  branch and `origin/main` had identical mobile dependency and lockfile state,
+  while an earlier PR run had passed the same live validation.
+- **Root cause:** Expo's live SDK 57 compatibility metadata advanced after the
+  previous successful run, so exact pins that had been accepted became stale
+  without a repository change.
+- **Fix / mitigation:** Run Expo's canonical `expo install --fix`, retain exact
+  package pins, and commit the resulting coherent lockfile update. The final
+  compatible graph, including Expo 57.0.9 and React Native 0.86.2, landed on
+  `main`; PR #2303 merged that canonical package manifest and lockfile instead
+  of preserving its earlier partial refresh. Expo
+  documents that `--check` exits nonzero in CI for incompatible versions and
+  `--fix` updates invalid versions to the compatible set in its
+  [CLI version-validation guidance](https://docs.expo.dev/more/expo-cli/#version-validation).
+  The package manager's generated release-age exceptions were removed; no
+  retry, validation exclusion, fallback, or warning-only behavior was added.
+- **Validation:** The same Expo dependency check reports
+  `Dependencies are up to date`; frozen-lockfile installation, exact-version
+  policy, mobile typecheck, the focused mobile panel tests, and a clean iOS
+  Metro export of 2,919 modules all pass locally.
+- **Remaining risk / follow-up:** The gate depends on mutable upstream
+  compatibility metadata, so future patch publications can invalidate a clean
+  head. Merge only after the new exact head passes the same CI step.
+
+## 2026-07-29 — Local Compose network allocation exhausted during PR validation
+
+- **Status:** Unresolved shared-host capacity issue; PR #2303 validation is
+  continuing in isolated GitHub Actions runners.
+- **Symptoms:** The analytics SQL phase of `pnpm lint` could not connect to
+  ClickHouse. Starting the worktree's isolated ClickHouse service then failed
+  before any container was created.
+- **User impact:** No production impact. Local real-engine analytics lint for
+  PR #2303 could not run, while all Docker-free lint, tests, and typechecks
+  completed.
+- **Evidence:** The exact failing startup command was
+  `pnpm compose -- up -d --wait --wait-timeout 180 clickhouse`; the first fatal
+  line was `Network 2180_default Error Error response from daemon: all predefined address pools have been fully subnetted`.
+  Docker reported 33 networks, including six dangling networks owned by other
+  workspaces. This worktree owned no network or container to remove.
+- **Root cause:** The shared Docker daemon had exhausted its configured
+  predefined bridge-network address pools before it could allocate the
+  worktree-specific `2180_default` network.
+- **Fix / mitigation:** No cross-workspace network was removed. The branch
+  retains the repository's worktree-isolated Compose configuration, matching
+  Docker's documented
+  [project-name isolation](https://docs.docker.com/compose/how-tos/project-name/),
+  and exact-head CI remains the required analytics SQL validation.
+- **Validation:** `pnpm lint:sandbox` passed, along with 920 changed tests and
+  root, server, web, and mobile typechecks. The full analytics SQL lint remains
+  delegated to exact-head CI because its local ClickHouse prerequisite could
+  not start.
+- **Remaining risk / follow-up:** Reclaim only stale networks with confirmed
+  ownership, or expand the Docker daemon's configured address pools, before a
+  future local real-engine run. Do not prune active or unowned workspace
+  networks.
+
+## 2026-07-29 — Successful-fit schema object survived mutation testing
+
+- **Status:** Root cause fixed for PR #2303; fresh exact-head CI validation
+  pending.
+- **Symptoms:** Mutation shard 2 failed even though the changed unit suite and
+  parameter-schema tests passed.
+- **User impact:** No production impact. PR #2303 remained blocked because its
+  new successful-fit timestamp contract was not proved against a schema that
+  silently discarded every model timestamp.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "src/personalization/params.ts:58-77,src/personalization/params.ts:81-81"`.
+  Its first fatal mutation result was `[Survived] ObjectLiteral` at
+  `src/personalization/params.ts:68:40`, replacing the five-field
+  `successfulFitAtSchema` with `z.object({})`; the final mutation score was
+  0%, below the 75% breaking threshold.
+- **Root cause:** Per-test mutation coverage associated the schema-object
+  construction with the dynamic all-fitters refit test. That test asserted the
+  pre-validation refit result but did not prove that the complete timestamp map
+  survived the canonical Zod parsing boundary, so Stryker selected no
+  timestamp-schema assertion for the mutant.
+- **Fix / mitigation:** The all-fitters refit regression now parses the
+  generated parameters through `personalizedParamsSchema` and asserts that all
+  five successful-fit timestamps remain intact. No mutation exclusion,
+  threshold change, or test-only production export was added.
+- **Validation:** The focused refit test passes, and the exact failing Stryker
+  shard now kills its only mutant with a 100% mutation score.
+- **Remaining risk / follow-up:** Keep mutation assertions at the production
+  serialization or validation boundary when module-initialization coverage can
+  cause Stryker to select a different test than a nearby schema-only test.
+
 ## 2026-07-29 — Local integration stack exhausted Docker network pools
 
 - **Status:** Local infrastructure blocker for issue #2170; isolated CI
@@ -20880,6 +20979,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The local daemon cause remains unresolved.
   Treat any exact-head CI failure as a new code signal and investigate its
   first fatal line independently.
+
 ## 2026-07-29 — Local full Vitest run ended on worker RPC timeout
 
 - **Status:** Unresolved local-runner failure during issue-2108 validation;
