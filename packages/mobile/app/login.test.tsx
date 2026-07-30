@@ -424,6 +424,72 @@ describe("LoginScreen", () => {
     expect(mockRouterReplace).toHaveBeenCalledWith("/onboarding");
   });
 
+  it("advertises current and new credentials to password managers", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const emailInput = await screen.findByLabelText("Email");
+    const passwordInput = screen.getByLabelText("Password");
+    expect(emailInput.getAttribute("autocomplete")).toBe("email");
+    expect(passwordInput.getAttribute("autocomplete")).toBe("current-password");
+    expect(passwordInput.getAttribute("type")).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByLabelText("Password").getAttribute("passwordrules")).toBe(
+      "minlength: 8; maxlength: 128;",
+    );
+    expect(screen.getByText("Use 8–128 characters.")).toBeTruthy();
+  });
+
+  it("reveals and hides the password with an accessible control", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const passwordInput = await screen.findByLabelText("Password");
+    fireEvent.change(passwordInput, { target: { value: "password123" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passwordInput.getAttribute("type")).toBe("text");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(passwordInput.getAttribute("type")).toBe("password");
+  });
+
+  it("shows actionable registration errors without sending invalid credentials", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account and continue" }));
+
+    expect(await screen.findByText("Enter a valid email address.")).toBeTruthy();
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(mockRegisterWithPassword).not.toHaveBeenCalled();
+  });
+
   it("visually distinguishes disabled email sign-in from the enabled state", async () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: [],

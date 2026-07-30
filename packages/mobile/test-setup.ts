@@ -175,10 +175,13 @@ vi.mock("react-native", () => {
   };
   Pressable.displayName = "Pressable";
   const TextInput = ({
+    accessibilityLabel,
+    "aria-label": ariaLabel,
     multiline,
     numberOfLines: _numberOfLines,
     onChangeText,
     placeholderTextColor: _placeholderTextColor,
+    secureTextEntry,
     style,
     textAlignVertical: _textAlignVertical,
     testID,
@@ -188,11 +191,13 @@ vi.mock("react-native", () => {
     const tagName = multiline === true ? "textarea" : "input";
     return React.createElement(tagName, {
       ...props,
+      "aria-label": accessibilityLabel ?? ariaLabel,
       "data-testid": testID,
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (typeof onChangeText === "function") onChangeText(event.target.value);
       },
       style: flattenStyle(style),
+      ...(multiline === true ? {} : { type: secureTextEntry === true ? "password" : "text" }),
       value,
     });
   };
