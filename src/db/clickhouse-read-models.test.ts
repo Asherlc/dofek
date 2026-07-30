@@ -22,6 +22,9 @@ describe("buildActivityReadModelRefreshStatements", () => {
     expect(activitySql).toContain("tombstoned_groups AS");
     expect(activitySql).toContain("INNER JOIN tombstoned");
     expect(activitySql).toContain("NOT IN (SELECT group_id FROM tombstoned_groups)");
+    expect(activitySql).toContain(
+      "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
+    );
     expect(statements[3]).toContain("arrayJoin(member_activity_ids)");
   });
 });

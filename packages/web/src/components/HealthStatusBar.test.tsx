@@ -15,10 +15,48 @@ const serverMetric = {
   statusToken: "near_baseline" as const,
   statusColor: "positive" as const,
   statusLabel: "Near baseline",
+  evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
   explanation: "Skin Temperature is close to your usual range.",
 };
 
 describe("HealthStatusBar", () => {
+  it("renders server-computed baseline deviation, comparison, and coverage", () => {
+    render(
+      <HealthStatusBar
+        metrics={[{ ...serverMetric, metric: "hrv", label: "Heart Rate Variability (HRV)" }]}
+        baselineRelative={[
+          {
+            metric: "hrv",
+            label: "Heart Rate Variability (HRV)",
+            value: 72,
+            baseline: {
+              windowDays: 30,
+              mean: 60,
+              standardDeviation: 6,
+              zScore: 2,
+              sampleCount: 24,
+              coverage: 0.8,
+            },
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 66,
+              baselineMean: 61,
+              delta: 5,
+              direction: "increasing",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "30d baseline 60.0 ± 6.0 · 2.0 SD above baseline · 7d vs prior 28d +5.0 · 24/30 baseline days",
+      ),
+    ).toBeDefined();
+  });
+
   it("renders structured units while preserving the exact server status", () => {
     const { container } = render(
       <HealthStatusBar
@@ -40,7 +78,11 @@ describe("HealthStatusBar", () => {
     expect(container.querySelector(".font-semibold")?.textContent).toContain("94.0°F");
     expect(screen.getByText(/baseline 94.0°F/)).toBeDefined();
     expect(screen.getByText(/Near baseline/)).toBeDefined();
-    expect(screen.getByTitle("Skin Temperature is close to your usual range.")).toBeDefined();
+    expect(
+      screen.getByText("Within your usual range: less than 1 standard deviation from baseline"),
+    ).toBeDefined();
+    expect(screen.getByText("Skin Temperature is close to your usual range.")).toBeDefined();
+    expect(screen.getByLabelText("Near baseline status").textContent).toBe("✓");
   });
 
   it("does not recalculate or rename the status returned by the server", () => {
@@ -63,7 +105,7 @@ describe("HealthStatusBar", () => {
     );
 
     expect(screen.getByText(/Server-selected label/)).toBeDefined();
-    expect(screen.getByTitle("Server-selected explanation.")).toBeDefined();
+    expect(screen.getByText("Server-selected explanation.")).toBeDefined();
     expect(screen.queryByText(/abnormal/i)).toBeNull();
   });
 
@@ -81,6 +123,7 @@ describe("HealthStatusBar", () => {
             statusToken: "insufficient_data",
             statusColor: "muted",
             statusLabel: "Not enough data",
+            evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
             explanation: "Not enough varied data yet to compare this value with your usual range.",
           },
         ]}
@@ -88,6 +131,22 @@ describe("HealthStatusBar", () => {
     );
 
     expect(screen.getByText(/Not enough data/)).toBeDefined();
+  });
+
+  it.each([
+    { statusToken: "insufficient_data" as const, statusLabel: "Not enough data", symbol: "?" },
+    { statusToken: "near_baseline" as const, statusLabel: "Near baseline", symbol: "✓" },
+    { statusToken: "moving_as_intended" as const, statusLabel: "Moving as intended", symbol: "✓" },
+    { statusToken: "notable_deviation" as const, statusLabel: "Notable deviation", symbol: "!" },
+    { statusToken: "far_from_baseline" as const, statusLabel: "Far from baseline", symbol: "×" },
+  ])("renders $statusToken as the non-color symbol $symbol", ({
+    statusToken,
+    statusLabel,
+    symbol,
+  }) => {
+    render(<HealthStatusBar metrics={[{ ...serverMetric, statusToken, statusLabel }]} />);
+
+    expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
   });
 
   it("renders a distinct empty state when no metrics are available", () => {

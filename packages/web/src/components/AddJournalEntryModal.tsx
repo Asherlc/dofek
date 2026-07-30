@@ -212,7 +212,7 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
           <button
             type="submit"
             disabled={!selectedSlug || createMutation.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white disabled:opacity-50"
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-on-accent disabled:opacity-50"
           >
             {createMutation.isPending ? "Saving..." : "Save"}
           </button>

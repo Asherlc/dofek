@@ -13,7 +13,7 @@ import { UnitProvider } from "../components/UnitProvider.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password", "/terms"]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",
@@ -78,7 +78,7 @@ function AuthGate() {
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
-              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90"
+              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90"
               onClick={() => void retryBootstrap()}
             >
               Try again

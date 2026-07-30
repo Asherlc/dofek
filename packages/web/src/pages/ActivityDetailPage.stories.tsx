@@ -10,6 +10,12 @@ const baseActivity: ActivityDetail = {
   activityType: "cycling",
   startedAt: "2026-03-31T08:00:00Z",
   endedAt: "2026-03-31T09:30:00Z",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone",
+  },
   name: "Morning Ride",
   notes: null,
   providerId: "wahoo",

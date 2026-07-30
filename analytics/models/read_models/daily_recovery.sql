@@ -32,10 +32,28 @@ recovery_inputs AS (
         recovery_inputs.efficiency_pct AS efficiency_pct,
         recovery_inputs.hrv_mean_30d AS hrv_mean_30d,
         recovery_inputs.hrv_sd_30d AS hrv_sd_30d,
+        recovery_inputs.hrv_baseline_sample_count AS hrv_baseline_sample_count,
+        recovery_inputs.hrv_baseline_coverage AS hrv_baseline_coverage,
+        recovery_inputs.hrv_mean_7d AS hrv_mean_7d,
+        recovery_inputs.hrv_mean_previous_28d AS hrv_mean_previous_28d,
         recovery_inputs.rhr_mean_30d AS rhr_mean_30d,
         recovery_inputs.rhr_sd_30d AS rhr_sd_30d,
+        recovery_inputs.rhr_baseline_sample_count AS rhr_baseline_sample_count,
+        recovery_inputs.rhr_baseline_coverage AS rhr_baseline_coverage,
+        recovery_inputs.rhr_mean_7d AS rhr_mean_7d,
+        recovery_inputs.rhr_mean_previous_28d AS rhr_mean_previous_28d,
         recovery_inputs.rr_mean_30d AS rr_mean_30d,
         recovery_inputs.rr_sd_30d AS rr_sd_30d,
+        recovery_inputs.rr_baseline_sample_count AS rr_baseline_sample_count,
+        recovery_inputs.rr_baseline_coverage AS rr_baseline_coverage,
+        recovery_inputs.rr_mean_7d AS rr_mean_7d,
+        recovery_inputs.rr_mean_previous_28d AS rr_mean_previous_28d,
+        recovery_inputs.efficiency_mean_30d AS efficiency_mean_30d,
+        recovery_inputs.efficiency_sd_30d AS efficiency_sd_30d,
+        recovery_inputs.efficiency_baseline_sample_count AS efficiency_baseline_sample_count,
+        recovery_inputs.efficiency_baseline_coverage AS efficiency_baseline_coverage,
+        recovery_inputs.efficiency_mean_7d AS efficiency_mean_7d,
+        recovery_inputs.efficiency_mean_previous_28d AS efficiency_mean_previous_28d,
         recovery_inputs.hrv_mean_60d AS hrv_mean_60d,
         recovery_inputs.hrv_sd_60d AS hrv_sd_60d,
         recovery_inputs.rhr_mean_60d AS rhr_mean_60d,
@@ -57,14 +75,22 @@ scored AS (
         ) AS hrv_z_score,
         if(
             resting_hr IS NOT NULL AND rhr_mean_30d IS NOT NULL AND rhr_sd_30d IS NOT NULL AND rhr_sd_30d > 0,
-            -1 * ((resting_hr - rhr_mean_30d) / rhr_sd_30d),
+            (resting_hr - rhr_mean_30d) / rhr_sd_30d,
             CAST(NULL, 'Nullable(Float64)')
         ) AS resting_hr_z_score,
         if(
             respiratory_rate IS NOT NULL AND rr_mean_30d IS NOT NULL AND rr_sd_30d IS NOT NULL AND rr_sd_30d > 0,
-            -1 * ((respiratory_rate - rr_mean_30d) / rr_sd_30d),
+            (respiratory_rate - rr_mean_30d) / rr_sd_30d,
             CAST(NULL, 'Nullable(Float64)')
         ) AS respiratory_rate_z_score,
+        if(
+            efficiency_pct IS NOT NULL
+                AND efficiency_mean_30d IS NOT NULL
+                AND efficiency_sd_30d IS NOT NULL
+                AND efficiency_sd_30d > 0,
+            (efficiency_pct - efficiency_mean_30d) / efficiency_sd_30d,
+            CAST(NULL, 'Nullable(Float64)')
+        ) AS efficiency_z_score,
         if(
             efficiency_pct IS NOT NULL,
             least(100, greatest(0, round(efficiency_pct))),
@@ -77,8 +103,8 @@ sigmoid_inputs AS (
     SELECT
         *,
         if(hrv_z_score IS NULL, CAST(NULL, 'Nullable(Float64)'), 1 / (1 + exp(-hrv_z_score * 1.1))) AS hrv_sigmoid,
-        if(resting_hr_z_score IS NULL, CAST(NULL, 'Nullable(Float64)'), 1 / (1 + exp(-resting_hr_z_score * 1.1))) AS resting_hr_sigmoid,
-        if(respiratory_rate_z_score IS NULL, CAST(NULL, 'Nullable(Float64)'), 1 / (1 + exp(-respiratory_rate_z_score * 1.1))) AS respiratory_rate_sigmoid
+        if(resting_hr_z_score IS NULL, CAST(NULL, 'Nullable(Float64)'), 1 / (1 + exp(resting_hr_z_score * 1.1))) AS resting_hr_sigmoid,
+        if(respiratory_rate_z_score IS NULL, CAST(NULL, 'Nullable(Float64)'), 1 / (1 + exp(respiratory_rate_z_score * 1.1))) AS respiratory_rate_sigmoid
     FROM scored
 ),
 
@@ -155,10 +181,32 @@ SELECT
     sigmoid_scores.efficiency_pct AS efficiency_pct,
     sigmoid_scores.hrv_mean_30d AS hrv_mean_30d,
     sigmoid_scores.hrv_sd_30d AS hrv_sd_30d,
+    sigmoid_scores.hrv_z_score AS hrv_z_score,
+    sigmoid_scores.hrv_baseline_sample_count AS hrv_baseline_sample_count,
+    sigmoid_scores.hrv_baseline_coverage AS hrv_baseline_coverage,
+    sigmoid_scores.hrv_mean_7d AS hrv_mean_7d,
+    sigmoid_scores.hrv_mean_previous_28d AS hrv_mean_previous_28d,
     sigmoid_scores.rhr_mean_30d AS rhr_mean_30d,
     sigmoid_scores.rhr_sd_30d AS rhr_sd_30d,
+    sigmoid_scores.resting_hr_z_score AS resting_hr_z_score,
+    sigmoid_scores.rhr_baseline_sample_count AS rhr_baseline_sample_count,
+    sigmoid_scores.rhr_baseline_coverage AS rhr_baseline_coverage,
+    sigmoid_scores.rhr_mean_7d AS rhr_mean_7d,
+    sigmoid_scores.rhr_mean_previous_28d AS rhr_mean_previous_28d,
     sigmoid_scores.rr_mean_30d AS rr_mean_30d,
     sigmoid_scores.rr_sd_30d AS rr_sd_30d,
+    sigmoid_scores.respiratory_rate_z_score AS respiratory_rate_z_score,
+    sigmoid_scores.rr_baseline_sample_count AS rr_baseline_sample_count,
+    sigmoid_scores.rr_baseline_coverage AS rr_baseline_coverage,
+    sigmoid_scores.rr_mean_7d AS rr_mean_7d,
+    sigmoid_scores.rr_mean_previous_28d AS rr_mean_previous_28d,
+    sigmoid_scores.efficiency_mean_30d AS efficiency_mean_30d,
+    sigmoid_scores.efficiency_sd_30d AS efficiency_sd_30d,
+    sigmoid_scores.efficiency_z_score AS efficiency_z_score,
+    sigmoid_scores.efficiency_baseline_sample_count AS efficiency_baseline_sample_count,
+    sigmoid_scores.efficiency_baseline_coverage AS efficiency_baseline_coverage,
+    sigmoid_scores.efficiency_mean_7d AS efficiency_mean_7d,
+    sigmoid_scores.efficiency_mean_previous_28d AS efficiency_mean_previous_28d,
     sigmoid_scores.hrv_mean_60d AS hrv_mean_60d,
     sigmoid_scores.hrv_sd_60d AS hrv_sd_60d,
     sigmoid_scores.rhr_mean_60d AS rhr_mean_60d,

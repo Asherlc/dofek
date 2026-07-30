@@ -4,13 +4,29 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JournalPanel } from "./JournalPanel.tsx";
 
-const mocks = vi.hoisted(() => ({
-  captureException: vi.fn(),
-  deleteMutation: vi.fn(),
-  entriesInvalidate: vi.fn(),
-  entriesQuery: vi.fn(),
-  questionsQuery: vi.fn(),
-}));
+interface CapturedJournalSeries {
+  data: Array<[string, number | null]>;
+  accessibilityDescription?: string;
+  formatValue?: (value: number) => string;
+  name: string;
+  visualization?: "line" | "point";
+}
+
+interface CapturedChartProps {
+  series: CapturedJournalSeries[];
+}
+
+const mocks = vi.hoisted(() => {
+  const chartProps: CapturedChartProps[] = [];
+  return {
+    chartProps,
+    captureException: vi.fn(),
+    deleteMutation: vi.fn(),
+    entriesInvalidate: vi.fn(),
+    entriesQuery: vi.fn(),
+    questionsQuery: vi.fn(),
+  };
+});
 
 vi.mock("../lib/telemetry.ts", () => ({
   captureException: mocks.captureException,
@@ -52,7 +68,10 @@ vi.mock("./TimeRangeSelector.tsx", () => ({
 }));
 
 vi.mock("./TimeSeriesChart.tsx", () => ({
-  TimeSeriesChart: () => <div>Journal chart</div>,
+  TimeSeriesChart: (props: CapturedChartProps) => {
+    mocks.chartProps.push(props);
+    return <div>Journal chart</div>;
+  },
 }));
 
 const entry = {
@@ -73,6 +92,7 @@ describe("JournalPanel", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
+    mocks.chartProps.length = 0;
     mocks.captureException.mockReset();
     mocks.entriesInvalidate.mockReset();
     mocks.entriesQuery.mockReset();
@@ -239,5 +259,92 @@ describe("JournalPanel", () => {
 
     expect(screen.getByText("Journal questions refresh failed")).toBeDefined();
     expect(screen.getByText("No numeric journal data to chart.")).toBeDefined();
+  });
+
+  it("renders boolean observations as Yes/No points and numeric observations as lines", () => {
+    mocks.questionsQuery.mockReturnValue({
+      data: [
+        {
+          slug: "alcohol",
+          display_name: "Alcohol",
+          category: "substance",
+          data_type: "boolean",
+          unit: null,
+          sort_order: 1,
+        },
+        {
+          slug: "energy",
+          display_name: "Energy",
+          category: "wellness",
+          data_type: "numeric",
+          unit: "/10",
+          sort_order: 2,
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+    mocks.entriesQuery.mockReturnValue({
+      data: [
+        {
+          ...entry,
+          id: "alcohol-yes",
+          date: "2026-07-23",
+          question_slug: "alcohol",
+          display_name: "Alcohol",
+          category: "substance",
+          data_type: "boolean",
+          answer_text: "yes",
+          answer_numeric: 1,
+        },
+        {
+          ...entry,
+          id: "alcohol-no",
+          date: "2026-07-24",
+          question_slug: "alcohol",
+          display_name: "Alcohol",
+          category: "substance",
+          data_type: "boolean",
+          answer_text: "no",
+          answer_numeric: 0,
+        },
+        {
+          ...entry,
+          id: "energy-8",
+          date: "2026-07-24",
+          question_slug: "energy",
+          display_name: "Energy",
+          data_type: "numeric",
+          unit: "/10",
+          answer_text: null,
+          answer_numeric: 8,
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    const chart = mocks.chartProps.at(-1);
+    const alcohol = chart?.series.find((series) => series.name === "Alcohol");
+    const energy = chart?.series.find((series) => series.name === "Energy");
+
+    expect(alcohol).toMatchObject({
+      data: [
+        ["2026-07-23", 1],
+        ["2026-07-24", 0],
+      ],
+      accessibilityDescription: "Alcohol is shown as separate Yes/No points.",
+      visualization: "point",
+    });
+    expect(alcohol?.formatValue?.(1)).toBe("Yes");
+    expect(alcohol?.formatValue?.(0)).toBe("No");
+    expect(alcohol?.formatValue?.(2)).toBe("2");
+    expect(energy).toMatchObject({
+      data: [["2026-07-24", 8]],
+      visualization: "line",
+    });
   });
 });

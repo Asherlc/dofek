@@ -63,6 +63,8 @@ export function seedFoodStoryQuery(queryClient: QueryClient, date: string): void
       sourceLabels: ["dofek"],
       contributingSourceLabels: ["dofek"],
       excludedSourceLabels: [],
+      contributionGrain: "itemized",
+      contributionLabel: "Dofek itemized entries",
     },
     summary: {
       calories: 2220,
@@ -80,9 +82,9 @@ export function seedFoodStoryQuery(queryClient: QueryClient, date: string): void
         progressPercentage: 100,
       },
       macros: {
-        protein: { grams: 162, calories: 648, percentage: 29 },
-        carbs: { grams: 202, calories: 808, percentage: 36 },
-        fat: { grams: 71, calories: 639, percentage: 29 },
+        protein: { grams: 162, calories: 648, energySharePercentage: 31 },
+        carbs: { grams: 202, calories: 808, energySharePercentage: 39 },
+        fat: { grams: 71, calories: 639, energySharePercentage: 30 },
       },
     },
   });

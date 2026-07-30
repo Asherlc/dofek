@@ -55,6 +55,7 @@ function LoginPage() {
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   const showPasswordAuth = providers?.password ?? false;
   const showOAuthProviders = allProviders.length > 0;
+  const passwordAuthDisabled = submitting || !email.trim() || !password;
   const emailValidationError =
     authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
   const passwordValidationError = passwordTouched
@@ -72,6 +73,22 @@ function LoginPage() {
     setPasswordTouched(false);
     setPasswordVisible(false);
   }
+
+  const headerCopy =
+    authMode === "register"
+      ? {
+          title: "Create your account",
+          subtitle: "Enter your details. Next, you'll connect your health data.",
+        }
+      : authMode === "reset"
+        ? {
+            title: "Reset your password",
+            subtitle: "Enter your email to receive a password reset link.",
+          }
+        : {
+            title: "Sign in to Dofek",
+            subtitle: "View and manage your health data.",
+          };
 
   async function handlePasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,10 +141,17 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center">
+    <div className="min-h-screen bg-page flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm p-8 rounded-2xl bg-surface-solid border border-border shadow-xl">
-        <h1 className="text-2xl font-bold text-foreground text-center mb-2">Dofek</h1>
-        <p className="text-muted text-center mb-8 text-sm">Sign in to view your health data</p>
+        <a
+          href="/"
+          aria-label="Back to Dofek"
+          className="inline-flex mb-6 text-sm text-subtle hover:text-foreground transition-colors"
+        >
+          &larr; Back to Dofek
+        </a>
+        <h1 className="text-2xl font-bold text-foreground text-center mb-2">{headerCopy.title}</h1>
+        <p className="text-muted text-center mb-8 text-sm">{headerCopy.subtitle}</p>
 
         {loading ? (
           <div className="flex justify-center py-8">
@@ -327,17 +351,40 @@ function LoginPage() {
                       ) : null}
                       <button
                         type="submit"
-                        disabled={submitting || !email.trim() || !password}
-                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        disabled={passwordAuthDisabled}
+                        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+                          passwordAuthDisabled
+                            ? "bg-surface-hover text-muted cursor-not-allowed"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        }`}
                       >
                         {submitting
                           ? authMode === "register"
                             ? "Creating account..."
                             : "Signing in..."
                           : authMode === "register"
-                            ? "Create account"
+                            ? "Create account and continue"
                             : "Sign in with email"}
                       </button>
+                      {authMode === "register" ? (
+                        <p className="text-xs text-subtle text-center leading-relaxed">
+                          By creating an account, you agree to the{" "}
+                          <a
+                            href="/terms"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Terms of Service
+                          </a>{" "}
+                          and acknowledge the{" "}
+                          <a
+                            href="/privacy"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Privacy Policy
+                          </a>
+                          .
+                        </p>
+                      ) : null}
                     </form>
                   </>
                 )}

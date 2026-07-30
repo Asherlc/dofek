@@ -11,6 +11,18 @@ interface TooltipParam {
 
 interface ChartElementProps {
   option: {
+    aria?: {
+      enabled?: boolean;
+      label?: {
+        description?: string;
+      };
+    };
+    series?: Array<{
+      name?: string;
+      smooth?: boolean;
+      symbolSize?: number;
+      type?: string;
+    }>;
     tooltip?: {
       formatter?: (params: TooltipParam[]) => string;
     };
@@ -94,6 +106,65 @@ describe("isSeriesEmpty", () => {
 });
 
 describe("TimeSeriesChart", () => {
+  it("renders boolean observations as accessible Yes/No points beside numeric lines", () => {
+    const element = TimeSeriesChart({
+      series: [
+        {
+          name: "Alcohol",
+          data: [
+            ["2026-04-01", 1],
+            ["2026-04-03", 0],
+          ],
+          accessibilityDescription: "Alcohol is shown as separate Yes/No points.",
+          formatValue: (value) => (value === 1 ? "Yes" : "No"),
+          visualization: "point",
+        },
+        {
+          name: "Energy",
+          data: [
+            ["2026-04-01", 8],
+            ["2026-04-03", 6],
+          ],
+          visualization: "line",
+        },
+      ],
+    });
+    if (!isValidElement<ChartElementProps>(element)) {
+      throw new Error("Expected TimeSeriesChart to return a chart element");
+    }
+
+    expect(element.props.option.series).toMatchObject([
+      { name: "Alcohol", type: "scatter", symbolSize: 10 },
+      { name: "Energy", type: "line", smooth: true },
+    ]);
+    expect(element.props.option.aria).toEqual({
+      enabled: true,
+      label: {
+        description:
+          "Time series chart. Alcohol is shown as separate Yes/No points. Energy is shown as a numeric line.",
+      },
+    });
+
+    const formatter = element.props.option.tooltip?.formatter;
+    if (!formatter) throw new Error("Expected tooltip formatter");
+    expect(
+      formatter([
+        {
+          seriesName: "Alcohol",
+          value: ["2026-04-01", 1],
+        },
+      ]),
+    ).toContain("Alcohol: <b>Yes</b>");
+    expect(
+      formatter([
+        {
+          seriesName: "Alcohol",
+          value: ["2026-04-03", 0],
+        },
+      ]),
+    ).toContain("Alcohol: <b>No</b>");
+  });
+
   it("escapes user-controlled tooltip series names and formatted values", () => {
     const element = TimeSeriesChart({
       series: [

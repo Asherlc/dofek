@@ -79,15 +79,29 @@ describe("StreamPoint", () => {
 describe("ActivityRepository", () => {
   const dialect = new PgDialect();
 
+  function withUnknownLocalTimeContext(rows: Record<string, unknown>[]) {
+    return rows.map((row) =>
+      "activity_type" in row
+        ? {
+            timezone: null,
+            start_utc_offset_minutes: null,
+            end_utc_offset_minutes: null,
+            local_time_source: "unknown",
+            ...row,
+          }
+        : row,
+    );
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(rows));
     const database = { execute };
     const repo = new ActivityRepository(database, "user-1", "UTC");
     return { repo, execute };
   }
 
   function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(postgresRows);
+    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(postgresRows));
     const database = { execute };
     const sensorStore = {
       query: vi.fn().mockResolvedValue([]),
@@ -609,6 +623,10 @@ describe("ActivityRepository", () => {
             activity_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
             ended_at: "2024-01-15T10:45:00.000Z",
+            timezone: null,
+            start_utc_offset_minutes: null,
+            end_utc_offset_minutes: null,
+            local_time_source: "unknown",
             name: "Deleted Run",
             notes: null,
             provider_id: "strava",

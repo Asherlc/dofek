@@ -28,7 +28,7 @@ export function DailyHeartRatePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Daily Heart Rate by Source</h1>
+          <h2 className="text-lg font-semibold">Daily Heart Rate by Source</h2>
           <p className="text-xs text-dim">Compare heart rate readings across providers</p>
         </div>
         <input

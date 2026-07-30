@@ -4,8 +4,9 @@ import { render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDailyBySourceQuery } = vi.hoisted(() => ({
+const { mockDailyBySourceQuery, mockStackScreen } = vi.hoisted(() => ({
   mockDailyBySourceQuery: vi.fn(),
+  mockStackScreen: vi.fn(() => null),
 }));
 
 function stripStyle({ style: _s, contentContainerStyle: _cs, ...rest }: Record<string, unknown>) {
@@ -47,7 +48,7 @@ vi.mock("react-native-svg", () => ({
 }));
 
 vi.mock("expo-router", () => ({
-  Stack: { Screen: () => null },
+  Stack: { Screen: mockStackScreen },
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -86,12 +87,26 @@ vi.mock("./_layout-options", () => ({
 
 describe("DailyHeartRateScreen", () => {
   beforeEach(() => {
+    mockStackScreen.mockClear();
     mockDailyBySourceQuery.mockReturnValue({
       data: [],
       isLoading: false,
       isError: false,
       error: null,
     });
+  });
+
+  it("uses the native navigation title as its single screen heading", async () => {
+    const { default: DailyHeartRateScreen } = await import("./daily-heart-rate");
+
+    render(<DailyHeartRateScreen />);
+
+    expect(mockStackScreen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ title: "Heart Rate by Source" }),
+      }),
+      undefined,
+    );
   });
 
   it("renders with date navigator and empty state", async () => {

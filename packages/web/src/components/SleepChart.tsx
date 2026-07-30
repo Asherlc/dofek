@@ -1,4 +1,8 @@
 import { formatDateMedium } from "@dofek/format/format";
+import {
+  formatRecordLocalTime,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { sleepStageColors } from "@dofek/scoring/colors";
 import {
   dofekAxis,
@@ -14,6 +18,11 @@ import { DofekChart } from "./DofekChart.tsx";
 interface SleepData {
   date?: string;
   started_at: string;
+  ended_at: string | null;
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source: RecordLocalTimeContext["source"];
   duration_minutes: number | null;
   deep_minutes: number | null;
   rem_minutes: number | null;
@@ -49,6 +58,24 @@ export function SleepChart({ data, loading }: SleepChartProps) {
           return `<span style="color:${escapeTooltipHtml(p.color)}">\u25CF</span> ${escapeTooltipHtml(p.seriesName)}: ${val}m`;
         });
         const sourceRow = sourceByStartedAt.get(String(firstParam.value[0]));
+        const timingLine = sourceRow
+          ? (() => {
+              const context = {
+                timezone: sourceRow.timezone,
+                startUtcOffsetMinutes: sourceRow.start_utc_offset_minutes,
+                endUtcOffsetMinutes: sourceRow.end_utc_offset_minutes,
+                source: sourceRow.local_time_source,
+              };
+              const bedtime = formatRecordLocalTime(sourceRow.started_at, context, "start");
+              const wake =
+                sourceRow.ended_at == null
+                  ? "--"
+                  : formatRecordLocalTime(sourceRow.ended_at, context, "end");
+              return bedtime === "--" || wake === "--"
+                ? '<br/><span style="color:#9ca3af">Local sleep time unavailable</span>'
+                : `<br/><span style="color:#9ca3af">${escapeTooltipHtml(bedtime)} – ${escapeTooltipHtml(wake)}</span>`;
+            })()
+          : "";
         const sourceLine = sourceRow
           ? (() => {
               const { primary, alsoFrom } = formatSleepProvenance({
@@ -61,7 +88,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
               }</span>`;
             })()
           : "";
-        return `<strong>${escapeTooltipHtml(date)}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}${sourceLine}`;
+        return `<strong>${escapeTooltipHtml(date)}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}${timingLine}${sourceLine}`;
       },
     }),
     xAxis: dofekAxis.time(),

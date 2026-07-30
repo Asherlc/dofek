@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const monthlyQueryControl = vi.hoisted(() => ({
   showError: false,
   preserveData: false,
+  showDecisionSupport: true,
 }));
 const mockWeeklyReportQuery = vi.hoisted(() => vi.fn());
 const mockMonthlyReportQuery = vi.hoisted(() => vi.fn());
@@ -35,6 +36,15 @@ vi.mock("../lib/trpc", () => ({
                 avgHrv: 48,
               },
               history: [],
+              decisionSupport: monthlyQueryControl.showDecisionSupport
+                ? {
+                    whatChanged: ["Weekly training increased."],
+                    likelyAssociations: ["Training and sleep moved together."],
+                    whatWorked: ["Sleep stayed consistent."],
+                    whatToTryNext: ["Repeat the routine next week."],
+                    confidenceAndMissingData: ["Confidence is limited."],
+                  }
+                : null,
             },
             isLoading: false,
             error: null,
@@ -63,6 +73,15 @@ vi.mock("../lib/trpc", () => ({
                       avgSleepTrend: null,
                     },
                     history: [],
+                    decisionSupport: monthlyQueryControl.showDecisionSupport
+                      ? {
+                          whatChanged: ["Monthly training increased."],
+                          likelyAssociations: ["Training and sleep moved together."],
+                          whatWorked: ["Sleep stayed consistent."],
+                          whatToTryNext: ["Repeat the routine next month."],
+                          confidenceAndMissingData: ["Confidence is limited."],
+                        }
+                      : null,
                   },
             isLoading: false,
             error: monthlyQueryControl.showError
@@ -89,6 +108,7 @@ describe("ReportsScreen", () => {
   beforeEach(() => {
     monthlyQueryControl.showError = false;
     monthlyQueryControl.preserveData = false;
+    monthlyQueryControl.showDecisionSupport = true;
     mockWeeklyReportQuery.mockClear();
     mockMonthlyReportQuery.mockClear();
   });
@@ -103,6 +123,8 @@ describe("ReportsScreen", () => {
     expect(screen.getAllByText("Average Heart Rate Variability (HRV)")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Share weekly report" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share monthly report" })).toBeTruthy();
+    expect(screen.getByText("Weekly training increased.")).toBeTruthy();
+    expect(screen.getByText("Monthly training increased.")).toBeTruthy();
     expect(mockWeeklyReportQuery).toHaveBeenCalledWith(
       { weeks: 12, endDate: "2026-07-24" },
       { retry: false },
@@ -118,6 +140,16 @@ describe("ReportsScreen", () => {
 
     expect(screen.getByText("Monthly report service unavailable")).toBeTruthy();
     expect(screen.queryByText("Not enough monthly data to create a report.")).toBeNull();
+  });
+
+  it("renders report metrics without a decision summary when synthesis is unavailable", async () => {
+    monthlyQueryControl.showDecisionSupport = false;
+    const { default: ReportsScreen } = await import("./reports");
+
+    render(<ReportsScreen />);
+
+    expect(screen.queryByText("Decision summary")).toBeNull();
+    expect(screen.getAllByText("Average Heart Rate Variability (HRV)")).toHaveLength(2);
   });
 
   it("keeps cached monthly report data visible during a background failure", async () => {

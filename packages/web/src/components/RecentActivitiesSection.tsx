@@ -47,12 +47,14 @@ interface RecentActivitiesSectionProps {
   activityTypes?: readonly string[];
   additionalColumns?: Array<ActivityTableColumn<Activity>>;
   additionalDataLoading?: boolean;
+  emptyMessage?: string;
 }
 
 export function RecentActivitiesSection({
   activityTypes,
   additionalColumns,
   additionalDataLoading = false,
+  emptyMessage,
 }: RecentActivitiesSectionProps) {
   const { days } = useTrainingDays();
   const [page, setPage] = useState(0);
@@ -82,6 +84,7 @@ export function RecentActivitiesSection({
       additionalColumns={additionalColumns}
       loading={activities.isLoading || additionalDataLoading}
       error={activities.error?.message}
+      emptyMessage={emptyMessage}
       totalCount={activities.data?.totalCount}
       page={page}
       pageSize={PAGE_SIZE}

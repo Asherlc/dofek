@@ -37,6 +37,11 @@ block-length selection literature ([Politis and White
 operational choices. Degenerate inputs or runs that cannot supply every requested replicate
 return explicit unavailable metadata instead of interval bounds.
 
+The dependence-aware interval does not remove time trends or establish a direct relationship.
+Current V2 responses therefore warn that autocorrelation or a shared time trend can create an
+apparent correlation; unrelated trending series are the classic spurious-regression case
+([Granger and Newbold 1974](https://doi.org/10.1016/0304-4076(74)90034-7)).
+
 ### Insight generation
 
 `CorrelationResult.generateInsight` provides human-readable explanations of statistical findings, accounting for time lags (e.g., "Higher Caffeine today is associated with lower Sleep Efficiency 1 calendar day later").

@@ -91,6 +91,14 @@ describe("healthReportRouter", () => {
             avgHrv: 45.3,
           },
           history: [],
+          decisionSupport: expect.objectContaining({
+            whatChanged: [
+              "This is the first observed week, so week-over-week changes are not available yet.",
+            ],
+            whatToTryNext: [
+              "Repeat or deliberately adjust one part of the routine next week, then compare it with this baseline.",
+            ],
+          }),
         },
         null,
       );
@@ -145,6 +153,14 @@ describe("healthReportRouter", () => {
             avgSleepTrend: null,
           },
           history: [],
+          decisionSupport: expect.objectContaining({
+            whatChanged: [
+              "This is the first observed month, so month-over-month changes are not available yet.",
+            ],
+            whatToTryNext: [
+              "Repeat or deliberately adjust one part of the routine next month, then compare it with this baseline.",
+            ],
+          }),
         },
         30,
       );

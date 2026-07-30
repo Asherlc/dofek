@@ -4,6 +4,8 @@ export const healthStatusMetricSchema = z.object({
   metric: z.enum([
     "hrv",
     "resting_heart_rate",
+    "respiratory_rate",
+    "sleep_efficiency",
     "spo2",
     "steps",
     "skin_temperature",
@@ -26,6 +28,7 @@ export const healthStatusMetricSchema = z.object({
   ]),
   statusColor: z.enum(["positive", "warning", "danger", "muted"]),
   statusLabel: z.string(),
+  evaluationRule: z.string(),
   explanation: z.string(),
 });
 

@@ -102,8 +102,32 @@ export interface MicronutrientSafetyReviewData {
   readonly unit: string;
   readonly totalDailyAverage: number;
   readonly foodDailyAverage: number;
+  readonly providerDailyTotalAverage: number;
   readonly supplementDailyAverage: number;
   readonly daysTracked: number;
+  readonly sourceBreakdown: NutritionSourceContribution[];
+}
+
+export type NutritionIntakeType = "itemized_food" | "provider_daily_total" | "supplement";
+
+export interface NutritionSourceContribution {
+  readonly providerId: string;
+  readonly sourceLabel: string;
+  readonly intakeType: NutritionIntakeType;
+  readonly dailyAverageContribution: number;
+  readonly daysTracked: number;
+}
+
+export interface NutritionAnalyticsDataQuality {
+  readonly selectedWindowDays: RangeDays;
+  readonly daysWithData: number;
+  readonly usableDays: number;
+  readonly overlapDays: number;
+  readonly conflictDays: number;
+  readonly completenessPercent: number | null;
+  readonly sourceLabels: string[];
+  readonly contributingSourceLabels: string[];
+  readonly excludedSourceLabels: string[];
 }
 
 function upperLimitMessage(evaluation: UpperLimitEvaluation): string {
@@ -189,9 +213,14 @@ export class MicronutrientSafetyReview {
       intake: {
         totalDailyAverage: Math.round(this.#row.totalDailyAverage * 10) / 10,
         foodDailyAverage: Math.round(this.#row.foodDailyAverage * 10) / 10,
+        providerDailyTotalAverage: Math.round(this.#row.providerDailyTotalAverage * 10) / 10,
         supplementDailyAverage: Math.round(this.#row.supplementDailyAverage * 10) / 10,
         daysTracked: this.#row.daysTracked,
       },
+      sourceBreakdown: this.#row.sourceBreakdown.map((source) => ({
+        ...source,
+        dailyAverageContribution: Math.round(source.dailyAverageContribution * 10) / 10,
+      })),
       adequacy: this.#adequacy,
       upperLimit: this.#upperLimit,
       safetyStatus: this.#safetyStatus,
@@ -469,42 +498,136 @@ export class NutritionAnalyticsRepository extends BaseRepository {
         unit: z.string(),
         avg_total_intake: z.coerce.number(),
         avg_food_intake: z.coerce.number(),
+        avg_provider_daily_total_intake: z.coerce.number(),
         avg_supplement_intake: z.coerce.number(),
         days_tracked: z.coerce.number(),
+        source_breakdown: z.array(
+          z.object({
+            providerId: z.string(),
+            sourceLabel: z.string(),
+            intakeType: z.enum(["itemized_food", "provider_daily_total", "supplement"]),
+            dailyAverageContribution: z.coerce.number(),
+            daysTracked: z.coerce.number(),
+          }),
+        ),
       }),
-      sql`WITH daily_totals AS (
+      sql`WITH contributions AS (
             SELECT
               fen.date,
-              n.id,
-              n.display_name,
-              n.unit,
-              SUM(fen.amount) AS total_amount,
+              fen.nutrient_id,
+              fen.amount,
+              fen.provider_id,
+              CASE
+                WHEN fen.supplement_dose_event_id IS NOT NULL THEN 'supplement'
+                WHEN classification.effective_grain = 'itemized' THEN 'itemized_food'
+                ELSE 'provider_daily_total'
+              END AS intake_type,
               COALESCE(
-                SUM(fen.amount) FILTER (WHERE fen.food_entry_id IS NOT NULL),
-                0
-              ) AS food_amount,
-              COALESCE(
-                SUM(fen.amount) FILTER (WHERE fen.supplement_dose_event_id IS NOT NULL),
-                0
-              ) AS supplement_amount
-            FROM fitness.v_nutrition_canonical_nutrient fen
-            JOIN fitness.nutrient n ON n.id = fen.nutrient_id
+                classification.source_label,
+                NULLIF(BTRIM(supplement_event.source_name), ''),
+                fen.provider_id
+              ) AS source_label
+            FROM fitness.v_nutrition_canonical_nutrient AS fen
+            LEFT JOIN fitness.v_nutrition_entry_classification AS classification
+              ON classification.id = fen.food_entry_id
+            LEFT JOIN fitness.v_supplement_dose_current AS supplement_event
+              ON supplement_event.id = fen.supplement_dose_event_id
             WHERE fen.user_id = ${this.userId}
               ${currentDateRangePredicate(sql`fen.date`, days)}
               ${this.dateAccessPredicate(sql`fen.date`)}
-            GROUP BY fen.date, n.id, n.display_name, n.unit
+          ),
+          daily_totals AS (
+            SELECT
+              contribution.date,
+              n.id,
+              n.display_name,
+              n.unit,
+              SUM(contribution.amount) AS total_amount,
+              COALESCE(
+                SUM(contribution.amount)
+                  FILTER (WHERE contribution.intake_type = 'itemized_food'),
+                0
+              ) AS food_amount,
+              COALESCE(
+                SUM(contribution.amount)
+                  FILTER (WHERE contribution.intake_type = 'provider_daily_total'),
+                0
+              ) AS provider_daily_total_amount,
+              COALESCE(
+                SUM(contribution.amount)
+                  FILTER (WHERE contribution.intake_type = 'supplement'),
+                0
+              ) AS supplement_amount
+            FROM contributions AS contribution
+            JOIN fitness.nutrient AS n ON n.id = contribution.nutrient_id
+            GROUP BY contribution.date, n.id, n.display_name, n.unit
+          ),
+          nutrient_summary AS (
+            SELECT
+              id,
+              display_name,
+              unit,
+              AVG(total_amount) AS avg_total_intake,
+              AVG(food_amount) AS avg_food_intake,
+              AVG(provider_daily_total_amount) AS avg_provider_daily_total_intake,
+              AVG(supplement_amount) AS avg_supplement_intake,
+              COUNT(total_amount)::integer AS days_tracked
+            FROM daily_totals
+            GROUP BY id, display_name, unit
+          ),
+          source_daily AS (
+            SELECT
+              date,
+              nutrient_id,
+              provider_id,
+              source_label,
+              intake_type,
+              SUM(amount) AS source_amount
+            FROM contributions
+            GROUP BY date, nutrient_id, provider_id, source_label, intake_type
+          ),
+          source_summary AS (
+            SELECT
+              nutrient_id,
+              provider_id,
+              source_label,
+              intake_type,
+              SUM(source_amount) AS total_amount,
+              COUNT(*)::integer AS days_tracked
+            FROM source_daily
+            GROUP BY nutrient_id, provider_id, source_label, intake_type
+          ),
+          source_breakdowns AS (
+            SELECT
+              source.nutrient_id,
+              JSONB_AGG(
+                JSONB_BUILD_OBJECT(
+                  'providerId', source.provider_id,
+                  'sourceLabel', source.source_label,
+                  'intakeType', source.intake_type,
+                  'dailyAverageContribution',
+                    source.total_amount / NULLIF(summary.days_tracked, 0),
+                  'daysTracked', source.days_tracked
+                )
+                ORDER BY source.intake_type, source.source_label, source.provider_id
+              ) AS sources
+            FROM source_summary AS source
+            JOIN nutrient_summary AS summary ON summary.id = source.nutrient_id
+            GROUP BY source.nutrient_id
           )
           SELECT
-            id AS nutrient_id,
-            display_name AS nutrient,
-            unit,
-            AVG(total_amount) AS avg_total_intake,
-            AVG(food_amount) AS avg_food_intake,
-            AVG(supplement_amount) AS avg_supplement_intake,
-            COUNT(total_amount) AS days_tracked
-          FROM daily_totals
-          GROUP BY id, display_name, unit
-          ORDER BY display_name`,
+            summary.id AS nutrient_id,
+            summary.display_name AS nutrient,
+            summary.unit,
+            summary.avg_total_intake,
+            summary.avg_food_intake,
+            summary.avg_provider_daily_total_intake,
+            summary.avg_supplement_intake,
+            summary.days_tracked,
+            COALESCE(source_breakdowns.sources, '[]'::jsonb) AS source_breakdown
+          FROM nutrient_summary AS summary
+          LEFT JOIN source_breakdowns ON source_breakdowns.nutrient_id = summary.id
+          ORDER BY summary.display_name`,
     );
 
     return rows.flatMap((row) => {
@@ -528,11 +651,72 @@ export class NutritionAnalyticsRepository extends BaseRepository {
           unit: row.unit,
           totalDailyAverage: row.avg_total_intake,
           foodDailyAverage: row.avg_food_intake,
+          providerDailyTotalAverage: row.avg_provider_daily_total_intake,
           supplementDailyAverage: row.avg_supplement_intake,
           daysTracked: row.days_tracked,
+          sourceBreakdown: row.source_breakdown,
         }),
       ];
     });
+  }
+
+  /** Selected-window source coverage and overlap context for nutrient interpretation. */
+  async getMicronutrientDataQuality(days: RangeDays): Promise<NutritionAnalyticsDataQuality> {
+    const rows = await executeWithSchema(
+      this.db,
+      z.object({
+        date: dateStringSchema,
+        resolution_status: z.enum(["available", "source_conflict"]),
+        source_labels: z.array(z.string()),
+        contributing_source_labels: z.array(z.string()),
+        excluded_source_labels: z.array(z.string()),
+      }),
+      sql`SELECT
+            date,
+            resolution_status,
+            source_labels,
+            contributing_source_labels,
+            excluded_source_labels
+          FROM fitness.v_nutrition_daily
+          WHERE user_id = ${this.userId}
+            ${currentDateRangePredicate(sql`date`, days)}
+            ${this.dateAccessPredicate(sql`date`)}
+          ORDER BY date`,
+    );
+
+    const sourceLabels = new Set<string>();
+    const contributingSourceLabels = new Set<string>();
+    const excludedSourceLabels = new Set<string>();
+    let usableDays = 0;
+    let overlapDays = 0;
+    let conflictDays = 0;
+
+    for (const row of rows) {
+      for (const label of row.source_labels) sourceLabels.add(label);
+      for (const label of row.contributing_source_labels) contributingSourceLabels.add(label);
+      for (const label of row.excluded_source_labels) excludedSourceLabels.add(label);
+
+      if (row.resolution_status === "available") {
+        usableDays++;
+      } else {
+        conflictDays++;
+      }
+      if (row.resolution_status === "source_conflict" || row.excluded_source_labels.length > 0) {
+        overlapDays++;
+      }
+    }
+
+    return {
+      selectedWindowDays: days,
+      daysWithData: rows.length,
+      usableDays,
+      overlapDays,
+      conflictDays,
+      completenessPercent: days == null ? null : Math.round((usableDays / days) * 1_000) / 10,
+      sourceLabels: [...sourceLabels].sort(),
+      contributingSourceLabels: [...contributingSourceLabels].sort(),
+      excludedSourceLabels: [...excludedSourceLabels].sort(),
+    };
   }
 
   /** General review state; no medication-specific interaction is inferred. */

@@ -34,6 +34,13 @@ describe("MonthlyReportContent", () => {
               avgSleepTrend: null,
             },
           ],
+          decisionSupport: {
+            whatChanged: ["Monthly training increased."],
+            likelyAssociations: ["Training and sleep moved together."],
+            whatWorked: ["Sleep stayed consistent."],
+            whatToTryNext: ["Repeat the routine next month."],
+            confidenceAndMissingData: ["Confidence is limited."],
+          },
         }}
       />,
     );
@@ -44,13 +51,14 @@ describe("MonthlyReportContent", () => {
     expect(screen.getByText("June 2026")).toBeTruthy();
     expect(screen.getByText("+10.0%")).toBeTruthy();
     expect(screen.getByText("-2.0%")).toBeTruthy();
+    expect(screen.getByText("Monthly training increased.")).toBeTruthy();
     const neutralTrendColor = `rgb(${Number.parseInt(textColors.secondary.slice(1, 3), 16)}, ${Number.parseInt(textColors.secondary.slice(3, 5), 16)}, ${Number.parseInt(textColors.secondary.slice(5, 7), 16)})`;
     expect(screen.getByText("+10.0%").style.color).toBe(neutralTrendColor);
     expect(screen.getByText("-2.0%").style.color).toBe(neutralTrendColor);
   });
 
   it("renders the empty state", () => {
-    render(<MonthlyReportContent data={{ current: null, history: [] }} />);
+    render(<MonthlyReportContent data={{ current: null, history: [], decisionSupport: null }} />);
 
     expect(screen.getByText("Not enough data for a monthly report yet.")).toBeTruthy();
   });
