@@ -784,6 +784,8 @@ describe("WHOOP Provider — parsing", () => {
       expect(result?.remMinutes).toBe(90);
       expect(result?.lightMinutes).toBe(180);
       expect(result?.awakeMinutes).toBe(30);
+      expect(result?.durationMinutes).toBe(420);
+      expect(result?.stagingAvailable).toBe(true);
       expect(result?.efficiencyPct).toBeCloseTo(91.7);
       expect(result?.isNap).toBe(false);
     });

@@ -332,6 +332,7 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed?.remMinutes).toBe(81); // 4852630 / 60000
     expect(parsed?.lightMinutes).toBe(261); // 15647370 / 60000
     expect(parsed?.awakeMinutes).toBe(51); // 3063020 / 60000
+    expect(parsed?.stagingAvailable).toBe(true);
     expect(parsed?.efficiencyPct).toBe(89.4);
     expect(parsed?.sleepType).toBe("sleep");
     expect(parsed?.isNap).toBe(false);

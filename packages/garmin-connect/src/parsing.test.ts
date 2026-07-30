@@ -173,6 +173,22 @@ describe("parseConnectSleep", () => {
     });
   });
 
+  it.each([
+    "deepSleepSeconds",
+    "lightSleepSeconds",
+    "remSleepSeconds",
+    "awakeSleepSeconds",
+  ] as const)("marks staging unavailable when %s is absent", (missingStage) => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        ...sampleSleep.dailySleepDTO,
+        [missingStage]: undefined,
+      },
+    });
+
+    expect(parsed?.stagingAvailable).toBe(false);
+  });
+
   it("preserves an absent sleep duration as missing", () => {
     const parsed = parseConnectSleep({
       dailySleepDTO: {
