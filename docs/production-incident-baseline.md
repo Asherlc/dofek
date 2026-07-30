@@ -7,6 +7,139 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-29: Responsive E2E selected the wrong 14-day control
+
+### Symptoms
+
+PR #2284 CI run
+[30464833420](https://github.com/Asherlc/dofek/actions/runs/30464833420)
+failed all four selected-life-event scenarios in
+`responsive-controls.cy.ts`, while the four Correlation scenarios and the
+remaining web E2E specs passed.
+
+### User Impact
+
+There was no production or end-user impact. The selector defect blocked merge
+validation of the responsive life-event controls.
+
+### Evidence
+
+The exact failing command was the Cypress run in `Test / E2E Tests (Web)`.
+Its first fatal line was
+`AssertionError: Timed out retrying after 10000ms: Too many elements found. Found '6', expected '4'.`
+at `responsive-controls.cy.ts:108`. The failure screenshot showed Cypress
+resolving `cy.contains("button", "14d")` to the Journal range selector above
+the life-event panel; that control's parent correctly contains six range
+buttons. The selected life-event analysis card contains the intended separate
+14/30/60/90-day window group.
+
+### Root Cause
+
+The acceptance test used a page-global text selector for a label shared by the
+Journal range selector and the selected life-event analysis window. Cypress
+matched the first visible `14d` button, so the four-button assertion inspected
+the wrong control group.
+
+### Fix or Mitigation
+
+Scope the analysis-window and Delete assertions to the card headed by the
+seeded life-event label before selecting its buttons. No production behavior,
+timeout, retry, or test-runner configuration changed. Cypress documents
+`.within()` as the mechanism for scoping subsequent queries to a selected
+element:
+<https://docs.cypress.io/api/commands/within>.
+
+### Remaining Risk
+
+Fresh exact-head E2E CI must confirm that all eight responsive scenarios pass
+against the production build.
+
+## 2026-07-29: Shared Docker disk pressure blocked local web E2E validation
+
+### Symptoms
+
+The issue #2187 web E2E stack stopped making progress during its BuildKit
+image build, and subsequent Docker API commands did not return within 15
+seconds. Repository lint separately could not reach the local ClickHouse
+service on `127.0.0.1:8123`.
+
+### User Impact
+
+There was no production or end-user impact. The incident blocked local SQL lint
+and Cypress validation in a Docker Desktop environment shared by several
+concurrent Conductor workspaces.
+
+### Evidence
+
+The host data volume was at 100% capacity with only 8.7 GiB available. A build
+owned by another workspace remained active for more than 65 minutes, while
+`docker info` timed out and multiple other workspace Docker commands remained
+queued. The issue #2187 E2E command was stopped without touching another
+workspace's containers, volumes, or build process.
+
+### Root Cause
+
+Shared host disk pressure and a saturated Docker daemon prevented the current
+workspace from creating or inspecting containers. The responsive web changes
+build successfully outside Docker, so the failure did not originate in the
+changed application code.
+
+### Fix or Mitigation
+
+The current workspace's default and E2E Compose cleanup completed successfully.
+The subsequent rebuildable-cache prune blocked behind the unrelated active
+build and was canceled after more than three minutes when the daemon stopped
+responding again. Validation moved to the isolated CI runner without adding
+retries, timeouts, or application workarounds. The recovery order follows
+[`docs/testing.md`](testing.md#docker-disk-recovery) and Docker's
+[resource-pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+
+### Remaining Risk
+
+Local SQL lint and Cypress remain blocked until the unrelated build releases
+the daemon and the rebuildable-cache prune can complete. Other workspace
+resources must remain intact.
+
+## 2026-07-29: E2E image build timed out downloading npm packages
+
+### Symptoms
+
+The web E2E job for PR #2284 failed in `Build E2E images with cache` before
+starting its Compose dependencies or Cypress.
+
+### User Impact
+
+There was no production or end-user impact. The failure delayed CI validation
+of a responsive web fix.
+
+### Evidence
+
+Inside the Docker `client-build` stage, pnpm downloaded workspace packages at
+unusually low transfer rates and repeatedly logged registry tarball
+`error (23)` failures. The first fatal line was
+`[23] The operation was aborted due to timeout`, followed by
+`TimeoutError: The operation was aborted due to timeout`. The failing command
+was the dependency installation invoked before `packages/web` could build; the
+E2E services and Cypress step remained unstarted.
+
+### Root Cause
+
+Transient npm registry download timeouts exhausted pnpm's existing attempts
+during the isolated E2E image build. The failure occurred before application
+compilation or test execution and was unrelated to the responsive changes.
+
+### Fix or Mitigation
+
+No timeout, retry, cache, or application behavior was changed. The same
+canonical commit is being validated on a fresh GitHub Actions run, using the
+platform's documented rerun workflow:
+<https://docs.github.com/actions/managing-workflow-runs-and-deployments/managing-workflow-runs/re-running-workflows-and-jobs>.
+
+### Remaining Risk
+
+The incident remains unresolved until a fresh E2E job completes. An external
+registry interruption can recur without a repository change.
+
 ## 2026-07-29: Shared Docker VM AIO exhaustion blocked local integration validation
 
 ### Symptoms
