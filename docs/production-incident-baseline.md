@@ -20743,3 +20743,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If a separate runner repeats the same missing
   cache-blob error, treat GitHub Actions cache availability as an external
   blocker and capture the second job rather than weakening the security gate.
+
+## 2026-07-29 — Workspace ClickHouse unavailable for local SQLFluff
+
+- **Status:** Unresolved in the disposable issue-2103 Compose environment;
+  exact-head CI is the authoritative SQLFluff gate.
+- **Symptoms:** The complete `pnpm lint` command passed the repository policy
+  and Biome checks, then stopped while SQLFluff's dbt templater compiled
+  `activity_aerobic_efficiency.sql`.
+- **User impact:** No production or end-user impact. Local full-lint validation
+  could not complete, but the changed scoring, web, mobile, and documentation
+  files remained independently verifiable.
+- **Evidence:** The exact failing command was `pnpm lint`. Its first fatal line
+  was `dbt tried to connect to the database and failed`, caused by
+  `HTTPConnection(host='127.0.0.1', port=8123): Failed to establish a new connection:
+  [Errno 61] Connection refused`. A single
+  `pnpm compose -- up -d clickhouse` startup attempt then stalled while creating
+  the workspace ClickHouse volume and was interrupted after approximately one
+  minute; Docker reported the volume request as canceled.
+- **Root cause:** The disposable worktree's local ClickHouse prerequisite was
+  absent, and the Docker daemon did not complete the service's volume creation.
+  No changed SQL or analytics model was involved.
+- **Fix / mitigation:** No retry, timeout increase, lint suppression, Compose
+  change, or application workaround was added. Keep the local evidence and
+  require the normal exact-head hosted SQLFluff job before merge.
+- **Validation:** Repository policy checks and Biome passed before SQLFluff;
+  focused scoring/web/mobile tests, package typechecks, and both Storybook
+  builds passed. Hosted exact-head validation remains required before merge.
+- **Remaining risk / follow-up:** Remove only the issue-2103 Compose project
+  during worktree cleanup. Treat any hosted SQLFluff failure as a new code
+  signal rather than attributing it to this local Docker failure.

@@ -185,7 +185,7 @@ describe("TodayScreen independent loading states", () => {
       date: "2026-03-21",
       action: {
         id: "strain_target",
-        title: "Keep a steady training day — aim for 12 strain",
+        title: "No change needs attention — aim for 12 strain",
         summary: "Moderate recovery (60). Aim for a steady training day.",
         zone: "Maintain",
       },
