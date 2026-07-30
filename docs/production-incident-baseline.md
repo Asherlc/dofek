@@ -20773,3 +20773,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Remove only the issue-2103 Compose project
   during worktree cleanup. Treat any hosted SQLFluff failure as a new code
   signal rather than attributing it to this local Docker failure.
+
+## 2026-07-29 — Independent dependency PRs exposed coupled version pins
+
+- **Status:** Root causes fixed on PRs
+  [#2267](https://github.com/Asherlc/dofek/pull/2267),
+  [#2266](https://github.com/Asherlc/dofek/pull/2266),
+  [#2262](https://github.com/Asherlc/dofek/pull/2262), and
+  [#2251](https://github.com/Asherlc/dofek/pull/2251); replacement exact-head
+  CI is pending.
+- **Symptoms:** CodeQL initialization, Slack typecheck, mobile Storybook/native
+  compilation, and the server Docker build failed on otherwise routine
+  dependency-update PRs.
+- **User impact:** No production impact because required checks blocked every
+  affected PR. The updates could not merge without reconciling their coupled
+  versions and paths.
+- **Evidence:** CodeQL's first fatal line was
+  `Loaded a configuration file for version '4.37.3', but running version '4.37.0'`.
+  Slack's first fatal line was `packages/server/src/slack/bot.ts(116,35):
+  TS2345` after Bolt 5 installed Socket Mode 3 while the direct dependency
+  remained on 2.0.7. Storybook resolved
+  `expo-router/build/global-state/router-store` beneath the exact-file mock and
+  failed with `Not a directory`. The Docker build failed while copying
+  `/usr/local/bin/python3.13` from the new Python 3.14 image.
+- **Root cause:** Each PR changed one member of a coupled set: all CodeQL
+  actions in a workflow must use one release; Bolt and the directly imported
+  Socket Mode client must share their major; a Vite file mock must not
+  prefix-match package subpaths; and Docker copy paths must match the selected
+  Python runtime.
+- **Fix / mitigation:** Pin all three CodeQL actions to the same 4.37.3 commit,
+  align Bolt with Socket Mode 3 and patched Undici 7.29.0, use an exact
+  `expo-router` alias while moving Sentry React Native to 8.20.0, and update
+  the Docker copy paths to Python 3.14. No check, timeout, retry, or failure
+  threshold was weakened.
+- **Validation:** CodeQL workflow lint, Slack typecheck and audit, mobile
+  typecheck and Storybook production build, native Release compilation, and
+  Docker image path validation must pass before merge. Exact-head CI remains
+  the final gate.
+- **Remaining risk / follow-up:** Group coupled CodeQL and Slack dependencies
+  in Dependabot configuration so future updates arrive atomically. Continue to
+  require a native Release build for Sentry React Native updates.
