@@ -24,7 +24,7 @@ describe("useTimeRangePreference", () => {
 
     expect(result.current.days).toBe(90);
     expect(result.current.description).toBe(
-      "Default: 90 days balances recent training changes with enough history.",
+      "Recommended default: 90 days balances recent training changes with enough history.",
     );
   });
 

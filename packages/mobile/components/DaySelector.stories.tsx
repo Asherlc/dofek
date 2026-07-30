@@ -8,7 +8,7 @@ const meta = {
   component: DaySelector,
   args: {
     days: 7,
-    description: "Default: 30 days keeps recent changes visible.",
+    description: "Recommended default: 30 days keeps recent changes visible.",
     onChange: () => {},
   },
 } satisfies Meta<typeof DaySelector>;
@@ -31,7 +31,7 @@ export const Default: Story = {
 export const CustomOptions: Story = {
   args: {
     days: 30,
-    description: "Default: 90 days balances recent changes with enough history.",
+    description: "Recommended default: 90 days balances recent changes with enough history.",
     options: [
       { label: "1m", value: 30 },
       { label: "3m", value: 90 },

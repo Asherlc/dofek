@@ -1,34 +1,44 @@
+import { z } from "zod";
+
 export type TimeRangeDays = number | null;
+
+const persistedTimeRangePreferenceSchema = z.union([
+  z.literal("all"),
+  z.string().transform(Number).pipe(z.number().int().positive()),
+]);
 
 export const TIME_RANGE_POLICIES = {
   body: {
     defaultDays: 30,
-    description: "Default: 30 days keeps recent body changes visible.",
+    description: "Recommended default: 30 days keeps recent body changes visible.",
   },
   recovery: {
     defaultDays: 30,
-    description: "Default: 30 days keeps recent recovery changes visible.",
+    description: "Recommended default: 30 days keeps recent recovery changes visible.",
   },
   sleep: {
     defaultDays: 30,
-    description: "Default: 30 days keeps recent sleep patterns visible.",
+    description: "Recommended default: 30 days keeps recent sleep patterns visible.",
   },
   training: {
     defaultDays: 90,
-    description: "Default: 90 days balances recent training changes with enough history.",
+    description:
+      "Recommended default: 90 days balances recent training changes with enough history.",
   },
   nutrition: {
     defaultDays: 90,
-    description: "Default: 90 days provides enough intake and weight history for stable trends.",
+    description:
+      "Recommended default: 90 days provides enough intake and weight history for stable trends.",
   },
   behavior: {
     defaultDays: 90,
-    description: "Default: 90 days provides enough journal observations to compare patterns.",
+    description:
+      "Recommended default: 90 days provides enough journal observations to compare patterns.",
   },
   correlation: {
     defaultDays: 365,
     description:
-      "Default: 1 year provides enough paired observations for longer-term relationships.",
+      "Recommended default: 1 year provides enough paired observations for longer-term relationships.",
   },
 } as const;
 
@@ -43,17 +53,13 @@ export function serializeTimeRangePreference(days: TimeRangeDays): string {
 }
 
 export function parseTimeRangePreference(
-  persistedValue: string | null,
+  persistedValue: unknown,
   defaultDays: number,
 ): TimeRangeDays {
-  if (persistedValue === "all") {
-    return null;
-  }
-
-  if (persistedValue === null || persistedValue.trim() === "") {
+  const parsedValue = persistedTimeRangePreferenceSchema.safeParse(persistedValue);
+  if (!parsedValue.success) {
     return defaultDays;
   }
 
-  const days = Number(persistedValue);
-  return Number.isInteger(days) && days > 0 ? days : defaultDays;
+  return parsedValue.data === "all" ? null : parsedValue.data;
 }

@@ -43,7 +43,7 @@ describe("useTimeRangePreference", () => {
 
     expect(result.current.days).toBe(90);
     expect(result.current.description).toBe(
-      "Default: 90 days provides enough intake and weight history for stable trends.",
+      "Recommended default: 90 days provides enough intake and weight history for stable trends.",
     );
   });
 

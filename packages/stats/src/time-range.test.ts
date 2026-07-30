@@ -11,33 +11,35 @@ describe("time range policy", () => {
     expect(TIME_RANGE_POLICIES).toEqual({
       body: {
         defaultDays: 30,
-        description: "Default: 30 days keeps recent body changes visible.",
+        description: "Recommended default: 30 days keeps recent body changes visible.",
       },
       recovery: {
         defaultDays: 30,
-        description: "Default: 30 days keeps recent recovery changes visible.",
+        description: "Recommended default: 30 days keeps recent recovery changes visible.",
       },
       sleep: {
         defaultDays: 30,
-        description: "Default: 30 days keeps recent sleep patterns visible.",
+        description: "Recommended default: 30 days keeps recent sleep patterns visible.",
       },
       training: {
         defaultDays: 90,
-        description: "Default: 90 days balances recent training changes with enough history.",
+        description:
+          "Recommended default: 90 days balances recent training changes with enough history.",
       },
       nutrition: {
         defaultDays: 90,
         description:
-          "Default: 90 days provides enough intake and weight history for stable trends.",
+          "Recommended default: 90 days provides enough intake and weight history for stable trends.",
       },
       behavior: {
         defaultDays: 90,
-        description: "Default: 90 days provides enough journal observations to compare patterns.",
+        description:
+          "Recommended default: 90 days provides enough journal observations to compare patterns.",
       },
       correlation: {
         defaultDays: 365,
         description:
-          "Default: 1 year provides enough paired observations for longer-term relationships.",
+          "Recommended default: 1 year provides enough paired observations for longer-term relationships.",
       },
     });
   });
@@ -65,5 +67,13 @@ describe("time range policy", () => {
     expect(parseTimeRangePreference("0", 90)).toBe(90);
     expect(parseTimeRangePreference("-30", 90)).toBe(90);
     expect(parseTimeRangePreference("not-a-range", 90)).toBe(90);
+  });
+
+  it("falls back to the domain default for corrupt non-string storage values", () => {
+    const corruptValues: unknown[] = [90, true, {}, ["90"]];
+
+    for (const persistedValue of corruptValues) {
+      expect(parseTimeRangePreference(persistedValue, 30)).toBe(30);
+    }
   });
 });

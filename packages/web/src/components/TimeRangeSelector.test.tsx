@@ -9,13 +9,15 @@ describe("TimeRangeSelector", () => {
     render(
       <TimeRangeSelector
         days={90}
-        description="Default: 90 days balances recent training changes with enough history."
+        description="Recommended default: 90 days balances recent training changes with enough history."
         onChange={vi.fn()}
       />,
     );
 
     expect(
-      screen.getByText("Default: 90 days balances recent training changes with enough history."),
+      screen.getByText(
+        "Recommended default: 90 days balances recent training changes with enough history.",
+      ),
     ).toBeTruthy();
   });
 });

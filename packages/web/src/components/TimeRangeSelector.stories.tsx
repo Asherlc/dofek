@@ -9,7 +9,7 @@ function TimeRangeSelectorStory({ initialDays }: { initialDays: TimeRangeDays })
     <div className="inline-flex flex-col gap-3">
       <TimeRangeSelector
         days={days}
-        description="Default: 90 days balances recent training changes with enough history."
+        description="Recommended default: 90 days balances recent training changes with enough history."
         onChange={setDays}
       />
       <span className="text-sm text-muted">

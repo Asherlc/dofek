@@ -10,7 +10,8 @@
     "./time-range": "./src/time-range.ts"
   },
   "dependencies": {
-    "@dofek/scoring": "workspace:*"
+    "@dofek/scoring": "workspace:*",
+    "zod": "4.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
