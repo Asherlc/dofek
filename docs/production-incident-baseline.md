@@ -7,6 +7,53 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-29: Responsive E2E selected the wrong 14-day control
+
+### Symptoms
+
+PR #2284 CI run
+[30464833420](https://github.com/Asherlc/dofek/actions/runs/30464833420)
+failed all four selected-life-event scenarios in
+`responsive-controls.cy.ts`, while the four Correlation scenarios and the
+remaining web E2E specs passed.
+
+### User Impact
+
+There was no production or end-user impact. The selector defect blocked merge
+validation of the responsive life-event controls.
+
+### Evidence
+
+The exact failing command was the Cypress run in `Test / E2E Tests (Web)`.
+Its first fatal line was
+`AssertionError: Timed out retrying after 10000ms: Too many elements found. Found '6', expected '4'.`
+at `responsive-controls.cy.ts:108`. The failure screenshot showed Cypress
+resolving `cy.contains("button", "14d")` to the Journal range selector above
+the life-event panel; that control's parent correctly contains six range
+buttons. The selected life-event analysis card contains the intended separate
+14/30/60/90-day window group.
+
+### Root Cause
+
+The acceptance test used a page-global text selector for a label shared by the
+Journal range selector and the selected life-event analysis window. Cypress
+matched the first visible `14d` button, so the four-button assertion inspected
+the wrong control group.
+
+### Fix or Mitigation
+
+Scope the analysis-window and Delete assertions to the card headed by the
+seeded life-event label before selecting its buttons. No production behavior,
+timeout, retry, or test-runner configuration changed. Cypress documents
+`.within()` as the mechanism for scoping subsequent queries to a selected
+element:
+<https://docs.cypress.io/api/commands/within>.
+
+### Remaining Risk
+
+Fresh exact-head E2E CI must confirm that all eight responsive scenarios pass
+against the production build.
+
 ## 2026-07-29: Shared Docker disk pressure blocked local web E2E validation
 
 ### Symptoms

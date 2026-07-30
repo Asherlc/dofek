@@ -102,15 +102,19 @@ describe("Responsive decision controls", () => {
         cy.contains("button", "Delete").should("be.visible");
         setRootFontSize(rootFontSize);
 
-        cy.contains("button", "14d")
-          .parent()
-          .find("button")
-          .should("have.length", 4)
-          .should("be.visible")
-          .and(expectInsideViewport(viewportWidth));
-        cy.contains("button", "Delete")
-          .should("be.visible")
-          .and(expectInsideViewport(viewportWidth));
+        cy.contains("h3", "Responsive control check")
+          .closest(".card")
+          .within(() => {
+            cy.contains("button", "14d")
+              .parent()
+              .find("button")
+              .should("have.length", 4)
+              .should("be.visible")
+              .and(expectInsideViewport(viewportWidth));
+            cy.contains("button", "Delete")
+              .should("be.visible")
+              .and(expectInsideViewport(viewportWidth));
+          });
         expectNoHorizontalOverflow();
       });
     }
