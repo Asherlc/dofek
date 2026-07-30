@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { Pressable } from "react-native";
+import { Pressable, TextInput } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 
 describe("Pressable test mock", () => {
@@ -28,5 +28,19 @@ describe("Pressable test mock", () => {
 
     fireEvent.mouseUp(button);
     expect(onPressOut).toHaveBeenCalledOnce();
+  });
+});
+
+describe("TextInput test mock", () => {
+  it("preserves React Native accessibility labels and direct ARIA labels", () => {
+    render(
+      <>
+        <TextInput accessibilityLabel="React Native label" />
+        <TextInput aria-label="Direct ARIA label" />
+      </>,
+    );
+
+    expect(screen.getByLabelText("React Native label")).toBeTruthy();
+    expect(screen.getByLabelText("Direct ARIA label")).toBeTruthy();
   });
 });
