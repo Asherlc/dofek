@@ -582,7 +582,21 @@ SELECT
   if(best.staging_available, best.light_minutes, NULL) AS light_minutes,
   if(best.staging_available, best.awake_minutes, NULL) AS awake_minutes,
   best.staging_available AS staging_available,
-  best.efficiency_pct AS efficiency_pct,
+  coalesce(
+    best.efficiency_pct,
+    multiIf(
+      best.staging_available
+        AND best.provider_id = 'apple_health'
+        AND best.duration_minutes > 0,
+      round((coalesce(best.deep_minutes, 0) + coalesce(best.rem_minutes, 0) + coalesce(best.light_minutes, 0)) / best.duration_minutes * 100, 1),
+      best.staging_available
+        AND best.provider_id IN ('eight-sleep', 'polar')
+        AND best.duration_minutes > 0
+        AND best.awake_minutes IS NOT NULL,
+      round(best.duration_minutes / (best.duration_minutes + best.awake_minutes) * 100, 1),
+      NULL
+    )
+  ) AS efficiency_pct,
   best.sleep_type AS sleep_type,
   best.is_nap AS is_nap,
   best.source_name AS source_name,
