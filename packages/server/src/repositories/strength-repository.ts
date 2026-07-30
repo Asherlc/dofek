@@ -83,7 +83,9 @@ export class MuscleGroupVolume {
   }
 }
 
-/** Progressive overload trend for a single exercise. */
+export type ProgressiveOverloadTrend = "increasing" | "decreasing" | "stable";
+
+/** Weekly volume trend for a single exercise. */
 export class ProgressiveOverload {
   readonly #exerciseName: string;
   readonly #weeklyVolumes: number[];
@@ -97,8 +99,10 @@ export class ProgressiveOverload {
     return Math.round(linearRegressionSlope(this.#weeklyVolumes) * 100) / 100;
   }
 
-  get isProgressing(): boolean {
-    return linearRegressionSlope(this.#weeklyVolumes) > 0;
+  get trend(): ProgressiveOverloadTrend {
+    if (this.slopeKgPerWeek > 0) return "increasing";
+    if (this.slopeKgPerWeek < 0) return "decreasing";
+    return "stable";
   }
 
   toDetail() {
@@ -106,7 +110,7 @@ export class ProgressiveOverload {
       exerciseName: this.#exerciseName,
       weeklyVolumes: this.#weeklyVolumes,
       slopeKgPerWeek: this.slopeKgPerWeek,
-      isProgressing: this.isProgressing,
+      trend: this.trend,
     };
   }
 }

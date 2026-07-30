@@ -119,7 +119,7 @@ describe("strengthRouter", () => {
   });
 
   describe("progressiveOverload", () => {
-    it("computes regression slope for exercises", async () => {
+    it("computes regression slope and descriptive direction for exercises", async () => {
       const rows = [
         { exercise_name: "Squat", week: "2024-01-08", weekly_volume: 3000 },
         { exercise_name: "Squat", week: "2024-01-15", weekly_volume: 3200 },
@@ -129,7 +129,7 @@ describe("strengthRouter", () => {
       const result = await caller.progressiveOverload({ days: 90 });
 
       expect(result).toHaveLength(1);
-      expect(result[0]?.isProgressing).toBe(true);
+      expect(result[0]?.trend).toBe("increasing");
       expect(result[0]?.slopeKgPerWeek).toBeGreaterThan(0);
     });
 

@@ -83,7 +83,7 @@ function StrengthTab() {
           )}
         </Section>
 
-        <Section title="Progressive Overload" subtitle="Exercise-level overload trends">
+        <Section title="Exercise Volume Trends" subtitle="Weekly volume direction by exercise">
           {overload.error && !overload.data ? (
             <QueryStatePanel error={overload.error} />
           ) : (
