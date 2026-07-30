@@ -326,9 +326,9 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (p: SyncProviderSummary, fullSync = false) => {
+    (p: SyncProviderSummary) => {
       if (p.authorized && !p.needsReauth && !p.pushOnly) {
-        handleSync(p.id, fullSync);
+        handleSync(p.id);
         return;
       }
       if (p.pushOnly) {
@@ -368,7 +368,7 @@ export function DataSourcesPanel() {
           setGarminAuthOpen(true);
           break;
         default:
-          handleSync(p.id, fullSync);
+          handleSync(p.id);
       }
     },
     [handleSync, updateState],
@@ -494,7 +494,6 @@ export function DataSourcesPanel() {
                     stats={providerStats}
                     recentLogs={recentLogs}
                     onSync={() => handleProviderClick(provider)}
-                    onFullSync={() => handleProviderClick(provider, true)}
                   />
                 );
               })}

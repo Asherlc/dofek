@@ -54,11 +54,6 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  fullSyncLink: {
-    fontSize: 13,
-    color: colors.accent,
-    marginTop: 4,
-  },
   shareInfoCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
