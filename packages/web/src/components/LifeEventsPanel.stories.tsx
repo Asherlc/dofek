@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
+import { within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 import { LifeEventsPanel } from "./LifeEventsPanel.tsx";
@@ -197,4 +198,16 @@ export const TravelWeek: Story = {
     viewport: { defaultViewport: "mobile1" },
   },
   render: () => <LifeEventsStoryFrame scenario={travelWeekScenario} />,
+};
+
+export const MobileAnalysis: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  render: () => <LifeEventsStoryFrame scenario={defaultScenario} />,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", { name: /Started creatine/i }),
+    );
+  },
 };

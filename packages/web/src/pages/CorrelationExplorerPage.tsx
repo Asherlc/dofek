@@ -378,7 +378,7 @@ export function CorrelationExplorerPage() {
               <Link
                 to="/experiments"
                 search={{ outcomeMetricId: metricY, lagDays: lag }}
-                className="inline-flex px-3 py-1.5 text-xs rounded-md bg-accent/15 text-foreground hover:bg-accent/25 transition-colors"
+                className="inline-flex w-full justify-center px-3 py-1.5 text-center text-xs rounded-md bg-accent/15 text-foreground hover:bg-accent/25 transition-colors sm:w-auto"
               >
                 Start experiment with {yMetric?.label ?? "this outcome"}
               </Link>
