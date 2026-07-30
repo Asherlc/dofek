@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useWindowDimensions } from "react-native";
+import { Linking, useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCaptureException } = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ const mockRegisterWithPassword = vi.fn();
 const mockRequestPasswordReset = vi.fn();
 const mockRouterReplace = vi.fn();
 const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+const mockOpenUrl = vi.spyOn(Linking, "openURL");
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -63,6 +64,7 @@ const { default: LoginScreen } = await import("./login");
 describe("LoginScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOpenUrl.mockResolvedValue();
     mockIsNativeAppleSignInAvailable.mockResolvedValue(false);
     mockUseWindowDimensions.mockReturnValue({
       width: 390,
@@ -143,6 +145,75 @@ describe("LoginScreen", () => {
       screen.getByText("Enter your details. Next, you'll connect your health data."),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create account and continue" })).toBeTruthy();
+  });
+
+  it("shows legal context and an existing-account path during registration", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByText("Sign in to Dofek")).toBeTruthy();
+  });
+
+  it("opens registration policies on the configured Dofek instance", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() => expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/terms"));
+
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+
+    await waitFor(() =>
+      expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/privacy"),
+    );
+  });
+
+  it("reports a legal-document launch failure and explains it to the user", async () => {
+    const openError = new Error("Browser unavailable");
+    mockOpenUrl.mockRejectedValueOnce(openError).mockResolvedValueOnce();
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Could not open the Privacy Policy. Try again.")).toBeTruthy(),
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(openError, {
+      source: "login-screen-open-legal-document",
+      document: "privacy",
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Could not open the Privacy Policy. Try again.")).not.toBeTruthy(),
+    );
   });
 
   it("shows task-specific password reset guidance", async () => {
