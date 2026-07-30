@@ -254,18 +254,19 @@ describe("Dashboard", () => {
     mockDailyOverview.mockClear();
   });
 
-  it("uses the same 90-day overview window as training and mobile", () => {
+  it("uses a 90-day evidence window without widening current-day plan lookups", () => {
     render(<Dashboard />);
 
-    const range = { days: 90, endDate: "2026-05-27" };
-    expect(mockReadinessQuery).toHaveBeenCalledWith(range);
-    expect(mockWorkloadQuery).toHaveBeenCalledWith(range);
-    expect(mockStrainTargetQuery).toHaveBeenCalledWith(range);
-    expect(mockTodayPlanQuery).toHaveBeenCalledWith(range);
-    expect(mockTrendsQuery).toHaveBeenCalledWith(range);
-    expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(range);
+    const overviewRange = { days: 90, endDate: "2026-05-27" };
+    const planLookback = { days: 30, endDate: "2026-05-27" };
+    expect(mockReadinessQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockWorkloadQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockStrainTargetQuery).toHaveBeenCalledWith(planLookback);
+    expect(mockTodayPlanQuery).toHaveBeenCalledWith(planLookback);
+    expect(mockTrendsQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockInsightsQuery).toHaveBeenCalledWith(
-      range,
+      overviewRange,
       expect.objectContaining({ enabled: true }),
     );
     expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(

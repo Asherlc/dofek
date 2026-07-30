@@ -4,6 +4,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import {
   dateWindowEnd,
   dateWindowStartPredicate,
+  dateWindowStartString,
   type RangeDays,
   rangeDaysOrNullAdd,
 } from "../lib/date-window.ts";
@@ -189,10 +190,8 @@ export class DailyMetricsRepository extends BaseRepository {
     if (days === null) return rows.filter((row) => row.date <= endDate);
 
     // Discard warmup rows — only return the requested date range
-    const cutoffDate = new Date(`${endDate}T00:00:00`);
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-    return rows.filter((row) => row.date >= cutoffStr);
+    const cutoffStr = dateWindowStartString(endDate, days - 1);
+    return rows.filter((row) => row.date >= cutoffStr && row.date <= endDate);
   }
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */

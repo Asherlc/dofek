@@ -123,15 +123,19 @@ export function isCoreDashboardReady({
 
 export function Dashboard() {
   const units = useUnitConverter();
-  const days = 90;
+  const overviewDays = 90;
+  const planLookbackDays = 30;
   const endDate = useTodayQueryDate();
-  const readinessData = trpc.recovery.readinessScore.useQuery({ days, endDate });
-  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
-  const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
+  const readinessData = trpc.recovery.readinessScore.useQuery({ days: overviewDays, endDate });
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days: overviewDays, endDate });
+  const strainTarget = trpc.recovery.strainTarget.useQuery({ days: planLookbackDays, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
-  const todayPlan = trpc.todayPlan.get.useQuery({ days, endDate });
-  const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
+  const todayPlan = trpc.todayPlan.get.useQuery({ days: planLookbackDays, endDate });
+  const trends = trpc.dailyMetrics.trends.useQuery({ days: overviewDays, endDate });
+  const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({
+    days: overviewDays,
+    endDate,
+  });
   const coreDashboardReady = isCoreDashboardReady({
     readinessReady:
       readinessData.data !== undefined || (readinessData.isFetched && readinessData.error == null),
@@ -149,7 +153,7 @@ export function Dashboard() {
     strainTarget.isLoading ||
     sleepPerformance.isLoading;
   const insightsQuery = trpc.insights.compute.useQuery(
-    { days, endDate },
+    { days: overviewDays, endDate },
     { enabled: coreDashboardReady },
   );
   const processingStatus = useProcessingStatus({
@@ -249,7 +253,7 @@ export function Dashboard() {
         sleepError={sleepPerformance.error}
       />
       <DashboardEvidenceOverview
-        days={days}
+        days={overviewDays}
         endDate={endDate}
         topInsight={topInsight}
         insightError={insightStatePanel}
