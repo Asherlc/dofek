@@ -18,10 +18,18 @@ interface HealthStatusBarProps {
 }
 
 const statusColors: Record<HealthStatusMetric["statusColor"], string> = {
-  positive: "bg-emerald-500",
-  warning: "bg-amber-500",
-  danger: "bg-red-500",
-  muted: "bg-dim",
+  positive: "border-emerald-500 text-emerald-500",
+  warning: "border-amber-500 text-amber-500",
+  danger: "border-red-500 text-red-500",
+  muted: "border-dim text-dim",
+};
+
+const statusSymbols: Record<HealthStatusMetric["statusToken"], string> = {
+  insufficient_data: "?",
+  near_baseline: "✓",
+  moving_as_intended: "✓",
+  notable_deviation: "!",
+  far_from_baseline: "×",
 };
 
 function MetricValue({ value }: { value: number | null }) {
@@ -133,10 +141,15 @@ export function HealthStatusBar({
             key={metric.metric}
             className="flex-1 min-w-[120px] card card-hover p-3 stagger-fade-in"
             style={{ animationDelay: `${index * 80}ms` }}
-            title={metric.explanation}
           >
             <div className="flex items-center gap-2 mb-1">
-              <div className={`w-2 h-2 rounded-full ${statusColors[metric.statusColor]}`} />
+              <span
+                className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold leading-none ${statusColors[metric.statusColor]}`}
+                role="img"
+                aria-label={`${metric.statusLabel} status`}
+              >
+                {statusSymbols[metric.statusToken]}
+              </span>
               <span className="text-xs text-muted uppercase tracking-wider">{metric.label}</span>
             </div>
             <div className="text-lg font-semibold font-mono tabular-nums">
@@ -147,6 +160,8 @@ export function HealthStatusBar({
                 ? `baseline ${formatBaseline(metric, formatter)} · ${metric.statusLabel}`
                 : metric.statusLabel}
             </div>
+            <div className="mt-1 text-[10px] font-medium text-muted">{metric.evaluationRule}</div>
+            <div className="mt-1 text-[10px] text-subtle">{metric.explanation}</div>
             {baselineContext ? (
               <div className="mt-1 text-[10px] text-subtle">
                 {formatBaselineContext(baselineContext, {

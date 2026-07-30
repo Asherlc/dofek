@@ -141,6 +141,7 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "moving_as_intended",
       statusColor: "positive",
       statusLabel: "Moving as intended",
+      evaluationRule: "Above your baseline, where higher values support this metric",
     });
   });
 
@@ -160,7 +161,43 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "notable_deviation",
       statusColor: "warning",
       statusLabel: "Notably below baseline",
+      evaluationRule:
+        "Outside your usual range: 1 to less than 2 standard deviations from baseline",
     });
+  });
+
+  it.each([
+    {
+      value: 59.999,
+      statusToken: "near_baseline",
+      evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
+    },
+    {
+      value: 60,
+      statusToken: "notable_deviation",
+      evaluationRule:
+        "Outside your usual range: 1 to less than 2 standard deviations from baseline",
+    },
+    {
+      value: 70,
+      statusToken: "far_from_baseline",
+      evaluationRule: "Well outside your usual range: at least 2 standard deviations from baseline",
+    },
+  ])("returns the exact evaluated rule at value $value", ({
+    value,
+    statusToken,
+    evaluationRule,
+  }) => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "skin_temperature",
+        label: "Skin Temperature",
+        value,
+        baseline: 50,
+        sampleDeviation: 10,
+        intent: "neutral",
+      }),
+    ).toMatchObject({ statusToken, evaluationRule });
   });
 
   it.each([
@@ -205,6 +242,7 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "insufficient_data",
       statusColor: "muted",
       statusLabel: "Not enough data",
+      evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
     });
   });
 });
