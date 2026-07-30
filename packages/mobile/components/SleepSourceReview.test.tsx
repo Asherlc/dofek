@@ -88,4 +88,37 @@ describe("SleepSourceReview", () => {
     expect(screen.getByText("No overlapping sessions")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  it("keeps the selected start time visible when the end is unavailable", () => {
+    render(
+      <SleepSourceReview
+        nights={[
+          {
+            date: "2026-03-01",
+            durationMinutes: null,
+            providerId: "whoop",
+            sourceName: null,
+            sourceProviders: ["whoop"],
+            selectedSessionId,
+            startedAt: "2026-03-02T06:00:00Z",
+            endedAt: null,
+            localTimeContext: {
+              timezone: "UTC",
+              startUtcOffsetMinutes: 0,
+              endUtcOffsetMinutes: null,
+              source: "provider_timezone",
+            },
+            overlappingSessions: [],
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        (_, element) => element?.textContent === "6:00 AM – End unavailable · Duration unavailable",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Local time unavailable")).toBeNull();
+  });
 });

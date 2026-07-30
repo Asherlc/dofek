@@ -2,6 +2,7 @@ import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { RangeDays } from "../lib/date-window.ts";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 const nullableNumberSchema = z.preprocess(
@@ -22,14 +23,13 @@ const overlappingSleepSessionSchema = z
     start_utc_offset_minutes: nullableNumberSchema,
     end_utc_offset_minutes: nullableNumberSchema,
     local_time_source: localTimeSourceSchema,
-    started_at: z.string(),
-    ended_at: z.string().nullable(),
+    started_at: timestampStringSchema,
+    ended_at: timestampStringSchema.nullable(),
     duration_minutes: nullableNumberSchema,
   })
   .transform((session) => ({
     ...session,
     source_name: session.source_name ?? null,
-    source_providers: session.source_providers ?? [],
   }));
 
 const clickHouseSleepNightSchema = z
@@ -66,7 +66,6 @@ const clickHouseSleepNightSchema = z
     source_name: row.source_name ?? null,
     source_providers: row.source_providers ?? [],
     selected_session_id: row.selected_session_id ?? null,
-    overlapping_sessions: row.overlapping_sessions ?? [],
     started_at: row.started_at ?? `${row.date}T12:00:00`,
     ended_at: row.ended_at ?? null,
   }));

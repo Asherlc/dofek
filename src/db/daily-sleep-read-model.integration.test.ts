@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { timestampStringSchema } from "./typed-sql.ts";
 
 const testUserId = "00000000-0000-4000-8000-000000001770";
 const selectedSleepId = "00000000-0000-4000-8000-000000001771";
@@ -41,8 +42,8 @@ const overlapEvidenceRowSchema = z.object({
       start_utc_offset_minutes: z.coerce.number().nullable(),
       end_utc_offset_minutes: z.coerce.number().nullable(),
       local_time_source: z.string(),
-      started_at: z.string(),
-      ended_at: z.string().nullable(),
+      started_at: timestampStringSchema,
+      ended_at: timestampStringSchema.nullable(),
       duration_minutes: z.coerce.number().nullable(),
     }),
   ),
@@ -147,8 +148,8 @@ describe("daily_sleep read-model lifecycle", () => {
             start_utc_offset_minutes: 0,
             end_utc_offset_minutes: 0,
             local_time_source: "provider_offset",
-            started_at: "2026-02-01 23:30:00.000000",
-            ended_at: "2026-02-02 05:00:00.000000",
+            started_at: "2026-02-01T23:30:00.000Z",
+            ended_at: "2026-02-02T05:00:00.000Z",
             duration_minutes: 330,
           },
         ],
@@ -304,6 +305,7 @@ async function readConflictEvidence(
       date: conflictSleepDate,
       userId: testUserId,
     },
+    clickhouse_settings: { date_time_output_format: "iso" },
     format: "JSONEachRow",
   });
   const rows = await result.json<{

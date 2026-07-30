@@ -126,8 +126,10 @@ function formatSessionTime(
   context: RecordLocalTimeContext,
 ): string {
   const start = formatRecordLocalTime(startedAt, context, "start");
-  const end = endedAt == null ? "--" : formatRecordLocalTime(endedAt, context, "end");
-  return start === "--" || end === "--" ? "Local time unavailable" : `${start} – ${end}`;
+  if (start === "--") return "Local time unavailable";
+  if (endedAt == null) return `${start} – End unavailable`;
+  const end = formatRecordLocalTime(endedAt, context, "end");
+  return end === "--" ? "Local time unavailable" : `${start} – ${end}`;
 }
 
 const styles = StyleSheet.create({

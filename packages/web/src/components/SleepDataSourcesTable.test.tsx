@@ -92,4 +92,11 @@ describe("SleepDataSourcesTable", () => {
     expect(screen.getByText("Oura · Oura Ring")).toBeDefined();
     expect(screen.getByText(/5h 30m/)).toBeDefined();
   });
+
+  it("keeps the selected start time visible when the end is unavailable", () => {
+    render(<SleepDataSourcesTable rows={[{ ...row(1), endedAt: null }]} />);
+
+    expect(screen.getByText("6:00 AM – End unavailable")).toBeDefined();
+    expect(screen.queryByText("Local time unavailable")).toBeNull();
+  });
 });
