@@ -1,3 +1,4 @@
+import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../../../src/db/index.ts";
@@ -247,6 +248,13 @@ const summaryRowSchema = z.object({
   duration_minutes: z.coerce.number(),
 });
 
+function strengthActivityTypeSqlList() {
+  return sql.join(
+    STRENGTH_ACTIVITY_TYPES.map((activityType) => sql`${activityType}`),
+    sql`, `,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -277,7 +285,7 @@ export class StrengthRepository {
           FROM fitness.v_activity a
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type IN ('strength', 'strength_training')
+            AND a.activity_type IN (${strengthActivityTypeSqlList()})
             ${rangeFilter}
           GROUP BY 1
           ORDER BY week`,
@@ -315,7 +323,7 @@ export class StrengthRepository {
             JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
             JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type IN ('strength', 'strength_training')
+            AND a.activity_type IN (${strengthActivityTypeSqlList()})
             ${rangeFilter}
             AND ss.set_type = 'working'
             AND ss.weight_kg > 0
@@ -372,7 +380,7 @@ export class StrengthRepository {
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type IN ('strength', 'strength_training')
+            AND a.activity_type IN (${strengthActivityTypeSqlList()})
             ${rangeFilter}
             AND e.muscle_groups IS NOT NULL
           GROUP BY mg, 2
@@ -405,7 +413,7 @@ export class StrengthRepository {
           JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type IN ('strength', 'strength_training')
+            AND a.activity_type IN (${strengthActivityTypeSqlList()})
             ${rangeFilter}
             AND ss.weight_kg > 0
           GROUP BY e.name, 2
@@ -516,7 +524,7 @@ export class StrengthRepository {
           FROM fitness.v_activity a
           LEFT JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type IN ('strength', 'strength_training')
+            AND a.activity_type IN (${strengthActivityTypeSqlList()})
             ${rangeFilter}
             AND a.ended_at IS NOT NULL
           GROUP BY a.id, a.started_at, a.ended_at, a.name
