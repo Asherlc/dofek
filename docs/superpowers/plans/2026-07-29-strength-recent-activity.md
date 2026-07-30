@@ -19,7 +19,7 @@
 
 ## Test Strategy
 
-- Unit: prove the shared contract includes every supported strength type.
+- Contract: prove the selected route and repository behavior use the shared strength types.
 - Integration: seed structured sets under functional strength and functional fitness activities in real Postgres, then prove the Strength analytics and activity list include the same selected-window workouts.
 - Web: prove the route passes the shared type contract to the activity list and renders exact dynamic period/type copy for finite and all-time ranges.
 - Mobile parity: no mobile Strength analytics route exists; both clients retain access to the shared server/domain contract without adding an unrelated screen.
@@ -28,31 +28,32 @@
 
 - Create: `docs/superpowers/plans/2026-07-29-strength-recent-activity.md` - record the confirmed approach and validation.
 - Modify: `packages/training/src/training.ts` - define the canonical strength activity-type contract.
-- Modify: `packages/training/src/training.test.ts` - cover the shared contract.
 - Modify: `packages/server/src/repositories/strength-repository.ts` - use the shared contract in every Strength query.
-- Create: `packages/server/src/repositories/strength-repository.integration.test.ts` - execute the reconciled repository behavior against Postgres.
+- Create: `packages/server/src/repositories/strength-repository.integration.test.ts` - execute the reconciled Strength and activity-list repository behavior against Postgres.
 - Modify: `packages/web/src/routes/training/strength.lazy.tsx` - use the shared contract and render exact scope copy.
 - Modify: `packages/web/src/routes/training/strength.lazy.test.tsx` - cover query inputs and copy for finite/all-time ranges.
 - Modify: `packages/web/src/routes/training/range-plumbing.test-helper.tsx` - expose Strength route props to its focused test.
 - Modify: `packages/web/src/components/ActivityList.tsx` - allow the scoped section to supply an exact empty-state message.
 - Modify: `packages/web/src/components/ActivityList.test.tsx` - cover the custom empty state.
+- Modify: `packages/web/src/components/ActivityList.stories.tsx` - preserve default/loading/empty scenarios and add the scoped strength empty state.
 - Modify: `packages/web/src/components/RecentActivitiesSection.tsx` - forward the scoped empty-state message.
 - Modify: `packages/web/src/components/RecentActivitiesSection.test.tsx` - cover forwarding without changing query behavior.
+- Modify: `packages/web/src/components/RecentActivitiesSection.stories.tsx` - preserve default/loading/empty scenarios and add the scoped strength variant.
 
 ## Tasks
 
 ### Task 1: Add Failing Contract and UI Tests
 
-- [x] Add unit expectations for the canonical strength types.
 - [x] Add route expectations for the shared types, selected-range copy, and all-time copy.
 - [x] Add component expectations for the scoped empty-state message.
+- [x] Add scoped Storybook variants alongside the existing default, loading, and empty scenarios.
 - [x] Run `pnpm vitest run packages/training/src/training.test.ts packages/web/src/routes/training/strength.lazy.test.tsx packages/web/src/components/ActivityList.test.tsx packages/web/src/components/RecentActivitiesSection.test.tsx`.
 - [x] Confirm failures identify the missing shared contract and copy behavior.
 
 ### Task 2: Add the Failing Database Regression
 
 - [x] Seed all four strength activity types with structured sets in a focused repository integration fixture.
-- [x] Assert Strength analytics and `activity.list` include the same selected-window variants.
+- [x] Assert the Strength and activity-list repositories include the same selected-window variants.
 - [x] Run `pnpm vitest run --project integration packages/server/src/repositories/strength-repository.integration.test.ts`.
 - [x] Confirm the current two-type repository predicate excludes the functional variants.
 

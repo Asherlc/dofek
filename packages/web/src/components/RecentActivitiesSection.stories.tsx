@@ -1,4 +1,5 @@
 import type { UnitSystem } from "@dofek/format/units";
+import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -183,7 +184,7 @@ export const ScopedStrengthEmpty: Story = {
   render: () => (
     <ActivitiesStory
       scenario={{ items: [], totalCount: 0 }}
-      activityTypes={["strength", "strength_training", "functional_strength", "functional_fitness"]}
+      activityTypes={STRENGTH_ACTIVITY_TYPES}
       emptyMessage="No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness."
     />
   ),
