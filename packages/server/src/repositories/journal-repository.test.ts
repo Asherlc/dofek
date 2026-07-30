@@ -61,7 +61,7 @@ describe("JournalRepository", () => {
       expect(result).toEqual([]);
     });
 
-    it("returns parsed entry rows with question metadata", async () => {
+    it("returns parsed entry details with resolved source provenance", async () => {
       const { repository } = makeRepository([
         {
           id: "entry-1",
@@ -81,6 +81,36 @@ describe("JournalRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.id).toBe("entry-1");
       expect(result[0]?.question_slug).toBe("caffeine");
+      expect(result[0]?.source).toEqual({
+        providerId: "dofek",
+        label: "Dofek",
+      });
+      expect(result[0]).not.toHaveProperty("provider_id");
+    });
+
+    it("uses the canonical label for review-fixture provenance", async () => {
+      const { repository } = makeRepository([
+        {
+          id: "entry-2",
+          date: "2025-01-15",
+          provider_id: "manual_review",
+          question_slug: "meditation",
+          display_name: "Meditation",
+          category: "wellness",
+          data_type: "boolean",
+          unit: null,
+          answer_text: "yes",
+          answer_numeric: 1,
+          impact_score: null,
+        },
+      ]);
+
+      const result = await repository.listEntries(30);
+
+      expect(result[0]?.source).toEqual({
+        providerId: "manual_review",
+        label: "Manual review",
+      });
     });
 
     it("calls execute once", async () => {

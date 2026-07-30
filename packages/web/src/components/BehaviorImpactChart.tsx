@@ -1,4 +1,6 @@
 import { formatReadinessDifference } from "@dofek/format/format";
+import type { ProviderProvenance } from "@dofek/providers/providers";
+import { useState } from "react";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -9,12 +11,14 @@ function ReadinessAssociationBar({
   category,
   yesCount,
   noCount,
+  sources,
 }: {
   label: string;
   readinessDifferencePercent: number;
   category: string;
   yesCount: number;
   noCount: number;
+  sources: ProviderProvenance[];
 }) {
   const maxBar = 50; // max percentage width
   const barWidth = Math.min(Math.abs(readinessDifferencePercent), maxBar);
@@ -33,6 +37,7 @@ function ReadinessAssociationBar({
         <span className="block text-[10px] text-dim">
           Yes n = {yesCount} · No n = {noCount}
         </span>
+        <ProviderSourceDetails sources={sources} />
       </div>
       <div className="flex min-w-0 items-center">
         {/* Lower relative difference */}
@@ -60,6 +65,37 @@ function ReadinessAssociationBar({
         <span className="text-xs font-medium text-blue-300">{value}</span>
       </div>
     </div>
+  );
+}
+
+function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const sourceNames = sources.map((source) => source.label).join(", ");
+  const sourceIds = sources.map((source) => source.providerId).join(", ");
+  const sourcePrefix = sources.length === 1 ? "Source" : "Sources";
+  const idPrefix = sources.length === 1 ? "Provider ID" : "Provider IDs";
+  const action = expanded ? "Hide" : "Show";
+
+  return (
+    <span className="block text-[10px] text-dim">
+      <span>
+        {sourcePrefix}: {sourceNames}
+      </span>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${action} technical source details for ${sourceNames}`}
+        className="ml-1 text-subtle underline decoration-dotted underline-offset-2 hover:text-muted"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        Technical details
+      </button>
+      {expanded && (
+        <span className="block">
+          {idPrefix}: {sourceIds}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -137,6 +173,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
               category={item.category}
               yesCount={item.yesCount}
               noCount={item.noCount}
+              sources={item.sources}
             />
           ))}
         </div>
