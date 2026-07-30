@@ -1028,12 +1028,19 @@ describe("Router coverage", () => {
   describe("nutritionAnalytics", () => {
     it("adaptiveTdee returns TDEE estimate with weight smoothing", async () => {
       const result = await query<{
+        status: "available" | "unavailable";
         estimatedTdee: number | null;
-        confidence: number;
-        dataPoints: number;
+        estimateRange: { minimum: number; maximum: number } | null;
+        unavailableReason: string | null;
+        evidence: {
+          fitWindowDays: number;
+          minimumCalorieDays: number;
+          acceptedWindows: number;
+        };
         dailyData: {
           date: string;
-          caloriesIn: number;
+          caloriesIn: number | null;
+          nutritionStatus: "available" | "source_conflict" | "missing";
           weightKg: number | null;
           smoothedWeight: number | null;
           estimatedTdee: number | null;
@@ -1041,14 +1048,14 @@ describe("Router coverage", () => {
       }>("nutritionAnalytics.adaptiveTdee", { days: 90 });
 
       expect(Array.isArray(result.dailyData)).toBe(true);
-      expect(typeof result.confidence).toBe("number");
-      expect(result.confidence).toBeGreaterThanOrEqual(0);
-      expect(result.confidence).toBeLessThanOrEqual(1);
-      expect(typeof result.dataPoints).toBe("number");
+      expect(["available", "unavailable"]).toContain(result.status);
+      expect(result.evidence.fitWindowDays).toBe(28);
+      expect(result.evidence.minimumCalorieDays).toBe(20);
+      expect(typeof result.evidence.acceptedWindows).toBe("number");
 
       for (const day of result.dailyData) {
         expect(day.date).toBeTruthy();
-        expect(typeof day.caloriesIn).toBe("number");
+        expect(["available", "source_conflict", "missing"]).toContain(day.nutritionStatus);
       }
     });
 

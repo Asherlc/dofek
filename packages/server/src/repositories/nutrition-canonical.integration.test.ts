@@ -621,7 +621,13 @@ describe("canonical nutrition contribution set", () => {
     const vitaminC = adequacy.find((nutrient) => nutrient.nutrient === "Vitamin C");
     expect(vitaminC?.avgIntake).toBe(50);
 
-    const tdeeData = await repository.getAdaptiveTdeeData(30);
-    expect(tdeeData).toContainEqual({ date, caloriesIn: 1000, weightKg: null });
+    const tdeeData = await repository.getAdaptiveTdeeData(30, date);
+    expect(tdeeData).toContainEqual({
+      date,
+      caloriesIn: 1000,
+      nutritionStatus: "available",
+      lowerPrioritySourcesExcluded: true,
+      weightKg: null,
+    });
   });
 });

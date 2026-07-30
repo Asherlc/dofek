@@ -10,7 +10,7 @@ import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import NutritionAnalyticsScreen from "./nutrition-analytics";
 
-type NutritionAnalyticsStoryScenario = "available" | "error" | "stale-error";
+type NutritionAnalyticsStoryScenario = "available" | "error" | "stale-error" | "unavailable";
 
 function NutritionAnalyticsStoryFrame({ scenario }: { scenario: NutritionAnalyticsStoryScenario }) {
   const queryClient = useMemo(() => {
@@ -35,7 +35,9 @@ function NutritionAnalyticsStoryFrame({ scenario }: { scenario: NutritionAnalyti
     () =>
       trpc.createClient({
         links: [
-          createNutritionAnalyticsStoryLink(scenario === "available" ? "available" : "error"),
+          createNutritionAnalyticsStoryLink(
+            scenario === "available" || scenario === "unavailable" ? scenario : "error",
+          ),
         ],
       }),
     [scenario],
@@ -70,6 +72,10 @@ export const Default: Story = {
 
 export const ConsolidatedError: Story = {
   render: () => <NutritionAnalyticsStoryFrame scenario="error" />,
+};
+
+export const TdeeUnavailable: Story = {
+  render: () => <NutritionAnalyticsStoryFrame scenario="unavailable" />,
 };
 
 export const StaleDataWithRefreshError: Story = {

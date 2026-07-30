@@ -12,13 +12,49 @@ import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { NutritionAnalyticsPage } from "./NutritionAnalyticsPage.tsx";
 
-type NutritionAnalyticsScenario = "available" | "error" | "stale-error";
+type NutritionAnalyticsScenario = "available" | "error" | "stale-error" | "unavailable";
 
 const storyData = {
   adaptiveTdee: {
+    status: "available",
     estimatedTdee: 2_250,
-    confidence: 0.82,
-    dataPoints: 30,
+    estimateRange: { minimum: 2_180, maximum: 2_320 },
+    unavailableReason: null,
+    evidence: {
+      selectedWindowDays: 90,
+      fitWindowDays: 28,
+      minimumCalorieDays: 20,
+      observedDays: 90,
+      calorieDays: 82,
+      weightDays: 45,
+      acceptedWindows: 30,
+      excludedDays: {
+        missingCalories: 6,
+        sourceConflict: 2,
+        lowerPrioritySources: 3,
+      },
+    },
+    dailyData: [],
+  },
+  adaptiveTdeeUnavailable: {
+    status: "unavailable",
+    estimatedTdee: null,
+    estimateRange: null,
+    unavailableReason: "No body-weight measurements are available in the selected period.",
+    evidence: {
+      selectedWindowDays: 90,
+      fitWindowDays: 28,
+      minimumCalorieDays: 20,
+      observedDays: 90,
+      calorieDays: 90,
+      weightDays: 0,
+      acceptedWindows: 0,
+      excludedDays: {
+        missingCalories: 0,
+        sourceConflict: 0,
+        lowerPrioritySources: 0,
+      },
+    },
     dailyData: [],
   },
   macroRatios: [
@@ -94,7 +130,11 @@ function createMockObservable(
 ): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
-      if (scenario !== "available" && path.startsWith("nutritionAnalytics.")) {
+      if (
+        scenario !== "available" &&
+        scenario !== "unavailable" &&
+        path.startsWith("nutritionAnalytics.")
+      ) {
         observer.error?.(
           TRPCClientError.from<AppRouter>(new Error("Body measurements are unavailable.")),
         );
@@ -102,7 +142,14 @@ function createMockObservable(
       }
 
       if (path === "nutritionAnalytics.adaptiveTdee") {
-        observer.next?.({ result: { data: storyData.adaptiveTdee } });
+        observer.next?.({
+          result: {
+            data:
+              scenario === "unavailable"
+                ? storyData.adaptiveTdeeUnavailable
+                : storyData.adaptiveTdee,
+          },
+        });
       } else if (path === "nutritionAnalytics.macroRatios") {
         observer.next?.({ result: { data: storyData.macroRatios } });
       } else if (path === "nutritionAnalytics.micronutrientAdequacyV2") {
@@ -184,6 +231,10 @@ export const Default: Story = {
 
 export const ConsolidatedError: Story = {
   render: () => <NutritionAnalyticsStoryFrame scenario="error" />,
+};
+
+export const TdeeUnavailable: Story = {
+  render: () => <NutritionAnalyticsStoryFrame scenario="unavailable" />,
 };
 
 export const StaleDataWithRefreshError: Story = {

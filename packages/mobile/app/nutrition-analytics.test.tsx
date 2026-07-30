@@ -23,6 +23,21 @@ const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
 }));
 
+const adaptiveEvidence = {
+  selectedWindowDays: 90,
+  fitWindowDays: 28,
+  minimumCalorieDays: 20,
+  observedDays: 90,
+  calorieDays: 82,
+  weightDays: 45,
+  acceptedWindows: 30,
+  excludedDays: {
+    missingCalories: 6,
+    sourceConflict: 2,
+    lowerPrioritySources: 3,
+  },
+} as const;
+
 function queryResult(
   refetch: ReturnType<typeof vi.fn>,
   overrides: Partial<MockQuery> = {},
@@ -68,6 +83,10 @@ vi.mock("../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
 }));
 
+vi.mock("../lib/units", () => ({
+  useUnitConverter: () => ({ caloriesPerDayLabel: "energy-rate-unit" }),
+}));
+
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mocks.routerPush }),
 }));
@@ -91,9 +110,15 @@ describe("NutritionAnalyticsScreen", () => {
     mocks.adaptiveTdee.mockReturnValue(
       queryResult(mocks.adaptiveTdeeRefetch, {
         data: {
+          status: "unavailable",
           estimatedTdee: null,
-          confidence: 0,
-          dataPoints: 0,
+          estimateRange: null,
+          unavailableReason: "No body-weight measurements are available in the selected period.",
+          evidence: {
+            ...adaptiveEvidence,
+            weightDays: 0,
+            acceptedWindows: 0,
+          },
           dailyData: [],
         },
       }),
@@ -162,8 +187,9 @@ describe("NutritionAnalyticsScreen", () => {
       screen.getByText("Adaptive Total Daily Energy Expenditure (TDEE) Estimate"),
     ).toBeTruthy();
     expect(
-      screen.getByText("Not enough data to estimate Total Daily Energy Expenditure (TDEE)"),
+      screen.getByText("No body-weight measurements are available in the selected period."),
     ).toBeTruthy();
+    expect(screen.getByText("28-day fit · at least 20 usable calorie days")).toBeTruthy();
     expect(
       screen.getByText(
         "Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value; not a personalized deficiency or safety assessment",
@@ -221,9 +247,11 @@ describe("NutritionAnalyticsScreen", () => {
     mocks.adaptiveTdee.mockReturnValue(
       queryResult(mocks.adaptiveTdeeRefetch, {
         data: {
+          status: "available",
           estimatedTdee: 2_250,
-          confidence: 82,
-          dataPoints: 30,
+          estimateRange: { minimum: 2_180, maximum: 2_320 },
+          unavailableReason: null,
+          evidence: adaptiveEvidence,
           dailyData: [],
         },
         error: new Error("Nutrition analytics refresh failed."),
@@ -300,7 +328,14 @@ describe("NutritionAnalyticsScreen", () => {
 
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByText("Nutrition analytics refresh failed.")).toBeTruthy();
-    expect(screen.getByText("Based on 30 data points")).toBeTruthy();
+    expect(screen.getByText("Observed rolling range: 2,180–2,320 energy-rate-unit")).toBeTruthy();
+    expect(screen.getByText("90-day evaluation · 90 accessible calendar days")).toBeTruthy();
+    expect(screen.getByText("82 calorie days · 45 weight days · 30 accepted windows")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Excluded: 6 missing calorie days · 2 source-conflict days · 3 days with lower-priority sources",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Iron")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retrying..." }).getAttribute("aria-disabled")).toBe(
       "true",
