@@ -1,8 +1,10 @@
+import { formatDateTime } from "@dofek/format/format";
 import { chartColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Polyline } from "react-native-svg";
 import { colors } from "../../theme";
+import { AccessibleChart } from "../AccessibleChart";
 
 const DOMAIN_MIN = 30;
 const DOMAIN_MAX = 220;
@@ -81,7 +83,7 @@ export function MultiSourceHeartRateChart({
     return yAxisWidth + ((milliseconds - timeMin) / timeRange) * plotWidth;
   };
 
-  return (
+  const chart = (
     <View
       style={[
         styles.container,
@@ -139,6 +141,21 @@ export function MultiSourceHeartRateChart({
         })}
       </View>
     </View>
+  );
+
+  return (
+    <AccessibleChart
+      title="Heart rate by source"
+      summary="Heart rate samples compared across recorded sources."
+      rows={sources.flatMap((source) =>
+        source.samples.map((sample) => ({
+          label: source.providerLabel,
+          value: `${formatDateTime(sample.time)} · ${sample.heartRate} beats per minute`,
+        })),
+      )}
+    >
+      {chart}
+    </AccessibleChart>
   );
 }
 

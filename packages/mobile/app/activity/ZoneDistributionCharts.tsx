@@ -7,6 +7,7 @@ import {
 } from "@dofek/zones/zones";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
+import { AccessibleChart } from "../../components/AccessibleChart";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { colors } from "../../theme";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
@@ -89,31 +90,34 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         description={description}
         textStyle={zoneChartStyles.title}
       />
-      <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
-        {rows.map((row, rowIndex) => {
-          const zoneItem = row.zone;
-          const rawBarWidth = (zoneItem.percent / 100) * barAreaWidth;
-          const barWidth = zoneItem.percent > 0 ? Math.max(rawBarWidth, 2) : 0;
-          const rowY = rowIndex * (barHeight + gap);
+      <AccessibleChart
+        title={title}
+        summary={
+          title === "Heart Rate Zones"
+            ? "Time spent in each heart rate zone."
+            : "Time spent in each power zone."
+        }
+        rows={rows.map((row) => ({
+          label:
+            row.subordinateLabel === null
+              ? row.primaryLabel
+              : `${row.primaryLabel} · ${row.subordinateLabel}`,
+          value: `${row.zone.percent}% · ${row.zone.seconds} seconds`,
+        }))}
+      >
+        <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
+          {rows.map((row, rowIndex) => {
+            const zoneItem = row.zone;
+            const rawBarWidth = (zoneItem.percent / 100) * barAreaWidth;
+            const barWidth = zoneItem.percent > 0 ? Math.max(rawBarWidth, 2) : 0;
+            const rowY = rowIndex * (barHeight + gap);
 
-          return (
-            <G key={row.key}>
-              {row.subordinateLabel == null ? (
-                <SvgText
-                  x={labelX}
-                  y={rowY + barHeight / 2 + 4}
-                  fill={colors.textSecondary}
-                  fontSize={11}
-                  fontWeight="600"
-                  textAnchor="end"
-                >
-                  {row.primaryLabel}
-                </SvgText>
-              ) : (
-                <>
+            return (
+              <G key={row.key}>
+                {row.subordinateLabel == null ? (
                   <SvgText
                     x={labelX}
-                    y={rowY + 9}
+                    y={rowY + barHeight / 2 + 4}
                     fill={colors.textSecondary}
                     fontSize={11}
                     fontWeight="600"
@@ -121,46 +125,59 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
                   >
                     {row.primaryLabel}
                   </SvgText>
-                  <SvgText
-                    x={labelX}
-                    y={rowY + 20}
-                    fill={colors.textTertiary}
-                    fontSize={10}
-                    textAnchor="end"
-                  >
-                    {row.subordinateLabel}
-                  </SvgText>
-                </>
-              )}
-              <Rect
-                x={labelWidth}
-                y={rowY}
-                width={barAreaWidth}
-                height={barHeight}
-                rx={4}
-                fill={colors.surfaceSecondary}
-              />
-              <Rect
-                x={labelWidth}
-                y={rowY}
-                width={barWidth}
-                height={barHeight}
-                rx={4}
-                fill={row.color}
-              />
-              <SvgText
-                x={labelWidth + barAreaWidth + 8}
-                y={rowY + barHeight / 2 + 4}
-                fill={colors.text}
-                fontSize={12}
-                fontWeight="600"
-              >
-                {row.percentLabel}
-              </SvgText>
-            </G>
-          );
-        })}
-      </Svg>
+                ) : (
+                  <>
+                    <SvgText
+                      x={labelX}
+                      y={rowY + 9}
+                      fill={colors.textSecondary}
+                      fontSize={11}
+                      fontWeight="600"
+                      textAnchor="end"
+                    >
+                      {row.primaryLabel}
+                    </SvgText>
+                    <SvgText
+                      x={labelX}
+                      y={rowY + 20}
+                      fill={colors.textTertiary}
+                      fontSize={10}
+                      textAnchor="end"
+                    >
+                      {row.subordinateLabel}
+                    </SvgText>
+                  </>
+                )}
+                <Rect
+                  x={labelWidth}
+                  y={rowY}
+                  width={barAreaWidth}
+                  height={barHeight}
+                  rx={4}
+                  fill={colors.surfaceSecondary}
+                />
+                <Rect
+                  x={labelWidth}
+                  y={rowY}
+                  width={barWidth}
+                  height={barHeight}
+                  rx={4}
+                  fill={row.color}
+                />
+                <SvgText
+                  x={labelWidth + barAreaWidth + 8}
+                  y={rowY + barHeight / 2 + 4}
+                  fill={colors.text}
+                  fontSize={12}
+                  fontWeight="600"
+                >
+                  {row.percentLabel}
+                </SvgText>
+              </G>
+            );
+          })}
+        </Svg>
+      </AccessibleChart>
     </View>
   );
 }

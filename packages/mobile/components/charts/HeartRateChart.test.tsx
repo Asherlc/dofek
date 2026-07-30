@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HeartRateChart } from "./HeartRateChart";
 
@@ -17,6 +17,20 @@ describe("HeartRateChart", () => {
     const polyline = container.querySelector("polyline");
     expect(polyline).not.toBeNull();
     expect(polyline?.getAttribute("stroke")).toBe("#ff453a");
+  });
+
+  it("provides a VoiceOver summary and exact sample values", () => {
+    render(<HeartRateChart data={[65, 68, 72]} width={300} height={150} />);
+
+    expect(
+      screen.getByRole("image", {
+        name: "Heart rate. Heart rate over the recorded sample sequence.",
+      }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "View Heart rate data" }));
+    expect(screen.getByText("65 beats per minute")).toBeDefined();
+    expect(screen.getByText("68 beats per minute")).toBeDefined();
+    expect(screen.getByText("72 beats per minute")).toBeDefined();
   });
 
   it("clamps values to domain range", () => {

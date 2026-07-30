@@ -19,10 +19,16 @@
 
 import { formatDateYmd } from "@dofek/format/format";
 import ReactECharts from "echarts-for-react";
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import type { TimeRangeDays } from "../lib/timeRange.ts";
+import {
+  addChartAria,
+  buildChartSummary,
+  buildChartTable,
+  hasChartTableData,
+} from "./chart-accessibility.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 import { QueryErrorBoundary } from "./QueryErrorBoundary.tsx";
 
@@ -73,6 +79,8 @@ export function DofekChart({
   const range = useContext(ChartRangeContext);
   const chartOption =
     timeRangeMode === "context" ? applySelectedRangeToTimeAxes(option, range) : option;
+  const chartSummary = buildChartSummary(chartOption);
+  const accessibleChartOption = addChartAria(chartOption, chartSummary);
 
   if (loading) {
     return <ChartLoadingSkeleton height={height} />;
@@ -95,14 +103,76 @@ export function DofekChart({
           </div>
         )}
         <ReactECharts
-          option={{ backgroundColor: "transparent", ...chartOption }}
+          option={{ backgroundColor: "transparent", ...accessibleChartOption }}
           style={{ height, width: "100%" }}
           notMerge={true}
           opts={opts}
           onEvents={onEvents}
         />
       </div>
+      <ChartDataDisclosure option={chartOption} summary={chartSummary} />
     </QueryErrorBoundary>
+  );
+}
+
+function ChartDataDisclosure({
+  option,
+  summary,
+}: {
+  option: Record<string, unknown>;
+  summary: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const table = useMemo(() => (expanded ? buildChartTable(option) : null), [expanded, option]);
+
+  return (
+    <div className="mt-2 space-y-1">
+      <p className="text-xs text-dim">{summary}</p>
+      {hasChartTableData(option) && (
+        <details
+          onToggle={(event) => setExpanded(event.currentTarget.open)}
+          className="text-xs text-dim"
+        >
+          <summary className="cursor-pointer select-none font-medium text-foreground">
+            View chart data
+          </summary>
+          {table !== null && (
+            <div className="mt-2 max-h-72 overflow-auto rounded-lg border border-border">
+              <table className="w-full border-collapse text-left">
+                <caption className="sr-only">{summary}</caption>
+                <thead className="sticky top-0 bg-surface">
+                  <tr>
+                    <th scope="col" className="px-3 py-2 font-semibold">
+                      Series
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-semibold">
+                      {table.categoryHeader}
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-semibold">
+                      Value
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.rows.map((row) => (
+                    <tr
+                      key={`${row.series}-${row.category}-${row.value}`}
+                      className="border-t border-border"
+                    >
+                      <th scope="row" className="px-3 py-2 font-medium">
+                        {row.series}
+                      </th>
+                      <td className="px-3 py-2">{row.category}</td>
+                      <td className="px-3 py-2 font-mono">{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </details>
+      )}
+    </div>
   );
 }
 
