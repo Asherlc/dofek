@@ -138,6 +138,51 @@ describe("Login route", () => {
     expect(screen.getByRole("button", { name: "Create account and continue" })).toBeTruthy();
   });
 
+  it("shows legal context and an existing-account path during registration", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+
+    expect(screen.getByRole("link", { name: "Terms of Service" }).getAttribute("href")).toBe(
+      "/terms",
+    );
+    expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+      "/privacy",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(screen.getByRole("heading", { name: "Sign in to Dofek" })).toBeTruthy();
+  });
+
+  it("keeps a Dofek home link visible in every auth mode", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const homeLink = await screen.findByRole("link", { name: "Back to Dofek" });
+    expect(homeLink.getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("link", { name: "Back to Dofek" }).getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByRole("link", { name: "Back to Dofek" }).getAttribute("href")).toBe("/");
+  });
+
   it("uses neutral disabled registration styling until required details are entered", async () => {
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
     mockFetchConfiguredProviders.mockResolvedValue({

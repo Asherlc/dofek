@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -132,6 +133,19 @@ export default function LoginScreen() {
       setError(err instanceof Error ? err.message : "Password reset failed");
     } finally {
       setLoggingIn(false);
+    }
+  }
+
+  async function openLegalDocument(document: "privacy" | "terms") {
+    const documentTitle = document === "privacy" ? "Privacy Policy" : "Terms of Service";
+    try {
+      await Linking.openURL(`${serverUrl}/${document}`);
+    } catch (error_: unknown) {
+      captureException(error_, {
+        source: "login-screen-open-legal-document",
+        document,
+      });
+      setError(`Could not open the ${documentTitle}. Try again.`);
     }
   }
 
@@ -376,6 +390,30 @@ export default function LoginScreen() {
                             : "Sign in with email"}
                       </Text>
                     </TouchableOpacity>
+                    {authMode === "register" ? (
+                      <View style={styles.legalContext}>
+                        <Text style={styles.legalText}>
+                          By creating an account, you agree to the Terms of Service and acknowledge
+                          the Privacy Policy.
+                        </Text>
+                        <View style={styles.legalLinks}>
+                          <TouchableOpacity
+                            onPress={() => void openLegalDocument("terms")}
+                            accessibilityRole="link"
+                            accessibilityLabel="Terms of Service"
+                          >
+                            <Text style={styles.legalLinkText}>Terms of Service</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => void openLegalDocument("privacy")}
+                            accessibilityRole="link"
+                            accessibilityLabel="Privacy Policy"
+                          >
+                            <Text style={styles.legalLinkText}>Privacy Policy</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : null}
                   </>
                 )}
               </View>
@@ -527,6 +565,28 @@ const styles = StyleSheet.create({
   },
   passwordButtonTextDisabled: {
     color: colors.textSecondary,
+  },
+  legalContext: {
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  legalText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  legalLinks: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 20,
+  },
+  legalLinkText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   forgotPasswordText: {
     color: colors.textSecondary,
