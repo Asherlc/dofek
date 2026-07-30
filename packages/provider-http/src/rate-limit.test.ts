@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
+  isProviderConnectFailure,
   PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
   ProviderRateLimitError,
   ProviderRequestTimeoutError,
@@ -292,6 +293,23 @@ describe("fetchWithRateLimitHandling", () => {
       expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
       expect(error).toHaveProperty("statusCode", statusCode);
     }
+  });
+
+  it("wraps undici connect timeouts as provider request timeouts (DOFEK-SERVER-4A)", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockRejectedValue(fetchError);
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "withings",
+    });
+
+    const error = await rateLimitFetch("https://wbsapi.withings.net/measure").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("providerId", "withings");
+    expect(isProviderConnectFailure(error)).toBe(true);
   });
 
   it("uses provider scope and null user by default in wrapper errors", async () => {

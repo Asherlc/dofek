@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
 const mockCompleteObserverUpdates = vi.fn().mockReturnValue(0);
+const mockSetObserverSyncInProgress = vi.fn();
 const mockTeardownBackgroundObservers = vi.fn().mockReturnValue(0);
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockIsAvailable = vi.fn().mockReturnValue(true);
@@ -29,6 +30,7 @@ vi.mock("../modules/health-kit", () => ({
   setupBackgroundObservers: (...args: unknown[]) => mockSetupBackgroundObservers(...args),
   addSampleUpdateListener: (...args: unknown[]) => mockAddSampleUpdateListener(...args),
   completeObserverUpdates: (...args: unknown[]) => mockCompleteObserverUpdates(...args),
+  setObserverSyncInProgress: (...args: unknown[]) => mockSetObserverSyncInProgress(...args),
   teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
@@ -323,6 +325,44 @@ describe("initBackgroundHealthKitSync", () => {
     );
     expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
     vi.useRealTimers();
+  });
+
+  it("does not report background fetch timeouts to Sentry (DOFEK-MOBILE-19)", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1_000 }]);
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(
+      new Error("fetch failed: UnexpectedException: The request timed out."),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Background HealthKit upload timed out; retrying on next delivery",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("marks native observer sync lifecycle while draining deliveries (DOFEK-MOBILE-1C)", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.waitFor(() => {
+      expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
+      expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(false);
+    });
   });
 
   it("does not report locked-device route errors and marks the observer sync unsuccessful", async () => {

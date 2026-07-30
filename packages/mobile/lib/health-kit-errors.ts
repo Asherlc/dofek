@@ -11,3 +11,12 @@ export function isHealthKitDatabaseInaccessible(error: unknown): boolean {
     error.code === HEALTHKIT_DATABASE_INACCESSIBLE_CODE
   );
 }
+
+export function isBackgroundHealthKitTransientNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("fetch failed") &&
+    (normalized.includes("timed out") || normalized.includes("timeout"))
+  );
+}
