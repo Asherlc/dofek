@@ -70,6 +70,22 @@ describe("providerSyncLogPresentation", () => {
     });
   });
 
+  it("warns when a sync completed with missing data", () => {
+    expect(
+      providerSyncLogPresentation({
+        authFailureReason: null,
+        dataType: "daily_metrics",
+        providerName: "Oura",
+        status: "degraded",
+      }),
+    ).toEqual({
+      dataTypeLabel: "Daily metrics",
+      heading: "Daily metrics data synced with issues",
+      message: "Some daily metrics data may be missing. Open Diagnostics for details.",
+      tone: "warning",
+    });
+  });
+
   it("does not present an unexpected raw status as a successful sync", () => {
     expect(
       providerSyncLogPresentation({

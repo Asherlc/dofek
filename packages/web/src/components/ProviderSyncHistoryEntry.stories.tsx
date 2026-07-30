@@ -46,3 +46,19 @@ export const SuccessfulSync: Story = {
     },
   },
 };
+
+export const SyncedWithIssues: Story = {
+  args: {
+    providerName: "Oura",
+    entry: {
+      id: "sync-log-03",
+      syncedAt: "2026-07-24T14:00:00.000Z",
+      dataType: "daily_metrics",
+      status: "degraded",
+      recordCount: 8,
+      durationMs: 1100,
+      errorMessage: "Two daily summaries were unavailable",
+      authFailureReason: null,
+    },
+  },
+};
