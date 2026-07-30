@@ -66,8 +66,7 @@ export default function ReportsScreen() {
           />
         ) : weeklyReport.isLoading && !weeklyReport.data ? (
           <QueryStatePanel variant="loading" />
-        ) : weeklyReport.data &&
-          weeklyReport.data.recovery &&
+        ) : weeklyReport.data?.recovery &&
           !weeklyReport.data.current &&
           weeklyReport.data.history.length === 0 ? (
           <ReportRecoveryPanel
@@ -122,7 +121,7 @@ export default function ReportsScreen() {
               </View>
             </Card>
           </View>
-        ) : weeklyReport.data && weeklyReport.data.emptyState && !weeklyReport.data.current ? (
+        ) : weeklyReport.data?.emptyState && !weeklyReport.data.current ? (
           <EmptyStatePreview content={weeklyReport.data.emptyState} />
         ) : (
           <QueryStatePanel variant="empty" message="Not enough weekly data to create a report." />
@@ -149,8 +148,7 @@ export default function ReportsScreen() {
           />
         ) : monthlyReport.isLoading && !monthlyReport.data ? (
           <QueryStatePanel variant="loading" />
-        ) : monthlyReport.data &&
-          monthlyReport.data.recovery &&
+        ) : monthlyReport.data?.recovery &&
           !monthlyReport.data.current &&
           monthlyReport.data.history.length === 0 ? (
           <ReportRecoveryPanel
@@ -201,7 +199,7 @@ export default function ReportsScreen() {
               </View>
             </Card>
           </View>
-        ) : monthlyReport.data && monthlyReport.data.emptyState && !monthlyReport.data.current ? (
+        ) : monthlyReport.data?.emptyState && !monthlyReport.data.current ? (
           <EmptyStatePreview content={monthlyReport.data.emptyState} />
         ) : (
           <QueryStatePanel variant="empty" message="Not enough monthly data to create a report." />

@@ -71,7 +71,8 @@ describe("WeeklyReportCard", () => {
             message: "No activity, sleep, or recovery data is available for this report yet.",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement: "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+            requirement:
+              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
             previewTitle: "When ready, your weekly report will include",
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "This preview shows report sections only. No personal values or conclusions are estimated.",
@@ -112,7 +113,8 @@ describe("WeeklyReportCard", () => {
             message: "No activity, sleep, or recovery data is available for this report yet.",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement: "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+            requirement:
+              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
             previewTitle: "When ready, your weekly report will include",
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "This preview shows report sections only. No personal values or conclusions are estimated.",
@@ -151,7 +153,8 @@ describe("WeeklyReportCard", () => {
             message: "No activity, sleep, or recovery data is available for this report yet.",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement: "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+            requirement:
+              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
             previewTitle: "When ready, your weekly report will include",
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "This preview shows report sections only. No personal values or conclusions are estimated.",
@@ -202,7 +205,8 @@ describe("WeeklyReportCard", () => {
             message: "No activity, sleep, or recovery data is available for this report yet.",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement: "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+            requirement:
+              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
             previewTitle: "When ready, your weekly report will include",
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "This preview shows report sections only. No personal values or conclusions are estimated.",

@@ -51,7 +51,8 @@ describe("MonthlyReportContent", () => {
             message: "No activity, sleep, or recovery data is available for this report yet.",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement: "At least 1 observed day of activity, sleep, or recovery data is required to create a monthly report.",
+            requirement:
+              "At least 1 observed day of activity, sleep, or recovery data is required to create a monthly report.",
             previewTitle: "When ready, your monthly report will include",
             previewItems: [
               "Training time and activity count",

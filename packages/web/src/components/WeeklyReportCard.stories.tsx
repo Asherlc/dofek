@@ -56,14 +56,16 @@ const meta = {
         message: "No activity, sleep, or recovery data is available for this report yet.",
         minimumObservedDays: 1,
         acceptedDataTypes: ["activity", "sleep", "recovery"],
-        requirement: "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+        requirement:
+          "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
         previewTitle: "When ready, your weekly report will include",
         previewItems: ["Training time and activity count", "Average nightly sleep"],
         note: "This preview shows report sections only. No personal values or conclusions are estimated.",
       },
       recovery: {
         range: { startDate: "2026-03-30", endDate: "2026-04-05" },
-        emptyMessage: "No activity, sleep, or recovery data was found from 2026-03-30 through 2026-04-05.",
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-30 through 2026-04-05.",
       },
     },
   },
@@ -90,7 +92,8 @@ export const Empty: Story = {
       decisionSupport: null,
       recovery: {
         range: { startDate: "2026-03-30", endDate: "2026-04-05" },
-        emptyMessage: "No activity, sleep, or recovery data was found from 2026-03-30 through 2026-04-05.",
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-30 through 2026-04-05.",
       },
       emptyState: {
         reportKind: "weekly",
