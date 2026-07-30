@@ -375,18 +375,32 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Health Tracking</Text>
           <Text style={styles.sectionDescription}>Log and review personal health events</Text>
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push("/cycle")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Cycle Tracking"
-          >
-            <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Cycle Tracking</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </View>
-          </TouchableOpacity>
+          <View style={styles.healthTrackingCards}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/cycle")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Cycle Tracking"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.devToolLabel}>Cycle Tracking</Text>
+                <Text style={styles.devToolChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/tracking")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Journal Trends"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.devToolLabel}>Journal Trends</Text>
+                <Text style={styles.devToolChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 

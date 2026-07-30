@@ -120,28 +120,53 @@ describe("JournalRepository", () => {
     });
   });
 
-  describe("listTrends", () => {
+  describe("listTrendEntries", () => {
     it("returns empty array when no trend data exists", async () => {
       const { repository } = makeRepository([]);
-      const result = await repository.listTrends("caffeine", 90);
+      const result = await repository.listTrendEntries(90, "2025-01-15");
       expect(result).toEqual([]);
     });
 
-    it("returns parsed trend points", async () => {
+    it("returns exact chartable entries with resolved source provenance", async () => {
       const { repository } = makeRepository([
-        { date: "2025-01-10", value: "3" },
-        { date: "2025-01-11", value: "5" },
+        {
+          id: "entry-1",
+          date: "2025-01-10",
+          provider_id: "manual_review",
+          question_slug: "mood",
+          display_name: "Mood",
+          category: "wellness",
+          data_type: "numeric",
+          unit: "score",
+          answer_text: null,
+          answer_numeric: "3",
+          impact_score: null,
+        },
       ]);
-      const result = await repository.listTrends("mood", 90);
+      const result = await repository.listTrendEntries(90, "2025-01-15");
       expect(result).toEqual([
-        { date: "2025-01-10", value: 3 },
-        { date: "2025-01-11", value: 5 },
+        {
+          id: "entry-1",
+          date: "2025-01-10",
+          question_slug: "mood",
+          display_name: "Mood",
+          category: "wellness",
+          data_type: "numeric",
+          unit: "score",
+          answer_text: null,
+          answer_numeric: 3,
+          impact_score: null,
+          source: {
+            providerId: "manual_review",
+            label: "Manual review",
+          },
+        },
       ]);
     });
 
     it("calls execute once", async () => {
       const { repository, execute } = makeRepository([]);
-      await repository.listTrends("mood", 30);
+      await repository.listTrendEntries(30, "2025-01-15");
       expect(execute).toHaveBeenCalledTimes(1);
     });
   });

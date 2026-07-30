@@ -3,12 +3,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
+import { within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
 import { JournalPanel } from "./JournalPanel.tsx";
+import {
+  emptyJournalTrendEvidence,
+  type JournalTrendEvidence,
+} from "./journal-trend-test-fixtures.ts";
 
 interface JournalScenario {
   entries: unknown[];
   loading?: boolean;
+  trends?: JournalTrendEvidence;
 }
 
 const entries = [
@@ -98,12 +104,76 @@ const questions = [
   },
 ];
 
+const trendEvidence: JournalTrendEvidence = {
+  window: {
+    startDate: "2026-07-21",
+    endDate: "2026-07-24",
+    dayCount: 4,
+    gapRepresentation: "explicit_daily",
+  },
+  statement:
+    "3 exact observations across 2 of 4 days. Missing days indicate no journal value was recorded.",
+  uncertainty: {
+    status: "unavailable",
+    statement: "Uncertainty interval: not available for raw journal observations.",
+  },
+  series: [
+    {
+      questionSlug: "alcohol",
+      displayName: "Alcohol",
+      dataType: "boolean",
+      unit: null,
+      observationCount: 2,
+      observedDayCount: 2,
+      missingDayCount: 2,
+      statement: "2 exact observations across 2 of 4 days; 2 days have no recorded value.",
+      points: [
+        { date: "2026-07-21", value: null, source: null },
+        {
+          date: "2026-07-22",
+          value: 0,
+          source: { providerId: "whoop", label: "WHOOP (Cloud)" },
+        },
+        { date: "2026-07-23", value: null, source: null },
+        {
+          date: "2026-07-24",
+          value: 1,
+          source: { providerId: "manual_review", label: "Manual review" },
+        },
+      ],
+    },
+    {
+      questionSlug: "energy",
+      displayName: "Energy",
+      dataType: "numeric",
+      unit: "/10",
+      observationCount: 1,
+      observedDayCount: 1,
+      missingDayCount: 3,
+      statement: "1 exact observation across 1 of 4 days; 3 days have no recorded value.",
+      points: [
+        { date: "2026-07-21", value: null, source: null },
+        { date: "2026-07-22", value: null, source: null },
+        { date: "2026-07-23", value: null, source: null },
+        {
+          date: "2026-07-24",
+          value: 8,
+          source: { providerId: "dofek", label: "Dofek" },
+        },
+      ],
+    },
+  ],
+};
+
 function createMockLink(scenario: JournalScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       if (op.path === "journal.entries" && scenario.loading) return createLoadingObservable();
       if (op.path === "journal.entries") return createMockObservable(scenario.entries);
       if (op.path === "journal.questions") return createMockObservable(questions);
+      if (op.path === "journal.trends") {
+        return createMockObservable(scenario.trends ?? emptyJournalTrendEvidence);
+      }
       return createMockObservable({ ok: true });
     };
 }
@@ -172,4 +242,11 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <JournalStory scenario={{ entries: [] }} />,
+};
+
+export const TrendEvidence: Story = {
+  render: () => <JournalStory scenario={{ entries, trends: trendEvidence }} />,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Trends" }));
+  },
 };

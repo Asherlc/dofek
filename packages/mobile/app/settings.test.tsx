@@ -494,6 +494,17 @@ describe("SettingsScreen data sources", () => {
 
     expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
   });
+
+  it("navigates to journal trends from the health tracking section", async () => {
+    mockSearchParams = { tab: "health" };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Journal Trends" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/tracking");
+  });
 });
 
 describe("SettingsScreen reports", () => {

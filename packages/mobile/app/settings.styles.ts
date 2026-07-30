@@ -49,6 +49,9 @@ export const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  healthTrackingCards: {
+    gap: 8,
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
