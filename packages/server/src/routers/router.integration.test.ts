@@ -83,13 +83,16 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, sleep_type
+              awake_minutes, efficiency_pct, sleep_type, timezone,
+              start_utc_offset_minutes, end_utc_offset_minutes, local_time_source,
+              staging_available
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
-	              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
-	            )`,
+              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep',
+              'UTC', 0, 0, 'provider_timezone', true
+            )`,
       );
       const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
@@ -601,11 +604,12 @@ describe("Router coverage", () => {
           date: string;
           durationMinutes: number;
           sleepMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
-          efficiency: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          efficiency: number | null;
+          stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
         sleepDebt: number;
@@ -619,9 +623,26 @@ describe("Router coverage", () => {
         // For non-Apple Health providers, sleepMinutes should equal durationMinutes
         expect(night.sleepMinutes).toBe(night.durationMinutes);
         // Stage percentages should roughly sum to 100
+        expect(night.stagingAvailable).toBe(true);
+        expect(night.deepPct).not.toBeNull();
+        expect(night.remPct).not.toBeNull();
+        expect(night.lightPct).not.toBeNull();
+        expect(night.awakePct).not.toBeNull();
+        if (
+          night.deepPct == null ||
+          night.remPct == null ||
+          night.lightPct == null ||
+          night.awakePct == null
+        ) {
+          throw new Error("Expected complete stage percentages");
+        }
         const totalPct = night.deepPct + night.remPct + night.lightPct + night.awakePct;
         expect(totalPct).toBeGreaterThan(90);
         expect(totalPct).toBeLessThan(110);
+        expect(night.efficiency).not.toBeNull();
+        if (night.efficiency == null) {
+          throw new Error("Expected provider-reported efficiency");
+        }
         expect(night.efficiency).toBeGreaterThan(0);
       }
 
@@ -654,12 +675,12 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, sleep_type
+              awake_minutes, efficiency_pct, staging_available, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID},
               ${sleepDate}::date + INTERVAL '13 hours',
               ${sleepDate}::date + INTERVAL '21 hours',
-              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
+              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, true, 'sleep'
             )`,
       );
 
@@ -753,6 +774,13 @@ describe("Router coverage", () => {
             actualWeight: number;
             actualReps: number;
           }[];
+          trend: {
+            direction: "increasing" | "decreasing" | "stable";
+            summary: string;
+            changeMagnitudeKg: number;
+            firstDate: string;
+            latestDate: string;
+          };
         }[]
       >("strength.estimatedOneRepMax", { days: 90 });
 
@@ -762,6 +790,28 @@ describe("Router coverage", () => {
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
         expect(exercise.history.length).toBeGreaterThanOrEqual(3);
+        const firstEntry = exercise.history[0];
+        const latestEntry = exercise.history.at(-1);
+        expect(firstEntry).toBeDefined();
+        expect(latestEntry).toBeDefined();
+        if (!firstEntry || !latestEntry) {
+          throw new Error("Estimated max history unexpectedly had no date bounds.");
+        }
+
+        const changeKg = Math.round((latestEntry.estimatedMax - firstEntry.estimatedMax) * 10) / 10;
+        const expectedDirection =
+          changeKg > 0 ? "increasing" : changeKg < 0 ? "decreasing" : "stable";
+        const expectedSummary = {
+          increasing: "Estimated max increased from first to latest estimate.",
+          decreasing: "Estimated max decreased from first to latest estimate.",
+          stable: "Estimated max did not change from first to latest estimate.",
+        } as const;
+
+        expect(exercise.trend.direction).toBe(expectedDirection);
+        expect(exercise.trend.summary).toBe(expectedSummary[expectedDirection]);
+        expect(exercise.trend.changeMagnitudeKg).toBe(Math.abs(changeKg));
+        expect(exercise.trend.firstDate).toBe(firstEntry.date);
+        expect(exercise.trend.latestDate).toBe(latestEntry.date);
 
         for (const entry of exercise.history) {
           expect(entry.date).toBeTruthy();
@@ -801,13 +851,21 @@ describe("Router coverage", () => {
       }
     });
 
-    it("progressiveOverload returns slope and progression status", async () => {
+    it("progressiveOverload returns dated evidence and descriptive direction", async () => {
       const result = await query<
         {
           exerciseName: string;
-          weeklyVolumes: number[];
+          observations: { week: string; totalVolumeKg: number }[];
+          period: {
+            startWeek: string;
+            endWeek: string;
+            observationCount: number;
+            elapsedWeekCount: number;
+          };
           slopeKgPerWeek: number;
-          isProgressing: boolean;
+          trend: "increasing" | "decreasing" | "stable";
+          interpretation: string;
+          deloadContext: string;
         }[]
       >("strength.progressiveOverload", { days: 90 });
 
@@ -816,13 +874,15 @@ describe("Router coverage", () => {
 
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
-        expect(exercise.weeklyVolumes.length).toBeGreaterThanOrEqual(2);
+        expect(exercise.observations.length).toBeGreaterThanOrEqual(2);
+        expect(exercise.period.observationCount).toBe(exercise.observations.length);
+        expect(exercise.period.startWeek).toBe(exercise.observations[0]?.week);
+        expect(exercise.period.endWeek).toBe(exercise.observations.at(-1)?.week);
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
-        expect(typeof exercise.isProgressing).toBe("boolean");
-        // With progressive overload built in (weight increases by 2.5 each week),
-        // volume should be increasing
-        expect(exercise.isProgressing).toBe(true);
+        expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
+        expect(exercise.interpretation).toContain("not inherently good or bad");
+        expect(exercise.deloadContext).toContain("planned deload");
       }
     });
 
@@ -1010,12 +1070,19 @@ describe("Router coverage", () => {
   describe("nutritionAnalytics", () => {
     it("adaptiveTdee returns TDEE estimate with weight smoothing", async () => {
       const result = await query<{
+        status: "available" | "unavailable";
         estimatedTdee: number | null;
-        confidence: number;
-        dataPoints: number;
+        estimateRange: { minimum: number; maximum: number } | null;
+        unavailableReason: string | null;
+        evidence: {
+          fitWindowDays: number;
+          minimumCalorieDays: number;
+          acceptedWindows: number;
+        };
         dailyData: {
           date: string;
-          caloriesIn: number;
+          caloriesIn: number | null;
+          nutritionStatus: "available" | "source_conflict" | "missing";
           weightKg: number | null;
           smoothedWeight: number | null;
           estimatedTdee: number | null;
@@ -1023,14 +1090,14 @@ describe("Router coverage", () => {
       }>("nutritionAnalytics.adaptiveTdee", { days: 90 });
 
       expect(Array.isArray(result.dailyData)).toBe(true);
-      expect(typeof result.confidence).toBe("number");
-      expect(result.confidence).toBeGreaterThanOrEqual(0);
-      expect(result.confidence).toBeLessThanOrEqual(1);
-      expect(typeof result.dataPoints).toBe("number");
+      expect(["available", "unavailable"]).toContain(result.status);
+      expect(result.evidence.fitWindowDays).toBe(28);
+      expect(result.evidence.minimumCalorieDays).toBe(20);
+      expect(typeof result.evidence.acceptedWindows).toBe("number");
 
       for (const day of result.dailyData) {
         expect(day.date).toBeTruthy();
-        expect(typeof day.caloriesIn).toBe("number");
+        expect(["available", "source_conflict", "missing"]).toContain(day.nutritionStatus);
       }
     });
 

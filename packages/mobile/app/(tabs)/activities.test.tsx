@@ -2,8 +2,8 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { Alert } from "react-native";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AccessibilityInfo, Alert, Platform } from "react-native";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
   data: unknown[];
@@ -130,6 +130,8 @@ vi.mock("react-native-svg", () => ({
 
 import ActivitiesScreen from "./activities";
 
+afterEach(() => vi.useRealTimers());
+
 function activity(overrides: Record<string, unknown> = {}) {
   return {
     id: "activity-1",
@@ -137,10 +139,22 @@ function activity(overrides: Record<string, unknown> = {}) {
     activityType: "indoor_cycling",
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
+    localTimeContext: {
+      timezone: null,
+      startUtcOffsetMinutes: 60,
+      endUtcOffsetMinutes: 60,
+      source: "provider_offset",
+    },
     durationMin: 60,
+    source: {
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: "2026-03-18T08:05:00.000Z",
     location: null,
     tss: 100,
-    stats: [{ label: "Training Stress Score", value: "100" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }
@@ -227,6 +241,39 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
+  });
+
+  it("renders server-authored source overlap and processing freshness", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-18T08:08:00.000Z"));
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              source: {
+                primarySourceLabel: "Wahoo",
+                sourceCount: 2,
+                overlapSummary: "2 matched source records · Wahoo selected by source priority",
+              },
+              lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Wahoo")).toBeDefined();
+    expect(
+      screen.getByText("2 matched source records · Wahoo selected by source priority"),
+    ).toBeDefined();
+    expect(screen.getByText("Processed 1m ago")).toBeDefined();
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {
@@ -394,11 +441,41 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
+      "polite",
+    );
     fireEvent.click(screen.getByText("Trainer Ride"));
 
     expect(routerPush).not.toHaveBeenCalled();
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByText("1 activity selected").getAttribute("accessibilityliveregion")).toBe(
+      "polite",
+    );
+  });
+
+  it("announces selected activity count changes on iOS", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
+    const announceForAccessibility = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => undefined);
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    await waitFor(() =>
+      expect(announceForAccessibility).toHaveBeenLastCalledWith("0 activities selected"),
+    );
+    fireEvent.click(screen.getByText("Trainer Ride"));
+
+    await waitFor(() =>
+      expect(announceForAccessibility).toHaveBeenLastCalledWith("1 activity selected"),
+    );
   });
 
   it("bulk deletes selected activities after confirmation", async () => {
@@ -413,7 +490,7 @@ describe("ActivitiesScreen", () => {
     });
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
 
@@ -446,12 +523,12 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Running"));
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("clears selected activities when the date range changes", () => {
@@ -463,12 +540,12 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("8 weeks"));
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("paginates the activity card history", () => {

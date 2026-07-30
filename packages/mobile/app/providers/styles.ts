@@ -23,6 +23,42 @@ export const styles = StyleSheet.create({
     color: colors.accent,
     marginTop: 4,
   },
+  // Sync All buttons
+  syncAllRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
+  syncAllButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  syncAllButtonFlex: {
+    flex: 1,
+  },
+  syncAllButtonDisabled: {
+    opacity: 0.5,
+  },
+  syncAllButtonText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  fullSyncAllButton: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  fullSyncAllButtonText: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "600",
+  },
   shareInfoCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,

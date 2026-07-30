@@ -13,7 +13,20 @@ vi.mock("./DofekChart.tsx", () => ({
 import { SleepAnalyticsChart } from "./SleepAnalyticsChart.tsx";
 
 const night: SleepNightlyRow = {
+  providerId: null,
+  sourceName: null,
+  sourceProviders: [],
+  selectedSessionId: null,
+  overlappingSessions: [],
   date: "2026-07-20",
+  startedAt: "2026-07-21T05:00:00Z",
+  endedAt: "2026-07-21T13:00:00Z",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone",
+  },
   durationMinutes: 480,
   sleepMinutes: 450,
   deepPct: 20,
@@ -21,6 +34,7 @@ const night: SleepNightlyRow = {
   lightPct: 50,
   awakePct: 10,
   efficiency: 93.8,
+  stagingAvailable: true,
   rollingAvgDuration: 450,
 };
 

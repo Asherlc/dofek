@@ -7,6 +7,7 @@ Cypress exercises the Dofek web application against the isolated E2E stack.
 - `e2e/`
   - `activity-recording.cy.ts`: Saves a recorded activity with metric-stream samples through tRPC.
   - `cycling.cy.ts`: Covers the cycling page's empty states, section headings, and aerobic-efficiency response.
+  - `dark-mode.cy.ts`: Verifies that public and authentication surfaces follow the browser's dark system appearance.
   - `dashboard.cy.ts`: Covers authenticated loading, `/api/auth/me`, and the step health monitor backed by `fitness.v_daily_metrics`.
   - `login.cy.ts`: Covers the sign-in page and unauthenticated dashboard redirect.
   - `navigation.cy.ts`: Smoke-tests the authenticated top-level routes.

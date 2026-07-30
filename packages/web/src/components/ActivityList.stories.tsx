@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { within } from "storybook/test";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList.tsx";
 
@@ -209,6 +210,15 @@ export const Selectable: Story = {
   },
 };
 
+export const SelectionMode: Story = {
+  args: {
+    onBulkDelete: () => {},
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Select activities" }));
+  },
+};
+
 export const Loading: Story = {
   args: {
     activities: [],
@@ -219,5 +229,13 @@ export const Loading: Story = {
 export const Empty: Story = {
   args: {
     activities: [],
+  },
+};
+
+export const ScopedEmpty: Story = {
+  args: {
+    activities: [],
+    emptyMessage:
+      "No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness.",
   },
 };

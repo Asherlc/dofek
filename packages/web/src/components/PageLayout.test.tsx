@@ -155,7 +155,7 @@ describe("PageLayout", () => {
         <p>Content</p>
       </PageLayout>,
     );
-    expect(screen.getByText("Page Title Here")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Page Title Here" })).toBeTruthy();
     expect(screen.getByText("Page description here")).toBeTruthy();
   });
 });

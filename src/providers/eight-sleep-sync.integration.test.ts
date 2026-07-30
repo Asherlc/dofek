@@ -197,6 +197,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleep1.deepMinutes).toBe(120); // 2 hours
     expect(sleep1.remMinutes).toBe(120);
     expect(sleep1.lightMinutes).toBe(180);
+    expect(sleep1.stagingAvailable).toBe(true);
 
     // Verify daily metrics
     const dailyRows = await ctx.db

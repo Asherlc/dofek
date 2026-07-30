@@ -67,6 +67,7 @@ describe("behaviorImpactRouter", () => {
           avg_readiness_no: 70,
           yes_count: 10,
           no_count: 20,
+          provider_ids: ["manual_review"],
         },
         {
           question_slug: "meditation",
@@ -76,6 +77,7 @@ describe("behaviorImpactRouter", () => {
           avg_readiness_no: 60,
           yes_count: 15,
           no_count: 12,
+          provider_ids: ["whoop", "manual_review"],
         },
       ];
 
@@ -97,11 +99,16 @@ describe("behaviorImpactRouter", () => {
       expect(alcohol?.impactPercent).toBeCloseTo(-21.4, 0);
       expect(alcohol?.yesCount).toBe(10);
       expect(alcohol?.noCount).toBe(20);
+      expect(alcohol?.sources).toEqual([{ providerId: "manual_review", label: "Manual review" }]);
 
       const meditation = result.find((r) => r.questionSlug === "meditation");
       expect(meditation).toBeDefined();
       // Impact: ((75 - 60) / 60) * 100 = 25%
       expect(meditation?.impactPercent).toBeCloseTo(25, 0);
+      expect(meditation?.sources).toEqual([
+        { providerId: "manual_review", label: "Manual review" },
+        { providerId: "whoop", label: "WHOOP (Cloud)" },
+      ]);
     });
 
     it("uses default days of 90", async () => {

@@ -1,3 +1,4 @@
+import { type RecordLocalTimeContext, recordLocalHour } from "@dofek/format/record-local-time";
 import {
   type ReadinessComponents,
   ReadinessScore,
@@ -56,21 +57,6 @@ function addDays(dateString: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function hourInTimezone(timestamp: string, timezone: string): number | null {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour + minute / 60;
-}
-
 function populationStddev(values: number[]): number | null {
   if (values.length === 0) return null;
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -93,12 +79,32 @@ export interface SleepNightlyRow {
   durationMinutes: number;
   /** Actual time asleep (deep + REM + light). Use for display and sleep debt. */
   sleepMinutes: number;
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
-  efficiency: number;
+  deepPct: number | null;
+  remPct: number | null;
+  lightPct: number | null;
+  awakePct: number | null;
+  efficiency: number | null;
+  stagingAvailable: boolean;
   rollingAvgDuration: number | null;
+  startedAt: string;
+  endedAt: string | null;
+  localTimeContext: RecordLocalTimeContext;
+  providerId: string | null;
+  sourceName: string | null;
+  sourceProviders: string[];
+  selectedSessionId: string | null;
+  overlappingSessions: SleepOverlappingSession[];
+}
+
+export interface SleepOverlappingSession {
+  sessionId: string;
+  providerId: string;
+  sourceName: string | null;
+  sourceProviders: string[];
+  localTimeContext: RecordLocalTimeContext;
+  startedAt: string;
+  endedAt: string | null;
+  durationMinutes: number | null;
 }
 
 export interface SleepAnalyticsResult {
@@ -148,8 +154,14 @@ export const recoveryRouter = router({
         })
       ).flatMap((row) => {
         const endedAt = row.ended_at;
-        const bedtimeHour = hourInTimezone(row.started_at, ctx.timezone);
-        const waketimeHour = endedAt ? hourInTimezone(endedAt, ctx.timezone) : null;
+        const localTimeContext = {
+          timezone: row.timezone,
+          startUtcOffsetMinutes: row.start_utc_offset_minutes,
+          endUtcOffsetMinutes: row.end_utc_offset_minutes,
+          source: row.local_time_source,
+        };
+        const bedtimeHour = recordLocalHour(row.started_at, localTimeContext, "start");
+        const waketimeHour = endedAt ? recordLocalHour(endedAt, localTimeContext, "end") : null;
         if (bedtimeHour == null || waketimeHour == null) return [];
         return [{ date: row.date, bedtimeHour, waketimeHour }];
       });
@@ -339,9 +351,7 @@ export const recoveryRouter = router({
       const computeSleepMinutes = (row: (typeof rows)[number]) => {
         const durationMinutes = row.duration_minutes ?? 0;
         if (row.provider_id !== "apple_health") return durationMinutes;
-        const hasStages =
-          row.deep_minutes != null || row.rem_minutes != null || row.light_minutes != null;
-        if (!hasStages) return durationMinutes;
+        if (!row.staging_available) return durationMinutes;
         return (row.deep_minutes ?? 0) + (row.rem_minutes ?? 0) + (row.light_minutes ?? 0);
       };
 
@@ -357,25 +367,53 @@ export const recoveryRouter = router({
             : 0;
         return {
           date: row.date,
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+          localTimeContext: {
+            timezone: row.timezone,
+            startUtcOffsetMinutes: row.start_utc_offset_minutes,
+            endUtcOffsetMinutes: row.end_utc_offset_minutes,
+            source: row.local_time_source,
+          },
+          providerId: row.provider_id,
+          sourceName: row.source_name,
+          sourceProviders: row.source_providers,
+          selectedSessionId: row.selected_session_id,
+          overlappingSessions: row.overlapping_sessions.map((session) => ({
+            sessionId: session.session_id,
+            providerId: session.provider_id,
+            sourceName: session.source_name,
+            sourceProviders: session.source_providers,
+            localTimeContext: {
+              timezone: session.timezone,
+              startUtcOffsetMinutes: session.start_utc_offset_minutes,
+              endUtcOffsetMinutes: session.end_utc_offset_minutes,
+              source: session.local_time_source,
+            },
+            startedAt: session.started_at,
+            endedAt: session.ended_at,
+            durationMinutes: session.duration_minutes,
+          })),
           durationMinutes,
           sleepMinutes,
           deepPct:
-            durationMinutes > 0
+            row.staging_available && durationMinutes > 0
               ? Math.round(((row.deep_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : 0,
+              : null,
           remPct:
-            durationMinutes > 0
+            row.staging_available && durationMinutes > 0
               ? Math.round(((row.rem_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : 0,
+              : null,
           lightPct:
-            durationMinutes > 0
+            row.staging_available && durationMinutes > 0
               ? Math.round(((row.light_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : 0,
+              : null,
           awakePct:
-            durationMinutes > 0
+            row.staging_available && durationMinutes > 0
               ? Math.round(((row.awake_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : 0,
-          efficiency: Math.round((row.efficiency_pct ?? 0) * 10) / 10,
+              : null,
+          efficiency: row.efficiency_pct == null ? null : Math.round(row.efficiency_pct * 10) / 10,
+          stagingAvailable: row.staging_available,
           rollingAvgDuration: Math.round(rollingAvgDuration * 10) / 10,
         };
       });
@@ -399,10 +437,15 @@ export const recoveryRouter = router({
               (nightly.reduce((sum, night) => sum + night.sleepMinutes, 0) / nightly.length) * 10,
             ) / 10
           : null;
+      const measuredEfficiencies = nightly
+        .map((night) => night.efficiency)
+        .filter((efficiency): efficiency is number => efficiency != null);
       const averageEfficiencyPercent =
-        nightly.length > 0
+        measuredEfficiencies.length > 0
           ? Math.round(
-              (nightly.reduce((sum, night) => sum + night.efficiency, 0) / nightly.length) * 10,
+              (measuredEfficiencies.reduce((sum, efficiency) => sum + efficiency, 0) /
+                measuredEfficiencies.length) *
+                10,
             ) / 10
           : null;
 

@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { AppHeader } from "./AppHeader";
 
 const storyPaths = [
@@ -23,6 +24,7 @@ const storyPaths = [
   "/health-report",
   "/weekly-report",
   "/monthly-report",
+  "/more",
   "/settings",
   "/admin",
 ] as const;
@@ -65,7 +67,24 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByText("Dofek")).toHaveLength(2);
+    await expect(canvas.queryByRole("heading", { name: "Dofek" })).not.toBeInTheDocument();
+  },
+};
+
+export const MobileNavigationOpen: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Toggle navigation menu" }),
+    );
+  },
+};
 
 export const EmptyNoUser: Story = {
   name: "No user",

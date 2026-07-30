@@ -37,6 +37,12 @@ const mockActivity: ActivityDetail = {
   activityType: "running",
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
+  localTimeContext: {
+    timezone: null,
+    startUtcOffsetMinutes: 60,
+    endUtcOffsetMinutes: 60,
+    source: "provider_offset",
+  },
   providerId: "whoop",
   subsource: null,
   providerAbsentAt: null,

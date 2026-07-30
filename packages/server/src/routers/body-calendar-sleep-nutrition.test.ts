@@ -123,6 +123,12 @@ describe("sleepRouter", () => {
     provider_id: "p1",
     source_name: null,
     source_providers: [],
+    selected_session_id: null,
+    overlapping_sessions: [],
+    timezone: null,
+    start_utc_offset_minutes: null,
+    end_utc_offset_minutes: null,
+    local_time_source: "unknown",
     started_at: "2024-01-01T22:00:00Z",
     ended_at: "2024-01-02T06:00:00Z",
     duration_minutes: 480,
@@ -131,6 +137,7 @@ describe("sleepRouter", () => {
     light_minutes: 250,
     awake_minutes: 30,
     efficiency_pct: 93.5,
+    staging_available: true,
   };
 
   describe("list", () => {

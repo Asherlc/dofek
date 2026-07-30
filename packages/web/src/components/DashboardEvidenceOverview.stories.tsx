@@ -6,7 +6,7 @@ const meta = {
   component: DashboardEvidenceOverview,
   tags: ["autodocs"],
   args: {
-    days: 30,
+    days: 90,
     endDate: "2026-05-27",
     trend: {
       latestRestingHeartRate: 52,
@@ -21,15 +21,15 @@ const meta = {
     },
     healthMonitor: (
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-border bg-white/70 p-3">
+        <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-muted">Heart Rate Variability</p>
           <p className="mt-1 text-xl font-semibold text-foreground">68 ms</p>
         </div>
-        <div className="rounded-lg border border-border bg-white/70 p-3">
+        <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-muted">Steps</p>
           <p className="mt-1 text-xl font-semibold text-foreground">7,640</p>
         </div>
-        <div className="rounded-lg border border-border bg-white/70 p-3">
+        <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-muted">Respiratory Rate</p>
           <p className="mt-1 text-xl font-semibold text-foreground">14 breaths/min</p>
         </div>
@@ -95,7 +95,7 @@ export const Loading: Story = {
         {[0, 1, 2].map((placeholder) => (
           <div
             key={placeholder}
-            className="h-20 animate-pulse rounded-lg border border-border bg-white/70"
+            className="h-20 animate-pulse rounded-lg border border-border bg-surface"
           />
         ))}
       </div>

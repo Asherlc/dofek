@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockExecute = vi.fn().mockResolvedValue([]);
 const mockReconcile = vi.fn().mockResolvedValue(undefined);
+const mockCaptureException = vi.fn();
 
 vi.mock("./provider-activity-absence.ts", () => ({
   reconcileProviderActivityAbsence: (...args: unknown[]) => mockReconcile(...args),
   markProviderActivityAbsent: vi.fn(),
+}));
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 import type { SyncDatabase } from "./index.ts";
@@ -75,6 +79,10 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
 });
 
 describe("upsertProviderActivity", () => {
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+  });
+
   it("does not include providerAbsentAt in conflict updates", async () => {
     const onConflictDoUpdate = vi.fn();
     const db = makeMockDb(onConflictDoUpdate);
@@ -138,6 +146,150 @@ describe("upsertProviderActivity", () => {
         externalId: "hk:workout:abc",
       }),
     );
+  });
+
+  it("stores explicit unknown context when an optional provider timezone is invalid", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await expect(
+      upsertProviderActivity(
+        db,
+        {
+          providerId: "peloton",
+          externalId: "workout-1",
+          activityType: "indoor_cycling",
+          startedAt: new Date("2026-06-20T21:49:00Z"),
+          endedAt: new Date("2026-06-20T22:17:59Z"),
+          timezone: "Not/A_Timezone",
+          startUtcOffsetMinutes: 123,
+          endUtcOffsetMinutes: 124,
+          localTimeSource: "unknown",
+        },
+        { activityType: "indoor_cycling" },
+      ),
+    ).resolves.toEqual({ id: "activity-id" });
+
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "unknown",
+      }),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: {
+        activityType: "indoor_cycling",
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "unknown",
+      },
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { operation: "provider-activity-local-time-context" },
+    });
+  });
+
+  it("resolves and trims a valid optional provider timezone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "peloton",
+        externalId: "workout-1",
+        activityType: "indoor_cycling",
+        startedAt: new Date("2026-03-08T09:30:00.000Z"),
+        endedAt: new Date("2026-03-08T10:30:00.000Z"),
+        timezone: "  America/Los_Angeles  ",
+      },
+      { activityType: "indoor_cycling" },
+    );
+
+    const expectedContext = {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -420,
+      localTimeSource: "provider_timezone",
+    };
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(expect.objectContaining(expectedContext));
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: { activityType: "indoor_cycling", ...expectedContext },
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("preserves explicitly supplied authoritative offset context", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "whoop",
+        externalId: "workout-1",
+        activityType: "running",
+        startedAt: new Date("2026-06-20T21:49:00Z"),
+        timezone: null,
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_offset",
+      },
+      { activityType: "running" },
+    );
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: {
+        activityType: "running",
+        timezone: null,
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_offset",
+      },
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a whitespace-only optional timezone to explicit unknown", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "peloton",
+        externalId: "workout-1",
+        activityType: "indoor_cycling",
+        startedAt: new Date("2026-06-20T21:49:00Z"),
+        timezone: "   ",
+        startUtcOffsetMinutes: 123,
+        endUtcOffsetMinutes: 124,
+        localTimeSource: "unknown",
+      },
+      { activityType: "indoor_cycling" },
+    );
+
+    const explicitUnknown = {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown",
+    };
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(expect.objectContaining(explicitUnknown));
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: { activityType: "indoor_cycling", ...explicitUnknown },
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });
 

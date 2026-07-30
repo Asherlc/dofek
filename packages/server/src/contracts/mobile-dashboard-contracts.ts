@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
+import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 
 const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
@@ -134,6 +135,7 @@ export const healthStatusMetricSchema = z.object({
   ]),
   statusColor: z.enum(["positive", "warning", "danger", "muted"]),
   statusLabel: z.string(),
+  evaluationRule: z.string(),
   explanation: z.string(),
 });
 
@@ -204,6 +206,14 @@ export const mobileRecoveryTabOutputSchema = z.object({
   healthspan: z.object({
     healthspanScore: score100Schema.nullable(),
     yearsDelta: z.number().nullable(),
+    availability: z.object({
+      status: z.enum(["available", "insufficient_data"]),
+      availableMetricCount: z.number().int().min(0).max(9),
+      requiredMetricCount: z.literal(3),
+      missingMetricLabels: z.array(z.string()),
+      summary: z.string(),
+      nextCondition: z.string().nullable(),
+    }),
     metrics: z.array(
       z.object({
         name: z.string(),
@@ -254,6 +264,7 @@ export const mobileTrainingTabOutputSchema = z.object({
       hours: nonnegativeNumberSchema,
     }),
   ),
+  progressiveOverload: z.array(progressiveOverloadRowSchema),
   verticalAscent: z.array(
     z.object({
       date: dateSchema,

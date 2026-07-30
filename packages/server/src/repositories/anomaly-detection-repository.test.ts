@@ -42,10 +42,17 @@ function makeDb(rows: Record<string, unknown>[] = []) {
 }
 
 function makeSensorStore(sleepRows: Record<string, unknown>[] = []) {
+  const sleepRowsWithLocalTimeContext = sleepRows.map((row) => ({
+    timezone: null,
+    start_utc_offset_minutes: null,
+    end_utc_offset_minutes: null,
+    local_time_source: "unknown",
+    ...row,
+  }));
   return {
     query: vi.fn(async (_schema: unknown, query: string) =>
       query.includes("analytics.daily_sleep") || query.includes("analytics.v_sleep")
-        ? sleepRows
+        ? sleepRowsWithLocalTimeContext
         : [{ date: "2024-06-14", resting_hr: 52 }],
     ),
   };
@@ -84,6 +91,7 @@ function sleepRowsForBaseline({
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: null,
+    staging_available: false,
   }));
   return [
     ...baselineRows,
@@ -100,6 +108,7 @@ function sleepRowsForBaseline({
       light_minutes: null,
       awake_minutes: null,
       efficiency_pct: null,
+      staging_available: false,
     },
   ];
 }

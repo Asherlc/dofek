@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
   fetchBodyComparisonRows,
+  fetchBodyCompProvenanceRows,
   fetchBodyCompRows,
   fetchBodyWeightRows,
 } from "./body-clickhouse.ts";
@@ -64,6 +65,42 @@ describe("fetchBodyWeightRows", () => {
 });
 
 describe("fetchBodyCompRows", () => {
+  it("keeps provenance fields separate from the generic insight row contract", async () => {
+    const store: BodyClickHouseStore = {
+      async query(schema) {
+        return [
+          schema.parse({
+            date: "2026-07-25",
+            recorded_at: "2026-07-25T08:00:00.000Z",
+            provider_id: "withings",
+            source_providers: ["apple_health"],
+            weight_kg: 72,
+            body_fat_pct: 18,
+          }),
+        ];
+      },
+    };
+
+    await expect(fetchBodyCompRows(store, "user-1", "UTC", "now", 90)).resolves.toEqual([
+      {
+        date: "2026-07-25",
+        recorded_at: "2026-07-25T08:00:00.000Z",
+        weight_kg: 72,
+        body_fat_pct: 18,
+      },
+    ]);
+    await expect(fetchBodyCompProvenanceRows(store, "user-1", "UTC", "now", 90)).resolves.toEqual([
+      {
+        date: "2026-07-25",
+        recorded_at: "2026-07-25T08:00:00.000Z",
+        provider_id: "withings",
+        source_providers: ["apple_health"],
+        weight_kg: 72,
+        body_fat_pct: 18,
+      },
+    ]);
+  });
+
   it("returns and filters by the user's local calendar date", async () => {
     const calls: Array<{ query: string; params?: Record<string, unknown> }> = [];
     const store: BodyClickHouseStore = {

@@ -482,6 +482,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="more"
+            options={{
+              title: "More",
+            }}
+          />
+          <Stack.Screen
             name="support"
             options={{
               title: "Help & Support",
@@ -535,6 +541,12 @@ function AuthGate() {
             name="behavior-associations"
             options={{
               title: "Behavior Associations",
+            }}
+          />
+          <Stack.Screen
+            name="tracking"
+            options={{
+              title: "Journal Trends",
             }}
           />
           <Stack.Screen

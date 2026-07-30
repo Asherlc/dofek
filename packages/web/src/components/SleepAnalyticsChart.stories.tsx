@@ -2,9 +2,26 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { SleepNightlyRow } from "dofek-server/types";
 import { SleepAnalyticsChart } from "./SleepAnalyticsChart.tsx";
 
+const sourceEvidence = {
+  providerId: null,
+  sourceName: null,
+  sourceProviders: [],
+  selectedSessionId: null,
+  overlappingSessions: [],
+};
+
 const nightly: SleepNightlyRow[] = [
   {
+    ...sourceEvidence,
     date: "2026-05-25",
+    startedAt: "2026-05-26T05:00:00Z",
+    endedAt: "2026-05-26T12:50:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 470,
     sleepMinutes: 432,
     deepPct: 22,
@@ -12,10 +29,20 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 46,
     awakePct: 8,
     efficiency: 92,
+    stagingAvailable: true,
     rollingAvgDuration: 425,
   },
   {
+    ...sourceEvidence,
     date: "2026-05-26",
+    startedAt: "2026-05-27T05:15:00Z",
+    endedAt: "2026-05-27T12:40:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 445,
     sleepMinutes: 401,
     deepPct: 19,
@@ -23,10 +50,20 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 48,
     awakePct: 10,
     efficiency: 90,
+    stagingAvailable: true,
     rollingAvgDuration: 421,
   },
   {
+    ...sourceEvidence,
     date: "2026-05-27",
+    startedAt: "2026-05-28T04:45:00Z",
+    endedAt: "2026-05-28T13:00:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 495,
     sleepMinutes: 457,
     deepPct: 24,
@@ -34,10 +71,20 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 43,
     awakePct: 8,
     efficiency: 92,
+    stagingAvailable: true,
     rollingAvgDuration: 429,
   },
   {
+    ...sourceEvidence,
     date: "2026-05-28",
+    startedAt: "2026-05-29T05:30:00Z",
+    endedAt: "2026-05-29T12:40:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 430,
     sleepMinutes: 387,
     deepPct: 18,
@@ -45,10 +92,20 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 51,
     awakePct: 10,
     efficiency: 90,
+    stagingAvailable: true,
     rollingAvgDuration: 423,
   },
   {
+    ...sourceEvidence,
     date: "2026-05-29",
+    startedAt: "2026-05-30T05:00:00Z",
+    endedAt: "2026-05-30T13:00:00Z",
+    localTimeContext: {
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    },
     durationMinutes: 480,
     sleepMinutes: 446,
     deepPct: 23,
@@ -56,6 +113,7 @@ const nightly: SleepNightlyRow[] = [
     lightPct: 46,
     awakePct: 7,
     efficiency: 93,
+    stagingAvailable: true,
     rollingAvgDuration: 431,
   },
 ];

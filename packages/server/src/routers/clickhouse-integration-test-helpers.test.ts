@@ -99,6 +99,19 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
+    for (const tableName of ["v_activity", "v_sleep", "deduped_activities", "daily_sleep"]) {
+      expect(
+        setupCommands.some(
+          (command) =>
+            command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+            command.includes(`.${tableName}`) &&
+            command.includes("timezone Nullable(String)") &&
+            command.includes("start_utc_offset_minutes Nullable(Int16)") &&
+            command.includes("end_utc_offset_minutes Nullable(Int16)") &&
+            command.includes("local_time_source String"),
+        ),
+      ).toBe(true);
+    }
     expect(
       setupCommands.some(
         (command) =>
@@ -118,6 +131,14 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".activity_location_sample"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_summary") &&
+          command.includes("refreshed_at DateTime64(9)"),
       ),
     ).toBe(true);
     expect(
@@ -255,7 +276,21 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO postgres_fitness_test_") &&
           command.includes(".activity") &&
-          command.includes("FROM postgresql('db:5432', 'health', 'activity'"),
+          command.includes("FROM postgresql('db:5432', 'health', 'activity'") &&
+          command.includes("start_utc_offset_minutes") &&
+          command.includes("end_utc_offset_minutes") &&
+          command.includes("local_time_source"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO postgres_fitness_test_") &&
+          command.includes(".sleep_session") &&
+          command.includes("timezone") &&
+          command.includes("start_utc_offset_minutes") &&
+          command.includes("end_utc_offset_minutes") &&
+          command.includes("local_time_source"),
       ),
     ).toBe(true);
     expect(
@@ -273,6 +308,22 @@ describe("clickhouse integration test helpers", () => {
           command.endsWith(".deduped_activities"),
       ),
     ).toBe(true);
+    for (const tableName of ["deduped_activities", "daily_sleep"]) {
+      expect(
+        commands.some(
+          (command) =>
+            command.includes("INSERT INTO analytics_test_") &&
+            command.includes(`.${tableName}`) &&
+            command.includes("start_utc_offset_minutes") &&
+            command.includes("end_utc_offset_minutes") &&
+            command.includes("local_time_source") &&
+            (tableName !== "deduped_activities" ||
+              command.includes(
+                "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
+              )),
+        ),
+      ).toBe(true);
+    }
     expect(
       commands.some(
         (command) =>

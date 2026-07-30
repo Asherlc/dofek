@@ -80,6 +80,10 @@ function addDays(dateString: string, days: number): string {
 function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
   return rows.map((row) => ({
     date: row.date,
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "provider_offset",
     started_at: `${row.date}T22:00:00`,
     ended_at: `${addDays(row.date, 1)}T06:00:00`,
     duration_minutes: row.duration_minutes,
@@ -88,6 +92,7 @@ function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
+    staging_available: false,
     provider_id: row.provider_id ?? null,
     source_name: row.source_name ?? null,
     source_providers: row.source_providers ?? (row.provider_id ? [row.provider_id] : []),
@@ -945,15 +950,14 @@ describe("sleepNeedRouter", () => {
       expect(result?.score).toBe(70);
     });
 
-    it("uses default efficiency of 85 when null", async () => {
+    it("returns unavailable performance when efficiency was not reported", async () => {
       const caller = createPerformanceCaller([
         { date: "2026-03-14", duration_minutes: 480, efficiency_pct: null },
         { date: "2026-03-01", duration_minutes: 480 },
       ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
-      expect(result).not.toBeNull();
-      expect(result?.efficiency).toBe(85);
+      expect(result).toBeNull();
     });
 
     it("uses default baseline of 480 when avg_duration is null", async () => {

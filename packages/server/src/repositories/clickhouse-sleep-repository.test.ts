@@ -13,6 +13,10 @@ describe("fetchDailySleepPerformanceNights", () => {
         provider_id: "provider-a",
         source_name: "Apple Watch",
         source_providers: ["apple_health"],
+        timezone: null,
+        start_utc_offset_minutes: -420,
+        end_utc_offset_minutes: -420,
+        local_time_source: "provider_offset",
         started_at: "2026-03-13T22:00:00Z",
         ended_at: "2026-03-14T06:00:00Z",
         duration_minutes: 480,
@@ -21,6 +25,7 @@ describe("fetchDailySleepPerformanceNights", () => {
         light_minutes: 260,
         awake_minutes: 30,
         efficiency_pct: 92,
+        staging_available: true,
       },
     ]);
 
@@ -77,6 +82,22 @@ describe("fetchSleepNights", () => {
         provider_id: "whoop",
         source_name: "WHOOP 4.0",
         source_providers: ["whoop", "apple_health"],
+        selected_session_id: "00000000-0000-4000-8000-000000001774",
+        overlapping_sessions: [
+          {
+            session_id: "00000000-0000-4000-8000-000000001775",
+            provider_id: "apple_health",
+            source_name: "Apple Watch",
+            source_providers: ["apple_health"],
+            timezone: "America/Los_Angeles",
+            start_utc_offset_minutes: -420,
+            end_utc_offset_minutes: -420,
+            local_time_source: "provider_timezone",
+            started_at: "2026-03-13T23:30:00Z",
+            ended_at: "2026-03-14T05:00:00Z",
+            duration_minutes: 330,
+          },
+        ],
         started_at: "2026-03-13T22:00:00Z",
         ended_at: "2026-03-14T06:00:00Z",
         duration_minutes: 480,
@@ -85,6 +106,7 @@ describe("fetchSleepNights", () => {
         light_minutes: 260,
         awake_minutes: 30,
         efficiency_pct: 92,
+        staging_available: true,
       },
     ]);
 
@@ -102,10 +124,28 @@ describe("fetchSleepNights", () => {
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).toContain("source_name");
     expect(queryText).toContain("source_providers");
+    expect(queryText).toContain("selected_session_id");
+    expect(queryText).toContain("overlapping_sessions");
     expect(rows[0]).toMatchObject({
       provider_id: "whoop",
       source_name: "WHOOP 4.0",
       source_providers: ["whoop", "apple_health"],
+      selected_session_id: "00000000-0000-4000-8000-000000001774",
+      overlapping_sessions: [
+        {
+          session_id: "00000000-0000-4000-8000-000000001775",
+          provider_id: "apple_health",
+          source_name: "Apple Watch",
+          source_providers: ["apple_health"],
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -420,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_timezone",
+          started_at: "2026-03-13T23:30:00.000Z",
+          ended_at: "2026-03-14T05:00:00.000Z",
+          duration_minutes: 330,
+        },
+      ],
     });
   });
 
@@ -122,6 +162,7 @@ describe("fetchSleepNights", () => {
         light_minutes: null,
         awake_minutes: null,
         efficiency_pct: 92,
+        staging_available: false,
       },
     ]);
 
@@ -135,6 +176,8 @@ describe("fetchSleepNights", () => {
 
     expect(rows[0]?.source_name).toBeNull();
     expect(rows[0]?.source_providers).toEqual([]);
+    expect(rows[0]?.selected_session_id).toBeNull();
+    expect(rows[0]?.overlapping_sessions).toEqual([]);
   });
 
   it("defaults null provenance fields to null and an empty list", async () => {
@@ -152,6 +195,7 @@ describe("fetchSleepNights", () => {
         light_minutes: null,
         awake_minutes: null,
         efficiency_pct: 92,
+        staging_available: false,
       },
     ]);
 
@@ -165,6 +209,64 @@ describe("fetchSleepNights", () => {
 
     expect(rows[0]?.source_name).toBeNull();
     expect(rows[0]?.source_providers).toEqual([]);
+  });
+
+  it("normalizes null nightly and nested overlap arrays", async () => {
+    const baseRow = {
+      date: "2026-03-14",
+      provider_id: "whoop",
+      started_at: "2026-03-13T22:00:00Z",
+      ended_at: "2026-03-14T06:00:00Z",
+      duration_minutes: 480,
+      deep_minutes: null,
+      rem_minutes: null,
+      light_minutes: null,
+      awake_minutes: null,
+      efficiency_pct: 92,
+      staging_available: false,
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...baseRow, overlapping_sessions: null }])
+      .mockResolvedValueOnce([
+        {
+          ...baseRow,
+          overlapping_sessions: [
+            {
+              session_id: "00000000-0000-4000-8000-000000001775",
+              provider_id: "apple_health",
+              source_providers: null,
+              timezone: null,
+              start_utc_offset_minutes: null,
+              end_utc_offset_minutes: null,
+              local_time_source: "unknown",
+              started_at: new Date("2026-03-13T23:30:00Z"),
+              ended_at: new Date("2026-03-14T05:00:00Z"),
+              duration_minutes: null,
+            },
+          ],
+        },
+      ]);
+    const input = {
+      sensorStore: { query },
+      userId: "user-1",
+      timezone: "UTC",
+      endDate: "2026-03-15",
+      days: 30,
+    } as const;
+
+    const nullNightlyOverlaps = await fetchSleepNights(input);
+    const nullNestedSources = await fetchSleepNights(input);
+
+    expect(nullNightlyOverlaps[0]?.overlapping_sessions).toEqual([]);
+    expect(nullNestedSources[0]?.overlapping_sessions).toEqual([
+      expect.objectContaining({
+        source_name: null,
+        source_providers: [],
+        started_at: "2026-03-13T23:30:00.000Z",
+        ended_at: "2026-03-14T05:00:00.000Z",
+      }),
+    ]);
   });
 
   it("preserves full-history, ordering, limit, access, and query options", async () => {
@@ -218,6 +320,7 @@ describe("fetchSleepNights", () => {
         light_minutes: null,
         awake_minutes: null,
         efficiency_pct: 92,
+        staging_available: false,
       },
     ]);
 

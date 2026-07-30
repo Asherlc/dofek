@@ -1,3 +1,4 @@
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Database } from "dofek/db";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
@@ -204,16 +205,6 @@ function healthTrends(
     });
 }
 
-function localTime(timestamp: string | null, timezone: string): string | null {
-  if (!timestamp) return null;
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone: timezone,
-  }).format(new Date(timestamp));
-}
-
 function average(values: Array<number | null | undefined>): number | null {
   return aggregateNumbers(values)?.avg ?? null;
 }
@@ -384,24 +375,41 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         dailyMetrics.map((row) => [row.date, row.respiratory_rate_avg]),
       );
       return jsonContent(
-        rows.map((row) => ({
-          date: row.date,
-          total_duration_minutes: row.duration_minutes,
-          sleep_efficiency_pct: row.efficiency_pct,
-          time_in_bed_minutes:
-            row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
-          onset_time: localTime(row.started_at, requestedTimezone),
-          wake_time: localTime(row.ended_at, requestedTimezone),
-          stages: {
-            rem_minutes: row.rem_minutes,
-            sws_minutes: row.deep_minutes,
-            light_minutes: row.light_minutes,
-            awake_minutes: row.awake_minutes,
-          },
-          sleep_consistency_pct: null,
-          respiratory_rate_avg: respiratoryRateByDate.get(row.date) ?? null,
-          source_provider: row.provider_id,
-        })),
+        rows.map((row) => {
+          const localTimeContext = {
+            timezone: row.timezone,
+            startUtcOffsetMinutes: row.start_utc_offset_minutes,
+            endUtcOffsetMinutes: row.end_utc_offset_minutes,
+            source: row.local_time_source,
+          };
+          return {
+            date: row.date,
+            staging_available: row.staging_available,
+            total_duration_minutes: row.duration_minutes,
+            sleep_efficiency_pct: row.efficiency_pct,
+            time_in_bed_minutes:
+              row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
+            onset_time:
+              formatRecordLocalTime(row.started_at, localTimeContext, "start") === "--"
+                ? null
+                : formatRecordLocalTime(row.started_at, localTimeContext, "start"),
+            wake_time:
+              row.ended_at == null ||
+              formatRecordLocalTime(row.ended_at, localTimeContext, "end") === "--"
+                ? null
+                : formatRecordLocalTime(row.ended_at, localTimeContext, "end"),
+            local_time_context: localTimeContext,
+            stages: {
+              rem_minutes: row.rem_minutes,
+              sws_minutes: row.deep_minutes,
+              light_minutes: row.light_minutes,
+              awake_minutes: row.awake_minutes,
+            },
+            sleep_consistency_pct: null,
+            respiratory_rate_avg: respiratoryRateByDate.get(row.date) ?? null,
+            source_provider: row.provider_id,
+          };
+        }),
       );
     },
   );

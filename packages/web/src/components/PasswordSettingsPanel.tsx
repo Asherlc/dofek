@@ -1,6 +1,15 @@
+import {
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
 import { useState } from "react";
 import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
+import { PasswordInput } from "./PasswordInput.tsx";
+
+const CURRENT_PASSWORD_REQUIRED_ERROR = "Enter your current password.";
 
 export function PasswordSettingsPanel() {
   const auth = useAuth();
@@ -14,11 +23,21 @@ export function PasswordSettingsPanel() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const hasPassword = status.data?.hasPassword ?? false;
+  const currentPasswordError = localError === CURRENT_PASSWORD_REQUIRED_ERROR;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLocalError(null);
     setSuccess(null);
+    if (hasPassword && !currentPassword) {
+      setLocalError(CURRENT_PASSWORD_REQUIRED_ERROR);
+      return;
+    }
+    const passwordError = getNewPasswordValidationError(newPassword);
+    if (passwordError) {
+      setLocalError(passwordError);
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setLocalError("Passwords do not match");
       return;
@@ -53,19 +72,24 @@ export function PasswordSettingsPanel() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 max-w-md">
+    <form onSubmit={handleSubmit} className="space-y-3 max-w-md" noValidate>
       {hasPassword ? (
         <div>
           <label htmlFor="current-password" className="block text-xs text-muted mb-1">
             Current password
           </label>
-          <input
+          <PasswordInput
             id="current-password"
-            type="password"
+            visibilityLabel="current password"
             value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
+            onChange={(event) => {
+              setCurrentPassword(event.target.value);
+              setLocalError(null);
+            }}
             required
             autoComplete="current-password"
+            aria-invalid={currentPasswordError ? true : undefined}
+            aria-describedby={currentPasswordError ? "password-form-message" : undefined}
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
           />
         </div>
@@ -74,14 +98,20 @@ export function PasswordSettingsPanel() {
         <label htmlFor="new-password" className="block text-xs text-muted mb-1">
           New password
         </label>
-        <input
+        <PasswordInput
           id="new-password"
-          type="password"
+          visibilityLabel="new password"
           value={newPassword}
-          onChange={(event) => setNewPassword(event.target.value)}
+          onChange={(event) => {
+            setNewPassword(event.target.value);
+            setLocalError(null);
+          }}
           required
-          minLength={8}
+          minLength={PASSWORD_MIN_LENGTH}
+          maxLength={PASSWORD_MAX_LENGTH}
           autoComplete="new-password"
+          aria-invalid={localError && !currentPasswordError ? true : undefined}
+          aria-describedby="password-form-message"
           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
         />
       </div>
@@ -89,18 +119,34 @@ export function PasswordSettingsPanel() {
         <label htmlFor="confirm-password" className="block text-xs text-muted mb-1">
           Confirm password
         </label>
-        <input
+        <PasswordInput
           id="confirm-password"
-          type="password"
+          visibilityLabel="confirm password"
           value={confirmPassword}
-          onChange={(event) => setConfirmPassword(event.target.value)}
+          onChange={(event) => {
+            setConfirmPassword(event.target.value);
+            setLocalError(null);
+          }}
           required
-          minLength={8}
+          minLength={PASSWORD_MIN_LENGTH}
+          maxLength={PASSWORD_MAX_LENGTH}
           autoComplete="new-password"
+          aria-invalid={localError && !currentPasswordError ? true : undefined}
+          aria-describedby={
+            localError && !currentPasswordError ? "password-form-message" : undefined
+          }
           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
         />
       </div>
-      {localError ? <p className="text-xs text-red-400">{localError}</p> : null}
+      {localError ? (
+        <p id="password-form-message" role="alert" className="text-xs text-red-400">
+          {localError}
+        </p>
+      ) : (
+        <p id="password-form-message" className="text-xs text-subtle">
+          {PASSWORD_REQUIREMENT_TEXT}
+        </p>
+      )}
       {setPassword.error ? (
         <p className="text-xs text-red-400">{setPassword.error.message}</p>
       ) : null}
@@ -108,7 +154,7 @@ export function PasswordSettingsPanel() {
       <button
         type="submit"
         disabled={setPassword.isPending}
-        className="px-3 py-2 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
+        className="px-3 py-2 rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
       >
         {setPassword.isPending
           ? hasPassword

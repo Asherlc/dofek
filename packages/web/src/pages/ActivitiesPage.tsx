@@ -13,7 +13,7 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
@@ -349,23 +349,45 @@ function ActivityControls({
   onConfirmDelete,
   onConfirmRestore,
 }: ActivityControlsProps) {
+  const selectionGuidanceId = useId();
+  const selectionGuidance = showHidden
+    ? "Choose visible activities to delete or hidden activities to restore."
+    : "Choose one or more activities to delete.";
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold">Activity log</p>
+        <div>
+          <p className="text-sm font-semibold">Activity log</p>
+          {canSelect ? (
+            <p id={selectionGuidanceId} className="mt-0.5 text-xs text-muted">
+              {selectionGuidance}
+            </p>
+          ) : null}
+        </div>
         {canSelect && !selectMode ? (
           <button
             type="button"
             onClick={onSelect}
+            aria-describedby={selectionGuidanceId}
             className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
           >
-            Select
+            Select activities
           </button>
         ) : null}
       </div>
       {selectMode ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-subtle tabular-nums">{selectedCount} selected</span>
+          <output
+            aria-live="polite"
+            aria-atomic="true"
+            className="text-xs text-subtle tabular-nums"
+          >
+            {selectedCountLabel}
+          </output>
           {confirmDelete ? (
             <>
               <span className="text-xs text-muted">
@@ -389,7 +411,7 @@ function ActivityControls({
                 type="button"
                 onClick={onConfirmRestore}
                 disabled={restorePending || selectedHiddenCount === 0}
-                className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 {restorePending ? "Restoring..." : "Confirm Restore"}
               </button>
@@ -401,7 +423,7 @@ function ActivityControls({
                   type="button"
                   onClick={onRestoreSelected}
                   disabled={restorePending || selectedHiddenCount === 0}
-                  className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   Restore
                 </button>

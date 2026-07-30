@@ -161,12 +161,10 @@ vi.mock("./SyncProviderCard.tsx", () => ({
     provider,
     state,
     onSync,
-    onFullSync,
   }: {
     provider: { id: string; name: string };
     state: { status: string; message?: string };
     onSync: () => void;
-    onFullSync: () => void;
   }) => (
     <section data-testid={`provider-card-${provider.id}`}>
       <h4>{provider.name}</h4>
@@ -174,9 +172,6 @@ vi.mock("./SyncProviderCard.tsx", () => ({
       {state.message ? <p>{state.message}</p> : null}
       <button type="button" onClick={onSync}>
         Sync
-      </button>
-      <button type="button" onClick={onFullSync}>
-        Full sync
       </button>
     </section>
   ),
@@ -191,6 +186,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
+import { PageSection } from "./PageSection.tsx";
 
 afterEach(cleanup);
 
@@ -247,6 +243,17 @@ describe("DataSourcesPanel", () => {
     mockLogsQuery.mockReset();
     mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockCaptureException.mockReset();
+  });
+
+  it("uses the Settings section as its single Data Sources heading", () => {
+    render(
+      <PageSection title="Data Sources" subtitle="Connect and manage health data providers">
+        <DataSourcesPanel />
+      </PageSection>,
+    );
+
+    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(2);
+    expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
   });
 
   it("reserves stable action and provider regions while inventory loads", () => {

@@ -83,7 +83,7 @@ function resolveConfidence(
 function actionTitle(zone: TodayPlanZone, targetStrain: number): string {
   if (zone === "Push") return `Train hard today — aim for ${targetStrain} strain`;
   if (zone === "Recovery") return `Keep training light today — aim for ${targetStrain} strain`;
-  return `Keep a steady training day — aim for ${targetStrain} strain`;
+  return `No change needs attention — aim for ${targetStrain} strain`;
 }
 
 function secondSupportingFact(input: BuildTodayPlanInput): {

@@ -162,6 +162,9 @@ ranked AS (
     active_activity.name AS name,
     active_activity.notes AS notes,
     active_activity.timezone AS timezone,
+    active_activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+    active_activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+    active_activity.local_time_source AS local_time_source,
     active_activity.raw AS raw,
     coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
   FROM active_activity
@@ -326,7 +329,26 @@ merged AS (
     any(best.source_name) AS source_name,
     argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
     argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
-    argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
+    argMinIf(
+      ranked.timezone,
+      ranked.priority,
+      ranked.local_time_source IN ('provider_timezone', 'device_timezone')
+    ) AS timezone,
+    argMinIf(
+      ranked.start_utc_offset_minutes,
+      ranked.priority,
+      ranked.local_time_source != 'unknown'
+    ) AS start_utc_offset_minutes,
+    argMinIf(
+      ranked.end_utc_offset_minutes,
+      ranked.priority,
+      ranked.local_time_source != 'unknown'
+    ) AS end_utc_offset_minutes,
+    argMinIf(
+      ranked.local_time_source,
+      ranked.priority,
+      ranked.local_time_source != 'unknown'
+    ) AS local_time_source,
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
     arraySort(groupUniqArrayIf(ranked.provider_id, ranked.id IS NOT NULL)) AS source_providers,
     groupArrayIf(
@@ -359,6 +381,9 @@ SELECT
   name,
   notes,
   timezone,
+  start_utc_offset_minutes,
+  end_utc_offset_minutes,
+  coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
   raw,
   source_providers,
   source_external_ids,
@@ -436,8 +461,13 @@ ranked AS (
     active_sleep.light_minutes AS light_minutes,
     active_sleep.awake_minutes AS awake_minutes,
     active_sleep.efficiency_pct AS efficiency_pct,
+    active_sleep.staging_available AS staging_available,
     active_sleep.sleep_type AS sleep_type,
     active_sleep.source_name AS source_name,
+    active_sleep.timezone AS timezone,
+    active_sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+    active_sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+    active_sleep.local_time_source AS local_time_source,
     coalesce(device_priority_match.sleep_priority, active_provider_priority.sleep_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority,
     multiIf(
       active_sleep.sleep_type IN ('nap', 'late_nap', 'rest'), true,
@@ -521,8 +551,13 @@ best AS (
       ranked.light_minutes AS light_minutes,
       ranked.awake_minutes AS awake_minutes,
       ranked.efficiency_pct AS efficiency_pct,
+      ranked.staging_available AS staging_available,
       ranked.sleep_type AS sleep_type,
       ranked.source_name AS source_name,
+      ranked.timezone AS timezone,
+      ranked.start_utc_offset_minutes AS start_utc_offset_minutes,
+      ranked.end_utc_offset_minutes AS end_utc_offset_minutes,
+      ranked.local_time_source AS local_time_source,
       ranked.priority AS priority,
       ranked.is_nap AS is_nap,
       row_number() OVER (
@@ -542,18 +577,22 @@ SELECT
   best.started_at AS started_at,
   best.ended_at AS ended_at,
   best.duration_minutes AS duration_minutes,
-  best.deep_minutes AS deep_minutes,
-  best.rem_minutes AS rem_minutes,
-  best.light_minutes AS light_minutes,
-  best.awake_minutes AS awake_minutes,
+  if(best.staging_available, best.deep_minutes, NULL) AS deep_minutes,
+  if(best.staging_available, best.rem_minutes, NULL) AS rem_minutes,
+  if(best.staging_available, best.light_minutes, NULL) AS light_minutes,
+  if(best.staging_available, best.awake_minutes, NULL) AS awake_minutes,
+  best.staging_available AS staging_available,
   coalesce(
     best.efficiency_pct,
     multiIf(
-      best.provider_id = 'apple_health'
-        AND best.duration_minutes > 0
-        AND (best.deep_minutes IS NOT NULL OR best.rem_minutes IS NOT NULL OR best.light_minutes IS NOT NULL),
+      best.staging_available
+        AND best.provider_id = 'apple_health'
+        AND best.duration_minutes > 0,
       round((coalesce(best.deep_minutes, 0) + coalesce(best.rem_minutes, 0) + coalesce(best.light_minutes, 0)) / best.duration_minutes * 100, 1),
-      best.provider_id IN ('eight-sleep', 'polar') AND best.duration_minutes > 0 AND best.awake_minutes IS NOT NULL,
+      best.staging_available
+        AND best.provider_id IN ('eight-sleep', 'polar')
+        AND best.duration_minutes > 0
+        AND best.awake_minutes IS NOT NULL,
       round(best.duration_minutes / (best.duration_minutes + best.awake_minutes) * 100, 1),
       NULL
     )
@@ -561,6 +600,10 @@ SELECT
   best.sleep_type AS sleep_type,
   best.is_nap AS is_nap,
   best.source_name AS source_name,
+  best.timezone AS timezone,
+  best.start_utc_offset_minutes AS start_utc_offset_minutes,
+  best.end_utc_offset_minutes AS end_utc_offset_minutes,
+  best.local_time_source AS local_time_source,
   arraySort(groupUniqArray(ranked.provider_id)) AS source_providers
 FROM best
 INNER JOIN final_groups
@@ -578,10 +621,15 @@ GROUP BY
   best.rem_minutes,
   best.light_minutes,
   best.awake_minutes,
+  best.staging_available,
   best.efficiency_pct,
   best.sleep_type,
   best.is_nap,
-  best.source_name`;
+  best.source_name,
+  best.timezone,
+  best.start_utc_offset_minutes,
+  best.end_utc_offset_minutes,
+  best.local_time_source`;
 }
 
 function buildDailyMetricsReadModelSql(): string {
@@ -871,6 +919,15 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildSleepReadModelSql(),
     buildDailyMetricsReadModelSql(),
     ...buildProviderStatsCreateReadModelStatements(),
+  ];
+}
+
+export function buildSleepQualityMigrationStatements(): string[] {
+  return [
+    "ALTER TABLE postgres_fitness.sleep_session ADD COLUMN IF NOT EXISTS staging_available Bool DEFAULT false AFTER efficiency_pct",
+    "ALTER TABLE analytics.daily_sleep ADD COLUMN IF NOT EXISTS staging_available Bool DEFAULT false AFTER efficiency_pct",
+    "DROP VIEW IF EXISTS analytics.v_sleep",
+    buildSleepReadModelSql(),
   ];
 }
 

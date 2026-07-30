@@ -242,7 +242,7 @@ describe("DailyOverview", () => {
     if (panel instanceof HTMLElement) {
       expect(panel.className).not.toContain("dashboard-hero");
       expect(panel.classList.contains("card")).toBe(false);
-      expect(panel.className).toContain("bg-white/62");
+      expect(panel.className).toContain("bg-surface");
     }
   });
 

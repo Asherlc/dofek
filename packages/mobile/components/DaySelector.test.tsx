@@ -27,7 +27,7 @@ import { DaySelector, DEFAULT_DAY_OPTIONS } from "./DaySelector";
 
 describe("DaySelector", () => {
   it("renders all default options", () => {
-    render(<DaySelector days={30} onChange={vi.fn()} />);
+    render(<DaySelector days={30} description="Recent changes." onChange={vi.fn()} />);
     for (const opt of DEFAULT_DAY_OPTIONS) {
       expect(screen.getByText(opt.label)).toBeTruthy();
     }
@@ -35,7 +35,7 @@ describe("DaySelector", () => {
 
   it("calls onChange with the selected value", () => {
     const onChange = vi.fn();
-    render(<DaySelector days={30} onChange={onChange} />);
+    render(<DaySelector days={30} description="Recent changes." onChange={onChange} />);
     fireEvent.click(screen.getByText("7d"));
     expect(onChange).toHaveBeenCalledWith(7);
   });
@@ -45,9 +45,27 @@ describe("DaySelector", () => {
       { label: "1w", value: 7 },
       { label: "1m", value: 30 },
     ];
-    render(<DaySelector days={7} onChange={vi.fn()} options={options} />);
+    render(
+      <DaySelector days={7} description="Recent changes." onChange={vi.fn()} options={options} />,
+    );
     expect(screen.getByText("1w")).toBeTruthy();
     expect(screen.getByText("1m")).toBeTruthy();
     expect(screen.queryByText("14d")).toBeNull();
+  });
+
+  it("visibly explains why the selected domain uses its default period", () => {
+    render(
+      <DaySelector
+        days={90}
+        description="Recommended default: 90 days balances recent training changes with enough history."
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Recommended default: 90 days balances recent training changes with enough history.",
+      ),
+    ).toBeTruthy();
   });
 });

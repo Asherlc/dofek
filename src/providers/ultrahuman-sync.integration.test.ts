@@ -209,6 +209,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     if (!sleepRecord) throw new Error("expected sleep session");
     expect(sleepRecord.externalId).toBe("ultrahuman-sleep-2026-03-14");
     expect(sleepRecord.durationMinutes).toBe(450); // 27000 / 60
+    expect(sleepRecord.stagingAvailable).toBe(false);
 
     // recordsSynced = 2 daily + 1 sleep = 3
     expect(result.recordsSynced).toBe(3);

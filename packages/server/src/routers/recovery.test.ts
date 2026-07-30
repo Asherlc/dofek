@@ -54,6 +54,31 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
 type SleepNightTestRow = {
   date: string;
   provider_id: string;
+  source_name?: string | null;
+  source_providers?: string[];
+  selected_session_id?: string | null;
+  overlapping_sessions?: {
+    session_id: string;
+    provider_id: string;
+    source_name: string | null;
+    source_providers: string[];
+    timezone: string | null;
+    start_utc_offset_minutes: number | null;
+    end_utc_offset_minutes: number | null;
+    local_time_source: SleepNightTestRow["local_time_source"];
+    started_at: string;
+    ended_at: string | null;
+    duration_minutes: number | null;
+  }[];
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source:
+    | "provider_timezone"
+    | "provider_offset"
+    | "device_timezone"
+    | "device_offset"
+    | "unknown";
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -62,6 +87,7 @@ type SleepNightTestRow = {
   light_minutes: number | null;
   awake_minutes: number | null;
   efficiency_pct: number | null;
+  staging_available: boolean;
 };
 
 function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTestRow {
@@ -69,6 +95,14 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
   return {
     date,
     provider_id: "apple_health",
+    source_name: null,
+    source_providers: [],
+    selected_session_id: null,
+    overlapping_sessions: [],
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "device_offset",
     started_at: `${date}T22:00:00Z`,
     ended_at: `${addDays(date, 1)}T06:00:00Z`,
     duration_minutes: 480,
@@ -77,6 +111,7 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
     light_minutes: 255,
     awake_minutes: 30,
     efficiency_pct: 93.75,
+    staging_available: true,
     ...overrides,
   };
 }
@@ -195,7 +230,7 @@ describe("recoveryRouter.sleepConsistency", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      timezone: "UTC",
+      timezone: "America/Los_Angeles",
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
@@ -207,6 +242,26 @@ describe("recoveryRouter.sleepConsistency", () => {
     expect(result[0]?.waketimeHour).toBe(6.78);
     expect(result[0]?.rollingBedtimeStddev).toBe(0);
     expect(result[0]?.rollingWaketimeStddev).toBe(0);
+  });
+
+  it("omits schedule rows when the record local time is unknown", async () => {
+    const rows = [
+      sleepNightRow({
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    await expect(caller.sleepConsistency({})).resolves.toEqual([]);
   });
 
   it("sets consistencyScore to null when fewer than 7 nights are available", async () => {
@@ -656,6 +711,12 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.date).toBe("2026-03-01");
     expect(night?.durationMinutes).toBe(480);
     expect(night?.sleepMinutes).toBeCloseTo(436.97, 1);
+    expect(night?.localTimeContext).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: 0,
+      source: "device_offset",
+    });
     // deepPct rounds to 1 decimal: 18.567 -> 18.6
     expect(night?.deepPct).toBe(18.6);
     // remPct rounds to 1 decimal: 22.345 -> 22.3
@@ -669,6 +730,65 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
     expect(result.averageSleepMinutes).toBeCloseTo(437, 1);
     expect(result.averageEfficiencyPercent).toBe(93.5);
+  });
+
+  it("maps the server-owned nightly selection and overlap evidence", async () => {
+    const selectedSessionId = "00000000-0000-4000-8000-000000001774";
+    const overlappingSessionId = "00000000-0000-4000-8000-000000001775";
+    const rows = [
+      sleepNightRow({
+        provider_id: "whoop",
+        source_name: "WHOOP 4.0",
+        source_providers: ["apple_health", "whoop"],
+        selected_session_id: selectedSessionId,
+        overlapping_sessions: [
+          {
+            session_id: overlappingSessionId,
+            provider_id: "oura",
+            source_name: "Oura Ring",
+            source_providers: ["oura"],
+            timezone: "America/Los_Angeles",
+            start_utc_offset_minutes: -420,
+            end_utc_offset_minutes: -420,
+            local_time_source: "provider_timezone",
+            started_at: "2026-03-01T23:30:00Z",
+            ended_at: "2026-03-02T05:00:00Z",
+            duration_minutes: 330,
+          },
+        ],
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      providerId: "whoop",
+      sourceName: "WHOOP 4.0",
+      sourceProviders: ["apple_health", "whoop"],
+      selectedSessionId,
+      overlappingSessions: [
+        {
+          sessionId: overlappingSessionId,
+          providerId: "oura",
+          sourceName: "Oura Ring",
+          sourceProviders: ["oura"],
+          localTimeContext: {
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_timezone",
+          },
+          startedAt: "2026-03-01T23:30:00.000Z",
+          endedAt: "2026-03-02T05:00:00.000Z",
+          durationMinutes: 330,
+        },
+      ],
+    });
   });
 
   it("computes rolling average duration from available sleep rows", async () => {
@@ -715,6 +835,48 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
     expect(result.averageSleepMinutes).toBe(405);
     expect(result.averageEfficiencyPercent).toBe(85);
+  });
+
+  it("excludes an incomplete provider row from stage and efficiency averages", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "apple_health",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageEfficiencyPercent).toBe(90);
+    expect(result.nightly[1]).toMatchObject({
+      stagingAvailable: false,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      efficiency: null,
+    });
   });
 
   it("computes positive sleep debt when sleep is below target", async () => {

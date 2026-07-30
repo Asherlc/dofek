@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatTimeOnly,
 } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -400,7 +401,10 @@ export function ActivityHeader({
         </span>
       </div>
       <p className="text-sm text-subtle">
-        {formatDateLong(activity.startedAt)} at {formatTimeOnly(activity.startedAt)}
+        {formatDateLong(activity.startedAt)} at{" "}
+        {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
+          ? "Local time unavailable"
+          : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">
