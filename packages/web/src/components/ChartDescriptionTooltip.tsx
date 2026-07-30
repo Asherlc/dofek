@@ -1,24 +1,51 @@
+import { useId, useState } from "react";
+import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
+
 interface ChartDescriptionTooltipProps {
   description: string;
   className?: string;
 }
 
 export function ChartDescriptionTooltip({ description, className }: ChartDescriptionTooltipProps) {
+  const descriptionId = useId();
+  const [open, setOpen] = useState(false);
+
   return (
-    <span className={`relative inline-flex group ${className ?? ""}`}>
-      <span
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border-strong text-[10px] font-semibold text-subtle cursor-help"
-        aria-describedby={undefined}
+    <span className={`inline-flex ${className ?? ""}`}>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-label="About this chart"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border-strong px-2 text-xs font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-solid"
+        onClick={() => setOpen(true)}
       >
-        i
-      </span>
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2 rounded-md bg-surface-solid border border-border-strong px-3 py-2 text-xs text-foreground opacity-0 transition-opacity group-hover:opacity-100 whitespace-normal max-w-xs z-50 shadow-lg"
+        About
+      </button>
+      <ModalDialog
+        ariaDescribedBy={descriptionId}
+        open={open}
+        onClose={() => setOpen(false)}
+        closeOnInteractOutside
+        contentClassName="w-[calc(100vw-2rem)] max-w-sm rounded-lg border border-border-strong bg-surface-solid p-5 shadow-xl"
       >
-        {description}
-        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-border-strong" />
-      </span>
+        <ModalDialogTitle className="text-base font-semibold text-foreground">
+          About this chart
+        </ModalDialogTitle>
+        <ModalDialogDescription
+          id={descriptionId}
+          className="mt-2 text-sm leading-relaxed text-muted"
+        >
+          {description}
+        </ModalDialogDescription>
+        <button
+          type="button"
+          aria-label="Close chart explanation"
+          className="mt-4 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border-strong px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-solid"
+          onClick={() => setOpen(false)}
+        >
+          Close
+        </button>
+      </ModalDialog>
     </span>
   );
 }
