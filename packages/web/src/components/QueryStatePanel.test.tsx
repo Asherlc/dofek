@@ -31,6 +31,23 @@ describe("QueryStatePanel", () => {
     expect(screen.getByText("Provider query failed")).toBeDefined();
   });
 
+  it("renders structured empty-state guidance", () => {
+    render(
+      <QueryStatePanel
+        variant="empty"
+        message={
+          <span>
+            <span>2 of 3 metrics are available.</span>
+            <span>Sync one more metric.</span>
+          </span>
+        }
+      />,
+    );
+
+    expect(screen.getByText("2 of 3 metrics are available.")).toBeDefined();
+    expect(screen.getByText("Sync one more metric.")).toBeDefined();
+  });
+
   it("renders an announced, visibly identified error with AA contrast", () => {
     render(<QueryStatePanel error={new Error("Provider query failed")} />);
 

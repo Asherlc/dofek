@@ -71,6 +71,7 @@ export interface HealthspanResult {
 }
 
 const HEALTHSPAN_REQUIRED_METRIC_COUNT = 3;
+const HEALTHSPAN_CACHE_KEY_VERSION = "healthspan-availability-v1";
 const HEALTHSPAN_SUPPORTED_METRIC_LABELS = [
   "Sleep Consistency",
   "Sleep Duration",
@@ -286,7 +287,10 @@ export const healthspanRouter = router({
    * Healthspan Score — composite longevity metric inspired by Whoop's Healthspan.
    * Updates weekly from rolling 4-week data windows.
    */
-  score: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  score: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: HEALTHSPAN_CACHE_KEY_VERSION,
+  })
     .input(z.object({ weeks: z.number().min(4).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;

@@ -50,13 +50,14 @@ function makeData(overrides: Partial<HealthspanResult> = {}): HealthspanResult {
 }
 
 describe("HealthspanScoreCard", () => {
-  it("renders loading skeleton when loading", () => {
-    const { container } = render(<HealthspanScoreCard data={undefined} loading={true} />);
-    expect(container.querySelector("[class*='animate-spin']")).not.toBeNull();
+  it("renders the canonical loading state when loading", () => {
+    render(<HealthspanScoreCard data={undefined} loading={true} />);
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
   });
 
-  it("renders empty state when data is undefined", () => {
+  it("renders the canonical empty state when data is undefined", () => {
     render(<HealthspanScoreCard data={undefined} />);
+    expect(screen.getByTestId("query-state-empty")).toBeDefined();
     expect(screen.getByText("Healthspan availability is unavailable.")).toBeDefined();
   });
 
@@ -78,6 +79,7 @@ describe("HealthspanScoreCard", () => {
       />,
     );
 
+    expect(screen.getByTestId("query-state-empty")).toBeDefined();
     expect(screen.getByText("2 of 3 required Healthspan metrics are available.")).toBeDefined();
     expect(
       screen.getByText(
