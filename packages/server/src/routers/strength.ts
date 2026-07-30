@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
+import {
+  type ProgressiveOverloadTrend,
+  StrengthRepository,
+} from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +44,7 @@ export interface ProgressiveOverloadRow {
   exerciseName: string;
   weeklyVolumes: number[];
   slopeKgPerWeek: number;
-  isProgressing: boolean;
+  trend: ProgressiveOverloadTrend;
 }
 
 export interface WorkoutSummaryRow {

@@ -803,13 +803,13 @@ describe("Router coverage", () => {
       }
     });
 
-    it("progressiveOverload returns slope and progression status", async () => {
+    it("progressiveOverload returns slope and descriptive direction", async () => {
       const result = await query<
         {
           exerciseName: string;
           weeklyVolumes: number[];
           slopeKgPerWeek: number;
-          isProgressing: boolean;
+          trend: "increasing" | "decreasing" | "stable";
         }[]
       >("strength.progressiveOverload", { days: 90 });
 
@@ -820,10 +820,7 @@ describe("Router coverage", () => {
         expect(exercise.exerciseName).toBeTruthy();
         expect(exercise.weeklyVolumes.length).toBeGreaterThanOrEqual(2);
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
-        expect(typeof exercise.isProgressing).toBe("boolean");
-        // With progressive overload built in (weight increases by 2.5 each week),
-        // volume should be increasing
-        expect(exercise.isProgressing).toBe(true);
+        expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
       }
     });

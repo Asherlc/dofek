@@ -7,19 +7,19 @@ const exercises: ProgressiveOverloadRow[] = [
     exerciseName: "Back Squat",
     weeklyVolumes: [4800, 5100, 5450, 5800, 6150],
     slopeKgPerWeek: 327.5,
-    isProgressing: true,
+    trend: "increasing",
   },
   {
     exerciseName: "Bench Press",
     weeklyVolumes: [3200, 3310, 3380, 3420, 3490],
     slopeKgPerWeek: 68.5,
-    isProgressing: true,
+    trend: "increasing",
   },
   {
     exerciseName: "Deadlift",
     weeklyVolumes: [4200, 4100, 4050, 3980, 3900],
     slopeKgPerWeek: -73,
-    isProgressing: false,
+    trend: "decreasing",
   },
 ];
 

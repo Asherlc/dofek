@@ -20466,3 +20466,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Tear down only the issue-2153 Compose project
   after merge. Treat any hosted SQLFluff failure as a new code signal rather
   than attributing it to this local restart.
+
+## 2026-07-29 — Local Docker daemon stalled a Compose port lookup
+
+- **Status:** Unresolved in the disposable issue-2113 workspace; exact-head CI
+  is the authoritative full-suite gate.
+- **Symptoms:** The Docker-free `pnpm test` tier stopped making progress in the
+  unrelated `compose-env` wrapper unit test after the changed server and web
+  tests had passed.
+- **User impact:** No production impact. Local full-suite validation could not
+  reach its final summary.
+- **Evidence:** PID `67987` ran
+  `docker compose --project-name compose-env-test-ijbKcE ... port db 5432` for
+  3 minutes 5 seconds in a sleeping state, with its Docker Compose plugin child
+  sleeping for the same duration. Docker documents `compose port` as the
+  command that prints a service's public port
+  ([CLI reference](https://docs.docker.com/reference/cli/docker/compose/port/)).
+  No test assertion failed before the stall. The Vitest session was stopped
+  with `Ctrl-C` and exited 130.
+- **Root cause:** Unknown local Docker daemon or Docker Compose plugin
+  unresponsiveness during the isolated test project's port lookup. There is no
+  evidence that the changed strength-volume response or web rendering caused
+  the stall.
+- **Fix / mitigation:** Do not retry, add a timeout, bypass the test, or change
+  product/workflow behavior. Preserve the evidence and rely on the normal
+  exact-head hosted CI run for the full suite.
+- **Validation:** The focused server and colocated web suites pass 59 tests;
+  server, web, and root TypeScript checks pass; the production Storybook build
+  passes; and targeted Biome passes. Exact-head CI remains required before
+  merge.
+- **Remaining risk / follow-up:** The local daemon cause remains unresolved.
+  Treat any exact-head CI failure as a new code signal and investigate its
+  first fatal line independently.

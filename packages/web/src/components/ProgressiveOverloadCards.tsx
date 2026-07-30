@@ -1,5 +1,4 @@
 import { formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -9,9 +8,7 @@ interface ProgressiveOverloadCardsProps {
   loading?: boolean;
 }
 
-function SparklineChart({ values, isProgressing }: { values: number[]; isProgressing: boolean }) {
-  const color = isProgressing ? chartColors.emerald : statusColors.danger;
-
+function SparklineChart({ values }: { values: number[] }) {
   const option = {
     grid: dofekGrid("single", { top: 2, right: 2, bottom: 2, left: 2 }),
     xAxis: dofekAxis.category({
@@ -21,9 +18,9 @@ function SparklineChart({ values, isProgressing }: { values: number[]; isProgres
     yAxis: { type: "value" as const, show: false },
     series: [
       dofekSeries.line("Volume", values, {
-        color,
+        color: chartColors.blue,
         smooth: 0.3,
-        areaStyle: { opacity: 0.1, color },
+        areaStyle: { opacity: 0.1, color: chartColors.blue },
       }),
     ],
   };
@@ -39,7 +36,7 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
         loading={loading}
         empty={exercises.length === 0}
         height={200}
-        emptyMessage="No progressive overload data"
+        emptyMessage="No exercise volume trends"
       />
     );
   }
@@ -48,26 +45,21 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {exercises.map((exercise) => (
         <div key={exercise.exerciseName} className="card p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-foreground truncate">
-              {exercise.exerciseName}
-            </span>
-            <span className={`text-lg ${exercise.isProgressing ? "text-accent" : "text-red-400"}`}>
-              {exercise.isProgressing ? "\u2191" : "\u2193"}
-            </span>
+          <div className="text-sm font-medium text-foreground truncate mb-2">
+            {exercise.exerciseName}
           </div>
           <div className="text-xs text-muted mb-2">
-            {exercise.isProgressing ? "+" : ""}
-            {formatNumber(exercise.slopeKgPerWeek)} kg/week
+            {trendLabel(exercise.trend)} {formatNumber(Math.abs(exercise.slopeKgPerWeek))} kg/week
           </div>
-          {exercise.weeklyVolumes.length >= 2 && (
-            <SparklineChart
-              values={exercise.weeklyVolumes}
-              isProgressing={exercise.isProgressing}
-            />
-          )}
+          {exercise.weeklyVolumes.length >= 2 && <SparklineChart values={exercise.weeklyVolumes} />}
         </div>
       ))}
     </div>
   );
+}
+
+function trendLabel(trend: ProgressiveOverloadRow["trend"]): string {
+  if (trend === "increasing") return "Increasing";
+  if (trend === "decreasing") return "Decreasing";
+  return "Stable";
 }
