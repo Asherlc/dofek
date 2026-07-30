@@ -13,6 +13,7 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
 import {
   buildStrainTargetResult,
@@ -77,6 +78,7 @@ export async function loadMobileTrainingTab(
     ctx.accessWindow,
   );
   const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+  const strengthRepo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
 
   const windowStart = dateWindowStartString(endDate, days);
   const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
@@ -149,6 +151,7 @@ export async function loadMobileTrainingTab(
     gradeProgressionModels,
     volumeByGradeModels,
     sessionSummaryModels,
+    progressiveOverloadModels,
   ] = await Promise.all([
     trainingRepo.getActivityStatsAndWeeklyVolume(days),
     cyclingRepo.getActivities(ChartRange.fromDays(days), {
@@ -160,6 +163,7 @@ export async function loadMobileTrainingTab(
     climbingRepo.getGradeProgression(days),
     climbingRepo.getVolumeByGrade(days),
     climbingRepo.getSessionSummaries(days),
+    strengthRepo.getProgressiveOverload(days),
   ]);
 
   return {
@@ -167,6 +171,7 @@ export async function loadMobileTrainingTab(
     strainTarget,
     activities,
     weeklyVolume,
+    progressiveOverload: progressiveOverloadModels.map((model) => model.toDetail()),
     verticalAscent: cyclingAnalytics.verticalAscent,
     climbing: {
       gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),

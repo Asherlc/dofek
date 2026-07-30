@@ -1,6 +1,8 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import { UnitConverter } from "@dofek/format/units";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
-import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards.tsx";
+import { View } from "react-native";
+import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards";
 
 const exercise: ProgressiveOverloadRow = {
   exerciseName: "Back Squat",
@@ -36,13 +38,12 @@ const exercise: ProgressiveOverloadRow = {
 const meta = {
   title: "Strength/ProgressiveOverloadCards",
   component: ProgressiveOverloadCards,
-  tags: ["autodocs"],
-  args: { exercises: [exercise] },
+  args: { exercises: [exercise], units: new UnitConverter("metric") },
   decorators: [
     (Story) => (
-      <div className="w-[900px] bg-page p-6">
+      <View style={{ padding: 16, width: 390 }}>
         <Story />
-      </div>
+      </View>
     ),
   ],
 } satisfies Meta<typeof ProgressiveOverloadCards>;

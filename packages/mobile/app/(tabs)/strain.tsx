@@ -30,6 +30,7 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
+import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { safeParseRows } from "../../lib/safe-parse";
@@ -448,6 +449,21 @@ export default function StrainScreen() {
               />
               <VerticalAscentChart data={verticalAscent} units={units} />
             </View>
+          )}
+
+          {shouldShowTrainingQueryError ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Exercise Volume Trends</Text>
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load exercise volume trends."}
+              </Text>
+            </View>
+          ) : (
+            <ProgressiveOverloadCards
+              exercises={trainingData?.progressiveOverload ?? []}
+              loading={trainingQuery.isLoading && trainingData == null}
+              units={units}
+            />
           )}
 
           <View style={styles.card}>

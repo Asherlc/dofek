@@ -851,13 +851,21 @@ describe("Router coverage", () => {
       }
     });
 
-    it("progressiveOverload returns slope and descriptive direction", async () => {
+    it("progressiveOverload returns dated evidence and descriptive direction", async () => {
       const result = await query<
         {
           exerciseName: string;
-          weeklyVolumes: number[];
+          observations: { week: string; totalVolumeKg: number }[];
+          period: {
+            startWeek: string;
+            endWeek: string;
+            observationCount: number;
+            elapsedWeekCount: number;
+          };
           slopeKgPerWeek: number;
           trend: "increasing" | "decreasing" | "stable";
+          interpretation: string;
+          deloadContext: string;
         }[]
       >("strength.progressiveOverload", { days: 90 });
 
@@ -866,10 +874,15 @@ describe("Router coverage", () => {
 
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
-        expect(exercise.weeklyVolumes.length).toBeGreaterThanOrEqual(2);
+        expect(exercise.observations.length).toBeGreaterThanOrEqual(2);
+        expect(exercise.period.observationCount).toBe(exercise.observations.length);
+        expect(exercise.period.startWeek).toBe(exercise.observations[0]?.week);
+        expect(exercise.period.endWeek).toBe(exercise.observations.at(-1)?.week);
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
         expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
+        expect(exercise.interpretation).toContain("not inherently good or bad");
+        expect(exercise.deloadContext).toContain("planned deload");
       }
     });
 
