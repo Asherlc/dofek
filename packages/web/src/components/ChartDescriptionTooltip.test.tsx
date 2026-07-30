@@ -15,7 +15,15 @@ describe("ChartDescriptionTooltip", () => {
     trigger.focus();
     fireEvent.click(trigger);
 
-    expect(screen.getByRole("dialog", { name: "About this chart" })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", {
+      name: "About this chart",
+      description: "This chart shows your weekly training load.",
+    });
+    const descriptionId = dialog.getAttribute("aria-describedby");
+    expect(descriptionId).not.toBeNull();
+    expect(document.getElementById(descriptionId ?? "")).toHaveTextContent(
+      "This chart shows your weekly training load.",
+    );
     expect(screen.getByText("This chart shows your weekly training load.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Close chart explanation" }));

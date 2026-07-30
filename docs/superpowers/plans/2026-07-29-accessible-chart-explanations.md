@@ -4,7 +4,7 @@
 
 **Behavior:** Every existing `ChartDescriptionTooltip` consumer inherits a visible `About` control with a 44-by-44 target. Web opens the explanation in the existing accessible dialog and restores focus when it closes. Mobile opens the explanation in a native alert with an explicit Close action.
 
-**Scope:** Modify only the canonical web and mobile `ChartDescriptionTooltip` components, their colocated tests, focused stories, and the shared mobile Pressable test mock needed to execute public press callbacks. Do not add a dependency, change individual chart consumers, or introduce a second disclosure primitive.
+**Scope:** Modify only the canonical web and mobile `ChartDescriptionTooltip` components, their colocated tests, focused stories, the shared web dialog's optional accessible-description wiring, and the shared mobile Pressable test mock needed to execute public press callbacks. Do not add a dependency, change individual chart consumers, or introduce a second disclosure primitive.
 
 **References:**
 
@@ -29,6 +29,7 @@
 - Modify: `packages/web/src/components/ChartDescriptionTooltip.test.tsx`
 - Modify: `packages/web/src/components/ChartDescriptionTooltip.tsx`
 - Modify: `packages/web/src/components/ChartDescriptionTooltip.stories.tsx`
+- Modify: `packages/web/src/components/ModalDialog.tsx`
 - Modify: `packages/mobile/components/ChartDescriptionTooltip.test.tsx`
 - Modify: `packages/mobile/components/ChartDescriptionTooltip.tsx`
 - Modify: `packages/mobile/components/MetricCard.test.tsx`

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
+import { useId, useState } from "react";
+import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
 
 interface ChartDescriptionTooltipProps {
   description: string;
@@ -7,6 +7,7 @@ interface ChartDescriptionTooltipProps {
 }
 
 export function ChartDescriptionTooltip({ description, className }: ChartDescriptionTooltipProps) {
+  const descriptionId = useId();
   const [open, setOpen] = useState(false);
 
   return (
@@ -21,6 +22,7 @@ export function ChartDescriptionTooltip({ description, className }: ChartDescrip
         About
       </button>
       <ModalDialog
+        ariaDescribedBy={descriptionId}
         open={open}
         onClose={() => setOpen(false)}
         closeOnInteractOutside
@@ -29,7 +31,12 @@ export function ChartDescriptionTooltip({ description, className }: ChartDescrip
         <ModalDialogTitle className="text-base font-semibold text-foreground">
           About this chart
         </ModalDialogTitle>
-        <p className="mt-2 text-sm leading-relaxed text-muted">{description}</p>
+        <ModalDialogDescription
+          id={descriptionId}
+          className="mt-2 text-sm leading-relaxed text-muted"
+        >
+          {description}
+        </ModalDialogDescription>
         <button
           type="button"
           aria-label="Close chart explanation"
