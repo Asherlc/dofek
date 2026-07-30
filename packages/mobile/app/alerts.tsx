@@ -1,11 +1,13 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import {
+  PROCESSING_ALERTS_EMPTY_PREVIEW,
   type ProcessingAlert,
   processingAlertsFailurePresentation,
 } from "@dofek/providers/processing-alerts";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { PaginationControls } from "../components/PaginationControls";
 import { QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -77,11 +79,7 @@ export default function AlertsScreen() {
       ) : failurePresentation && (!alertsQuery.data || alerts.length === 0) ? (
         failurePanel
       ) : alertsQuery.data?.alerts.length === 0 ? (
-        <QueryStatePanel
-          variant="empty"
-          title="Nothing needs your attention"
-          message="New sync, connection, and import problems will appear here."
-        />
+        <EmptyStatePreview content={PROCESSING_ALERTS_EMPTY_PREVIEW} />
       ) : (
         <View style={styles.list}>
           {failurePanel}

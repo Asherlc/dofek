@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -11,7 +12,6 @@ import type { ActivitySensorStore } from "./activity-repository.ts";
 import { MonthlyReportRepository } from "./monthly-report-repository.ts";
 
 const userId = "77777777-7777-4777-8777-777777777777";
-const emptyUserId = "66666666-6666-4666-8666-666666666666";
 const activityId = "88888888-8888-4888-8888-888888888888";
 
 describe("MonthlyReportRepository ClickHouse read models", () => {
@@ -177,12 +177,50 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
     expect(report.history).toHaveLength(11);
   });
 
-  it("returns the no-data result for an empty user", async () => {
-    const report = await new MonthlyReportRepository(emptyUserId, sensorStore).getReport(
-      12,
-      endDate,
+  it("transitions from the preview to a report after one observed day", async () => {
+    const transitionUserId = randomUUID();
+    const repository = new MonthlyReportRepository(transitionUserId, sensorStore);
+    const emptyReport = await repository.getReport(12);
+
+    expect(emptyReport.current).toBeNull();
+    expect(emptyReport.history).toEqual([]);
+    expect(emptyReport.emptyState).toEqual(
+      expect.objectContaining({
+        reportKind: "monthly",
+        minimumObservedDays: 1,
+      }),
+    );
+    expect(emptyReport.decisionSupport).toBeNull();
+
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.daily_recovery (
+        user_id,
+        date,
+        hrv,
+        resting_hr,
+        is_deleted,
+        refresh_version,
+        refreshed_at
+      ) VALUES (
+        toUUID('${transitionUserId}'),
+        toDate('${monthStart}') + INTERVAL 5 DAY,
+        55,
+        51,
+        0,
+        1,
+        now64(9)
+      )`,
     );
 
-    expect(report).toEqual({ current: null, history: [], decisionSupport: null });
+    const report = await repository.getReport(12);
+
+    expect(report.current).toEqual(
+      expect.objectContaining({
+        monthStart,
+        avgRestingHr: 51,
+        avgHrv: 55,
+      }),
+    );
   });
 });

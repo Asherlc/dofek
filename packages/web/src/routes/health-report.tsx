@@ -57,7 +57,7 @@ const reportDecisionSynthesisSchema = z.object({
 });
 
 const weeklyReportSchema = z.object({
-  current: weekSummarySchema.nullable(),
+  current: weekSummarySchema,
   history: z.array(weekSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
 });
@@ -75,7 +75,7 @@ const monthSummarySchema = z.object({
 });
 
 const monthlyReportSchema = z.object({
-  current: monthSummarySchema.nullable(),
+  current: monthSummarySchema,
   history: z.array(monthSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
 });

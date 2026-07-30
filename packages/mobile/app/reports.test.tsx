@@ -6,6 +6,8 @@ const monthlyQueryControl = vi.hoisted(() => ({
   showEmpty: false,
   showError: false,
   preserveData: false,
+  weeklyEmpty: false,
+  monthlyEmpty: false,
   showDecisionSupport: true,
 }));
 const mockWeeklyReportQuery = vi.hoisted(() => vi.fn());
@@ -32,29 +34,46 @@ vi.mock("../lib/trpc", () => ({
         useQuery: (...args: unknown[]) => {
           mockWeeklyReportQuery(...args);
           return {
-            data: {
-              current: {
-                weekStart: "2026-07-19",
-                trainingHours: 5,
-                activityCount: 3,
-                avgDailyLoad: 4,
-                avgSleepMinutes: 450,
-                sleepPerformancePct: 100,
-                avgReadiness: 0,
-                avgRestingHr: 55,
-                avgHrv: 48,
-              },
-              history: [],
-              decisionSupport: monthlyQueryControl.showDecisionSupport
-                ? {
-                    whatChanged: ["Weekly training increased."],
-                    likelyAssociations: ["Training and sleep moved together."],
-                    whatWorked: ["Sleep stayed consistent."],
-                    whatToTryNext: ["Repeat the routine next week."],
-                    confidenceAndMissingData: ["Confidence is limited."],
-                  }
-                : null,
-            },
+            data: monthlyQueryControl.weeklyEmpty
+              ? {
+                  current: null,
+                  history: [],
+                  decisionSupport: null,
+                  emptyState: {
+                    reportKind: "weekly",
+                    title: "Server weekly preview title",
+                    message: "Server weekly preview message.",
+                    minimumObservedDays: 1,
+                    acceptedDataTypes: ["activity", "sleep", "recovery"],
+                    requirement: "Server weekly coverage requirement.",
+                    previewTitle: "Server weekly structure",
+                    previewItems: ["Training time and activity count", "Average nightly sleep"],
+                    note: "Server weekly no-estimate note.",
+                  },
+                }
+              : {
+                  current: {
+                    weekStart: "2026-07-19",
+                    trainingHours: 5,
+                    activityCount: 3,
+                    avgDailyLoad: 4,
+                    avgSleepMinutes: 450,
+                    sleepPerformancePct: 100,
+                    avgReadiness: 0,
+                    avgRestingHr: 55,
+                    avgHrv: 48,
+                  },
+                  history: [],
+                  decisionSupport: monthlyQueryControl.showDecisionSupport
+                    ? {
+                        whatChanged: ["Weekly training increased."],
+                        likelyAssociations: ["Training and sleep moved together."],
+                        whatWorked: ["Sleep stayed consistent."],
+                        whatToTryNext: ["Repeat the routine next week."],
+                        confidenceAndMissingData: ["Confidence is limited."],
+                      }
+                    : null,
+                },
             isLoading: false,
             error: null,
           };
@@ -69,36 +88,56 @@ vi.mock("../lib/trpc", () => ({
             data:
               monthlyQueryControl.showError && !monthlyQueryControl.preserveData
                 ? undefined
-                : {
-                    current: monthlyQueryControl.showEmpty
-                      ? null
-                      : {
-                          monthStart: "2026-07-01",
-                          trainingHours: 20,
-                          activityCount: 10,
-                          avgDailyStrain: 8,
-                          avgSleepMinutes: 450,
-                          avgRestingHr: 55,
-                          avgHrv: 48,
-                          trainingHoursTrend: null,
-                          avgSleepTrend: null,
-                        },
-                    history: [],
-                    recovery: {
-                      range: { startDate: "2026-02-01", endDate: "2026-07-24" },
-                      emptyMessage:
-                        "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
+                : monthlyQueryControl.monthlyEmpty
+                  ? {
+                      current: null,
+                      history: [],
+                      emptyState: {
+                        reportKind: "monthly",
+                        title: "Server monthly preview title",
+                        message: "Server monthly preview message.",
+                        minimumObservedDays: 1,
+                        acceptedDataTypes: ["activity", "sleep", "recovery"],
+                        requirement: "Server monthly coverage requirement.",
+                        previewTitle: "Server monthly structure",
+                        previewItems: [
+                          "Average daily strain",
+                          "Month-over-month training and sleep changes",
+                        ],
+                        note: "Server monthly no-estimate note.",
+                      },
+                      decisionSupport: null,
+                    }
+                  : {
+                      current: monthlyQueryControl.showEmpty
+                        ? null
+                        : {
+                            monthStart: "2026-07-01",
+                            trainingHours: 20,
+                            activityCount: 10,
+                            avgDailyStrain: 8,
+                            avgSleepMinutes: 450,
+                            avgRestingHr: 55,
+                            avgHrv: 48,
+                            trainingHoursTrend: null,
+                            avgSleepTrend: null,
+                          },
+                      history: [],
+                      recovery: {
+                        range: { startDate: "2026-02-01", endDate: "2026-07-24" },
+                        emptyMessage:
+                          "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
+                      },
+                      decisionSupport: monthlyQueryControl.showDecisionSupport
+                        ? {
+                            whatChanged: ["Monthly training increased."],
+                            likelyAssociations: ["Training and sleep moved together."],
+                            whatWorked: ["Sleep stayed consistent."],
+                            whatToTryNext: ["Repeat the routine next month."],
+                            confidenceAndMissingData: ["Confidence is limited."],
+                          }
+                        : null,
                     },
-                    decisionSupport: monthlyQueryControl.showDecisionSupport
-                      ? {
-                          whatChanged: ["Monthly training increased."],
-                          likelyAssociations: ["Training and sleep moved together."],
-                          whatWorked: ["Sleep stayed consistent."],
-                          whatToTryNext: ["Repeat the routine next month."],
-                          confidenceAndMissingData: ["Confidence is limited."],
-                        }
-                      : null,
-                  },
             isLoading: false,
             isFetching: false,
             error: monthlyQueryControl.showError
@@ -127,6 +166,8 @@ describe("ReportsScreen", () => {
     monthlyQueryControl.showEmpty = false;
     monthlyQueryControl.showError = false;
     monthlyQueryControl.preserveData = false;
+    monthlyQueryControl.weeklyEmpty = false;
+    monthlyQueryControl.monthlyEmpty = false;
     monthlyQueryControl.showDecisionSupport = true;
     mockWeeklyReportQuery.mockClear();
     mockMonthlyReportQuery.mockClear();
@@ -175,6 +216,27 @@ describe("ReportsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review data alerts" }));
     expect(mockMonthlyRefetch).toHaveBeenCalledOnce();
     expect(mockPush).toHaveBeenCalledWith("/alerts");
+  });
+
+  it("renders the server-owned empty report previews without deriving requirements", async () => {
+    monthlyQueryControl.weeklyEmpty = true;
+    monthlyQueryControl.monthlyEmpty = true;
+    const { default: ReportsScreen } = await import("./reports");
+
+    render(<ReportsScreen />);
+
+    expect(screen.getByText("Server weekly preview title")).toBeTruthy();
+    expect(screen.getByText("Server weekly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server weekly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server weekly structure")).toBeTruthy();
+    expect(screen.getByText("Training time and activity count")).toBeTruthy();
+    expect(screen.getByText("Server weekly no-estimate note.")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview title")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server monthly structure")).toBeTruthy();
+    expect(screen.getByText("Average daily strain")).toBeTruthy();
+    expect(screen.getByText("Server monthly no-estimate note.")).toBeTruthy();
   });
 
   it("renders report metrics without a decision summary when synthesis is unavailable", async () => {

@@ -1,11 +1,12 @@
 import { formatDateShort, formatDurationMinutes, formatHRV } from "@dofek/format/format";
 import { sleepPerformanceColor } from "@dofek/scoring/scoring";
-import type { WeeklyReportData } from "dofek-server/types";
+import type { WeeklyReportResult } from "dofek-server/types";
+import { EmptyStatePreview } from "./EmptyStatePreview.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 import { ReportDecisionSynthesis } from "./ReportDecisionSynthesis.tsx";
 
 interface WeeklyReportCardProps {
-  data: WeeklyReportData | undefined;
+  data: WeeklyReportResult | undefined;
   loading?: boolean;
 }
 
@@ -14,12 +15,16 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
     return <ChartLoadingSkeleton height={320} />;
   }
 
-  if (!data?.current) {
+  if (!data) {
     return (
       <div className="card p-6 flex items-center justify-center h-[320px]">
         <span className="text-dim text-sm">No weekly data yet</span>
       </div>
     );
+  }
+
+  if (!data.current) {
+    return <EmptyStatePreview content={data.emptyState} />;
   }
 
   const { current, history } = data;

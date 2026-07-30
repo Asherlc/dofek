@@ -65,3 +65,31 @@ export const Loading: Story = {
     loading: true,
   },
 };
+
+export const Empty: Story = {
+  tags: ["review-scenario", "review-scenario-empty-data"],
+  args: {
+    data: {
+      current: null,
+      history: [],
+      emptyState: {
+        reportKind: "weekly",
+        title: "Your weekly report will appear here",
+        message: "No activity, sleep, or recovery data is available for this report yet.",
+        minimumObservedDays: 1,
+        acceptedDataTypes: ["activity", "sleep", "recovery"],
+        requirement:
+          "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+        previewTitle: "When ready, your weekly report will include",
+        previewItems: [
+          "Training time and activity count",
+          "Average nightly sleep",
+          "Average resting heart rate",
+          "Average heart rate variability",
+          "Recent week comparisons",
+        ],
+        note: "This preview shows report sections only. No personal values or conclusions are estimated.",
+      },
+    },
+  },
+};

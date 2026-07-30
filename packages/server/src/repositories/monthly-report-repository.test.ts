@@ -123,7 +123,15 @@ describe("MonthlyReportRepository", () => {
   it("returns null current and empty history for empty rows", async () => {
     const { repo } = makeRepository([]);
     const result = await repo.getReport(6, "2026-07-24");
-    expect(result).toEqual({ current: null, history: [], decisionSupport: null });
+    expect(result.current).toBeNull();
+    expect(result.history).toEqual([]);
+    expect(result.emptyState).toEqual(
+      expect.objectContaining({
+        reportKind: "monthly",
+        minimumObservedDays: 1,
+      }),
+    );
+    expect(result.decisionSupport).toBeNull();
   });
 
   it("binds the requested user and month window", async () => {
