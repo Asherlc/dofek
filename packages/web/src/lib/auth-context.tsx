@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { AuthUser } from "./auth.ts";
 import { logout as doLogout, fetchCurrentUser } from "./auth.ts";
+import { identifyPostHogUser, resetPostHogUser } from "./posthog.ts";
 import { captureException } from "./telemetry.ts";
 
 interface AuthContextValue {
@@ -30,6 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = await fetchCurrentUser();
       setBootstrapError(null);
       setUser(currentUser);
+      if (currentUser) {
+        identifyPostHogUser(currentUser);
+      }
     } catch (error: unknown) {
       captureException(error, { source: "auth-bootstrap" });
       setBootstrapError(error instanceof Error ? error.message : String(error));
@@ -47,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBootstrapError(null);
     try {
       await doLogout();
+      resetPostHogUser();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
       throw error;
