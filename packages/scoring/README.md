@@ -54,6 +54,9 @@ console.log({
 - `zScoreToRecoveryScore` uses a Dofek-defined asymmetric sigmoid where a
   z-score of zero maps to 62.
 - Strain targets use Dofek-defined readiness bands.
+- Today Plan keeps Push and Recovery recommendations actionable while presenting
+  the Maintain band as the neutral “No change needs attention” state
+  ([rule builder](./src/today-plan.ts), [executable tests](./src/today-plan.test.ts)).
 - Sleep performance defaults to 70% sleep sufficiency and 30% efficiency. When
   consistency or low-stress inputs are supplied, it averages all available
   components equally.
