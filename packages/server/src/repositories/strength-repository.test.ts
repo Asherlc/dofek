@@ -33,22 +33,62 @@ describe("VolumeWeek", () => {
 });
 
 describe("EstimatedOneRepMax", () => {
-  it("groups history under exercise name", () => {
+  it("describes an increasing first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax("Bench Press", [
       { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
-      { date: "2024-01-15", estimatedMax: 105, actualWeight: 85, actualReps: 7 },
+      { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
     ]);
     const detail = entry.toDetail();
-    expect(detail.exerciseName).toBe("Bench Press");
-    expect(detail.history).toHaveLength(2);
-    expect(detail.history[0]?.estimatedMax).toBe(100);
+    expect(detail).toEqual({
+      exerciseName: "Bench Press",
+      history: [
+        { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
+        { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
+      ],
+      trend: {
+        direction: "increasing",
+        summary: "Estimated max increased from first to latest estimate.",
+        changeMagnitudeKg: 5.2,
+        firstDate: "2024-01-01",
+        latestDate: "2024-01-15",
+      },
+    });
   });
 
-  it("handles single entry", () => {
+  it("describes a decreasing first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax("Squat", [
       { date: "2024-01-01", estimatedMax: 150, actualWeight: 120, actualReps: 5 },
+      { date: "2024-02-01", estimatedMax: 142.4, actualWeight: 115, actualReps: 5 },
     ]);
-    expect(entry.toDetail().history).toHaveLength(1);
+
+    expect(entry.toDetail().trend).toEqual({
+      direction: "decreasing",
+      summary: "Estimated max decreased from first to latest estimate.",
+      changeMagnitudeKg: 7.6,
+      firstDate: "2024-01-01",
+      latestDate: "2024-02-01",
+    });
+  });
+
+  it("describes an unchanged first-to-latest estimated max", () => {
+    const entry = new EstimatedOneRepMax("Row", [
+      { date: "2024-01-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
+      { date: "2024-02-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
+    ]);
+
+    expect(entry.toDetail().trend).toEqual({
+      direction: "stable",
+      summary: "Estimated max did not change from first to latest estimate.",
+      changeMagnitudeKg: 0,
+      firstDate: "2024-01-01",
+      latestDate: "2024-02-01",
+    });
+  });
+
+  it("rejects an empty history because trend evidence needs date bounds", () => {
+    expect(() => new EstimatedOneRepMax("Row", []).toDetail()).toThrow(
+      "Estimated max history must contain at least one observation.",
+    );
   });
 });
 

@@ -111,6 +111,15 @@ directly and do not infer a directional trend, causal effect, or confidence inte
 and gap construction live in
 [`journal-trend-evidence.ts`](./src/services/journal-trend-evidence.ts).
 
+### Estimated strength evidence contract
+
+`strength.estimatedOneRepMax` returns the raw estimated-max observations together with a
+server-authored first-to-latest change direction, summary, non-negative kilogram magnitude, and
+exact date bounds for each exercise. Web clients may convert the kilogram values into the selected
+display unit and format dates, but they render the supplied direction and summary without inferring
+a trend from the observations. The responsive chart selects one exercise at a time so long exercise
+lists stay readable without hiding the time axis.
+
 See `../../docs/nutrition-ai-input.md` for full client/server flow details.
 
 ## Development

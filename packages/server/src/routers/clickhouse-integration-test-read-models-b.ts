@@ -260,8 +260,9 @@ GROUP BY
 }
 
 export function buildTestDailySleepSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH ranked_sleep AS (
+  return `WITH live_sleep AS (
   SELECT
+    id,
     user_id,
     toDate(started_at - INTERVAL 6 HOUR) AS date,
     provider_id,
@@ -279,13 +280,97 @@ export function buildTestDailySleepSelectSql(databases: IsolatedClickHouseDataba
     light_minutes,
     awake_minutes,
     efficiency_pct,
-    staging_available,
-    row_number() OVER (
-      PARTITION BY user_id, toDate(started_at - INTERVAL 6 HOUR)
-      ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
-    ) AS row_number
+    staging_available
   FROM ${databases.analytics}.v_sleep
   WHERE is_nap = false
+),
+ranked_sleep AS (
+  SELECT
+    *,
+    row_number() OVER (
+      PARTITION BY user_id, date
+      ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
+    ) AS row_number
+  FROM live_sleep
+),
+nightly_winner AS (
+  SELECT *
+  FROM ranked_sleep
+  WHERE row_number = 1
+),
+nightly_overlaps AS (
+  SELECT
+    nightly_winner.user_id AS user_id,
+    nightly_winner.date AS date,
+    arraySort(
+      groupArray(CAST(
+        (
+          candidate.id,
+          candidate.provider_id,
+          candidate.source_name,
+          candidate.source_providers,
+          candidate.timezone,
+          candidate.start_utc_offset_minutes,
+          candidate.end_utc_offset_minutes,
+          candidate.local_time_source,
+          candidate.started_at,
+          candidate.ended_at,
+          candidate.duration_minutes
+        ),
+        'Tuple(
+          session_id UUID,
+          provider_id String,
+          source_name Nullable(String),
+          source_providers Array(String),
+          timezone Nullable(String),
+          start_utc_offset_minutes Nullable(Int16),
+          end_utc_offset_minutes Nullable(Int16),
+          local_time_source String,
+          started_at DateTime64(6, ''UTC''),
+          ended_at Nullable(DateTime64(6, ''UTC'')),
+          duration_minutes Nullable(Int32)
+        )'
+      ))
+    ) AS overlapping_sessions
+  FROM nightly_winner
+  INNER JOIN live_sleep AS candidate
+    ON candidate.user_id = nightly_winner.user_id
+   AND candidate.date = nightly_winner.date
+   AND candidate.id != nightly_winner.id
+   AND greatest(candidate.started_at, nightly_winner.started_at)
+      < least(
+        coalesce(candidate.ended_at, candidate.started_at + INTERVAL 8 HOUR),
+        coalesce(nightly_winner.ended_at, nightly_winner.started_at + INTERVAL 8 HOUR)
+      )
+  GROUP BY nightly_winner.user_id, nightly_winner.date
+),
+selected_sleep AS (
+  SELECT
+    nightly_winner.*,
+    nightly_winner.id AS selected_session_id,
+    coalesce(
+      nightly_overlaps.overlapping_sessions,
+      CAST(
+        [],
+        'Array(Tuple(
+          session_id UUID,
+          provider_id String,
+          source_name Nullable(String),
+          source_providers Array(String),
+          timezone Nullable(String),
+          start_utc_offset_minutes Nullable(Int16),
+          end_utc_offset_minutes Nullable(Int16),
+          local_time_source String,
+          started_at DateTime64(6, ''UTC''),
+          ended_at Nullable(DateTime64(6, ''UTC'')),
+          duration_minutes Nullable(Int32)
+        ))'
+      )
+    ) AS overlapping_sessions
+  FROM nightly_winner
+  LEFT JOIN nightly_overlaps
+    ON nightly_overlaps.user_id = nightly_winner.user_id
+   AND nightly_overlaps.date = nightly_winner.date
 ),
 refresh_clock AS (
   SELECT
@@ -293,30 +378,31 @@ refresh_clock AS (
     now64(9) AS refreshed_at
 )
 SELECT
-  CAST(ranked_sleep.user_id, 'UUID') AS user_id,
-  CAST(ranked_sleep.date, 'Date') AS date,
-  ranked_sleep.provider_id AS provider_id,
-  ranked_sleep.source_name AS source_name,
-  ranked_sleep.source_providers AS source_providers,
-  ranked_sleep.timezone AS timezone,
-  ranked_sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
-  ranked_sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
-  ranked_sleep.local_time_source AS local_time_source,
-  ranked_sleep.started_at AS started_at,
-  ranked_sleep.ended_at AS ended_at,
-  ranked_sleep.duration_minutes AS duration_minutes,
-  ranked_sleep.deep_minutes AS deep_minutes,
-  ranked_sleep.rem_minutes AS rem_minutes,
-  ranked_sleep.light_minutes AS light_minutes,
-  ranked_sleep.awake_minutes AS awake_minutes,
-  ranked_sleep.efficiency_pct AS efficiency_pct,
-  ranked_sleep.staging_available AS staging_available,
+  CAST(selected_sleep.user_id, 'UUID') AS user_id,
+  CAST(selected_sleep.date, 'Date') AS date,
+  selected_sleep.provider_id AS provider_id,
+  selected_sleep.source_name AS source_name,
+  selected_sleep.source_providers AS source_providers,
+  selected_sleep.selected_session_id AS selected_session_id,
+  selected_sleep.overlapping_sessions AS overlapping_sessions,
+  selected_sleep.timezone AS timezone,
+  selected_sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+  selected_sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+  selected_sleep.local_time_source AS local_time_source,
+  selected_sleep.started_at AS started_at,
+  selected_sleep.ended_at AS ended_at,
+  selected_sleep.duration_minutes AS duration_minutes,
+  selected_sleep.deep_minutes AS deep_minutes,
+  selected_sleep.rem_minutes AS rem_minutes,
+  selected_sleep.light_minutes AS light_minutes,
+  selected_sleep.awake_minutes AS awake_minutes,
+  selected_sleep.efficiency_pct AS efficiency_pct,
+  selected_sleep.staging_available AS staging_available,
   refresh_clock.refresh_version AS refresh_version,
   toUInt8(0) AS is_deleted,
   refresh_clock.refreshed_at AS refreshed_at
-FROM ranked_sleep
-CROSS JOIN refresh_clock
-WHERE ranked_sleep.row_number = 1`;
+FROM selected_sleep
+CROSS JOIN refresh_clock`;
 }
 
 export function buildTestDailyActivityLoadSelectSql(

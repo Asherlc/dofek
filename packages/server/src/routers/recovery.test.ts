@@ -54,6 +54,22 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
 type SleepNightTestRow = {
   date: string;
   provider_id: string;
+  source_name?: string | null;
+  source_providers?: string[];
+  selected_session_id?: string | null;
+  overlapping_sessions?: {
+    session_id: string;
+    provider_id: string;
+    source_name: string | null;
+    source_providers: string[];
+    timezone: string | null;
+    start_utc_offset_minutes: number | null;
+    end_utc_offset_minutes: number | null;
+    local_time_source: SleepNightTestRow["local_time_source"];
+    started_at: string;
+    ended_at: string | null;
+    duration_minutes: number | null;
+  }[];
   timezone: string | null;
   start_utc_offset_minutes: number | null;
   end_utc_offset_minutes: number | null;
@@ -79,6 +95,10 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
   return {
     date,
     provider_id: "apple_health",
+    source_name: null,
+    source_providers: [],
+    selected_session_id: null,
+    overlapping_sessions: [],
     timezone: null,
     start_utc_offset_minutes: 0,
     end_utc_offset_minutes: 0,
@@ -710,6 +730,65 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
     expect(result.averageSleepMinutes).toBeCloseTo(437, 1);
     expect(result.averageEfficiencyPercent).toBe(93.5);
+  });
+
+  it("maps the server-owned nightly selection and overlap evidence", async () => {
+    const selectedSessionId = "00000000-0000-4000-8000-000000001774";
+    const overlappingSessionId = "00000000-0000-4000-8000-000000001775";
+    const rows = [
+      sleepNightRow({
+        provider_id: "whoop",
+        source_name: "WHOOP 4.0",
+        source_providers: ["apple_health", "whoop"],
+        selected_session_id: selectedSessionId,
+        overlapping_sessions: [
+          {
+            session_id: overlappingSessionId,
+            provider_id: "oura",
+            source_name: "Oura Ring",
+            source_providers: ["oura"],
+            timezone: "America/Los_Angeles",
+            start_utc_offset_minutes: -420,
+            end_utc_offset_minutes: -420,
+            local_time_source: "provider_timezone",
+            started_at: "2026-03-01T23:30:00Z",
+            ended_at: "2026-03-02T05:00:00Z",
+            duration_minutes: 330,
+          },
+        ],
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      providerId: "whoop",
+      sourceName: "WHOOP 4.0",
+      sourceProviders: ["apple_health", "whoop"],
+      selectedSessionId,
+      overlappingSessions: [
+        {
+          sessionId: overlappingSessionId,
+          providerId: "oura",
+          sourceName: "Oura Ring",
+          sourceProviders: ["oura"],
+          localTimeContext: {
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_timezone",
+          },
+          startedAt: "2026-03-01T23:30:00.000Z",
+          endedAt: "2026-03-02T05:00:00.000Z",
+          durationMinutes: 330,
+        },
+      ],
+    });
   });
 
   it("computes rolling average duration from available sleep rows", async () => {

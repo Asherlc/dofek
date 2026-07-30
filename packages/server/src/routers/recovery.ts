@@ -89,6 +89,22 @@ export interface SleepNightlyRow {
   startedAt: string;
   endedAt: string | null;
   localTimeContext: RecordLocalTimeContext;
+  providerId: string | null;
+  sourceName: string | null;
+  sourceProviders: string[];
+  selectedSessionId: string | null;
+  overlappingSessions: SleepOverlappingSession[];
+}
+
+export interface SleepOverlappingSession {
+  sessionId: string;
+  providerId: string;
+  sourceName: string | null;
+  sourceProviders: string[];
+  localTimeContext: RecordLocalTimeContext;
+  startedAt: string;
+  endedAt: string | null;
+  durationMinutes: number | null;
 }
 
 export interface SleepAnalyticsResult {
@@ -359,6 +375,25 @@ export const recoveryRouter = router({
             endUtcOffsetMinutes: row.end_utc_offset_minutes,
             source: row.local_time_source,
           },
+          providerId: row.provider_id,
+          sourceName: row.source_name,
+          sourceProviders: row.source_providers,
+          selectedSessionId: row.selected_session_id,
+          overlappingSessions: row.overlapping_sessions.map((session) => ({
+            sessionId: session.session_id,
+            providerId: session.provider_id,
+            sourceName: session.source_name,
+            sourceProviders: session.source_providers,
+            localTimeContext: {
+              timezone: session.timezone,
+              startUtcOffsetMinutes: session.start_utc_offset_minutes,
+              endUtcOffsetMinutes: session.end_utc_offset_minutes,
+              source: session.local_time_source,
+            },
+            startedAt: session.started_at,
+            endedAt: session.ended_at,
+            durationMinutes: session.duration_minutes,
+          })),
           durationMinutes,
           sleepMinutes,
           deepPct:

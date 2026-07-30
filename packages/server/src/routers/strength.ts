@@ -5,7 +5,10 @@ import {
 } from "../contracts/progressive-overload.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
+import {
+  type EstimatedMaxTrendEvidence,
+  StrengthRepository,
+} from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +32,7 @@ export interface EstimatedOneRepMaxEntry {
 export interface EstimatedOneRepMaxRow {
   exerciseName: string;
   history: EstimatedOneRepMaxEntry[];
+  trend: EstimatedMaxTrendEvidence;
 }
 
 export interface MuscleGroupWeek {
@@ -71,6 +75,7 @@ export const strengthRouter = router({
       const exercises = await repo.getEstimatedOneRepMax(range.days);
       return exercises.map((exercise) => exercise.toDetail());
     },
+    { keyVersion: "estimated-max-trend-v1" },
   ),
 
   muscleGroupVolume: selectedChartRangeQuery(
