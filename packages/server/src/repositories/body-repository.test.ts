@@ -170,6 +170,10 @@ describe("BodyRepository", () => {
         endDate: "2024-01-15",
       },
     );
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
+    expect(queryText).toContain(") AS body_measurements");
+    expect(queryText).toContain("ORDER BY body_measurements.recorded_at ASC");
     expect(result[0]).toBeInstanceOf(BodyMeasurement);
     expect(result[0]?.id).toBe("bm-range-1");
   });
