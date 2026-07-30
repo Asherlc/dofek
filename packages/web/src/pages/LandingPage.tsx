@@ -188,7 +188,7 @@ function LandingNav() {
           </a>
           <Link
             to="/login"
-            className="hidden text-sm font-medium text-foreground transition-colors hover:text-accent sm:inline"
+            className="text-sm font-medium text-foreground transition-colors hover:text-accent"
           >
             Sign in
           </Link>

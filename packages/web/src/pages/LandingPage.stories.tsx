@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { type LandingPageProvider, LandingPageView } from "./LandingPage.tsx";
 
 const configuredProviders: LandingPageProvider[] = [
@@ -74,6 +75,18 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ConfiguredProviders: Story = {};
+
+export const MobileHeader: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  play: async ({ canvasElement }) => {
+    const signInLink = within(canvasElement).getByRole("link", { name: "Sign in" });
+
+    await expect(signInLink).toBeVisible();
+    await expect(signInLink).toHaveAttribute("href", "/login");
+  },
+};
 
 export const IllustrativeDecisionPreview: Story = {
   name: "Illustrative decision preview",
