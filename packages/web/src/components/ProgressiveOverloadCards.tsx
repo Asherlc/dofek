@@ -1,6 +1,7 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ProgressiveOverloadCardsProps {
@@ -29,6 +30,8 @@ function SparklineChart({ values }: { values: number[] }) {
 }
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
+  const units = useUnitConverter();
+
   if (loading || exercises.length === 0) {
     return (
       <DofekChart
@@ -49,7 +52,8 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
             {exercise.exerciseName}
           </div>
           <div className="text-xs text-muted mb-2">
-            {trendLabel(exercise.trend)} {formatNumber(Math.abs(exercise.slopeKgPerWeek))} kg/week
+            {trendLabel(exercise.trend)}{" "}
+            {formatMeasurementText(units.formatWeight(Math.abs(exercise.slopeKgPerWeek)))}/week
           </div>
           {exercise.weeklyVolumes.length >= 2 && <SparklineChart values={exercise.weeklyVolumes} />}
         </div>

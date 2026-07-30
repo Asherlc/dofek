@@ -3,6 +3,7 @@
 import { chartColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 
 vi.mock("./DofekChart.tsx", () => ({
   DofekChart: ({ option }: { option: Record<string, unknown> }) => (
@@ -60,5 +61,24 @@ describe("ProgressiveOverloadCards", () => {
     );
 
     expect(screen.getByText("Stable 0.0 kg/week")).toHaveClass("text-muted");
+  });
+
+  it("formats weekly volume slopes in the selected weight unit", () => {
+    render(
+      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
+        <ProgressiveOverloadCards
+          exercises={[
+            {
+              exerciseName: "Row",
+              weeklyVolumes: [500, 501],
+              slopeKgPerWeek: 1,
+              trend: "increasing",
+            },
+          ]}
+        />
+      </UnitContext.Provider>,
+    );
+
+    expect(screen.getByText("Increasing 2.2 lb/week")).toHaveClass("text-muted");
   });
 });
