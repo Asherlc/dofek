@@ -13,6 +13,7 @@ import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import {
   chartThemeColors,
   dofekAxis,
@@ -20,7 +21,7 @@ import {
   dofekTooltip,
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
-import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
+import { selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
@@ -262,7 +263,7 @@ function PairedObservationsTable({
 }
 
 export function CorrelationExplorerPage() {
-  const [days, setDays] = useState<TimeRangeDays>(365);
+  const { days, description, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [lag, setLag] = useState(0);
@@ -303,6 +304,7 @@ export function CorrelationExplorerPage() {
         headerChildren={
           <TimeRangeSelector
             days={days}
+            description={description}
             onChange={(nextDays) => {
               setDays(nextDays);
               resetObservationCursor();

@@ -12,7 +12,7 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -38,6 +38,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
@@ -184,25 +185,42 @@ class ClimbingSectionModel {
 export default function StrainScreen() {
   const router = useRouter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, description, isHydrated, setDays } = useTimeRangePreference("training");
   const units = useUnitConverter();
   const endDate = useTodayQueryDate();
+  const hasCommittedHydratedRange = useRef(false);
+  const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
+  useEffect(() => {
+    hasCommittedHydratedRange.current = isHydrated;
+  }, [isHydrated]);
 
   const trainingQuery = trpc.mobileDashboard.training.useQuery(
     { days, endDate },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
   );
   const hrZonesQuery = trpc.training.hrZones.useQuery(
     { days },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
   );
   const polarizationQuery = trpc.efficiency.polarizationTrend.useQuery(
     { days },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
   );
   const monotonyQuery = trpc.cyclingAdvanced.trainingMonotony.useQuery(
     { days },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
   );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
@@ -211,7 +229,7 @@ export default function StrainScreen() {
   useReportQueryError(polarizationQuery);
   useReportQueryError(monotonyQuery);
 
-  const trainingData = trainingQuery.data;
+  const trainingData = isHydrated ? trainingQuery.data : undefined;
 
   const workloadResult = trainingData?.workloadRatio;
   const workloadData = workloadResult?.timeSeries ?? [];
@@ -292,6 +310,10 @@ export default function StrainScreen() {
       ]).then(() => undefined),
   });
 
+  if (!isHydrated) {
+    return <QueryStatePanel variant="loading" minHeight={200} />;
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -304,7 +326,7 @@ export default function StrainScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

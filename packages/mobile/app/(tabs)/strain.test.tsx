@@ -10,6 +10,21 @@ const mockPolarizationInvalidate = vi.fn();
 const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
+let mockTrainingDataDays = 90;
+type MockRangeQueryOptions = {
+  enabled?: boolean;
+  placeholderData?: (previousData: unknown) => unknown;
+};
+let mockRangeQueryCalls: Record<
+  "training" | "hrZones" | "polarization" | "monotony",
+  Array<{ input: { days: number; endDate?: string }; options: MockRangeQueryOptions }>
+>;
+let mockTimeRangePreference = {
+  days: 90,
+  description: "Recommended default: 90 days balances recent training changes with enough history.",
+  isHydrated: true,
+  setDays: vi.fn(),
+};
 
 type MockTrainingData = Record<string, unknown>;
 type MockTrainingState = {
@@ -109,28 +124,43 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       training: {
-        useQuery: () => ({
-          data: mockTrainingState.data,
-          isLoading: mockTrainingState.isLoading,
-          isFetching: mockTrainingState.isFetching,
-          isError: mockTrainingState.isError,
-          error: mockTrainingState.error,
-        }),
+        useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.training.push({ input, options });
+          return {
+            data:
+              input.days === mockTrainingDataDays
+                ? mockTrainingState.data
+                : options.placeholderData?.(mockTrainingState.data),
+            isLoading: mockTrainingState.isLoading,
+            isFetching: mockTrainingState.isFetching,
+            isError: mockTrainingState.isError,
+            error: mockTrainingState.error,
+          };
+        },
       },
     },
     training: {
       hrZones: {
-        useQuery: () => ({ ...mockHrZonesState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.hrZones.push({ input, options });
+          return { ...mockHrZonesState };
+        },
       },
     },
     efficiency: {
       polarizationTrend: {
-        useQuery: () => ({ ...mockPolarizationState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.polarization.push({ input, options });
+          return { ...mockPolarizationState };
+        },
       },
     },
     cyclingAdvanced: {
       trainingMonotony: {
-        useQuery: () => ({ ...mockMonotonyState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.monotony.push({ input, options });
+          return { ...mockMonotonyState };
+        },
       },
     },
     processing: {
@@ -156,6 +186,10 @@ vi.mock("../../lib/trpc", () => ({
       },
     }),
   },
+}));
+
+vi.mock("../../lib/useTimeRangePreference", () => ({
+  useTimeRangePreference: () => mockTimeRangePreference,
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -199,7 +233,53 @@ describe("StrainScreen recent activity navigation", () => {
     mockPolarizationInvalidate.mockResolvedValue(undefined);
     mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
+    mockTrainingDataDays = 90;
+    mockRangeQueryCalls = {
+      training: [],
+      hrZones: [],
+      polarization: [],
+      monotony: [],
+    };
+    mockTimeRangePreference = {
+      days: 90,
+      description:
+        "Recommended default: 90 days balances recent training changes with enough history.",
+      isHydrated: true,
+      setDays: vi.fn(),
+    };
     resetMockTrainingState();
+  });
+
+  it("does not consume cached default-range data during preference hydration", async () => {
+    mockTimeRangePreference.isHydrated = false;
+
+    const { default: StrainScreen } = await import("./strain");
+    const view = render(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.options.enabled).toBe(false);
+    }
+    expect(screen.queryByText("16.0")).toBeNull();
+
+    mockTimeRangePreference.days = 30;
+    mockTimeRangePreference.isHydrated = true;
+    view.rerender(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.input.days).toBe(30);
+      expect(calls.at(-1)?.options.enabled).toBe(true);
+      expect(calls.at(-1)?.options.placeholderData).toBeUndefined();
+    }
+    expect(screen.queryByText("16.0")).toBeNull();
+
+    mockTrainingDataDays = 30;
+    view.rerender(<StrainScreen />);
+    mockTimeRangePreference.days = 90;
+    view.rerender(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.options.placeholderData).toBeTypeOf("function");
+    }
   });
 
   it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {

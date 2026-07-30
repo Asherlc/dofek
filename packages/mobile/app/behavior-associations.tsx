@@ -6,6 +6,7 @@ import { Card } from "../components/Card";
 import { DaySelector } from "../components/DaySelector";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors, spacing } from "../theme";
 
 const DAY_OPTIONS = [
@@ -46,7 +47,7 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
 }
 
 export default function BehaviorAssociationsScreen() {
-  const [days, setDays] = useState(90);
+  const { days, description, setDays } = useTimeRangePreference("behavior");
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
 
@@ -59,7 +60,7 @@ export default function BehaviorAssociationsScreen() {
         </Text>
       </View>
 
-      <DaySelector days={days} onChange={setDays} options={DAY_OPTIONS} />
+      <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
 
       <Card title="Evidence">
         <Text style={styles.evidenceText}>

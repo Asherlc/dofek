@@ -17,7 +17,7 @@ import {
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -40,6 +40,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
@@ -176,15 +177,23 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, description, isHydrated, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
+  const hasCommittedHydratedRange = useRef(false);
+  const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
+  useEffect(() => {
+    hasCommittedHydratedRange.current = isHydrated;
+  }, [isHydrated]);
 
   const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
     { days, endDate },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
   );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
-  const recoveryData = recoveryQuery.data;
+  const recoveryData = isHydrated ? recoveryQuery.data : undefined;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
   const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
@@ -256,6 +265,10 @@ export default function RecoveryScreen() {
       ]).then(() => undefined),
   });
 
+  if (!isHydrated) {
+    return <QueryStatePanel variant="loading" minHeight={200} />;
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -268,7 +281,7 @@ export default function RecoveryScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

@@ -20959,6 +20959,68 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   during worktree cleanup. Treat any hosted SQLFluff failure as a new code
   signal rather than attributing it to this local Docker failure.
 
+## 2026-07-29 — Docker address pools blocked local issue-2083 SQLFluff
+
+- **Status:** Unresolved local Docker prerequisite failure; exact-head CI is
+  the authoritative SQLFluff gate.
+- **Symptoms:** `pnpm lint` passed Biome and every repository policy check,
+  then SQLFluff's dbt templater could not connect to ClickHouse. The one
+  workspace-scoped service startup attempt also failed before creating a
+  container.
+- **User impact:** No production or end-user impact. The local environment
+  could not execute the analytics SQL lint phase for a change that does not
+  modify analytics SQL.
+- **Evidence:** The exact failing command was `pnpm lint`, whose SQLFluff
+  subcommand was `sqlfluff lint --ignore parsing models`. Its first fatal model
+  line was `== [models/read_models/activity_aerobic_efficiency.sql] FAIL`,
+  followed by `dbt tried to connect to the database and failed` and
+  `HTTPConnection(host='127.0.0.1', port=8123): Failed to establish a new
+  connection: [Errno 61] Connection refused`. The exact prerequisite command
+  was `pnpm compose -- up -d clickhouse`; after waiting without progress it
+  failed with `all predefined address pools have been fully subnetted`.
+  `pnpm compose -- ps clickhouse` showed no container.
+- **Root cause:** The Docker daemon had exhausted its predefined network
+  address pools, so Compose could not create the isolated
+  `issue-2083_default` network or start ClickHouse.
+- **Fix / mitigation:** No retry, timeout increase, network cleanup outside
+  this worktree, lint suppression, or application workaround was added.
+  Continue Docker-free validation and require the normal hosted exact-head
+  SQLFluff job before merge.
+- **Validation:** Root and package typechecks, focused web/mobile tests,
+  repository Biome and policy gates, and both Storybook builds pass. The
+  Docker-free full unit/mobile tier and hosted exact-head CI remain required.
+- **Remaining risk / follow-up:** Docker network-pool capacity remains
+  unresolved locally. Any hosted SQLFluff failure must be investigated from
+  its own first fatal line rather than attributed to this local daemon.
+
+## 2026-07-29 — Concurrent workspace tests starved issue-2083 validation
+
+- **Status:** Local resource pressure identified; hosted exact-head CI is the
+  authoritative post-merge validation gate.
+- **Symptoms:** The post-merge focused Vitest command exited without completing
+  the requested files or printing a test-run summary.
+- **User impact:** No production or end-user impact. Local post-merge focused
+  tests and typechecks could not produce trustworthy terminal exits.
+- **Evidence:** The exact command was
+  `CI=1 ./node_modules/.bin/vitest run packages/stats/src/time-range.test.ts packages/web/src/hooks/useTimeRangePreference.test.ts packages/web/src/components/TimeRangeSelector.test.tsx packages/web/src/components/TimeRangeSelector.consumers.test.tsx --project unit --maxWorkers=2`.
+  It reported one passing file, then ended without the normal test summary.
+  No termination or signal line was emitted; the first abnormal terminal
+  evidence was `EXIT:undefined`. Immediately afterward, `uptime` reported load
+  averages of `589.60 572.75 436.95`, and the process list showed concurrent
+  Vitest workers and full test runs from other workspaces.
+- **Root cause:** Concurrent repository validation across the shared host
+  exhausted local process and compute capacity before this focused run could
+  complete.
+- **Fix / mitigation:** Do not terminate other workspaces' processes or weaken
+  validation. With coordinator approval, stop local retries and use the normal
+  hosted exact-head matrix as the authoritative unchanged gate.
+- **Validation:** Before the fresh-main merge, the shared/web focused suite
+  passed 15 tests, the mobile focused suite passed 7 tests, the stats
+  typecheck passed, and Biome was clean. The replacement hosted matrix must
+  pass on the published exact head before merge.
+- **Remaining risk / follow-up:** The pull request must remain unmerged until
+  every hosted check passes and the final review-thread sweep is clean.
+
 ## 2026-07-29 — Issue 2078 local SQLFluff lacked ClickHouse
 
 - **Status:** Local environment prerequisite unavailable; exact-head hosted CI

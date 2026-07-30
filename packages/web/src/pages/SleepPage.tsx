@@ -1,6 +1,6 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { z } from "zod";
 import {
   CorrelationCard,
@@ -18,12 +18,9 @@ import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
 import { SleepOverviewCards } from "../components/SleepOverviewCards.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
-import {
-  minimumSelectedRangeQueryInput,
-  selectedRangeQueryInput,
-  type TimeRangeDays,
-} from "../lib/timeRange.ts";
+import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -51,7 +48,7 @@ function isSleepInsight(metric: string): boolean {
 }
 
 export function SleepPage() {
-  const [days, setDays] = useState<TimeRangeDays>(30);
+  const { days, description, setDays } = useTimeRangePreference("sleep");
   const endDate = useTodayQueryDate();
 
   const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
@@ -87,7 +84,9 @@ export function SleepPage() {
   return (
     <ChartRangeProvider days={days}>
       <PageLayout
-        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+        headerChildren={
+          <TimeRangeSelector days={days} description={description} onChange={setDays} />
+        }
         title="Sleep"
         subtitle="Sleep stages, debt, and patterns over time"
       >

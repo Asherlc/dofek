@@ -6,7 +6,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 let mockRecoveryData: Record<string, unknown> | undefined;
 let mockRecoveryLoading = false;
 let mockRecoveryFetching = false;
+let mockRecoveryDataDays = 30;
 let sparkLinePropsCalls: Record<string, unknown>[];
+let mockRecoveryQueryCalls: Array<{
+  input: { days: number; endDate?: string };
+  options: {
+    enabled?: boolean;
+    placeholderData?: (previousData: Record<string, unknown> | undefined) => unknown;
+  };
+}>;
+let mockTimeRangePreference = {
+  days: 30,
+  description: "Recommended default: 30 days keeps recent recovery changes visible.",
+  isHydrated: true,
+  setDays: vi.fn(),
+};
 const mockRecoveryInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
@@ -69,14 +83,27 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       recovery: {
-        useQuery: () => ({
-          data:
+        useQuery: (
+          input: { days: number; endDate?: string },
+          options: {
+            enabled?: boolean;
+            placeholderData?: (previousData: Record<string, unknown> | undefined) => unknown;
+          },
+        ) => {
+          mockRecoveryQueryCalls.push({ input, options });
+          const cachedData =
             mockRecoveryData == null
               ? undefined
-              : { baselineRelative: [], healthStatus: [], ...mockRecoveryData },
-          isLoading: mockRecoveryLoading,
-          isFetching: mockRecoveryFetching,
-        }),
+              : { baselineRelative: [], healthStatus: [], ...mockRecoveryData };
+          return {
+            data:
+              input.days === mockRecoveryDataDays
+                ? cachedData
+                : options.placeholderData?.(cachedData),
+            isLoading: mockRecoveryLoading,
+            isFetching: mockRecoveryFetching,
+          };
+        },
       },
     },
     processing: {
@@ -93,6 +120,10 @@ vi.mock("../../lib/trpc", () => ({
       },
     }),
   },
+}));
+
+vi.mock("../../lib/useTimeRangePreference", () => ({
+  useTimeRangePreference: () => mockTimeRangePreference,
 }));
 
 vi.mock("../../components/charts/SparkLine", () => ({
@@ -150,6 +181,14 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = undefined;
     mockRecoveryLoading = false;
     mockRecoveryFetching = false;
+    mockRecoveryDataDays = 30;
+    mockRecoveryQueryCalls = [];
+    mockTimeRangePreference = {
+      days: 30,
+      description: "Recommended default: 30 days keeps recent recovery changes visible.",
+      isHydrated: true,
+      setDays: vi.fn(),
+    };
     sparkLinePropsCalls = [];
     mockRecoveryInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
@@ -157,6 +196,36 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
+  });
+
+  it("does not consume cached default-range data during preference hydration", async () => {
+    mockRecoveryData = {
+      readinessScore: [{ date: "2026-04-06", readinessScore: 77 }],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    };
+    mockTimeRangePreference.isHydrated = false;
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    const view = render(<RecoveryScreen />);
+
+    expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(false);
+    expect(screen.queryByText("77")).toBeNull();
+
+    mockTimeRangePreference.days = 90;
+    mockTimeRangePreference.isHydrated = true;
+    view.rerender(<RecoveryScreen />);
+
+    expect(mockRecoveryQueryCalls.at(-1)?.input.days).toBe(90);
+    expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(true);
+    expect(mockRecoveryQueryCalls.at(-1)?.options.placeholderData).toBeUndefined();
+    expect(screen.queryByText("77")).toBeNull();
+
+    mockRecoveryDataDays = 90;
+    view.rerender(<RecoveryScreen />);
+    mockTimeRangePreference.days = 30;
+    view.rerender(<RecoveryScreen />);
+
+    expect(mockRecoveryQueryCalls.at(-1)?.options.placeholderData).toBeTypeOf("function");
   });
 
   it("refreshes recovery data and processing status together", async () => {

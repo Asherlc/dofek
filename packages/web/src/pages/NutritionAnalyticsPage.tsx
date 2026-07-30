@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
 import { AdaptiveTdeeChart } from "../components/AdaptiveTdeeChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
@@ -7,16 +6,16 @@ import { MicronutrientChart } from "../components/MicronutrientChart.tsx";
 import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import {
   formatTimeRangeLabel,
   minimumSelectedRangeQueryInput,
   selectedRangeQueryInput,
-  type TimeRangeDays,
 } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export function NutritionAnalyticsPage() {
-  const [days, setDays] = useState<TimeRangeDays>(30);
+  const { days, description, setDays } = useTimeRangePreference("nutrition");
 
   const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery(
     selectedRangeQueryInput(days),
@@ -49,7 +48,7 @@ export function NutritionAnalyticsPage() {
     <ChartRangeProvider days={days}>
       <div className="space-y-6 sm:space-y-8">
         <div className="flex justify-end">
-          <TimeRangeSelector days={days} onChange={setDays} />
+          <TimeRangeSelector days={days} description={description} onChange={setDays} />
         </div>
         {firstError ? (
           <div className="space-y-2">
