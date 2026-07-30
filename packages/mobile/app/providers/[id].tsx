@@ -2,12 +2,10 @@ import { formatRelativeTime } from "@dofek/format/format";
 import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
-import { statusColors } from "@dofek/scoring/colors";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -21,13 +19,12 @@ import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown"
 import { ProviderSyncHistoryEntry } from "../../components/ProviderSyncHistoryEntry";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
-import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { ProviderDetailAuthModals } from "./auth-modals";
-import { ProviderDataDeleteControl } from "./provider-data-delete-control";
+import { ProviderDangerZone } from "./provider-danger-zone";
 import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
 import { ProviderDetailExtras } from "./provider-detail-extras";
 import {
@@ -537,12 +534,10 @@ function ProviderDetailContent({
   displayProvider: NonNullable<ProviderDetailActionsResult["displayProvider"]>;
 }) {
   const { serverUrl } = useAuth();
-  const router = useRouter();
   const trpcUtils = trpc.useUtils();
 
   const stats = trpc.sync.providerStats.useQuery();
   const processingStatus = useProcessingStatus({ providerId });
-  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
@@ -566,32 +561,6 @@ function ProviderDetailContent({
     needsReauth: Boolean(provider?.needsReauth),
     requiresAuthorization: displayProvider.authType !== "none",
   });
-
-  const handleDisconnect = useCallback(() => {
-    if (!providerId) return;
-    Alert.alert(
-      "Disconnect Provider",
-      "This will permanently delete all synced data from this provider. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await disconnectMutation.mutateAsync({ providerId });
-              trpcUtils.sync.providers.invalidate();
-              trpcUtils.sync.providerStats.invalidate();
-              router.back();
-            } catch (error: unknown) {
-              captureException(error, { context: "provider-disconnect" });
-              Alert.alert("Error", "Failed to disconnect provider");
-            }
-          },
-        },
-      ],
-    );
-  }, [providerId, disconnectMutation, trpcUtils, router]);
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -737,8 +706,10 @@ function ProviderDetailContent({
       <RecordsBrowser providerId={providerId} stats={providerStats} />
 
       {/* Disconnect */}
-      <ProviderDataDeleteControl
+      <ProviderDangerZone
+        canDisconnect={Boolean(provider?.authorized)}
         providerId={providerId}
+        providerName={displayProvider.name}
         additionalOperations={
           isSyncing
             ? [
@@ -752,17 +723,6 @@ function ProviderDetailContent({
             : []
         }
       />
-      {provider?.authorized && (
-        <TouchableOpacity
-          style={styles.disconnectButton}
-          onPress={handleDisconnect}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Disconnect Provider"
-        >
-          <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
-        </TouchableOpacity>
-      )}
       <ProviderDetailAuthModals modals={modals} />
     </ScrollView>
   );
@@ -864,19 +824,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-
-  // Disconnect
-  disconnectButton: {
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  disconnectButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: statusColors.danger,
   },
 });

@@ -122,7 +122,7 @@ describe("MonthlyReportRepository", () => {
 
   it("returns null current and empty history for empty rows", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current).toBeNull();
     expect(result.history).toEqual([]);
     expect(result.emptyState).toEqual(
@@ -137,17 +137,19 @@ describe("MonthlyReportRepository", () => {
   it("binds the requested user and month window", async () => {
     const { repo, execute } = makeRepository([]);
 
-    await repo.getReport(12);
+    await repo.getReport(12, "2026-07-24");
 
     expect(execute).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
       userId: "user-1",
-      months: 12,
+      startDate: "2025-08-01",
+      endDate: "2026-07-24",
     });
+    expect(execute.mock.calls[0]?.[1]).not.toContain("today()");
   });
 
   it("returns single month as current with empty history", async () => {
     const { repo } = makeRepository([makeDbRow({ month_start: "2025-03-01" })]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current).not.toBeNull();
     expect(result.current?.monthStart).toBe("2025-03-01");
     expect(result.current?.trainingHoursTrend).toBeNull();
@@ -164,7 +166,7 @@ describe("MonthlyReportRepository", () => {
       makeDbRow({ month_start: "2025-02-01", training_hours: 12, avg_sleep_minutes: 420 }),
       makeDbRow({ month_start: "2025-03-01", training_hours: 15, avg_sleep_minutes: 400 }),
     ]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
 
     expect(result.history).toHaveLength(2);
     expect(result.current?.monthStart).toBe("2025-03-01");
@@ -186,7 +188,7 @@ describe("MonthlyReportRepository", () => {
 
   it("preserves null HR and HRV values", async () => {
     const { repo } = makeRepository([makeDbRow({ avg_resting_hr: null, avg_hrv: null })]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current?.avgRestingHr).toBeNull();
     expect(result.current?.avgHrv).toBeNull();
   });
@@ -196,14 +198,14 @@ describe("MonthlyReportRepository", () => {
       makeDbRow({ month_start: "2025-01-01", training_hours: 0, avg_sleep_minutes: 0 }),
       makeDbRow({ month_start: "2025-02-01", training_hours: 10, avg_sleep_minutes: 420 }),
     ]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current?.trainingHoursTrend).toBeNull();
     expect(result.current?.avgSleepTrend).toBeNull();
   });
 
   it("calls execute once", async () => {
     const { repo, execute } = makeRepository([]);
-    await repo.getReport(6);
+    await repo.getReport(6, "2026-07-24");
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });

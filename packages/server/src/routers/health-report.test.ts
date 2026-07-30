@@ -135,6 +135,7 @@ describe("healthReportRouter", () => {
       await caller.generate({
         reportType: "monthly",
         months: 6,
+        endDate: "2026-03-24",
         expiresInDays: 30,
       });
 

@@ -18,21 +18,24 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
   let testContext: TestContext;
   let sensorStore: ActivitySensorStore;
   let monthStart: string;
+  let endDate: string;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
     const monthResult = await getClickHouseTestClient(testContext).query({
-      query: "SELECT toString(toStartOfMonth(today())) AS month_start",
+      query:
+        "SELECT toString(toStartOfMonth(today())) AS month_start, toString(toStartOfMonth(today()) + INTERVAL 6 DAY) AS end_date",
       format: "JSONEachRow",
     });
     const [monthRow] = z
-      .array(z.object({ month_start: dateStringSchema }))
+      .array(z.object({ month_start: dateStringSchema, end_date: dateStringSchema }))
       .parse(await monthResult.json());
     if (!monthRow) {
       throw new Error("ClickHouse did not return its current month");
     }
     monthStart = monthRow.month_start;
+    endDate = monthRow.end_date;
 
     await executeClickHouseTestCommand(
       testContext,
@@ -158,7 +161,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
   });
 
   it("builds the report from compact serving models without recursive views", async () => {
-    const report = await new MonthlyReportRepository(userId, sensorStore).getReport(12);
+    const report = await new MonthlyReportRepository(userId, sensorStore).getReport(12, endDate);
 
     expect(report.current).toEqual({
       monthStart,
@@ -171,7 +174,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
       trainingHoursTrend: null,
       avgSleepTrend: null,
     });
-    expect(report.history).toHaveLength(12);
+    expect(report.history).toHaveLength(11);
   });
 
   it("transitions from the preview to a report after one observed day", async () => {

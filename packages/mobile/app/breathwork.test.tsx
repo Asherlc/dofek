@@ -21,15 +21,51 @@ interface Technique {
 
 const mocks = vi.hoisted<{
   mutate: ReturnType<typeof vi.fn>;
+  invalidateHistory: ReturnType<typeof vi.fn>;
+  invalidateOutcomes: ReturnType<typeof vi.fn>;
   techniques: {
     data: Technique[] | undefined;
     error: Error | null;
     isLoading: boolean;
   };
+  outcomes: {
+    data:
+      | {
+          windowDays: number;
+          windowKind: "rolling-instant";
+          techniques: {
+            techniqueId: string;
+            sessionCount: number;
+            stress: {
+              reportCount: number;
+              lowerCount: number;
+              sameCount: number;
+              higherCount: number;
+            };
+            perceivedEffect: {
+              reportCount: number;
+              betterCount: number;
+              sameCount: number;
+              worseCount: number;
+            };
+            dizziness: { reportCount: number; yesCount: number };
+          }[];
+        }
+      | undefined;
+    error: Error | null;
+    isLoading: boolean;
+  };
 }>(() => ({
   mutate: vi.fn(),
+  invalidateHistory: vi.fn(),
+  invalidateOutcomes: vi.fn(),
   techniques: {
     data: [],
+    error: null,
+    isLoading: false,
+  },
+  outcomes: {
+    data: { windowDays: 30, windowKind: "rolling-instant", techniques: [] },
     error: null,
     isLoading: false,
   },
@@ -39,14 +75,24 @@ vi.mock("../lib/trpc", () => ({
   trpc: {
     breathwork: {
       techniques: { useQuery: () => mocks.techniques },
+      outcomes: { useQuery: () => mocks.outcomes },
       logSession: {
-        useMutation: () => ({
+        useMutation: (options: { onSuccess?: () => void }) => ({
           error: null,
           isPending: false,
-          mutate: mocks.mutate,
+          mutate: (input: unknown) => {
+            mocks.mutate(input);
+            options.onSuccess?.();
+          },
         }),
       },
     },
+    useUtils: () => ({
+      breathwork: {
+        history: { invalidate: mocks.invalidateHistory },
+        outcomes: { invalidate: mocks.invalidateOutcomes },
+      },
+    }),
   },
 }));
 
@@ -89,6 +135,11 @@ describe("BreathworkScreen", () => {
           defaultRounds: 30,
         },
       ],
+      error: null,
+      isLoading: false,
+    };
+    mocks.outcomes = {
+      data: { windowDays: 30, windowKind: "rolling-instant", techniques: [] },
       error: null,
       isLoading: false,
     };
@@ -138,7 +189,7 @@ describe("BreathworkScreen", () => {
     expect(screen.getByRole("button", { name: "Start Session" })).toBeTruthy();
   });
 
-  it("guides and logs a completed session at phase boundaries without polling", async () => {
+  it("guides a completed session at phase boundaries without polling", async () => {
     vi.useFakeTimers();
     const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
     const technique = mocks.techniques.data?.[0];
@@ -179,13 +230,123 @@ describe("BreathworkScreen", () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(screen.getByText("How do you feel now?")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Box Breathing" })).toHaveProperty("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
     expect(mocks.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
         techniqueId: "box-breathing",
         rounds: 1,
         durationSeconds: 2,
+        stressBefore: null,
+        stressAfter: null,
+        dizzinessAfter: null,
+        perceivedEffect: null,
       }),
     );
+    expect(mocks.invalidateHistory).toHaveBeenCalledOnce();
+    expect(mocks.invalidateOutcomes).toHaveBeenCalledOnce();
+  });
+
+  it("saves optional before-and-after reports", async () => {
+    vi.useFakeTimers();
+    const technique = mocks.techniques.data?.[0];
+    if (!technique) throw new Error("Expected a breathwork technique fixture");
+    mocks.techniques.data = [
+      {
+        ...technique,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+    const { default: BreathworkScreen } = await import("./breathwork");
+    render(<BreathworkScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Before-session stress 8" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "After-session stress 3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Felt better" }));
+    fireEvent.click(screen.getByRole("button", { name: "No dizziness" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save session" }));
+
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        techniqueId: "box-breathing",
+        stressBefore: 8,
+        stressAfter: 3,
+        dizzinessAfter: false,
+        perceivedEffect: "better",
+      }),
+    );
+  });
+
+  it("preserves a pre-session stress report when the post-session check-in is skipped", async () => {
+    vi.useFakeTimers();
+    const technique = mocks.techniques.data?.[0];
+    if (!technique) throw new Error("Expected a breathwork technique fixture");
+    mocks.techniques.data = [
+      {
+        ...technique,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+    const { default: BreathworkScreen } = await import("./breathwork");
+    render(<BreathworkScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Before-session stress 7" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
+
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stressBefore: 7,
+        stressAfter: null,
+        dizzinessAfter: null,
+        perceivedEffect: null,
+      }),
+    );
+  });
+
+  it("shows server-computed personal patterns without causal claims", async () => {
+    mocks.outcomes.data = {
+      windowDays: 30,
+      windowKind: "rolling-instant",
+      techniques: [
+        {
+          techniqueId: "box-breathing",
+          sessionCount: 5,
+          stress: { reportCount: 4, lowerCount: 3, sameCount: 1, higherCount: 0 },
+          perceivedEffect: { reportCount: 5, betterCount: 4, sameCount: 1, worseCount: 0 },
+          dizziness: { reportCount: 5, yesCount: 1 },
+        },
+      ],
+    };
+    const { default: BreathworkScreen } = await import("./breathwork");
+    render(<BreathworkScreen />);
+
+    expect(
+      screen.getByText("Stress after session: 3 lower, 1 same, 0 higher (4 paired check-ins)"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Overall feeling: 4 better, 1 same, 0 worse (5 responses)"),
+    ).toBeTruthy();
+    expect(screen.getByText("Dizziness: 1 of 5 responses")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Patterns in your reports do not prove the breathing technique caused the change.",
+      ),
+    ).toBeTruthy();
   });
 
   it("starts only one timer for rapid duplicate Start presses", async () => {
@@ -212,6 +373,7 @@ describe("BreathworkScreen", () => {
       vi.advanceTimersByTime(4_000);
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
 
