@@ -77,7 +77,7 @@ vi.mock("./TimeSeriesChart.tsx", () => ({
 const entry = {
   id: "entry-1",
   date: "2026-07-25",
-  provider_id: "dofek",
+  source: { providerId: "dofek", label: "Dofek" },
   question_slug: "mood",
   display_name: "Mood",
   category: "wellness",
@@ -143,7 +143,7 @@ describe("JournalPanel", () => {
         {
           ...entry,
           id: "alcohol",
-          provider_id: "whoop",
+          source: { providerId: "manual_review", label: "Manual review" },
           question_slug: "alcohol",
           display_name: "Alcohol",
           data_type: "boolean",
@@ -154,7 +154,7 @@ describe("JournalPanel", () => {
         {
           ...entry,
           id: "late-meal",
-          provider_id: "whoop",
+          source: { providerId: "whoop", label: "WHOOP (Cloud)" },
           question_slug: "late_meal",
           display_name: "Late meal",
           data_type: "boolean",
@@ -171,14 +171,43 @@ describe("JournalPanel", () => {
 
     const alcoholRow = screen.getByText("Alcohol").parentElement?.parentElement;
     const lateMealRow = screen.getByText("Late meal").parentElement?.parentElement;
-    expect(alcoholRow?.textContent).toMatch(/^Alcohol\s*Yes\s*whoop$/);
-    expect(lateMealRow?.textContent).toMatch(/^Late meal\s*No\s*whoop$/);
+    expect(alcoholRow?.textContent).toContain("Manual review");
+    expect(alcoholRow?.textContent).not.toContain("manual_review");
+    expect(lateMealRow?.textContent).toContain("WHOOP (Cloud)");
+    expect(lateMealRow?.textContent).not.toContain("whoop");
     const yesAnswer = screen.getByText("Yes");
     const noAnswer = screen.getByText("No");
     expect(yesAnswer.classList.contains("bg-surface-hover")).toBe(true);
     expect(yesAnswer.classList.contains("text-muted")).toBe(true);
     expect(noAnswer.classList.contains("bg-surface-hover")).toBe(true);
     expect(noAnswer.classList.contains("text-muted")).toBe(true);
+  });
+
+  it("reveals raw source IDs only through accessible technical details", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: [
+        {
+          ...entry,
+          source: { providerId: "manual_review", label: "Manual review" },
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("Manual review")).toBeDefined();
+    expect(screen.queryByText("manual_review")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show technical source details for Manual review" }),
+    );
+
+    expect(screen.getByText("Provider ID: manual_review")).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Hide technical source details for Manual review" }),
+    ).toBeDefined();
   });
 
   it("paginates journal entries", () => {

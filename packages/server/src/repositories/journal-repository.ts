@@ -1,3 +1,4 @@
+import { type ProviderProvenance, resolveProviderProvenance } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -59,9 +60,12 @@ const journalEntryFullRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export type JournalQuestionRow = z.infer<typeof journalQuestionRowSchema>;
-export type JournalEntryRow = z.infer<typeof journalEntryRowSchema>;
+type JournalEntryRow = z.infer<typeof journalEntryRowSchema>;
 export type TrendPoint = z.infer<typeof trendPointSchema>;
 export type JournalEntryFullRow = z.infer<typeof journalEntryFullRowSchema>;
+export type JournalEntryDetail = Omit<JournalEntryRow, "provider_id"> & {
+  source: ProviderProvenance;
+};
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -99,8 +103,8 @@ export class JournalRepository {
   }
 
   /** Get journal entries for a date range, joined with question metadata. */
-  async listEntries(days: RangeDays): Promise<JournalEntryRow[]> {
-    return executeWithSchema(
+  async listEntries(days: RangeDays): Promise<JournalEntryDetail[]> {
+    const rows = await executeWithSchema(
       this.#db,
       journalEntryRowSchema,
       sql`SELECT
@@ -121,6 +125,10 @@ export class JournalRepository {
             ${currentDateRangePredicate(sql`je.date`, days, ">=")}
           ORDER BY je.date DESC, jq.sort_order, jq.display_name`,
     );
+    return rows.map(({ provider_id: providerId, ...entry }) => ({
+      ...entry,
+      source: resolveProviderProvenance(providerId),
+    }));
   }
 
   /** Time-series trend data for a specific question. */

@@ -11,6 +11,7 @@ import {
   providerLogoId,
   providerLogoType,
   providerSourceLabel,
+  resolveProviderProvenance,
   SVG_LOGOS,
 } from "./providers.ts";
 
@@ -25,6 +26,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS["fit-file"]).toBe("FIT File");
     expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
     expect(PROVIDER_LABELS.apple_health).toBe("Apple Health");
+    expect(PROVIDER_LABELS.manual_review).toBe("Manual review");
   });
 
   it("all values are non-empty strings", () => {
@@ -45,6 +47,15 @@ describe("providerLabel", () => {
 
   it("falls back to the raw ID for unknown providers", () => {
     expect(providerLabel("unknown-provider")).toBe("unknown-provider");
+  });
+});
+
+describe("resolveProviderProvenance", () => {
+  it("pairs the canonical human label with the diagnostic provider ID", () => {
+    expect(resolveProviderProvenance("manual_review")).toEqual({
+      providerId: "manual_review",
+      label: "Manual review",
+    });
   });
 });
 
