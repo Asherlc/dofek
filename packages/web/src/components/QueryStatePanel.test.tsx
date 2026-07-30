@@ -87,6 +87,17 @@ describe("QueryStatePanel", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
+  it("uses a domain-specific error title when provided", () => {
+    render(
+      <QueryStatePanel
+        error={new Error("Status service timed out")}
+        title="Alert status is unavailable"
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Alert status is unavailable" })).toBeDefined();
+  });
+
   it("falls back when the error has no usable message", () => {
     render(<QueryStatePanel error={new Error("")} />);
     expect(screen.getByText("Failed to load data.")).toBeDefined();
