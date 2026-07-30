@@ -774,6 +774,13 @@ describe("Router coverage", () => {
             actualWeight: number;
             actualReps: number;
           }[];
+          trend: {
+            direction: "increasing" | "decreasing" | "stable";
+            summary: string;
+            changeMagnitudeKg: number;
+            firstDate: string;
+            latestDate: string;
+          };
         }[]
       >("strength.estimatedOneRepMax", { days: 90 });
 
@@ -783,6 +790,13 @@ describe("Router coverage", () => {
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
         expect(exercise.history.length).toBeGreaterThanOrEqual(3);
+        expect(exercise.trend.direction).toBe("increasing");
+        expect(exercise.trend.summary).toBe(
+          "Estimated max increased from first to latest estimate.",
+        );
+        expect(exercise.trend.changeMagnitudeKg).toBeGreaterThan(0);
+        expect(exercise.trend.firstDate).toBe(exercise.history[0]?.date);
+        expect(exercise.trend.latestDate).toBe(exercise.history.at(-1)?.date);
 
         for (const entry of exercise.history) {
           expect(entry.date).toBeTruthy();

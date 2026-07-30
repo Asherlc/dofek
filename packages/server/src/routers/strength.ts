@@ -2,6 +2,7 @@ import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
 import {
+  type EstimatedMaxTrendEvidence,
   type ProgressiveOverloadTrend,
   StrengthRepository,
 } from "../repositories/strength-repository.ts";
@@ -28,6 +29,7 @@ export interface EstimatedOneRepMaxEntry {
 export interface EstimatedOneRepMaxRow {
   exerciseName: string;
   history: EstimatedOneRepMaxEntry[];
+  trend: EstimatedMaxTrendEvidence;
 }
 
 export interface MuscleGroupWeek {

@@ -43,6 +43,16 @@ export interface OneRepMaxEntryRow {
   actualReps: number;
 }
 
+export type EstimatedMaxTrendDirection = "increasing" | "decreasing" | "stable";
+
+export interface EstimatedMaxTrendEvidence {
+  direction: EstimatedMaxTrendDirection;
+  summary: string;
+  changeMagnitudeKg: number;
+  firstDate: string;
+  latestDate: string;
+}
+
 /** An exercise with estimated 1RM history over time. */
 export class EstimatedOneRepMax {
   readonly #exerciseName: string;
@@ -53,10 +63,46 @@ export class EstimatedOneRepMax {
     this.#history = history;
   }
 
+  get trend(): EstimatedMaxTrendEvidence {
+    const firstEntry = this.#history[0];
+    const latestEntry = this.#history.at(-1);
+    if (!firstEntry || !latestEntry) {
+      throw new Error("Estimated max history must contain at least one observation.");
+    }
+
+    const changeKg = Math.round((latestEntry.estimatedMax - firstEntry.estimatedMax) * 10) / 10;
+    if (changeKg > 0) {
+      return {
+        direction: "increasing",
+        summary: "Estimated max increased from first to latest estimate.",
+        changeMagnitudeKg: changeKg,
+        firstDate: firstEntry.date,
+        latestDate: latestEntry.date,
+      };
+    }
+    if (changeKg < 0) {
+      return {
+        direction: "decreasing",
+        summary: "Estimated max decreased from first to latest estimate.",
+        changeMagnitudeKg: -changeKg,
+        firstDate: firstEntry.date,
+        latestDate: latestEntry.date,
+      };
+    }
+    return {
+      direction: "stable",
+      summary: "Estimated max did not change from first to latest estimate.",
+      changeMagnitudeKg: 0,
+      firstDate: firstEntry.date,
+      latestDate: latestEntry.date,
+    };
+  }
+
   toDetail() {
     return {
       exerciseName: this.#exerciseName,
       history: this.#history,
+      trend: this.trend,
     };
   }
 }
