@@ -148,8 +148,14 @@ describe("LandingPage", () => {
   it("shows concrete analysis examples in the product preview", () => {
     render(<LandingPage />);
 
+    expect(screen.getByText("Illustrative example")).toBeTruthy();
     expect(screen.getByText("Daily summary")).toBeTruthy();
     expect(screen.getByText("Today's recovery picture")).toBeTruthy();
+    expect(screen.getByText("May 27, 2026 · Example data")).toBeTruthy();
+    expect(screen.getByText("74%")).toBeTruthy();
+    expect(screen.getByText("Near baseline")).toBeTruthy();
+    expect(screen.getByText("7h 42m")).toBeTruthy();
+    expect(screen.getByText("96% of need")).toBeTruthy();
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
     expect(screen.getByText("Recent trend")).toBeTruthy();
@@ -161,12 +167,66 @@ describe("LandingPage", () => {
     expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
+    expect(screen.queryByText("No data")).toBeNull();
 
     const dailySummary = screen.getByText("Daily summary");
-    const overviewRange = screen.getByText("Apr 28 - May 27");
+    const overviewRange = screen.getByText("Apr 28–May 27, 2026");
     expect(
       dailySummary.compareDocumentPosition(overviewRange) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("demonstrates value, comparison, confidence, source, and action in the preview", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("r = 0.72")).toBeTruthy();
+    expect(screen.getByText("Strong positive")).toBeTruthy();
+    expect(screen.getByText("24 paired days of 30")).toBeTruthy();
+    expect(screen.getByText("Example sources: Oura sleep + Apple Health HRV")).toBeTruthy();
+    expect(screen.getByText("Confidence: moderate; association, not causation.")).toBeTruthy();
+    expect(screen.getByText("Next: compare late meals on the same nights.")).toBeTruthy();
+
+    expect(screen.getByText("+3 bpm vs prior 7 days")).toBeTruthy();
+    expect(screen.getByText("7 of 7 nights")).toBeTruthy();
+    expect(screen.getByText("Example source: Oura")).toBeTruthy();
+    expect(screen.getByText("Confidence: high coverage; not a diagnosis.")).toBeTruthy();
+    expect(screen.getByText("Next: review training and meal timing.")).toBeTruthy();
+
+    expect(screen.getByText("r = -0.46")).toBeTruthy();
+    expect(screen.getByText("Moderate negative")).toBeTruthy();
+    expect(screen.getByText("22 paired days of 30")).toBeTruthy();
+    expect(screen.getByText("Example sources: Garmin load + Oura sleep")).toBeTruthy();
+    expect(screen.getByText("Confidence: low; descriptive only.")).toBeTruthy();
+    expect(
+      screen.getByText("Next: inspect high-load weeks with lower sleep consistency."),
+    ).toBeTruthy();
+  });
+
+  it("gives preview charts accessible names, axes, units, and time context", () => {
+    render(<LandingPage />);
+
+    expect(
+      screen.getByRole("img", {
+        name: "Example correlation scatter plot. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: "Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: Resting heart rate (bpm).",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: "Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: Sleep consistency (%).",
+      }),
+    ).toBeTruthy();
+
+    expect(screen.getAllByText("Sleep consistency (%)")).toHaveLength(2);
+    expect(screen.getByText("Heart rate variability (ms)")).toBeTruthy();
+    expect(screen.getByText("Training load (points)")).toBeTruthy();
+    expect(screen.getByText("Resting heart rate (bpm)")).toBeTruthy();
+    expect(screen.getByText("May 21")).toBeTruthy();
+    expect(screen.getByText("May 27")).toBeTruthy();
   });
 
   it("formats preview units through the unit system", () => {

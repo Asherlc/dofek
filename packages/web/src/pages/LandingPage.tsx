@@ -1,4 +1,3 @@
-import { formatDateYmd } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import { trpc } from "../lib/trpc.ts";
@@ -281,8 +280,11 @@ function OverviewPreview() {
     <div className="rounded-xl border border-border bg-surface p-3.5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-accent-secondary">
+            Illustrative example
+          </div>
           <div className="text-sm font-semibold text-foreground">Overview</div>
-          <div className="text-xs text-subtle">Apr 28 - May 27</div>
+          <div className="text-xs text-subtle">Apr 28–May 27, 2026</div>
         </div>
         <div className="rounded-md border border-border bg-surface-solid px-3 py-1 text-xs text-muted">
           30 days
@@ -299,11 +301,10 @@ function OverviewPreview() {
 }
 
 function DailySummaryPreview() {
-  const previewDate = formatDateYmd();
   const rings = [
-    { label: "Recovery", value: "--", caption: "No data", tone: "var(--color-subtle)" },
-    { label: "Strain", value: "0.0", caption: "Light", tone: "var(--color-muted)" },
-    { label: "Sleep", value: "--", caption: "No data", tone: "var(--color-subtle)" },
+    { label: "Recovery", value: "74%", caption: "Near baseline", tone: "var(--color-accent)" },
+    { label: "Strain", value: "8.6", caption: "Moderate", tone: "var(--color-muted)" },
+    { label: "Sleep", value: "7h 42m", caption: "96% of need", tone: "var(--color-accent)" },
   ] as const;
 
   return (
@@ -317,7 +318,7 @@ function DailySummaryPreview() {
             Today&apos;s recovery picture
           </div>
         </div>
-        <div className="text-xs text-subtle">{previewDate}</div>
+        <div className="text-right text-xs text-subtle">May 27, 2026 · Example data</div>
       </div>
       <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
         {rings.map((ring) => (
@@ -353,11 +354,22 @@ function CorrelationPanel() {
           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
             Correlation
           </div>
-          <div className="mt-1 text-3xl font-bold text-accent">0.72</div>
+          <div className="mt-1 text-3xl font-bold text-accent">r = 0.72</div>
           <div className="mt-1 text-xs font-medium text-accent-secondary">Strong positive</div>
-          <div className="text-xs text-subtle">30-day signal</div>
+          <div className="text-xs text-subtle">24 paired days of 30</div>
         </div>
-        <ScatterPlot />
+        <ScatterPlot
+          accessibleName="Example correlation scatter plot. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms)."
+          xAxisLabel="Sleep consistency (%)"
+          xTickLabels={["70", "100"]}
+          yAxisLabel="Heart rate variability (ms)"
+          yTickLabels={["45", "85"]}
+        />
+      </div>
+      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
+        <p>Example sources: Oura sleep + Apple Health HRV</p>
+        <p>Confidence: moderate; association, not causation.</p>
+        <p className="font-semibold text-muted">Next: compare late meals on the same nights.</p>
       </div>
     </div>
   );
@@ -376,8 +388,20 @@ function TrendPanel() {
             52
           </div>
           <div className="text-xs text-subtle">bpm average</div>
+          <div className="mt-1 text-xs font-medium text-accent-secondary">
+            +3 bpm vs prior 7 days
+          </div>
+          <div className="text-xs text-subtle">7 of 7 nights</div>
         </div>
-        <LineChart color={activityMetricColors.heartRate} />
+        <LineChart
+          accessibleName="Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: Resting heart rate (bpm)."
+          color={activityMetricColors.heartRate}
+        />
+      </div>
+      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
+        <p>Example source: Oura</p>
+        <p>Confidence: high coverage; not a diagnosis.</p>
+        <p className="font-semibold text-muted">Next: review training and meal timing.</p>
       </div>
     </div>
   );
@@ -389,9 +413,28 @@ function ComparisonPanel() {
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
         Training load compared with sleep consistency
       </div>
-      <div className="mt-1 text-sm text-muted">Review load beside sleep and recovery.</div>
-      <div className="mt-3">
-        <ScatterPlot descending={true} />
+      <div className="mt-1 text-sm text-muted">Harder weeks align with less consistent sleep.</div>
+      <div className="mt-3 grid grid-cols-[0.45fr_1fr] items-end gap-3">
+        <div>
+          <div className="text-2xl font-bold text-accent">r = -0.46</div>
+          <div className="mt-1 text-xs font-medium text-accent-secondary">Moderate negative</div>
+          <div className="text-xs text-subtle">22 paired days of 30</div>
+        </div>
+        <ScatterPlot
+          accessibleName="Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: Sleep consistency (%)."
+          descending={true}
+          xAxisLabel="Training load (points)"
+          xTickLabels={["0", "120"]}
+          yAxisLabel="Sleep consistency (%)"
+          yTickLabels={["65", "95"]}
+        />
+      </div>
+      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
+        <p>Example sources: Garmin load + Oura sleep</p>
+        <p>Confidence: low; descriptive only.</p>
+        <p className="font-semibold text-muted">
+          Next: inspect high-load weeks with lower sleep consistency.
+        </p>
       </div>
     </div>
   );
@@ -401,7 +444,7 @@ function HealthMonitorPreview() {
   const units = useUnitConverter();
   const metrics = [
     { label: "Heart Rate Variability", value: "68 ms" },
-    { label: "Resting Heart Rate", value: "-" },
+    { label: "Resting Heart Rate", value: "52 bpm" },
     { label: "Blood Oxygen", value: "98%" },
     { label: "Steps", value: "7,640" },
     { label: "Respiratory Rate", value: "14 breaths/min" },
@@ -426,12 +469,29 @@ function HealthMonitorPreview() {
           </div>
         ))}
       </div>
+      <div className="mt-2 border-t border-border pt-2 text-[10px] text-subtle">
+        Example data · 27 of 30 days · Oura + Apple Health
+      </div>
     </div>
   );
 }
 
-function ScatterPlot({ descending = false }: { descending?: boolean }) {
-  const points = descending
+function ScatterPlot({
+  accessibleName,
+  descending = false,
+  xAxisLabel,
+  xTickLabels,
+  yAxisLabel,
+  yTickLabels,
+}: {
+  accessibleName: string;
+  descending?: boolean;
+  xAxisLabel: string;
+  xTickLabels: readonly [string, string];
+  yAxisLabel: string;
+  yTickLabels: readonly [string, string];
+}) {
+  const points: readonly (readonly [number, number])[] = descending
     ? [
         [8, 18],
         [18, 26],
@@ -462,43 +522,73 @@ function ScatterPlot({ descending = false }: { descending?: boolean }) {
       ];
 
   return (
-    <svg viewBox="0 0 120 72" className="h-24 w-full" role="img" aria-hidden="true">
-      <path d="M4 64H116" stroke="var(--color-border-strong)" strokeWidth="1" />
-      <path d="M4 8V64" stroke="var(--color-border-strong)" strokeWidth="1" />
-      <path
-        d={descending ? "M8 18 L112 58" : "M8 60 L112 14"}
-        stroke="var(--color-accent-secondary)"
-        strokeWidth="1.5"
-      />
-      {points.map(([xPosition, yPosition]) => (
-        <circle
-          key={`${xPosition}-${yPosition}`}
-          cx={xPosition}
-          cy={yPosition}
-          r="2"
-          fill="var(--color-accent-secondary)"
-          opacity="0.75"
+    <div className="min-w-0">
+      <div className="text-[9px] font-medium text-subtle">{yAxisLabel}</div>
+      <svg viewBox="0 0 120 72" className="h-20 w-full" role="img" aria-label={accessibleName}>
+        <path d="M12 60H116" stroke="var(--color-border-strong)" strokeWidth="1" />
+        <path d="M12 8V60" stroke="var(--color-border-strong)" strokeWidth="1" />
+        <path
+          d={descending ? "M16 16 L112 54" : "M16 56 L112 14"}
+          stroke="var(--color-accent-secondary)"
+          strokeWidth="1.5"
         />
-      ))}
-    </svg>
+        {points.map(([xPosition, yPosition]) => (
+          <circle
+            key={`${xPosition}-${yPosition}`}
+            cx={xPosition + 8}
+            cy={yPosition - 4}
+            r="2"
+            fill="var(--color-accent-secondary)"
+            opacity="0.75"
+          />
+        ))}
+        <text x="1" y="12" fill="var(--color-subtle)" fontSize="7">
+          {yTickLabels[1]}
+        </text>
+        <text x="1" y="61" fill="var(--color-subtle)" fontSize="7">
+          {yTickLabels[0]}
+        </text>
+        <text x="12" y="70" fill="var(--color-subtle)" fontSize="7">
+          {xTickLabels[0]}
+        </text>
+        <text x="116" y="70" textAnchor="end" fill="var(--color-subtle)" fontSize="7">
+          {xTickLabels[1]}
+        </text>
+      </svg>
+      <div className="text-center text-[9px] font-medium text-subtle">{xAxisLabel}</div>
+    </div>
   );
 }
 
-function LineChart({ color }: { color: string }) {
+function LineChart({ accessibleName, color }: { accessibleName: string; color: string }) {
   return (
-    <svg viewBox="0 0 160 72" className="h-24 w-full" role="img" aria-hidden="true">
-      <path
-        d="M0 18 C18 20 28 38 44 34 C62 30 72 48 90 44 C110 40 122 56 160 52"
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-      />
-      <path
-        d="M0 18 C18 20 28 38 44 34 C62 30 72 48 90 44 C110 40 122 56 160 52 L160 72 L0 72Z"
-        fill={color}
-        opacity="0.08"
-      />
-    </svg>
+    <div className="min-w-0">
+      <div className="text-[9px] font-medium text-subtle">Resting heart rate (bpm)</div>
+      <svg viewBox="0 0 160 72" className="h-20 w-full" role="img" aria-label={accessibleName}>
+        <path d="M14 8V62H158" stroke="var(--color-border-strong)" strokeWidth="1" fill="none" />
+        <path
+          d="M14 18 C30 20 40 38 56 34 C74 30 84 48 102 44 C122 40 134 56 158 52"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+        />
+        <path
+          d="M14 18 C30 20 40 38 56 34 C74 30 84 48 102 44 C122 40 134 56 158 52 L158 62 L14 62Z"
+          fill={color}
+          opacity="0.08"
+        />
+        <text x="1" y="12" fill="var(--color-subtle)" fontSize="7">
+          56
+        </text>
+        <text x="1" y="62" fill="var(--color-subtle)" fontSize="7">
+          48
+        </text>
+      </svg>
+      <div className="flex justify-between text-[9px] text-subtle">
+        <span>May 21</span>
+        <span>May 27</span>
+      </div>
+    </div>
   );
 }
 
