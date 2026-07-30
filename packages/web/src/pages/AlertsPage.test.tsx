@@ -179,10 +179,14 @@ describe("AlertsPage", () => {
     expect(screen.getAllByRole("button", { name: "Retry alert status" })).toHaveLength(1);
   });
 
-  it("keeps cached alerts visible and identifies them as potentially stale", () => {
+  it("keeps cached alerts visible when their check timestamp is invalid", () => {
     const currentQuery = mockAlertsQuery();
     mockAlertsQuery.mockReturnValue({
       ...currentQuery,
+      data: {
+        ...currentQuery.data,
+        generatedAt: "invalid-timestamp",
+      },
       error: new Error("Status service timed out."),
     });
 
@@ -190,7 +194,7 @@ describe("AlertsPage", () => {
 
     expect(screen.getByRole("heading", { name: "Alert status may be out of date" })).toBeTruthy();
     expect(screen.getByText("Garmin summary wasn’t updated")).toBeTruthy();
-    expect(screen.getByText(/Showing alerts last checked/)).toBeTruthy();
+    expect(screen.getByText(/Showing cached alerts from a previous check/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry alert status" })).toBeTruthy();
   });
 });

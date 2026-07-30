@@ -18,6 +18,7 @@ describe("processing alert contract", () => {
     expect(
       processingAlertsFailurePresentation({
         errorMessage: "Status service timed out.",
+        hasSnapshot: false,
         lastCheckedLabel: null,
       }),
     ).toEqual({
@@ -32,12 +33,28 @@ describe("processing alert contract", () => {
     expect(
       processingAlertsFailurePresentation({
         errorMessage: "Status service timed out.",
+        hasSnapshot: true,
         lastCheckedLabel: "5 minutes ago",
       }),
     ).toEqual({
       title: "Alert status may be out of date",
       message:
         "Showing alerts last checked 5 minutes ago. Your synced health data is still available, and this status check did not pause syncs or imports. Details: Status service timed out.",
+      retryLabel: "Retry alert status",
+    });
+  });
+
+  it("identifies cached alerts as stale when their timestamp cannot be formatted", () => {
+    expect(
+      processingAlertsFailurePresentation({
+        errorMessage: "Status service timed out.",
+        hasSnapshot: true,
+        lastCheckedLabel: null,
+      }),
+    ).toEqual({
+      title: "Alert status may be out of date",
+      message:
+        "Showing cached alerts from a previous check. Your synced health data is still available, and this status check did not pause syncs or imports. Details: Status service timed out.",
       retryLabel: "Retry alert status",
     });
   });

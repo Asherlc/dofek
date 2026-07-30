@@ -50,6 +50,7 @@ export default function AlertsScreen() {
   const failurePresentation = alertsQuery.error
     ? processingAlertsFailurePresentation({
         errorMessage: alertsQuery.error.message,
+        hasSnapshot: alertsQuery.data !== undefined,
         lastCheckedLabel: alertsQuery.data
           ? formatRelativeTime(alertsQuery.data.generatedAt)
           : null,

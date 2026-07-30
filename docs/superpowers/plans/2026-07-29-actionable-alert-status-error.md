@@ -17,7 +17,7 @@
 - The initial web failure says only “Alerts could not be loaded. Refresh the page to try again.”
 - The initial mobile failure says only “Pull down or reopen this screen to try again.”
 - Neither initial failure exposes the existing query refetch action.
-- When TanStack Query retains a snapshot and a background refresh fails, both clients silently render the cached alert list without identifying it as potentially stale.
+- TanStack Query marks cached query data stale and refetches stale queries in the background ([TanStack Query important defaults](https://tanstack.com/query/latest/docs/framework/react/guides/important-defaults)). In the current clients, a failed refresh leaves both `data` and `error` observable, but both clients silently render the cached alert list without identifying it as potentially stale.
 - `processing.alerts` is a read-only status query; its failure does not itself mutate synced data or pause sync/import processing.
 
 ## Test Strategy

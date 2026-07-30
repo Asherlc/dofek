@@ -32,18 +32,17 @@ export interface ProcessingAlertsFailurePresentation {
 
 export function processingAlertsFailurePresentation(input: {
   errorMessage: string;
+  hasSnapshot: boolean;
   lastCheckedLabel: string | null;
 }): ProcessingAlertsFailurePresentation {
-  const statusScope =
-    input.lastCheckedLabel === null
-      ? "We could not check for new alerts."
+  const statusScope = !input.hasSnapshot
+    ? "We could not check for new alerts."
+    : input.lastCheckedLabel === null
+      ? "Showing cached alerts from a previous check."
       : `Showing alerts last checked ${input.lastCheckedLabel}.`;
 
   return {
-    title:
-      input.lastCheckedLabel === null
-        ? "Alert status is unavailable"
-        : "Alert status may be out of date",
+    title: input.hasSnapshot ? "Alert status may be out of date" : "Alert status is unavailable",
     message: `${statusScope} Your synced health data is still available, and this status check did not pause syncs or imports. Details: ${input.errorMessage}`,
     retryLabel: "Retry alert status",
   };

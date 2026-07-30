@@ -82,6 +82,11 @@ function createMockObservable(
             ],
           },
         });
+      } else {
+        observer.error?.(
+          TRPCClientError.from<AppRouter>(new Error(`Unhandled Storybook tRPC operation: ${path}`)),
+        );
+        return { unsubscribe: () => {} };
       }
       observer.complete?.();
       return { unsubscribe: () => {} };
