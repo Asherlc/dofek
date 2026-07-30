@@ -398,7 +398,7 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
         visualization: showAsPoints ? ("point" as const) : ("line" as const),
         formatValue:
           trend?.dataType === "boolean"
-            ? (value: number) => (value === 1 ? "Yes" : value === 0 ? "No" : String(value))
+            ? (value: number) => formatJournalTrendValue(value, "boolean", trend.unit)
             : undefined,
       };
     });
@@ -437,7 +437,15 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
     );
   }
 
-  if (!evidence) return null;
+  if (!evidence) {
+    return (
+      <QueryStatePanel
+        variant="empty"
+        height={96}
+        message="Journal trend evidence is unavailable."
+      />
+    );
+  }
 
   if (evidence.series.length === 0) {
     return (

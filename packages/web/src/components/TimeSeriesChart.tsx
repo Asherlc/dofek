@@ -9,6 +9,8 @@ import {
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
+const MAX_MISSING_DAY_MARKERS = 60;
+
 interface Series {
   name: string;
   data: [string, number | null][];
@@ -102,7 +104,9 @@ export function TimeSeriesChart({
     legend: dofekLegend(series.length > 1),
     series: series.map((s) => {
       const missingDayMarkers =
-        s.missingDates && s.missingDates.length > 0
+        s.missingDates &&
+        s.missingDates.length > 0 &&
+        s.missingDates.length <= MAX_MISSING_DAY_MARKERS
           ? {
               markLine: {
                 symbol: ["none", "none"],

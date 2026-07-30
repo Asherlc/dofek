@@ -116,7 +116,7 @@ describe("TimeSeriesChart", () => {
   it("renders boolean observations as accessible Yes/No points beside numeric lines", () => {
     const element = TimeSeriesChart({
       accessibilityDescription:
-        "Journal trends from July 1, 2026 to July 3, 2026. Missing days are gaps.",
+        "Journal trends from April 1, 2026 to April 3, 2026. Missing days are gaps.",
       series: [
         {
           name: "Alcohol",
@@ -162,7 +162,7 @@ describe("TimeSeriesChart", () => {
       enabled: true,
       label: {
         description:
-          "Time series chart. Journal trends from July 1, 2026 to July 3, 2026. Missing days are gaps. Alcohol is shown as separate Yes/No points. Energy is shown as a numeric line.",
+          "Time series chart. Journal trends from April 1, 2026 to April 3, 2026. Missing days are gaps. Alcohol is shown as separate Yes/No points. Energy is shown as a numeric line.",
       },
     });
 
@@ -213,5 +213,27 @@ describe("TimeSeriesChart", () => {
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<img src=x");
+  });
+
+  it("omits visual missing-day markers when their density would obscure the chart", () => {
+    const missingDates = Array.from({ length: 61 }, (_, index) => {
+      const date = new Date("2026-01-01T00:00:00.000Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const element = TimeSeriesChart({
+      series: [
+        {
+          name: "Energy",
+          data: [["2026-01-01", 8]],
+          missingDates,
+        },
+      ],
+    });
+    if (!isValidElement<ChartElementProps>(element)) {
+      throw new Error("Expected TimeSeriesChart to return a chart element");
+    }
+
+    expect(element.props.option.series?.[0]?.markLine).toBeUndefined();
   });
 });

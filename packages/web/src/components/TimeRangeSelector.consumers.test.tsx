@@ -5,6 +5,7 @@ import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../lib/selectedRangeQueryRegistry.test-helper.ts";
+import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
 
 const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -164,20 +165,7 @@ vi.mock("../lib/trpc.ts", () => {
         delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
         questions: recordQuery("journal.questions"),
-        trends: recordQuery("journal.trends", {
-          window: {
-            startDate: "2026-07-01",
-            endDate: "2026-07-30",
-            dayCount: 30,
-            gapRepresentation: "explicit_daily",
-          },
-          statement: "No numeric or Yes/No journal observations in this window.",
-          uncertainty: {
-            status: "unavailable",
-            statement: "Uncertainty interval: not available for raw journal observations.",
-          },
-          series: [],
-        }),
+        trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),

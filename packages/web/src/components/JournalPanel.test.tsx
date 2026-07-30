@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JournalPanel } from "./JournalPanel.tsx";
+import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
 
 interface CapturedJournalSeries {
   data: Array<[string, number | null]>;
@@ -17,21 +18,6 @@ interface CapturedChartProps {
   accessibilityDescription?: string;
   series: CapturedJournalSeries[];
 }
-
-const emptyTrendEvidence = {
-  window: {
-    startDate: "2026-07-01",
-    endDate: "2026-07-30",
-    dayCount: 30,
-    gapRepresentation: "explicit_daily" as const,
-  },
-  statement: "No numeric or Yes/No journal observations in this window.",
-  uncertainty: {
-    status: "unavailable" as const,
-    statement: "Uncertainty interval: not available for raw journal observations.",
-  },
-  series: [],
-};
 
 const mocks = vi.hoisted(() => {
   const chartProps: CapturedChartProps[] = [];
@@ -122,7 +108,7 @@ describe("JournalPanel", () => {
     mocks.questionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
     mocks.trendsQuery.mockReset();
     mocks.trendsQuery.mockReturnValue({
-      data: emptyTrendEvidence,
+      data: emptyJournalTrendEvidence,
       error: null,
       isLoading: false,
     });
@@ -303,7 +289,7 @@ describe("JournalPanel", () => {
 
   it("retains the trends empty state alongside a background refresh failure", () => {
     mocks.trendsQuery.mockReturnValue({
-      data: emptyTrendEvidence,
+      data: emptyJournalTrendEvidence,
       error: new Error("Journal trends refresh failed"),
       isFetching: false,
       isLoading: false,
@@ -315,6 +301,19 @@ describe("JournalPanel", () => {
 
     expect(screen.getByText("Journal trends refresh failed")).toBeDefined();
     expect(screen.getByText("No numeric journal data to chart.")).toBeDefined();
+  });
+
+  it("shows an unavailable state when the trends query settles without evidence", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(screen.getByText("Journal trend evidence is unavailable.")).toBeDefined();
   });
 
   it("renders server-authored dates, gaps, exact values, and uncertainty evidence", () => {

@@ -6,11 +6,15 @@ import { useMemo } from "react";
 import { within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
 import { JournalPanel } from "./JournalPanel.tsx";
+import {
+  emptyJournalTrendEvidence,
+  type JournalTrendEvidence,
+} from "./journal-trend-test-fixtures.ts";
 
 interface JournalScenario {
   entries: unknown[];
   loading?: boolean;
-  trends?: unknown;
+  trends?: JournalTrendEvidence;
 }
 
 const entries = [
@@ -100,7 +104,7 @@ const questions = [
   },
 ];
 
-const trendEvidence = {
+const trendEvidence: JournalTrendEvidence = {
   window: {
     startDate: "2026-07-21",
     endDate: "2026-07-24",
@@ -168,22 +172,7 @@ function createMockLink(scenario: JournalScenario): TRPCLink<AppRouter> {
       if (op.path === "journal.entries") return createMockObservable(scenario.entries);
       if (op.path === "journal.questions") return createMockObservable(questions);
       if (op.path === "journal.trends") {
-        return createMockObservable(
-          scenario.trends ?? {
-            window: {
-              startDate: "2026-07-01",
-              endDate: "2026-07-30",
-              dayCount: 30,
-              gapRepresentation: "explicit_daily",
-            },
-            statement: "No numeric or Yes/No journal observations in this window.",
-            uncertainty: {
-              status: "unavailable",
-              statement: "Uncertainty interval: not available for raw journal observations.",
-            },
-            series: [],
-          },
-        );
+        return createMockObservable(scenario.trends ?? emptyJournalTrendEvidence);
       }
       return createMockObservable({ ok: true });
     };
