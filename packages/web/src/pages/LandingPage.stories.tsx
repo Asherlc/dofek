@@ -88,6 +88,18 @@ export const MobileHeader: Story = {
   },
 };
 
+export const IllustrativeDecisionPreview: Story = {
+  name: "Illustrative decision preview",
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Shows the landing-page example with comparison, coverage, source, limitation, action, and labeled chart context.",
+      },
+    },
+  },
+};
+
 export const ImportOnlyProviders: Story = {
   args: {
     usableProviders: importOnlyProviders,

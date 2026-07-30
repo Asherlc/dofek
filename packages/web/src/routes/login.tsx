@@ -104,8 +104,15 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center">
+    <div className="min-h-screen bg-page flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm p-8 rounded-2xl bg-surface-solid border border-border shadow-xl">
+        <a
+          href="/"
+          aria-label="Back to Dofek"
+          className="inline-flex mb-6 text-sm text-subtle hover:text-foreground transition-colors"
+        >
+          &larr; Back to Dofek
+        </a>
         <h1 className="text-2xl font-bold text-foreground text-center mb-2">{headerCopy.title}</h1>
         <p className="text-muted text-center mb-8 text-sm">{headerCopy.subtitle}</p>
 
@@ -283,6 +290,25 @@ function LoginPage() {
                             ? "Create account and continue"
                             : "Sign in with email"}
                       </button>
+                      {authMode === "register" ? (
+                        <p className="text-xs text-subtle text-center leading-relaxed">
+                          By creating an account, you agree to the{" "}
+                          <a
+                            href="/terms"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Terms of Service
+                          </a>{" "}
+                          and acknowledge the{" "}
+                          <a
+                            href="/privacy"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Privacy Policy
+                          </a>
+                          .
+                        </p>
+                      ) : null}
                     </form>
                   </>
                 )}
