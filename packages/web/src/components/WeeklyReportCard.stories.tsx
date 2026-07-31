@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { WeeklyReportCard } from "./WeeklyReportCard";
+import { weeklyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
 
 const meta = {
   title: "Insights/WeeklyReportCard",
@@ -50,6 +51,7 @@ const meta = {
           "These period averages can show co-movement, but they cannot establish cause and effect.",
         ],
       },
+      emptyState: weeklyReportEmptyStateFixture,
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;
@@ -90,6 +92,7 @@ export const Empty: Story = {
         ],
         note: "This preview shows report sections only. No personal values or conclusions are estimated.",
       },
+      decisionSupport: null,
     },
   },
 };

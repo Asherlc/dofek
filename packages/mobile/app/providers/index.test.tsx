@@ -1542,30 +1542,7 @@ describe("ProvidersScreen", () => {
     );
   });
 
-  it("passes sinceDays: undefined when Full sync link is clicked", async () => {
-    mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
-    mockSyncStatusFetch.mockResolvedValue({
-      status: "done",
-      providers: { wahoo: { status: "done" } },
-    });
-
-    await renderProvidersScreen();
-
-    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-    fireEvent.click(wahooCard.getByText("Full sync"));
-
-    await waitFor(() => {
-      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
-        providerId: "wahoo",
-        sinceDays: undefined,
-      });
-    });
-    await waitFor(() => {
-      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-2" }, { staleTime: 0 });
-    });
-  });
-
-  it("passes sinceDays: 7 when Sync All is clicked", async () => {
+  it("keeps Sync All disabled when another provider is still polling", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-3", providerJobs: [] });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",

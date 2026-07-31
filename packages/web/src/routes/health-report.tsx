@@ -7,6 +7,10 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
+import {
+  monthlyReportEmptyStateFixture,
+  weeklyReportEmptyStateFixture,
+} from "../components/report-empty-state-fixtures.ts";
 import { healthReportTabs } from "../lib/healthReportNavigation.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -138,6 +142,7 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...parsedReport.data,
               decisionSupport: parsedReport.data.decisionSupport ?? null,
+              emptyState: weeklyReportEmptyStateFixture,
             }}
           />
         </SharedReportShell>
@@ -154,6 +159,7 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...parsedReport.data,
               decisionSupport: parsedReport.data.decisionSupport ?? null,
+              emptyState: monthlyReportEmptyStateFixture,
             }}
           />
         </SharedReportShell>

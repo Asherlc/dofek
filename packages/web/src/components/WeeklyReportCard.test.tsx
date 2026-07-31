@@ -2,6 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
+import { weeklyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
 
 describe("WeeklyReportCard", () => {
   it("previews the server-owned weekly report structure without values", () => {
@@ -21,6 +22,7 @@ describe("WeeklyReportCard", () => {
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "Server no-estimate note.",
           },
+          decisionSupport: null,
         }}
       />,
     );
@@ -56,6 +58,7 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -82,6 +85,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -106,6 +110,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -142,6 +147,7 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
