@@ -46,25 +46,26 @@ public class HealthKitModule: Module {
     private lazy var observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
         timeout: 25,
         reportExpiration: { [weak self] expiration in
-            guard let self else {
-                return
-            }
-            let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
-            breadcrumb.message = self.observerSyncInProgress
-                ? "Observer update expired while JavaScript sync was still running"
-                : "Observer update expired before JavaScript sync completed"
-            breadcrumb.data = [
-                "updateId": expiration.updateId,
-                "typeIdentifier": expiration.typeIdentifier,
-                "ageMilliseconds": expiration.ageMilliseconds,
-            ]
-            SentrySDK.addBreadcrumb(breadcrumb)
-            if !self.observerUpdateCoordinator.hasPendingUpdates {
-                self.observerSyncInProgress = false
-            }
+            self?.handleObserverUpdateExpiration(expiration)
         }
     )
     private var observerQueries: [HKObserverQuery] = []
+
+    private func handleObserverUpdateExpiration(_ expiration: HealthKitObserverUpdateExpiration) {
+        let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
+        breadcrumb.message = observerSyncInProgress
+            ? "Observer update expired while JavaScript sync was still running"
+            : "Observer update expired before JavaScript sync completed"
+        breadcrumb.data = [
+            "updateId": expiration.updateId,
+            "typeIdentifier": expiration.typeIdentifier,
+            "ageMilliseconds": expiration.ageMilliseconds,
+        ]
+        SentrySDK.addBreadcrumb(breadcrumb)
+        if !observerUpdateCoordinator.hasPendingUpdates {
+            observerSyncInProgress = false
+        }
+    }
 
     @discardableResult
     private func stopBackgroundObservers() -> Int {

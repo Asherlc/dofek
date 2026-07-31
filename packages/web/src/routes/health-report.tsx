@@ -6,11 +6,11 @@ import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import {
   monthlyReportEmptyStateFixture,
   weeklyReportEmptyStateFixture,
 } from "../components/report-empty-state-fixtures.ts";
+import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { healthReportTabs } from "../lib/healthReportNavigation.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -164,12 +164,13 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "weekly") {
     const parsedReport = weeklyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
           <WeeklyReportCard
             data={{
-              ...parsedReport.data,
-              decisionSupport: parsedReport.data.decisionSupport ?? null,
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
               emptyState: weeklyReportEmptyStateFixture,
             }}
           />
@@ -181,12 +182,13 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "monthly") {
     const parsedReport = monthlyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
           <MonthlyReportContent
             data={{
-              ...parsedReport.data,
-              decisionSupport: parsedReport.data.decisionSupport ?? null,
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
               emptyState: monthlyReportEmptyStateFixture,
             }}
           />

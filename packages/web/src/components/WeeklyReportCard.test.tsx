@@ -1,8 +1,12 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { weeklyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
+import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("WeeklyReportCard", () => {
   it("previews the server-owned weekly report structure without values", () => {
@@ -11,11 +15,6 @@ describe("WeeklyReportCard", () => {
         data={{
           current: null,
           history: [],
-          decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Server weekly preview title",
@@ -63,10 +62,6 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
@@ -94,10 +89,6 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-05-24", endDate: "2026-05-30" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
@@ -123,10 +114,6 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-05-24", endDate: "2026-05-30" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
@@ -164,10 +151,6 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: weeklyReportEmptyStateFixture,
         }}
       />,

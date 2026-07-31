@@ -53,11 +53,6 @@ export const Empty: Story = {
       history: [],
       decisionSupport: null,
       emptyState: monthlyReportEmptyStateFixture,
-      recovery: {
-        range: { startDate: "2026-03-01", endDate: "2026-03-24" },
-        emptyMessage:
-          "No activity, sleep, or recovery data was found from 2026-03-01 through 2026-03-24.",
-      },
     },
   },
 };
