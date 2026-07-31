@@ -37,7 +37,6 @@ export const HEALTHKIT_BACKGROUND_SENTRY_SOURCE = "bg-healthkit-sync";
 
 export function isHealthKitSentrySource(source: string | undefined): boolean {
   return (
-    source === HEALTHKIT_BACKGROUND_SENTRY_SOURCE ||
-    (source?.startsWith("health-kit-") ?? false)
+    source === HEALTHKIT_BACKGROUND_SENTRY_SOURCE || (source?.startsWith("health-kit-") ?? false)
   );
 }

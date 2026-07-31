@@ -113,12 +113,9 @@ describe("ios telemetry", () => {
     const options = mocks.mockInit.mock.calls[0]?.[0];
     const beforeSend = options?.beforeSend;
     const timeoutError = new Error("fetch failed: UnexpectedException: The request timed out.");
-    expect(
-      beforeSend?.(
-        { event_id: "event-1" },
-        { originalException: timeoutError },
-      ),
-    ).toEqual({ event_id: "event-1" });
+    expect(beforeSend?.({ event_id: "event-1" }, { originalException: timeoutError })).toEqual({
+      event_id: "event-1",
+    });
     expect(
       beforeSend?.(
         { event_id: "event-2", tags: { source: "bg-healthkit-sync" } },
