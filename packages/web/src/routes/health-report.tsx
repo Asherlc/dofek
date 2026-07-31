@@ -1,5 +1,6 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { useState } from "react";
 import { z } from "zod";
 import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
@@ -56,10 +57,31 @@ const reportDecisionSynthesisSchema = z.object({
   confidenceAndMissingData: z.array(decisionSupportItemSchema),
 });
 
+const reportEmptyStateSchema = z.object({
+  reportKind: z.enum(["weekly", "monthly"]),
+  title: z.string(),
+  message: z.string(),
+  minimumObservedDays: z.literal(1),
+  acceptedDataTypes: z.tuple([z.literal("activity"), z.literal("sleep"), z.literal("recovery")]),
+  requirement: z.string(),
+  previewTitle: z.string(),
+  previewItems: z.array(z.string()),
+  note: z.string(),
+});
+
+const weeklyReportEmptyStateSchema = reportEmptyStateSchema.extend({
+  reportKind: z.literal("weekly"),
+});
+
+const monthlyReportEmptyStateSchema = reportEmptyStateSchema.extend({
+  reportKind: z.literal("monthly"),
+});
+
 const weeklyReportSchema = z.object({
   current: weekSummarySchema,
   history: z.array(weekSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
+  emptyState: weeklyReportEmptyStateSchema.optional(),
 });
 
 const monthSummarySchema = z.object({
@@ -78,6 +100,7 @@ const monthlyReportSchema = z.object({
   current: monthSummarySchema,
   history: z.array(monthSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
+  emptyState: monthlyReportEmptyStateSchema.optional(),
 });
 const REPORT_PAGE_SIZE = 20;
 
@@ -138,6 +161,7 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...parsedReport.data,
               decisionSupport: parsedReport.data.decisionSupport ?? null,
+              emptyState: parsedReport.data.emptyState ?? createReportEmptyState("weekly"),
             }}
           />
         </SharedReportShell>
@@ -154,6 +178,7 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...parsedReport.data,
               decisionSupport: parsedReport.data.decisionSupport ?? null,
+              emptyState: parsedReport.data.emptyState ?? createReportEmptyState("monthly"),
             }}
           />
         </SharedReportShell>

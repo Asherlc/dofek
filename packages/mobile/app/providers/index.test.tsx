@@ -1542,27 +1542,60 @@ describe("ProvidersScreen", () => {
     );
   });
 
-  it("passes sinceDays: undefined when Full sync link is clicked", async () => {
-    mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
-    mockSyncStatusFetch.mockResolvedValue({
-      status: "done",
-      providers: { wahoo: { status: "done" } },
+  it("keeps Sync All disabled when another provider is still polling", async () => {
+    const garminProvider = {
+      id: "garmin",
+      name: "Garmin",
+      authType: "oauth",
+      authorized: true,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [connectedProvider, garminProvider],
+      isLoading: false,
+      error: null,
+    });
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "garmin:active-job",
+          status: "running",
+          providers: { garmin: { status: "running", message: "Syncing Garmin" } },
+        },
+      ],
+    });
+    mockSyncStatusFetch.mockImplementation(() => new Promise(() => {}));
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "job-skipped",
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ],
     });
 
     await renderProvidersScreen();
 
+    await waitFor(() => {
+      expect(
+        screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled"),
+      ).toBe(true);
+    });
+
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-    fireEvent.click(wahooCard.getByText("Full sync"));
+    fireEvent.click(wahooCard.getByText("Sync"));
 
     await waitFor(() => {
-      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
-        providerId: "wahoo",
-        sinceDays: undefined,
-      });
+      expect(wahooCard.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     });
-    await waitFor(() => {
-      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-2" }, { staleTime: 0 });
-    });
+    expect(screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 
   it("passes sinceDays: 7 when Sync All is clicked", async () => {

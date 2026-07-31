@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { monthlyReportEmptyState } from "../test-fixtures/report-data.ts";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
 const meta = {
@@ -34,6 +35,7 @@ const meta = {
           "These period averages can show co-movement, but they cannot establish cause and effect.",
         ],
       },
+      emptyState: monthlyReportEmptyState,
     },
   },
 } satisfies Meta<typeof MonthlyReportContent>;
@@ -49,6 +51,7 @@ export const Empty: Story = {
     data: {
       current: null,
       history: [],
+      decisionSupport: null,
       emptyState: {
         reportKind: "monthly",
         title: "Your monthly report will appear here",

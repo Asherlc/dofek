@@ -439,7 +439,7 @@ export default function ProvidersScreen() {
       try {
         const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
+          sinceDays: ROUTINE_SYNC_DAYS,
         });
         const providerResult = result.providerResults?.find(
           (entry) => entry.providerId === providerId,

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { weeklyReportEmptyState } from "../test-fixtures/report-data.ts";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
 
 describe("WeeklyReportCard", () => {
@@ -10,6 +11,7 @@ describe("WeeklyReportCard", () => {
         data={{
           current: null,
           history: [],
+          decisionSupport: null,
           emptyState: {
             reportKind: "weekly",
             title: "Server weekly preview title",
@@ -56,6 +58,7 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
+          emptyState: weeklyReportEmptyState,
         }}
       />,
     );
@@ -82,6 +85,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
+          emptyState: weeklyReportEmptyState,
         }}
       />,
     );
@@ -106,6 +110,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
+          emptyState: weeklyReportEmptyState,
         }}
       />,
     );
@@ -142,6 +147,7 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
+          emptyState: weeklyReportEmptyState,
         }}
       />,
     );
