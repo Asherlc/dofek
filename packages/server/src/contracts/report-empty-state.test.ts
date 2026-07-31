@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createReportEmptyState,
   monthlyReportEmptyStateSchema,
+  reportEmptyStateSchema,
   weeklyReportEmptyStateSchema,
 } from "./report-empty-state.ts";
 
@@ -51,5 +52,15 @@ describe("report empty-state contract", () => {
       note: "This preview shows report sections only. No personal values or conclusions are estimated.",
     });
     expect(monthlyReportEmptyStateSchema.parse(emptyState)).toEqual(emptyState);
+  });
+
+  it("selects the report-kind-specific runtime schema", () => {
+    const weekly = createReportEmptyState("weekly");
+    const monthly = createReportEmptyState("monthly");
+
+    expect(reportEmptyStateSchema("weekly").parse(weekly)).toEqual(weekly);
+    expect(reportEmptyStateSchema("monthly").parse(monthly)).toEqual(monthly);
+    expect(reportEmptyStateSchema("weekly").safeParse(monthly).success).toBe(false);
+    expect(reportEmptyStateSchema("monthly").safeParse(weekly).success).toBe(false);
   });
 });
