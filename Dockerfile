@@ -7,10 +7,10 @@ COPY package.json ./
 # Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.13.8-alpine3.20 AS dbt-tools
+FROM python:3.13.14-alpine3.24 AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
-    dbt-core==1.12.0 \
+    dbt-core==1.11.12 \
     dbt-clickhouse==1.10.1 \
     sqlfluff==4.2.2 \
     sqlfluff-templater-dbt==4.2.2
