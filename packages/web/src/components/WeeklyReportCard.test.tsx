@@ -11,10 +11,6 @@ describe("WeeklyReportCard", () => {
           current: null,
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Server weekly preview title",
@@ -61,10 +57,6 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Your weekly report will appear here",
@@ -103,10 +95,6 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-05-24", endDate: "2026-05-30" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Your weekly report will appear here",
@@ -143,10 +131,6 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-05-24", endDate: "2026-05-30" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Your weekly report will appear here",
@@ -195,10 +179,6 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Your weekly report will appear here",
