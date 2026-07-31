@@ -104,7 +104,9 @@ async function performHealthKitSync(
   }
 
   if (result.errors.length > 0) {
-    const actionableErrors = result.errors.filter((message) => !isTransientNetworkErrorMessage(message));
+    const actionableErrors = result.errors.filter(
+      (message) => !isTransientNetworkErrorMessage(message),
+    );
     if (actionableErrors.length === 0) {
       stageTelemetry.complete("failed");
       logger.info(TAG, "Background HealthKit upload timed out; retrying on next delivery");

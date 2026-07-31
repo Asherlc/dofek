@@ -7,9 +7,7 @@ import {
 describe("health-kit-errors", () => {
   it("detects transient background fetch timeout messages", () => {
     expect(
-      isTransientNetworkErrorMessage(
-        "fetch failed: UnexpectedException: The request timed out.",
-      ),
+      isTransientNetworkErrorMessage("fetch failed: UnexpectedException: The request timed out."),
     ).toBe(true);
     expect(
       isTransientNetworkErrorMessage(

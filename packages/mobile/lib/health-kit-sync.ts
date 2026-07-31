@@ -5,7 +5,10 @@ import type {
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
-import { isHealthKitDatabaseInaccessible, isTransientNetworkErrorMessage } from "./health-kit-errors";
+import {
+  isHealthKitDatabaseInaccessible,
+  isTransientNetworkErrorMessage,
+} from "./health-kit-errors";
 import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
@@ -350,7 +353,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
         totalInserted += routeResult.inserted;
       } catch (error) {
-        if (isTransientNetworkErrorMessage(error instanceof Error ? error.message : String(error))) {
+        if (
+          isTransientNetworkErrorMessage(error instanceof Error ? error.message : String(error))
+        ) {
           const message = error instanceof Error ? error.message : String(error);
           errors.push(`Push workout routes: ${message}`);
         } else {

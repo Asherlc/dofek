@@ -116,9 +116,7 @@ describe("ios telemetry", () => {
       beforeSend?.(
         { event_id: "event-1" },
         {
-          originalException: new Error(
-            "fetch failed: UnexpectedException: The request timed out.",
-          ),
+          originalException: new Error("fetch failed: UnexpectedException: The request timed out."),
         },
       ),
     ).toBeNull();
