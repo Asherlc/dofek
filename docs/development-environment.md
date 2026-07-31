@@ -31,13 +31,14 @@ Install mise using its
 then run:
 
 ```bash
-MISE_LOCKED=1 mise install --locked
+mise trust mise.toml
+mise install --locked
 mise exec -- infisical login
 mise run cloud:init
 ```
 
-`MISE_LOCKED=1` installs only the pinned tool versions recorded in
-`mise.lock`. `cloud:init` then:
+The first two commands trust the reviewed repository configuration and install
+only the pinned tool versions. `cloud:init` then:
 
 1. Installs pnpm dependencies with the frozen lockfile.
 2. Builds a workspace-local CodeGraph index when one does not exist.
@@ -60,7 +61,7 @@ devcontainer up --workspace-folder .
 
 The container lifecycle is intentionally split:
 
-- `onCreateCommand` runs `MISE_LOCKED=1 mise install --locked` and
+- `onCreateCommand` runs `mise install --locked` and
   `mise run cloud:prebuild`. This phase downloads tools and dependencies and
   builds the CodeGraph index without requiring application secrets.
 - `postCreateCommand` enables RTK's global Codex instructions and runs
@@ -77,7 +78,8 @@ and pinned vcpkg bootstrap from
 through `VCPKG_ROOT`, install the pinned minimum mise version, and use:
 
 ```bash
-MISE_LOCKED=1 mise install --locked
+mise trust mise.toml
+mise install --locked
 mise run agent:codex
 mise run cloud:init
 ```

@@ -17,11 +17,10 @@
     "VCPKG_ROOT": "/opt/vcpkg"
   },
   "remoteEnv": {
-    "MISE_LOCKED": "1",
     "PATH": "/home/vscode/.local/share/mise/shims:${containerEnv:PATH}"
   },
   "remoteUser": "vscode",
-  "onCreateCommand": "MISE_LOCKED=1 mise install --locked && mise run cloud:prebuild",
+  "onCreateCommand": "mise trust mise.toml && mise install --locked && mise run cloud:prebuild",
   "postCreateCommand": "mise run agent:codex && mise run cloud:start",
   "hostRequirements": {
     "cpus": 4,
