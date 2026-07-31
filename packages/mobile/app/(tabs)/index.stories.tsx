@@ -7,11 +7,11 @@ import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
-import TodayScreen from "./index";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "./processing-status-story-fixture";
+} from "./_processing-status-story-fixture";
+import TodayScreen from "./index";
 
 function localDateString(dayOffset = 0): string {
   const date = new Date();
