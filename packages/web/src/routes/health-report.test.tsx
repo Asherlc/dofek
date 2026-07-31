@@ -12,9 +12,13 @@ const mockWriteText = vi.hoisted(() => vi.fn());
 const captured = vi.hoisted<{
   component: (() => ReactElement) | null;
   validateSearch: ((search: Record<string, unknown>) => { token?: string | null }) | null;
+  weeklyReportData: { emptyState?: { reportKind: string } } | undefined;
+  monthlyReportData: { emptyState?: { reportKind: string } } | undefined;
 }>(() => ({
   component: null,
   validateSearch: null,
+  weeklyReportData: undefined,
+  monthlyReportData: undefined,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -47,18 +51,36 @@ vi.mock("../components/WeeklyReportCard.tsx", () => ({
     data?: {
       current: { weekStart: string } | null;
       decisionSupport?: { whatChanged: string[] } | null;
+      emptyState?: { reportKind: string };
     };
-  }) => (
-    <div>
-      Weekly snapshot {data?.current?.weekStart} {data?.decisionSupport?.whatChanged[0]}
-    </div>
-  ),
+  }) => {
+    captured.weeklyReportData = data;
+    return (
+      <div>
+        Weekly snapshot {data?.current?.weekStart} {data?.decisionSupport?.whatChanged[0]}
+        {data?.emptyState ? ` empty:${data.emptyState.reportKind}` : null}
+      </div>
+    );
+  },
 }));
 
 vi.mock("../components/MonthlyReportContent.tsx", () => ({
-  MonthlyReportContent: ({ data }: { data?: { current: { monthStart: string } | null } }) => (
-    <div>Monthly snapshot {data?.current?.monthStart}</div>
-  ),
+  MonthlyReportContent: ({
+    data,
+  }: {
+    data?: {
+      current: { monthStart: string } | null;
+      emptyState?: { reportKind: string };
+    };
+  }) => {
+    captured.monthlyReportData = data;
+    return (
+      <div>
+        Monthly snapshot {data?.current?.monthStart}
+        {data?.emptyState ? ` empty:${data.emptyState.reportKind}` : null}
+      </div>
+    );
+  },
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -128,6 +150,8 @@ beforeEach(() => {
     value: { writeText: mockWriteText },
   });
   mockWriteText.mockResolvedValue(undefined);
+  captured.weeklyReportData = undefined;
+  captured.monthlyReportData = undefined;
 });
 
 afterEach(() => {
@@ -163,7 +187,9 @@ describe("health report route", () => {
     expect(mockGetShared).toHaveBeenCalledWith({ token: "shared-token" });
     expect(mockMyReports).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Shared Health Report" })).toBeTruthy();
-    expect(screen.getByText("Weekly snapshot 2026-07-19")).toBeTruthy();
+    expect(screen.getByText(/Weekly snapshot 2026-07-19/)).toBeTruthy();
+    expect(screen.getByText(/empty:weekly/)).toBeTruthy();
+    expect(captured.weeklyReportData?.emptyState?.reportKind).toBe("weekly");
   });
 
   it("renders decision support stored in a new shared report snapshot", () => {
@@ -234,7 +260,30 @@ describe("health report route", () => {
     renderRoute("monthly-token");
 
     expect(mockGetShared).toHaveBeenCalledWith({ token: "monthly-token" });
-    expect(screen.getByText("Monthly snapshot 2026-07-01")).toBeTruthy();
+    expect(screen.getByText(/Monthly snapshot 2026-07-01/)).toBeTruthy();
+    expect(screen.getByText(/empty:monthly/)).toBeTruthy();
+    expect(captured.monthlyReportData?.emptyState?.reportKind).toBe("monthly");
+  });
+
+  it("renders legacy shared reports that omit emptyState and recovery metadata", () => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportData: {
+          current: weeklyReport.reportData.current,
+          history: weeklyReport.reportData.history,
+          decisionSupport: weeklyReport.reportData.decisionSupport,
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("legacy-weekly-token");
+
+    expect(screen.getByText(/Weekly snapshot 2026-07-19/)).toBeTruthy();
+    expect(screen.getByText(/empty:weekly/)).toBeTruthy();
+    expect(captured.weeklyReportData?.emptyState?.reportKind).toBe("weekly");
   });
 
   it("shows a loading state without falling back to owner management", () => {

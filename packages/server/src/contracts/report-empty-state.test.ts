@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { createReportEmptyState } from "./report-empty-state.ts";
+import {
+  createReportEmptyState,
+  monthlyReportEmptyStateSchema,
+  weeklyReportEmptyStateSchema,
+} from "./report-empty-state.ts";
 
 describe("report empty-state contract", () => {
   it("describes the exact weekly requirement and only field-backed sections", () => {
-    expect(createReportEmptyState("weekly")).toEqual({
+    const emptyState = createReportEmptyState("weekly");
+    expect(emptyState).toEqual({
       reportKind: "weekly",
       title: "Your weekly report will appear here",
       message: "No activity, sleep, or recovery data is available for this report yet.",
@@ -21,10 +26,12 @@ describe("report empty-state contract", () => {
       ],
       note: "This preview shows report sections only. No personal values or conclusions are estimated.",
     });
+    expect(weeklyReportEmptyStateSchema.parse(emptyState)).toEqual(emptyState);
   });
 
   it("describes the exact monthly requirement and only field-backed sections", () => {
-    expect(createReportEmptyState("monthly")).toEqual({
+    const emptyState = createReportEmptyState("monthly");
+    expect(emptyState).toEqual({
       reportKind: "monthly",
       title: "Your monthly report will appear here",
       message: "No activity, sleep, or recovery data is available for this report yet.",
@@ -43,5 +50,6 @@ describe("report empty-state contract", () => {
       ],
       note: "This preview shows report sections only. No personal values or conclusions are estimated.",
     });
+    expect(monthlyReportEmptyStateSchema.parse(emptyState)).toEqual(emptyState);
   });
 });
