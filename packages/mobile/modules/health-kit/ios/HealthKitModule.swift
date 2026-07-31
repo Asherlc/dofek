@@ -58,14 +58,8 @@ public class HealthKitModule: Module {
         observerStateLock.unlock()
     }
 
-    private func clearObserverSyncInProgressIfIdle() {
-        observerStateLock.lock()
-        defer { observerStateLock.unlock() }
-        if !observerUpdateCoordinator.hasPendingUpdates {
-            observerSyncInProgress = false
-        }
-    }
-
+    /// Bridge entry point for JS `setObserverSyncInProgress`. `true` always sets the flag;
+    /// `false` clears it only when no observer updates are still pending natively.
     private func setObserverSyncInProgressFromBridge(inProgress: Bool) {
         observerStateLock.lock()
         defer { observerStateLock.unlock() }
@@ -77,17 +71,26 @@ public class HealthKitModule: Module {
     }
 
     private func handleObserverUpdateExpiration(_ expiration: HealthKitObserverUpdateExpiration) {
+        observerStateLock.lock()
+        let syncInProgress = observerSyncInProgress
+        let hasPendingUpdates = observerUpdateCoordinator.hasPendingUpdates
+        if !hasPendingUpdates {
+            observerSyncInProgress = false
+        }
+        observerStateLock.unlock()
+
         let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
-        breadcrumb.message = observerSyncInProgress
+        breadcrumb.message = syncInProgress
             ? "Observer update expired while JavaScript sync was still running"
             : "Observer update expired before JavaScript sync completed"
         breadcrumb.data = [
             "updateId": expiration.updateId,
             "typeIdentifier": expiration.typeIdentifier,
             "ageMilliseconds": expiration.ageMilliseconds,
+            "observerSyncInProgress": syncInProgress,
+            "hasPendingUpdates": hasPendingUpdates,
         ]
         SentrySDK.addBreadcrumb(breadcrumb)
-        clearObserverSyncInProgressIfIdle()
     }
 
     @discardableResult

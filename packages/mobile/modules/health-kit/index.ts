@@ -206,7 +206,9 @@ export function completeObserverUpdates(updateIds: string[], succeeded: boolean)
   return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
 }
 
-/** Tell native observers whether JavaScript is still processing a delivery. */
+/** Tell native observers whether JavaScript is still processing a delivery.
+ * Pass `true` when sync starts; pass `false` when sync finishes. Clearing to
+ * `false` is ignored while native still has pending observer updates or catch-up. */
 export function setObserverSyncInProgress(inProgress: boolean): void {
   HealthKitModule.setObserverSyncInProgress(inProgress);
 }
