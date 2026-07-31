@@ -1253,6 +1253,6 @@ describe("Withings — rate-limit aware fetch wiring", () => {
       provider.sync(
         new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
       ),
-    ).rejects.toThrow("fetch failed");
+    ).rejects.toThrow("withings provider request timed out after");
   });
 });

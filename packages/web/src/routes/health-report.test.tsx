@@ -93,6 +93,23 @@ const weeklyReport = {
       avgHrv: 48,
     },
     history: [],
+    decisionSupport: null,
+    emptyState: {
+      reportKind: "weekly" as const,
+      title: "Your weekly report will appear here",
+      message: "No activity, sleep, or recovery data is available for this report yet.",
+      minimumObservedDays: 1,
+      acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
+      requirement:
+        "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
+      previewTitle: "When ready, your weekly report will include",
+      previewItems: ["Training time and activity count", "Average nightly sleep"],
+      note: "This preview shows report sections only. No personal values or conclusions are estimated.",
+    },
+    recovery: {
+      range: { startDate: "2026-07-19", endDate: "2026-07-25" },
+      emptyMessage: "No data found for this period.",
+    },
   },
   expiresAt: null,
   createdAt: "2026-07-24T00:00:00.000Z",
@@ -191,6 +208,23 @@ describe("health report route", () => {
             avgSleepTrend: -2,
           },
           history: [],
+          decisionSupport: null,
+          emptyState: {
+            reportKind: "monthly" as const,
+            title: "Your monthly report will appear here",
+            message: "No activity, sleep, or recovery data is available for this report yet.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
+            requirement:
+              "At least 1 observed day of activity, sleep, or recovery data is required to create a monthly report.",
+            previewTitle: "When ready, your monthly report will include",
+            previewItems: ["Training time and activity count", "Average daily strain"],
+            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
+          },
+          recovery: {
+            range: { startDate: "2026-07-01", endDate: "2026-07-31" },
+            emptyMessage: "No data found for this period.",
+          },
         },
       },
       error: null,
@@ -265,24 +299,21 @@ describe("health report route", () => {
     expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
   });
 
-  it.each(["weekly", "monthly"] as const)(
-    "rejects an empty %s persisted report",
-    (reportType) => {
-      mockGetShared.mockReturnValue({
-        data: {
-          ...weeklyReport,
-          reportType,
-          reportData: { current: null, history: [] },
-        },
-        error: null,
-        isLoading: false,
-      });
+  it.each(["weekly", "monthly"] as const)("rejects an empty %s persisted report", (reportType) => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportType,
+        reportData: { current: null, history: [] },
+      },
+      error: null,
+      isLoading: false,
+    });
 
-      renderRoute("shared-token");
+    renderRoute("shared-token");
 
-      expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
-    },
-  );
+    expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
+  });
 
   it("rejects blank decision-support narratives in persisted report data", () => {
     mockGetShared.mockReturnValue({
