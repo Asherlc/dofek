@@ -267,7 +267,7 @@ describe("health report route", () => {
     expect(captured.monthlyReportData?.emptyState?.reportKind).toBe("monthly");
   });
 
-  it("renders legacy shared reports that omit emptyState and recovery metadata", () => {
+  it("renders legacy weekly shared reports that omit emptyState and recovery metadata", () => {
     mockGetShared.mockReturnValue({
       data: {
         ...weeklyReport,
@@ -286,6 +286,41 @@ describe("health report route", () => {
     expect(screen.getByText(/Weekly snapshot 2026-07-19/)).toBeTruthy();
     expect(screen.getByText(/empty:weekly/)).toBeTruthy();
     expect(captured.weeklyReportData?.emptyState?.reportKind).toBe("weekly");
+  });
+
+  it("renders legacy monthly shared reports that omit emptyState and recovery metadata", () => {
+    const monthlyCurrent = {
+      monthStart: "2026-07-01",
+      trainingHours: 20,
+      activityCount: 10,
+      avgDailyStrain: 8,
+      avgSleepMinutes: 450,
+      avgRestingHr: 55,
+      avgHrv: 48,
+      trainingHoursTrend: 10,
+      avgSleepTrend: -2,
+    };
+
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportType: "monthly",
+        reportData: {
+          current: monthlyCurrent,
+          history: [],
+          decisionSupport: null,
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("legacy-monthly-token");
+
+    expect(mockGetShared).toHaveBeenCalledWith({ token: "legacy-monthly-token" });
+    expect(screen.getByText(/Monthly snapshot 2026-07-01/)).toBeTruthy();
+    expect(screen.getByText(/empty:monthly/)).toBeTruthy();
+    expect(captured.monthlyReportData?.emptyState?.reportKind).toBe("monthly");
   });
 
   it("renders an empty weekly shared report from stored server empty state", () => {
