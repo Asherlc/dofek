@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { weeklyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
+import { weeklyReportEmptyState } from "dofek-server/report-empty-state";
 import { WeeklyReportCard } from "./WeeklyReportCard";
 
 const meta = {
@@ -51,7 +51,7 @@ const meta = {
           "These period averages can show co-movement, but they cannot establish cause and effect.",
         ],
       },
-      emptyState: weeklyReportEmptyStateFixture,
+      emptyState: weeklyReportEmptyState,
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;
