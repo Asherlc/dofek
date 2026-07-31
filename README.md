@@ -81,8 +81,7 @@ See [the metric-stream architecture](docs/clickhouse-metric-stream.md),
 ## Quick Start
 
 ```bash
-mise trust mise.toml
-mise install --locked
+MISE_LOCKED=1 mise install --locked
 mise exec -- infisical login
 mise run cloud:init
 ```
