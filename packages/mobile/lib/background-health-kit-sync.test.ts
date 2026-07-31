@@ -662,6 +662,7 @@ describe("initBackgroundHealthKitSync", () => {
     const startingSyncCount = mockLoggerInfo.mock.calls.filter(
       ([, message]) => message === "Starting sync",
     ).length;
+    mockSetObserverSyncInProgress.mockClear();
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
@@ -669,6 +670,7 @@ describe("initBackgroundHealthKitSync", () => {
       updateId: "update-1",
     });
 
+    expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
     expect(
       mockLoggerInfo.mock.calls.filter(([, message]) => message === "Starting sync"),
     ).toHaveLength(startingSyncCount + 1);

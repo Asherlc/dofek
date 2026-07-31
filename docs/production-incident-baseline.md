@@ -21250,3 +21250,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Group coupled CodeQL and Slack dependencies
   in Dependabot configuration so future updates arrive atomically. Continue to
   require a native Release build for Sentry React Native updates.
+
+## 2026-07-30 — HealthKit Observer Expirations Reported as Sentry Errors
+
+- **Status:** Fixed in source; pending native iOS release and Sentry resolution.
+- **Symptoms:** Sentry issue
+  [DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/7633118736/)
+  recorded handled `com.dofek.healthkit-observer: Code: 1` events when native
+  observer callbacks expired before JavaScript acknowledged them.
+- **User impact:** No crash or data loss. HealthKit can redeliver updates after
+  expiration, and successful syncs still uploaded data. The events were false
+  positives under iOS background suspension and long-running observer syncs.
+- **Evidence:** Prior fixes scoped observer syncs to delivered types, removed
+  JavaScript debouncing, and suppressed Sentry capture only while JavaScript
+  reported an active sync. Expirations still reached Sentry when the JavaScript
+  thread was suspended before `setObserverSyncInProgress(true)` ran, and when
+  sync exceeded the unchanged 25-second native boundary without the flag set.
+- **Root cause:** Observer expiration telemetry treated an expected iOS
+  background timing boundary as an actionable error, and the sync-in-progress
+  flag was set too late in the JavaScript delivery path.
+- **Fix / mitigation:** Mark observer sync in progress at native delivery and
+  in the JavaScript listener before queueing work. Never capture observer
+  expirations to Sentry; record them as informational breadcrumbs only. Clear
+  the in-progress flag only when no observer updates remain pending natively or
+  in the JavaScript queue. Prior type-scoped sync, anchor commit, and timeout
+  behavior are unchanged.
+- **Validation:** Mobile Vitest background HealthKit orchestration tests pass.
+  The HealthKit Swift package passes 78 tests, including pending-update
+  tracking on the observer coordinator.
+- **Remaining risk / follow-up:** Ship through the normal native iOS release
+  path, then resolve DOFEK-MOBILE-1C in Sentry after production events stop.

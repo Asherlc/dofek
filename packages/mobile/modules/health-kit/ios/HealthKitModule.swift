@@ -45,31 +45,19 @@ public class HealthKitModule: Module {
             guard let self else {
                 return
             }
-            if self.observerSyncInProgress {
-                let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
-                breadcrumb.message =
-                    "Observer update expired while JavaScript sync was still running"
-                breadcrumb.data = [
-                    "updateId": expiration.updateId,
-                    "typeIdentifier": expiration.typeIdentifier,
-                    "ageMilliseconds": expiration.ageMilliseconds,
-                ]
-                SentrySDK.addBreadcrumb(breadcrumb)
-                return
+            let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
+            breadcrumb.message = self.observerSyncInProgress
+                ? "Observer update expired while JavaScript sync was still running"
+                : "Observer update expired before JavaScript sync completed"
+            breadcrumb.data = [
+                "updateId": expiration.updateId,
+                "typeIdentifier": expiration.typeIdentifier,
+                "ageMilliseconds": expiration.ageMilliseconds,
+            ]
+            SentrySDK.addBreadcrumb(breadcrumb)
+            if !self.observerUpdateCoordinator.hasPendingUpdates {
+                self.observerSyncInProgress = false
             }
-            SentrySDK.capture(
-                error: NSError(
-                    domain: "com.dofek.healthkit-observer",
-                    code: 1,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "HealthKit observer update expired before JavaScript sync completed",
-                        "updateId": expiration.updateId,
-                        "typeIdentifier": expiration.typeIdentifier,
-                        "ageMilliseconds": expiration.ageMilliseconds,
-                    ]
-                )
-            )
         }
     )
     private var observerQueries: [HKObserverQuery] = []
@@ -859,6 +847,7 @@ public class HealthKitModule: Module {
                         typeIdentifier: sampleType.identifier,
                         completion: completionHandler
                     )
+                    self.observerSyncInProgress = true
                     MainThreadEventEmitter.emit(
                         [
                             "typeIdentifier": sampleType.identifier,
@@ -911,7 +900,11 @@ public class HealthKitModule: Module {
         }
 
         Function("setObserverSyncInProgress") { (inProgress: Bool) in
-            self.observerSyncInProgress = inProgress
+            if inProgress {
+                self.observerSyncInProgress = true
+            } else if !self.observerUpdateCoordinator.hasPendingUpdates {
+                self.observerSyncInProgress = false
+            }
         }
 
         Function("completeObserverUpdates") { (updateIds: [String], succeeded: Bool) -> Int in
