@@ -1,6 +1,5 @@
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPLogExporter as OTLPLogExporterHttp } from "@opentelemetry/exporter-logs-otlp-http";
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
@@ -25,10 +24,6 @@ vi.mock("@opentelemetry/exporter-trace-otlp-proto", () => ({
 }));
 
 vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
-  OTLPLogExporter: vi.fn(),
-}));
-
-vi.mock("@opentelemetry/exporter-logs-otlp-proto", () => ({
   OTLPLogExporter: vi.fn(),
 }));
 
@@ -90,7 +85,6 @@ describe("instrumentation", () => {
     vi.mocked(NodeSDK).mockClear();
     vi.mocked(OTLPTraceExporter).mockClear();
     vi.mocked(OTLPLogExporter).mockClear();
-    vi.mocked(OTLPLogExporterHttp).mockClear();
     vi.mocked(OTLPMetricExporter).mockClear();
     vi.mocked(BatchSpanProcessor).mockClear();
     vi.mocked(BatchLogRecordProcessor).mockClear();
@@ -199,8 +193,16 @@ describe("instrumentation", () => {
     const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
-      exporter: expect.any(OTLPLogExporterHttp),
+      exporter: expect.any(OTLPLogExporter),
     });
+    expect(OTLPLogExporter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: expect.any(String),
+        headers: expect.objectContaining({
+          Authorization: expect.stringContaining("Bearer "),
+        }),
+      }),
+    );
   });
 
   it("only configures trace processors and auto instrumentations when only traces endpoint exists", async () => {

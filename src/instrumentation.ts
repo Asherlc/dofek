@@ -1,6 +1,5 @@
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPLogExporter as OTLPLogExporterHttp } from "@opentelemetry/exporter-logs-otlp-http";
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -32,10 +31,9 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
   }
 
   if (hasPostHogLogExport) {
-    // PostHog logs ingestion uses the HTTP OTLP exporter; Axiom uses the proto exporter above.
     processors.push(
       new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporterHttp({
+        exporter: new OTLPLogExporter({
           url: POSTHOG_LOGS_URL,
           headers: {
             Authorization: `Bearer ${POSTHOG_API_KEY}`,
