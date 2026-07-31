@@ -433,7 +433,7 @@ export default function ProvidersScreen() {
   );
 
   const handleSyncProvider = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, fullSync = false) => {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
       setAnySyncing(true);
       try {
@@ -853,6 +853,7 @@ export default function ProvidersScreen() {
             syncing={syncingProviders.has(provider.id)}
             syncProgress={syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
             onConnect={() => handleConnect(provider)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />
