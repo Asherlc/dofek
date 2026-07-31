@@ -354,16 +354,15 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
               });
             }
           } catch (error) {
-            if (
-              handleWorkoutRouteError(error, {
-                errors,
-                errorLabel: `Route query for workout ${workout.uuid}`,
-                source: "health-kit-workout-route-query",
-                captureContext: { workoutUuid: workout.uuid },
-              }) === "locked"
-            ) {
+            if (isHealthKitDatabaseInaccessible(error)) {
               throw error;
             }
+            handleWorkoutRouteError(error, {
+              errors,
+              errorLabel: `Route query for workout ${workout.uuid}`,
+              source: "health-kit-workout-route-query",
+              captureContext: { workoutUuid: workout.uuid },
+            });
           }
         }
         return workerRoutes;
@@ -537,16 +536,15 @@ async function syncObserverWorkouts(
         locations,
       });
     } catch (error) {
-      if (
-        handleWorkoutRouteError(error, {
-          errors,
-          errorLabel: `Route sync for workout ${workout.uuid}`,
-          source: "health-kit-workout-route-observer-sync",
-          captureContext: { workoutUuid: workout.uuid },
-        }) === "locked"
-      ) {
+      if (isHealthKitDatabaseInaccessible(error)) {
         throw error;
       }
+      handleWorkoutRouteError(error, {
+        errors,
+        errorLabel: `Route sync for workout ${workout.uuid}`,
+        source: "health-kit-workout-route-observer-sync",
+        captureContext: { workoutUuid: workout.uuid },
+      });
     }
   }
 
