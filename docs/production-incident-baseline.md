@@ -21276,7 +21276,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   same worker. Vitest's default `forks` pool runs each test file in a child
   process whose environment is shared by every module loaded in that worker:
   <https://vitest.dev/guide/improving-performance.html#threads-vs-forks>.
-  `@sentry/node` is
+  [`@sentry/node`](https://docs.sentry.io/platforms/javascript/guides/node/) is
   [mocked](https://vitest.dev/guide/mocking.html#modules) in that test, so
   Sentry stayed clean, but any unmocked telemetry sink wired to the same guard
   emitted the fixture errors as real production events.
@@ -21297,8 +21297,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** `src/jobs/worker.test.ts` and both `sentry.test.ts` suites
   pass, the full Docker-free unit tier passes, and lint and TypeScript checks
   pass.
-- **Remaining risk / follow-up:** When a PostHog (`posthog-node`) error
-  exporter lands on `main`, mock it in `worker.test.ts` the same way
+- **Remaining risk / follow-up:** When a PostHog
+  ([`posthog-node`](https://posthog.com/docs/libraries/node)) error exporter
+  lands on `main`, mock it in `worker.test.ts` the same way
   [`@sentry/node` is mocked](https://vitest.dev/guide/mocking.html#modules) so
   no test run can emit real telemetry regardless of environment classification.
 
