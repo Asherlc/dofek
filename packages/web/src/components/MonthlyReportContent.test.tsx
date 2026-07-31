@@ -4,6 +4,7 @@ import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
+import { monthlyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
 
 describe("MonthlyReportContent", () => {
   it("renders current and previous monthly snapshots", () => {
@@ -41,29 +42,7 @@ describe("MonthlyReportContent", () => {
             whatToTryNext: ["Repeat the routine next month."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          recovery: {
-            range: { startDate: "2026-07-01", endDate: "2026-07-31" },
-            emptyMessage: "No data found for this period.",
-          },
-          emptyState: {
-            reportKind: "monthly",
-            title: "Your monthly report will appear here",
-            message: "No activity, sleep, or recovery data is available for this report yet.",
-            minimumObservedDays: 1,
-            acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement:
-              "At least 1 observed day of activity, sleep, or recovery data is required to create a monthly report.",
-            previewTitle: "When ready, your monthly report will include",
-            previewItems: [
-              "Training time and activity count",
-              "Average daily strain",
-              "Average sleep duration",
-              "Average resting heart rate",
-              "Average heart rate variability",
-              "Month-over-month training and sleep changes",
-            ],
-            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
-          },
+          emptyState: monthlyReportEmptyStateFixture,
         }}
       />,
     );
@@ -87,10 +66,6 @@ describe("MonthlyReportContent", () => {
           current: null,
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-01", endDate: "2026-03-24" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "monthly",
             title: "Server monthly preview title",

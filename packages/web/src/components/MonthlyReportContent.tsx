@@ -1,10 +1,10 @@
 import { formatDurationMinutes, formatHRV, formatMonthYear } from "@dofek/format/format";
 import { textColors } from "@dofek/scoring/colors";
-import type { MonthlyReportResult, MonthSummary } from "dofek-server/types";
+import type { MonthlyReportData, MonthSummary } from "dofek-server/types";
 import { EmptyStatePreview } from "./EmptyStatePreview.tsx";
 import { ReportDecisionSynthesis } from "./ReportDecisionSynthesis.tsx";
 
-export function MonthlyReportContent({ data }: { data: MonthlyReportResult | undefined }) {
+export function MonthlyReportContent({ data }: { data: MonthlyReportData | undefined }) {
   if (!data) {
     return (
       <div className="card p-6">

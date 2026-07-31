@@ -1,7 +1,12 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { weeklyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("WeeklyReportCard", () => {
   it("previews the server-owned weekly report structure without values", () => {
@@ -10,11 +15,6 @@ describe("WeeklyReportCard", () => {
         data={{
           current: null,
           history: [],
-          decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
           emptyState: {
             reportKind: "weekly",
             title: "Server weekly preview title",
@@ -26,6 +26,7 @@ describe("WeeklyReportCard", () => {
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "Server no-estimate note.",
           },
+          decisionSupport: null,
         }}
       />,
     );
@@ -61,22 +62,7 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
-          emptyState: {
-            reportKind: "weekly",
-            title: "Your weekly report will appear here",
-            message: "No activity, sleep, or recovery data is available for this report yet.",
-            minimumObservedDays: 1,
-            acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement:
-              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
-            previewTitle: "When ready, your weekly report will include",
-            previewItems: ["Training time and activity count", "Average nightly sleep"],
-            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
-          },
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -103,22 +89,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-05-24", endDate: "2026-05-30" },
-            emptyMessage: "No data found for this period.",
-          },
-          emptyState: {
-            reportKind: "weekly",
-            title: "Your weekly report will appear here",
-            message: "No activity, sleep, or recovery data is available for this report yet.",
-            minimumObservedDays: 1,
-            acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement:
-              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
-            previewTitle: "When ready, your weekly report will include",
-            previewItems: ["Training time and activity count", "Average nightly sleep"],
-            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
-          },
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -143,22 +114,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-05-24", endDate: "2026-05-30" },
-            emptyMessage: "No data found for this period.",
-          },
-          emptyState: {
-            reportKind: "weekly",
-            title: "Your weekly report will appear here",
-            message: "No activity, sleep, or recovery data is available for this report yet.",
-            minimumObservedDays: 1,
-            acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement:
-              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
-            previewTitle: "When ready, your weekly report will include",
-            previewItems: ["Training time and activity count", "Average nightly sleep"],
-            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
-          },
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -195,22 +151,7 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
-          recovery: {
-            range: { startDate: "2026-03-17", endDate: "2026-03-23" },
-            emptyMessage: "No data found for this period.",
-          },
-          emptyState: {
-            reportKind: "weekly",
-            title: "Your weekly report will appear here",
-            message: "No activity, sleep, or recovery data is available for this report yet.",
-            minimumObservedDays: 1,
-            acceptedDataTypes: ["activity", "sleep", "recovery"],
-            requirement:
-              "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
-            previewTitle: "When ready, your weekly report will include",
-            previewItems: ["Training time and activity count", "Average nightly sleep"],
-            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
-          },
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
