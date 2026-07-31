@@ -81,7 +81,7 @@ const reportEmptyStateSchema = <T extends "weekly" | "monthly">(reportKind: T) =
   });
 
 const weeklyReportSchema = z.object({
-  current: weekSummarySchema,
+  current: weekSummarySchema.nullable(),
   history: z.array(weekSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable(),
   emptyState: reportEmptyStateSchema("weekly"),
@@ -101,7 +101,7 @@ const monthSummarySchema = z.object({
 });
 
 const monthlyReportSchema = z.object({
-  current: monthSummarySchema,
+  current: monthSummarySchema.nullable(),
   history: z.array(monthSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable(),
   emptyState: reportEmptyStateSchema("monthly"),
@@ -160,12 +160,13 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "weekly") {
     const parsedReport = weeklyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
           <WeeklyReportCard
             data={{
-              ...parsedReport.data,
-              decisionSupport: parsedReport.data.decisionSupport ?? null,
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
             }}
           />
         </SharedReportShell>
@@ -176,12 +177,13 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "monthly") {
     const parsedReport = monthlyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
           <MonthlyReportContent
             data={{
-              ...parsedReport.data,
-              decisionSupport: parsedReport.data.decisionSupport ?? null,
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
             }}
           />
         </SharedReportShell>

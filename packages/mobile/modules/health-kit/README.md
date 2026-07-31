@@ -36,10 +36,13 @@ Updates delivered during a running sync remain pending for the next serialized
 sync. Re-registration, JavaScript teardown, and Expo module destruction stop
 the queries and complete every callback still pending.
 
-A native 25-second expiration completes an update exactly once and reports the
-expired update ID, HealthKit sample type, and monotonic callback age to Sentry
-if JavaScript never responds. JavaScript logs the start and completion of each
-query, upload batch, and post-sync callback with its duration and item context.
+A native 25-second expiration completes an update exactly once and records the
+expired update ID, HealthKit sample type, and monotonic callback age as a Sentry
+breadcrumb when native code has not received completion by the 25-second
+deadline. Observer expirations are expected under iOS background constraints and
+are not reported as Sentry errors. JavaScript logs the start and completion of
+each query, upload batch, and post-sync callback with its duration and item
+context.
 This is a failure boundary, not a successful sync signal; the next HealthKit
 delivery remains eligible to retry the same data. Apple's background-delivery
 contract requires calling the observer completion handler only after processing
@@ -94,7 +97,7 @@ a physical iPhone with a Release build:
    that the query, upload, post-sync callback, and overall observer logs include
    monotonic durations and item context.
 3. Verify JavaScript acknowledges the update ID before the 25-second native
-   expiration and that no `com.dofek.healthkit-observer` expiration event is
+   expiration and that no `com.dofek.healthkit-observer` Sentry error is
    reported.
 4. Repeat with multiple sample types delivered together and confirm every
    update ID is completed exactly once after its queued serialized sync settles.
