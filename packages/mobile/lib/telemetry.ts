@@ -5,10 +5,7 @@ import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
 import PostHog from "posthog-react-native";
-import {
-  isBackgroundHealthKitTransientNetworkError,
-  isHealthKitSentrySource,
-} from "./health-kit-errors";
+import { shouldSuppressBackgroundHealthKitTransientNetworkError } from "./health-kit-errors";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
 const OTEL_ENDPOINT: string | undefined = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
@@ -119,23 +116,6 @@ export function initTelemetry() {
   Sentry.init({
     dsn: SENTRY_DSN,
     debug: __DEV__,
-    beforeSend(event, hint) {
-      const error = hint.originalException;
-      if (!isBackgroundHealthKitTransientNetworkError(error)) {
-        return event;
-      }
-
-      const source =
-        typeof event.tags?.source === "string"
-          ? event.tags.source
-          : typeof event.extra?.source === "string"
-            ? event.extra.source
-            : undefined;
-      if (isHealthKitSentrySource(source)) {
-        return null;
-      }
-      return event;
-    },
     tracesSampler: ({ name, inheritOrSampleWith }) =>
       name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
   });
@@ -186,11 +166,22 @@ function sanitizePostHogProperties(
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
   const source = typeof context.source === "string" ? context.source : undefined;
-  Sentry.captureException(error, {
-    ...(source ? { tags: { source } } : {}),
-    extra: context,
-  });
-  posthogClient?.captureException(error, sanitizePostHogProperties(context));
+  // Suppress non-actionable transient background HealthKit network failures from
+  // every error-tracking destination. Applying the check here (rather than only in
+  // Sentry's beforeSend) keeps Sentry and PostHog consistent — otherwise the PostHog
+  // capture path silently mints error-tracking issues for errors Sentry drops. Logs
+  // and breadcrumbs below still record the failure for observability.
+  const captureToErrorTracking = !shouldSuppressBackgroundHealthKitTransientNetworkError(
+    error,
+    source,
+  );
+  if (captureToErrorTracking) {
+    Sentry.captureException(error, {
+      ...(source ? { tags: { source } } : {}),
+      extra: context,
+    });
+    posthogClient?.captureException(error, sanitizePostHogProperties(context));
+  }
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
   const attributes =
