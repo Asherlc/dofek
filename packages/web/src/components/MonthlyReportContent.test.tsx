@@ -2,8 +2,8 @@
 
 import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
 import { monthlyReportEmptyState } from "dofek-server/report-empty-state";
+import { describe, expect, it } from "vitest";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
 describe("MonthlyReportContent", () => {

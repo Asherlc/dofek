@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
 import { weeklyReportEmptyState } from "dofek-server/report-empty-state";
+import { afterEach, describe, expect, it } from "vitest";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
 
 afterEach(cleanup);

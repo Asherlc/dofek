@@ -1,5 +1,6 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { monthlyReportEmptyState, weeklyReportEmptyState } from "dofek-server/report-empty-state";
 import { useState } from "react";
 import { z } from "zod";
 import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
@@ -8,10 +9,6 @@ import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { healthReportTabs } from "../lib/healthReportNavigation.ts";
-import {
-  monthlyReportEmptyState,
-  weeklyReportEmptyState,
-} from "dofek-server/report-empty-state";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
