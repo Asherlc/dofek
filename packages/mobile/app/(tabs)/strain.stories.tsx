@@ -4,11 +4,11 @@ import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contr
 import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
-import { createFixtureDates, type FixtureDates } from "./fixture-dates";
+import { createFixtureDates, type FixtureDates } from "./_fixture-dates";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "./processing-status-story-fixture";
+} from "./_processing-status-story-fixture";
 import StrainScreen from "./strain";
 
 const STRAIN_COMPANION_RESPONSES = {

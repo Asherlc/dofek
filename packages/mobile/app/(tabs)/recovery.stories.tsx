@@ -7,11 +7,11 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
-import { createFixtureDates } from "./fixture-dates";
+import { createFixtureDates } from "./_fixture-dates";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "./processing-status-story-fixture";
+} from "./_processing-status-story-fixture";
 import RecoveryScreen from "./recovery";
 
 function createRecoveryErrorStoryLink(recoveryUnavailable: boolean): TRPCLink<AppRouter> {

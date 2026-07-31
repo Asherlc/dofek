@@ -11,7 +11,7 @@ import TodayScreen from "./index";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "./processing-status-story-fixture";
+} from "./_processing-status-story-fixture";
 
 function localDateString(dayOffset = 0): string {
   const date = new Date();

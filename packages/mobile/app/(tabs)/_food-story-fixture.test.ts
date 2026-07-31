@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { FoodByDateV2Schema } from "../../types/api";
-import { seedFoodStoryQuery } from "./food-story-fixture";
+import { seedFoodStoryQuery } from "./_food-story-fixture";
 
 describe("seedFoodStoryQuery", () => {
   it("seeds runtime-valid data for the current byDateV2 procedure", () => {
