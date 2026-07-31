@@ -265,24 +265,21 @@ describe("health report route", () => {
     expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
   });
 
-  it.each(["weekly", "monthly"] as const)(
-    "rejects an empty %s persisted report",
-    (reportType) => {
-      mockGetShared.mockReturnValue({
-        data: {
-          ...weeklyReport,
-          reportType,
-          reportData: { current: null, history: [] },
-        },
-        error: null,
-        isLoading: false,
-      });
+  it.each(["weekly", "monthly"] as const)("rejects an empty %s persisted report", (reportType) => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportType,
+        reportData: { current: null, history: [] },
+      },
+      error: null,
+      isLoading: false,
+    });
 
-      renderRoute("shared-token");
+    renderRoute("shared-token");
 
-      expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
-    },
-  );
+    expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
+  });
 
   it("rejects blank decision-support narratives in persisted report data", () => {
     mockGetShared.mockReturnValue({
