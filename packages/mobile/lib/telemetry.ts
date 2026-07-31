@@ -4,7 +4,6 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
-import type { AuthUser } from "./auth";
 import PostHog from "posthog-react-native";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
@@ -86,7 +85,13 @@ function createLogProcessors(): BatchLogRecordProcessor[] {
   return processors;
 }
 
-export function identifyPostHogUser(user: AuthUser): void {
+type PostHogUser = {
+  id: string;
+  email: string;
+  name: string;
+};
+
+export function identifyPostHogUser(user: PostHogUser): void {
   posthogClient?.identify(user.id, {
     email: user.email,
     name: user.name,
@@ -141,13 +146,30 @@ export function initTelemetry() {
   }
 }
 
+function sanitizePostHogProperties(
+  data: Record<string, unknown>,
+): Record<string, string | number | boolean | null> {
+  const properties: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      properties[key] = value;
+    }
+  }
+  return properties;
+}
+
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
   const source = typeof context.source === "string" ? context.source : undefined;
   Sentry.captureException(error, {
     ...(source ? { tags: { source } } : {}),
     extra: context,
   });
-  posthogClient?.captureException(error, context);
+  posthogClient?.captureException(error, sanitizePostHogProperties(context));
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
   const attributes =

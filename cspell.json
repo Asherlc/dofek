@@ -242,6 +242,7 @@
     "cyclinganalytics",
     "connectmobile",
     "posthog",
+    "autocapture",
     "fhir",
     "loinc",
     "acsm",

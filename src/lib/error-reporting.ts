@@ -1,22 +1,28 @@
 import {
   captureException as sentryCaptureException,
   type CaptureContext,
-  type EventHint,
-  type ScopeContext,
 } from "@sentry/node";
 import { capturePostHogException } from "./posthog.ts";
+
+type ScopeContextLike = {
+  tags?: Record<string, string>;
+  extra?: Record<string, unknown>;
+  contexts?: Record<string, unknown>;
+  fingerprint?: string[];
+  level?: string;
+};
 
 function flattenCaptureContext(captureContext?: CaptureContext): Record<string, unknown> {
   if (!captureContext) {
     return {};
   }
 
-  if (typeof captureContext === "string") {
-    return { captureContext };
+  if (typeof captureContext === "string" || typeof captureContext === "function") {
+    return { captureContext: typeof captureContext };
   }
 
   const properties: Record<string, unknown> = {};
-  const context = captureContext as ScopeContext;
+  const context = captureContext as ScopeContextLike;
 
   if (context.tags) {
     for (const [key, value] of Object.entries(context.tags)) {
@@ -49,14 +55,11 @@ function flattenCaptureContext(captureContext?: CaptureContext): Record<string, 
 export function captureException(
   exception: unknown,
   captureContext?: CaptureContext,
-  hint?: EventHint,
 ): string {
   const eventId =
-    hint !== undefined
-      ? sentryCaptureException(exception, captureContext, hint)
-      : captureContext !== undefined
-        ? sentryCaptureException(exception, captureContext)
-        : sentryCaptureException(exception);
+    captureContext !== undefined
+      ? sentryCaptureException(exception, captureContext)
+      : sentryCaptureException(exception);
   capturePostHogException(exception, undefined, flattenCaptureContext(captureContext));
   return eventId;
 }

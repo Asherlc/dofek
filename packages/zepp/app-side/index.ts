@@ -74,6 +74,9 @@ function reportSideException(error: unknown, context: Record<string, unknown> = 
     distinctId: getTelemetryDistinctId(),
     source: "zepp-side",
     connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+  });
+}
+
 function getStoredServerUrl(): string {
   const storedServerUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
   return storedServerUrl || DEFAULT_DOFEK_SERVER_URL;
