@@ -60,10 +60,36 @@ const reportDecisionSynthesisSchema = z.object({
   confidenceAndMissingData: z.array(decisionSupportItemSchema),
 });
 
+const reportRecoverySchema = z.object({
+  range: z.object({
+    startDate: z.string(),
+    endDate: z.string(),
+  }),
+  emptyMessage: z.string(),
+});
+
+const weeklyReportRecoverySchema = reportRecoverySchema;
+const monthlyReportRecoverySchema = reportRecoverySchema;
+
+const reportEmptyStateSchema = <T extends "weekly" | "monthly">(reportKind: T) =>
+  z.object({
+    reportKind: z.literal(reportKind),
+    title: z.string(),
+    message: z.string(),
+    minimumObservedDays: z.literal(1),
+    acceptedDataTypes: z.tuple([z.literal("activity"), z.literal("sleep"), z.literal("recovery")]),
+    requirement: z.string(),
+    previewTitle: z.string(),
+    previewItems: z.array(z.string()),
+    note: z.string(),
+  });
+
 const weeklyReportSchema = z.object({
   current: weekSummarySchema,
   history: z.array(weekSummarySchema),
-  decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
+  decisionSupport: reportDecisionSynthesisSchema.nullable(),
+  emptyState: reportEmptyStateSchema("weekly"),
+  recovery: weeklyReportRecoverySchema,
 });
 
 const monthSummarySchema = z.object({
@@ -81,7 +107,9 @@ const monthSummarySchema = z.object({
 const monthlyReportSchema = z.object({
   current: monthSummarySchema,
   history: z.array(monthSummarySchema),
-  decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
+  decisionSupport: reportDecisionSynthesisSchema.nullable(),
+  emptyState: reportEmptyStateSchema("monthly"),
+  recovery: monthlyReportRecoverySchema,
 });
 const REPORT_PAGE_SIZE = 20;
 
