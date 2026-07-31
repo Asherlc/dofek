@@ -13,11 +13,9 @@ export function isHealthKitDatabaseInaccessible(error: unknown): boolean {
 }
 
 export function isTransientNetworkErrorMessage(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("fetch failed") &&
-    (normalized.includes("timed out") || normalized.includes("timeout"))
-  );
+  // Match the React Native fetch timeout shape seen in DOFEK-MOBILE-19, including
+  // when the message is prefixed by sync-stage labels or TRPC wrappers.
+  return /fetch failed.*the request timed out/i.test(message);
 }
 
 export function isBackgroundHealthKitTransientNetworkError(error: unknown): boolean {

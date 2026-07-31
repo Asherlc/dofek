@@ -82,6 +82,33 @@ function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
   };
 }
 
+interface WorkoutRouteErrorContext {
+  errors: string[];
+  errorLabel: string;
+  source: string;
+  captureContext?: Record<string, unknown>;
+  suppressTransientNetworkErrors?: boolean;
+}
+
+function handleWorkoutRouteError(
+  error: unknown,
+  context: WorkoutRouteErrorContext,
+): "locked" | undefined {
+  if (isHealthKitDatabaseInaccessible(error)) {
+    return "locked";
+  }
+  const shouldReport =
+    !context.suppressTransientNetworkErrors || !isBackgroundHealthKitTransientNetworkError(error);
+  if (shouldReport) {
+    captureException(error, {
+      source: context.source,
+      ...context.captureContext,
+    });
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  context.errors.push(`${context.errorLabel}: ${message}`);
+}
+
 function isAuthorizationNotDetermined(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return false;
@@ -327,15 +354,16 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
               });
             }
           } catch (error) {
-            if (isHealthKitDatabaseInaccessible(error)) {
+            if (
+              handleWorkoutRouteError(error, {
+                errors,
+                errorLabel: `Route query for workout ${workout.uuid}`,
+                source: "health-kit-workout-route-query",
+                captureContext: { workoutUuid: workout.uuid },
+              }) === "locked"
+            ) {
               throw error;
             }
-            captureException(error, {
-              source: "health-kit-workout-route-query",
-              workoutUuid: workout.uuid,
-            });
-            const message = error instanceof Error ? error.message : String(error);
-            errors.push(`Route query for workout ${workout.uuid}: ${message}`);
           }
         }
         return workerRoutes;
@@ -353,14 +381,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
         totalInserted += routeResult.inserted;
       } catch (error) {
-        if (!isBackgroundHealthKitTransientNetworkError(error)) {
-          captureException(error, {
-            source: "health-kit-workout-route-push",
-            routeCount: routes.length,
-          });
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`Push workout routes: ${message}`);
+        handleWorkoutRouteError(error, {
+          errors,
+          errorLabel: "Push workout routes",
+          source: "health-kit-workout-route-push",
+          captureContext: { routeCount: routes.length },
+          suppressTransientNetworkErrors: true,
+        });
       }
     }
   }
@@ -510,15 +537,16 @@ async function syncObserverWorkouts(
         locations,
       });
     } catch (error) {
-      if (isHealthKitDatabaseInaccessible(error)) {
+      if (
+        handleWorkoutRouteError(error, {
+          errors,
+          errorLabel: `Route sync for workout ${workout.uuid}`,
+          source: "health-kit-workout-route-observer-sync",
+          captureContext: { workoutUuid: workout.uuid },
+        }) === "locked"
+      ) {
         throw error;
       }
-      captureException(error, {
-        source: "health-kit-workout-route-observer-sync",
-        workoutUuid: workout.uuid,
-      });
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Route sync for workout ${workout.uuid}: ${message}`);
     }
   }
 
@@ -528,14 +556,13 @@ async function syncObserverWorkouts(
       const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
       inserted += routeResult.inserted;
     } catch (error) {
-      if (!isBackgroundHealthKitTransientNetworkError(error)) {
-        captureException(error, {
-          source: "health-kit-workout-route-observer-push",
-          routeCount: routes.length,
-        });
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Push workout routes: ${message}`);
+      handleWorkoutRouteError(error, {
+        errors,
+        errorLabel: "Push workout routes",
+        source: "health-kit-workout-route-observer-push",
+        captureContext: { routeCount: routes.length },
+        suppressTransientNetworkErrors: true,
+      });
     }
   }
   return { deleted: 0, inserted, errors };

@@ -16,6 +16,8 @@ describe("health-kit-errors", () => {
       ),
     ).toBe(true);
     expect(isTransientNetworkErrorMessage("network unreachable")).toBe(false);
+    expect(isTransientNetworkErrorMessage("fetch failed: connection reset")).toBe(false);
+    expect(isTransientNetworkErrorMessage("request timeout")).toBe(false);
   });
 
   it("detects transient network errors on Error instances and causes (DOFEK-MOBILE-19)", () => {
