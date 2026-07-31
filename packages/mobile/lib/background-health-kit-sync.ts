@@ -204,7 +204,7 @@ async function drainSyncQueue(): Promise<void> {
     }
   } finally {
     syncing = undefined;
-    setObserverSyncInProgress(pendingUpdates.size > 0);
+    setObserverSyncInProgress(pendingCatchUp !== undefined || pendingUpdates.size > 0);
   }
 
   await drainSyncQueue();

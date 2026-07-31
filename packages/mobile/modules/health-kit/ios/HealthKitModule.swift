@@ -40,6 +40,7 @@ public class HealthKitModule: Module {
     )
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private var observerSyncInProgress = false
+    private let observerStateLock = NSLock()
     // Lazy so the expiration closure can capture self after stored properties finish
     // initializing. Swift serializes lazy initialization, and first access only happens
     // from observer callbacks / complete* after the module is fully constructed.
@@ -50,6 +51,30 @@ public class HealthKitModule: Module {
         }
     )
     private var observerQueries: [HKObserverQuery] = []
+
+    private func markObserverSyncInProgress() {
+        observerStateLock.lock()
+        observerSyncInProgress = true
+        observerStateLock.unlock()
+    }
+
+    private func clearObserverSyncInProgressIfIdle() {
+        observerStateLock.lock()
+        defer { observerStateLock.unlock() }
+        if !observerUpdateCoordinator.hasPendingUpdates {
+            observerSyncInProgress = false
+        }
+    }
+
+    private func setObserverSyncInProgressFromBridge(inProgress: Bool) {
+        observerStateLock.lock()
+        defer { observerStateLock.unlock() }
+        if inProgress {
+            observerSyncInProgress = true
+        } else if !observerUpdateCoordinator.hasPendingUpdates {
+            observerSyncInProgress = false
+        }
+    }
 
     private func handleObserverUpdateExpiration(_ expiration: HealthKitObserverUpdateExpiration) {
         let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
@@ -62,9 +87,7 @@ public class HealthKitModule: Module {
             "ageMilliseconds": expiration.ageMilliseconds,
         ]
         SentrySDK.addBreadcrumb(breadcrumb)
-        if !observerUpdateCoordinator.hasPendingUpdates {
-            observerSyncInProgress = false
-        }
+        clearObserverSyncInProgressIfIdle()
     }
 
     @discardableResult
@@ -851,7 +874,7 @@ public class HealthKitModule: Module {
                         typeIdentifier: sampleType.identifier,
                         completion: completionHandler
                     )
-                    self.observerSyncInProgress = true
+                    self.markObserverSyncInProgress()
                     MainThreadEventEmitter.emit(
                         [
                             "typeIdentifier": sampleType.identifier,
@@ -904,11 +927,7 @@ public class HealthKitModule: Module {
         }
 
         Function("setObserverSyncInProgress") { (inProgress: Bool) in
-            if inProgress {
-                self.observerSyncInProgress = true
-            } else if !self.observerUpdateCoordinator.hasPendingUpdates {
-                self.observerSyncInProgress = false
-            }
+            self.setObserverSyncInProgressFromBridge(inProgress: inProgress)
         }
 
         Function("completeObserverUpdates") { (updateIds: [String], succeeded: Bool) -> Int in

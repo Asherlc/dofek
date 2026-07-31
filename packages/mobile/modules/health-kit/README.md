@@ -38,10 +38,11 @@ the queries and complete every callback still pending.
 
 A native 25-second expiration completes an update exactly once and records the
 expired update ID, HealthKit sample type, and monotonic callback age as a Sentry
-breadcrumb when JavaScript never responds. Observer expirations are expected
-under iOS background constraints and are not reported as Sentry errors. JavaScript
-logs the start and completion of each query, upload batch, and post-sync callback
-with its duration and item context.
+breadcrumb when native code has not received completion by the 25-second
+deadline. Observer expirations are expected under iOS background constraints and
+are not reported as Sentry errors. JavaScript logs the start and completion of
+each query, upload batch, and post-sync callback with its duration and item
+context.
 This is a failure boundary, not a successful sync signal; the next HealthKit
 delivery remains eligible to retry the same data. Apple's background-delivery
 contract requires calling the observer completion handler only after processing

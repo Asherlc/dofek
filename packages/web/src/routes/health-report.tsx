@@ -6,10 +6,6 @@ import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import {
-  monthlyReportEmptyStateFixture,
-  weeklyReportEmptyStateFixture,
-} from "../components/report-empty-state-fixtures.ts";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { healthReportTabs } from "../lib/healthReportNavigation.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -85,7 +81,7 @@ const reportEmptyStateSchema = <T extends "weekly" | "monthly">(reportKind: T) =
   });
 
 const weeklyReportSchema = z.object({
-  current: weekSummarySchema,
+  current: weekSummarySchema.nullable(),
   history: z.array(weekSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable(),
   emptyState: reportEmptyStateSchema("weekly"),
@@ -105,7 +101,7 @@ const monthSummarySchema = z.object({
 });
 
 const monthlyReportSchema = z.object({
-  current: monthSummarySchema,
+  current: monthSummarySchema.nullable(),
   history: z.array(monthSummarySchema),
   decisionSupport: reportDecisionSynthesisSchema.nullable(),
   emptyState: reportEmptyStateSchema("monthly"),
@@ -171,7 +167,6 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...reportData,
               decisionSupport: reportData.decisionSupport ?? null,
-              emptyState: weeklyReportEmptyStateFixture,
             }}
           />
         </SharedReportShell>
@@ -189,7 +184,6 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...reportData,
               decisionSupport: reportData.decisionSupport ?? null,
-              emptyState: monthlyReportEmptyStateFixture,
             }}
           />
         </SharedReportShell>

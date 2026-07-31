@@ -21259,13 +21259,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   recorded handled `com.dofek.healthkit-observer: Code: 1` events when native
   observer callbacks expired before JavaScript acknowledged them.
 - **User impact:** No crash or data loss. HealthKit can redeliver updates after
-  expiration, and successful syncs still uploaded data. The events were false
-  positives under iOS background suspension and long-running observer syncs.
+  expiration ([executing observer queries](https://developer.apple.com/documentation/healthkit/executing-observer-queries)),
+  and successful syncs still uploaded data. The events were false positives under
+  iOS background suspension ([preparing your UI to run in the background](https://developer.apple.com/documentation/uikit/app_and_environment/scenes/preparing_your_ui_to_run_in_the_background))
+  and long-running observer syncs.
 - **Evidence:** Prior fixes scoped observer syncs to delivered types, removed
   JavaScript debouncing, and suppressed Sentry capture only while JavaScript
   reported an active sync. Expirations still reached Sentry when the JavaScript
-  thread was suspended before `setObserverSyncInProgress(true)` ran, and when
-  sync exceeded the unchanged 25-second native boundary without the flag set.
+  thread was suspended before `setObserverSyncInProgress(true)` ran ([background
+  delivery](https://developer.apple.com/documentation/healthkit/hkhealthstore/enablebackgrounddelivery(for:frequency:withcompletion:))),
+  and when sync exceeded the unchanged 25-second native boundary without the flag
+  set.
 - **Root cause:** Observer expiration telemetry treated an expected iOS
   background timing boundary as an actionable error, and the sync-in-progress
   flag was set too late in the JavaScript delivery path.
