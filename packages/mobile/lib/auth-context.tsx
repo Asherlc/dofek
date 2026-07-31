@@ -90,6 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(currentUser);
         setBootstrapError(null);
         startupOutcome = "authenticated";
+        const { identifyPostHogUser } = await import("./telemetry");
+        identifyPostHogUser(currentUser);
       } else {
         await clearSessionToken();
         setUser(null);
@@ -145,6 +147,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const currentUser = await fetchCurrentUser(SERVER_URL, token);
     setUser(currentUser);
     setBootstrapError(null);
+    if (currentUser) {
+      const { identifyPostHogUser } = await import("./telemetry");
+      identifyPostHogUser(currentUser);
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -165,6 +171,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         await clearSessionToken();
       }
+      const { resetPostHogUser } = await import("./telemetry");
+      resetPostHogUser();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
     }

@@ -4,7 +4,7 @@ import {
   type TreffPolarizationWeek,
 } from "@dofek/training/training-distribution";
 import { computePolarizationIndex, HEART_RATE_ZONES } from "@dofek/zones/zones";
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -349,7 +349,7 @@ export class EfficiencyRepository extends BaseRepository {
         range,
         activityDiagnostic,
       ).catch((error) => {
-        Sentry.captureException(error);
+        captureException(error);
         return null;
       });
     }

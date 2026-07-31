@@ -151,6 +151,15 @@ DataWidget(
       } catch (error: unknown) {
         writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         logger.error("live workout upload failed %j", error);
+        void this.request({
+          method: "telemetry.report",
+          params: {
+            message: error instanceof Error ? error.message : String(error),
+            name: error instanceof Error ? error.name : "Error",
+            stack: error instanceof Error ? error.stack : undefined,
+            category: "workout-upload",
+          },
+        });
       } finally {
         this.state.flushing = false;
       }

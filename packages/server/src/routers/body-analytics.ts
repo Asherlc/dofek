@@ -1,4 +1,4 @@
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";

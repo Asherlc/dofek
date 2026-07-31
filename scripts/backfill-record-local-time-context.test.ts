@@ -1,11 +1,14 @@
 import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 import { main } from "./backfill-record-local-time-context.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../src/lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
+}));
+vi.mock("@sentry/node", () => ({
   close: vi.fn(async () => true),
   init: vi.fn(),
 }));

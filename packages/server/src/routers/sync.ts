@@ -1,5 +1,5 @@
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";

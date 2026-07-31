@@ -1,6 +1,6 @@
 import { formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
-import { captureException } from "@sentry/react";
+import { captureException } from "../lib/telemetry.ts";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";

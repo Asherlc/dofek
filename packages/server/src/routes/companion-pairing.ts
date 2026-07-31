@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import QRCode from "qrcode";
@@ -63,7 +63,7 @@ export function createCompanionPairingRouter(deps: {
         expiresAt: challenge.expiresAt,
       });
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[companion-pairing] Failed to start pairing: ${error}`);
       sendJson(res, 500, { error: "Failed to start companion pairing." });
     }
@@ -104,7 +104,7 @@ export function createCompanionPairingRouter(deps: {
         expiresAt: challenge.expiresAt,
       });
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[companion-pairing] Failed to read pairing status: ${error}`);
       res.set("Cache-Control", "no-store");
       sendJson(res, 500, { error: "Failed to read companion pairing status." });
@@ -134,7 +134,7 @@ export function createCompanionPairingRouter(deps: {
       });
       res.type("image/svg+xml").send(svg);
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[companion-pairing] Failed to render QR code: ${error}`);
       res.status(500).type("text/plain").send("Failed to render pairing QR code.");
     }

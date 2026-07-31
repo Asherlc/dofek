@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { setupClickHouseCdcFromEnv } from "../src/db/clickhouse-cdc.ts";
 
 function requireEnvironmentVariable(environmentVariableName: string): string {
@@ -38,7 +39,7 @@ export async function main(): Promise<void> {
     await Sentry.close(2_000);
     process.exit(0);
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     console.error(`[clickhouse-cdc] ${error}`);
     await Sentry.close(2_000);
     process.exit(1);

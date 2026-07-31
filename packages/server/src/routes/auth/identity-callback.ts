@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -152,7 +152,7 @@ export async function handleIdentityCallback(
       try {
         await queryCache.invalidateByPrefix(`${userId}:auth.linkedAccounts`);
       } catch (cacheError: unknown) {
-        Sentry.captureException(cacheError);
+        captureException(cacheError);
         logger.warn(
           `[auth] Failed to invalidate linked-accounts cache for user ${userId}: ${cacheError}`,
         );
@@ -181,7 +181,7 @@ export async function handleIdentityCallback(
     logger.info(`[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`);
     res.redirect(linkUserId ? "/settings" : getPostLoginRedirect(returnTo, isNewUser));
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     const oauthCode =
       err instanceof Error && "code" in err && typeof err.code === "string" ? err.code : undefined;

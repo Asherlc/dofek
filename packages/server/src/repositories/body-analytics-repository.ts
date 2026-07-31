@@ -1,5 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";

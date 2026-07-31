@@ -15,7 +15,7 @@ import {
 } from "@dofek/garmin-connect/parsing";
 import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
-import { captureException } from "@sentry/node";
+import { captureException } from "../../lib/error-reporting.ts";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";

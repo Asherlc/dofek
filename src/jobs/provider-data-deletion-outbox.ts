@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import {
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionDispatched,
@@ -44,7 +44,7 @@ export function startProviderDataDeletionOutboxDispatcher(
         }
       })
       .catch((error: unknown) => {
-        Sentry.captureException(error, { tags: { source: "provider-data-deletion-outbox" } });
+        captureException(error, { tags: { source: "provider-data-deletion-outbox" } });
         logger.error(`[provider-data-deletion-outbox] Dispatch failed: ${String(error)}`);
       })
       .finally(() => {

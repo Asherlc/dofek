@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import type { ConnectionOptions } from "bullmq";
 import { z } from "zod";
 import { logger } from "../logger.ts";
@@ -135,7 +135,7 @@ class GarminImportProgressCoordinator {
   }
 
   #reportRefreshFailure(batchId: string, error: unknown): void {
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { garminDumpStep: "progress-refresh" },
       extra: { batchId },
     });

@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import type { SQLWrapper } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -64,7 +64,7 @@ export function createDatabase(connectionString: string): Database {
   registerPostgresPoolMetrics(client);
   client.on("error", (error) => {
     logger.error(`[db] PostgreSQL pool idle client error: ${error.message}`);
-    Sentry.captureException(error, { tags: { source: "postgres-pool" } });
+    captureException(error, { tags: { source: "postgres-pool" } });
   });
   const db = drizzle(client, { schema });
   const rawExecute = db.execute.bind(db);

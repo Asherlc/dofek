@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { type OAuthConfig, revokeToken, type TokenSet } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
@@ -79,7 +79,7 @@ async function revokeStandardTokens(
       }`;
       errors.push(message);
       logger.error(`[auth] ${providerId} ${message}`);
-      Sentry.captureException(error);
+      captureException(error);
     }
   }
   if (errors.length > 0) {
@@ -103,7 +103,7 @@ async function revokeSupersededAuthorization(params: {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      Sentry.captureException(error);
+      captureException(error);
       if (!params.oauthConfig.revokeUrl) {
         throw error;
       }
@@ -434,7 +434,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             revokeError instanceof Error ? revokeError.message : String(revokeError)
           }`,
         );
-        Sentry.captureException(revokeError);
+        captureException(revokeError);
       }
     }
 
@@ -446,7 +446,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       ),
     );
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(
       `[auth] OAuth callback failed for ${resolvedProviderName ?? "unknown provider"}: ${message}`,

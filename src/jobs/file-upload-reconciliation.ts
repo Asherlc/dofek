@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import {
   expireFileUpload,
   fileUploadObjectKeyExists,
@@ -20,7 +20,7 @@ function reportReconciliationItemFailure(
   repairKind: "upload" | "orphan",
   extra: { uploadId: string } | { objectKey: string },
 ): void {
-  Sentry.captureException(error, {
+  captureException(error, {
     tags: { source: "file-upload-reconciliation", repairKind },
     extra,
   });
@@ -101,7 +101,7 @@ export function startFileUploadReconciler(
     if (closed || running) return;
     running = reconcileFileUploads(database, storage)
       .catch((error: unknown) => {
-        Sentry.captureException(error, { tags: { source: "file-upload-reconciliation" } });
+        captureException(error, { tags: { source: "file-upload-reconciliation" } });
         logger.error(`[file-upload-reconciliation] Failed: ${String(error)}`);
       })
       .finally(() => {

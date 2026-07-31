@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react";
+import posthog from "posthog-js";
 
 declare const __COMMIT_HASH__: string;
 
@@ -27,4 +28,5 @@ export function initTelemetry() {
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
   Sentry.captureException(error, { extra: context });
+  posthog.captureException(error, context);
 }

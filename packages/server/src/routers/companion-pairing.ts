@@ -1,4 +1,4 @@
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { DEFAULT_COMPANION_CONNECTION_TYPE } from "../companion/connection-type.ts";

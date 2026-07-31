@@ -1,5 +1,5 @@
 import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "./index.ts";
@@ -123,7 +123,7 @@ function normalizeProviderActivityInsert(
       updateLocalTimeContext: true,
     };
   } catch (error: unknown) {
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { operation: "provider-activity-local-time-context" },
     });
     return {

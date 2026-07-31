@@ -5,11 +5,13 @@ const mocks = vi.hoisted(() => {
   const mockInit = vi.fn();
   const mockCaptureException = vi.fn();
   const mockBrowserTracingIntegration = vi.fn(() => ({ name: "BrowserTracing" }));
+  const mockPostHogCaptureException = vi.fn();
 
   return {
     mockInit,
     mockCaptureException,
     mockBrowserTracingIntegration,
+    mockPostHogCaptureException,
   };
 });
 
@@ -17,6 +19,12 @@ vi.mock("@sentry/react", () => ({
   init: mocks.mockInit,
   captureException: mocks.mockCaptureException,
   browserTracingIntegration: mocks.mockBrowserTracingIntegration,
+}));
+
+vi.mock("posthog-js", () => ({
+  default: {
+    captureException: mocks.mockPostHogCaptureException,
+  },
 }));
 
 describe("web telemetry", () => {
@@ -73,6 +81,9 @@ describe("web telemetry", () => {
 
     expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
       extra: { "react.component_stack": "<App>" },
+    });
+    expect(mocks.mockPostHogCaptureException).toHaveBeenCalledWith(error, {
+      "react.component_stack": "<App>",
     });
   });
 });

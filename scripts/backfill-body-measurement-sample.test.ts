@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   backfillMissingBodyMeasurementSamples,
@@ -11,8 +12,10 @@ import {
   parseBodyMeasurementSampleBackfillOptions,
 } from "./backfill-body-measurement-sample.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../src/lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
+}));
+vi.mock("@sentry/node", () => ({
   close: vi.fn(async () => true),
   init: vi.fn(),
 }));

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { Client } from "pg";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import {
@@ -129,7 +130,7 @@ export async function main(): Promise<void> {
     await Sentry.close(2_000);
   } catch (error: unknown) {
     exitCode = 1;
-    Sentry.captureException(error);
+    captureException(error);
     console.error(`[clickhouse-cdc-health] ${error}`);
     await Sentry.close(2_000);
   } finally {

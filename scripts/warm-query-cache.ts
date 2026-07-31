@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { getAccessWindowForUser } from "../packages/server/src/billing/access-window-repository.ts";
 import type { AccessWindow } from "../packages/server/src/billing/entitlement.ts";
 import { ClickHouseActivitySensorStore } from "../packages/server/src/repositories/clickhouse-activity-sensor-store.ts";
@@ -85,7 +85,7 @@ export function parseRegisteredQueryCacheKey(key: string): RegisteredQueryCacheK
       input: parseInput(key.slice(timezoneSeparator + 1)),
     };
   } catch (error) {
-    Sentry.captureException(error, { tags: { cacheOperation: "parseWarmKey" } });
+    captureException(error, { tags: { cacheOperation: "parseWarmKey" } });
     return null;
   }
 }
@@ -172,7 +172,7 @@ export async function warmRegisteredQueryCachesWithOutcomes<TDatabase, TSensorSt
         status: "failed",
         errorMessage,
       });
-      Sentry.captureException(error, {
+      captureException(error, {
         tags: { cacheOperation: "warm", trpcPath: registeredQuery.path },
         extra: { cacheKey: registeredQuery.key, userId: registeredQuery.userId },
       });

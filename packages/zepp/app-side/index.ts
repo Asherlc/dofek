@@ -2,6 +2,12 @@ import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
+import {
+  captureException as reportPostHogException,
+  clearBufferedTelemetryEvents,
+  flushTelemetryEvents,
+  restoreBufferedTelemetryEvents,
+} from "../src/posthog-client.ts";
 import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
@@ -37,6 +43,37 @@ function getRawString(value: Record<string, unknown>, key: string): string {
   return typeof raw === "string" ? raw : "";
 }
 
+function getTelemetryDistinctId(): string {
+  const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+  if (apiToken) {
+    return `zepp:${apiToken.slice(0, 12)}`;
+  }
+  const pairingId = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim();
+  if (pairingId) {
+    return `zepp-pairing:${pairingId}`;
+  }
+  return "zepp-side-unidentified";
+}
+
+function flushBufferedTelemetryFromWatch(): void {
+  restoreBufferedTelemetryEvents(settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_BUFFER));
+  flushTelemetryEvents()
+    .then(() => {
+      settings.settingsStorage.removeItem(STORAGE_KEYS.TELEMETRY_BUFFER);
+      clearBufferedTelemetryEvents();
+    })
+    .catch((error: unknown) => {
+      logger.error("telemetry flush failed %j", error);
+    });
+}
+
+function reportSideException(error: unknown, context: Record<string, unknown> = {}): void {
+  logger.error("captured exception %j", error);
+  void reportPostHogException(error, {
+    ...context,
+    distinctId: getTelemetryDistinctId(),
+    source: "zepp-side",
+    connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
 function getStoredServerUrl(): string {
   const storedServerUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
   return storedServerUrl || DEFAULT_DOFEK_SERVER_URL;
@@ -45,6 +82,7 @@ function getStoredServerUrl(): string {
 AppSideService(
   BaseSideService({
     onInit() {
+      flushBufferedTelemetryFromWatch();
       settings.settingsStorage.addListener("change", ({ key, newValue }) => {
         this.handleSettingsChange(key, newValue);
       });
@@ -55,7 +93,7 @@ AppSideService(
       }
       if (apiToken) {
         this.verifyConnection().catch((error: unknown) => {
-          logger.error("connection verification failed %j", error);
+          reportSideException(error, { category: "connection-verification" });
         });
       } else if (!pairingId) {
         this.setConnectionStatus({ state: "not connected" });
@@ -129,25 +167,25 @@ AppSideService(
 
       if (key === STORAGE_KEYS.CMD_START_PAIRING) {
         this.startPairing().catch((error: unknown) => {
-          logger.error("pairing start failed %j", error);
+          reportSideException(error, { category: "pairing-start" });
         });
       }
 
       if (key === STORAGE_KEYS.CMD_CHECK_CONNECTION) {
         this.verifyConnection().catch((error: unknown) => {
-          logger.error("connection verification failed %j", error);
+          reportSideException(error, { category: "connection-verification" });
         });
       }
 
       if (key === STORAGE_KEYS.CMD_DISCONNECT) {
         this.disconnect().catch((error: unknown) => {
-          logger.error("disconnect failed %j", error);
+          reportSideException(error, { category: "disconnect" });
         });
       }
 
       if (key === STORAGE_KEYS.CMD_LOGIN_PASSWORD && typeof newValue === "string" && newValue) {
         this.loginWithPassword(newValue).catch((error: unknown) => {
-          logger.error("password login failed %j", error);
+          reportSideException(error, { category: "password-login" });
         });
       }
     },
@@ -228,7 +266,7 @@ AppSideService(
     schedulePairingPoll(pairingId: string, serverUrl: string, operation: number) {
       setTimeout(() => {
         this.pollPairing(pairingId, serverUrl, operation).catch((error: unknown) => {
-          logger.error("pairing poll failed %j", error);
+          reportSideException(error, { category: "pairing-poll" });
         });
       }, 3000);
     },
@@ -251,7 +289,7 @@ AppSideService(
           )}`,
         });
       } catch (error) {
-        logger.error("pairing poll request failed %j", error);
+        reportSideException(error, { category: "pairing-poll-request" });
         if (connectionOperations.isCurrent(operation)) {
           this.schedulePairingPoll(pairingId, serverUrl, operation);
         }
@@ -260,7 +298,9 @@ AppSideService(
       const summary = summarizeZeppFetchResponse(response);
       if (!summary.ok) {
         if (shouldRetryPairingPollFailure(summary)) {
-          logger.error("pairing poll transient response failed %j", summary.errorMessage);
+          reportSideException(new Error(summary.errorMessage ?? "pairing poll transient failure"), {
+            category: "pairing-poll-transient",
+          });
           this.schedulePairingPoll(pairingId, serverUrl, operation);
           return;
         }
@@ -472,7 +512,7 @@ AppSideService(
 
         if (!summary.ok) {
           const message = summary.errorMessage ?? "health data upload failed";
-          logger.error("health data upload failed: %s", message);
+          reportSideException(new Error(message), { category: "health-upload" });
           settings.settingsStorage.setItem(
             STORAGE_KEYS.HEALTH_SYNC_STATUS,
             JSON.stringify({ state: "error", reason: message }),
@@ -488,7 +528,7 @@ AppSideService(
         logger.log("health data uploaded successfully");
       } catch (error) {
         const message = error instanceof Error ? error.message : "health data upload failed";
-        logger.error("health data upload fetch failed: %j", error);
+        reportSideException(error, { category: "health-upload-fetch" });
         settings.settingsStorage.setItem(
           STORAGE_KEYS.HEALTH_SYNC_STATUS,
           JSON.stringify({ state: "error", reason: message }),
@@ -632,6 +672,22 @@ AppSideService(
           transferState: "sent",
           sampleCount: params.sampleCount ?? status.sampleCount,
           updatedAt: Date.now(),
+        });
+        res(null, { ok: true });
+        return;
+      }
+
+      if (method === "telemetry.report") {
+        const errorMessage = typeof params.message === "string" ? params.message : "unknown error";
+        const errorName = typeof params.name === "string" ? params.name : "Error";
+        const stack = typeof params.stack === "string" ? params.stack : undefined;
+        const error = new Error(errorMessage);
+        error.name = errorName;
+        if (stack) {
+          error.stack = stack;
+        }
+        reportSideException(error, {
+          category: typeof params.category === "string" ? params.category : "zepp-watch",
         });
         res(null, { ok: true });
         return;

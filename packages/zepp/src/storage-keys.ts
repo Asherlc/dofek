@@ -22,6 +22,7 @@ export const STORAGE_KEYS = {
   PAIRING_EXPIRES_AT: "pairing_expires_at",
   HEALTH_SYNC_STATUS: "health_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
+  TELEMETRY_BUFFER: "telemetry_buffer",
 } as const;
 
 export const DEFAULT_DOFEK_SERVER_URL = "https://dofek.asherlc.com";

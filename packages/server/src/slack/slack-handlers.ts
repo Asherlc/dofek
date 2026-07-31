@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { App as AppType, SayFn } from "@slack/bolt";
 import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
@@ -74,7 +74,7 @@ function buildSlackExceptionContext(context: SlackExceptionContext): Record<stri
 }
 
 function captureSlackException(error: unknown, context: SlackExceptionContext): void {
-  Sentry.captureException(error, {
+  captureException(error, {
     contexts: {
       slack: buildSlackExceptionContext(context),
     },
@@ -641,7 +641,7 @@ export function registerHandlers(
           logger.error(
             `[slack] Failed to load daily calorie progress after confirm: ${progressErrorMessage}`,
           );
-          Sentry.captureException(
+          captureException(
             progressError instanceof Error ? progressError : new Error(progressErrorMessage),
           );
         }

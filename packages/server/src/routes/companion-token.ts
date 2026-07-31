@@ -1,5 +1,5 @@
 import { PasswordLoginRequestSchema } from "@dofek/auth/auth";
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import { z } from "zod";
@@ -67,7 +67,7 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
         sendJson(res, 401, { error: error.message });
         return;
       }
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[companion-token] Password login failed: ${error}`);
       sendJson(res, 500, { error: "Failed to create Dofek connection." });
     }
@@ -100,7 +100,7 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
       });
     } catch (error) {
       companionConnectionOperationsTotal.inc({ operation: "verify", outcome: "error" });
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[companion-token] Connection validation failed: ${error}`);
       sendJson(res, 500, { error: "Failed to validate Dofek connection." });
     }
@@ -130,7 +130,7 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
       sendJson(res, 200, { state: "disconnected" });
     } catch (error) {
       companionConnectionOperationsTotal.inc({ operation: "revoke", outcome: "error" });
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[companion-token] Connection revocation failed: ${error}`);
       sendJson(res, 500, { error: "Failed to disconnect Dofek." });
     }

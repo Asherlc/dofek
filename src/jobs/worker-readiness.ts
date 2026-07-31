@@ -1,5 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 
 interface WorkerReadinessClient {
@@ -118,7 +118,7 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
         if (error instanceof WorkerReadinessError) {
           logger.warn(`[worker] Readiness check failed: ${message}`);
         } else {
-          Sentry.captureException(error);
+          captureException(error);
           logger.error(`[worker] Readiness check failed: ${message}`);
         }
         sendJson(response, 503, { status: "unavailable" });

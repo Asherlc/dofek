@@ -35,7 +35,7 @@ vi.mock("dofek/auth/oauth", () => ({
   revokeToken: (...args: unknown[]) => mockRevokeToken(...args),
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -103,7 +103,7 @@ vi.mock("./shared.ts", () => ({
   })),
 }));
 
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
@@ -301,7 +301,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Wahoo deauthorization unavailable" }),
     );
     expect(res.status).toHaveBeenCalledWith(400);
@@ -698,7 +698,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
         userId: "user-1",
       }),
     );
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.stringContaining("stale revoked credential remains stored"),
         cause: expect.objectContaining({ message: "database unavailable" }),

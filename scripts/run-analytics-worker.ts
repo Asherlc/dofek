@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { z } from "zod";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
 import { initProductionSentry } from "../src/lib/sentry.ts";
@@ -101,7 +101,7 @@ export async function runAnalyticsWorker(): Promise<void> {
   const worker = createAnalyticsWorkerFromEnvironment(process.env, {
     now: () => new Date(),
     reportFailure: (error, tags) => {
-      Sentry.captureException(error, { tags });
+      captureException(error, { tags });
       logger.error(
         `[analytics-worker] ${tags.analyticsRefreshStep} failed: ${errorMessage(error)}`,
       );

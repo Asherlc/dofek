@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { UnrecoverableError } from "bullmq";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -126,7 +126,7 @@ async function updateFitFileImportProgress(
 ): Promise<void> {
   await job.updateProgress(info).catch((error: unknown) => {
     logger.warn("Failed to update FIT import progress: %s", error);
-    Sentry.captureException(error, { tags: { fitImportStep: "updateProgress" } });
+    captureException(error, { tags: { fitImportStep: "updateProgress" } });
   });
 }
 

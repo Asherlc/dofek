@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import {
   backfillMissingBodyMeasurementSamples,
   countMissingBodyMeasurementSamples,
@@ -86,7 +87,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     }
     console.log("[body-measurement-backfill] complete");
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     throw error;
   } finally {
     await client.close?.();

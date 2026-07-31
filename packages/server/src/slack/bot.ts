@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
 import type { Database } from "dofek/db";
@@ -78,7 +78,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     });
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
-      Sentry.captureException(error);
+      captureException(error);
     });
     registerHandlers(app, repository);
 
@@ -104,7 +104,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
       processEventErrorHandler: async ({ error }) => {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error(`[slack] Bolt processEvent error: ${errorMessage}`);
-        Sentry.captureException(error instanceof Error ? error : new Error(errorMessage));
+        captureException(error instanceof Error ? error : new Error(errorMessage));
         return true; // ack the event so Slack doesn't retry indefinitely
       },
     });
@@ -141,7 +141,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
-      Sentry.captureException(error);
+      captureException(error);
     });
 
     registerHandlers(app, repository);

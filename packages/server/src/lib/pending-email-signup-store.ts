@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { RedisConnection } from "bullmq";
 import type { TokenSet } from "dofek/auth/oauth";
 import { getRedisConnection } from "dofek/jobs/queues";
@@ -225,7 +225,7 @@ export class RedisPendingEmailSignupStore implements PendingEmailSignupStore {
     try {
       decoded = JSON.parse(payload);
     } catch {
-      Sentry.captureException(new Error("Invalid pending email signup Redis payload"), {
+      captureException(new Error("Invalid pending email signup Redis payload"), {
         tags: {
           context: "pending-email-signup-parse",
           reason: "json",
@@ -237,7 +237,7 @@ export class RedisPendingEmailSignupStore implements PendingEmailSignupStore {
 
     const parsed = pendingEmailSignupEntrySchema.safeParse(decoded);
     if (!parsed.success) {
-      Sentry.captureException(new Error("Invalid pending email signup Redis payload"), {
+      captureException(new Error("Invalid pending email signup Redis payload"), {
         tags: {
           context: "pending-email-signup-parse",
           reason: "schema",

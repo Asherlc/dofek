@@ -1,4 +1,5 @@
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPLogExporter as OTLPLogExporterHttp } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -23,8 +24,20 @@ vi.mock("@opentelemetry/exporter-trace-otlp-proto", () => ({
   OTLPTraceExporter: vi.fn(),
 }));
 
+vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
+  OTLPLogExporter: vi.fn(),
+}));
+
 vi.mock("@opentelemetry/exporter-logs-otlp-proto", () => ({
   OTLPLogExporter: vi.fn(),
+}));
+
+vi.mock("@opentelemetry/resources", () => ({
+  resourceFromAttributes: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("@opentelemetry/semantic-conventions", () => ({
+  ATTR_SERVICE_NAME: "service.name",
 }));
 
 vi.mock("@opentelemetry/exporter-metrics-otlp-proto", () => ({
@@ -77,6 +90,7 @@ describe("instrumentation", () => {
     vi.mocked(NodeSDK).mockClear();
     vi.mocked(OTLPTraceExporter).mockClear();
     vi.mocked(OTLPLogExporter).mockClear();
+    vi.mocked(OTLPLogExporterHttp).mockClear();
     vi.mocked(OTLPMetricExporter).mockClear();
     vi.mocked(BatchSpanProcessor).mockClear();
     vi.mocked(BatchLogRecordProcessor).mockClear();
@@ -116,7 +130,7 @@ describe("instrumentation", () => {
     expect(typeof mod.startInstrumentation).toBe("function");
   });
 
-  it("returns undefined when no OTLP endpoints are set", async () => {
+  it("returns undefined when no OTLP endpoints are set and not in production", async () => {
     delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     delete process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
@@ -172,6 +186,20 @@ describe("instrumentation", () => {
     );
     expect(getNodeAutoInstrumentations).toHaveBeenCalledWith({
       "@opentelemetry/instrumentation-winston": { enabled: false },
+    });
+  });
+
+  it("adds a PostHog log exporter in production even without Axiom endpoints", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      DEPLOY_ENVIRONMENT: "production",
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    expect(config?.logRecordProcessors).toHaveLength(1);
+    expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
+      exporter: expect.any(OTLPLogExporterHttp),
     });
   });
 

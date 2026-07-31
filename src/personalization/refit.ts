@@ -1,5 +1,5 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -62,7 +62,7 @@ export async function refitAllParams(
     existingParams = await loadPersonalizedParams(db, userId);
   } catch (err) {
     logger.error(`[personalization] Failed to load existing params: ${err}`);
-    Sentry.captureException(err, { tags: { context: "personalization-load-existing" } });
+    captureException(err, { tags: { context: "personalization-load-existing" } });
   }
   const params: PersonalizedParams = {
     version: 1,
@@ -93,7 +93,7 @@ export async function refitAllParams(
     await savePersonalizedParams(db, userId, params);
   } catch (err) {
     logger.error(`[personalization] Failed to save params: ${err}`);
-    Sentry.captureException(err, { tags: { context: "personalization-save" } });
+    captureException(err, { tags: { context: "personalization-save" } });
   }
 
   return params;

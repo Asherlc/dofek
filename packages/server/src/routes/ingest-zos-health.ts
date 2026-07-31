@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
 import { sleepSession, sleepStage } from "dofek/db/schema/activity";
 import { ensureProvider } from "dofek/db/tokens";
@@ -211,7 +211,7 @@ export function createIngestZosHealthRouter(deps: {
       }
       userId = validatedUserId;
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[ingest-zos] Token validation failed: ${error}`);
       sendJson(res, 500, { error: "Failed to validate Dofek connection." });
       return;
@@ -488,7 +488,7 @@ export function createIngestZosHealthRouter(deps: {
       await invalidateAllUserQueries(userId);
       sendJson(res, 200, { status: "ok" });
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[ingest-zos] Failed to ingest health data: ${error}`);
       sendJson(res, 500, { error: "Failed to ingest health data." });
     }

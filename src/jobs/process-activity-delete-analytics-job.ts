@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import {
   runActivityReadModelBuild,
   runProviderDeleteReadModelBuild,
@@ -23,7 +23,7 @@ async function updateActivityAnalyticsProgress(
 ): Promise<void> {
   await job.updateProgress({ percentage, message }).catch((error: unknown) => {
     logger.warn("Failed to update activity analytics progress: %s", error);
-    Sentry.captureException(error, { tags: { activityAnalyticsStep: "updateProgress" } });
+    captureException(error, { tags: { activityAnalyticsStep: "updateProgress" } });
   });
 }
 

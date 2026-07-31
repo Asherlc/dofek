@@ -2,7 +2,7 @@ import {
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -427,7 +427,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
           const reportableError = err.cause ?? new Error(err.message);
           if (shouldReportProviderError(reportableError)) {
-            Sentry.captureException(reportableError, {
+            captureException(reportableError, {
               tags: { provider: provider.id },
               ...(err.context ? { extra: err.context } : {}),
             });
@@ -500,7 +500,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
       if (isRetryableInfraError(err)) {
         const message = err instanceof Error ? err.message : String(err);
-        Sentry.captureException(err, {
+        captureException(err, {
           tags: { provider: provider.id, retryable: "true" },
           level: "warning",
         });
@@ -519,7 +519,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       const message = err instanceof Error ? err.message : String(err);
       const authFailureReason = authFailureReasonFromError(err);
       if (shouldReportProviderError(err)) {
-        Sentry.captureException(err, { tags: { provider: provider.id } });
+        captureException(err, { tags: { provider: provider.id } });
       }
       providerStatus[provider.id] = { status: "error", message };
       await appendProcessingStageEvent(db, {
@@ -561,7 +561,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     await enqueueDebouncedPostSyncMaintenance();
   } catch (err) {
     logger.error(`[worker] Failed to enqueue global post-sync maintenance: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-sync-global-maintenance-enqueue" } });
+    captureException(err, { tags: { phase: "post-sync-global-maintenance-enqueue" } });
   }
 
   try {
@@ -569,6 +569,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     await enqueueDebouncedUserRefit(job.data.userId);
   } catch (err) {
     logger.error(`[worker] Failed to enqueue user refit: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });
+    captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });
   }
 }

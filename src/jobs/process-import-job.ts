@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { UnrecoverableError } from "bullmq";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
@@ -74,7 +74,7 @@ interface ImportProgressInfo {
 async function updateImportJobProgress(job: ImportJob, info: ImportProgressInfo): Promise<void> {
   await job.updateProgress(info).catch((error: unknown) => {
     logger.warn("Failed to update import progress: %s", error);
-    Sentry.captureException(error, { tags: { phase: "import-progress-update" } });
+    captureException(error, { tags: { phase: "import-progress-update" } });
   });
 }
 
@@ -181,7 +181,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
               .updateProgress({ percentage: scaledPercentage, message })
               .catch((error: unknown) => {
                 logger.warn("Failed to update import progress: %s", error);
-                Sentry.captureException(error, { tags: { phase: "import-progress-update" } });
+                captureException(error, { tags: { phase: "import-progress-update" } });
               });
             if (info.percentage >= lastLoggedPercentage + 10) {
               logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
@@ -355,7 +355,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     try {
       await unlink(filePath);
     } catch (cleanupError) {
-      Sentry.captureException(cleanupError, { tags: { phase: "uploaded-file-cleanup" } });
+      captureException(cleanupError, { tags: { phase: "uploaded-file-cleanup" } });
       await appendProcessingStageEvent(db, {
         operationId: processingOperation.id,
         stage: "ingest",
@@ -435,7 +435,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     await enqueueDebouncedPostSyncMaintenance();
   } catch (err) {
     logger.error(`[worker] Failed to enqueue global post-import maintenance: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-global-maintenance-enqueue" } });
+    captureException(err, { tags: { phase: "post-import-global-maintenance-enqueue" } });
   }
 
   try {
@@ -443,7 +443,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     await enqueueDebouncedUserRefit(userId);
   } catch (err) {
     logger.error(`[worker] Failed to enqueue post-import user refit: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-user-refit-enqueue" } });
+    captureException(err, { tags: { phase: "post-import-user-refit-enqueue" } });
   }
 
   if (terminalImportError) {

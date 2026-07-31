@@ -1,6 +1,6 @@
 // cspell:ignore overcommittracker
 import { SpanStatusCode, trace } from "@opentelemetry/api";
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
@@ -115,7 +115,7 @@ function reportableInfrastructureError(error: unknown): unknown {
 }
 
 function reportClickHouseInfrastructureError(error: unknown, path: string): void {
-  Sentry.captureException(reportableInfrastructureError(error), {
+  captureException(reportableInfrastructureError(error), {
     tags: { dependency: "clickhouse", trpcPath: path },
   });
 }

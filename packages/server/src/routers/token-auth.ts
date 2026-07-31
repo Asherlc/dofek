@@ -2,7 +2,7 @@ import {
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { connectProviderWithTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";

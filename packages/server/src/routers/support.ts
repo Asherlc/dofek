@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { userProfile } from "dofek/db/schema/reference";
 import { eq } from "drizzle-orm";
@@ -52,7 +52,7 @@ export const supportRouter = router({
       );
       return { ticketNumber: ticket.ticketNumber };
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(
         `[support] ticket creation failed userId=${ctx.userId} message=${
           error instanceof Error ? error.message : String(error)

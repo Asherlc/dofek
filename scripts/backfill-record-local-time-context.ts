@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 
@@ -70,7 +71,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       await db.$client.end();
     }
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     throw error;
   } finally {
     await Sentry.close(2_000);

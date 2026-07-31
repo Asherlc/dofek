@@ -1,4 +1,4 @@
-import { captureException } from "@sentry/node";
+import { captureException } from "../../lib/error-reporting.ts";
 import { and, eq, gte, isNotNull, lt, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../db/clickhouse.ts";
