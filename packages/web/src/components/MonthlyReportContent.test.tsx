@@ -43,6 +43,10 @@ describe("MonthlyReportContent", () => {
             confidenceAndMissingData: ["Confidence is limited."],
           },
           emptyState: monthlyReportEmptyState,
+          recovery: {
+            range: { startDate: "2026-07-01", endDate: "2026-07-31" },
+            emptyMessage: "No data found for this period.",
+          },
         }}
       />,
     );
@@ -66,6 +70,10 @@ describe("MonthlyReportContent", () => {
           current: null,
           history: [],
           decisionSupport: null,
+          recovery: {
+            range: { startDate: "2026-03-01", endDate: "2026-03-24" },
+            emptyMessage: "No data found for this period.",
+          },
           emptyState: {
             reportKind: "monthly",
             title: "Server monthly preview title",

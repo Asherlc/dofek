@@ -36,6 +36,11 @@ const meta = {
         ],
       },
       emptyState: monthlyReportEmptyState,
+      recovery: {
+        range: { startDate: "2026-03-01", endDate: "2026-03-24" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-01 through 2026-03-24.",
+      },
     },
   },
 } satisfies Meta<typeof MonthlyReportContent>;
@@ -70,6 +75,11 @@ export const Empty: Story = {
           "Month-over-month training and sleep changes",
         ],
         note: "This preview shows report sections only. No personal values or conclusions are estimated.",
+      },
+      recovery: {
+        range: { startDate: "2026-03-01", endDate: "2026-03-24" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-01 through 2026-03-24.",
       },
     },
   },

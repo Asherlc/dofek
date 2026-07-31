@@ -52,6 +52,11 @@ const meta = {
         ],
       },
       emptyState: weeklyReportEmptyState,
+      recovery: {
+        range: { startDate: "2026-03-30", endDate: "2026-04-05" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-30 through 2026-04-05.",
+      },
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;
@@ -75,6 +80,11 @@ export const Empty: Story = {
       current: null,
       history: [],
       decisionSupport: null,
+      recovery: {
+        range: { startDate: "2026-03-30", endDate: "2026-04-05" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-30 through 2026-04-05.",
+      },
       emptyState: {
         reportKind: "weekly",
         title: "Your weekly report will appear here",

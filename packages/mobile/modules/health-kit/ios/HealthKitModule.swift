@@ -39,6 +39,10 @@ public class HealthKitModule: Module {
         anchorStore: HealthKitAnchorStore(userDefaults: .standard)
     )
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
+    private var observerSyncInProgress = false
+    // Lazy so the expiration closure can capture self after stored properties finish
+    // initializing. Swift serializes lazy initialization, and first access only happens
+    // from observer callbacks / complete* after the module is fully constructed.
     private lazy var observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
         timeout: 25,
         reportExpiration: { [weak self] expiration in
@@ -73,7 +77,6 @@ public class HealthKitModule: Module {
         }
     )
     private var observerQueries: [HKObserverQuery] = []
-    private var observerSyncInProgress = false
 
     @discardableResult
     private func stopBackgroundObservers() -> Int {
