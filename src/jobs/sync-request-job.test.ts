@@ -1,9 +1,14 @@
 import type { JobsOptions } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
-import { buildSyncRequestJobId } from "../lib/sync-request-query.ts";
+import {
+  buildSyncRequestJobId,
+  registerSyncRequestQueryResolver,
+} from "../lib/sync-request-query.ts";
 import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
 import type { SyncJobData } from "./queues.ts";
 import { enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
+
+registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
 
 describe("resolveWhoopSyncRequestQuery", () => {
   it("maps a fresh sync job to the first bootstrap cycles request", () => {
@@ -297,6 +302,100 @@ describe("enqueueSyncJobWithRequestDedup", () => {
       expect.objectContaining({ jobId: expect.any(String) }),
     );
     expect(result).toBe(newJob);
+  });
+
+  it("reports a BullMQ lifecycle-deduplicated job as already queued", async () => {
+    const existingJob = { id: "first-full-job" };
+    const addJob = vi.fn().mockResolvedValue(existingJob);
+    const getJob = vi.fn().mockResolvedValue(undefined);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "strava",
+      {
+        userId: "user-1",
+        providerId: "strava",
+        sinceIso: "1970-01-01T00:00:00.000Z",
+        untilIso: "2026-07-29T17:00:01.000Z",
+        targetRefreshWindow: { type: "full" },
+      },
+      { deduplication: { id: "sync:full:strava:user-1" } },
+      addJob,
+      getJob,
+    );
+
+    expect(addJob).toHaveBeenCalledWith(
+      "sync",
+      expect.anything(),
+      expect.objectContaining({
+        jobId: expect.stringMatching(/^sync-req-strava-user-1-/),
+        deduplication: { id: "sync:full:strava:user-1" },
+      }),
+    );
+    expect(result).toBe(existingJob);
+    expect(result?.alreadyQueued).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "lifecycle deduplication is absent",
+      jobOptions: {},
+      returnedJobId: "different-job-id",
+      jobData,
+    },
+    {
+      name: "request job ID is absent",
+      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      returnedJobId: "different-job-id",
+      jobData: {
+        userId: "user-1",
+        providerId: "whoop",
+        checkpoint: {
+          runId: "run-1",
+          recordsSynced: 0,
+          phase: "done" as const,
+          cycleFetchCursorMs: null,
+          cycles: [],
+          apiSteps: [],
+          apiStepIndex: 0,
+          presentExternalIds: [],
+        },
+      },
+    },
+    {
+      name: "BullMQ returns no job ID",
+      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      returnedJobId: undefined,
+      jobData,
+    },
+    {
+      name: "BullMQ returns the requested job ID",
+      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      returnedJobId: "requested-job-id",
+      jobData,
+    },
+  ])("does not report already queued when $name", async ({
+    jobOptions,
+    returnedJobId,
+    jobData,
+  }) => {
+    const returnedJob = { id: returnedJobId };
+    const addJob = vi.fn().mockImplementation(async (_name, _data, options: JobsOptions) => {
+      if (returnedJobId === "requested-job-id") {
+        returnedJob.id = options.jobId;
+      }
+      return returnedJob;
+    });
+    const getJob = vi.fn().mockResolvedValue(undefined);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(result?.alreadyQueued).toBe(false);
   });
 
   it("returns an existing cooldown-delayed job without enqueueing a duplicate", async () => {

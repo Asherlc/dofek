@@ -2,6 +2,7 @@
 
 import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { describe, expect, it } from "vitest";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
@@ -41,6 +42,7 @@ describe("MonthlyReportContent", () => {
             whatToTryNext: ["Repeat the routine next month."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
+          emptyState: createReportEmptyState("monthly"),
         }}
       />,
     );
@@ -58,8 +60,32 @@ describe("MonthlyReportContent", () => {
   });
 
   it("renders the empty state", () => {
-    render(<MonthlyReportContent data={{ current: null, history: [], decisionSupport: null }} />);
+    render(
+      <MonthlyReportContent
+        data={{
+          current: null,
+          history: [],
+          decisionSupport: null,
+          emptyState: {
+            reportKind: "monthly",
+            title: "Server monthly preview title",
+            message: "Server monthly preview message.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"],
+            requirement: "Server monthly coverage requirement.",
+            previewTitle: "Server monthly structure",
+            previewItems: ["Average daily strain", "Month-over-month training and sleep changes"],
+            note: "Server no-estimate note.",
+          },
+        }}
+      />,
+    );
 
-    expect(screen.getByText("Not enough data for a monthly report yet.")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview title")).toBeTruthy();
+    expect(screen.getByText("Server monthly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server monthly structure")).toBeTruthy();
+    expect(screen.getByText("Average daily strain")).toBeTruthy();
+    expect(screen.getByText("Server no-estimate note.")).toBeTruthy();
   });
 });

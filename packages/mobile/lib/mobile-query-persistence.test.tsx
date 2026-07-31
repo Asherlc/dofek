@@ -1,9 +1,13 @@
 import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { dehydrate, QueryClient } from "@tanstack/react-query";
-import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
+import {
+  persistQueryClient,
+  persistQueryClientRestore,
+} from "@tanstack/react-query-persist-client";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createMobileQueryPersister,
+  MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES,
   mobileQueryCacheBuster,
   removeMobileQueryCache,
 } from "./mobile-query-persistence";
@@ -140,5 +144,20 @@ describe("mobile query persistence", () => {
 
     await expect(AsyncStorage.getItem("dofek-query-cache:user-1")).resolves.toBeNull();
     await expect(AsyncStorage.getItem("dofek-query-cache:user-2")).resolves.toBe("cache");
+  });
+
+  it("drops oversized persisted caches instead of writing them (DOFEK-MOBILE-1E)", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const client = createQueryClient();
+    client.setQueryData(["huge"], "x".repeat(MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES));
+
+    await persistQueryClient({
+      queryClient: client,
+      persister: createMobileQueryPersister("user-1"),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster("user-1"),
+    });
+
+    await expect(AsyncStorage.getItem("dofek-query-cache:user-1")).resolves.toBeNull();
   });
 });

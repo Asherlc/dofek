@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { WeeklyReportCard } from "./WeeklyReportCard";
 
 const meta = {
@@ -50,6 +51,7 @@ const meta = {
           "These period averages can show co-movement, but they cannot establish cause and effect.",
         ],
       },
+      emptyState: createReportEmptyState("weekly"),
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;
@@ -63,5 +65,17 @@ export const Default: Story = {};
 export const Loading: Story = {
   args: {
     loading: true,
+  },
+};
+
+export const Empty: Story = {
+  tags: ["review-scenario", "review-scenario-empty-data"],
+  args: {
+    data: {
+      current: null,
+      history: [],
+      decisionSupport: null,
+      emptyState: createReportEmptyState("weekly"),
+    },
   },
 };

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createReportEmptyState } from "../contracts/report-empty-state.ts";
 import { HealthReportRepository, SharedReport } from "../repositories/health-report-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
@@ -78,7 +79,7 @@ describe("healthReportRouter", () => {
 
       expect(generate).toHaveBeenCalledWith(
         "weekly",
-        {
+        expect.objectContaining({
           current: {
             weekStart: "2026-03-22",
             trainingHours: 5.6,
@@ -99,7 +100,8 @@ describe("healthReportRouter", () => {
               "Repeat or deliberately adjust one part of the routine next week, then compare it with this baseline.",
             ],
           }),
-        },
+          emptyState: createReportEmptyState("weekly"),
+        }),
         null,
       );
       expect(result.shareToken).toBe("abc123");
@@ -135,12 +137,13 @@ describe("healthReportRouter", () => {
       await caller.generate({
         reportType: "monthly",
         months: 6,
+        endDate: "2026-03-24",
         expiresInDays: 30,
       });
 
       expect(generate).toHaveBeenCalledWith(
         "monthly",
-        {
+        expect.objectContaining({
           current: {
             monthStart: "2026-03-01",
             trainingHours: 40.5,
@@ -161,7 +164,8 @@ describe("healthReportRouter", () => {
               "Repeat or deliberately adjust one part of the routine next month, then compare it with this baseline.",
             ],
           }),
-        },
+          emptyState: createReportEmptyState("monthly"),
+        }),
         30,
       );
     });

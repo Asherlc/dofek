@@ -1,5 +1,6 @@
 import {
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import type { Database, SyncDatabase } from "../db/index.ts";
@@ -155,7 +156,13 @@ function createCheckpointStore(job: SyncJob): SyncCheckpointStore {
 
 function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   return (
-    errors.find((syncError) => isRetryableInfraError(syncError.cause ?? syncError.message)) ?? null
+    errors.find((syncError) => {
+      const reportableError = syncError.cause ?? syncError.message;
+      if (isProviderTransportError(reportableError)) {
+        return false;
+      }
+      return isRetryableInfraError(reportableError);
+    }) ?? null
   );
 }
 
@@ -190,8 +197,28 @@ function isProviderServiceUnavailableError(error: unknown): boolean {
   return false;
 }
 
+function isProviderRequestTimeoutError(error: unknown): boolean {
+  const visitedErrors = new Set<Error>();
+  let currentError = error;
+
+  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
+    if (currentError instanceof ProviderRequestTimeoutError) {
+      return true;
+    }
+
+    visitedErrors.add(currentError);
+    currentError = "cause" in currentError ? currentError.cause : undefined;
+  }
+
+  return false;
+}
+
+function isProviderTransportError(error: unknown): boolean {
+  return isProviderServiceUnavailableError(error) || isProviderRequestTimeoutError(error);
+}
+
 function shouldReportProviderError(error: unknown): boolean {
-  return !isProviderServiceUnavailableError(error) && !authFailureReasonFromError(error);
+  return !isProviderTransportError(error) && !authFailureReasonFromError(error);
 }
 
 async function scheduleRateLimitRetry(
@@ -498,7 +525,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         continue;
       }
 
-      if (isRetryableInfraError(err)) {
+      if (isRetryableInfraError(err) && !isProviderTransportError(err)) {
         const message = err instanceof Error ? err.message : String(err);
         captureException(err, {
           tags: { provider: provider.id, retryable: "true" },

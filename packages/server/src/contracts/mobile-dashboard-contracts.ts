@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
+import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 
 const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
@@ -263,6 +264,7 @@ export const mobileTrainingTabOutputSchema = z.object({
       hours: nonnegativeNumberSchema,
     }),
   ),
+  progressiveOverload: z.array(progressiveOverloadRowSchema),
   verticalAscent: z.array(
     z.object({
       date: dateSchema,

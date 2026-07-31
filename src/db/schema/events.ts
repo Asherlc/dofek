@@ -316,11 +316,27 @@ export const breathworkSession = fitness.table(
     durationSeconds: integer("duration_seconds").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     notes: text("notes"),
+    stressBefore: bigint("stress_before", { mode: "number" }),
+    stressAfter: bigint("stress_after", { mode: "number" }),
+    dizzinessAfter: boolean("dizziness_after"),
+    perceivedEffect: text("perceived_effect"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("breathwork_session_user_idx").on(table.userId),
     index("breathwork_session_started_at_idx").on(table.startedAt.desc()),
+    check(
+      "breathwork_session_stress_before_range",
+      sql`${table.stressBefore} IS NULL OR ${table.stressBefore} BETWEEN 0 AND 10`,
+    ),
+    check(
+      "breathwork_session_stress_after_range",
+      sql`${table.stressAfter} IS NULL OR ${table.stressAfter} BETWEEN 0 AND 10`,
+    ),
+    check(
+      "breathwork_session_perceived_effect_valid",
+      sql`${table.perceivedEffect} IS NULL OR ${table.perceivedEffect} IN ('better', 'same', 'worse')`,
+    ),
   ],
 );
 

@@ -15,8 +15,8 @@ export interface TrainingImpulseFitResult {
   r2: number;
 }
 
-const MIN_ACTIVITIES = 20;
-const MIN_R2 = 0.3;
+export const MINIMUM_TRAINING_IMPULSE_ACTIVITIES = 20;
+export const MINIMUM_TRAINING_IMPULSE_R_SQUARED = 0.3;
 const GENDER_FACTOR_CANDIDATES = [0.5, 0.55, 0.6, 0.64, 0.65, 0.7, 0.75, 0.8];
 const EXPONENT_CANDIDATES = [1.5, 1.6, 1.7, 1.8, 1.92, 2.0, 2.1, 2.2, 2.5];
 
@@ -30,7 +30,7 @@ const EXPONENT_CANDIDATES = [1.5, 1.6, 1.7, 1.8, 1.92, 2.0, 2.1, 2.2, 2.5];
 export function fitTrainingImpulseConstants(
   data: TrainingImpulseInput[],
 ): TrainingImpulseFitResult | null {
-  if (data.length < MIN_ACTIVITIES) return null;
+  if (data.length < MINIMUM_TRAINING_IMPULSE_ACTIVITIES) return null;
 
   let bestR2 = -Infinity;
   let bestGenderFactor = 0.64;
@@ -47,7 +47,7 @@ export function fitTrainingImpulseConstants(
     }
   }
 
-  if (bestR2 < MIN_R2) return null;
+  if (bestR2 < MINIMUM_TRAINING_IMPULSE_R_SQUARED) return null;
 
   return {
     genderFactor: bestGenderFactor,

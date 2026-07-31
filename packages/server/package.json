@@ -7,6 +7,7 @@
     "./router": "./src/router.ts",
     "./types": "./src/types.ts",
     "./baseline-relative-metrics": "./src/contracts/baseline-relative-metrics.ts",
+    "./report-empty-state": "./src/contracts/report-empty-state.ts",
     "./health-report-share-expiry": "./src/health-report-share-expiry.ts",
     "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts",
     "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts"

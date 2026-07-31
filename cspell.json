@@ -23,6 +23,7 @@
     "CPLUSPLUSFLAGS",
     "chunker",
     "cutover",
+    "deload",
     "dofek",
     "datname",
     "Dokploy",

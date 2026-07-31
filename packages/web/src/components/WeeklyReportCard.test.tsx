@@ -1,9 +1,44 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
+import { afterEach, describe, expect, it } from "vitest";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
 
+afterEach(() => {
+  cleanup();
+});
+
 describe("WeeklyReportCard", () => {
+  it("previews the server-owned weekly report structure without values", () => {
+    render(
+      <WeeklyReportCard
+        data={{
+          current: null,
+          history: [],
+          emptyState: {
+            reportKind: "weekly",
+            title: "Server weekly preview title",
+            message: "Server weekly preview message.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"],
+            requirement: "Server weekly coverage requirement.",
+            previewTitle: "Server weekly structure",
+            previewItems: ["Training time and activity count", "Average nightly sleep"],
+            note: "Server no-estimate note.",
+          },
+          decisionSupport: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Server weekly preview title")).toBeTruthy();
+    expect(screen.getByText("Server weekly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server weekly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server weekly structure")).toBeTruthy();
+    expect(screen.getByText("Training time and activity count")).toBeTruthy();
+    expect(screen.getByText("Server no-estimate note.")).toBeTruthy();
+  });
+
   it("shows sleep-not-tracked messaging when weekly sleep is 0 minutes", () => {
     render(
       <WeeklyReportCard
@@ -27,6 +62,7 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );
@@ -53,6 +89,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );
@@ -77,6 +114,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );
@@ -113,6 +151,7 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );

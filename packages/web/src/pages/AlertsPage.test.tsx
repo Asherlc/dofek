@@ -127,6 +127,13 @@ describe("AlertsPage", () => {
     render(<AlertsPage />);
 
     expect(screen.getByText("Nothing needs your attention")).toBeTruthy();
+    expect(screen.getByText("When an alert appears, it will show")).toBeTruthy();
+    expect(screen.getByText("What happened")).toBeTruthy();
+    expect(screen.getByText("When it happened")).toBeTruthy();
+    expect(screen.getByText("What to do next")).toBeTruthy();
+    expect(
+      screen.getByText("Only real problems detected for your account are shown."),
+    ).toBeTruthy();
   });
 
   it("paginates active alerts", () => {

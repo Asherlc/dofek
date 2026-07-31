@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 const mockAlert = vi.hoisted(() => vi.fn());
+const mockSendAccessibilityEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -50,45 +52,53 @@ vi.mock("react-native", () => ({
   },
   RefreshControl: () => null,
   Alert: { alert: mockAlert },
-  TouchableOpacity: ({
-    children,
-    onPress,
-    disabled,
-    ...props
-  }: {
-    children?: React.ReactNode;
-    onPress?: () => void;
-    disabled?: boolean;
-  } & Record<string, unknown>) => {
-    const {
-      accessibilityLabel,
-      accessibilityRole,
-      accessibilityState,
-      style: _s,
-      activeOpacity: _ao,
-      testID,
-      ...rest
-    } = props;
-    const state =
-      typeof accessibilityState === "object" && accessibilityState !== null
-        ? accessibilityState
-        : {};
-    return React.createElement(
-      "button",
+  TouchableOpacity: React.forwardRef(
+    (
       {
-        type: "button",
-        onClick: onPress,
+        children,
+        onPress,
         disabled,
-        "aria-busy": "busy" in state ? state.busy : undefined,
-        "aria-disabled": "disabled" in state ? state.disabled : undefined,
-        "aria-label": accessibilityLabel,
-        role: accessibilityRole ?? "presentation",
-        ...(testID ? { "data-testid": testID } : {}),
-        ...rest,
-      },
-      children,
-    );
-  },
+        ...props
+      }: {
+        children?: React.ReactNode;
+        onPress?: () => void;
+        disabled?: boolean;
+      } & Record<string, unknown>,
+      ref: React.ForwardedRef<HTMLButtonElement>,
+    ) => {
+      const {
+        accessibilityLabel,
+        accessibilityRole,
+        accessibilityState,
+        accessible,
+        style: _s,
+        activeOpacity: _ao,
+        testID,
+        ...rest
+      } = props;
+      const state =
+        typeof accessibilityState === "object" && accessibilityState !== null
+          ? accessibilityState
+          : {};
+      return React.createElement(
+        "button",
+        {
+          type: "button",
+          ref,
+          onClick: onPress,
+          disabled,
+          "aria-busy": "busy" in state ? state.busy : undefined,
+          "aria-disabled": "disabled" in state ? state.disabled : undefined,
+          "aria-label": accessibilityLabel,
+          "data-accessible": accessible,
+          role: accessibilityRole ?? "presentation",
+          ...(testID ? { "data-testid": testID } : {}),
+          ...rest,
+        },
+        children,
+      );
+    },
+  ),
   TextInput: ({
     placeholder,
     value,
@@ -125,10 +135,13 @@ vi.mock("react-native", () => ({
     children?: React.ReactNode;
     visible?: boolean;
   } & Record<string, unknown>) => {
-    if (!visible) return null;
-    const { animationType: _at, transparent: _t, onRequestClose: _orc, ...rest } = props;
-    return React.createElement("div", { role: "dialog", ...rest }, children);
+    const { animationType: _at, transparent: _t, onRequestClose: _orc, onShow, ...rest } = props;
+    React.useEffect(() => {
+      if (visible) onShow?.();
+    }, [onShow, visible]);
+    return visible ? React.createElement("div", { role: "dialog", ...rest }, children) : null;
   },
+  AccessibilityInfo: { sendAccessibilityEvent: mockSendAccessibilityEvent },
   Image: ({
     source: _source,
     style: _style,
@@ -911,6 +924,7 @@ describe("ProvidersScreen", () => {
     mockImportSharedFile.mockReset();
     mockGetDocumentAsync.mockReset();
     mockAlert.mockReset();
+    mockSendAccessibilityEvent.mockReset();
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
@@ -992,11 +1006,25 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("does not render Sync link for disconnected providers", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [disconnectedProvider],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const stravaCard = within(screen.getByTestId("provider-card-strava"));
+    expect(stravaCard.queryByText("Sync")).toBeNull();
+  });
+
   it("renders Full Sync All button alongside Sync All", async () => {
     await renderProvidersScreen();
 
-    expect(screen.getByText("Sync All")).toBeTruthy();
-    expect(screen.getByText("Full Sync All")).toBeTruthy();
+    expect(screen.getByText("Sync recent data")).toBeTruthy();
+    expect(screen.getByText("Updates the last 7 days for every connected provider.")).toBeTruthy();
+    expect(screen.getByText("Sync full history…")).toBeTruthy();
   });
 
   it("renders dataset-level processing progress on the provider list", async () => {
@@ -1413,12 +1441,24 @@ describe("ProvidersScreen", () => {
     );
 
     const rendered = await renderProvidersScreen();
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
     rendered.unmount();
 
     await act(async () => {
       rejectSync(new Error("Sync failed"));
       await Promise.resolve();
+    });
+  });
+
+  it("shows the exact bulk sync startup error", async () => {
+    const error = new Error("Provider queues unavailable. Try again.");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    await renderProvidersScreen();
+    fireEvent.click(screen.getByText("Sync recent data"));
+
+    await waitFor(() => {
+      expect(screen.getByText(error.message)).toBeTruthy();
     });
   });
 
@@ -1487,9 +1527,9 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     await waitFor(() => {
-      expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
-        true,
-      );
+      expect(
+        screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled"),
+      ).toBe(true);
     });
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
@@ -1498,9 +1538,32 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(wahooCard.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     });
-    expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
+    expect(screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled")).toBe(
       true,
     );
+  });
+
+  it("passes sinceDays: ROUTINE_SYNC_DAYS when Sync link is clicked", async () => {
+    mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
+    mockSyncStatusFetch.mockResolvedValue({
+      status: "done",
+      providers: { wahoo: { status: "done" } },
+    });
+
+    await renderProvidersScreen();
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    fireEvent.click(wahooCard.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
+        providerId: "wahoo",
+        sinceDays: ROUTINE_SYNC_DAYS,
+      });
+    });
+    await waitFor(() => {
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-2" }, { staleTime: 0 });
+    });
   });
 
   it("passes sinceDays: 7 when Sync All is clicked", async () => {
@@ -1512,7 +1575,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: 7 });
@@ -1535,7 +1598,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     await waitFor(() => {
@@ -1560,7 +1623,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     await waitFor(() => {
@@ -1615,7 +1678,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockSyncStatusFetch).toHaveBeenCalledWith(
@@ -1629,7 +1692,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("passes sinceDays: undefined when Full Sync All is clicked", async () => {
+  it("confirms before passing sinceDays: undefined for full history", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-4", providerJobs: [] });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",
@@ -1638,7 +1701,14 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Full Sync All"));
+    fireEvent.click(screen.getByText("Sync full history…"));
+    expect(screen.getByText(/all history each connected provider makes available/i)).toBeTruthy();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+    const cancelButton = screen.getByText("Cancel").closest("button");
+    await waitFor(() =>
+      expect(mockSendAccessibilityEvent).toHaveBeenCalledWith(cancelButton, "focus"),
+    );
+    fireEvent.click(screen.getByText("Start full sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: undefined });
@@ -2113,8 +2183,8 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    // Sync All button should not appear when only import-only providers exist
-    expect(screen.queryByText("Sync All")).toBeNull();
+    // Bulk sync controls should not appear when only import-only providers exist.
+    expect(screen.queryByText("Sync recent data")).toBeNull();
   });
 
   it("does not render a sync action for push-only providers", async () => {
@@ -2139,8 +2209,8 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.queryByText("Sync All")).toBeNull();
-    expect(screen.queryByText("Full Sync All")).toBeNull();
+    expect(screen.queryByText("Sync recent data")).toBeNull();
+    expect(screen.queryByText("Sync full history…")).toBeNull();
   });
 
   it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {

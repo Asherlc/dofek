@@ -1,5 +1,6 @@
 import {
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1331,6 +1332,40 @@ describe("processSyncJob", () => {
     expect(mockLogSync).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("records metrics without reporting returned provider connect timeouts to Sentry", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const timeout = new ProviderRequestTimeoutError({
+      cause: fetchError,
+      providerId: "withings",
+      timeoutMs: 120_000,
+    });
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: "metric_stream: fetch failed", cause: timeout }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "withings" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "withings",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "withings",
+      data_type: "sync",
+    });
   });
 
   it("rethrows retryable infrastructure errors returned in sync results", async () => {

@@ -56,10 +56,36 @@ const reportDecisionSynthesisSchema = z.object({
   confidenceAndMissingData: z.array(decisionSupportItemSchema),
 });
 
+const reportRecoverySchema = z.object({
+  range: z.object({
+    startDate: z.string(),
+    endDate: z.string(),
+  }),
+  emptyMessage: z.string(),
+});
+
+const weeklyReportRecoverySchema = reportRecoverySchema;
+const monthlyReportRecoverySchema = reportRecoverySchema;
+
+const reportEmptyStateSchema = <T extends "weekly" | "monthly">(reportKind: T) =>
+  z.object({
+    reportKind: z.literal(reportKind),
+    title: z.string(),
+    message: z.string(),
+    minimumObservedDays: z.literal(1),
+    acceptedDataTypes: z.tuple([z.literal("activity"), z.literal("sleep"), z.literal("recovery")]),
+    requirement: z.string(),
+    previewTitle: z.string(),
+    previewItems: z.array(z.string()),
+    note: z.string(),
+  });
+
 const weeklyReportSchema = z.object({
   current: weekSummarySchema.nullable(),
   history: z.array(weekSummarySchema),
-  decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
+  decisionSupport: reportDecisionSynthesisSchema.nullable(),
+  emptyState: reportEmptyStateSchema("weekly"),
+  recovery: weeklyReportRecoverySchema,
 });
 
 const monthSummarySchema = z.object({
@@ -77,7 +103,9 @@ const monthSummarySchema = z.object({
 const monthlyReportSchema = z.object({
   current: monthSummarySchema.nullable(),
   history: z.array(monthSummarySchema),
-  decisionSupport: reportDecisionSynthesisSchema.nullable().optional(),
+  decisionSupport: reportDecisionSynthesisSchema.nullable(),
+  emptyState: reportEmptyStateSchema("monthly"),
+  recovery: monthlyReportRecoverySchema,
 });
 const REPORT_PAGE_SIZE = 20;
 
@@ -132,12 +160,13 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "weekly") {
     const parsedReport = weeklyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
           <WeeklyReportCard
             data={{
-              ...parsedReport.data,
-              decisionSupport: parsedReport.data.decisionSupport ?? null,
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
             }}
           />
         </SharedReportShell>
@@ -148,12 +177,13 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "monthly") {
     const parsedReport = monthlyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
           <MonthlyReportContent
             data={{
-              ...parsedReport.data,
-              decisionSupport: parsedReport.data.decisionSupport ?? null,
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
             }}
           />
         </SharedReportShell>

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
 const meta = {
@@ -34,6 +35,7 @@ const meta = {
           "These period averages can show co-movement, but they cannot establish cause and effect.",
         ],
       },
+      emptyState: createReportEmptyState("monthly"),
     },
   },
 } satisfies Meta<typeof MonthlyReportContent>;
@@ -42,3 +44,15 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const Empty: Story = {
+  tags: ["review-scenario", "review-scenario-empty-data"],
+  args: {
+    data: {
+      current: null,
+      history: [],
+      decisionSupport: null,
+      emptyState: createReportEmptyState("monthly"),
+    },
+  },
+};

@@ -639,7 +639,7 @@ function createTriggerSyncProcedure() {
                 userId: ctx.userId,
                 ...syncWindowToJobData(syncWindow, input.sinceDays),
               },
-              { skipWhenRateLimited: true },
+              { skipWhenRateLimited: true, singleFlightFullSync: true },
             );
             if (!job) {
               return {

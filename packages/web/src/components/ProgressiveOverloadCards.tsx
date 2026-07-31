@@ -1,4 +1,5 @@
-import { formatMeasurementText } from "@dofek/format/units";
+import { formatDateMedium } from "@dofek/format/format";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -55,11 +56,35 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
             {trendLabel(exercise.trend)}{" "}
             {formatMeasurementText(units.formatWeight(Math.abs(exercise.slopeKgPerWeek)))}/week
           </div>
-          {exercise.weeklyVolumes.length >= 2 && <SparklineChart values={exercise.weeklyVolumes} />}
+          <div className="text-xs text-muted mb-1">
+            {formatDateMedium(exercise.period.startWeek)} –{" "}
+            {formatDateMedium(exercise.period.endWeek)}
+          </div>
+          <div className="text-xs text-muted mb-2">
+            {exercise.period.observationCount} recorded weeks across{" "}
+            {exercise.period.elapsedWeekCount} calendar weeks
+          </div>
+          <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
+          <div className="text-xs text-muted mb-2">{exercise.uncertainty.statement}</div>
+          <div className="text-xs text-muted mb-1">{exercise.interpretation}</div>
+          <div className="text-xs text-muted mb-2">{exercise.deloadContext}</div>
+          {exercise.observations.length >= 2 && (
+            <SparklineChart
+              values={exercise.observations.map((observation) => observation.totalVolumeKg)}
+            />
+          )}
         </div>
       ))}
     </div>
   );
+}
+
+function uncertaintyLabel(exercise: ProgressiveOverloadRow, units: UnitConverter): string | null {
+  if (exercise.uncertainty.availability === "unavailable") return null;
+  const lower = units.convertWeight(exercise.uncertainty.lowerKgPerWeek).toFixed(1);
+  const upper = units.convertWeight(exercise.uncertainty.upperKgPerWeek).toFixed(1);
+  const unit = units.formatWeight(0).parts.find((part) => part.type === "unit")?.value;
+  return `${exercise.uncertainty.methodLabel}: ${lower} to ${upper} ${unit ?? units.weightLabel}/week`;
 }
 
 function trendLabel(trend: ProgressiveOverloadRow["trend"]): string {

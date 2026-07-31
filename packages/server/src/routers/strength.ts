@@ -1,9 +1,12 @@
 import { z } from "zod";
+import {
+  type ProgressiveOverloadRow,
+  progressiveOverloadRowSchema,
+} from "../contracts/progressive-overload.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
 import {
   type EstimatedMaxTrendEvidence,
-  type ProgressiveOverloadTrend,
   StrengthRepository,
 } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -42,12 +45,7 @@ export interface MuscleGroupVolumeRow {
   weeklyData: MuscleGroupWeek[];
 }
 
-export interface ProgressiveOverloadRow {
-  exerciseName: string;
-  weeklyVolumes: number[];
-  slopeKgPerWeek: number;
-  trend: ProgressiveOverloadTrend;
-}
+export type { ProgressiveOverloadRow };
 
 export interface WorkoutSummaryRow {
   date: string;
@@ -97,6 +95,10 @@ export const strengthRouter = router({
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const overloads = await repo.getProgressiveOverload(range.days);
       return overloads.map((overload) => overload.toDetail());
+    },
+    {
+      outputSchema: z.array(progressiveOverloadRowSchema),
+      keyVersion: "progressive-overload-evidence-v1",
     },
   ),
 
