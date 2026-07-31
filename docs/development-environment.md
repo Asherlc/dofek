@@ -37,7 +37,8 @@ mise run cloud:init
 ```
 
 `MISE_LOCKED=1` installs only the pinned tool versions recorded in
-`mise.lock`. `cloud:init` then:
+`mise.lock`; see mise's
+[lockfile reference](https://mise.jdx.dev/dev-tools/mise-lock.html). `cloud:init` then:
 
 1. Installs pnpm dependencies with the frozen lockfile.
 2. Builds a workspace-local CodeGraph index when one does not exist.

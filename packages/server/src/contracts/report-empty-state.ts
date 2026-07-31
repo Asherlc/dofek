@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type ReportKind = "weekly" | "monthly";
 
 interface ReportEmptyStateBase {
@@ -21,6 +23,38 @@ export interface MonthlyReportEmptyState extends ReportEmptyStateBase {
 }
 
 export type ReportEmptyState = WeeklyReportEmptyState | MonthlyReportEmptyState;
+
+const acceptedDataTypesSchema = z.tuple([
+  z.literal("activity"),
+  z.literal("sleep"),
+  z.literal("recovery"),
+]);
+
+const reportEmptyStateBaseSchema = z.object({
+  message: z.string(),
+  minimumObservedDays: z.literal(1),
+  acceptedDataTypes: acceptedDataTypesSchema,
+  requirement: z.string(),
+  previewTitle: z.string(),
+  previewItems: z.array(z.string()),
+  note: z.string(),
+});
+
+export const weeklyReportEmptyStateSchema = reportEmptyStateBaseSchema.extend({
+  reportKind: z.literal("weekly"),
+  title: z.string(),
+});
+
+export const monthlyReportEmptyStateSchema = reportEmptyStateBaseSchema.extend({
+  reportKind: z.literal("monthly"),
+  title: z.string(),
+});
+
+export function reportEmptyStateSchema(reportKind: "weekly"): typeof weeklyReportEmptyStateSchema;
+export function reportEmptyStateSchema(reportKind: "monthly"): typeof monthlyReportEmptyStateSchema;
+export function reportEmptyStateSchema(reportKind: ReportKind) {
+  return reportKind === "weekly" ? weeklyReportEmptyStateSchema : monthlyReportEmptyStateSchema;
+}
 
 const sharedEmptyState = {
   message: "No activity, sleep, or recovery data is available for this report yet.",
@@ -67,3 +101,6 @@ export function createReportEmptyState(reportKind: ReportKind): ReportEmptyState
     ],
   };
 }
+
+export const weeklyReportEmptyState = createReportEmptyState("weekly");
+export const monthlyReportEmptyState = createReportEmptyState("monthly");
