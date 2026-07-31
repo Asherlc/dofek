@@ -1,8 +1,4 @@
-import {
-  POSTHOG_API_KEY,
-  POSTHOG_CAPTURE_URL,
-  POSTHOG_LOGS_URL,
-} from "./posthog-config.ts";
+import { POSTHOG_API_KEY, POSTHOG_CAPTURE_URL, POSTHOG_LOGS_URL } from "./posthog-config.ts";
 
 const MAX_BUFFERED_EVENTS = 20;
 
@@ -66,6 +62,13 @@ export function serializeBufferedTelemetryEvents(): string {
   return JSON.stringify(bufferedEvents);
 }
 
+function isBufferedTelemetryEvent(entry: unknown): entry is BufferedTelemetryEvent {
+  if (!isRecord(entry)) {
+    return false;
+  }
+  return entry.kind === "exception" || entry.kind === "log";
+}
+
 export function restoreBufferedTelemetryEvents(raw: string | null | undefined): void {
   if (!raw) {
     return;
@@ -75,12 +78,7 @@ export function restoreBufferedTelemetryEvents(raw: string | null | undefined): 
     if (!Array.isArray(parsed)) {
       return;
     }
-    bufferedEvents = parsed
-      .filter(
-        (entry) =>
-          isRecord(entry) && (entry.kind === "exception" || entry.kind === "log"),
-      )
-      .slice(-MAX_BUFFERED_EVENTS) as BufferedTelemetryEvent[];
+    bufferedEvents = parsed.filter(isBufferedTelemetryEvent).slice(-MAX_BUFFERED_EVENTS);
   } catch {
     bufferedEvents = [];
   }

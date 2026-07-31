@@ -1,4 +1,3 @@
-import { captureException } from "../lib/error-reporting.ts";
 import { Job, UnrecoverableError, Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
@@ -6,6 +5,7 @@ import { createDatabaseFromEnv } from "../db/index.ts";
 import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
 import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";

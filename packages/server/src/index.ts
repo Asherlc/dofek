@@ -5,7 +5,6 @@ import { constants as zlibConstants } from "node:zlib";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
@@ -23,6 +22,7 @@ import {
   createZipEntryExtractQueue,
   getImportQueue,
 } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import express from "express";
 import {

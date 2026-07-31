@@ -1,6 +1,6 @@
-import { captureException } from "../lib/error-reporting.ts";
 import type { ConnectionOptions } from "bullmq";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { garminImportCheckpointSchema } from "./process-garmin-dump-import-job.ts";
 import {

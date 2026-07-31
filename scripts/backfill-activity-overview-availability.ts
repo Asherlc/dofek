@@ -1,12 +1,12 @@
 import { parseArgs } from "node:util";
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import {
   type ActivityOverviewAvailabilityBackfillOptions,
   backfillActivityOverviewAvailability,
 } from "../src/db/activity-overview-availability-backfill.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { parsePostgresTimestamp } from "../src/db/clickhouse-migrations/sql.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 const MAXIMUM_WINDOW_MILLISECONDS = 31 * 24 * 60 * 60 * 1_000;
 

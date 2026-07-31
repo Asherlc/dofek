@@ -1,10 +1,10 @@
-import { captureException } from "../lib/error-reporting.ts";
 import { UnrecoverableError } from "bullmq";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   processingDatasetKeysForImport,

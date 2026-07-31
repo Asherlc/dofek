@@ -15,9 +15,7 @@ function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
 }
 
-function createLogRecordProcessors(
-  env: Record<string, string | undefined>,
-): LogRecordProcessor[] {
+function createLogRecordProcessors(env: Record<string, string | undefined>): LogRecordProcessor[] {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
   const hasAxiomLogExport = Boolean(endpoint || logsEndpoint);
@@ -58,7 +56,6 @@ export function startInstrumentation(
 ): NodeSDK | undefined {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
-  const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
   const metricsEndpoint = env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
   const hasTraceExport = Boolean(endpoint || tracesEndpoint);

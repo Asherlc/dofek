@@ -1,11 +1,11 @@
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import {
   backfillMissingBodyMeasurementSamples,
   countMissingBodyMeasurementSamples,
 } from "../src/db/body-measurement-sample.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { parsePostgresTimestamp } from "../src/db/clickhouse-migrations/sql.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 interface BodyMeasurementSampleBackfillOptions {
   start: Date;

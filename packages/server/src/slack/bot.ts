@@ -1,7 +1,7 @@
-import { captureException } from "dofek/lib/error-reporting";
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import type express from "express";
 import type { NextFunction, Request, Response } from "express";
 import { logger } from "../logger.ts";

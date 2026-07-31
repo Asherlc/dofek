@@ -1,7 +1,7 @@
 import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
-import { captureException } from "../lib/error-reporting.ts";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,

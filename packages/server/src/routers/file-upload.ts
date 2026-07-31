@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import {
@@ -26,6 +25,7 @@ import {
   createImportUploadStorageFromEnv,
   type ImportUploadStorage,
 } from "dofek/file-upload-storage";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 

@@ -1,4 +1,3 @@
-import { captureException } from "../lib/error-reporting.ts";
 import {
   runActivityReadModelBuild,
   runProviderDeleteReadModelBuild,
@@ -8,6 +7,7 @@ import {
 } from "../analytics/activity-read-model-build.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { ActivityAnalyticsJobData } from "./queues.ts";
 

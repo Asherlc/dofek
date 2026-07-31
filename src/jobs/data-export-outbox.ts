@@ -1,6 +1,6 @@
-import { captureException } from "../lib/error-reporting.ts";
 import { listQueuedDataExportRequests } from "../db/data-export.ts";
 import type { Database } from "../db/typed-sql.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { type DataExportQueue, enqueueDataExport } from "./queues.ts";
 

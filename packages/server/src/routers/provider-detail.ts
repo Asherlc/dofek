@@ -1,8 +1,8 @@
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
 import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema } from "../lib/operation-progress.ts";

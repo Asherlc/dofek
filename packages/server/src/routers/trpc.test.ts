@@ -48,8 +48,8 @@ vi.mock("@opentelemetry/api", () => ({
   },
 }));
 
-import { captureException } from "dofek/lib/error-reporting";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import {
   cacheHitsTotal,
   cacheMissesTotal,

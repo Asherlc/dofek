@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { getAccessWindowForUser } from "../packages/server/src/billing/access-window-repository.ts";
 import type { AccessWindow } from "../packages/server/src/billing/entitlement.ts";
 import { ClickHouseActivitySensorStore } from "../packages/server/src/repositories/clickhouse-activity-sensor-store.ts";
@@ -8,6 +7,7 @@ import { appRouter } from "../packages/server/src/router.ts";
 import type { Context } from "../packages/server/src/trpc.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { RedisQueryCacheRegistry } from "../src/lib/redis-query-cache-registry.ts";
 import { logger } from "../src/logger.ts";
 import { recordCacheRunForPendingProcessing } from "../src/processing/cache-processing.ts";

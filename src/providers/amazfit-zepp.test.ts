@@ -1,8 +1,8 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
-import { captureException } from "../lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runWithTokenUser } from "../db/token-user-context.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   AmazfitZeppClient,

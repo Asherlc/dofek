@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { captureException } from "dofek/lib/error-reporting";
 import { RedisConnection } from "bullmq";
 import type { TokenSet } from "dofek/auth/oauth";
 import { getRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 
 const ENTRY_TTL_MS = 10 * 60 * 1000;

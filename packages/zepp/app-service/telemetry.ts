@@ -1,7 +1,7 @@
 import { log as Logger } from "@zos/utils";
 import {
-  captureException as reportException,
   enqueueTelemetryException,
+  captureException as reportException,
   restoreBufferedTelemetryEvents,
   serializeBufferedTelemetryEvents,
 } from "../src/posthog-client.ts";

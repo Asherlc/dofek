@@ -1,9 +1,9 @@
-import { captureException } from "../lib/error-reporting.ts";
 import {
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionDispatched,
 } from "../db/provider-data-deletion.ts";
 import type { Database } from "../db/typed-sql.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { enqueueProviderDataDeletion, type ProviderDataDeletionQueue } from "./queues.ts";
 

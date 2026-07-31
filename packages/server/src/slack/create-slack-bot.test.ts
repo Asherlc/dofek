@@ -61,8 +61,8 @@ vi.mock("dofek/lib/cache", () => ({
   },
 }));
 
-import { captureException } from "dofek/lib/error-reporting";
 import bolt from "@slack/bolt";
+import { captureException } from "dofek/lib/error-reporting";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /** Mock fetch for verifyBotConfiguration — returns successful auth.test response with scopes in headers */

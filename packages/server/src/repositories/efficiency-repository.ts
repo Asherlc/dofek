@@ -4,8 +4,8 @@ import {
   type TreffPolarizationWeek,
 } from "@dofek/training/training-distribution";
 import { computePolarizationIndex, HEART_RATE_ZONES } from "@dofek/zones/zones";
-import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";

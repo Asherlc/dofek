@@ -1,4 +1,3 @@
-import { captureException } from "../lib/error-reporting.ts";
 import {
   expireFileUpload,
   fileUploadObjectKeyExists,
@@ -10,6 +9,7 @@ import {
 import type { Database } from "../db/typed-sql.ts";
 import { fileUploadLifecycleTotal, fileUploadReconciliationTotal } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 
 const RECONCILIATION_INTERVAL_MS = 15 * 60 * 1_000;

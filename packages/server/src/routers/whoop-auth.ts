@@ -1,8 +1,8 @@
 import { WhoopClient } from "@dofek/whoop/client";
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { ensureProvider } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { saveWhoopAuthTokens } from "dofek/providers/whoop/resolve-tokens";
 import { z } from "zod";
 import {

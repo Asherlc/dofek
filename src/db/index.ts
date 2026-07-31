@@ -1,7 +1,7 @@
-import { captureException } from "../lib/error-reporting.ts";
 import type { SQLWrapper } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { drizzleSchema as schema } from "./drizzle-schema.ts";
 import { registerPostgresPoolMetrics } from "./pool-metrics.ts";

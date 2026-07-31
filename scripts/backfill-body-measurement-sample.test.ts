@@ -1,5 +1,3 @@
-import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   backfillMissingBodyMeasurementSamples,
@@ -7,6 +5,7 @@ import {
 } from "../src/db/body-measurement-sample.ts";
 import type { ClickHouseClient } from "../src/db/clickhouse.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import {
   main,
   parseBodyMeasurementSampleBackfillOptions,

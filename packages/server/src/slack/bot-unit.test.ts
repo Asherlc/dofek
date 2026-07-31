@@ -54,8 +54,8 @@ vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
-import { captureException } from "dofek/lib/error-reporting";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
 import { FoodEntryRepository } from "./food-entry-repository.ts";

@@ -1,5 +1,5 @@
-import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import QRCode from "qrcode";
 import { z } from "zod";

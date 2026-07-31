@@ -1,5 +1,5 @@
-import { captureException } from "./error-reporting.ts";
 import { getSharedRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "./error-reporting.ts";
 
 export interface CacheStore {
   get(key: string): Promise<unknown | undefined>;

@@ -1,6 +1,6 @@
-import { captureException } from "dofek/lib/error-reporting";
 import { type OAuthConfig, revokeToken, type TokenSet } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
 import {

@@ -1,16 +1,9 @@
-import {
-  captureException as sentryCaptureException,
-  type CaptureContext,
-} from "@sentry/node";
+import { type CaptureContext, captureException as sentryCaptureException } from "@sentry/node";
 import { capturePostHogException } from "./posthog.ts";
 
-type ScopeContextLike = {
-  tags?: Record<string, string>;
-  extra?: Record<string, unknown>;
-  contexts?: Record<string, unknown>;
-  fingerprint?: string[];
-  level?: string;
-};
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function flattenCaptureContext(captureContext?: CaptureContext): Record<string, unknown> {
   if (!captureContext) {
@@ -21,29 +14,34 @@ function flattenCaptureContext(captureContext?: CaptureContext): Record<string, 
     return { captureContext: typeof captureContext };
   }
 
-  const properties: Record<string, unknown> = {};
-  const context = captureContext as ScopeContextLike;
+  if (!isRecord(captureContext)) {
+    return {};
+  }
 
-  if (context.tags) {
-    for (const [key, value] of Object.entries(context.tags)) {
-      properties[`tag_${key}`] = value;
+  const properties: Record<string, unknown> = {};
+
+  if (isRecord(captureContext.tags)) {
+    for (const [key, value] of Object.entries(captureContext.tags)) {
+      if (typeof value === "string") {
+        properties[`tag_${key}`] = value;
+      }
     }
   }
 
-  if (context.extra) {
-    Object.assign(properties, context.extra);
+  if (isRecord(captureContext.extra)) {
+    Object.assign(properties, captureContext.extra);
   }
 
-  if (context.contexts) {
-    properties.contexts = context.contexts;
+  if (isRecord(captureContext.contexts)) {
+    properties.contexts = captureContext.contexts;
   }
 
-  if (context.fingerprint) {
-    properties.fingerprint = context.fingerprint;
+  if (Array.isArray(captureContext.fingerprint)) {
+    properties.fingerprint = captureContext.fingerprint;
   }
 
-  if (context.level) {
-    properties.level = context.level;
+  if (typeof captureContext.level === "string") {
+    properties.level = captureContext.level;
   }
 
   return properties;
@@ -52,10 +50,7 @@ function flattenCaptureContext(captureContext?: CaptureContext): Record<string, 
 /**
  * Reports an exception to Sentry and PostHog error tracking.
  */
-export function captureException(
-  exception: unknown,
-  captureContext?: CaptureContext,
-): string {
+export function captureException(exception: unknown, captureContext?: CaptureContext): string {
   const eventId =
     captureContext !== undefined
       ? sentryCaptureException(exception, captureContext)

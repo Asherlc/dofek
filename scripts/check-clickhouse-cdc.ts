@@ -1,11 +1,11 @@
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { Client } from "pg";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import {
   assertClickHouseCdcHealth,
   checkClickHouseCdcHealth,
 } from "../src/db/clickhouse-cdc-health.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import {
   createProcessingReconciliationDatabaseFromEnv,
   reconcilePendingProcessingOperations,

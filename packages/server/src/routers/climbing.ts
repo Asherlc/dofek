@@ -1,6 +1,6 @@
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import {
   type ClimbingActivityEntryRow,

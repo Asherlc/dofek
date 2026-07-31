@@ -1,6 +1,6 @@
 import { supplementDoseOccurrencesSchema } from "@dofek/format/supplement-dose-events";
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { invalidateNutritionCaches } from "../lib/nutrition-cache.ts";
 import {

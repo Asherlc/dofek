@@ -1,9 +1,9 @@
-import { captureException } from "../lib/error-reporting.ts";
 import {
   listPendingFileUploadOutboxRequests,
   markFileUploadOutboxDispatched,
 } from "../db/file-upload.ts";
 import type { Database } from "../db/typed-sql.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { enqueueFileUploadImport, type FileUploadImportQueue } from "./queues.ts";
 

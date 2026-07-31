@@ -3,9 +3,9 @@ import { BaseSideService } from "@zeppos/zml/base-side";
 import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import {
-  captureException as reportPostHogException,
   clearBufferedTelemetryEvents,
   flushTelemetryEvents,
+  captureException as reportPostHogException,
   restoreBufferedTelemetryEvents,
 } from "../src/posthog-client.ts";
 import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";

@@ -1,5 +1,5 @@
-import { captureException } from "../lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 

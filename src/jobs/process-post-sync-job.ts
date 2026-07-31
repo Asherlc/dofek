@@ -1,6 +1,6 @@
-import { captureException } from "../lib/error-reporting.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
 import { reportJobProgress } from "./job-progress.ts";

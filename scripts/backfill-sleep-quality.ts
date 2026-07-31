@@ -1,11 +1,11 @@
 import { parseArgs } from "node:util";
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import {
   backfillSleepQuality,
   type SleepQualityBackfillOptions,
 } from "../src/db/sleep-quality-backfill.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 const MAXIMUM_WINDOW_MILLISECONDS = 31 * 24 * 60 * 60 * 1_000;
 

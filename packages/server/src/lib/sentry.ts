@@ -1,6 +1,6 @@
 import { captureException } from "dofek/lib/error-reporting";
-import { initProductionSentry } from "dofek/lib/sentry";
 import { initProductionPostHog } from "dofek/lib/posthog";
+import { initProductionSentry } from "dofek/lib/sentry";
 import type express from "express";
 
 let initialized = false;

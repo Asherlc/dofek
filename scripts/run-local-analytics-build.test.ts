@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import type { AnalyticsMicrobatchQueryClient } from "../src/processing/analytics-microbatch-bounds.ts";
 import { runLocalAnalyticsBuild } from "./run-local-analytics-build.ts";
 

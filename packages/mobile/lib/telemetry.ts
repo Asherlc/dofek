@@ -87,7 +87,7 @@ function createLogProcessors(): BatchLogRecordProcessor[] {
 
 type PostHogUser = {
   id: string;
-  email: string;
+  email: string | null;
   name: string;
 };
 

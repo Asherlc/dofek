@@ -1,5 +1,4 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import { captureException } from "../lib/error-reporting.ts";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -7,6 +6,7 @@ import {
   restingHeartRateValuesCte,
 } from "../db/resting-heart-rate-query.ts";
 import type { Database } from "../db/typed-sql.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 
 /**

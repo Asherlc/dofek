@@ -1,5 +1,5 @@
-import { captureException } from "dofek/lib/error-reporting";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";

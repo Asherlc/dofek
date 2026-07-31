@@ -1,5 +1,4 @@
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
@@ -14,6 +13,7 @@ import {
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";

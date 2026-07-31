@@ -1,7 +1,7 @@
-import { captureException } from "../lib/error-reporting.ts";
 import { WaitingChildrenError } from "bullmq";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   cleanupPreparedGarminDumpImport,

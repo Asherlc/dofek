@@ -1,7 +1,7 @@
 import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";

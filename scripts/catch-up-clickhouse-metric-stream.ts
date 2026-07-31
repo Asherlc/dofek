@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import {
   type ClickHouseCommandClient,
   createClickHouseClientFromEnv,
@@ -11,6 +10,7 @@ import {
   clickHouseStringLiteral,
   parsePostgresTimestamp,
 } from "../src/db/clickhouse-migrations/sql.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { INGEST_DATABASE, METRIC_STREAM_TABLE } from "../src/metric-stream/clickhouse-table.ts";
 
 export interface MetricStreamCatchUpOptions {

@@ -1,7 +1,7 @@
 import { TupleParam } from "@clickhouse/client";
-import { captureException } from "../lib/error-reporting.ts";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   INGEST_DATABASE,

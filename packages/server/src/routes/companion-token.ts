@@ -1,6 +1,6 @@
 import { PasswordLoginRequestSchema } from "@dofek/auth/auth";
-import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import { z } from "zod";
 import { authenticatePasswordUser, InvalidCredentialsError } from "../auth/password-credential.ts";

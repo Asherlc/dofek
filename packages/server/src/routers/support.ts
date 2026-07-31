@@ -1,6 +1,6 @@
-import { captureException } from "dofek/lib/error-reporting";
 import { TRPCError } from "@trpc/server";
 import { userProfile } from "dofek/db/schema/reference";
+import { captureException } from "dofek/lib/error-reporting";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getZohoDeskClient } from "../lib/zoho-desk.ts";

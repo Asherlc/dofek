@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { backfillClimbingAttemptCount } from "../src/db/climbing-attempt-count-backfill.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 function initializeSentry(): void {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;

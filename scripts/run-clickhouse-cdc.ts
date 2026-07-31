@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { setupClickHouseCdcFromEnv } from "../src/db/clickhouse-cdc.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 function requireEnvironmentVariable(environmentVariableName: string): string {
   const value = process.env[environmentVariableName];

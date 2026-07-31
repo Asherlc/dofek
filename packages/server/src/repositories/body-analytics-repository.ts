@@ -1,6 +1,6 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import { captureException } from "dofek/lib/error-reporting";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString, type RangeDays } from "../lib/date-window.ts";

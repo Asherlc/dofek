@@ -1,10 +1,10 @@
 // cspell:ignore overcommittracker
 import { SpanStatusCode, trace } from "@opentelemetry/api";
-import { captureException } from "dofek/lib/error-reporting";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
 import {

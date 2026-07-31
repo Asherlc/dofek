@@ -1,7 +1,7 @@
 import { randomBytes, randomInt } from "node:crypto";
-import { captureException } from "dofek/lib/error-reporting";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import {
   type CompanionConnectionType,

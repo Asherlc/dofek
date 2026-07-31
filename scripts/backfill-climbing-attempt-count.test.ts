@@ -1,8 +1,8 @@
 import * as Sentry from "@sentry/node";
-import { captureException } from "../src/lib/error-reporting.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { backfillClimbingAttemptCount } from "../src/db/climbing-attempt-count-backfill.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { main } from "./backfill-climbing-attempt-count.ts";
 
 vi.mock("../src/lib/error-reporting.ts", () => ({
