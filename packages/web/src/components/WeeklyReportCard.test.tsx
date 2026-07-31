@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
-import { weeklyReportEmptyState } from "dofek-server/report-empty-state";
 import { afterEach, describe, expect, it } from "vitest";
+import { weeklyReportEmptyStateFixture } from "./report-empty-state-fixtures.ts";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+});
 
 describe("WeeklyReportCard", () => {
   it("previews the server-owned weekly report structure without values", () => {
@@ -25,6 +27,7 @@ describe("WeeklyReportCard", () => {
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "Server no-estimate note.",
           },
+          decisionSupport: null,
         }}
       />,
     );
@@ -60,7 +63,7 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          emptyState: weeklyReportEmptyState,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -87,7 +90,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          emptyState: weeklyReportEmptyState,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -112,7 +115,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          emptyState: weeklyReportEmptyState,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
@@ -149,7 +152,7 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
-          emptyState: weeklyReportEmptyState,
+          emptyState: weeklyReportEmptyStateFixture,
         }}
       />,
     );
