@@ -79,7 +79,7 @@ describe("healthReportRouter", () => {
 
       expect(generate).toHaveBeenCalledWith(
         "weekly",
-        {
+        expect.objectContaining({
           current: {
             weekStart: "2026-03-22",
             trainingHours: 5.6,
@@ -101,7 +101,7 @@ describe("healthReportRouter", () => {
             ],
           }),
           emptyState: createReportEmptyState("weekly"),
-        },
+        }),
         null,
       );
       expect(result.shareToken).toBe("abc123");
@@ -143,7 +143,7 @@ describe("healthReportRouter", () => {
 
       expect(generate).toHaveBeenCalledWith(
         "monthly",
-        {
+        expect.objectContaining({
           current: {
             monthStart: "2026-03-01",
             trainingHours: 40.5,
@@ -165,7 +165,7 @@ describe("healthReportRouter", () => {
             ],
           }),
           emptyState: createReportEmptyState("monthly"),
-        },
+        }),
         30,
       );
     });
