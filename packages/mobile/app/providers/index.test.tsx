@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { providerActionLabel } from "./provider-card.tsx";
 
 const mockPush = vi.fn();
