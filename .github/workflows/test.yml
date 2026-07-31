@@ -197,6 +197,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build server image with cache
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -207,7 +214,7 @@ jobs:
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
-            type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
           cache-to: type=gha,mode=max,scope=e2e
       - name: Scan server image (Grype)
         env:
@@ -917,6 +924,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build E2E images with cache
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -927,7 +941,7 @@ jobs:
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
-            type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
           cache-to: type=gha,mode=max,scope=e2e
       - name: Start e2e dependencies
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis redpanda
