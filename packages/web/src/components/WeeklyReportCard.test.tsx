@@ -27,7 +27,6 @@ describe("WeeklyReportCard", () => {
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "Server no-estimate note.",
           },
-          decisionSupport: null,
         }}
       />,
     );
