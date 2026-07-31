@@ -107,9 +107,27 @@ describe("ios telemetry", () => {
     expect(mocks.mockInit).toHaveBeenCalledWith({
       dsn: "https://key@sentry.example/789",
       debug: true,
+      beforeSend: expect.any(Function),
       tracesSampler: expect.any(Function),
     });
     const options = mocks.mockInit.mock.calls[0]?.[0];
+    const beforeSend = options?.beforeSend;
+    expect(
+      beforeSend?.(
+        { event_id: "event-1" },
+        {
+          originalException: new Error(
+            "fetch failed: UnexpectedException: The request timed out.",
+          ),
+        },
+      ),
+    ).toBeNull();
+    expect(
+      beforeSend?.(
+        { event_id: "event-2" },
+        { originalException: new Error("unexpected server failure") },
+      ),
+    ).toEqual({ event_id: "event-2" });
     const tracesSampler = options?.tracesSampler;
     expect(tracesSampler?.({ name: "App Start", inheritOrSampleWith: vi.fn() })).toBe(1);
     expect(tracesSampler?.({ name: "Mobile Startup", inheritOrSampleWith: vi.fn() })).toBe(1);

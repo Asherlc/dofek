@@ -12,11 +12,23 @@ export function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   );
 }
 
-export function isBackgroundHealthKitTransientNetworkError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+export function isTransientNetworkErrorMessage(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("fetch failed") &&
     (normalized.includes("timed out") || normalized.includes("timeout"))
   );
+}
+
+export function isBackgroundHealthKitTransientNetworkError(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (isTransientNetworkErrorMessage(error.message)) {
+      return true;
+    }
+    if (error.cause !== undefined) {
+      return isBackgroundHealthKitTransientNetworkError(error.cause);
+    }
+    return false;
+  }
+  return isTransientNetworkErrorMessage(String(error));
 }

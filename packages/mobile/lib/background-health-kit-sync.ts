@@ -10,6 +10,7 @@ import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple
 import {
   isBackgroundHealthKitTransientNetworkError,
   isHealthKitDatabaseInaccessible,
+  isTransientNetworkErrorMessage,
 } from "./health-kit-errors";
 import {
   BACKGROUND_HEALTH_KIT_TYPES,
@@ -103,13 +104,19 @@ async function performHealthKitSync(
   }
 
   if (result.errors.length > 0) {
+    const actionableErrors = result.errors.filter((message) => !isTransientNetworkErrorMessage(message));
+    if (actionableErrors.length === 0) {
+      stageTelemetry.complete("failed");
+      logger.info(TAG, "Background HealthKit upload timed out; retrying on next delivery");
+      return false;
+    }
     stageTelemetry.complete("failed");
     const error = new Error(
-      `HealthKit observer sync completed with ${result.errors.length} error(s): ${result.errors.join("; ")}`,
+      `HealthKit observer sync completed with ${actionableErrors.length} error(s): ${actionableErrors.join("; ")}`,
     );
     logger.warn(TAG, error.message);
     captureException(error, {
-      errorCount: result.errors.length,
+      errorCount: actionableErrors.length,
       source: TAG,
     });
     return false;
