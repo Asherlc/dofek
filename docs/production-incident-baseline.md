@@ -21305,21 +21305,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   SELECTs (after `timezone`), while migration
   `0063_record_local_time_context` added them with plain
   `ADD COLUMN IF NOT EXISTS`, which ClickHouse appends to the end of the physical
-  table. dbt-clickhouse binds `INSERT INTO <table> (<physical order>)
-  <model SELECT>` positionally, so on databases created before those columns
-  existed every column after `timezone` shifted and `source_synced_at`
-  (`DateTime64(9)`) landed on a small-integer destination. Fresh databases were
-  unaffected because the `CREATE TABLE` migrations already listed the columns in
-  position, which is why CI stayed green.
+  table when no `AFTER`/`FIRST` clause is given ([ALTER TABLE … ADD COLUMN](https://clickhouse.com/docs/en/sql-reference/statements/alter/column#add-column)).
+  dbt-clickhouse writes its incremental append as `INSERT INTO <table>
+  (<physical order>) <model SELECT>`, and ClickHouse maps the SELECT to that
+  explicit column list positionally ([INSERT INTO … SELECT](https://clickhouse.com/docs/en/sql-reference/statements/insert-into#inserting-the-results-of-select)),
+  so on databases created before those columns existed every column after
+  `timezone` shifted and `source_synced_at` (`DateTime64(9)`) landed on a
+  small-integer destination. Fresh databases were unaffected because the
+  `CREATE TABLE` migrations already listed the columns in position, which is why
+  CI stayed green.
 - **Root cause:** An append-incremental dbt model's SELECT order must match the
   physical column order, and `ADD COLUMN` without an `AFTER` clause breaks that
   invariant on already-populated tables. `deduped_activities` and `daily_sleep`
   carried the same latent mismatch.
 - **Fix / mitigation:** Migration
   `0067_repair_local_time_column_order` repositions the columns in place with
-  `MODIFY COLUMN ... AFTER` (metadata-only, no data rewrite) so the physical
-  order matches each model again; it is a no-op where the columns are already in
-  position. No timeout, retry, or guard was weakened.
+  `MODIFY COLUMN ... AFTER`, which changes only column order in table metadata
+  and does not rewrite data ([ALTER TABLE … MODIFY COLUMN](https://clickhouse.com/docs/en/sql-reference/statements/alter/column#modify-column)),
+  so the physical order matches each model again; it is a no-op where the columns
+  are already in position. No timeout, retry, or guard was weakened.
 - **Validation:** A ClickHouse integration test reproduces the appended layout,
   proves the positional insert fails before the repair and succeeds after, and
   asserts the repaired physical order equals each model's SELECT order. A unit
