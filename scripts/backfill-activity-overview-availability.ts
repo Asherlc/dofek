@@ -6,6 +6,7 @@ import {
 } from "../src/db/activity-overview-availability-backfill.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { parsePostgresTimestamp } from "../src/db/clickhouse-migrations/sql.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 const MAXIMUM_WINDOW_MILLISECONDS = 31 * 24 * 60 * 60 * 1_000;
 
@@ -71,7 +72,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     }
     console.log("[activity-overview-availability-backfill] complete");
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     throw error;
   } finally {
     await client.close?.();

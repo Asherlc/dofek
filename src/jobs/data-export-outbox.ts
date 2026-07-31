@@ -1,6 +1,6 @@
-import * as Sentry from "@sentry/node";
 import { listQueuedDataExportRequests } from "../db/data-export.ts";
 import type { Database } from "../db/typed-sql.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { type DataExportQueue, enqueueDataExport } from "./queues.ts";
 
@@ -38,7 +38,7 @@ export function startDataExportOutboxDispatcher(
         }
       })
       .catch((error: unknown) => {
-        Sentry.captureException(error, { tags: { source: "data-export-outbox" } });
+        captureException(error, { tags: { source: "data-export-outbox" } });
         logger.error(`[data-export-outbox] Dispatch failed: ${String(error)}`);
       })
       .finally(() => {

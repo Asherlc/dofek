@@ -1,6 +1,6 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { userProfile } from "dofek/db/schema/reference";
+import { captureException } from "dofek/lib/error-reporting";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getZohoDeskClient } from "../lib/zoho-desk.ts";
@@ -52,7 +52,7 @@ export const supportRouter = router({
       );
       return { ticketNumber: ticket.ticketNumber };
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(
         `[support] ticket creation failed userId=${ctx.userId} message=${
           error instanceof Error ? error.message : String(error)

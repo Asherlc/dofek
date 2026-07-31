@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -6,7 +6,7 @@ const cacheMocks = vi.hoisted(() => ({
   invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -126,7 +126,7 @@ describe("foodRouter", () => {
   beforeEach(() => {
     cacheMocks.invalidateByPrefix.mockReset();
     cacheMocks.invalidateByPrefix.mockResolvedValue(undefined);
-    vi.mocked(Sentry.captureException).mockReset();
+    vi.mocked(captureException).mockReset();
   });
 
   describe("list", () => {
@@ -442,7 +442,7 @@ describe("foodRouter", () => {
       });
 
       expect(result).toEqual({ success: true });
-      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(captureException).toHaveBeenCalledWith(cacheError);
       expect(warnSpy).toHaveBeenCalledWith(
         "[nutrition] Failed to invalidate nutrition cache for userId=user-1: Error: Redis unavailable",
       );

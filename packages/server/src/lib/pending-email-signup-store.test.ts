@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getPendingEmailSignupStore,
@@ -7,7 +7,7 @@ import {
   RedisPendingEmailSignupStore,
 } from "./pending-email-signup-store.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -162,7 +162,7 @@ const sampleEntry: PendingEmailSignupEntry = {
 };
 
 beforeEach(() => {
-  vi.mocked(Sentry.captureException).mockClear();
+  vi.mocked(captureException).mockClear();
 });
 
 describe("RedisPendingEmailSignupStore", () => {
@@ -386,7 +386,7 @@ describe("RedisPendingEmailSignupStore", () => {
 
     await expect(store.get(token)).resolves.toBeNull();
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       new Error("Invalid pending email signup Redis payload"),
       {
         tags: {
@@ -397,7 +397,7 @@ describe("RedisPendingEmailSignupStore", () => {
     );
     expect(await store.get(token)).toBeNull();
     const sentryCallText = vi
-      .mocked(Sentry.captureException)
+      .mocked(captureException)
       .mock.calls.map(([error, context]) => `${String(error)} ${JSON.stringify(context)}`)
       .join("\n");
     expect(sentryCallText).not.toContain(credentialFragment);
@@ -416,7 +416,7 @@ describe("RedisPendingEmailSignupStore", () => {
 
     await expect(store.get(token)).resolves.toBeNull();
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       new Error("Invalid pending email signup Redis payload"),
       {
         tags: {
@@ -427,7 +427,7 @@ describe("RedisPendingEmailSignupStore", () => {
     );
     expect(await store.get(token)).toBeNull();
     const sentryCallText = vi
-      .mocked(Sentry.captureException)
+      .mocked(captureException)
       .mock.calls.map(([error, context]) => `${String(error)} ${JSON.stringify(context)}`)
       .join("\n");
     expect(sentryCallText).not.toContain(credentialFragment);

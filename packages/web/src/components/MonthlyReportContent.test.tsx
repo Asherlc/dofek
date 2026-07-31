@@ -2,9 +2,9 @@
 
 import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { describe, expect, it } from "vitest";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
-import { monthlyReportEmptyState } from "dofek-server/report-empty-state";
 
 describe("MonthlyReportContent", () => {
   it("renders current and previous monthly snapshots", () => {
@@ -42,7 +42,7 @@ describe("MonthlyReportContent", () => {
             whatToTryNext: ["Repeat the routine next month."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          emptyState: monthlyReportEmptyState,
+          emptyState: createReportEmptyState("monthly"),
         }}
       />,
     );

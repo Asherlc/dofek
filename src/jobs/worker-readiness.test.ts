@@ -1,9 +1,9 @@
-import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
 }));
 
@@ -130,7 +130,7 @@ describe("createWorkerReadinessServer", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ status: "unavailable" });
     expect(listLength).not.toHaveBeenCalled();
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "BullMQ worker is not running: sync" }),
     );
   });
@@ -143,7 +143,7 @@ describe("createWorkerReadinessServer", () => {
     ]);
 
     expect(response.status).toBe(503);
-    expect(Sentry.captureException).toHaveBeenCalledWith(redisError);
+    expect(captureException).toHaveBeenCalledWith(redisError);
     expect(logger.error).toHaveBeenCalledWith("[worker] Readiness check failed: redis offline");
   });
 
@@ -156,7 +156,7 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(503);
     expect(listLength).not.toHaveBeenCalled();
-    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "[worker] Readiness check failed: BullMQ worker blocking connection (sync) is not ready",
     );
@@ -171,7 +171,7 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(503);
     expect(listLength).not.toHaveBeenCalled();
-    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "[worker] Readiness check failed: BullMQ worker command connection (sync) is not ready",
     );
@@ -279,7 +279,7 @@ describe("createWorkerReadinessServer", () => {
     const response = await responsePromise;
 
     expect(response.status).toBe(503);
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Worker readiness timed out after 2500ms" }),
     );
   }, 1_000);

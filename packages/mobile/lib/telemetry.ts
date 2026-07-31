@@ -4,13 +4,22 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
+import PostHog from "posthog-react-native";
+import {
+  isBackgroundHealthKitTransientNetworkError,
+  isHealthKitSentrySource,
+} from "./health-kit-errors";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
 const OTEL_ENDPOINT: string | undefined = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
 const OTEL_HEADERS: string | undefined = process.env.EXPO_PUBLIC_OTEL_HEADERS;
+const POSTHOG_API_KEY = "phc_GsvyihTLSXrWGKYYGz84m44nuT59kYEwEXNnI0JICtg";
+const POSTHOG_HOST = "https://us.i.posthog.com";
+const POSTHOG_LOGS_URL = `${POSTHOG_HOST}/i/v1/logs`;
 
 let initialized = false;
 let loggerProvider: LoggerProvider | undefined;
+let posthogClient: PostHog | undefined;
 
 function parseHeaders(raw: string): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -50,6 +59,53 @@ function sentryBreadcrumbLevel(severityText: string): "info" | "warning" | "erro
   }
 }
 
+function createLogProcessors(): BatchLogRecordProcessor[] {
+  const processors: BatchLogRecordProcessor[] = [];
+
+  if (OTEL_ENDPOINT) {
+    processors.push(
+      new BatchLogRecordProcessor({
+        exporter: new OTLPLogExporter({
+          url: OTEL_ENDPOINT,
+          headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
+        }),
+      }),
+    );
+  }
+
+  if (!__DEV__) {
+    processors.push(
+      new BatchLogRecordProcessor({
+        exporter: new OTLPLogExporter({
+          url: POSTHOG_LOGS_URL,
+          headers: {
+            Authorization: `Bearer ${POSTHOG_API_KEY}`,
+          },
+        }),
+      }),
+    );
+  }
+
+  return processors;
+}
+
+type TelemetryUser = {
+  id: string;
+  email: string | null;
+  name: string;
+};
+
+export function identifyUser(user: TelemetryUser): void {
+  posthogClient?.identify(user.id, {
+    email: user.email,
+    name: user.name,
+  });
+}
+
+export function resetUser(): void {
+  posthogClient?.reset();
+}
+
 export function initTelemetry() {
   if (initialized) {
     return;
@@ -63,25 +119,69 @@ export function initTelemetry() {
   Sentry.init({
     dsn: SENTRY_DSN,
     debug: __DEV__,
+    beforeSend(event, hint) {
+      const error = hint.originalException;
+      if (!isBackgroundHealthKitTransientNetworkError(error)) {
+        return event;
+      }
+
+      const source =
+        typeof event.tags?.source === "string"
+          ? event.tags.source
+          : typeof event.extra?.source === "string"
+            ? event.extra.source
+            : undefined;
+      if (isHealthKitSentrySource(source)) {
+        return null;
+      }
+      return event;
+    },
     tracesSampler: ({ name, inheritOrSampleWith }) =>
       name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
   });
 
-  if (OTEL_ENDPOINT) {
+  if (!__DEV__) {
+    posthogClient = new PostHog(POSTHOG_API_KEY, {
+      host: POSTHOG_HOST,
+      errorTracking: {
+        autocapture: {
+          uncaughtExceptions: true,
+          unhandledRejections: true,
+          console: ["error"],
+        },
+      },
+    });
+    posthogClient.register({ service: "dofek-mobile" });
+  }
+
+  const logProcessors = createLogProcessors();
+  if (logProcessors.length > 0) {
     const resource = resourceFromAttributes({
       [ATTR_SERVICE_NAME]: "dofek-mobile",
     });
 
-    const exporter = new OTLPLogExporter({
-      url: OTEL_ENDPOINT,
-      headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
-    });
-
     loggerProvider = new LoggerProvider({
       resource,
-      processors: [new BatchLogRecordProcessor({ exporter })],
+      processors: logProcessors,
     });
   }
+}
+
+function sanitizePostHogProperties(
+  data: Record<string, unknown>,
+): Record<string, string | number | boolean | null> {
+  const properties: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      properties[key] = value;
+    }
+  }
+  return properties;
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
@@ -90,6 +190,7 @@ export function captureException(error: unknown, context: Record<string, unknown
     ...(source ? { tags: { source } } : {}),
     extra: context,
   });
+  posthogClient?.captureException(error, sanitizePostHogProperties(context));
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
   const attributes =
@@ -127,8 +228,9 @@ function emitLog(
  * Structured logger backed by OpenTelemetry.
  *
  * When EXPO_PUBLIC_OTEL_ENDPOINT is set, log records are exported via
- * OTLP/HTTP to the configured collector (e.g. Axiom). Always also writes
- * to console for local development visibility.
+ * OTLP/HTTP to the configured collector (e.g. Axiom). In production, logs
+ * are also exported to PostHog. Always also writes to console for local
+ * development visibility.
  */
 export const logger = {
   info(category: string, message: string, data?: Record<string, unknown>) {
@@ -148,4 +250,7 @@ export const logger = {
 /** Flush pending log records (call before app exits or backgrounds). */
 export async function flushTelemetry(): Promise<void> {
   await loggerProvider?.forceFlush();
+  if (posthogClient) {
+    await posthogClient.flush();
+  }
 }

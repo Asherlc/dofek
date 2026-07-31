@@ -1,6 +1,6 @@
 import { WhoopClient } from "@dofek/whoop/client";
-import { captureException } from "@sentry/node";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { captureException } from "../../lib/error-reporting.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
 import { fingerprintOpaqueValue } from "../../sync/pagination-fingerprint.ts";

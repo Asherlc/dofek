@@ -1616,8 +1616,9 @@ describe("processSyncJob", () => {
   });
 
   it("continues when global post-sync enqueue fails", async () => {
+    const enqueueError = new Error("queue gone");
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
+    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(enqueueError);
 
     // Should not throw
     await runSyncJob(createMockJob(), mockDb);
@@ -1627,11 +1628,15 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue global post-sync maintenance"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-global-maintenance-enqueue" },
+    });
   });
 
   it("continues when per-user refit enqueue fails", async () => {
+    const enqueueError = new Error("queue gone");
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
+    mockEnqueueDebouncedUserRefit.mockRejectedValue(enqueueError);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -1640,6 +1645,9 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue user refit"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-user-refit-enqueue" },
+    });
   });
 
   it("relays within-provider progress to job.updateProgress with correct percentage", async () => {

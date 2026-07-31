@@ -1,4 +1,3 @@
-import { captureException } from "@sentry/node";
 import { and, eq, gte, isNotNull, lt, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../db/clickhouse.ts";
@@ -6,6 +5,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
+import { captureException } from "../../lib/error-reporting.ts";
 import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
 import { listPendingSyncRequestQueryKeys } from "../../lib/sync-request-queue.ts";
 import { garminSyncStepToApiQuery } from "./sync-api-query.ts";

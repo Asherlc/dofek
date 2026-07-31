@@ -756,6 +756,23 @@ describe("RedisCompanionPairingStore", () => {
     await expect(redisClient.readPairingPayload(challenge.id)).resolves.toBeNull();
   });
 
+  it("reports corrupted Redis challenge payloads during lookup by id", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    redisClient.corruptPairingPayload(challenge.id);
+
+    await expect(store.getById(challenge.id, now)).resolves.toBeNull();
+    expect(companionPairingStoreMocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(SyntaxError),
+      {
+        extra: { companionPairingId: challenge.id },
+      },
+    );
+  });
+
   it("returns null when Redis claim scripts do not return a payload", async () => {
     const redisClient = new FakeRedisClient();
     const store = new RedisCompanionPairingStore(async () => redisClient);
@@ -804,6 +821,33 @@ describe("RedisCompanionPairingStore", () => {
         now,
       }),
     ).resolves.toBeNull();
+    expect(companionPairingStoreMocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(SyntaxError),
+      {
+        extra: { companionPairingShortCode: challenge.shortCode },
+      },
+    );
+  });
+
+  it("reports corrupted Redis payloads during token issuance release", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const challenge = await store.createChallenge();
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+    redisClient.nextEvalResult = "{";
+
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+      }),
+    ).resolves.toBeNull();
+    expect(companionPairingStoreMocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(SyntaxError),
+      {
+        extra: { companionPairingShortCode: challenge.shortCode },
+      },
+    );
   });
 
   it("creates challenges through the shared Redis connection with Lua-capable clients", async () => {

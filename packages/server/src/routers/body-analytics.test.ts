@@ -1,9 +1,11 @@
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { describe, expect, it, vi } from "vitest";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
-vi.mock("@sentry/node", () => ({ captureException: vi.fn() }));
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },

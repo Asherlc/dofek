@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/node";
 import { type DataExportQueue, enqueueDataExport } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
@@ -124,7 +124,7 @@ export function createExportRouter({
     try {
       await enqueueDataExport({ exportId, userId: session.userId }, exportQueue);
     } catch (error: unknown) {
-      Sentry.captureException(error, {
+      captureException(error, {
         tags: { source: "data-export-enqueue" },
         extra: { exportId, userId: session.userId },
       });

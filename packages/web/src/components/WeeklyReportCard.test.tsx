@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { afterEach, describe, expect, it } from "vitest";
-import { weeklyReportEmptyState } from "dofek-server/report-empty-state";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
 
 afterEach(() => {
@@ -62,7 +62,7 @@ describe("WeeklyReportCard", () => {
             whatToTryNext: ["Repeat the routine next week."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
-          emptyState: weeklyReportEmptyState,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );
@@ -89,7 +89,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          emptyState: weeklyReportEmptyState,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );
@@ -114,7 +114,7 @@ describe("WeeklyReportCard", () => {
           },
           history: [],
           decisionSupport: null,
-          emptyState: weeklyReportEmptyState,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );
@@ -151,7 +151,7 @@ describe("WeeklyReportCard", () => {
             },
           ],
           decisionSupport: null,
-          emptyState: weeklyReportEmptyState,
+          emptyState: createReportEmptyState("weekly"),
         }}
       />,
     );

@@ -6,17 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth } from "./auth-context.tsx";
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
-const mockIdentifyPostHogUser = vi.hoisted(() => vi.fn());
-const mockResetPostHogUser = vi.hoisted(() => vi.fn());
+const mockIdentifyUser = vi.hoisted(() => vi.fn());
+const mockResetUser = vi.hoisted(() => vi.fn());
 const mockRedirectToLogin = vi.hoisted(() => vi.fn());
 
 vi.mock("./telemetry.ts", () => ({
   captureException: mockCaptureException,
-}));
-
-vi.mock("./posthog.ts", () => ({
-  identifyPostHogUser: mockIdentifyPostHogUser,
-  resetPostHogUser: mockResetPostHogUser,
+  identifyUser: mockIdentifyUser,
+  resetUser: mockResetUser,
 }));
 
 vi.mock("./auth.ts", async (importOriginal) => {
@@ -53,9 +50,9 @@ describe("AuthProvider analytics identity", () => {
       expect(result.current.user).toEqual(user);
     });
 
-    expect(mockIdentifyPostHogUser).toHaveBeenCalledOnce();
-    expect(mockIdentifyPostHogUser).toHaveBeenCalledWith(user);
-    expect(mockResetPostHogUser).not.toHaveBeenCalled();
+    expect(mockIdentifyUser).toHaveBeenCalledOnce();
+    expect(mockIdentifyUser).toHaveBeenCalledWith(user);
+    expect(mockResetUser).not.toHaveBeenCalled();
   });
 
   it("does not identify or reset an unauthenticated visitor during bootstrap", async () => {
@@ -68,8 +65,8 @@ describe("AuthProvider analytics identity", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(mockIdentifyPostHogUser).not.toHaveBeenCalled();
-    expect(mockResetPostHogUser).not.toHaveBeenCalled();
+    expect(mockIdentifyUser).not.toHaveBeenCalled();
+    expect(mockResetUser).not.toHaveBeenCalled();
   });
 
   it("resets the analytics identity after logout succeeds", async () => {
@@ -90,11 +87,11 @@ describe("AuthProvider analytics identity", () => {
       await result.current.logout();
     });
 
-    expect(mockResetPostHogUser).toHaveBeenCalledOnce();
+    expect(mockResetUser).toHaveBeenCalledOnce();
     expect(vi.mocked(logout).mock.invocationCallOrder[0]).toBeLessThan(
-      mockResetPostHogUser.mock.invocationCallOrder[0] ?? 0,
+      mockResetUser.mock.invocationCallOrder[0] ?? 0,
     );
-    expect(mockResetPostHogUser.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockResetUser.mock.invocationCallOrder[0]).toBeLessThan(
       mockRedirectToLogin.mock.invocationCallOrder[0] ?? 0,
     );
   });
@@ -120,7 +117,7 @@ describe("AuthProvider analytics identity", () => {
       }),
     ).rejects.toThrow("Network unavailable");
 
-    expect(mockResetPostHogUser).not.toHaveBeenCalled();
+    expect(mockResetUser).not.toHaveBeenCalled();
     expect(mockRedirectToLogin).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "logout" });
     expect(result.current.user?.id).toBe("user-123");
@@ -146,7 +143,7 @@ describe("AuthProvider analytics identity", () => {
     });
 
     expect(result.current.user).toBeNull();
-    expect(mockResetPostHogUser).toHaveBeenCalledOnce();
+    expect(mockResetUser).toHaveBeenCalledOnce();
   });
 
   it("resets before identifying a different authenticated user", async () => {
@@ -173,9 +170,9 @@ describe("AuthProvider analytics identity", () => {
     });
 
     expect(result.current.user?.id).toBe("user-456");
-    expect(mockResetPostHogUser).toHaveBeenCalledOnce();
-    expect(mockResetPostHogUser.mock.invocationCallOrder[0]).toBeLessThan(
-      mockIdentifyPostHogUser.mock.invocationCallOrder[1] ?? 0,
+    expect(mockResetUser).toHaveBeenCalledOnce();
+    expect(mockResetUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockIdentifyUser.mock.invocationCallOrder[1] ?? 0,
     );
   });
 });

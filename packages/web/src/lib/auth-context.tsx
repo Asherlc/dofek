@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { AuthUser } from "./auth.ts";
 import { logout as doLogout, fetchCurrentUser, redirectToLogin } from "./auth.ts";
-import { identifyPostHogUser, resetPostHogUser } from "./posthog.ts";
-import { captureException } from "./telemetry.ts";
+import { captureException, identifyUser, resetUser } from "./telemetry.ts";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -34,12 +33,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentUser);
       if (currentUser) {
         if (identifiedUserId.current && identifiedUserId.current !== currentUser.id) {
-          resetPostHogUser();
+          resetUser();
         }
-        identifyPostHogUser(currentUser);
+        identifyUser(currentUser);
         identifiedUserId.current = currentUser.id;
       } else if (identifiedUserId.current) {
-        resetPostHogUser();
+        resetUser();
         identifiedUserId.current = null;
       }
     } catch (error: unknown) {
@@ -63,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     setBootstrapError(null);
-    resetPostHogUser();
+    resetUser();
     identifiedUserId.current = null;
     redirectToLogin();
   }, []);
