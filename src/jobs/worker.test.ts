@@ -289,10 +289,13 @@ const {
 // test file as related to worker.ts, so mutations in worker.ts are covered.
 import "./worker.ts";
 
-// Restore the deployment-environment/DSN stubs so the "prod" classification does
-// not outlive this file within a reused vitest fork.
+// Restore only the deployment-environment/DSN stubs so the "prod"
+// classification does not outlive this file within a reused vitest fork.
+// Use targeted vi.stubEnv calls (not vi.unstubAllEnvs) so future tests in this
+// file can safely stub other env vars without having them implicitly cleared.
 afterAll(() => {
-  vi.unstubAllEnvs();
+  vi.stubEnv("DEPLOY_ENVIRONMENT", "test");
+  vi.stubEnv("SENTRY_DSN", undefined);
 });
 
 describe("worker module", () => {

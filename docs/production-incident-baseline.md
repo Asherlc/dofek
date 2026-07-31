@@ -21287,10 +21287,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   open by mutating the shared process environment and never restoring it.
 - **Fix / mitigation:** Replace the raw `process.env` assignments with tracked
   [`vi.stubEnv`](https://vitest.dev/api/vi.html#vi-stubenv) calls and restore
-  them with
-  [`vi.unstubAllEnvs()`](https://vitest.dev/api/vi.html#vi-unstuballenvs) in an
-  `afterAll`, so the "prod" classification cannot outlive the test file within
-  a reused worker. Add an explicit non-production `DEPLOY_ENVIRONMENT: "test"`
+  only `DEPLOY_ENVIRONMENT` and `SENTRY_DSN` in an `afterAll` (via targeted
+  `vi.stubEnv` calls, not `vi.unstubAllEnvs`), so the "prod" classification
+  cannot outlive the test file within a reused worker. Add an explicit non-production `DEPLOY_ENVIRONMENT: "test"`
   default to the shared test env in
   [vitest.config.ts](../vitest.config.ts) so no test run is classified as a
   production deployment unless it opts in. No production code was changed and
