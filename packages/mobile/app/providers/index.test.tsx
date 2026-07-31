@@ -1543,6 +1543,62 @@ describe("ProvidersScreen", () => {
     );
   });
 
+  it("keeps Sync All disabled when another provider is still polling", async () => {
+    const garminProvider = {
+      id: "garmin",
+      name: "Garmin",
+      authType: "oauth",
+      authorized: true,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [connectedProvider, garminProvider],
+      isLoading: false,
+      error: null,
+    });
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "garmin:active-job",
+          status: "running",
+          providers: { garmin: { status: "running", message: "Syncing Garmin" } },
+        },
+      ],
+    });
+    mockSyncStatusFetch.mockImplementation(() => new Promise(() => {}));
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "job-skipped",
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ],
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled"),
+      ).toBe(true);
+    });
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    fireEvent.click(wahooCard.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(wahooCard.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
+    });
+    expect(screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
   it("passes sinceDays: ROUTINE_SYNC_DAYS when Sync link is clicked", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
     mockSyncStatusFetch.mockResolvedValue({
