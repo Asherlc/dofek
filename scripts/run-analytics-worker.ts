@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
+import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
 import { captureException } from "../src/lib/error-reporting.ts";

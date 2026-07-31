@@ -1,6 +1,6 @@
 import { log as Logger } from "@zos/utils";
 import {
-  captureException as reportException,
+  enqueueTelemetryException,
   restoreBufferedTelemetryEvents,
   serializeBufferedTelemetryEvents,
 } from "../src/posthog-client.ts";
@@ -19,9 +19,8 @@ function syncTelemetryBufferStorage(): void {
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}): void {
   telemetryLogger.error("captured exception %j", error);
-  void reportException(error, { ...context, source: "zepp-watch" }).finally(() => {
-    syncTelemetryBufferStorage();
-  });
+  enqueueTelemetryException(error, { ...context, source: "zepp-watch" });
+  syncTelemetryBufferStorage();
 }
 
 export function loadWatchTelemetryBuffer(): void {
