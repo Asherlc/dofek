@@ -218,9 +218,7 @@ function isProviderTransportError(error: unknown): boolean {
 }
 
 function shouldReportProviderError(error: unknown): boolean {
-  return (
-    !isProviderTransportError(error) && !authFailureReasonFromError(error)
-  );
+  return !isProviderTransportError(error) && !authFailureReasonFromError(error);
 }
 
 async function scheduleRateLimitRetry(
