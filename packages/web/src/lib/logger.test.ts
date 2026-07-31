@@ -29,4 +29,35 @@ describe("web logger", () => {
       }),
     );
   });
+
+  it("forwards info logs to PostHog", async () => {
+    const { logger } = await import("./logger.ts");
+    logger.info("auth", "signed in", { userId: "user-1" });
+
+    expect(mockCapture).toHaveBeenCalledWith(
+      "client_log",
+      expect.objectContaining({
+        level: "info",
+        category: "auth",
+        message: "signed in",
+        platform: "web",
+        userId: "user-1",
+      }),
+    );
+  });
+
+  it("forwards error logs to PostHog", async () => {
+    const { logger } = await import("./logger.ts");
+    logger.error("sync", "provider failed");
+
+    expect(mockCapture).toHaveBeenCalledWith(
+      "client_log",
+      expect.objectContaining({
+        level: "error",
+        category: "sync",
+        message: "provider failed",
+        platform: "web",
+      }),
+    );
+  });
 });
