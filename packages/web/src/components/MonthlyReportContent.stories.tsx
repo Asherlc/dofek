@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { monthlyReportEmptyState } from "../lib/report-empty-states.ts";
+import { monthlyReportEmptyState } from "dofek-server/report-empty-state";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
 const meta = {

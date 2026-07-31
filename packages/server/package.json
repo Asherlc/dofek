@@ -9,6 +9,7 @@
     "./baseline-relative-metrics": "./src/contracts/baseline-relative-metrics.ts",
     "./health-report-share-expiry": "./src/health-report-share-expiry.ts",
     "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts",
+    "./report-empty-state": "./src/contracts/report-empty-state.ts",
     "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts"
   },
   "scripts": {

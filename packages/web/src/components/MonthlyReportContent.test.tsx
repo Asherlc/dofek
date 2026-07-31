@@ -3,7 +3,7 @@
 import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { monthlyReportEmptyState } from "../lib/report-empty-states.ts";
+import { monthlyReportEmptyState } from "dofek-server/report-empty-state";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
 describe("MonthlyReportContent", () => {

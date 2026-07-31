@@ -67,3 +67,6 @@ export function createReportEmptyState(reportKind: ReportKind): ReportEmptyState
     ],
   };
 }
+
+export const weeklyReportEmptyState = createReportEmptyState("weekly");
+export const monthlyReportEmptyState = createReportEmptyState("monthly");
