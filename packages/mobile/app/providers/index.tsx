@@ -433,13 +433,13 @@ export default function ProvidersScreen() {
   );
 
   const handleSyncProvider = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, fullSync = false) => {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
       setAnySyncing(true);
       try {
         const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: ROUTINE_SYNC_DAYS,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
         const providerResult = result.providerResults?.find(
           (entry) => entry.providerId === providerId,
@@ -853,6 +853,7 @@ export default function ProvidersScreen() {
             syncing={syncingProviders.has(provider.id)}
             syncProgress={syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
             onConnect={() => handleConnect(provider)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />

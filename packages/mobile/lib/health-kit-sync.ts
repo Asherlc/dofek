@@ -5,7 +5,10 @@ import type {
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
-import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
+import {
+  isBackgroundHealthKitTransientNetworkError,
+  isHealthKitDatabaseInaccessible,
+} from "./health-kit-errors";
 import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
@@ -77,6 +80,33 @@ function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
     ...workout,
     totalDistance: workout.totalDistance ?? null,
   };
+}
+
+interface WorkoutRouteErrorContext {
+  errors: string[];
+  errorLabel: string;
+  source: string;
+  captureContext?: Record<string, unknown>;
+  suppressTransientNetworkErrors?: boolean;
+}
+
+function handleWorkoutRouteError(
+  error: unknown,
+  context: WorkoutRouteErrorContext,
+): "locked" | undefined {
+  if (isHealthKitDatabaseInaccessible(error)) {
+    return "locked";
+  }
+  const shouldReport =
+    !context.suppressTransientNetworkErrors || !isBackgroundHealthKitTransientNetworkError(error);
+  if (shouldReport) {
+    captureException(error, {
+      source: context.source,
+      ...context.captureContext,
+    });
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  context.errors.push(`${context.errorLabel}: ${message}`);
 }
 
 function isAuthorizationNotDetermined(error: unknown): boolean {
@@ -327,12 +357,12 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
             if (isHealthKitDatabaseInaccessible(error)) {
               throw error;
             }
-            captureException(error, {
+            handleWorkoutRouteError(error, {
+              errors,
+              errorLabel: `Route query for workout ${workout.uuid}`,
               source: "health-kit-workout-route-query",
-              workoutUuid: workout.uuid,
+              captureContext: { workoutUuid: workout.uuid },
             });
-            const message = error instanceof Error ? error.message : String(error);
-            errors.push(`Route query for workout ${workout.uuid}: ${message}`);
           }
         }
         return workerRoutes;
@@ -350,12 +380,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
         totalInserted += routeResult.inserted;
       } catch (error) {
-        captureException(error, {
+        handleWorkoutRouteError(error, {
+          errors,
+          errorLabel: "Push workout routes",
           source: "health-kit-workout-route-push",
-          routeCount: routes.length,
+          captureContext: { routeCount: routes.length },
+          suppressTransientNetworkErrors: true,
         });
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`Push workout routes: ${message}`);
       }
     }
   }
@@ -508,12 +539,12 @@ async function syncObserverWorkouts(
       if (isHealthKitDatabaseInaccessible(error)) {
         throw error;
       }
-      captureException(error, {
+      handleWorkoutRouteError(error, {
+        errors,
+        errorLabel: `Route sync for workout ${workout.uuid}`,
         source: "health-kit-workout-route-observer-sync",
-        workoutUuid: workout.uuid,
+        captureContext: { workoutUuid: workout.uuid },
       });
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Route sync for workout ${workout.uuid}: ${message}`);
     }
   }
 
@@ -523,12 +554,13 @@ async function syncObserverWorkouts(
       const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
       inserted += routeResult.inserted;
     } catch (error) {
-      captureException(error, {
+      handleWorkoutRouteError(error, {
+        errors,
+        errorLabel: "Push workout routes",
         source: "health-kit-workout-route-observer-push",
-        routeCount: routes.length,
+        captureContext: { routeCount: routes.length },
+        suppressTransientNetworkErrors: true,
       });
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Push workout routes: ${message}`);
     }
   }
   return { deleted: 0, inserted, errors };

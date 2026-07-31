@@ -86,6 +86,7 @@ export function ProviderCard({
   importing = false,
   syncProgress,
   onSync,
+  onFullSync,
   onConnect,
   onImport,
   onPress,
@@ -96,6 +97,7 @@ export function ProviderCard({
   importing?: boolean;
   syncProgress: { percentage?: number; message?: string; failedCount?: number } | undefined;
   onSync: () => void;
+  onFullSync?: () => void;
   onConnect: () => void;
   onImport?: () => void;
   onPress: () => void;
@@ -187,6 +189,19 @@ export function ProviderCard({
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
+          {canRunManualSync &&
+            provider.authStatus === "connected" &&
+            onFullSync !== undefined &&
+            !syncing && (
+              <TouchableOpacity
+                onPress={onFullSync}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Full sync"
+              >
+                <Text style={styles.fullSyncLink}>Full sync</Text>
+              </TouchableOpacity>
+            )}
         </View>
       )}
 

@@ -356,6 +356,78 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
+  it("does not report TRPCClientError background fetch timeouts to Sentry (DOFEK-MOBILE-19)", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1_000 }]);
+    const timeoutError = new Error("fetch failed: UnexpectedException: The request timed out.");
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(
+      new Error("TRPCClientError", { cause: timeoutError }),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Background HealthKit upload timed out; retrying on next delivery",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("does not report observer sync result errors that are only transient timeouts", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        uuid: "workout-1",
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+      },
+    ]);
+    vi.mocked(queryWorkoutRoutes).mockResolvedValueOnce([
+      { latitude: 37.77, longitude: -122.42, timestamp: "2026-03-22T10:00:00Z" },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValueOnce(
+      new Error("fetch failed: UnexpectedException: The request timed out."),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKWorkoutTypeIdentifier",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Background HealthKit upload timed out; retrying on next delivery",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
   it("marks native observer sync lifecycle while draining deliveries (DOFEK-MOBILE-1C)", async () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
