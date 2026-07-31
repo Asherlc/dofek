@@ -32,6 +32,16 @@ export interface BreathworkSafetyGuidance {
   emergency: string;
 }
 
+export const PERCEIVED_BREATHWORK_EFFECTS = ["better", "same", "worse"] as const;
+export type PerceivedBreathworkEffect = (typeof PERCEIVED_BREATHWORK_EFFECTS)[number];
+
+export interface BreathworkOutcomeReport {
+  stressBefore: number | null;
+  stressAfter: number | null;
+  dizzinessAfter: boolean | null;
+  perceivedEffect: PerceivedBreathworkEffect | null;
+}
+
 /**
  * Safety wording follows NHS breathing/fainting guidance:
  * https://www.asph.nhs.uk/nervous-system-regulation

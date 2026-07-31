@@ -5,7 +5,7 @@ export function TermsPage() {
     <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-foreground mb-2">Terms of Service</h1>
-        <p className="text-subtle text-sm mb-10">Last updated: March 17, 2026</p>
+        <p className="text-subtle text-sm mb-10">Last updated: July 29, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
@@ -62,7 +62,8 @@ export function TermsPage() {
               </li>
               <li>
                 You may disconnect any provider at any time, which stops future data syncing from
-                that provider
+                that provider but retains data already imported into Dofek until you separately
+                delete it
               </li>
             </ul>
           </section>

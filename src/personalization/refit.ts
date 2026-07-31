@@ -64,9 +64,32 @@ export async function refitAllParams(
     logger.error(`[personalization] Failed to load existing params: ${err}`);
     Sentry.captureException(err, { tags: { context: "personalization-load-existing" } });
   }
+  const fittedAt = new Date().toISOString();
   const params: PersonalizedParams = {
-    version: 1,
-    fittedAt: new Date().toISOString(),
+    version: 2,
+    fittedAt,
+    successfulFitAt: {
+      exponentialMovingAverage:
+        ewmaResult.status === "fulfilled" && ewmaResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.exponentialMovingAverage ?? null),
+      readinessWeights:
+        readinessResult.status === "fulfilled" && readinessResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.readinessWeights ?? null),
+      sleepTarget:
+        sleepResult.status === "fulfilled" && sleepResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.sleepTarget ?? null),
+      stressThresholds:
+        stressResult.status === "fulfilled" && stressResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.stressThresholds ?? null),
+      trainingImpulseConstants:
+        trimpResult.status === "fulfilled" && trimpResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.trainingImpulseConstants ?? null),
+    },
     exponentialMovingAverage:
       ewmaResult.status === "fulfilled" && ewmaResult.value != null
         ? ewmaResult.value

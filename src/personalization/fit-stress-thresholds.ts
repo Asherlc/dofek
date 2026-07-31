@@ -11,7 +11,7 @@ export interface StressThresholdsFitResult {
   sampleCount: number;
 }
 
-const MIN_DAYS = 60;
+export const MINIMUM_STRESS_DAYS = 60;
 
 /**
  * Calibrate stress thresholds based on the user's personal z-score distribution.
@@ -28,7 +28,7 @@ const MIN_DAYS = 60;
 export function fitStressThresholds(
   data: StressThresholdsInput[],
 ): StressThresholdsFitResult | null {
-  if (data.length < MIN_DAYS) return null;
+  if (data.length < MINIMUM_STRESS_DAYS) return null;
 
   const hrvZScores = data.map((d) => d.hrvZScore).sort((a, b) => a - b);
   const rhrZScores = data.map((d) => d.rhrZScore).sort((a, b) => a - b);

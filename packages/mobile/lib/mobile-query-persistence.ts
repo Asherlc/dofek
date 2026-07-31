@@ -6,7 +6,8 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createElement, type ReactNode, useMemo } from "react";
 import { captureException } from "./telemetry";
 
-export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 4;
+export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 5;
+export const MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES = 5 * 1024 * 1024;
 
 export function mobileQueryCacheBuster(userId: string) {
   return `${userId}:v${MOBILE_QUERY_CACHE_CONTRACT_VERSION}`;
@@ -16,9 +17,23 @@ function queryCacheKey(userId: string) {
   return `dofek-query-cache:${userId}`;
 }
 
+function createBoundedAsyncStorage() {
+  return {
+    getItem: (key: string) => AsyncStorage.getItem(key),
+    setItem: async (key: string, value: string) => {
+      if (value.length > MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES) {
+        await AsyncStorage.removeItem(key);
+        return;
+      }
+      await AsyncStorage.setItem(key, value);
+    },
+    removeItem: (key: string) => AsyncStorage.removeItem(key),
+  };
+}
+
 export function createMobileQueryPersister(userId: string) {
   return createAsyncStoragePersister({
-    storage: AsyncStorage,
+    storage: createBoundedAsyncStorage(),
     key: queryCacheKey(userId),
     retry: ({ error }) => {
       captureException(error, { source: "mobile-query-cache-persist-write", userId });

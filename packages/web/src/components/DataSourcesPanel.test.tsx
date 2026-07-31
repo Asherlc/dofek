@@ -252,11 +252,11 @@ describe("DataSourcesPanel", () => {
       </PageSection>,
     );
 
-    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(2);
     expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
   });
 
-  it("reserves one stable provider region while inventory loads", () => {
+  it("reserves stable action and provider regions while inventory loads", () => {
     mockProvidersQuery.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -269,8 +269,11 @@ describe("DataSourcesPanel", () => {
     });
 
     const { rerender } = render(<DataSourcesPanel />);
+    const actionRegion = screen.getByRole("heading", { name: "Data Sources" }).parentElement;
     const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
 
+    expect(actionRegion?.className).toContain("min-h-20");
+    expect(screen.queryByRole("region", { name: "Sync all providers" })).toBeNull();
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
     expect(loadingRegion.className).toContain("h-80");
     expect(loadingRegion.className).toContain("sm:h-96");
@@ -289,6 +292,15 @@ describe("DataSourcesPanel", () => {
           pushOnly: false,
           needsReauth: false,
         },
+        {
+          id: "whoop",
+          name: "WHOOP",
+          authorized: true,
+          authType: "oauth2",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
       ],
       isLoading: false,
       error: null,
@@ -296,6 +308,8 @@ describe("DataSourcesPanel", () => {
     rerender(<DataSourcesPanel />);
 
     const processingRegion = screen.getByRole("region", { name: "Available data sources" });
+    expect(screen.getByRole("heading", { name: "Data Sources" }).parentElement).toBe(actionRegion);
+    expect(screen.getByRole("region", { name: "Sync all providers" })).toBeTruthy();
     expect(processingRegion).toBe(loadingRegion);
     expect(processingRegion.getAttribute("aria-busy")).toBe("true");
     expect(within(processingRegion).getByText("Loading processing status…")).toBeTruthy();
@@ -509,7 +523,7 @@ describe("DataSourcesPanel", () => {
     });
 
     render(<DataSourcesPanel />);
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const garminCard = within(screen.getByTestId("provider-card-garmin"));
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
@@ -550,7 +564,7 @@ describe("DataSourcesPanel", () => {
     });
 
     render(<DataSourcesPanel />);
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockPollSyncJob).toHaveBeenCalledWith(
@@ -595,17 +609,50 @@ describe("DataSourcesPanel", () => {
     mockSyncMutateAsync.mockRejectedValue(error);
 
     render(<DataSourcesPanel />);
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() =>
       expect(
         within(screen.getByTestId("provider-card-garmin")).getByText(error.message),
       ).toBeTruthy(),
     );
+    expect(screen.getByRole("alert")).toHaveTextContent(error.message);
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
     expect(mockCaptureException).toHaveBeenCalledWith(error, {
       operation: "sync.triggerSync",
     });
+  });
+
+  it("keeps both bulk actions disabled while provider jobs are still polling", async () => {
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "garmin:job-garmin",
+      jobIds: ["garmin:job-garmin"],
+      providerJobs: [
+        { providerId: "garmin", jobId: "garmin:job-garmin", queueName: "sync-garmin" },
+      ],
+      providerResults: [
+        {
+          providerId: "garmin",
+          status: "started",
+          jobId: "garmin:job-garmin",
+          queueName: "sync-garmin",
+        },
+      ],
+    });
+    mockPollSyncJob.mockImplementation(() => new Promise(() => {}));
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByText("Sync recent data"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Sync all providers for the last 7 days" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Sync full history for all providers" }),
+      ).toBeDisabled();
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Follow each provider below");
   });
 
   it("reports polling failures without the job id and skips the global duplicate", async () => {

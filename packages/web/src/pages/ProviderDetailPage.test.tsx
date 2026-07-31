@@ -1012,6 +1012,8 @@ describe("ProviderDetailPage delete all data", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
+    expect(screen.getAllByRole("heading", { name: "Danger Zone" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Disconnect Wahoo" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Delete all data" }));
     const confirmButton = screen.getByRole("button", { name: "Permanently delete data" });
     expect(confirmButton).toHaveProperty("disabled", true);

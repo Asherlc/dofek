@@ -4,6 +4,35 @@ import { describe, expect, it } from "vitest";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
 
 describe("WeeklyReportCard", () => {
+  it("previews the server-owned weekly report structure without values", () => {
+    render(
+      <WeeklyReportCard
+        data={{
+          current: null,
+          history: [],
+          emptyState: {
+            reportKind: "weekly",
+            title: "Server weekly preview title",
+            message: "Server weekly preview message.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"],
+            requirement: "Server weekly coverage requirement.",
+            previewTitle: "Server weekly structure",
+            previewItems: ["Training time and activity count", "Average nightly sleep"],
+            note: "Server no-estimate note.",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Server weekly preview title")).toBeTruthy();
+    expect(screen.getByText("Server weekly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server weekly coverage requirement.")).toBeTruthy();
+    expect(screen.getByText("Server weekly structure")).toBeTruthy();
+    expect(screen.getByText("Training time and activity count")).toBeTruthy();
+    expect(screen.getByText("Server no-estimate note.")).toBeTruthy();
+  });
+
   it("shows sleep-not-tracked messaging when weekly sleep is 0 minutes", () => {
     render(
       <WeeklyReportCard

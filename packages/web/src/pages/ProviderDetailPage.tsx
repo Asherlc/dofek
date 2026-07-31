@@ -14,7 +14,6 @@ import { getFileImportConfig } from "../components/file-import-configs.ts";
 import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
-import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -23,7 +22,7 @@ import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
+import { ProviderDangerZone } from "./ProviderDangerZone.tsx";
 import { RecordsBrowser, SyncHistory } from "./provider-detail-data.tsx";
 import { WhoopWearLocationPicker } from "./WhoopWearLocationPicker.tsx";
 
@@ -218,9 +217,6 @@ export function ProviderDetailPage() {
     }
     await runSyncJob({ sinceDate: rangeStartDate, untilDate: rangeEndDate });
   }, [rangeEndDate, rangeStartDate, runSyncJob]);
-  // Disconnect
-  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
-  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [reconnectModal, setReconnectModal] = useState<
     "credential" | "garmin" | "token" | "whoop" | null
   >(null);
@@ -299,13 +295,6 @@ export function ProviderDetailPage() {
       window.removeEventListener("message", onMessage);
     };
   }, [trpcUtils]);
-
-  const handleDisconnect = useCallback(async () => {
-    await disconnectMutation.mutateAsync({ providerId });
-    trpcUtils.sync.providers.invalidate();
-    trpcUtils.sync.providerStats.invalidate();
-    setShowDisconnectConfirm(false);
-  }, [providerId, disconnectMutation, trpcUtils]);
 
   if (providers.isLoading && providers.data === undefined) {
     return (
@@ -464,14 +453,6 @@ export function ProviderDetailPage() {
               phone with your WHOOP nearby to stream RR intervals and orientation data.
             </p>
           </div>
-          <ProviderDisconnectControl
-            canDisconnect={Boolean(provider?.authorized)}
-            showConfirm={showDisconnectConfirm}
-            isPending={disconnectMutation.isPending}
-            onOpenConfirm={() => setShowDisconnectConfirm(true)}
-            onConfirm={handleDisconnect}
-            onCancel={() => setShowDisconnectConfirm(false)}
-          />
         </section>
       )}
 
@@ -586,14 +567,6 @@ export function ProviderDetailPage() {
                     Re-authorize
                   </button>
                 )}
-              <ProviderDisconnectControl
-                canDisconnect={Boolean(provider?.authorized)}
-                showConfirm={showDisconnectConfirm}
-                isPending={disconnectMutation.isPending}
-                onOpenConfirm={() => setShowDisconnectConfirm(true)}
-                onConfirm={handleDisconnect}
-                onCancel={() => setShowDisconnectConfirm(false)}
-              />
             </div>
           </div>
           {syncStatus === "syncing" ? (
@@ -662,8 +635,10 @@ export function ProviderDetailPage() {
         stats={providerStats}
       />
 
-      <ProviderDataDeleteControl
+      <ProviderDangerZone
+        canDisconnect={Boolean(provider?.authorized)}
         providerId={providerId}
+        providerName={provider?.name ?? formatProviderName(providerId)}
         additionalOperations={
           syncStatus === "syncing"
             ? [

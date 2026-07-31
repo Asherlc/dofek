@@ -2,6 +2,14 @@
 
 Provider deletion is an asynchronous, generation-fenced workflow. It does not publish one broker event per stored metric. The API records one durable deletion request, and a BullMQ worker writes bounded batches of exact-ID tombstones directly to ClickHouse.
 
+Disconnect and data deletion are separate operations. Disconnect removes the
+provider connection, OAuth token, and webhook secret, stops future syncs, and
+retains imported records. **Delete All Data** removes the provider's imported
+records through the workflow below without changing whether the provider is
+connected. The canonical implementations are
+[`deleteProviderAuthorization`](../src/db/tokens.ts) and
+[`requestProviderDataDeletion`](../packages/server/src/repositories/provider-detail-repository.ts).
+
 ## Industry Terms
 
 | Term | Meaning in Dofek |

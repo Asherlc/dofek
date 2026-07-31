@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
+const mockCaptureException = vi.fn();
+
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: {
@@ -59,13 +64,20 @@ describe("refitAllParams", () => {
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
     expect(result).not.toBeNull();
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
     expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
     expect(result.trainingImpulseConstants).toBeNull();
     expect(result.fittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(result.successfulFitAt).toEqual({
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    });
   });
 
   it("calls execute for data queries and save", async () => {
@@ -114,7 +126,7 @@ describe("refitAllParams", () => {
     // Should not throw — individual failures are caught
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
     expect(result).not.toBeNull();
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
   });
 
   it("fittedAt is a valid ISO timestamp", async () => {
@@ -143,14 +155,44 @@ describe("refitAllParams", () => {
 
     // Should still return params despite save failure
     expect(result).not.toBeNull();
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Failed to save params"));
+  });
+
+  it("reports a failure to load existing params with operational context", async () => {
+    mockLoggerError.mockClear();
+    mockCaptureException.mockClear();
+    let callCount = 0;
+    const loadError = new Error("Load failed");
+    const db = {
+      execute: vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 4) return Promise.reject(loadError);
+        return Promise.resolve([]);
+      }),
+    };
+
+    await refitAllParams(db, "user-1", createMockSensorStore());
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      `[personalization] Failed to load existing params: ${loadError}`,
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(loadError, {
+      tags: { context: "personalization-load-existing" },
+    });
   });
 
   it("preserves existing fitted params when a refit has insufficient data", async () => {
     const existingParams = {
-      version: 1,
+      version: 2,
       fittedAt: "2026-01-01T00:00:00.000Z",
+      successfulFitAt: {
+        exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
+        readinessWeights: null,
+        sleepTarget: "2025-12-20T00:00:00.000Z",
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      },
       exponentialMovingAverage: {
         chronicTrainingLoadDays: 35,
         acuteTrainingLoadDays: 8,
@@ -169,6 +211,184 @@ describe("refitAllParams", () => {
     expect(result.exponentialMovingAverage).toEqual(existingParams.exponentialMovingAverage);
     expect(result.sleepTarget).toEqual(existingParams.sleepTarget);
     expect(result.fittedAt).not.toBe(existingParams.fittedAt);
+    expect(result.successfulFitAt?.exponentialMovingAverage).toBe(
+      existingParams.successfulFitAt.exponentialMovingAverage,
+    );
+    expect(result.successfulFitAt?.sleepTarget).toBe(existingParams.successfulFitAt.sleepTarget);
+  });
+
+  it("preserves every successful fit timestamp when fulfilled refits return no fit", async () => {
+    const successfulFitAt = {
+      exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
+      readinessWeights: "2025-12-16T00:00:00.000Z",
+      sleepTarget: "2025-12-17T00:00:00.000Z",
+      stressThresholds: "2025-12-18T00:00:00.000Z",
+      trainingImpulseConstants: "2025-12-19T00:00:00.000Z",
+    };
+    const existingParams = {
+      version: 2,
+      fittedAt: "2026-01-01T00:00:00.000Z",
+      successfulFitAt,
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    };
+    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
+
+    expect(result.successfulFitAt).toEqual(successfulFitAt);
+  });
+
+  it("preserves every successful fit timestamp when all refits reject", async () => {
+    const successfulFitAt = {
+      exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
+      readinessWeights: "2025-12-16T00:00:00.000Z",
+      sleepTarget: "2025-12-17T00:00:00.000Z",
+      stressThresholds: "2025-12-18T00:00:00.000Z",
+      trainingImpulseConstants: "2025-12-19T00:00:00.000Z",
+    };
+    const existingParams = {
+      version: 2,
+      fittedAt: "2026-01-01T00:00:00.000Z",
+      successfulFitAt,
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    };
+    let dbCallCount = 0;
+    const db = {
+      execute: vi.fn().mockImplementation(() => {
+        dbCallCount++;
+        if (dbCallCount === 1) return Promise.reject(new Error("Fitter query failed"));
+        if (dbCallCount === 2) return Promise.resolve([{ value: existingParams }]);
+        return Promise.resolve([]);
+      }),
+    };
+    const sensorStore = {
+      query: vi.fn().mockRejectedValue(new Error("Sensor fitter query failed")),
+    };
+
+    const result = await refitAllParams(db, "user-1", sensorStore);
+
+    expect(result.successfulFitAt).toEqual(successfulFitAt);
+  });
+
+  it("uses null successful fit timestamps for legacy params after insufficient refits", async () => {
+    const existingParams = {
+      version: 1,
+      fittedAt: "2026-01-01T00:00:00.000Z",
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    };
+    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
+
+    expect(result.successfulFitAt).toEqual({
+      exponentialMovingAverage: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    });
+  });
+
+  it("records the attempt timestamp for a newly accepted fit", async () => {
+    const exponentialMovingAverageRows = generateExponentialMovingAverageRows(180);
+    const db = createMockDb([[], [], [], [], [], []]);
+
+    const result = await refitAllParams(
+      db,
+      "user-1",
+      createMockSensorStore([exponentialMovingAverageRows]),
+    );
+
+    expect(result.exponentialMovingAverage).not.toBeNull();
+    expect(result.successfulFitAt?.exponentialMovingAverage).toBe(result.fittedAt);
+    expect(result.successfulFitAt?.readinessWeights).toBeNull();
+  });
+
+  it("records the same attempt timestamp when every fitter accepts a new fit", async () => {
+    const accepted = {
+      exponentialMovingAverage: {
+        chronicTrainingLoadDays: 42,
+        acuteTrainingLoadDays: 7,
+        sampleCount: 120,
+        correlation: 0.8,
+      },
+      readinessWeights: {
+        hrv: 0.4,
+        restingHr: 0.2,
+        sleep: 0.2,
+        respiratoryRate: 0.2,
+        sampleCount: 90,
+        correlation: 0.7,
+      },
+      sleepTarget: { minutes: 480, sampleCount: 30 },
+      stressThresholds: {
+        hrvThresholds: [-1.8, -1.1, -0.4] satisfies [number, number, number],
+        rhrThresholds: [1.8, 1.1, 0.4] satisfies [number, number, number],
+        sampleCount: 90,
+      },
+      trainingImpulseConstants: {
+        genderFactor: 0.64,
+        exponent: 1.92,
+        sampleCount: 30,
+        r2: 0.9,
+      },
+    };
+    vi.doMock("./fit-ewma.ts", () => ({
+      fitExponentialMovingAverage: vi.fn(() => accepted.exponentialMovingAverage),
+    }));
+    vi.doMock("./fit-readiness-weights.ts", () => ({
+      fitReadinessWeights: vi.fn(() => accepted.readinessWeights),
+    }));
+    vi.doMock("./fit-sleep-target.ts", () => ({
+      fitSleepTarget: vi.fn(() => accepted.sleepTarget),
+    }));
+    vi.doMock("./fit-stress-thresholds.ts", () => ({
+      fitStressThresholds: vi.fn(() => accepted.stressThresholds),
+    }));
+    vi.doMock("./fit-trimp.ts", () => ({
+      fitTrainingImpulseConstants: vi.fn(() => accepted.trainingImpulseConstants),
+    }));
+
+    try {
+      vi.resetModules();
+      const { refitAllParams: refitWithAcceptedFits } = await import("./refit.ts");
+      const { personalizedParamsSchema } = await import("./params.ts");
+      const result = await refitWithAcceptedFits(
+        createMockDb([[], [], [], [], []]),
+        "user-1",
+        createMockSensorStore(),
+      );
+
+      expect(result).toMatchObject(accepted);
+      const successfulFitAt = {
+        exponentialMovingAverage: result.fittedAt,
+        readinessWeights: result.fittedAt,
+        sleepTarget: result.fittedAt,
+        stressThresholds: result.fittedAt,
+        trainingImpulseConstants: result.fittedAt,
+      };
+      expect(result.successfulFitAt).toEqual(successfulFitAt);
+      expect(personalizedParamsSchema.parse(result).successfulFitAt).toEqual(successfulFitAt);
+    } finally {
+      vi.doUnmock("./fit-ewma.ts");
+      vi.doUnmock("./fit-readiness-weights.ts");
+      vi.doUnmock("./fit-sleep-target.ts");
+      vi.doUnmock("./fit-stress-thresholds.ts");
+      vi.doUnmock("./fit-trimp.ts");
+      vi.resetModules();
+    }
   });
 
   it("handles all fitters rejecting simultaneously", async () => {
@@ -178,7 +398,7 @@ describe("refitAllParams", () => {
 
     // Promise.allSettled catches all rejections
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
     expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
@@ -206,12 +426,30 @@ describe("refitAllParams", () => {
     expect(result.trainingImpulseConstants).toBeNull();
   });
 
-  it("version is always 1", async () => {
+  it("writes the current personalization schema version", async () => {
     const db = createMockDb([[], [], [], [], []]);
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
   });
 });
+
+function generateExponentialMovingAverageRows(count: number): Record<string, unknown>[] {
+  let chronicLoad = 0;
+  let acuteLoad = 0;
+
+  return Array.from({ length: count }, (_, index) => {
+    const dailyLoad = 50 + 30 * Math.sin(index / 14) + ((index * 17) % 20);
+    chronicLoad += (dailyLoad - chronicLoad) / 42;
+    acuteLoad += (dailyLoad - acuteLoad) / 7;
+    const trainingStressBalance = chronicLoad - acuteLoad;
+
+    return {
+      date: new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10),
+      daily_load: dailyLoad,
+      avg_performance: 200 + trainingStressBalance * 2,
+    };
+  });
+}
 
 // --- parseExponentialMovingAverageRows ---
 
