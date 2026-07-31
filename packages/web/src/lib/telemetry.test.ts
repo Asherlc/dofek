@@ -6,12 +6,16 @@ const mocks = vi.hoisted(() => {
   const mockCaptureException = vi.fn();
   const mockBrowserTracingIntegration = vi.fn(() => ({ name: "BrowserTracing" }));
   const mockPostHogCaptureException = vi.fn();
+  const mockPostHogIdentify = vi.fn();
+  const mockPostHogReset = vi.fn();
 
   return {
     mockInit,
     mockCaptureException,
     mockBrowserTracingIntegration,
     mockPostHogCaptureException,
+    mockPostHogIdentify,
+    mockPostHogReset,
   };
 });
 
@@ -24,6 +28,8 @@ vi.mock("@sentry/react", () => ({
 vi.mock("posthog-js", () => ({
   default: {
     captureException: mocks.mockPostHogCaptureException,
+    identify: mocks.mockPostHogIdentify,
+    reset: mocks.mockPostHogReset,
   },
 }));
 
@@ -85,5 +91,43 @@ describe("web telemetry", () => {
     expect(mocks.mockPostHogCaptureException).toHaveBeenCalledWith(error, {
       "react.component_stack": "<App>",
     });
+  });
+
+  it("identifies the authenticated user with durable person properties", async () => {
+    const mod = await import("./telemetry.ts");
+
+    mod.identifyUser({
+      id: "user-123",
+      name: "Alice Example",
+      email: "alice@example.com",
+    });
+
+    expect(mocks.mockPostHogIdentify).toHaveBeenCalledWith("user-123", {
+      email: "alice@example.com",
+      name: "Alice Example",
+    });
+  });
+
+  it("preserves a nullable email when identifying the user", async () => {
+    const mod = await import("./telemetry.ts");
+
+    mod.identifyUser({
+      id: "user-456",
+      name: "Private User",
+      email: null,
+    });
+
+    expect(mocks.mockPostHogIdentify).toHaveBeenCalledWith("user-456", {
+      email: null,
+      name: "Private User",
+    });
+  });
+
+  it("resets the browser identity", async () => {
+    const mod = await import("./telemetry.ts");
+
+    mod.resetUser();
+
+    expect(mocks.mockPostHogReset).toHaveBeenCalledOnce();
   });
 });

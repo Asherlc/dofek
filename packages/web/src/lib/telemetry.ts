@@ -8,6 +8,12 @@ const TRACE_PROPAGATION_TARGETS = [/^\/api/, /^\/auth/, /^\/callback/];
 
 let initialized = false;
 
+export type TelemetryUser = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
 export function initTelemetry() {
   if (initialized) {
     return;
@@ -29,4 +35,15 @@ export function initTelemetry() {
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
   Sentry.captureException(error, { extra: context });
   posthog.captureException(error, context);
+}
+
+export function identifyUser(user: TelemetryUser): void {
+  posthog.identify(user.id, {
+    email: user.email,
+    name: user.name,
+  });
+}
+
+export function resetUser(): void {
+  posthog.reset();
 }

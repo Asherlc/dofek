@@ -85,20 +85,20 @@ function createLogProcessors(): BatchLogRecordProcessor[] {
   return processors;
 }
 
-type PostHogUser = {
+type TelemetryUser = {
   id: string;
   email: string | null;
   name: string;
 };
 
-export function identifyPostHogUser(user: PostHogUser): void {
+export function identifyUser(user: TelemetryUser): void {
   posthogClient?.identify(user.id, {
     email: user.email,
     name: user.name,
   });
 }
 
-export function resetPostHogUser(): void {
+export function resetUser(): void {
   posthogClient?.reset();
 }
 

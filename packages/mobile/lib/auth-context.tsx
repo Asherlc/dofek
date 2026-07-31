@@ -21,7 +21,7 @@ import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { isSecureStoreAccessibilityError } from "./secure-store-access";
 import { SERVER_URL } from "./server";
 import { finishStartupPhase, startStartupPhase } from "./startup-telemetry";
-import { captureException } from "./telemetry";
+import { captureException, identifyUser, resetUser } from "./telemetry";
 
 interface AuthState {
   /** The authenticated user, or null if not logged in. */
@@ -90,8 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(currentUser);
         setBootstrapError(null);
         startupOutcome = "authenticated";
-        const { identifyPostHogUser } = await import("./telemetry");
-        identifyPostHogUser(currentUser);
+        identifyUser(currentUser);
       } else {
         await clearSessionToken();
         setUser(null);
@@ -148,8 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(currentUser);
     setBootstrapError(null);
     if (currentUser) {
-      const { identifyPostHogUser } = await import("./telemetry");
-      identifyPostHogUser(currentUser);
+      identifyUser(currentUser);
     }
   }, []);
 
@@ -171,8 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         await clearSessionToken();
       }
-      const { resetPostHogUser } = await import("./telemetry");
-      resetPostHogUser();
+      resetUser();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
     }

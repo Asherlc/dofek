@@ -1,5 +1,4 @@
 import posthog from "posthog-js";
-import type { AuthUser } from "./auth.ts";
 
 const API_KEY = "phc_GsvyihTLSXrWGKYYGz84m44nuT59kYEwEXNnI0JICtg";
 const API_HOST = "https://us.i.posthog.com";
@@ -19,15 +18,4 @@ export function initPostHog() {
 
 export function capturePageView() {
   posthog.capture("$pageview");
-}
-
-export function identifyPostHogUser(user: AuthUser): void {
-  posthog.identify(user.id, {
-    email: user.email,
-    name: user.name,
-  });
-}
-
-export function resetPostHogUser(): void {
-  posthog.reset();
 }
