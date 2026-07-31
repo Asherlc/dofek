@@ -1,5 +1,6 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { useState } from "react";
 import { z } from "zod";
 import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
@@ -138,6 +139,7 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...parsedReport.data,
               decisionSupport: parsedReport.data.decisionSupport ?? null,
+              emptyState: createReportEmptyState("weekly"),
             }}
           />
         </SharedReportShell>
@@ -154,6 +156,7 @@ function SharedHealthReport({ token }: { token: string }) {
             data={{
               ...parsedReport.data,
               decisionSupport: parsedReport.data.decisionSupport ?? null,
+              emptyState: createReportEmptyState("monthly"),
             }}
           />
         </SharedReportShell>

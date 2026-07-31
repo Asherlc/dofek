@@ -2,6 +2,7 @@
 
 import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { describe, expect, it } from "vitest";
 import { MonthlyReportContent } from "./MonthlyReportContent.tsx";
 
@@ -41,6 +42,7 @@ describe("MonthlyReportContent", () => {
             whatToTryNext: ["Repeat the routine next month."],
             confidenceAndMissingData: ["Confidence is limited."],
           },
+          emptyState: createReportEmptyState("monthly"),
         }}
       />,
     );
