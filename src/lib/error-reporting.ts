@@ -5,7 +5,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function flattenCaptureContext(captureContext?: CaptureContext): Record<string, unknown> {
+function flattenCaptureContext(captureContext?: unknown): Record<string, unknown> {
   if (!captureContext) {
     return {};
   }
@@ -46,6 +46,8 @@ function flattenCaptureContext(captureContext?: CaptureContext): Record<string, 
 
   return properties;
 }
+
+export { flattenCaptureContext };
 
 /**
  * Reports an exception to Sentry and PostHog error tracking.

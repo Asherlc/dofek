@@ -1,5 +1,5 @@
-import Transport from "winston-transport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Transport from "winston-transport";
 
 const otelMocks = vi.hoisted(() => ({
   createTransport: () =>
@@ -126,7 +126,12 @@ describe("logger OTel transport", () => {
   it("formats console transport output with level and message", async () => {
     const { logger } = await import("./logger.ts");
     const transport = logger.transports[0];
-    const formatted = transport.format?.transform({
+    expect(transport?.format).toBeDefined();
+    if (!transport?.format) {
+      return;
+    }
+
+    const formatted = transport.format.transform({
       level: "info",
       message: "hello world",
       [Symbol.for("level")]: "info",

@@ -66,7 +66,7 @@ describe("captureException dual reporting", () => {
     captureException(error, {
       tags: { source: "test", ignored: 42 },
       extra: { userId: "user-1" },
-      contexts: { runtime: { name: "node" } },
+      contexts: { runtime: { name: "node", version: "20" } },
       fingerprint: ["sync", "failure"],
       level: "warning",
     });
@@ -77,7 +77,7 @@ describe("captureException dual reporting", () => {
       expect.objectContaining({
         tag_source: "test",
         userId: "user-1",
-        contexts: { runtime: { name: "node" } },
+        contexts: { runtime: { name: "node", version: "20" } },
         fingerprint: ["sync", "failure"],
         level: "warning",
       }),
@@ -88,55 +88,40 @@ describe("captureException dual reporting", () => {
       expect.objectContaining({ tag_ignored: 42 }),
     );
   });
+});
 
-  it("maps string and function capture contexts for PostHog", async () => {
-    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
-    const { initProductionPostHog } = await import("./posthog.ts");
-    const { captureException } = await import("./error-reporting.ts");
-
-    initProductionPostHog();
-    const error = new Error("context variants");
-
-    captureException(error, "hint");
-    expect(posthogMocks.captureException).toHaveBeenLastCalledWith(error, "dofek-server", {
-      captureContext: "string",
-    });
-
-    captureException(error, () => undefined);
-    expect(posthogMocks.captureException).toHaveBeenLastCalledWith(error, "dofek-server", {
-      captureContext: "function",
-    });
+describe("flattenCaptureContext", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
   });
 
-  it("ignores non-record capture contexts for PostHog", async () => {
-    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
-    const { initProductionPostHog } = await import("./posthog.ts");
-    const { captureException } = await import("./error-reporting.ts");
+  it("flattens string and function contexts", async () => {
+    const { flattenCaptureContext } = await import("./error-reporting.ts");
 
-    initProductionPostHog();
-    const error = new Error("invalid context");
-
-    captureException(error, null as unknown as undefined);
-    expect(posthogMocks.captureException).toHaveBeenCalledWith(error, "dofek-server", {});
+    expect(flattenCaptureContext("hint")).toEqual({ captureContext: "string" });
+    expect(flattenCaptureContext(() => undefined)).toEqual({ captureContext: "function" });
   });
 
-  it("skips non-string tag values and non-record context sections", async () => {
-    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
-    const { initProductionPostHog } = await import("./posthog.ts");
-    const { captureException } = await import("./error-reporting.ts");
+  it("ignores null and other non-record contexts", async () => {
+    const { flattenCaptureContext } = await import("./error-reporting.ts");
 
-    initProductionPostHog();
-    const error = new Error("partial context");
+    expect(flattenCaptureContext(null)).toEqual({});
+    expect(flattenCaptureContext(undefined)).toEqual({});
+  });
 
-    captureException(error, {
-      tags: ["ignored"] as unknown as Record<string, string>,
-      extra: "ignored" as unknown as Record<string, unknown>,
-      contexts: "ignored" as unknown as Record<string, unknown>,
-      fingerprint: "ignored" as unknown as string[],
-      level: 1 as unknown as "warning",
-    });
+  it("skips invalid nested context sections", async () => {
+    const { flattenCaptureContext } = await import("./error-reporting.ts");
 
-    expect(posthogMocks.captureException).toHaveBeenCalledWith(error, "dofek-server", {});
+    expect(
+      flattenCaptureContext({
+        tags: ["ignored"],
+        extra: "ignored",
+        contexts: "ignored",
+        fingerprint: "ignored",
+        level: 1,
+      }),
+    ).toEqual({});
   });
 });
 
