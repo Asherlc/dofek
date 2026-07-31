@@ -40,42 +40,59 @@ public class HealthKitModule: Module {
     )
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private var observerSyncInProgress = false
-    // Lazy so the expiration closure can capture self after stored properties finish
-    // initializing. Swift serializes lazy initialization, and first access only happens
-    // from observer callbacks / complete* after the module is fully constructed.
-    private lazy var observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
-        timeout: 25,
-        reportExpiration: { [weak self] expiration in
-            guard let self else {
-                return
-            }
-            if self.observerSyncInProgress {
-                let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
-                breadcrumb.message =
-                    "Observer update expired while JavaScript sync was still running"
-                breadcrumb.data = [
-                    "updateId": expiration.updateId,
-                    "typeIdentifier": expiration.typeIdentifier,
-                    "ageMilliseconds": expiration.ageMilliseconds,
-                ]
-                SentrySDK.addBreadcrumb(breadcrumb)
-                return
-            }
-            SentrySDK.capture(
-                error: NSError(
-                    domain: "com.dofek.healthkit-observer",
-                    code: 1,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "HealthKit observer update expired before JavaScript sync completed",
+    private let observerUpdateCoordinatorLock = NSLock()
+    private var observerUpdateCoordinator: HealthKitObserverUpdateCoordinator?
+
+    private func makeObserverUpdateCoordinator() -> HealthKitObserverUpdateCoordinator {
+        HealthKitObserverUpdateCoordinator(
+            timeout: 25,
+            reportExpiration: { [weak self] expiration in
+                guard let self else {
+                    return
+                }
+                if self.observerSyncInProgress {
+                    let breadcrumb = Breadcrumb(level: .info, category: "healthkit.observer")
+                    breadcrumb.message =
+                        "Observer update expired while JavaScript sync was still running"
+                    breadcrumb.data = [
                         "updateId": expiration.updateId,
                         "typeIdentifier": expiration.typeIdentifier,
                         "ageMilliseconds": expiration.ageMilliseconds,
                     ]
+                    SentrySDK.addBreadcrumb(breadcrumb)
+                    return
+                }
+                SentrySDK.capture(
+                    error: NSError(
+                        domain: "com.dofek.healthkit-observer",
+                        code: 1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "HealthKit observer update expired before JavaScript sync completed",
+                            "updateId": expiration.updateId,
+                            "typeIdentifier": expiration.typeIdentifier,
+                            "ageMilliseconds": expiration.ageMilliseconds,
+                        ]
+                    )
                 )
-            )
+            }
+        )
+    }
+
+    private func observerUpdateCoordinatorInstance() -> HealthKitObserverUpdateCoordinator {
+        observerUpdateCoordinatorLock.lock()
+        defer { observerUpdateCoordinatorLock.unlock() }
+        if let existing = observerUpdateCoordinator {
+            return existing
         }
-    )
+        let created = makeObserverUpdateCoordinator()
+        observerUpdateCoordinator = created
+        return created
+    }
+
+    private func ensureObserverUpdateCoordinatorInitialized() {
+        observerUpdateCoordinatorInstance()
+    }
     private var observerQueries: [HKObserverQuery] = []
 
     @discardableResult
@@ -84,7 +101,7 @@ public class HealthKitModule: Module {
             healthStore.stop(query)
         }
         observerQueries.removeAll()
-        return observerUpdateCoordinator.completeAll()
+        return observerUpdateCoordinatorInstance().completeAll()
     }
 
     private func rejectPromise(_ promise: Promise, code: String, reason: String) {
@@ -115,6 +132,10 @@ public class HealthKitModule: Module {
 
         OnDestroy {
             _ = self.stopBackgroundObservers()
+        }
+
+        OnCreate {
+            self.ensureObserverUpdateCoordinatorInitialized()
         }
 
         Function("isAvailable") {
@@ -825,6 +846,9 @@ public class HealthKitModule: Module {
                 return
             }
 
+            // Initialize before observer callbacks or JS completion paths can access concurrently.
+            self.ensureObserverUpdateCoordinatorInitialized()
+
             // Re-registration must settle every callback owned by the old queries.
             self.stopBackgroundObservers()
 
@@ -858,7 +882,7 @@ public class HealthKitModule: Module {
                         return
                     }
 
-                    let updateId = self.observerUpdateCoordinator.register(
+                    let updateId = self.observerUpdateCoordinatorInstance().register(
                         typeIdentifier: sampleType.identifier,
                         completion: completionHandler
                     )
@@ -924,7 +948,7 @@ public class HealthKitModule: Module {
                     updateIds.count
                 )
             }
-            return self.observerUpdateCoordinator.complete(updateIds: updateIds)
+            return self.observerUpdateCoordinatorInstance().complete(updateIds: updateIds)
         }
 
         Function("teardownBackgroundObservers") { () -> Int in
