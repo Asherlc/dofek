@@ -13,11 +13,10 @@ function emitBrowserLog(level: LogLevel, category: string, message: string, data
 }
 
 /**
- * Structured browser logger that mirrors console output and forwards logs to PostHog.
+ * Structured browser logger that forwards logs to PostHog and mirrors warnings/errors to the console.
  */
 export const logger = {
   info(category: string, message: string, data?: Record<string, unknown>) {
-    console.log(`[${category}] ${message}`);
     emitBrowserLog("info", category, message, data);
   },
   warn(category: string, message: string, data?: Record<string, unknown>) {
