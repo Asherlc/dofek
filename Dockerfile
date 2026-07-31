@@ -7,14 +7,13 @@ COPY package.json ./
 # Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.14.6-alpine3.24 AS dbt-tools
+FROM python:3.13.8-alpine3.20 AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
     dbt-core==1.12.0 \
     dbt-clickhouse==1.10.1 \
     sqlfluff==4.2.2 \
-    sqlfluff-templater-dbt==4.2.2 \
-    mashumaro==3.17
+    sqlfluff-templater-dbt==4.2.2
 
 # ── Native FIT decoder: CMake + vcpkg ────────────────────────────────
 FROM alpine:3.24 AS fit-decoder-build
@@ -118,11 +117,11 @@ ENV SENTRY_RELEASE=${COMMIT_HASH}
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates libbz2 libstdc++
-COPY --from=dbt-tools /usr/local/bin/python3.14 /usr/local/bin/python3.14
+COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
 COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
-COPY --from=dbt-tools /usr/local/lib/python3.14 /usr/local/lib/python3.14
-COPY --from=dbt-tools /usr/local/lib/libpython3.14.so* /usr/local/lib/
+COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
 COPY --from=fit-decoder-build /src/.build/fit-decoder/bin/dofek-fit-decoder /usr/local/bin/
 
 COPY --from=source --chown=node:node /app/src ./src
