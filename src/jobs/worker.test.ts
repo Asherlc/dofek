@@ -254,6 +254,11 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock("../lib/posthog.ts", () => ({
+  initProductionPostHog: vi.fn(),
+  capturePostHogException: vi.fn(),
+}));
+
 vi.mock("../logger.ts", () => ({
   jobContext: { run: vi.fn((_store: unknown, fn: () => unknown) => fn()) },
   logger: {
@@ -424,13 +429,15 @@ describe("worker module", () => {
     expect(lastWorkerRun).toBeLessThan(readinessListen);
   });
 
-  it("initializes Sentry when DSN is set", async () => {
+  it("initializes Sentry and PostHog when DSN is set", async () => {
     const Sentry = await import("@sentry/node");
+    const { initProductionPostHog } = await import("../lib/posthog.ts");
     expect(Sentry.init).toHaveBeenCalledWith({
       dsn: "https://test@sentry.io/123",
       environment: "production",
       skipOpenTelemetrySetup: true,
     });
+    expect(initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
   });
 
   it("registers standard handlers plus FIT progress observers", () => {
