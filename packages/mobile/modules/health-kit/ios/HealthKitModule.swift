@@ -39,7 +39,7 @@ public class HealthKitModule: Module {
         anchorStore: HealthKitAnchorStore(userDefaults: .standard)
     )
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
-    private let observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
+    private lazy var observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
         timeout: 25,
         reportExpiration: { [weak self] expiration in
             guard let self else {

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { weeklyReportEmptyState } from "../lib/report-empty-states.ts";
 import { WeeklyReportCard } from "./WeeklyReportCard";
 
 const meta = {
@@ -50,6 +51,7 @@ const meta = {
           "These period averages can show co-movement, but they cannot establish cause and effect.",
         ],
       },
+      emptyState: weeklyReportEmptyState,
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;
@@ -72,6 +74,7 @@ export const Empty: Story = {
     data: {
       current: null,
       history: [],
+      decisionSupport: null,
       emptyState: {
         reportKind: "weekly",
         title: "Your weekly report will appear here",
