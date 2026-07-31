@@ -1,5 +1,5 @@
-import { captureException } from "@sentry/node";
 import { Kafka } from "kafkajs";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { type MetricStreamRedpandaEvent, metricStreamRedpandaEventSchema } from "./events.ts";
 import {

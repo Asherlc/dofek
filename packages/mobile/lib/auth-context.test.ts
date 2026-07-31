@@ -22,6 +22,8 @@ const { mockStartStartupPhase, mockFinishStartupPhase } = vi.hoisted(() => ({
 
 vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
+  identifyUser: vi.fn(),
+  resetUser: vi.fn(),
 }));
 
 vi.mock("./startup-telemetry", () => ({

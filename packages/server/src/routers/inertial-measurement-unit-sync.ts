@@ -1,5 +1,5 @@
 import { SpanStatusCode, trace } from "@opentelemetry/api";
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 import { InertialMeasurementUnitSyncRepository } from "../repositories/inertial-measurement-unit-sync-repository.ts";
@@ -104,7 +104,7 @@ export const inertialMeasurementUnitSyncRouter = router({
           if (error instanceof Error) {
             span.recordException(error);
           }
-          Sentry.captureException(error, { tags: { source: "imu-push-samples" } });
+          captureException(error, { tags: { source: "imu-push-samples" } });
           throw error;
         } finally {
           span.end();

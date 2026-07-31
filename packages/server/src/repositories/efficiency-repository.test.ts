@@ -1,6 +1,6 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { computePolarizationIndex } from "@dofek/zones/zones";
-import * as Sentry from "@sentry/node";
+import { captureException as reportException } from "dofek/lib/error-reporting";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { ChartRange } from "../lib/chart-range.ts";
@@ -8,7 +8,7 @@ import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { EfficiencyRepository } from "./efficiency-repository.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(() => "event-id"),
 }));
 
@@ -364,14 +364,14 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const sensorStore = makeSequentialSensorStore([[], []]);
     const { repo } = makeRepositoryWithSensorStore(sensorStore);
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
-    const captureException = vi.mocked(Sentry.captureException);
-    captureException.mockClear();
+    const mockReportException = vi.mocked(reportException);
+    mockReportException.mockClear();
 
     const result = await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(result).toEqual({ maxHr: null, activities: [] });
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(captureException).not.toHaveBeenCalled();
+    expect(mockReportException).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
   });
@@ -385,13 +385,13 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       .mockRejectedValueOnce(diagnosticError); // sample diagnostic fails → caught by .catch()
     const { repo, execute } = makeRepositoryWithSensorStore(sensorStore);
     execute.mockResolvedValueOnce([{ max_hr: 190, endurance_activities: 1 }]);
-    const captureException = vi.mocked(Sentry.captureException);
-    captureException.mockClear();
+    const mockReportException = vi.mocked(reportException);
+    mockReportException.mockClear();
 
     const result = await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(result).toEqual({ maxHr: null, activities: [] });
-    expect(captureException).toHaveBeenCalledWith(diagnosticError);
+    expect(mockReportException).toHaveBeenCalledWith(diagnosticError);
   });
 
   it("maps rows to AerobicEfficiencyActivity objects", async () => {

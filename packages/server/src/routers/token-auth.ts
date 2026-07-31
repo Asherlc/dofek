@@ -2,10 +2,10 @@ import {
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
-import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { connectProviderWithTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";

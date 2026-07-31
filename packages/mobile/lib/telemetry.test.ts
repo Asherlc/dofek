@@ -36,6 +36,16 @@ vi.mock("@sentry/react-native", () => ({
   addBreadcrumb: mocks.mockAddBreadcrumb,
 }));
 
+const posthogMocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  flush: vi.fn().mockResolvedValue(undefined),
+  register: vi.fn(),
+}));
+
+vi.mock("posthog-react-native", () => ({
+  default: vi.fn().mockImplementation(() => posthogMocks),
+}));
+
 vi.mock("@opentelemetry/sdk-logs", () => ({
   LoggerProvider: mocks.mockLoggerProvider,
   BatchLogRecordProcessor: mocks.mockBatchLogRecordProcessor,

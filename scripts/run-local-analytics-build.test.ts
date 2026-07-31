@@ -1,11 +1,11 @@
 import { fileURLToPath } from "node:url";
-import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import type { AnalyticsMicrobatchQueryClient } from "../src/processing/analytics-microbatch-bounds.ts";
 import { runLocalAnalyticsBuild } from "./run-local-analytics-build.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../src/lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
 }));
 vi.mock("../src/db/clickhouse.ts", () => ({
@@ -29,7 +29,7 @@ describe("runLocalAnalyticsBuild", () => {
 
     try {
       await expect(import("./run-local-analytics-build.ts")).rejects.toBe(initializationError);
-      expect(Sentry.captureException).toHaveBeenCalledWith(initializationError);
+      expect(captureException).toHaveBeenCalledWith(initializationError);
     } finally {
       process.argv[1] = originalScriptPath;
     }

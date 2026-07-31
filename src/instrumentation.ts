@@ -1,11 +1,50 @@
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { BatchLogRecordProcessor, type LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { POSTHOG_API_KEY, POSTHOG_LOGS_URL } from "./lib/posthog-config.ts";
+
+function isProductionDeployment(environment: string | undefined): boolean {
+  return environment === "prod" || environment === "production";
+}
+
+function createLogRecordProcessors(env: Record<string, string | undefined>): LogRecordProcessor[] {
+  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
+  const hasAxiomLogExport = Boolean(endpoint || logsEndpoint);
+  const hasPostHogLogExport = isProductionDeployment(env.DEPLOY_ENVIRONMENT);
+
+  const processors: LogRecordProcessor[] = [];
+
+  if (hasAxiomLogExport) {
+    processors.push(
+      new BatchLogRecordProcessor({
+        exporter: new OTLPLogExporter(),
+      }),
+    );
+  }
+
+  if (hasPostHogLogExport) {
+    processors.push(
+      new BatchLogRecordProcessor({
+        exporter: new OTLPLogExporter({
+          url: POSTHOG_LOGS_URL,
+          headers: {
+            Authorization: `Bearer ${POSTHOG_API_KEY}`,
+          },
+        }),
+      }),
+    );
+  }
+
+  return processors;
+}
 
 /**
  * Starts OpenTelemetry instrumentation when OTLP export env vars are set.
@@ -16,21 +55,24 @@ export function startInstrumentation(
 ): NodeSDK | undefined {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
-  const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
   const metricsEndpoint = env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
   const hasTraceExport = Boolean(endpoint || tracesEndpoint);
-  const hasLogExport = Boolean(endpoint || logsEndpoint);
+  const logRecordProcessors = createLogRecordProcessors(env);
+  const hasLogExport = logRecordProcessors.length > 0;
   const hasMetricExport = Boolean(endpoint || metricsEndpoint);
   if (!hasTraceExport && !hasLogExport && !hasMetricExport) {
     return undefined;
   }
 
+  const serviceName = env.OTEL_SERVICE_NAME ?? "dofek";
+
   const sdk = new NodeSDK({
+    resource: resourceFromAttributes({
+      [ATTR_SERVICE_NAME]: serviceName,
+    }),
     spanProcessors: hasTraceExport ? [new BatchSpanProcessor(new OTLPTraceExporter())] : [],
-    logRecordProcessors: hasLogExport
-      ? [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })]
-      : [],
+    logRecordProcessors,
     metricReader: hasMetricExport
       ? new PeriodicExportingMetricReader({
           exporter: new OTLPMetricExporter(),

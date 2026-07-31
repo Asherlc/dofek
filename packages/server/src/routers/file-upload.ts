@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import {
@@ -26,6 +25,7 @@ import {
   createImportUploadStorageFromEnv,
   type ImportUploadStorage,
 } from "dofek/file-upload-storage";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -347,7 +347,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
                 multipartUploadId,
               );
             } catch (abortError) {
-              Sentry.captureException(abortError, {
+              captureException(abortError, {
                 tags: { source: "file-upload-initiate", operation: "abortMultipartUpload" },
                 extra: { uploadId: upload.id, multipartUploadId },
               });

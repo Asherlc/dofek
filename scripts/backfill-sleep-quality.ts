@@ -5,6 +5,7 @@ import {
   backfillSleepQuality,
   type SleepQualityBackfillOptions,
 } from "../src/db/sleep-quality-backfill.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 const MAXIMUM_WINDOW_MILLISECONDS = 31 * 24 * 60 * 60 * 1_000;
 
@@ -77,7 +78,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       await db.$client.end();
     }
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     throw error;
   } finally {
     await Sentry.close(2_000);

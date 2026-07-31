@@ -1,7 +1,7 @@
 import { randomBytes, randomInt } from "node:crypto";
-import * as Sentry from "@sentry/node";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import {
   type CompanionConnectionType,
@@ -462,7 +462,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       }
       return parsed.data;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingId: id } });
+      captureException(error, { extra: { companionPairingId: id } });
       await client.del(pairingKey(id));
       return null;
     }
@@ -525,7 +525,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
   }
@@ -559,7 +559,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
   }
@@ -589,7 +589,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
   }

@@ -5,7 +5,6 @@ import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import * as Sentry from "@sentry/node";
 import yauzl from "yauzl";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -13,6 +12,7 @@ import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ParsedFitSession } from "../fit/parser.ts";
 import type { FitFileImportJobData } from "../jobs/queues.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { ImportProvider, SyncError } from "./types.ts";
 
@@ -208,7 +208,7 @@ async function reportGarminDumpProgress(
     await options.onProgress({ percentage, message });
   } catch (error) {
     logger.warn("Failed to report Garmin dump progress: %s", error);
-    Sentry.captureException(error, { tags: { garminDumpStep: "progress" } });
+    captureException(error, { tags: { garminDumpStep: "progress" } });
   }
 }
 

@@ -1,7 +1,7 @@
-import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { selectedDateRangeInput } from "../lib/date-window.ts";

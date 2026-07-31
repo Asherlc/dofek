@@ -78,7 +78,7 @@ vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -129,12 +129,12 @@ vi.mock("dofek/db", () => ({
 }));
 
 import type { AddressInfo } from "node:net";
-import * as Sentry from "@sentry/node";
 import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { loadTokens } from "dofek/db/tokens";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
@@ -910,7 +910,7 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/settings");
-      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(captureException).toHaveBeenCalledWith(cacheError);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining("Failed to invalidate linked-accounts cache"),
       );
@@ -1777,7 +1777,7 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/api/auth/providers");
       expect(res.status).toBe(500);
       expect(res.body).toContain("Failed to initialize auth provider broken");
-      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalled();
     });
 
     it("returns 500 when provider listing throws", async () => {
@@ -1788,7 +1788,7 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/api/auth/providers");
       expect(res.status).toBe(500);
       expect(res.body).toContain("Registry error");
-      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalled();
     });
   });
 
@@ -2742,7 +2742,7 @@ describe("createAuthRouter", () => {
         expect(createSession).not.toHaveBeenCalled();
         await expect(pendingStore.get(token)).resolves.not.toBeNull();
         expect(vi.getTimerCount()).toBe(0);
-        expect(Sentry.captureException).toHaveBeenCalledWith(
+        expect(captureException).toHaveBeenCalledWith(
           expect.objectContaining({
             name: "PendingEmailSignupClaimRenewalError",
             message: "Pending email signup claim renewal failed",
@@ -2755,7 +2755,7 @@ describe("createAuthRouter", () => {
           "[auth] Pending signup claim renewal failed",
         );
         expect(vi.mocked(logger.error)).toHaveBeenCalledOnce();
-        expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(
+        expect(JSON.stringify(vi.mocked(captureException).mock.calls)).not.toContain(
           "sensitive Redis command failure",
         );
         expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(
@@ -3103,7 +3103,7 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(500);
       expect(releaseSpy).not.toHaveBeenCalled();
-      expect(Sentry.captureException).toHaveBeenCalledWith(loadError);
+      expect(captureException).toHaveBeenCalledWith(loadError);
     });
 
     it("reports a claim release failure without hiding the completion error", async () => {
@@ -3121,10 +3121,10 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(500);
       expect(releaseSpy).toHaveBeenCalledOnce();
-      expect(Sentry.captureException).toHaveBeenCalledWith(releaseError, {
+      expect(captureException).toHaveBeenCalledWith(releaseError, {
         tags: { context: "pending-email-signup-release" },
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(completionError);
+      expect(captureException).toHaveBeenCalledWith(completionError);
       expect(logger.error).toHaveBeenCalledWith(
         "[auth] Releasing pending signup claim failed: Error: claim release unavailable",
       );
@@ -4595,7 +4595,7 @@ describe("createAuthRouter", () => {
         expect.stringContaining("DB connection lost"),
         expect.objectContaining({ err: expect.any(Error) }),
       );
-      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+      expect(captureException).toHaveBeenCalledWith(expect.any(Error));
       expect(mockExchangeCode).not.toHaveBeenCalled();
     });
   });

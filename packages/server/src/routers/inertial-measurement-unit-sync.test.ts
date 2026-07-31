@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -25,7 +25,7 @@ const { mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -96,7 +96,7 @@ function makeSample(
 
 describe("inertialMeasurementUnitSyncRouter", () => {
   beforeEach(() => {
-    vi.mocked(Sentry.captureException).mockReset();
+    vi.mocked(captureException).mockReset();
     mockSpan.end.mockReset();
     mockSpan.recordException.mockReset();
     mockSpan.setAttributes.mockReset();
@@ -537,7 +537,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         message: expect.stringContaining("ensureProvider(apple_motion) failed"),
         cause: dbError,
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(ensureError, {
+      expect(captureException).toHaveBeenCalledWith(ensureError, {
         tags: { source: "imu-push-samples" },
       });
       expect(mockSpan.recordException).toHaveBeenCalledWith(ensureError);
@@ -567,7 +567,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       ).rejects.toThrow("redpanda offline");
 
-      expect(Sentry.captureException).toHaveBeenCalledWith(publishError, {
+      expect(captureException).toHaveBeenCalledWith(publishError, {
         tags: { source: "imu-push-samples" },
       });
       expect(mockSpan.setStatus).toHaveBeenCalledWith({
@@ -596,7 +596,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       ).rejects.toThrow("string error");
 
-      expect(Sentry.captureException).toHaveBeenCalledWith("string error", {
+      expect(captureException).toHaveBeenCalledWith("string error", {
         tags: { source: "imu-push-samples" },
       });
       expect(mockSpan.recordException).not.toHaveBeenCalled();
@@ -624,7 +624,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         message: expect.stringContaining("ensureProvider(apple_motion) failed"),
         cause: stringError,
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(ensureError, {
+      expect(captureException).toHaveBeenCalledWith(ensureError, {
         tags: { source: "imu-push-samples" },
       });
       expect(mockSpan.recordException).toHaveBeenCalledWith(ensureError);

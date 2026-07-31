@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
@@ -61,7 +61,7 @@ class PendingEmailSignupClaimRenewal {
       .then(() => this.#store.renew(this.#claim))
       .catch((_error: unknown) => {
         const renewalFailure = new PendingEmailSignupClaimRenewalError();
-        Sentry.captureException(renewalFailure, {
+        captureException(renewalFailure, {
           tags: { context: "pending-email-signup-renewal" },
         });
         this.#failure = renewalFailure;
@@ -192,7 +192,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       try {
         await getPendingEmailSignupStoreRef().release(pendingClaim);
       } catch (releaseError: unknown) {
-        Sentry.captureException(releaseError, {
+        captureException(releaseError, {
           tags: { context: "pending-email-signup-release" },
         });
         logger.error(`[auth] Releasing pending signup claim failed: ${releaseError}`);
@@ -201,7 +201,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     if (err instanceof PendingEmailSignupClaimRenewalError) {
       logger.error("[auth] Pending signup claim renewal failed");
     } else {
-      Sentry.captureException(err);
+      captureException(err);
       logger.error(`[auth] Completing signup failed: ${err}`);
     }
     res.status(500).send("Signup failed — please try again");

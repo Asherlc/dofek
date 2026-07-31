@@ -50,12 +50,12 @@ vi.mock("dofek/lib/cache", () => ({
   },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
-import * as Sentry from "@sentry/node";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
 import { FoodEntryRepository } from "./food-entry-repository.ts";
@@ -314,7 +314,7 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Try describing what you ate"),
         }),
       );
-      expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect(captureException).toHaveBeenCalledWith(
         analysisError,
         expect.objectContaining({
           contexts: {
@@ -413,7 +413,7 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Please try again"),
         }),
       );
-      expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect(captureException).toHaveBeenCalledWith(
         lookupError,
         expect.objectContaining({
           contexts: {
@@ -596,7 +596,7 @@ describe("bot.ts — registerHandlers", () => {
         },
       });
 
-      expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect(captureException).toHaveBeenCalledWith(
         lookupError,
         expect.objectContaining({
           contexts: {
@@ -1136,7 +1136,7 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Please try again"),
         }),
       );
-      expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect(captureException).toHaveBeenCalledWith(
         refinementError,
         expect.objectContaining({
           contexts: {
@@ -1379,7 +1379,7 @@ describe("bot.ts — registerHandlers", () => {
             text: expect.stringContaining("Failed to save"),
           }),
         );
-        expect(Sentry.captureException).toHaveBeenCalledWith(progressError);
+        expect(captureException).toHaveBeenCalledWith(progressError);
       } finally {
         confirmSpy.mockRestore();
         loadSummarySpy.mockRestore();
@@ -1742,7 +1742,7 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Please try confirming"),
         }),
       );
-      expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect(captureException).toHaveBeenCalledWith(
         confirmError,
         expect.objectContaining({
           contexts: {
@@ -1782,7 +1782,7 @@ describe("bot.ts — registerHandlers", () => {
         client: { chat: { update: vi.fn() } },
       });
 
-      expect(Sentry.captureException).toHaveBeenCalledWith(confirmError, {
+      expect(captureException).toHaveBeenCalledWith(confirmError, {
         contexts: {
           slack: {
             eventType: "action",
@@ -1840,7 +1840,7 @@ describe("bot.ts — registerHandlers", () => {
             text: expect.not.stringContaining("Nothing was saved"),
           }),
         );
-        expect(Sentry.captureException).toHaveBeenCalledWith(
+        expect(captureException).toHaveBeenCalledWith(
           updateError,
           expect.objectContaining({
             contexts: {
@@ -2345,7 +2345,7 @@ describe("bot.ts — registerHandlers", () => {
           thread_ts: "1700000000.000000",
         }),
       );
-      expect(Sentry.captureException).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
     });
 
     it("finds user by user_profile email", async () => {

@@ -1,9 +1,9 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
 import { deleteProviderAuthorization } from "dofek/db/tokens";
 import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema } from "../lib/operation-progress.ts";
@@ -85,7 +85,7 @@ async function revokeTokensOnDisconnect(
         logger.warn(
           `[disconnect] Custom revocation failed for ${providerId}, falling back to standard OAuth revocation: ${message}`,
         );
-        Sentry.captureException(customError);
+        captureException(customError);
       }
     }
 
@@ -99,7 +99,7 @@ async function revokeTokensOnDisconnect(
         } catch (accessError) {
           const message = accessError instanceof Error ? accessError.message : String(accessError);
           logger.warn(`[disconnect] Access token revocation failed for ${providerId}: ${message}`);
-          Sentry.captureException(accessError);
+          captureException(accessError);
         }
       }
       if (tokens.refreshToken) {
@@ -109,14 +109,14 @@ async function revokeTokensOnDisconnect(
           const message =
             refreshError instanceof Error ? refreshError.message : String(refreshError);
           logger.warn(`[disconnect] Refresh token revocation failed for ${providerId}: ${message}`);
-          Sentry.captureException(refreshError);
+          captureException(refreshError);
         }
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`[disconnect] Remote token revocation failed for ${providerId}: ${message}`);
-    Sentry.captureException(error);
+    captureException(error);
   }
 }
 
@@ -295,7 +295,7 @@ export const providerDetailRouter = router({
           getProviderDataDeletionQueue().getJob(input.operationId),
         );
       } catch (error: unknown) {
-        Sentry.captureException(error, { tags: { operation: "providerDataDeletionStatus" } });
+        captureException(error, { tags: { operation: "providerDataDeletionStatus" } });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Unable to check provider data deletion progress",

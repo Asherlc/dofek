@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
   freshMutationResults: false,
 }));
 
-vi.mock("@sentry/react", () => ({ captureException: mocks.captureException }));
+vi.mock("../lib/telemetry.ts", () => ({ captureException: mocks.captureException }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/providers/strong-csv">{children}</a>,

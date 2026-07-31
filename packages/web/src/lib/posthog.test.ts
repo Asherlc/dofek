@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { capturePageView, identifyPostHogUser, initPostHog, resetPostHogUser } from "./posthog.ts";
+import { capturePageView, initPostHog } from "./posthog.ts";
 
 vi.mock("posthog-js", () => ({
   default: {
@@ -48,6 +48,20 @@ describe("initPostHog", () => {
       expect.objectContaining({ capture_pageleave: true }),
     );
   });
+
+  it("enables exception autocapture", () => {
+    initPostHog();
+    expect(posthog.init).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        capture_exceptions: {
+          capture_unhandled_errors: true,
+          capture_unhandled_rejections: true,
+          capture_console_errors: true,
+        },
+      }),
+    );
+  });
 });
 
 describe("capturePageView", () => {
@@ -64,49 +78,5 @@ describe("capturePageView", () => {
     capturePageView();
     expect(posthog.capture).toHaveBeenCalledTimes(1);
     expect(posthog.capture).toHaveBeenCalledWith("$pageview");
-  });
-});
-
-describe("identifyPostHogUser", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("identifies the authenticated user with durable person properties", () => {
-    identifyPostHogUser({
-      id: "user-123",
-      name: "Alice Example",
-      email: "alice@example.com",
-    });
-
-    expect(posthog.identify).toHaveBeenCalledWith("user-123", {
-      email: "alice@example.com",
-      name: "Alice Example",
-    });
-  });
-
-  it("preserves a nullable email when identifying the user", () => {
-    identifyPostHogUser({
-      id: "user-456",
-      name: "Private User",
-      email: null,
-    });
-
-    expect(posthog.identify).toHaveBeenCalledWith("user-456", {
-      email: null,
-      name: "Private User",
-    });
-  });
-});
-
-describe("resetPostHogUser", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("resets the browser identity", () => {
-    resetPostHogUser();
-
-    expect(posthog.reset).toHaveBeenCalledOnce();
   });
 });
