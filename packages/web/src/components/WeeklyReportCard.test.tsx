@@ -15,7 +15,6 @@ describe("WeeklyReportCard", () => {
         data={{
           current: null,
           history: [],
-          decisionSupport: null,
           emptyState: {
             reportKind: "weekly",
             title: "Server weekly preview title",
@@ -27,6 +26,7 @@ describe("WeeklyReportCard", () => {
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "Server no-estimate note.",
           },
+          decisionSupport: null,
         }}
       />,
     );
