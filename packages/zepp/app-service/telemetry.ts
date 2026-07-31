@@ -1,6 +1,5 @@
 import { log as Logger } from "@zos/utils";
 import {
-  enqueueTelemetryException,
   captureException as reportException,
   restoreBufferedTelemetryEvents,
   serializeBufferedTelemetryEvents,
@@ -9,18 +8,20 @@ import { STORAGE_KEYS } from "../src/storage-keys.ts";
 
 const telemetryLogger = Logger.getLogger("telemetry");
 
-function persistBufferedTelemetry(): void {
-  settings.settingsStorage.setItem(
-    STORAGE_KEYS.TELEMETRY_BUFFER,
-    serializeBufferedTelemetryEvents(),
-  );
+function syncTelemetryBufferStorage(): void {
+  const serialized = serializeBufferedTelemetryEvents();
+  if (serialized === "[]") {
+    settings.settingsStorage.removeItem(STORAGE_KEYS.TELEMETRY_BUFFER);
+    return;
+  }
+  settings.settingsStorage.setItem(STORAGE_KEYS.TELEMETRY_BUFFER, serialized);
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}): void {
   telemetryLogger.error("captured exception %j", error);
-  enqueueTelemetryException(error, { ...context, source: "zepp-watch" });
-  persistBufferedTelemetry();
-  void reportException(error, { ...context, source: "zepp-watch" });
+  void reportException(error, { ...context, source: "zepp-watch" }).finally(() => {
+    syncTelemetryBufferStorage();
+  });
 }
 
 export function loadWatchTelemetryBuffer(): void {

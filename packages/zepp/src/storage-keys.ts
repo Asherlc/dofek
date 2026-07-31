@@ -23,6 +23,7 @@ export const STORAGE_KEYS = {
   HEALTH_SYNC_STATUS: "health_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
   TELEMETRY_BUFFER: "telemetry_buffer",
+  TELEMETRY_INSTALL_ID: "telemetry_install_id",
 } as const;
 
 export const DEFAULT_DOFEK_SERVER_URL = "https://dofek.asherlc.com";

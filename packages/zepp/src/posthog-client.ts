@@ -13,7 +13,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isNormalizedError(
+  value: unknown,
+): value is { message: string; name: string; stack?: string } {
+  return isRecord(value) && typeof value.message === "string" && typeof value.name === "string";
+}
+
 function normalizeError(error: unknown): { message: string; name: string; stack?: string } {
+  if (isNormalizedError(error)) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: typeof error.stack === "string" ? error.stack : undefined,
+    };
+  }
   if (error instanceof Error) {
     return {
       message: error.message,
@@ -46,7 +59,7 @@ export function enqueueTelemetryException(
   error: unknown,
   context: Record<string, unknown> = {},
 ): void {
-  queueEvent({ kind: "exception", payload: { error, context } });
+  queueEvent({ kind: "exception", payload: { error: normalizeError(error), context } });
 }
 
 export function enqueueTelemetryLog(
@@ -183,7 +196,7 @@ export async function captureException(
   try {
     await postCaptureEvent("$exception", distinctId, properties);
   } catch {
-    queueEvent({ kind: "exception", payload: { error, context } });
+    queueEvent({ kind: "exception", payload: { error: normalized, context } });
   }
 }
 

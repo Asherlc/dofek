@@ -43,14 +43,24 @@ function getRawString(value: Record<string, unknown>, key: string): string {
   return typeof raw === "string" ? raw : "";
 }
 
-function getTelemetryDistinctId(): string {
-  const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
-  if (apiToken) {
-    return `zepp:${apiToken.slice(0, 12)}`;
+function ensureTelemetryInstallId(): string {
+  const existing = settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID)?.trim();
+  if (existing) {
+    return existing;
   }
+  const installId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  settings.settingsStorage.setItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID, installId);
+  return installId;
+}
+
+function getTelemetryDistinctId(): string {
   const pairingId = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim();
   if (pairingId) {
     return `zepp-pairing:${pairingId}`;
+  }
+  const installId = settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID)?.trim();
+  if (installId) {
+    return `zepp-install:${installId}`;
   }
   return "zepp-side-unidentified";
 }
@@ -85,6 +95,7 @@ function getStoredServerUrl(): string {
 AppSideService(
   BaseSideService({
     onInit() {
+      ensureTelemetryInstallId();
       flushBufferedTelemetryFromWatch();
       settings.settingsStorage.addListener("change", ({ key, newValue }) => {
         this.handleSettingsChange(key, newValue);

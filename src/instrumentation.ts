@@ -32,6 +32,7 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
   }
 
   if (hasPostHogLogExport) {
+    // PostHog logs ingestion uses the HTTP OTLP exporter; Axiom uses the proto exporter above.
     processors.push(
       new BatchLogRecordProcessor({
         exporter: new OTLPLogExporterHttp({

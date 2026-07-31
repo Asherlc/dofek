@@ -29,7 +29,12 @@ const hasOtelLogExport =
   isProductionDeployment(process.env.DEPLOY_ENVIRONMENT);
 
 if (hasOtelLogExport) {
-  import("@opentelemetry/winston-transport").then(({ OpenTelemetryTransportV3 }) => {
-    logger.add(new OpenTelemetryTransportV3());
-  });
+  import("@opentelemetry/winston-transport")
+    .then(({ OpenTelemetryTransportV3 }) => {
+      logger.add(new OpenTelemetryTransportV3());
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to initialize Winston OTel transport: ${message}`);
+    });
 }
