@@ -10,11 +10,11 @@ RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack pre
 FROM python:3.14.6-alpine3.24 AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
-    dbt-core==1.11.12 \
+    dbt-core==1.12.0 \
     dbt-clickhouse==1.10.1 \
     sqlfluff==4.2.2 \
     sqlfluff-templater-dbt==4.2.2 \
-    mashumaro==3.14
+    mashumaro==3.17
 
 # ── Native FIT decoder: CMake + vcpkg ────────────────────────────────
 FROM alpine:3.24 AS fit-decoder-build
