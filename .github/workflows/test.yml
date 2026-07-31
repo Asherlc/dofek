@@ -211,7 +211,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=e2e
       - name: Scan server image (Grype)
         env:
-          GRYPE_IMAGE: anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
+          GRYPE_IMAGE: mirror.gcr.io/anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
         run: |
           for attempt in $(seq 1 5); do
             if docker pull "$GRYPE_IMAGE"; then

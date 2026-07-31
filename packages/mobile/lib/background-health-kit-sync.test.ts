@@ -734,6 +734,7 @@ describe("initBackgroundHealthKitSync", () => {
     const startingSyncCount = mockLoggerInfo.mock.calls.filter(
       ([, message]) => message === "Starting sync",
     ).length;
+    mockSetObserverSyncInProgress.mockClear();
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
@@ -741,12 +742,43 @@ describe("initBackgroundHealthKitSync", () => {
       updateId: "update-1",
     });
 
+    expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
     expect(
       mockLoggerInfo.mock.calls.filter(([, message]) => message === "Starting sync"),
     ).toHaveLength(startingSyncCount + 1);
     await vi.waitFor(() => {
       expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
     });
+  });
+
+  it("keeps observer sync in progress while catch-up is pending", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    const workoutSync = createDeferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(workoutSync.promise);
+    mockSetupBackgroundObservers.mockImplementationOnce(async () => {
+      const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+      listener({
+        typeIdentifier: "HKWorkoutTypeIdentifier",
+        updateId: "update-during-setup",
+      });
+      return true;
+    });
+    mockSetObserverSyncInProgress.mockClear();
+
+    const initPromise = initBackgroundHealthKitSync(client);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
+    expect(mockSetObserverSyncInProgress).not.toHaveBeenCalledWith(false);
+
+    await initPromise;
+    expect(mockSetObserverSyncInProgress).not.toHaveBeenCalledWith(false);
+
+    workoutSync.resolve({ inserted: 0 });
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-during-setup"], true);
+    });
+    vi.useRealTimers();
   });
 
   it("serializes observer updates and completes every callback once", async () => {

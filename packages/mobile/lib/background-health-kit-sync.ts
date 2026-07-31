@@ -213,7 +213,7 @@ async function drainSyncQueue(): Promise<void> {
     }
   } finally {
     syncing = undefined;
-    setObserverSyncInProgress(false);
+    setObserverSyncInProgress(pendingCatchUp !== undefined || pendingUpdates.size > 0);
   }
 
   await drainSyncQueue();
@@ -255,6 +255,7 @@ export async function initBackgroundHealthKitSync(
       typeIdentifier: event.typeIdentifier,
     });
     pendingUpdates.set(event.updateId, event.typeIdentifier);
+    setObserverSyncInProgress(true);
     void drainSyncQueue();
   });
 

@@ -37,6 +37,12 @@ final class HealthKitObserverUpdateCoordinator {
         self.reportExpiration = reportExpiration
     }
 
+    var hasPendingUpdates: Bool {
+        lock.withLock {
+            !pendingUpdates.isEmpty
+        }
+    }
+
     func register(typeIdentifier: String, completion: @escaping () -> Void) -> String {
         let updateId = UUID().uuidString
         let expiration = DispatchWorkItem { [weak self] in

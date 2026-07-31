@@ -1,8 +1,12 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { createReportEmptyState } from "dofek-server/report-empty-state";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { WeeklyReportCard } from "./WeeklyReportCard.tsx";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("WeeklyReportCard", () => {
   it("previews the server-owned weekly report structure without values", () => {
@@ -11,7 +15,6 @@ describe("WeeklyReportCard", () => {
         data={{
           current: null,
           history: [],
-          decisionSupport: null,
           emptyState: {
             reportKind: "weekly",
             title: "Server weekly preview title",
@@ -23,6 +26,7 @@ describe("WeeklyReportCard", () => {
             previewItems: ["Training time and activity count", "Average nightly sleep"],
             note: "Server no-estimate note.",
           },
+          decisionSupport: null,
         }}
       />,
     );

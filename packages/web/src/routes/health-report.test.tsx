@@ -47,17 +47,31 @@ vi.mock("../components/WeeklyReportCard.tsx", () => ({
     data?: {
       current: { weekStart: string } | null;
       decisionSupport?: { whatChanged: string[] } | null;
+      emptyState?: { title: string };
     };
   }) => (
     <div>
-      Weekly snapshot {data?.current?.weekStart} {data?.decisionSupport?.whatChanged[0]}
+      {data?.current
+        ? `Weekly snapshot ${data.current.weekStart} ${data.decisionSupport?.whatChanged[0] ?? ""}`
+        : `Weekly empty ${data?.emptyState?.title ?? "missing"}`}
     </div>
   ),
 }));
 
 vi.mock("../components/MonthlyReportContent.tsx", () => ({
-  MonthlyReportContent: ({ data }: { data?: { current: { monthStart: string } | null } }) => (
-    <div>Monthly snapshot {data?.current?.monthStart}</div>
+  MonthlyReportContent: ({
+    data,
+  }: {
+    data?: {
+      current: { monthStart: string } | null;
+      emptyState?: { title: string };
+    };
+  }) => (
+    <div>
+      {data?.current
+        ? `Monthly snapshot ${data.current.monthStart}`
+        : `Monthly empty ${data?.emptyState?.title ?? "missing"}`}
+    </div>
   ),
 }));
 
@@ -235,6 +249,70 @@ describe("health report route", () => {
 
     expect(mockGetShared).toHaveBeenCalledWith({ token: "monthly-token" });
     expect(screen.getByText("Monthly snapshot 2026-07-01")).toBeTruthy();
+  });
+
+  it("renders an empty weekly shared report from stored server empty state", () => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportData: {
+          ...weeklyReport.reportData,
+          current: null,
+          emptyState: {
+            reportKind: "weekly" as const,
+            title: "Server weekly preview title",
+            message: "Server weekly preview message.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
+            requirement: "Server weekly coverage requirement.",
+            previewTitle: "Server weekly structure",
+            previewItems: ["Training time and activity count", "Average nightly sleep"],
+            note: "Server no-estimate note.",
+          },
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("empty-weekly-token");
+
+    expect(screen.getByText("Weekly empty Server weekly preview title")).toBeTruthy();
+  });
+
+  it("renders an empty monthly shared report from stored server empty state", () => {
+    mockGetShared.mockReturnValue({
+      data: {
+        ...weeklyReport,
+        reportType: "monthly",
+        reportData: {
+          current: null,
+          history: [],
+          decisionSupport: null,
+          emptyState: {
+            reportKind: "monthly" as const,
+            title: "Server monthly preview title",
+            message: "Server monthly preview message.",
+            minimumObservedDays: 1,
+            acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
+            requirement: "Server monthly coverage requirement.",
+            previewTitle: "Server monthly structure",
+            previewItems: ["Average daily strain", "Month-over-month training and sleep changes"],
+            note: "Server no-estimate note.",
+          },
+          recovery: {
+            range: { startDate: "2026-07-01", endDate: "2026-07-31" },
+            emptyMessage: "No data found for this period.",
+          },
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute("empty-monthly-token");
+
+    expect(screen.getByText("Monthly empty Server monthly preview title")).toBeTruthy();
   });
 
   it("shows a loading state without falling back to owner management", () => {
