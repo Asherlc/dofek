@@ -63,14 +63,14 @@ function readModelColumns(name: string): string[] {
 // Rebuild the physical column order the migration produces for `table` by
 // walking its `MODIFY COLUMN <column> ... AFTER <anchor>` chain from the given
 // starting anchor.
+const MODIFY_COLUMN_PATTERN =
+  /ALTER TABLE analytics\.(\w+)\s+MODIFY COLUMN (\w+)[\s\S]*?AFTER (\w+)/;
+
 function repositionedOrder(statements: readonly string[], table: string, anchor: string): string[] {
   const nextColumnByAnchor = new Map<string, string>();
   for (const statement of statements) {
-    const match = statement.match(
-      new RegExp(`ALTER TABLE analytics\\.${table}\\s+MODIFY COLUMN (\\w+)[\\s\\S]*?AFTER (\\w+)`),
-    );
-    const [, column, columnAnchor] = match ?? [];
-    if (column && columnAnchor) {
+    const [, statementTable, column, columnAnchor] = statement.match(MODIFY_COLUMN_PATTERN) ?? [];
+    if (statementTable === table && column && columnAnchor) {
       nextColumnByAnchor.set(columnAnchor, column);
     }
   }
