@@ -4,7 +4,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
-import { isBackgroundHealthKitTransientNetworkError } from "./health-kit-errors";
+import { isBackgroundHealthKitTransientNetworkError, isHealthKitSentrySource } from "./health-kit-errors";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
 const OTEL_ENDPOINT: string | undefined = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
@@ -66,7 +66,17 @@ export function initTelemetry() {
     debug: __DEV__,
     beforeSend(event, hint) {
       const error = hint.originalException;
-      if (isBackgroundHealthKitTransientNetworkError(error)) {
+      if (!isBackgroundHealthKitTransientNetworkError(error)) {
+        return event;
+      }
+
+      const source =
+        typeof event.tags?.source === "string"
+          ? event.tags.source
+          : typeof event.extra?.source === "string"
+            ? event.extra.source
+            : undefined;
+      if (isHealthKitSentrySource(source)) {
         return null;
       }
       return event;
