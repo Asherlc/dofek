@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createClickHouseClientFromEnv } from "../clickhouse.ts";
+import { type ClickHouseClient, createClickHouseClientFromEnv } from "../clickhouse.ts";
 import { createMigration } from "./0067_repair_local_time_column_order.ts";
 
 const columnRowsSchema = z.array(z.object({ name: z.string() }));
@@ -99,7 +99,12 @@ const scratchTables = [
 
 describe("0067_repair_local_time_column_order", () => {
   const database = `repair_local_time_${randomUUID().replaceAll("-", "")}`;
-  const client = createClickHouseClientFromEnv();
+  let client: ClickHouseClient;
+
+  beforeAll(async () => {
+    client = createClickHouseClientFromEnv();
+    await client.command({ query: `CREATE DATABASE ${database}` });
+  });
 
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
@@ -118,9 +123,6 @@ describe("0067_repair_local_time_column_order", () => {
   }
 
   it("restores the model column order on serving tables that appended the columns", async () => {
-    await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
-    await client.command({ query: `CREATE DATABASE ${database}` });
-
     for (const table of scratchTables) {
       await client.command({
         query: `CREATE TABLE ${database}.${table.name} (
