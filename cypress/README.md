@@ -56,10 +56,18 @@ Cypress runs `cy.task()` handlers in the Node process rather than in the browser
 
 ## Running Tests
 
-Use the full lifecycle after Dockerfile, migration, analytics-model, or seeded-state changes:
+Use the full lifecycle after Dockerfile, migration, analytics-model, or seeded-state changes. It
+creates the deterministic review fixture, copies its relational and sensor inputs into ClickHouse,
+builds the analytics models, and then runs the browser suite:
 
 ```bash
 pnpm e2e:web
+```
+
+Run the review-stack canonical-ID smoke test by itself when the stack is already available:
+
+```bash
+pnpm e2e:web -- --spec cypress/e2e/review-stack.cy.ts
 ```
 
 Reuse an existing E2E stack for repeated runs:

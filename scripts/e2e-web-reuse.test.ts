@@ -69,7 +69,7 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         (command) => command.command === "pnpm" && command.arguments.includes("compose"),
       );
 
-      expect(composeCommands).toHaveLength(6);
+      expect(composeCommands).toHaveLength(10);
       expect(
         composeCommands.every((command) =>
           command.arguments
@@ -78,7 +78,21 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
             .startsWith("compose -- --project-suffix e2e -f docker-compose.e2e.yml"),
         ),
       ).toBe(true);
+      expect(composeCommands.map((command) => command.arguments.at(-1))).toEqual([
+        "redpanda",
+        "migrate",
+        "migrate",
+        "seed",
+        "seed",
+        "review-seed-clickhouse",
+        "review-seed-clickhouse",
+        "analytics",
+        "analytics",
+        "server",
+      ]);
       expect(commands.filter((command) => command.command === "docker")).toEqual([
+        { command: "docker", arguments: ["wait", "one-shot-container"] },
+        { command: "docker", arguments: ["wait", "one-shot-container"] },
         { command: "docker", arguments: ["wait", "one-shot-container"] },
         { command: "docker", arguments: ["wait", "one-shot-container"] },
       ]);

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
-function runScript(script: string): number {
-  const result = spawnSync("pnpm", [script], { stdio: "inherit" });
+function runScript(script: string, args: string[] = []): number {
+  const result = spawnSync("pnpm", [script, ...args], { stdio: "inherit" });
   if (result.error) {
     console.error(`Failed to start pnpm ${script}: ${result.error.message}`);
     return 1;
@@ -15,7 +15,8 @@ function runScript(script: string): number {
 
 let firstStatus = runScript("e2e:web:up");
 if (firstStatus === 0) {
-  firstStatus = runScript("e2e:web:run");
+  const cypressArguments = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
+  firstStatus = runScript("e2e:web:run", cypressArguments);
 }
 
 const teardownStatus = runScript("e2e:web:down");

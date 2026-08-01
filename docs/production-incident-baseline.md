@@ -21384,3 +21384,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Future append-incremental serving columns must
   be added with an explicit `AFTER` clause; the new order-equality test guards
   the three current tables.
+
+## 2026-08-01 — Concurrent workspace Docker resources block #2199 validation
+
+- **Status:** Unresolved local infrastructure issue; no production impact.
+- **Symptoms:** `pnpm e2e:web -- --spec cypress/e2e/review-stack.cy.ts` remained
+  at Docker build step 45/126 for approximately seven minutes while another
+  workspace was running a concurrent cold build. The focused integration command
+  then failed before tests started with `failed to create network
+  issue-2199_default: Error response from daemon: all predefined address pools
+  have been fully subnetted`.
+- **User impact:** The new browser smoke test and the existing real-database
+  activity suites could not complete locally. No application service started
+  and no production data or service was affected.
+- **Evidence:** The first failure came from
+  `pnpm test:integration -- packages/server/src/routers/activity-dedup.integration.test.ts packages/server/src/repositories/activity-visibility-consistency.integration.test.ts`
+  through the repository Compose wrapper. The E2E build showed concurrent
+  `issue-2199-e2e` and another workspace build sharing Docker Desktop's builder.
+- **Root cause:** The shared Docker Desktop environment is exhausted both at
+  the builder/resource layer and in its predefined network address pools by
+  concurrent workspace stacks; this is not a repository test assertion failure.
+- **Fix / mitigation:** Stopped only the stalled #2199 E2E command and ran
+  `pnpm e2e:web:down` plus the default-project scoped Compose teardown. No other
+  workspace resources were removed or pruned.
+- **Validation:** The review-stack Compose file passes `config --quiet`; the
+  focused lifecycle tests pass all 6 tests. The live E2E and database suites
+  remain unvalidated locally until Docker resources and network pools are
+  reclaimed.
+- **Remaining risk / follow-up:** Run the focused E2E and integration commands
+  in a Docker environment with available builder capacity and project networks;
+  CI remains the next executable validation of the seeded browser path.

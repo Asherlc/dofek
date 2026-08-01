@@ -49,6 +49,8 @@ const upOnly = process.argv.includes(upOnlyFlag);
 
 dockerCompose(["up", "-d", "--wait", "--no-build", "db", "clickhouse", "redis", "redpanda"]);
 runOneShotService("migrate");
+runOneShotService("seed");
+runOneShotService("review-seed-clickhouse");
 runOneShotService("analytics");
 dockerCompose(["up", "-d", "--wait", "--no-build", "server"]);
 
