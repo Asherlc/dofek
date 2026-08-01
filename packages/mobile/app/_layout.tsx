@@ -161,9 +161,15 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
   return null;
 }
 
-function TelemetryRouteSync({ isAuthenticated }: { isAuthenticated: boolean }) {
+function TelemetryRouteSync({
+  isAuthenticated,
+  isLoading,
+}: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}) {
   const pathname = usePathname();
-  const telemetryRoute = isAuthenticated ? pathname : "/login";
+  const telemetryRoute = isLoading || isAuthenticated ? pathname : "/login";
 
   useEffect(() => {
     setTelemetryRoute(telemetryRoute);
@@ -403,7 +409,7 @@ function AuthGate() {
   if (isLoading) {
     return (
       <>
-        <TelemetryRouteSync isAuthenticated={Boolean(user)} />
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} isLoading />
         <View style={styles.loading}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
@@ -414,7 +420,7 @@ function AuthGate() {
   if (bootstrapError) {
     return (
       <>
-        <TelemetryRouteSync isAuthenticated={Boolean(user)} />
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} isLoading={false} />
         <View style={styles.authError}>
           <Text style={styles.authErrorTitle}>Could not verify your session</Text>
           <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
@@ -447,7 +453,7 @@ function AuthGate() {
   if (!user) {
     return (
       <>
-        <TelemetryRouteSync isAuthenticated={false} />
+        <TelemetryRouteSync isAuthenticated={false} isLoading={false} />
         <LoginScreen />
       </>
     );
@@ -456,7 +462,7 @@ function AuthGate() {
   // Step 3: Authenticated — show the app
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <TelemetryRouteSync isAuthenticated />
+      <TelemetryRouteSync isAuthenticated isLoading={false} />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
         <MedicationReminderNotificationListener />

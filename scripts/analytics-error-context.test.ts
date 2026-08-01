@@ -125,4 +125,29 @@ describe("buildAnalyticsFailureCaptureContext", () => {
       fingerprint: ["query-cache-warm", "unknown", "unknown"],
     });
   });
+
+  it("fingerprints a process failure without model artifacts by exit code", () => {
+    const error = new AnalyticsBuildError(
+      2,
+      [
+        createAnalyticsBuildFailure({
+          name: "provider_stats_downstream",
+          status: "skipped",
+          errorCode: null,
+          message: "depends on failed model",
+        }),
+      ],
+      "process-failed",
+    );
+    const tags = { analyticsRefreshStep: "analytics-build" as const };
+
+    expect(buildAnalyticsFailureCaptureContext(error, tags)).toEqual({
+      tags: {
+        analyticsRefreshStep: "analytics-build",
+        analyticsFailureCategory: "process-failed",
+        analyticsProcessExitCode: "2",
+      },
+      fingerprint: ["analytics-build", "process-failed", "2"],
+    });
+  });
 });

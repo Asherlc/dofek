@@ -20,6 +20,51 @@ vi.mock("../src/db/index.ts", () => ({
   createDatabaseFromEnv: vi.fn(),
 }));
 
+const TEST_MICROBATCH_BOUNDS = {
+  sensor_scalar_sample_begin: "2025-02-03",
+  deduped_sensor_begin: "2025-02-03",
+  activity_sensor_sample_begin: "2025-02-03",
+  activity_location_sample_begin: "2025-04-05",
+} as const;
+
+type TestArtifactModel = {
+  uniqueId: string;
+  name: string;
+  status: "success" | "error" | "skipped";
+  executionTime: number;
+  message: string | null;
+};
+
+function createArtifactReader(invocationId: string, models: readonly TestArtifactModel[]) {
+  const nodes = Object.fromEntries(
+    models.map((model) => [
+      model.uniqueId,
+      {
+        unique_id: model.uniqueId,
+        name: model.name,
+        resource_type: "model",
+      },
+    ]),
+  );
+  const results = models.map((model) => ({
+    unique_id: model.uniqueId,
+    status: model.status,
+    execution_time: model.executionTime,
+    message: model.message,
+  }));
+
+  return async (name: "manifest.json" | "run_results.json"): Promise<unknown> =>
+    name === "manifest.json"
+      ? {
+          metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json" },
+          nodes,
+        }
+      : {
+          metadata: { invocation_id: invocationId },
+          results,
+        };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -49,42 +94,21 @@ describe("runAnalyticsBuild", () => {
   it("records every selected model result before returning success", async () => {
     const runDbt = vi.fn(async () => 0);
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
-    const readArtifact = vi.fn(async (name: string) => {
-      if (name === "manifest.json") {
-        return {
-          metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json" },
-          nodes: {
-            "model.dofek.provider_stats": {
-              unique_id: "model.dofek.provider_stats",
-              name: "provider_stats",
-              resource_type: "model",
-            },
-          },
-        };
-      }
-      return {
-        metadata: { invocation_id: "dbt-run-1" },
-        results: [
-          {
-            unique_id: "model.dofek.provider_stats",
-            status: "success",
-            execution_time: 1,
-            message: null,
-          },
-        ],
-      };
-    });
+    const readArtifact = createArtifactReader("dbt-run-1", [
+      {
+        uniqueId: "model.dofek.provider_stats",
+        name: "provider_stats",
+        status: "success",
+        executionTime: 1,
+        message: null,
+      },
+    ]);
 
     await expect(
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: {
-          sensor_scalar_sample_begin: "2025-02-03",
-          deduped_sensor_begin: "2025-02-03",
-          activity_sensor_sample_begin: "2025-02-03",
-          activity_location_sample_begin: "2025-04-05",
-        },
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
         runDbt,
         readArtifact,
         recordRun,
@@ -119,38 +143,17 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: {
-          sensor_scalar_sample_begin: "2025-02-03",
-          deduped_sensor_begin: "2025-02-03",
-          activity_sensor_sample_begin: "2025-02-03",
-          activity_location_sample_begin: "2025-04-05",
-        },
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
         runDbt: async () => 1,
-        readArtifact: async (name) =>
-          name === "manifest.json"
-            ? {
-                metadata: {
-                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
-                },
-                nodes: {
-                  "model.dofek.provider_stats": {
-                    unique_id: "model.dofek.provider_stats",
-                    name: "provider_stats",
-                    resource_type: "model",
-                  },
-                },
-              }
-            : {
-                metadata: { invocation_id: "dbt-run-2" },
-                results: [
-                  {
-                    unique_id: "model.dofek.provider_stats",
-                    status: "error",
-                    execution_time: 1,
-                    message: "database error",
-                  },
-                ],
-              },
+        readArtifact: createArtifactReader("dbt-run-2", [
+          {
+            uniqueId: "model.dofek.provider_stats",
+            name: "provider_stats",
+            status: "error",
+            executionTime: 1,
+            message: "database error",
+          },
+        ]),
         recordRun,
       }),
     ).rejects.toMatchObject({
@@ -176,38 +179,17 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: {
-          sensor_scalar_sample_begin: "2025-02-03",
-          deduped_sensor_begin: "2025-02-03",
-          activity_sensor_sample_begin: "2025-02-03",
-          activity_location_sample_begin: "2025-04-05",
-        },
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
         runDbt: async () => 0,
-        readArtifact: async (name) =>
-          name === "manifest.json"
-            ? {
-                metadata: {
-                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
-                },
-                nodes: {
-                  "model.dofek.provider_stats": {
-                    unique_id: "model.dofek.provider_stats",
-                    name: "provider_stats",
-                    resource_type: "model",
-                  },
-                },
-              }
-            : {
-                metadata: { invocation_id: "dbt-run-combined-failure" },
-                results: [
-                  {
-                    unique_id: "model.dofek.provider_stats",
-                    status: "error",
-                    execution_time: 1,
-                    message: "database error",
-                  },
-                ],
-              },
+        readArtifact: createArtifactReader("dbt-run-combined-failure", [
+          {
+            uniqueId: "model.dofek.provider_stats",
+            name: "provider_stats",
+            status: "error",
+            executionTime: 1,
+            message: "database error",
+          },
+        ]),
         recordRun,
       }),
     ).rejects.toMatchObject({
@@ -225,38 +207,17 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: {
-          sensor_scalar_sample_begin: "2025-02-03",
-          deduped_sensor_begin: "2025-02-03",
-          activity_sensor_sample_begin: "2025-02-03",
-          activity_location_sample_begin: "2025-04-05",
-        },
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
         runDbt: async () => 0,
-        readArtifact: async (name) =>
-          name === "manifest.json"
-            ? {
-                metadata: {
-                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
-                },
-                nodes: {
-                  "model.dofek.provider_stats": {
-                    unique_id: "model.dofek.provider_stats",
-                    name: "provider_stats",
-                    resource_type: "model",
-                  },
-                },
-              }
-            : {
-                metadata: { invocation_id: "dbt-run-processing-failure" },
-                results: [
-                  {
-                    unique_id: "model.dofek.provider_stats",
-                    status: "success",
-                    execution_time: 1,
-                    message: null,
-                  },
-                ],
-              },
+        readArtifact: createArtifactReader("dbt-run-processing-failure", [
+          {
+            uniqueId: "model.dofek.provider_stats",
+            name: "provider_stats",
+            status: "success",
+            executionTime: 1,
+            message: null,
+          },
+        ]),
         recordRun,
       }),
     ).rejects.toThrow(
@@ -271,49 +232,24 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats", "provider_stats_downstream"],
         artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: {
-          sensor_scalar_sample_begin: "2025-02-03",
-          deduped_sensor_begin: "2025-02-03",
-          activity_sensor_sample_begin: "2025-02-03",
-          activity_location_sample_begin: "2025-04-05",
-        },
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
         runDbt: async () => 1,
-        readArtifact: async (name) =>
-          name === "manifest.json"
-            ? {
-                metadata: {
-                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
-                },
-                nodes: {
-                  "model.dofek.provider_stats": {
-                    unique_id: "model.dofek.provider_stats",
-                    name: "provider_stats",
-                    resource_type: "model",
-                  },
-                  "model.dofek.provider_stats_downstream": {
-                    unique_id: "model.dofek.provider_stats_downstream",
-                    name: "provider_stats_downstream",
-                    resource_type: "model",
-                  },
-                },
-              }
-            : {
-                metadata: { invocation_id: "dbt-run-3" },
-                results: [
-                  {
-                    unique_id: "model.dofek.provider_stats",
-                    status: "error",
-                    execution_time: 1,
-                    message: "Code: 159 TIMEOUT_EXCEEDED",
-                  },
-                  {
-                    unique_id: "model.dofek.provider_stats_downstream",
-                    status: "skipped",
-                    execution_time: 0,
-                    message: "depends on failed model",
-                  },
-                ],
-              },
+        readArtifact: createArtifactReader("dbt-run-3", [
+          {
+            uniqueId: "model.dofek.provider_stats",
+            name: "provider_stats",
+            status: "error",
+            executionTime: 1,
+            message: "Code: 159 TIMEOUT_EXCEEDED",
+          },
+          {
+            uniqueId: "model.dofek.provider_stats_downstream",
+            name: "provider_stats_downstream",
+            status: "skipped",
+            executionTime: 0,
+            message: "depends on failed model",
+          },
+        ]),
         recordRun,
       }),
     ).rejects.toMatchObject({
@@ -330,38 +266,17 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: {
-          sensor_scalar_sample_begin: "2025-02-03",
-          deduped_sensor_begin: "2025-02-03",
-          activity_sensor_sample_begin: "2025-02-03",
-          activity_location_sample_begin: "2025-04-05",
-        },
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
         runDbt: async () => 0,
-        readArtifact: async (name) =>
-          name === "manifest.json"
-            ? {
-                metadata: {
-                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
-                },
-                nodes: {
-                  "model.dofek.provider_stats": {
-                    unique_id: "model.dofek.provider_stats",
-                    name: "provider_stats",
-                    resource_type: "model",
-                  },
-                },
-              }
-            : {
-                metadata: { invocation_id: "dbt-run-4" },
-                results: [
-                  {
-                    unique_id: "model.dofek.provider_stats",
-                    status: "skipped",
-                    execution_time: 0,
-                    message: null,
-                  },
-                ],
-              },
+        readArtifact: createArtifactReader("dbt-run-4", [
+          {
+            uniqueId: "model.dofek.provider_stats",
+            name: "provider_stats",
+            status: "skipped",
+            executionTime: 0,
+            message: null,
+          },
+        ]),
         recordRun,
       }),
     ).rejects.toMatchObject({

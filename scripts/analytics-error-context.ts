@@ -20,7 +20,19 @@ export function buildAnalyticsFailureCaptureContext(
     return { tags: { ...tags } };
   }
 
-  const failure = error.failures.find((item) => item.status === "failed") ?? error.failures[0];
+  const failedModel = error.failures.find((item) => item.status === "failed");
+  if (!failedModel && error.reason === "process-failed") {
+    const exitCode = String(error.exitCode);
+    return {
+      tags: {
+        ...tags,
+        analyticsFailureCategory: "process-failed",
+        analyticsProcessExitCode: exitCode,
+      },
+      fingerprint: [tags.analyticsRefreshStep, "process-failed", exitCode],
+    };
+  }
+  const failure = failedModel ?? error.failures[0];
   if (!failure) {
     return {
       tags: { ...tags },

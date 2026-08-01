@@ -8,6 +8,8 @@ import PostHog from "posthog-react-native";
 import { shouldSuppressBackgroundHealthKitTransientNetworkError } from "./health-kit-errors";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
+const SENTRY_RELEASE: string | undefined = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
+const SENTRY_DIST: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DIST;
 const OTEL_ENDPOINT: string | undefined = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
 const OTEL_HEADERS: string | undefined = process.env.EXPO_PUBLIC_OTEL_HEADERS;
 const POSTHOG_API_KEY = "phc_GsvyihTLSXrWGKYYGz84m44nuT59kYEwEXNnI0JICtg";
@@ -143,6 +145,8 @@ export function initTelemetry() {
 
   Sentry.init({
     dsn: SENTRY_DSN,
+    ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
+    ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
     debug: __DEV__,
     tracesSampler: ({ name, inheritOrSampleWith }) =>
       name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
@@ -238,7 +242,11 @@ function emitLog(
   message: string,
   data?: Record<string, unknown>,
 ) {
-  const sanitizedData = sanitizeLogAttributes(data);
+  const logData =
+    currentTelemetryRoute && data?.route === undefined
+      ? { ...data, route: currentTelemetryRoute }
+      : data;
+  const sanitizedData = sanitizeLogAttributes(logData);
   Sentry.addBreadcrumb({
     category,
     message,

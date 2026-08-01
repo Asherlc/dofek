@@ -249,6 +249,8 @@ jobs:
         env:
           SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
           SENTRY_DIST: ${{ steps.build-number.outputs.value }}
+          EXPO_PUBLIC_SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
+          EXPO_PUBLIC_SENTRY_DIST: ${{ steps.build-number.outputs.value }}
         run: |
           set -o pipefail
           TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)

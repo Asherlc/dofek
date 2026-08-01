@@ -296,6 +296,25 @@ describe("RootLayout background cleanup", () => {
     });
   });
 
+  it("keeps the active pathname while auth is still restoring", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: true,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/settings");
+    });
+  });
+
   it("shows bootstrap failure instead of login when auth restore fails", async () => {
     mockAuthState.value = {
       user: null,

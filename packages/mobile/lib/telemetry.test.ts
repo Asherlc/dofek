@@ -81,6 +81,8 @@ vi.mock("@opentelemetry/semantic-conventions", () => ({
 
 describe("ios telemetry", () => {
   let originalDsn: string | undefined;
+  let originalRelease: string | undefined;
+  let originalDist: string | undefined;
   let originalOtelEndpoint: string | undefined;
   let originalOtelHeaders: string | undefined;
 
@@ -90,6 +92,8 @@ describe("ios telemetry", () => {
     vi.stubGlobal("__DEV__", true);
 
     originalDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+    originalRelease = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
+    originalDist = process.env.EXPO_PUBLIC_SENTRY_DIST;
     originalOtelEndpoint = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
     originalOtelHeaders = process.env.EXPO_PUBLIC_OTEL_HEADERS;
   });
@@ -100,6 +104,16 @@ describe("ios telemetry", () => {
       delete process.env.EXPO_PUBLIC_SENTRY_DSN;
     } else {
       process.env.EXPO_PUBLIC_SENTRY_DSN = originalDsn;
+    }
+    if (originalRelease === undefined) {
+      delete process.env.EXPO_PUBLIC_SENTRY_RELEASE;
+    } else {
+      process.env.EXPO_PUBLIC_SENTRY_RELEASE = originalRelease;
+    }
+    if (originalDist === undefined) {
+      delete process.env.EXPO_PUBLIC_SENTRY_DIST;
+    } else {
+      process.env.EXPO_PUBLIC_SENTRY_DIST = originalDist;
     }
     if (originalOtelEndpoint === undefined) {
       delete process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
@@ -148,6 +162,22 @@ describe("ios telemetry", () => {
       }),
     ).toBe(0);
     expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
+  });
+
+  it("passes the bundled release and distribution to Sentry", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_SENTRY_RELEASE = "release-sha";
+    process.env.EXPO_PUBLIC_SENTRY_DIST = "build-123";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    expect(mocks.mockInit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        release: "release-sha",
+        dist: "build-123",
+      }),
+    );
   });
 
   it("initializes PostHog with crash-only error autocapture in production builds", async () => {
@@ -381,6 +411,35 @@ describe("ios telemetry", () => {
         body: "[test-category] hello world",
         severityText: "INFO",
         attributes: { key: "value" },
+      }),
+    );
+  });
+
+  it("adds the current route to structured log breadcrumbs and OTel records", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/activity/550e8400-e29b-41d4-a716-446655440000");
+
+    mod.logger.info("screen-navigation", "Activity opened", { selected: true });
+
+    expect(mocks.mockAddBreadcrumb).toHaveBeenCalledWith({
+      category: "screen-navigation",
+      message: "Activity opened",
+      level: "info",
+      data: {
+        selected: true,
+        route: "/activity/:id",
+      },
+    });
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attributes: {
+          selected: true,
+          route: "/activity/:id",
+        },
       }),
     );
   });

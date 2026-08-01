@@ -263,6 +263,8 @@ If the collector requires headers, set `EXPO_PUBLIC_OTEL_HEADERS` (for example, 
 Mobile workflows load secrets from Infisical via GitHub OIDC ([`load-infisical-secrets`](../../.github/actions/load-infisical-secrets/action.yml)). Runtime env vars loaded into the app bundle:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
+- `EXPO_PUBLIC_SENTRY_RELEASE` (native release metadata, set by the iOS archive workflow)
+- `EXPO_PUBLIC_SENTRY_DIST` (native distribution metadata, set by the iOS archive workflow)
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS` (optional)
 
@@ -284,13 +286,15 @@ Workflow key requirements:
 
 Source-map and release correlation:
 
-- The signed iOS archive sets `SENTRY_RELEASE` to the deployed commit and
-  `SENTRY_DIST` to the generated build number. The Sentry Expo integration
-  uploads the map from that exact native archive during the Xcode build; EAS
-  Build likewise uploads source maps automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
+- The signed iOS archive sets both the Sentry upload variables and the
+  `EXPO_PUBLIC_*` runtime variables from the same deployed commit and generated
+  build number. The Sentry Expo integration uploads the map from that exact
+  native archive during the Xcode build; EAS Build likewise uploads source maps
+  automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
 - The production OTA workflow pins EOAS 2.3.22 and passes its `--dump-sourcemap`
-  option, so the export that EOAS publishes also emits the Hermes source maps;
-  that final `dist` directory is uploaded with
+  option, passes the same commit release into the published JavaScript runtime,
+  and makes the export emit the Hermes source maps; that final `dist` directory
+  is uploaded with
   `sentry-expo-upload-sourcemaps`. See [EOAS's publishing implementation](https://github.com/axelmarciano/expo-open-ota/tree/main/eoas), [Expo OTA Sentry guidance](https://docs.expo.dev/guides/using-sentry/), and [Expo Hermes source maps](https://docs.expo.dev/guides/using-hermes/).
 - Keep native archive uploads and OTA uploads separate: an OTA map must be
   uploaded from the export that produced the published update, while native
