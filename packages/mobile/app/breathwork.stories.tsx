@@ -1,4 +1,4 @@
-import { TECHNIQUES } from "@dofek/scoring/breathwork";
+import { TECHNIQUES, toBreathworkTechniqueDetails } from "@dofek/scoring/breathwork";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
@@ -29,7 +29,7 @@ function createMockLink(): TRPCLink<AppRouter> {
 }
 
 function resolveOperation(path: string): unknown {
-  if (path === "breathwork.techniques") return TECHNIQUES;
+  if (path === "breathwork.techniques") return TECHNIQUES.map(toBreathworkTechniqueDetails);
   if (path === "breathwork.outcomes") {
     return {
       windowDays: 30,

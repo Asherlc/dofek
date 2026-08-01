@@ -22,11 +22,23 @@ describe("TECHNIQUES", () => {
     for (const technique of TECHNIQUES) {
       expect(technique.id).toBeTruthy();
       expect(technique.name).toBeTruthy();
+      expect(technique.purpose).toBeTruthy();
       expect(technique.description).toBeTruthy();
+      expect(["Beginner", "Intermediate", "Advanced"]).toContain(technique.difficulty);
       expect(technique.inhaleSeconds).toBeGreaterThan(0);
       expect(technique.exhaleSeconds).toBeGreaterThan(0);
       expect(technique.defaultRounds).toBeGreaterThan(0);
     }
+  });
+
+  it("uses human-readable purposes and complete descriptions", () => {
+    expect(getTechniqueById("box-breathing")).toMatchObject({
+      name: "Box Breathing",
+      purpose: "Calm focus",
+      description:
+        "Breathe in for 4 seconds, hold for 4 seconds, breathe out for 4 seconds, then hold for 4 seconds.",
+      difficulty: "Beginner",
+    });
   });
 
   it("has unique IDs", () => {
@@ -51,7 +63,7 @@ describe("TECHNIQUES", () => {
 
     expect(technique?.name).toBe("Power Breathing");
     expect(technique?.description).toBe(
-      "30 rounds of 2-second inhales followed by 2-second exhales.",
+      "Take 30 rounds of active 2-second inhales followed by 2-second exhales.",
     );
     expect(technique?.inhaleSeconds).toBe(2);
     expect(technique?.exhaleSeconds).toBe(2);
@@ -102,7 +114,9 @@ describe("totalSessionSeconds", () => {
     const boxBreathing: BreathworkTechnique = {
       id: "box-breathing",
       name: "Box Breathing",
+      purpose: "Calm focus",
       description: "Equal inhale, hold, exhale, hold",
+      difficulty: "Beginner",
       safety: testSafety,
       inhaleSeconds: 4,
       holdInSeconds: 4,
@@ -118,7 +132,9 @@ describe("totalSessionSeconds", () => {
     const simpleBreath: BreathworkTechnique = {
       id: "simple",
       name: "Simple",
+      purpose: "Test pattern",
       description: "test",
+      difficulty: "Beginner",
       safety: testSafety,
       inhaleSeconds: 3,
       exhaleSeconds: 5,

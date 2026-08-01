@@ -1,7 +1,9 @@
 import {
-  type BreathworkTechnique,
+  type BreathworkTechniqueDetails,
+  getBreathworkTechniqueLabel,
   PERCEIVED_BREATHWORK_EFFECTS,
   TECHNIQUES,
+  toBreathworkTechniqueDetails,
 } from "@dofek/scoring/breathwork";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
@@ -38,7 +40,7 @@ const outcomeSummaryOutputSchema = z.object({
 
 export const breathworkRouter = router({
   techniques: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(
-    (): BreathworkTechnique[] => TECHNIQUES,
+    (): BreathworkTechniqueDetails[] => TECHNIQUES.map(toBreathworkTechniqueDetails),
   ),
   logSession: protectedProcedure
     .input(
@@ -66,7 +68,13 @@ export const breathworkRouter = router({
     .input(z.object({ days: z.number().min(1).max(365).default(30) }))
     .query(async ({ ctx, input }) => {
       const repo = new BreathworkRepository(ctx.db, ctx.userId);
-      return (await repo.getHistory(input.days)).map((session) => session.toDetail());
+      return (await repo.getHistory(input.days)).map((session) => {
+        const detail = session.toDetail();
+        return {
+          ...detail,
+          techniqueLabel: getBreathworkTechniqueLabel(detail.techniqueId),
+        };
+      });
     }),
   outcomes: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.void())

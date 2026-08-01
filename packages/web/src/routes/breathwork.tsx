@@ -1,9 +1,5 @@
-import { formatDateMedium } from "@dofek/format/format";
-import {
-  type BreathworkOutcomeReport,
-  type PerceivedBreathworkEffect,
-  totalSessionSeconds,
-} from "@dofek/scoring/breathwork";
+import { formatDateMedium, formatDurationSeconds } from "@dofek/format/format";
+import type { BreathworkOutcomeReport, PerceivedBreathworkEffect } from "@dofek/scoring/breathwork";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -34,6 +30,16 @@ const PHASE_LABELS: Record<SessionPhase, string> = {
   "hold-out": "Hold",
 };
 const HISTORY_PAGE_SIZE = 20;
+
+function techniqueAccessibilityLabel(technique: {
+  name: string;
+  purpose: string;
+  description: string;
+  durationSeconds: number;
+  difficulty: string;
+}): string {
+  return `${technique.name}. ${technique.purpose}. ${technique.description} Duration: ${formatDurationSeconds(technique.durationSeconds)}. Difficulty: ${technique.difficulty}.`;
+}
 
 function StressScale({
   label,
@@ -242,11 +248,10 @@ function BreathworkPage() {
             }
             setIsRunning(false);
 
-            const totalSeconds = totalSessionSeconds(technique, technique.defaultRounds);
             const completedSession = {
               techniqueId: technique.id,
               rounds: technique.defaultRounds,
-              durationSeconds: totalSeconds,
+              durationSeconds: technique.durationSeconds,
               startedAt: startTimeRef.current ?? new Date().toISOString(),
               stressBefore,
               stressAfter: null,
@@ -295,6 +300,7 @@ function BreathworkPage() {
                   <button
                     key={technique.id}
                     type="button"
+                    aria-label={techniqueAccessibilityLabel(technique)}
                     onClick={() => {
                       if (!isRunning) {
                         setSelectedTechniqueId(technique.id);
@@ -309,15 +315,12 @@ function BreathworkPage() {
                     disabled={isRunning || pendingSession !== null}
                   >
                     <div className="text-sm font-medium text-foreground">{technique.name}</div>
-                    <div className="text-xs text-dim mt-1 line-clamp-2">
-                      {technique.description}
-                    </div>
+                    <div className="text-xs text-dim mt-1">{technique.purpose}</div>
+                    <div className="text-xs text-dim mt-1">{technique.description}</div>
                     <div className="text-xs text-muted mt-2">
-                      {technique.defaultRounds} rounds
-                      {selectedTechnique?.id === technique.id &&
-                        ` / ${Math.round(
-                          totalSessionSeconds(technique, technique.defaultRounds) / 60,
-                        )}m`}
+                      {technique.defaultRounds} rounds · Duration:{" "}
+                      {formatDurationSeconds(technique.durationSeconds)} · Difficulty:{" "}
+                      {technique.difficulty}
                     </div>
                   </button>
                 ))}
@@ -477,6 +480,7 @@ function BreathworkPage() {
                   <div className="text-sm font-medium text-foreground">
                     {selectedTechnique.name}
                   </div>
+                  <p className="mt-1 text-sm text-dim">{selectedTechnique.purpose}</p>
                   <p className="mt-1 text-sm text-dim">{selectedTechnique.description}</p>
                   {selectedTechnique.possibleBenefit ? (
                     <p className="mt-2 text-sm text-muted">{selectedTechnique.possibleBenefit}</p>
@@ -599,7 +603,6 @@ function BreathworkPage() {
             history.data.length > 0 ? (
               <div className="space-y-2">
                 {visibleHistory.map((session) => {
-                  const technique = techniques.data?.find((t) => t.id === session.techniqueId);
                   return (
                     <div
                       key={session.id}
@@ -607,7 +610,7 @@ function BreathworkPage() {
                     >
                       <div>
                         <span className="text-sm text-foreground">
-                          {technique?.name ?? session.techniqueId}
+                          {session.techniqueLabel ?? "Breathwork session"}
                         </span>
                         <span className="text-xs text-dim ml-2">
                           {formatDateMedium(session.startedAt)}
