@@ -18524,10 +18524,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Billing height delta, zero Data Sources height delta, zero normalized
   downstream movement, and CLS `0.0000`; both routes passed without retries.
   The tab-aware regression now measures Data Sources on
-  `/settings?tab=connections` and redirected `/providers`, and Billing on
-  `/settings?tab=account`. Its post-merge local browser rerun is blocked by the
-  shared Docker disk incident recorded below; exact-head CI validation is
-  pending.
+  `/settings?tab=data-sources` and redirected `/providers`, and Billing on
+  `/settings?tab=billing` ([Cypress spec](../cypress/e2e/settings-layout-stability.cy.ts)).
+  Its post-merge local browser rerun is blocked by the shared Docker disk
+  incident recorded below; exact-head CI validation is pending.
 - **Remaining risk / follow-up:** Confirm production field CLS after rollout
   because synthetic page-load tests cannot represent every provider inventory,
   viewport, font, or long-lived session. The provider catalog now scrolls
