@@ -16,20 +16,7 @@ import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
-
-export type SettingsTab = "general" | "health" | "connections" | "account" | "advanced";
-
-const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "health", label: "Health" },
-  { id: "connections", label: "Connections" },
-  { id: "account", label: "Account" },
-  { id: "advanced", label: "Advanced" },
-];
-
-export function isSettingsTab(value: unknown): value is SettingsTab {
-  return SETTINGS_TABS.some((tab) => tab.id === value);
-}
+import { SETTINGS_TABS } from "./settingsTabs.ts";
 
 function getSignupWeekLabel(startDate: string, endDateExclusive: string): string {
   const endInclusive = parseValidDate(`${endDateExclusive}T12:00:00.000Z`);

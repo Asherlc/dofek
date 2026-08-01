@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import type { SettingsTab } from "../pages/settingsTabs.ts";
 
 const captured: {
   validateSearch:
     | ((search: Record<string, unknown>) => {
-        tab?: "general" | "health" | "connections" | "account" | "advanced";
+        tab?: SettingsTab;
         zeppPair?: string;
       })
     | null;
@@ -14,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
     () =>
     (options: {
       validateSearch?: (search: Record<string, unknown>) => {
-        tab?: "general" | "health" | "connections" | "account" | "advanced";
+        tab?: SettingsTab;
         zeppPair?: string;
       };
     }) => {
@@ -23,10 +24,9 @@ vi.mock("@tanstack/react-router", () => ({
     },
 }));
 
-vi.mock("../pages/SettingsPage.tsx", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../pages/SettingsPage.tsx")>();
-  return { ...actual, SettingsPage: () => null };
-});
+vi.mock("../pages/SettingsPage.tsx", () => ({
+  SettingsPage: () => null,
+}));
 
 beforeAll(async () => {
   await import("./settings.tsx");
