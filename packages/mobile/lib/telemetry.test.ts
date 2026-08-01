@@ -117,39 +117,9 @@ describe("ios telemetry", () => {
     expect(mocks.mockInit).toHaveBeenCalledWith({
       dsn: "https://key@sentry.example/789",
       debug: true,
-      beforeSend: expect.any(Function),
       tracesSampler: expect.any(Function),
     });
     const options = mocks.mockInit.mock.calls[0]?.[0];
-    const beforeSend = options?.beforeSend;
-    const timeoutError = new Error("fetch failed: UnexpectedException: The request timed out.");
-    expect(beforeSend?.({ event_id: "event-1" }, { originalException: timeoutError })).toEqual({
-      event_id: "event-1",
-    });
-    expect(
-      beforeSend?.(
-        { event_id: "event-2", tags: { source: "bg-healthkit-sync" } },
-        { originalException: timeoutError },
-      ),
-    ).toBeNull();
-    expect(
-      beforeSend?.(
-        { event_id: "event-3", tags: { source: "health-kit-workout-route-push" } },
-        { originalException: timeoutError },
-      ),
-    ).toBeNull();
-    expect(
-      beforeSend?.(
-        { event_id: "event-4", tags: { source: "auto-sync-providers" } },
-        { originalException: timeoutError },
-      ),
-    ).toEqual({ event_id: "event-4", tags: { source: "auto-sync-providers" } });
-    expect(
-      beforeSend?.(
-        { event_id: "event-5" },
-        { originalException: new Error("unexpected server failure") },
-      ),
-    ).toEqual({ event_id: "event-5" });
     const tracesSampler = options?.tracesSampler;
     expect(tracesSampler?.({ name: "App Start", inheritOrSampleWith: vi.fn() })).toBe(1);
     expect(tracesSampler?.({ name: "Mobile Startup", inheritOrSampleWith: vi.fn() })).toBe(1);
@@ -180,6 +150,47 @@ describe("ios telemetry", () => {
         source: "react-native-global",
         operation: "global-handler",
       },
+    });
+  });
+
+  it("drops transient background HealthKit network errors from Sentry and PostHog", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const connectionLostError = new Error(
+      "fetch failed: UnexpectedException: The network connection was lost.",
+    );
+    mod.captureException(connectionLostError, { source: "bg-healthkit-sync" });
+
+    // Neither error-tracking destination receives the suppressed error...
+    expect(mocks.mockCaptureException).not.toHaveBeenCalled();
+    expect(posthogMocks.captureException).not.toHaveBeenCalled();
+    // ...but the failure is still logged for observability.
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityText: "ERROR",
+        body: "[exception] fetch failed: UnexpectedException: The network connection was lost.",
+      }),
+    );
+  });
+
+  it("still reports transient network errors from non-HealthKit sources", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const connectionLostError = new Error(
+      "fetch failed: UnexpectedException: The network connection was lost.",
+    );
+    mod.captureException(connectionLostError, { source: "react-query" });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(connectionLostError, {
+      tags: { source: "react-query" },
+      extra: { source: "react-query" },
     });
   });
 
