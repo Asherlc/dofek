@@ -100,6 +100,54 @@ describe("PostHogConversationsClient", () => {
     expect(configCalls).toBe(1);
   });
 
+  it("refreshes the cached token after an authentication failure", async () => {
+    let configCalls = 0;
+    let messageCalls = 0;
+    const receivedTokens: string[] = [];
+
+    mswServer.use(
+      http.get(configUrl, () => {
+        configCalls += 1;
+        return HttpResponse.json({
+          conversations: { enabled: true, token: `conversation-token-${configCalls}` },
+        });
+      }),
+      http.post(messageUrl, ({ request }) => {
+        messageCalls += 1;
+        receivedTokens.push(request.headers.get("X-Conversations-Token") ?? "missing");
+        if (messageCalls === 1) {
+          return HttpResponse.json({ detail: "expired" }, { status: 401 });
+        }
+        return HttpResponse.json({
+          ticket_id: "ticket-refreshed",
+          message_id: "message-refreshed",
+          ticket_status: "new",
+          created_at: "2026-08-01T12:00:00.000Z",
+          unread_count: 0,
+        });
+      }),
+    );
+
+    const client = new PostHogConversationsClient(config);
+    const ticketInput = {
+      message: "Help",
+      contactEmail: "user@example.com",
+      contactName: "Asher",
+      distinctId: "user-1",
+      widgetSessionId: "widget-session-1",
+    };
+
+    await expect(client.createTicket(ticketInput)).rejects.toMatchObject({ status: 401 });
+    await expect(
+      client.createTicket({ ...ticketInput, widgetSessionId: "widget-session-2" }),
+    ).resolves.toEqual({
+      ticketId: "ticket-refreshed",
+    });
+
+    expect(configCalls).toBe(2);
+    expect(receivedTokens).toEqual(["conversation-token-1", "conversation-token-2"]);
+  });
+
   it("throws when conversations are disabled in the project config", async () => {
     mswServer.use(
       http.get(configUrl, () =>

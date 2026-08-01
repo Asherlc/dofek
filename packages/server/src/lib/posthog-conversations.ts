@@ -150,6 +150,10 @@ export class PostHogConversationsClient {
     );
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        this.#conversationToken = null;
+        this.#conversationTokenExpiresAt = 0;
+      }
       throw await createHttpError("ticket creation", response);
     }
 

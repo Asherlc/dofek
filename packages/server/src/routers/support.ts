@@ -14,6 +14,10 @@ const createTicketInput = z.object({
   email: z.string().email().optional(),
 });
 
+const createTicketOutput = z.object({
+  ticketId: z.string().trim().min(1),
+});
+
 /**
  * Build the ticket description sent to support agents. Includes the user's
  * message plus identifying context so agents can locate the account.
@@ -36,43 +40,46 @@ function buildDescription(
 }
 
 export const supportRouter = router({
-  createTicket: protectedProcedure.input(createTicketInput).mutation(async ({ ctx, input }) => {
-    const [profile] = await ctx.db
-      .select({ name: userProfile.name, email: userProfile.email })
-      .from(userProfile)
-      .where(eq(userProfile.id, ctx.userId))
-      .limit(1);
+  createTicket: protectedProcedure
+    .input(createTicketInput)
+    .output(createTicketOutput)
+    .mutation(async ({ ctx, input }) => {
+      const [profile] = await ctx.db
+        .select({ name: userProfile.name, email: userProfile.email })
+        .from(userProfile)
+        .where(eq(userProfile.id, ctx.userId))
+        .limit(1);
 
-    const contactEmail = input.email ?? profile?.email ?? undefined;
-    if (!contactEmail) {
-      throw new TRPCError({
-        code: "PRECONDITION_FAILED",
-        message: "We need an email to reply to. Add an email to your profile or enter one above.",
-      });
-    }
+      const contactEmail = input.email ?? profile?.email ?? undefined;
+      if (!contactEmail) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "We need an email to reply to. Add an email to your profile or enter one above.",
+        });
+      }
 
-    try {
-      const ticket = await getPostHogConversationsClient().createTicket({
-        message: buildDescription(input.subject, input.message, ctx.userId, ctx.appVersion),
-        contactEmail,
-        contactName: profile?.name ?? contactEmail,
-        distinctId: ctx.userId,
-        widgetSessionId: crypto.randomUUID(),
-      });
-      logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
-      return { ticketId: ticket.ticketId };
-    } catch (error) {
-      captureException(error);
-      logger.error(
-        `[support] ticket creation failed userId=${ctx.userId} message=${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      throw new TRPCError({
-        code: "BAD_GATEWAY",
-        message: "PostHog Support Tickets is unavailable. Please try again shortly.",
-        cause: error,
-      });
-    }
-  }),
+      try {
+        const ticket = await getPostHogConversationsClient().createTicket({
+          message: buildDescription(input.subject, input.message, ctx.userId, ctx.appVersion),
+          contactEmail,
+          contactName: profile?.name ?? contactEmail,
+          distinctId: ctx.userId,
+          widgetSessionId: crypto.randomUUID(),
+        });
+        logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
+        return { ticketId: ticket.ticketId };
+      } catch (error) {
+        captureException(error);
+        logger.error(
+          `[support] ticket creation failed userId=${ctx.userId} message=${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+          cause: error,
+        });
+      }
+    }),
 });
