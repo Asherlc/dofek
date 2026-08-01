@@ -20,7 +20,7 @@ export function buildAnalyticsFailureCaptureContext(
     return { tags: { ...tags } };
   }
 
-  const failure = error.failures[0];
+  const failure = error.failures.find((item) => item.status === "failed") ?? error.failures[0];
   if (!failure) {
     return {
       tags: { ...tags },

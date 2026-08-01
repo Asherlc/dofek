@@ -167,6 +167,52 @@ describe("runAnalyticsBuild", () => {
     expect(recordRun).toHaveBeenCalledOnce();
   });
 
+  it("reports pending-processing failures separately from dbt failures", async () => {
+    const recordRun = vi.fn(async () => ({ datasets: 3, failed: 2 }));
+
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: ["provider_stats"],
+        artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: {
+          sensor_scalar_sample_begin: "2025-02-03",
+          deduped_sensor_begin: "2025-02-03",
+          activity_sensor_sample_begin: "2025-02-03",
+          activity_location_sample_begin: "2025-04-05",
+        },
+        runDbt: async () => 0,
+        readArtifact: async (name) =>
+          name === "manifest.json"
+            ? {
+                metadata: {
+                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
+                },
+                nodes: {
+                  "model.dofek.provider_stats": {
+                    unique_id: "model.dofek.provider_stats",
+                    name: "provider_stats",
+                    resource_type: "model",
+                  },
+                },
+              }
+            : {
+                metadata: { invocation_id: "dbt-run-processing-failure" },
+                results: [
+                  {
+                    unique_id: "model.dofek.provider_stats",
+                    status: "success",
+                    execution_time: 1,
+                    message: null,
+                  },
+                ],
+              },
+        recordRun,
+      }),
+    ).rejects.toThrow(
+      "analytics processing recorded 2 failed dataset(s) after dbt completed successfully",
+    );
+  });
+
   it("fingerprints failed models instead of skipped dependents", async () => {
     const recordRun = vi.fn(async () => ({ datasets: 2, failed: 2 }));
 

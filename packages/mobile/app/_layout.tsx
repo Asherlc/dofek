@@ -161,20 +161,24 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
   return null;
 }
 
-function AuthGate() {
-  const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
-    useAuth();
+function TelemetryRouteSync({ isAuthenticated }: { isAuthenticated: boolean }) {
   const pathname = usePathname();
-  const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
-  const startupInteractiveMarkedRef = useRef(false);
-
-  const [queryClient] = useState(createAppQueryClient);
-
-  const telemetryRoute = user ? pathname : "/login";
+  const telemetryRoute = isAuthenticated ? pathname : "/login";
 
   useEffect(() => {
     setTelemetryRoute(telemetryRoute);
   }, [telemetryRoute]);
+
+  return null;
+}
+
+function AuthGate() {
+  const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
+    useAuth();
+  const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
+  const startupInteractiveMarkedRef = useRef(false);
+
+  const [queryClient] = useState(createAppQueryClient);
 
   useEffect(() => {
     finishStartupPhase("javascript", "ready");
@@ -398,49 +402,61 @@ function AuthGate() {
 
   if (isLoading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </View>
+      <>
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} />
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      </>
     );
   }
 
   if (bootstrapError) {
     return (
-      <View style={styles.authError}>
-        <Text style={styles.authErrorTitle}>Could not verify your session</Text>
-        <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
-        <View style={styles.authErrorActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try again"
-            style={styles.authErrorButton}
-            onPress={retryBootstrap}
-          >
-            <Text style={styles.authErrorButtonText}>Try again</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Sign out"
-            style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
-            onPress={logout}
-          >
-            <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
-              Sign out
-            </Text>
-          </Pressable>
+      <>
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} />
+        <View style={styles.authError}>
+          <Text style={styles.authErrorTitle}>Could not verify your session</Text>
+          <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
+          <View style={styles.authErrorActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Try again"
+              style={styles.authErrorButton}
+              onPress={retryBootstrap}
+            >
+              <Text style={styles.authErrorButtonText}>Try again</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+              style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
+              onPress={logout}
+            >
+              <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
+                Sign out
+              </Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      </>
     );
   }
 
   // No user — show login
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <>
+        <TelemetryRouteSync isAuthenticated={false} />
+        <LoginScreen />
+      </>
+    );
   }
 
   // Step 3: Authenticated — show the app
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <TelemetryRouteSync isAuthenticated />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
         <MedicationReminderNotificationListener />

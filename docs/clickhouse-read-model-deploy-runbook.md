@@ -208,17 +208,41 @@ ORDER BY rows DESC
 LIMIT 20;
 
 SELECT
-  user_id,
-  provider_id,
-  changed_at,
-  refreshed_at
-FROM analytics.provider_change_watermark FINAL
-WHERE changed_at > refreshed_at
-ORDER BY changed_at ASC
+  source_state.user_id,
+  source_state.provider_id,
+  source_state.changed_at,
+  watermark.refreshed_at
+FROM
+(
+    SELECT
+      user_id,
+      provider_id,
+      max(changed_at) AS changed_at
+    FROM analytics.provider_change_state
+    GROUP BY user_id, provider_id
+) AS source_state
+INNER JOIN
+(
+    SELECT
+      user_id,
+      provider_id,
+      max(refreshed_at) AS refreshed_at
+    FROM analytics.provider_change_watermark FINAL
+    GROUP BY user_id, provider_id
+) AS watermark
+  ON watermark.user_id = source_state.user_id
+ AND watermark.provider_id = source_state.provider_id
+WHERE source_state.changed_at > watermark.refreshed_at
+ORDER BY source_state.changed_at ASC
 LIMIT 50;
 SQL
 REMOTE
 ```
+
+This compares the live provider-change source with the watermark's last
+refresh time. Comparing the watermark row's own `changed_at` with
+`refreshed_at` would be tautologically clean because that row is written from
+the source during the refresh.
 
 Interpret the evidence in this order:
 

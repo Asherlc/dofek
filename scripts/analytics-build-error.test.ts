@@ -19,6 +19,33 @@ describe("analytics build failures", () => {
     expect(classifyAnalyticsFailure("dbt_model_failed", "Code: 47")).toBe("dependency");
   });
 
+  it("prioritizes recognized ClickHouse codes over message text", () => {
+    expect(
+      classifyAnalyticsFailure("dbt_model_failed", "Code: 47 unknown identifier named timeout"),
+    ).toBe("dependency");
+    expect(classifyAnalyticsFailure("dbt_model_failed", "Code: 62 parser mentions timeout")).toBe(
+      "syntax",
+    );
+  });
+
+  it("does not classify unrelated bare error words", () => {
+    expect(classifyAnalyticsFailure("dbt_model_failed", "statement timeout configuration")).toBe(
+      "unknown",
+    );
+    expect(classifyAnalyticsFailure("dbt_model_failed", "memory configuration note")).toBe(
+      "unknown",
+    );
+    expect(classifyAnalyticsFailure("dbt_model_failed", "stack overflow in plugin")).toBe(
+      "unknown",
+    );
+    expect(classifyAnalyticsFailure("dbt_model_failed", "Timeout exceeded while waiting")).toBe(
+      "timeout",
+    );
+    expect(classifyAnalyticsFailure("dbt_model_failed", "Memory limit exceeded for query")).toBe(
+      "memory",
+    );
+  });
+
   it("keeps model and category metadata on the thrown build error", () => {
     const failure = createAnalyticsBuildFailure({
       name: "provider_stats",

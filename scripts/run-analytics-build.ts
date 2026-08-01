@@ -80,7 +80,9 @@ export async function runAnalyticsBuild({
     throw new AnalyticsBuildError(exitCode, incompleteFailures, "incomplete");
   }
   if (processingResult.failed > 0) {
-    throw new Error("dbt build did not complete every required analytics model");
+    throw new Error(
+      `analytics processing recorded ${processingResult.failed} failed dataset(s) after dbt completed successfully`,
+    );
   }
   return processingResult;
 }

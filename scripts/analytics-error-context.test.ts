@@ -56,6 +56,36 @@ describe("buildAnalyticsFailureCaptureContext", () => {
     expect(context.tags.analyticsFailedModelCount).toBe("12");
   });
 
+  it("selects the first failed model when skipped dependents precede it", () => {
+    const error = new AnalyticsBuildError(1, [
+      createAnalyticsBuildFailure({
+        name: "skipped_dependent_model",
+        status: "skipped",
+        errorCode: null,
+        message: "depends on failed model",
+      }),
+      createAnalyticsBuildFailure({
+        name: "provider_stats",
+        status: "failed",
+        errorCode: "dbt_model_failed",
+        message: "Code: 159 TIMEOUT_EXCEEDED",
+      }),
+    ]);
+
+    expect(
+      buildAnalyticsFailureCaptureContext(error, { analyticsRefreshStep: "analytics-build" }),
+    ).toEqual({
+      tags: {
+        analyticsRefreshStep: "analytics-build",
+        analyticsModel: "provider_stats",
+        analyticsFailureCategory: "timeout",
+        analyticsFailedModels: "provider_stats",
+        analyticsFailedModelCount: "1",
+      },
+      fingerprint: ["analytics-build", "provider_stats", "timeout"],
+    });
+  });
+
   it("reports zero failed models when an incomplete build only skipped models", () => {
     const error = new AnalyticsBuildError(0, [
       createAnalyticsBuildFailure({

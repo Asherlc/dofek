@@ -5,7 +5,7 @@ on:
     inputs:
       commit_sha:
         description: "Commit SHA to deploy"
-        required: false
+        required: true
         type: string
       ci_run_id:
         description: "CI run ID to include in deploy summary (optional)"
@@ -21,6 +21,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Commit SHA to deploy (defaults to the selected ref HEAD)."
+        required: false
+        type: string
       ci_run_id:
         description: "CI run ID to include in deploy summary (optional)."
         required: false

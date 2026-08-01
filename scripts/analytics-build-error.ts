@@ -36,20 +36,39 @@ export function classifyAnalyticsFailure(
   }
 
   const text = failureText(errorCode, message);
-  if (/\b(?:code\s*:?\s*159|timeout(?:_exceeded)?|timed out)\b/i.test(text)) {
+  if (/\bcode\s*:?\s*159\b/i.test(text)) {
     return "timeout";
   }
-  if (/\b(?:code\s*:?\s*407|convert overflow|overflow)\b/i.test(text)) {
+  if (/\bcode\s*:?\s*407\b/i.test(text)) {
     return "overflow";
   }
-  if (/\b(?:code\s*:?\s*241|memory(?:_limit_exceeded)?|out of memory)\b/i.test(text)) {
+  if (/\bcode\s*:?\s*241\b/i.test(text)) {
     return "memory";
   }
-  if (/\b(?:code\s*:?\s*62|syntax[_ ]error|parser error)\b/i.test(text)) {
+  if (/\bcode\s*:?\s*62\b/i.test(text)) {
+    return "syntax";
+  }
+  if (/\bcode\s*:?\s*(?:47|60|81)\b/i.test(text)) {
+    return "dependency";
+  }
+  if (/\b(?:timeout[_ ]exceeded|timed out)\b/i.test(text)) {
+    return "timeout";
+  }
+  if (/\b(?:convert|numeric|arithmetic|decimal|integer)[ _-]+overflow(?:ed)?\b/i.test(text)) {
+    return "overflow";
+  }
+  if (
+    /\b(?:memory[_ ]limit(?:\s+\([^)]*\))?[_ ]exceeded|out of memory|cannot allocate memory)\b/i.test(
+      text,
+    )
+  ) {
+    return "memory";
+  }
+  if (/\b(?:syntax[_ ]error|parser error)\b/i.test(text)) {
     return "syntax";
   }
   if (
-    /\b(?:code\s*:?\s*(?:47|60|81)|unknown_(?:table|database|identifier)|unknown (?:table|database|identifier)|table .* not found|no such table)\b/i.test(
+    /\b(?:unknown_(?:table|database|identifier)|unknown (?:table|database|identifier)|table .* not found|no such table)\b/i.test(
       text,
     )
   ) {
