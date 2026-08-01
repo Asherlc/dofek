@@ -1,5 +1,5 @@
 import { type Context, context, createContextKey } from "@opentelemetry/api";
-import type { SpanProcessor } from "@opentelemetry/sdk-trace-node";
+import type { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
 const AI_USER_ID_CONTEXT_KEY = createContextKey("dofek.ai.user_id");
 
