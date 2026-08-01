@@ -21336,3 +21336,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   tracking on the observer coordinator.
 - **Remaining risk / follow-up:** Ship through the normal native iOS release
   path, then resolve DOFEK-MOBILE-1C in Sentry after production events stop.
+
+## 2026-07-31 — Activity read-model dbt build overflows on appended local-time columns
+
+- **Status:** Fixed in source; the read models catch up on the next worker
+  cycle once the migration ships.
+- **Symptoms:** The analytics worker's dbt build failed every cycle with
+  ClickHouse `Code: 407 Convert overflow` on `activity_source_records`. Error
+  tracking recorded only 1 occurrence / 1 user (first == last seen
+  2026-07-31 10:57:59 PT), which undercounts a deterministic per-cycle failure.
+- **User impact:** Team-facing, but degrades what users see. The worker builds
+  the head of the activity DAG with `activity_source_records+`
+  ([src/analytics/activity-read-model-build.ts](../src/analytics/activity-read-model-build.ts)),
+  so the failure froze `deduped_activities`, `deduped_activity_members`,
+  `activity_summary_rows`, `daily_activity_load`, and the rest of the activity
+  serving tables — they stopped refreshing and quietly served stale rows. No
+  data was lost or corrupted; canonical Postgres records stayed intact.
+- **Evidence:** #2290 (`ea2ec5d`) inserted `start_utc_offset_minutes`,
+  `end_utc_offset_minutes`, and `local_time_source` into the middle of the model
+  SELECTs (after `timezone`), while migration
+  `0063_record_local_time_context` added them with plain
+  `ADD COLUMN IF NOT EXISTS`, which ClickHouse appends to the end of the physical
+  table when no `AFTER`/`FIRST` clause is given ([ALTER TABLE … ADD COLUMN](https://clickhouse.com/docs/en/sql-reference/statements/alter/column#add-column)).
+  dbt-clickhouse writes its incremental append as `INSERT INTO <table>
+  (<physical order>) <model SELECT>`, and ClickHouse maps the SELECT to that
+  explicit column list positionally ([INSERT INTO … SELECT](https://clickhouse.com/docs/en/sql-reference/statements/insert-into#inserting-the-results-of-select)),
+  so on databases created before those columns existed every column after
+  `timezone` shifted and `source_synced_at` (`DateTime64(9)`) landed on a
+  small-integer destination. Fresh databases were unaffected because the
+  `CREATE TABLE` migrations already listed the columns in position, which is why
+  CI stayed green.
+- **Root cause:** An append-incremental dbt model's SELECT order must match the
+  physical column order, and `ADD COLUMN` without an `AFTER` clause breaks that
+  invariant on already-populated tables. `deduped_activities` and `daily_sleep`
+  carried the same latent mismatch.
+- **Fix / mitigation:** Migration
+  `0067_repair_local_time_column_order` repositions the columns in place with
+  `MODIFY COLUMN ... AFTER`, which changes only column order in table metadata
+  and does not rewrite data ([ALTER TABLE … MODIFY COLUMN](https://clickhouse.com/docs/en/sql-reference/statements/alter/column#modify-column)),
+  so the physical order matches each model again; it is a no-op where the columns
+  are already in position. No timeout, retry, or guard was weakened.
+- **Validation:** A ClickHouse integration test reproduces the appended layout,
+  proves the positional insert fails before the repair and succeeds after, and
+  asserts the repaired physical order equals each model's SELECT order. A unit
+  test asserts the migration's `AFTER` chain reproduces the model projection
+  order, closing the gap where substring assertions could not catch ordering.
+- **Remaining risk / follow-up:** Future append-incremental serving columns must
+  be added with an explicit `AFTER` clause; the new order-equality test guards
+  the three current tables.
