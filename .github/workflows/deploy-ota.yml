@@ -119,19 +119,20 @@ jobs:
           exit 1
       # eoas runs `pnpx expo export` internally and swallows its output, so a
       # failing export only shows up as a generic "exited with non-zero code: 1".
-      # Run the same command up front so the real Metro/expo error is visible.
+      # Run an isolated preflight so the real Metro/expo error is visible. The
+      # publish step below owns the final dist directory and its source maps.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
-        env:
-          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
-        run: pnpm expo export --output-dir dist --platform ios --source-maps external
+        run: pnpm expo export --output-dir /tmp/dofek-ota-preflight --platform ios
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
           DEBUG: true
           RELEASE_CHANNEL: production
           SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
-        run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive --packageRunner pnpm
+        # EOAS 2.3.22 passes Expo's --dump-sourcemap alias to the export it
+        # publishes, leaving the exact final dist available for Sentry upload.
+        run: npx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dump-sourcemap
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         env:

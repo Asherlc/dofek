@@ -20,7 +20,7 @@ let posthogClient: PostHog | undefined;
 let currentTelemetryRoute: string | undefined;
 
 const uuidRouteSegment =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const numericRouteSegment = /^\d+$/;
 
 function normalizeTelemetryRoute(route: string | null | undefined): string | undefined {

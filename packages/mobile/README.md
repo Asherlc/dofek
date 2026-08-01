@@ -288,10 +288,10 @@ Source-map and release correlation:
   `SENTRY_DIST` to the generated build number. The Sentry Expo integration
   uploads the map from that exact native archive during the Xcode build; EAS
   Build likewise uploads source maps automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
-- The OTA workflow exports the iOS bundle with external source maps and uploads
-  the same `dist` directory with `sentry-expo-upload-sourcemaps`. Expo documents
-  this export/upload sequence for OTA updates, and Hermes exports produce the
-  bytecode maps needed for symbolication ([Expo OTA Sentry guidance](https://docs.expo.dev/guides/using-sentry/), [Expo Hermes source maps](https://docs.expo.dev/guides/using-hermes/)).
+- The production OTA workflow pins EOAS 2.3.22 and passes its `--dump-sourcemap`
+  option, so the export that EOAS publishes also emits the Hermes source maps;
+  that final `dist` directory is uploaded with
+  `sentry-expo-upload-sourcemaps`. See [EOAS's publishing implementation](https://github.com/axelmarciano/expo-open-ota/tree/main/eoas), [Expo OTA Sentry guidance](https://docs.expo.dev/guides/using-sentry/), and [Expo Hermes source maps](https://docs.expo.dev/guides/using-hermes/).
 - Keep native archive uploads and OTA uploads separate: an OTA map must be
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.

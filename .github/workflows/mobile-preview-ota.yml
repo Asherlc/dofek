@@ -72,7 +72,7 @@ jobs:
           attempt=1
           while [ "$attempt" -le "$max_attempts" ]; do
             set +e
-            publish_output=$(npx eoas@2.3.17 publish \
+            publish_output=$(npx eoas@2.3.22 publish \
               --branch "pr-${{ github.event.number }}" \
               --platform ios \
               --nonInteractive \
