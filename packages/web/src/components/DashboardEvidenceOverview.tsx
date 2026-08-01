@@ -134,7 +134,7 @@ export function DashboardEvidenceOverview({
     relationship === "descriptive_association"
       ? evidence?.estimateLabel?.trim() || "--"
       : relationship === "correlation" && effectSize != null
-        ? Math.abs(effectSize).toFixed(2)
+        ? effectSize.toFixed(2)
         : "--";
   const trendLabel = trendPositionLabel(trend);
   const restingHeartRateToneValue = restingHeartRateTone(trend);

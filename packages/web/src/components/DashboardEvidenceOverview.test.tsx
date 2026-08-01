@@ -156,6 +156,32 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("0.42", { exact: true })).toBeTruthy();
   });
 
+  it("preserves the sign of a negative correlation effect size", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "negative-correlation-without-evidence",
+          type: "correlation",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Sleep duration",
+          message: "Sleep duration is associated with next-day HRV.",
+          detail: "Spearman rho=-0.42",
+          whenTrue: { mean: 60, n: 20 },
+          whenFalse: { mean: 55, n: 20 },
+          effectSize: -0.42,
+          pValue: 0.02,
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("-0.42", { exact: true })).toBeTruthy();
+  });
+
   it("renders axes and hover details from API-backed chart points", () => {
     render(
       <DashboardEvidenceOverview

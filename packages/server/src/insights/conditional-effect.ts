@@ -13,10 +13,11 @@ export function formatConditionalEffectLabel(
 
   const direction = difference > 0 ? "higher" : "lower";
   const unit = metricUnits[metric] ?? "";
-  const absoluteMetric = metric === "monthly weight change" || metric === "monthly body fat change";
+  const absoluteMetric =
+    metric === "monthly weight change" || metric === "monthly body fat change" || unit === "%";
   const baselineNearZero = Math.abs(falseMean) < 1;
-  const negativeBaseline = falseMean < 0;
-  const signsCross = trueMean * falseMean < 0;
+  const negativeBaseline = falseMean <= -1;
+  const signsCross = (trueMean < 0 && falseMean > 0) || (trueMean > 0 && falseMean < 0);
 
   if (absoluteMetric || baselineNearZero || negativeBaseline || signsCross) {
     const absoluteDifference = Math.abs(difference);

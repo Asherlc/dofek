@@ -30,8 +30,20 @@ describe("formatConditionalEffectLabel", () => {
     expect(formatConditionalEffectLabel(-2.5, -2, "next-day HRV")).toBe("0.50 ms lower");
   });
 
+  it("keeps the exact negative-baseline boundary in absolute units", () => {
+    expect(formatConditionalEffectLabel(-1.5, -1, "next-day HRV")).toBe("0.50 ms lower");
+  });
+
   it("uses absolute units when the means cross zero", () => {
     expect(formatConditionalEffectLabel(-0.5, 2, "next-day HRV")).toBe("2.50 ms lower");
+  });
+
+  it("uses absolute units when the means cross zero in the other direction", () => {
+    expect(formatConditionalEffectLabel(0.5, -2, "next-day HRV")).toBe("2.50 ms higher");
+  });
+
+  it("does not treat an exact zero mean as crossing zero", () => {
+    expect(formatConditionalEffectLabel(0, 2, "next-day HRV")).toBe("100% lower");
   });
 
   it("omits a unit when the metric has no configured unit", () => {
@@ -40,6 +52,12 @@ describe("formatConditionalEffectLabel", () => {
 
   it("uses a percentage for non-signed daily metrics when the baseline is not near zero", () => {
     expect(formatConditionalEffectLabel(2.6, 2, "next-day HRV")).toBe("30% higher");
+  });
+
+  it("uses percentage-point differences for percent-valued metrics", () => {
+    expect(formatConditionalEffectLabel(89, 85, "sleep efficiency that night")).toBe(
+      "4.00 % higher",
+    );
   });
 
   it("keeps monthly weight change in absolute kilograms at the old cutoff boundary", () => {
