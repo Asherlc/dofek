@@ -10,9 +10,18 @@ import {
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
+const MAX_SUPPORT_MESSAGE_LENGTH = 4_000;
+// Mirrors PostHog's WidgetMessageSerializer max_length=5000:
+// https://github.com/PostHog/posthog/blob/master/products/conversations/backend/api/serializers.py
+const POSTHOG_WIDGET_MESSAGE_MAX_LENGTH = 5_000;
+
 const createTicketInput = z.object({
   subject: z.string().trim().min(1, "Subject is required").max(255),
-  message: z.string().trim().min(1, "Message is required").max(10_000),
+  message: z
+    .string()
+    .trim()
+    .min(1, "Message is required")
+    .max(MAX_SUPPORT_MESSAGE_LENGTH, "Message is too long"),
   /** Optional reply-to email; falls back to the account's profile email. */
   email: z.string().email().optional(),
 });
@@ -130,9 +139,22 @@ export const supportRouter = router({
         });
       }
 
+      const description = buildDescription(
+        input.subject,
+        input.message,
+        ctx.userId,
+        ctx.appVersion,
+      );
+      if (description.length > POSTHOG_WIDGET_MESSAGE_MAX_LENGTH) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Support message is too long after context is added. Shorten it and try again.",
+        });
+      }
+
       try {
         const ticket = await getPostHogConversationsClient().createTicket({
-          message: buildDescription(input.subject, input.message, ctx.userId, ctx.appVersion),
+          message: description,
           contactEmail,
           contactName: profile?.name ?? contactEmail,
           distinctId: ctx.userId,

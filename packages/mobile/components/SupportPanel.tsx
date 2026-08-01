@@ -86,7 +86,7 @@ export function SupportPanel({
         onChangeText={setMessage}
         placeholder="How can we help?"
         placeholderTextColor={colors.textSecondary}
-        maxLength={10_000}
+        maxLength={4_000}
         multiline
         numberOfLines={6}
         textAlignVertical="top"

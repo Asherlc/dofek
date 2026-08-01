@@ -295,15 +295,32 @@ describe("PostHogConversationsClient", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ conversations: { enabled: true, token: "" } }));
     await expect(
       new PostHogConversationsClient(config).createTicket(ticketInput),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      name: "PostHogConversationsError",
+      status: 200,
+      message: "PostHog conversations config response was invalid",
+    });
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "failure",
+      status_class: "2xx",
+    });
 
     fetchMock.mockReset();
+    mockSupportTicketOperationsInc.mockReset();
     fetchMock
       .mockResolvedValueOnce(configResponse("conversation-token"))
       .mockResolvedValueOnce(jsonResponse({ ticket_id: " " }));
     await expect(
       new PostHogConversationsClient(config).createTicket(ticketInput),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      name: "PostHogConversationsError",
+      status: 200,
+      message: "PostHog ticket creation response was invalid",
+    });
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "failure",
+      status_class: "2xx",
+    });
   });
 
   it("converts timeout failures into service errors for config and ticket requests", async () => {

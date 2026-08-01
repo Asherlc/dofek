@@ -97,6 +97,22 @@ async function readPostHogJson(
   }
 }
 
+async function parsePostHogJson<T>(
+  fetchedResponse: FetchedPostHogResponse,
+  operation: string,
+  schema: z.ZodType<T>,
+): Promise<T> {
+  const payload = await readPostHogJson(fetchedResponse, operation);
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) {
+    throw new PostHogConversationsError(
+      `PostHog ${operation} response was invalid`,
+      fetchedResponse.response.status,
+    );
+  }
+  return parsed.data;
+}
+
 function createHttpError(operation: string, response: Response): PostHogConversationsError {
   return new PostHogConversationsError(
     `PostHog ${operation} request failed with status ${response.status}`,
@@ -179,8 +195,10 @@ export class PostHogConversationsClient {
       throw createHttpError("conversations config", response);
     }
 
-    const config = conversationConfigSchema.parse(
-      await readPostHogJson(fetchedResponse, "conversations config"),
+    const config = await parsePostHogJson(
+      fetchedResponse,
+      "conversations config",
+      conversationConfigSchema,
     );
     if (!config.conversations.enabled) {
       throw new PostHogConversationsError(
@@ -227,8 +245,10 @@ export class PostHogConversationsClient {
       throw createHttpError("ticket creation", response);
     }
 
-    const ticket = createTicketResponseSchema.parse(
-      await readPostHogJson(fetchedResponse, "ticket creation"),
+    const ticket = await parsePostHogJson(
+      fetchedResponse,
+      "ticket creation",
+      createTicketResponseSchema,
     );
     return { ticketId: ticket.ticket_id };
   }

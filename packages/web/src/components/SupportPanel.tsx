@@ -73,7 +73,7 @@ export function SupportPanel() {
         <textarea
           id="support-message"
           required
-          maxLength={10_000}
+          maxLength={4_000}
           rows={6}
           value={message}
           onChange={(event) => setMessage(event.target.value)}

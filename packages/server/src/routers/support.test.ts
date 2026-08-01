@@ -219,6 +219,44 @@ describe("supportRouter", () => {
     expect(mockCreateTicket).not.toHaveBeenCalled();
   });
 
+  it("rejects messages whose enriched description exceeds PostHog's limit", async () => {
+    await expect(
+      makeCaller(
+        { name: "Support User", email: "user@example.com" },
+        "x".repeat(1_000),
+      ).createTicket({
+        ...ticketInput,
+        message: "x".repeat(4_000),
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Support message is too long after context is added. Shorten it and try again.",
+    });
+    expect(mockCreateTicket).not.toHaveBeenCalled();
+  });
+
+  it("allows an enriched description exactly at PostHog's limit", async () => {
+    const message = "x".repeat(4_000);
+    const descriptionWithoutAppVersion = [
+      `Subject: ${ticketInput.subject}`,
+      "",
+      message,
+      "",
+      "---",
+      "User ID: user-1",
+      "App version: ",
+    ].join("\n");
+    const appVersion = "x".repeat(5_000 - descriptionWithoutAppVersion.length);
+    mockCreateTicket.mockResolvedValue({ ticketId: "ticket-limit" });
+
+    await expect(
+      makeCaller({ name: "Support User", email: "user@example.com" }, appVersion).createTicket({
+        ...ticketInput,
+        message,
+      }),
+    ).resolves.toEqual({ ticketId: "ticket-limit" });
+  });
+
   it("uses the explicit email when the profile is missing", async () => {
     vi.stubGlobal("crypto", { randomUUID: () => "widget-session-2" });
     mockCreateTicket.mockResolvedValue({ ticketId: "ticket-2" });
