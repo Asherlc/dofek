@@ -39,14 +39,22 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../pages/SettingsPage.tsx", () => ({
   SettingsPage: () => null,
-  isSettingsCategory: (value: unknown) =>
-    value === "account" ||
-    value === "data-sources" ||
-    value === "goals-models" ||
-    value === "privacy-export" ||
-    value === "notifications" ||
-    value === "billing" ||
-    value === "advanced",
+  normalizeSettingsCategory: (value: unknown) => {
+    if (
+      value === "account" ||
+      value === "data-sources" ||
+      value === "goals-models" ||
+      value === "privacy-export" ||
+      value === "notifications" ||
+      value === "billing" ||
+      value === "advanced"
+    ) {
+      return value;
+    }
+    if (value === "connections") return "data-sources";
+    if (value === "general" || value === "health") return "goals-models";
+    return undefined;
+  },
 }));
 
 beforeAll(async () => {
@@ -59,6 +67,15 @@ describe("settings search validation", () => {
       tab: "data-sources",
       zeppPair: "ABC234",
     });
+  });
+
+  it.each([
+    ["connections", "data-sources"],
+    ["general", "goals-models"],
+    ["health", "goals-models"],
+    ["account", "account"],
+  ] as const)("normalizes the legacy %s tab to %s", (legacyTab, currentCategory) => {
+    expect(captured.validateSearch?.({ tab: legacyTab })).toEqual({ tab: currentCategory });
   });
 
   it("drops invalid or empty settings search values", () => {

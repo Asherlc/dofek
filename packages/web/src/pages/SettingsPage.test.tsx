@@ -196,6 +196,60 @@ describe("SettingsPage categories", () => {
     expect(screen.getByText("Medication Reminders")).toBeTruthy();
   });
 
+  it("finds Data Export from Privacy/Export search terms", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "data export" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Privacy/Export" })).toBeTruthy();
+    expect(screen.getByText("Data Export")).toBeTruthy();
+  });
+
+  it("shows an empty state when no category matches the search", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "xyz" },
+    });
+
+    expect(screen.getByText("No settings categories match “xyz”.")).toBeTruthy();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByText("Password")).toBeNull();
+  });
+
+  it("clears the category search when a category is selected", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    const searchbox = screen.getByRole("searchbox", { name: "Search settings" });
+    fireEvent.change(searchbox, { target: { value: "medication" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
+
+    expect(searchbox).toHaveValue("");
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      search: expect.any(Function),
+    });
+  });
+
+  it.each([
+    ["connections", "data-sources"],
+    ["general", "goals-models"],
+    ["health", "goals-models"],
+    ["account", "account"],
+  ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory) => {
+    const { normalizeSettingsCategory } = await import("./SettingsPage.tsx");
+
+    expect(normalizeSettingsCategory(legacyTab)).toBe(currentCategory);
+  });
+
   it("renders only data-source settings for a deep link", async () => {
     mockSearch = { tab: "data-sources" };
     const { SettingsPage } = await import("./SettingsPage.tsx");

@@ -50,7 +50,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "privacy-export",
     label: "Privacy/Export",
-    searchText: "privacy export download delete danger zone",
+    searchText: "privacy export data export download delete danger zone",
   },
   {
     id: "notifications",
@@ -73,6 +73,17 @@ export function isSettingsCategory(value: unknown): value is SettingsCategory {
   return SETTINGS_CATEGORIES.some((category) => category.id === value);
 }
 
+const LEGACY_SETTINGS_CATEGORY_MAP: Readonly<Record<string, SettingsCategory>> = {
+  connections: "data-sources",
+  general: "goals-models",
+  health: "goals-models",
+};
+
+export function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined {
+  if (isSettingsCategory(value)) return value;
+  return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
+}
+
 function getSignupWeekLabel(startDate: string, endDateExclusive: string): string {
   const endInclusive = parseValidDate(`${endDateExclusive}T12:00:00.000Z`);
   if (!endInclusive) return `${formatDateMedium(startDate)} to --`;
@@ -88,7 +99,7 @@ export function SettingsPage() {
   const navigate = useNavigate({ from: "/settings" });
   const requestedCategory: SettingsCategory = search.zeppPair
     ? "data-sources"
-    : (search.tab ?? "account");
+    : (normalizeSettingsCategory(search.tab) ?? "account");
   const [categorySearch, setCategorySearch] = useState("");
   const normalizedCategorySearch = categorySearch.trim().toLowerCase();
   const visibleCategories = SETTINGS_CATEGORIES.filter(

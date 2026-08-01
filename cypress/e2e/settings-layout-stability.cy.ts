@@ -279,7 +279,7 @@ describe("Settings layout stability", () => {
     });
   }
 
-  it("keeps account settings stable while Billing resolves", () => {
+  it("keeps billing settings stable while Billing resolves", () => {
     cy.intercept("POST", /\/api\/trpc\/.*billing\.status/, (request) => {
       request.on("response", (response) => {
         response.setDelay(TARGET_RESPONSE_DELAY_MS);
@@ -323,9 +323,11 @@ describe("Settings layout stability", () => {
       const evidence =
         `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
         `Billing height delta ${billingHeightDelta}px; ` +
-        `Billing top ${initialBillingTop}px → ${finalBillingTop}px`;
+        `Billing top ${initialBillingTop}px → ${finalBillingTop}px; ` +
+        `Billing top delta ${Math.abs(finalBillingTop - initialBillingTop)}px`;
       cy.log(evidence);
       expect(Math.abs(billingHeightDelta), evidence).to.be.lessThan(1);
+      expect(Math.abs(finalBillingTop - initialBillingTop), evidence).to.be.lessThan(1);
       expect(cls, evidence).to.be.at.most(0.001);
     });
   });

@@ -382,6 +382,24 @@ describe("SettingsScreen categories", () => {
       "true",
     );
   });
+
+  it.each([
+    ["connections", "Data Sources", "2 connected"],
+    ["general", "Goals & Models", "Units"],
+    ["health", "Goals & Models", "Units"],
+    ["account", "Account", "Password"],
+  ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory, sectionText) => {
+    mockSearchParams = { tab: legacyTab };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    const selectedCategoryButton = screen
+      .getAllByRole("button", { name: currentCategory })
+      .find((button) => button.getAttribute("aria-selected") === "true");
+    expect(selectedCategoryButton).toBeTruthy();
+    expect(screen.getByText(sectionText)).toBeTruthy();
+  });
 });
 
 describe("SettingsScreen unit system", () => {
@@ -818,6 +836,16 @@ describe("SettingsScreen export UI rendering", () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText("Start Export")).toBeTruthy();
+  });
+
+  it("renders account deletion controls in Privacy/Export", async () => {
+    mockSessionToken = "   ";
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Danger Zone")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete All User Data" })).toBeTruthy();
   });
 
   it("shows Starting... and disables the button while processing", async () => {

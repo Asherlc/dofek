@@ -76,7 +76,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "privacy-export",
     label: "Privacy/Export",
-    searchText: "privacy export download delete danger zone",
+    searchText: "privacy export data export download delete danger zone",
   },
   {
     id: "notifications",
@@ -146,6 +146,17 @@ function isSettingsCategory(value: unknown): value is SettingsCategory {
   return SETTINGS_CATEGORIES.some((category) => category.id === value);
 }
 
+const LEGACY_SETTINGS_CATEGORY_MAP: Readonly<Record<string, SettingsCategory>> = {
+  connections: "data-sources",
+  general: "goals-models",
+  health: "goals-models",
+};
+
+function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined {
+  if (isSettingsCategory(value)) return value;
+  return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
+}
+
 function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
   return formatDateTime(date);
@@ -169,8 +180,9 @@ export default function SettingsScreen() {
   }>();
   const focusedReminderId =
     typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
-  const requestedCategory: SettingsCategory = isSettingsCategory(searchParams.tab)
-    ? searchParams.tab
+  const normalizedRequestedCategory = normalizeSettingsCategory(searchParams.tab);
+  const requestedCategory: SettingsCategory = normalizedRequestedCategory
+    ? normalizedRequestedCategory
     : searchParams.focus === "medicationReminders"
       ? "notifications"
       : "account";
@@ -851,7 +863,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Danger Zone ── */}
-      {activeCategory === "advanced" ? (
+      {activeCategory === "privacy-export" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           <Text style={styles.sectionDescription}>
