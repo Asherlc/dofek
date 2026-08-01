@@ -23,6 +23,7 @@ services:
 
   clickhouse:
     image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
+    mem_limit: 1536m
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./deploy/clickhouse/config.d/memory-limits.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
       test:
         [
