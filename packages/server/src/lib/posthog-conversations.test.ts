@@ -144,10 +144,7 @@ describe("PostHogConversationsClient", () => {
 
     await new PostHogConversationsClient(config).createTicket(ticketInput);
 
-    expect(mockSupportTicketDurationObserve).toHaveBeenCalledWith(
-      { outcome: "success" },
-      0.25,
-    );
+    expect(mockSupportTicketDurationObserve).toHaveBeenCalledWith({ outcome: "success" }, 0.25);
   });
 
   it("refreshes the cached token after 401 and 403 responses", async () => {
