@@ -425,6 +425,34 @@ describe("ActivitiesScreen", () => {
     expect(activityButton?.getAttribute("aria-label")).toContain("Indoor Cycling");
   });
 
+  it("includes available route measurements in each accessible action name", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              distanceMeters: 5000,
+              distanceState: { status: "available" },
+              elevationGainM: 120,
+              elevationState: { status: "available" },
+              location: null,
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Distance 5.0 km");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Elevation 120 m");
+  });
+
   it("does not repeat the activity type when an activity has no custom name", () => {
     mockQuery = {
       data: [

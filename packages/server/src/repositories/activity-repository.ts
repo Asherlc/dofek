@@ -454,7 +454,7 @@ export class ActivityRepository extends BaseRepository {
     return {
       ...rest,
       distance_state: activityMeasurementState("Distance", row.distance_meters),
-      elevation_state: activityMeasurementState("Elevation", row.elevation_gain_m),
+      elevation_state: activityMeasurementState("Elevation gain", row.elevation_gain_m),
     };
   }
 

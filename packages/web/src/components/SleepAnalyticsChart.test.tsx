@@ -5,8 +5,18 @@ import type { SleepNightlyRow } from "dofek-server/types";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./DofekChart.tsx", () => ({
-  DofekChart: ({ empty, emptyMessage }: { empty?: boolean; emptyMessage?: string }) => (
-    <div>{empty ? emptyMessage : "Sleep analytics chart"}</div>
+  DofekChart: ({
+    empty,
+    emptyMessage,
+    option,
+  }: {
+    empty?: boolean;
+    emptyMessage?: string;
+    option?: { series?: Array<{ data?: unknown[] }> };
+  }) => (
+    <div data-series-length={option?.series?.[0]?.data?.length ?? 0}>
+      {empty ? emptyMessage : "Sleep analytics chart"}
+    </div>
   ),
 }));
 
@@ -53,6 +63,17 @@ describe("SleepAnalyticsChart", () => {
     render(<SleepAnalyticsChart nightly={[night]} sleepDebt={30} />);
 
     expect(screen.getByText("Sleep analytics chart")).toBeTruthy();
+  });
+
+  it("plots the same recent window used by the measured-value check", () => {
+    const nightly = Array.from({ length: 15 }, (_, index) => ({
+      ...night,
+      date: `2026-07-${String(index + 1).padStart(2, "0")}`,
+    }));
+
+    render(<SleepAnalyticsChart nightly={nightly} sleepDebt={30} />);
+
+    expect(screen.getByText("Sleep analytics chart")).toHaveAttribute("data-series-length", "14");
   });
 
   it("shows the server-authored state when every plotted sleep value is unavailable", () => {

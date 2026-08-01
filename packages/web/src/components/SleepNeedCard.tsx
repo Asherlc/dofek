@@ -94,9 +94,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
           "Actual",
           data.recentNights.map((n) => ({
             value: n.actualMinutes,
-            itemStyle: {
-              color: n.actualMinutes == null ? "#3a3a3e" : chartThemeColors.axisLabel,
-            },
+            itemStyle: { color: chartThemeColors.axisLabel },
           })),
         ),
         barMaxWidth: 30,

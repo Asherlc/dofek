@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted(() => vi.fn());
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -15,7 +17,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: unknown) => {
+      cachedQueryOptions(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -43,6 +48,13 @@ import { trainingRouter } from "./training.ts";
 const createCaller = createTestCallerFactory(trainingRouter);
 
 describe("trainingRouter access window gating", () => {
+  it("versions the activity state cache contract", () => {
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 3_600_000,
+      keyVersion: "training-activity-states-v1",
+    });
+  });
+
   it("weeklyVolume throws a specific precondition error when the sensor store is missing", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },

@@ -137,7 +137,7 @@ describe("SleepScreen", () => {
     expect(screen.queryByText("50%")).toBeNull();
   });
 
-  it("keeps missing duration nights as gaps in the duration trend", async () => {
+  it("keeps missing sleep nights as gaps in the sleep trend", async () => {
     mockSleepData = {
       nightly: [
         {
@@ -195,7 +195,7 @@ describe("SleepScreen", () => {
     const { default: SleepScreen } = await import("./sleep");
     render(<SleepScreen />);
 
-    expect(screen.getByTestId("sleep-sparkline").getAttribute("data-values")).toBe("null,480");
+    expect(screen.getByTestId("sleep-sparkline").getAttribute("data-values")).toBe("null,450");
   });
 
   it("identifies the most recent night when sleep stages were not reported", async () => {

@@ -204,6 +204,17 @@ describe("sleep need contract", () => {
     });
   });
 
+  it("rejects mismatched insufficient-data explanations", () => {
+    expect(
+      sleepNeedV2Schema.safeParse({
+        availability: "insufficient_data",
+        reason: "missing_previous_day_load",
+        message: "Sync at least 7 qualifying nights to estimate sleep need.",
+        nextAction: "Sync more sleep and recovery data.",
+      }).success,
+    ).toBe(false);
+  });
+
   it("preserves the legacy V1 DTO with canRecommend false until its inputs are complete", () => {
     const computation = buildSleepNeedComputation({
       baselineMinutes: 480,

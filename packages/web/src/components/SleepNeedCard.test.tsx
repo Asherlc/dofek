@@ -223,7 +223,6 @@ describe("SleepNeedCard", () => {
     expect(bars).toHaveLength(3);
     // Null night should remain absent from the measured series.
     expect(bars[1]?.value).toBeNull();
-    expect(bars[1]?.itemStyle.color).toBe("#3a3a3e");
   });
 
   it("shows only the server message when previous-night sleep is missing", () => {

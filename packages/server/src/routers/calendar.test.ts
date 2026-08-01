@@ -4,6 +4,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 const repositoryResultMock = vi.hoisted(() => vi.fn());
 const repositoryInputMock = vi.hoisted(() => vi.fn());
+const cachedQueryOptions = vi.hoisted(() => vi.fn());
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -19,7 +20,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: unknown) => {
+      cachedQueryOptions(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -46,6 +50,14 @@ describe("calendarRouter", () => {
   beforeEach(() => {
     repositoryResultMock.mockReset();
     repositoryInputMock.mockReset();
+  });
+
+  it("versions the activity state cache contract", () => {
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 600_000,
+      keyVersion: "activity-calendar-states-v1",
+    });
+    expect(cachedQueryOptions).toHaveBeenCalledTimes(3);
   });
 
   it("surfaces missing ClickHouse analytics store as a precondition error", async () => {
@@ -96,6 +108,10 @@ describe("calendarRouter", () => {
               overlapSummary: "2 matched source records · Wahoo selected by source priority",
             },
             lastProcessedAt: "2026-03-18 08:07:00+00",
+            distanceMeters: 0,
+            distanceState: { status: "available" },
+            elevationGainM: 0,
+            elevationState: { status: "available" },
             location: null,
             tss: null,
             stats: [
@@ -160,6 +176,10 @@ describe("calendarRouter", () => {
               overlapSummary: null,
             },
             lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            distanceMeters: null,
+            distanceState: { status: "missing", reason: "Distance not recorded" },
+            elevationGainM: null,
+            elevationState: { status: "missing", reason: "Elevation gain not recorded" },
             location: null,
             tss: null,
             stats: [
@@ -224,6 +244,10 @@ describe("calendarRouter", () => {
               overlapSummary: null,
             },
             lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            distanceMeters: 5000,
+            distanceState: { status: "available" },
+            elevationGainM: 120,
+            elevationState: { status: "available" },
             location: {
               centroidLat: 37.7749,
               centroidLng: -122.4194,
@@ -244,10 +268,6 @@ describe("calendarRouter", () => {
                   { x: 480, y: 220 },
                 ],
               },
-              distanceMeters: 5000,
-              distanceState: { status: "available" },
-              elevationGainM: 120,
-              elevationState: { status: "available" },
             },
             tss: null,
             stats: [
@@ -294,10 +314,6 @@ describe("calendarRouter", () => {
                   { x: 480, y: 220 },
                 ],
               },
-              distanceMeters: 5000,
-              distanceState: { status: "available" },
-              elevationGainM: 120,
-              elevationState: { status: "available" },
             },
           }),
         ],
@@ -331,7 +347,7 @@ describe("calendarRouter", () => {
       totalDistanceMeters: null,
       totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["cycling", "running"],
     });
     const caller = createCaller({
@@ -347,7 +363,7 @@ describe("calendarRouter", () => {
       totalDistanceMeters: null,
       totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["cycling", "running"],
     });
   });

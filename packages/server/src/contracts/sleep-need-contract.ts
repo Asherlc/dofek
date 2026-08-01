@@ -82,19 +82,29 @@ const missingPreviousNightSleepNeedV2Schema = z
   })
   .strict();
 
-const insufficientDataSleepNeedV2Schema = z
+const insufficientBaselineSleepNeedV2Schema = z
   .object({
     availability: z.literal("insufficient_data"),
-    reason: z.enum(["insufficient_baseline_history", "missing_previous_day_load"]),
-    message: z.string().min(1),
-    nextAction: z.string().min(1),
+    reason: z.literal("insufficient_baseline_history"),
+    message: z.literal(INSUFFICIENT_BASELINE_HISTORY_MESSAGE),
+    nextAction: z.literal(INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION),
   })
   .strict();
 
-export const sleepNeedV2Schema = z.discriminatedUnion("availability", [
+const missingPreviousDayLoadSleepNeedV2Schema = z
+  .object({
+    availability: z.literal("insufficient_data"),
+    reason: z.literal("missing_previous_day_load"),
+    message: z.literal(MISSING_PREVIOUS_DAY_LOAD_MESSAGE),
+    nextAction: z.literal(MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION),
+  })
+  .strict();
+
+export const sleepNeedV2Schema = z.union([
   availableSleepNeedV2Schema,
   missingPreviousNightSleepNeedV2Schema,
-  insufficientDataSleepNeedV2Schema,
+  insufficientBaselineSleepNeedV2Schema,
+  missingPreviousDayLoadSleepNeedV2Schema,
 ]);
 
 export type SleepNeedV2 = z.infer<typeof sleepNeedV2Schema>;

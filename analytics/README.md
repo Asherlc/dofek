@@ -167,19 +167,22 @@ pnpm tsx scripts/with-env.ts -- env \
   --select "sensor_scalar_sample deduped_sensor activity_sensor_sample activity_location_sample"
 ```
 
-Choose the smallest interval that contains the data being repaired and advance
-long backfills in separately observed windows. dbt's microbatch documentation
-defines these flags as the supported historical backfill controls and
-recommends providing both bounds:
+For a microbatch replay, choose the smallest interval that contains the data
+being repaired and advance long backfills in separately observed windows. This
+bounded replay guidance does not define the retention boundary for the full
+`activity_summary_rows` rebuild below. dbt's microbatch documentation defines
+these flags as the supported historical backfill controls and recommends
+providing both bounds:
 <https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 
-When the semantics of an `activity_summary_rows` field change, existing
-append-incremental rows are not rewritten by the model change alone. After the
-upstream activity sensor and location summaries are current, run an explicit,
-monitored rebuild whose `initial_lookback_days` covers every affected activity:
-dbt recommends rebuilding an incremental model when its logic changes because
-historical transformations remain in the target table, using `--full-refresh`
-for the rebuild:
+When the semantics of an `activity_sensor_summary_rows` or
+`activity_summary_rows` field change, existing append-incremental rows are not
+rewritten by the model change alone. Run an explicit, monitored rebuild of the
+upstream sensor summary and its downstream activity summary, in dependency
+order, with an `initial_lookback_days` that covers every activity that should
+remain in both tables. dbt recommends rebuilding an incremental model when its
+logic changes because historical transformations remain in the target table,
+using `--full-refresh` for the rebuild:
 <https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
 
 ```sh
@@ -191,7 +194,7 @@ pnpm tsx scripts/with-env.ts -- env \
   --profiles-dir analytics \
   --full-refresh \
   --vars '{"initial_lookback_days": 3650}' \
-  --select activity_summary_rows
+  --select activity_sensor_summary_rows activity_summary_rows
 ```
 
 The lookback is a full-refresh retention boundary, not just the scope of the

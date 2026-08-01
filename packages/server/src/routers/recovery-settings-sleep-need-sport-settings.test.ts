@@ -795,7 +795,7 @@ describe("sleepNeedRouter", () => {
   const createCaller = createTestCallerFactory(sleepNeedRouter);
 
   describe("calculate", () => {
-    it("returns null when insufficient data", async () => {
+    it("returns an unavailable legacy recommendation when insufficient data", async () => {
       const rows = [
         {
           date: "2024-01-15",
@@ -813,9 +813,14 @@ describe("sleepNeedRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore(rows),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
     it("computes personalized baseline from good nights", async () => {
@@ -868,19 +873,23 @@ describe("sleepNeedRouter", () => {
       expect(result.recentNights).toHaveLength(7);
     });
 
-    it("handles empty data", async () => {
+    it("handles empty data with an unavailable legacy recommendation", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("returns null when sparse data cannot support the legacy result", async () => {
+    it("returns an unavailable legacy recommendation for sparse data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -901,10 +910,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("returns null when yesterday has sleep data but the baseline is insufficient", async () => {
+    it("keeps the legacy recommendation unavailable when the baseline is insufficient", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -925,10 +938,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("returns null when yesterday has no sleep data", async () => {
+    it("keeps the legacy recommendation unavailable when yesterday has no sleep data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
       const rows = [
         {
@@ -949,10 +966,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("returns null without sleep data", async () => {
+    it("returns the legacy fallback shape without sleep data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -961,7 +982,12 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        totalNeedMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
   });
 });

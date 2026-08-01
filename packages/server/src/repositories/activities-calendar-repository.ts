@@ -327,7 +327,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         distanceMeters: row.total_distance,
         distanceState: activityMeasurementState("Distance", row.total_distance),
         elevationGainM: row.elevation_gain_m,
-        elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
+        elevationState: activityMeasurementState("Elevation gain", row.elevation_gain_m),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -464,7 +464,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         distanceMeters: row.total_distance,
         distanceState: activityMeasurementState("Distance", row.total_distance),
         elevationGainM: row.elevation_gain_m,
-        elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
+        elevationState: activityMeasurementState("Elevation gain", row.elevation_gain_m),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -521,7 +521,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         totalDistanceMeters: null,
         totalDistanceState: activityMeasurementState("Distance", null),
         totalElevationGainM: null,
-        totalElevationState: activityMeasurementState("Elevation", null),
+        totalElevationState: activityMeasurementState("Elevation gain", null),
         activityTypes: [],
       };
     }
@@ -541,19 +541,14 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT
             count() AS activity_count,
             coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
-            sumOrNull(location.total_distance) AS total_distance_meters,
-            sumOrNull(sensor.elevation_gain_m) AS total_elevation_gain_m,
-            countIf(location.total_distance IS NOT NULL) AS distance_measurement_count,
-            countIf(sensor.elevation_gain_m IS NOT NULL) AS elevation_measurement_count
+            sumOrNull(summary.total_distance) AS total_distance_meters,
+            sumOrNull(summary.elevation_gain_m) AS total_elevation_gain_m,
+            countIf(summary.total_distance IS NOT NULL) AS distance_measurement_count,
+            countIf(summary.elevation_gain_m IS NOT NULL) AS elevation_measurement_count
           FROM analytics.deduped_activities AS activity FINAL
-          LEFT JOIN analytics.activity_location_summary_rows AS location FINAL
-            ON location.user_id = activity.user_id
-           AND location.activity_id = activity.activity_id
-           AND location.is_deleted = 0
-          LEFT JOIN analytics.activity_sensor_summary_rows AS sensor FINAL
-            ON sensor.user_id = activity.user_id
-           AND sensor.activity_id = activity.activity_id
-           AND sensor.is_deleted = 0
+          LEFT JOIN analytics.activity_summary AS summary
+            ON summary.user_id = activity.user_id
+           AND summary.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
@@ -606,10 +601,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       totalElevationGainM:
         totalElevationGainM == null ? null : Math.round(totalElevationGainM * 10) / 10,
       totalElevationState: elevationComplete
-        ? activityMeasurementState("Elevation", totalElevationGainM)
+        ? activityMeasurementState("Elevation gain", totalElevationGainM)
         : {
             status: "missing",
-            reason: "Elevation was not recorded for every activity.",
+            reason: "Elevation gain was not recorded for every activity.",
           },
       activityTypes: activityTypeRows.map((row) => row.activity_type),
     };

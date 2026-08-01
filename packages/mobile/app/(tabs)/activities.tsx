@@ -17,7 +17,7 @@ import {
   formatRecordLocalTime,
   type RecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
-import { formatMeasurementText } from "@dofek/format/units";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -92,11 +92,14 @@ function formatActivityAccessibilityLabel(
     localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
+    distanceMeters: number | null;
     distanceState: ActivityDataState;
+    elevationGainM: number | null;
     elevationState: ActivityDataState;
     location: { mapPreview: unknown } | null;
     stats: ActivityMetric[];
   },
+  units: UnitConverter,
 ): string {
   const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
   const labelParts = [
@@ -114,13 +117,26 @@ function formatActivityAccessibilityLabel(
     activity.distanceState.status === "available" ||
     activity.elevationState.status === "available";
   if (hasRouteMetrics) {
-    for (const metric of [
-      { label: "Distance", state: activity.distanceState },
-      { label: "Elevation", state: activity.elevationState },
-    ]) {
-      if (metric.state.status !== "available") {
+    const routeMetrics = [
+      formatActivityMetric(
+        "Distance",
+        activity.distanceMeters,
+        activity.distanceState,
+        (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+      ),
+      formatActivityMetric(
+        "Elevation",
+        activity.elevationGainM,
+        activity.elevationState,
+        (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+      ),
+    ];
+    for (const metric of routeMetrics) {
+      if (metric.status === "available") {
+        labelParts.push(`${metric.label} ${metric.value}`);
+      } else {
         labelParts.push(
-          `${metric.label} ${activityDataStateLabel(metric.state.status)}: ${metric.state.reason}`,
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
         );
       }
     }
@@ -362,6 +378,7 @@ export default function ActivitiesScreen() {
                         : "Select"
                       : "Open",
                     activity,
+                    units,
                   )}
                   accessibilityState={{
                     selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,

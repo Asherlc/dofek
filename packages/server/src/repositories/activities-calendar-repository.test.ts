@@ -165,7 +165,7 @@ function makeCalendarEntry(
     elevationGainM: overrides.elevationGainM ?? null,
     elevationState: overrides.elevationState ?? {
       status: "missing",
-      reason: "Elevation not recorded",
+      reason: "Elevation gain not recorded",
     },
     location: overrides.location ?? null,
     tss: overrides.tss ?? null,
@@ -646,7 +646,7 @@ describe("ActivitiesCalendarRepository", () => {
       totalElevationGainM: null,
       totalElevationState: {
         status: "missing",
-        reason: "Elevation was not recorded for every activity.",
+        reason: "Elevation gain was not recorded for every activity.",
       },
       activityTypes: ["walking"],
     });
@@ -683,6 +683,36 @@ describe("ActivitiesCalendarRepository", () => {
     });
   });
 
+  it("counts indoor and virtual zero distance as measured with outdoor totals", async () => {
+    const database = makeDatabase([[{ id: "indoor" }, { id: "run" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: 2,
+          total_minutes: 120,
+          total_distance_meters: 5000,
+          total_elevation_gain_m: 100,
+          distance_measurement_count: 2,
+          elevation_measurement_count: 2,
+        },
+      ],
+      [{ activity_type: "indoor_cycling" }, { activity_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      activityCount: 2,
+      totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
+    });
+
+    const overviewQuery = normalizeSql(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    expect(overviewQuery).toContain("sumOrNull(summary.total_distance)");
+    expect(overviewQuery).toContain("countIf(summary.total_distance IS NOT NULL)");
+  });
+
   it("returns an empty overview without querying ClickHouse when no activities are visible", async () => {
     const database = makeDatabase([[]]);
     const sensorStore = makeSensorStore([]);
@@ -696,7 +726,7 @@ describe("ActivitiesCalendarRepository", () => {
       totalDistanceMeters: null,
       totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: [],
     });
     expect(sensorStore.query).not.toHaveBeenCalled();
@@ -759,7 +789,7 @@ describe("ActivitiesCalendarRepository", () => {
       totalDistanceMeters: null,
       totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["running"],
     });
     for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {
@@ -795,20 +825,14 @@ describe("ActivitiesCalendarRepository", () => {
       "FROM analytics.deduped_activities AS activity FINAL",
     );
     expect(normalizedOverviewQuery).not.toContain("analytics.v_activity");
-    expect(normalizedOverviewQuery).not.toContain("analytics.activity_summary");
+    expect(normalizedOverviewQuery).toContain("LEFT JOIN analytics.activity_summary AS summary");
     expect(normalizedOverviewQuery).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
-    expect(normalizedOverviewQuery).toContain("sumOrNull(location.total_distance)");
-    expect(normalizedOverviewQuery).toContain("sumOrNull(sensor.elevation_gain_m)");
-    expect(normalizedOverviewQuery).toContain(
-      "LEFT JOIN analytics.activity_location_summary_rows AS location FINAL",
-    );
-    expect(normalizedOverviewQuery).toContain(
-      "LEFT JOIN analytics.activity_sensor_summary_rows AS sensor FINAL",
-    );
-    expect(normalizedOverviewQuery).toContain("location.is_deleted = 0");
-    expect(normalizedOverviewQuery).toContain("sensor.is_deleted = 0");
+    expect(normalizedOverviewQuery).toContain("sumOrNull(summary.total_distance)");
+    expect(normalizedOverviewQuery).toContain("sumOrNull(summary.elevation_gain_m)");
+    expect(normalizedOverviewQuery).toContain("countIf(summary.total_distance IS NOT NULL)");
+    expect(normalizedOverviewQuery).toContain("countIf(summary.elevation_gain_m IS NOT NULL)");
     expect(normalizedOverviewQuery).toContain("activity.activity_id IN {activityIds:Array(UUID)}");
   });
 
@@ -944,7 +968,7 @@ describe("ActivitiesCalendarRepository", () => {
         distanceMeters: null,
         distanceState: { status: "missing", reason: "Distance not recorded" },
         elevationGainM: null,
-        elevationState: { status: "missing", reason: "Elevation not recorded" },
+        elevationState: { status: "missing", reason: "Elevation gain not recorded" },
       }),
     );
   });
@@ -983,7 +1007,7 @@ describe("ActivitiesCalendarRepository", () => {
         distanceMeters: null,
         distanceState: { status: "missing", reason: "Distance not recorded" },
         elevationGainM: null,
-        elevationState: { status: "missing", reason: "Elevation not recorded" },
+        elevationState: { status: "missing", reason: "Elevation gain not recorded" },
       }),
     );
     expect(activities.find((activity) => activity.id === "zero-route-measurements")).toEqual(
@@ -1634,7 +1658,7 @@ describe("ActivitiesCalendarRepository", () => {
       distanceMeters: null,
       distanceState: { status: "missing", reason: "Distance not recorded" },
       elevationGainM: null,
-      elevationState: { status: "missing", reason: "Elevation not recorded" },
+      elevationState: { status: "missing", reason: "Elevation gain not recorded" },
       location: null,
       tss: 100,
       stats: [{ status: "available", label: "Training Stress Score", value: "100" }],

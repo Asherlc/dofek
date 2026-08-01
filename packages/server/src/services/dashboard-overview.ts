@@ -350,7 +350,7 @@ export async function loadDashboardOverview({
     ),
     hasYesterdayLoad: yesterdayLoadFromClickHouse != null,
   });
-  const sleepNeedResult = toSleepNeedV1(sleepNeedComputation);
+  const sleepNeedResult = sleepBaselineRows.length > 0 ? toSleepNeedV1(sleepNeedComputation) : null;
 
   const acuteLoad = dailyLoadRows.reduce((totalLoad, row) => {
     const daysAgo = Math.floor(

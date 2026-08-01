@@ -55,7 +55,7 @@ const activityStatSchema = z.discriminatedUnion("status", [
   z.object({
     status: activityDataStateUnavailableStatusSchema,
     label: z.string(),
-    reason: z.string().min(1),
+    reason: z.string().trim().min(1),
   }),
 ]);
 
@@ -129,7 +129,10 @@ export const calendarRouter = router({
     },
   ),
 
-  weekList: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  weekList: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-calendar-states-v1",
+  })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
     .query(async ({ ctx, input }) => {
@@ -151,7 +154,10 @@ export const calendarRouter = router({
       return repo.getWeekList(input);
     }),
 
-  activityOverview: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  activityOverview: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-calendar-states-v1",
+  })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)
     .query(async ({ ctx, input }) => {

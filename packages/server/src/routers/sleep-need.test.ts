@@ -211,12 +211,23 @@ describe("sleepNeedRouter", () => {
     });
 
     it("excludes older missing durations from debt and recent-night values", async () => {
+      const recentRows = completeSleepNeedRows().map((row) =>
+        row.date === "2026-03-13" ? { ...row, duration_minutes: null } : row,
+      );
+      recentRows.push({
+        date: "2026-03-07",
+        duration_minutes: 480,
+        next_day_hrv: 50,
+        median_hrv: 45,
+        good_recovery: true,
+        yesterday_load: 0,
+      });
       const caller = createCalculateCaller([
         {
           date: "2026-03-01",
           duration_minutes: null,
         },
-        ...completeSleepNeedRows(),
+        ...recentRows,
       ]);
 
       const result = await caller.calculateV2({ endDate: "2026-03-15" });
@@ -237,6 +248,10 @@ describe("sleepNeedRouter", () => {
         throw new Error("Expected available sleep need");
       }
       expect(result.recentNights.find((night) => night.date === "2026-03-01")).toBeUndefined();
+      expect(result.recentNights.find((night) => night.date === "2026-03-13")).toMatchObject({
+        actualMinutes: null,
+        debtMinutes: null,
+      });
     });
   });
 

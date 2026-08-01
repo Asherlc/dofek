@@ -283,9 +283,6 @@ export default function TodayScreen() {
         >
           <Card title="Sleep Data Needed">
             <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
-            {sleepNeed.availability === "insufficient_data" && (
-              <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
-            )}
           </Card>
         </Animated.View>
       )}

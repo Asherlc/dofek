@@ -16,18 +16,9 @@ export function SleepOverviewCards({
   sleepPerformance,
   sleepPerformanceLoading,
 }: SleepOverviewCardsProps) {
-  const hasSleepPerformance = sleepPerformance != null || sleepPerformanceLoading === true;
-
   return (
-    <div
-      className={
-        hasSleepPerformance ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : "grid grid-cols-1 gap-4"
-      }
-      data-testid="sleep-overview-cards"
-    >
-      {hasSleepPerformance && (
-        <SleepPerformanceCard data={sleepPerformance} loading={sleepPerformanceLoading} />
-      )}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="sleep-overview-cards">
+      <SleepPerformanceCard data={sleepPerformance} loading={sleepPerformanceLoading} />
       <SleepNeedCard data={sleepNeed} loading={sleepNeedLoading} />
     </div>
   );

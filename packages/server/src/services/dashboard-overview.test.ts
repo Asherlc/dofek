@@ -3,6 +3,12 @@ import type { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { loadDashboardOverview } from "./dashboard-overview.ts";
 
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function makeSensorStore({
   metricDate = "2026-06-29",
   sleepDurationMinutes = 455,
@@ -25,16 +31,18 @@ function makeSensorStore({
       let rows: Record<string, unknown>[];
       if (queryText.includes("analytics.daily_recovery")) {
         expect(queryText).toContain("recovery.is_deleted = 0");
-        rows = [
-          {
-            date: "2026-06-29",
-            hrv: 62,
-            hrv_score: 70,
-            resting_hr_score: 68,
-            sleep_score: 80,
-            respiratory_rate_score: 75,
-          },
-        ];
+        const recoveryDates =
+          sleepNights === undefined
+            ? [{ date: "2026-06-29", hrv: 62 }]
+            : sleepNights.map((night) => ({ date: addDays(night.date, 1), hrv: 62 }));
+        rows = recoveryDates.map((recovery) => ({
+          date: recovery.date,
+          hrv: recovery.hrv,
+          hrv_score: 70,
+          resting_hr_score: 68,
+          sleep_score: 80,
+          respiratory_rate_score: 75,
+        }));
       } else if (queryText.includes("analytics.daily_sleep")) {
         expect(queryText).toContain("AND sleep.is_deleted = 0");
         rows = (sleepNights ?? [{ date: "2026-06-29", durationMinutes: sleepDurationMinutes }]).map(
@@ -114,6 +122,21 @@ describe("loadDashboardOverview", () => {
       userId: "user-1",
     });
 
+    expect(result.sleepNeedV2).toEqual({
+      availability: "missing_previous_night",
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+  });
+
+  it("keeps the legacy dashboard sleep need unavailable when there are no sleep rows", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore({ sleepNights: [] }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeed).toBeNull();
     expect(result.sleepNeedV2).toEqual({
       availability: "missing_previous_night",
       message: "Sync last night's sleep data to see tonight's sleep need.",
@@ -212,17 +235,24 @@ describe("loadDashboardOverview", () => {
       sensorStore: makeSensorStore({
         sleepNights: [
           { date: "2026-06-29", durationMinutes: null },
-          { date: "2026-06-30", durationMinutes: 480 },
+          ...Array.from({ length: 8 }, (_, index) => ({
+            date: addDays("2026-06-23", index),
+            durationMinutes: 480,
+          })),
         ],
       }),
       userId: "user-1",
     });
 
-    expect(result.sleepNeedV2).toEqual({
-      availability: "insufficient_data",
-      reason: "insufficient_baseline_history",
-      message: "Sync at least 7 qualifying nights to estimate sleep need.",
-      nextAction: "Sync more sleep and recovery data.",
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 480,
+      estimateMetadata: {
+        baselineQualifyingNightCount: 8,
+        debtObservedNightCount: 8,
+      },
     });
   });
 
@@ -243,11 +273,15 @@ describe("loadDashboardOverview", () => {
       userId: "user-1",
     });
 
-    expect(result.sleepNeedV2).toEqual({
-      availability: "insufficient_data",
-      reason: "insufficient_baseline_history",
-      message: "Sync at least 7 qualifying nights to estimate sleep need.",
-      nextAction: "Sync more sleep and recovery data.",
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 429,
+      estimateMetadata: {
+        baselineQualifyingNightCount: 15,
+        debtObservedNightCount: 13,
+      },
     });
   });
 });

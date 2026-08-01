@@ -28,7 +28,7 @@ const sleepPerformance: SleepPerformanceInfo = {
 };
 
 describe("SleepOverviewCards", () => {
-  it("shows only the prerequisite card when prior-night sleep is missing", () => {
+  it("keeps both card positions stable when prior-night sleep is missing", () => {
     render(
       <SleepOverviewCards
         sleepNeed={{
@@ -39,9 +39,9 @@ describe("SleepOverviewCards", () => {
       />,
     );
 
-    expect(screen.getByTestId("sleep-overview-cards").className).not.toContain("lg:grid-cols-2");
+    expect(screen.getByTestId("sleep-overview-cards").className).toContain("lg:grid-cols-2");
     expect(screen.getByTestId("sleep-need-card")).toBeDefined();
-    expect(screen.queryByTestId("sleep-performance-card")).toBeNull();
+    expect(screen.getByTestId("sleep-performance-card")).toBeDefined();
   });
 
   it("shows both sleep cards when the recommendation is available", () => {
