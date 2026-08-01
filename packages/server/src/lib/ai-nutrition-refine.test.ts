@@ -103,6 +103,16 @@ describe("refineNutritionItems", () => {
     expect(result.items).toHaveLength(3);
     expect(result.provider).toBe("gemini");
     expect(result.items[2]?.foodName).toBe("Butter");
+    expect(mockGenerateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experimental_telemetry: {
+          functionId: "nutrition.refine_items",
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+        },
+      }),
+    );
   });
 
   it("includes local time in the system prompt when provided", async () => {

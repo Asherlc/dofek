@@ -85,6 +85,16 @@ describe("analyzeNutritionItems", () => {
     expect(result.items[0]?.meal).toBe("lunch");
     expect(result.items[1]?.foodName).toBe("Coca-Cola");
     expect(result.provider).toBe("gemini");
+    expect(mockGenerateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experimental_telemetry: {
+          functionId: "nutrition.analyze_items",
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+        },
+      }),
+    );
   });
 
   it("throws when no providers are configured", async () => {

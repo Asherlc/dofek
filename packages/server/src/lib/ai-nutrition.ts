@@ -134,6 +134,12 @@ export async function analyzeNutrition(description: string): Promise<AnalyzeResu
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionSchema }),
+        experimental_telemetry: {
+          functionId: "nutrition.analyze",
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+        },
         system: SYSTEM_PROMPT,
         prompt: description,
       });
@@ -183,6 +189,12 @@ export async function refineNutritionItems(
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
+        experimental_telemetry: {
+          functionId: "nutrition.refine_items",
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+        },
         system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.${localTime ? `\n\nThe user's local time is ${localTime}.` : ""}`,
         messages: [
           { role: "user", content: "Here's what I ate: the items below" },
@@ -219,6 +231,12 @@ export async function analyzeNutritionItems(
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
+        experimental_telemetry: {
+          functionId: "nutrition.analyze_items",
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+        },
         system,
         prompt: description,
       });

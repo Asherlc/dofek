@@ -43,6 +43,15 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
   refineNutritionItems: vi.fn(),
 }));
 
+const aiObservabilityMocks = vi.hoisted(() => ({
+  withAiGenerationContext: vi.fn(
+    async (_context: { userId?: string }, operation: () => Promise<unknown>): Promise<unknown> =>
+      operation(),
+  ),
+}));
+
+vi.mock("dofek/lib/ai-observability", () => aiObservabilityMocks);
+
 vi.mock("dofek/lib/cache", () => ({
   invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
   queryCache: {
@@ -233,6 +242,10 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(mockAnalyze).toHaveBeenCalledWith("Two eggs and toast", expect.any(String));
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-123" },
+        expect.any(Function),
+      );
       expect(client.users.info).toHaveBeenCalledWith({ user: "U123" });
       expect(chatPostMessage).toHaveBeenCalledWith({
         channel: "C123",
@@ -951,6 +964,10 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(loadSpy).toHaveBeenCalledWith(["old-id"]);
       expect(mockRefine).toHaveBeenCalled();
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-123" },
+        expect.any(Function),
+      );
       expect(deleteSpy).toHaveBeenCalledWith(["old-id"]);
       expect(chatPostMessage).toHaveBeenCalledWith({
         channel: "C1",

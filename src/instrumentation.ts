@@ -6,9 +6,11 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, type LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { POSTHOG_API_KEY, POSTHOG_LOGS_URL } from "./lib/posthog-config.ts";
+import { PostHogSpanProcessor } from "@posthog/ai/otel";
+import { AiContextSpanProcessor } from "./lib/ai-observability.ts";
+import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_LOGS_URL } from "./lib/posthog-config.ts";
 
 function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
@@ -46,9 +48,38 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
   return processors;
 }
 
+function createSpanProcessors(env: Record<string, string | undefined>): SpanProcessor[] {
+  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
+  const hasPostHogAiExport = isProductionDeployment(env.DEPLOY_ENVIRONMENT);
+
+  if (!hasAxiomTraceExport && !hasPostHogAiExport) {
+    return [];
+  }
+
+  const processors: SpanProcessor[] = [new AiContextSpanProcessor()];
+
+  if (hasAxiomTraceExport) {
+    processors.push(new BatchSpanProcessor(new OTLPTraceExporter()));
+  }
+
+  if (hasPostHogAiExport) {
+    processors.push(
+      new PostHogSpanProcessor({
+        projectToken: POSTHOG_API_KEY,
+        host: POSTHOG_HOST,
+      }),
+    );
+  }
+
+  return processors;
+}
+
 /**
- * Starts OpenTelemetry instrumentation when OTLP export env vars are set.
- * Returns the SDK instance for shutdown, or undefined if OTel is disabled.
+ * Starts OpenTelemetry instrumentation when OTLP export env vars or production
+ * observability adapters are configured. Returns the SDK instance for shutdown,
+ * or undefined if OTel is disabled.
  */
 export function startInstrumentation(
   env: Record<string, string | undefined> = process.env,
@@ -57,7 +88,9 @@ export function startInstrumentation(
   const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
   const metricsEndpoint = env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
-  const hasTraceExport = Boolean(endpoint || tracesEndpoint);
+  const spanProcessors = createSpanProcessors(env);
+  const hasTraceExport = spanProcessors.length > 0;
+  const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
   const logRecordProcessors = createLogRecordProcessors(env);
   const hasLogExport = logRecordProcessors.length > 0;
   const hasMetricExport = Boolean(endpoint || metricsEndpoint);
@@ -71,7 +104,7 @@ export function startInstrumentation(
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: serviceName,
     }),
-    spanProcessors: hasTraceExport ? [new BatchSpanProcessor(new OTLPTraceExporter())] : [],
+    spanProcessors,
     logRecordProcessors,
     metricReader: hasMetricExport
       ? new PeriodicExportingMetricReader({
@@ -81,7 +114,7 @@ export function startInstrumentation(
       : undefined,
     instrumentations: [
       // Winston logs are bridged via @opentelemetry/winston-transport in logger.ts
-      ...(hasTraceExport
+      ...(hasAxiomTraceExport
         ? [
             getNodeAutoInstrumentations({
               "@opentelemetry/instrumentation-winston": { enabled: false },

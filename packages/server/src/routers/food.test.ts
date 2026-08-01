@@ -6,6 +6,13 @@ const cacheMocks = vi.hoisted(() => ({
   invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
 }));
 
+const aiObservabilityMocks = vi.hoisted(() => ({
+  withAiGenerationContext: vi.fn(
+    async (_context: { userId?: string }, operation: () => Promise<unknown>): Promise<unknown> =>
+      operation(),
+  ),
+}));
+
 vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
@@ -15,6 +22,8 @@ vi.mock("dofek/lib/cache", () => ({
     invalidateByPrefix: cacheMocks.invalidateByPrefix,
   },
 }));
+
+vi.mock("dofek/lib/ai-observability", () => aiObservabilityMocks);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -126,6 +135,7 @@ describe("foodRouter", () => {
   beforeEach(() => {
     cacheMocks.invalidateByPrefix.mockReset();
     cacheMocks.invalidateByPrefix.mockResolvedValue(undefined);
+    aiObservabilityMocks.withAiGenerationContext.mockClear();
     vi.mocked(captureException).mockReset();
   });
 
@@ -454,6 +464,10 @@ describe("foodRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.analyzeWithAi({ description: "1 medium apple" });
       expect(result.nutrition).toHaveProperty("foodName", "Apple");
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-1" },
+        expect.any(Function),
+      );
     });
   });
 
@@ -465,6 +479,10 @@ describe("foodRouter", () => {
       });
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty("foodName", "Apple");
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-1" },
+        expect.any(Function),
+      );
     });
 
     it("returns an actionable error when AI cannot parse the meal", async () => {

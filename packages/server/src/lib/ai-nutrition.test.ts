@@ -76,6 +76,12 @@ describe("analyzeNutrition", () => {
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: "a big plate of roasted vegetables",
+        experimental_telemetry: {
+          functionId: "nutrition.analyze",
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+        },
       }),
     );
   });
