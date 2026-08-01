@@ -62,17 +62,23 @@ function readModelColumns(name: string): string[] {
 
 // Rebuild the physical column order the migration produces for `table` by
 // walking its `MODIFY COLUMN <column> ... AFTER <anchor>` chain from the given
-// starting anchor.
+// starting anchor. Every ALTER statement for `table` must parse; a statement
+// that falls through the pattern would silently shorten the chain and let an
+// ordering regression pass, so fail loudly instead.
 const MODIFY_COLUMN_PATTERN =
   /ALTER TABLE analytics\.(\w+)\s+MODIFY COLUMN (\w+)[\s\S]*?AFTER (\w+)/;
 
 function repositionedOrder(statements: readonly string[], table: string, anchor: string): string[] {
   const nextColumnByAnchor = new Map<string, string>();
   for (const statement of statements) {
-    const [, statementTable, column, columnAnchor] = statement.match(MODIFY_COLUMN_PATTERN) ?? [];
-    if (statementTable === table && column && columnAnchor) {
-      nextColumnByAnchor.set(columnAnchor, column);
+    if (!statement.startsWith(`ALTER TABLE analytics.${table}`)) {
+      continue;
     }
+    const [, , column, columnAnchor] = statement.match(MODIFY_COLUMN_PATTERN) ?? [];
+    if (!column || !columnAnchor) {
+      throw new Error(`Could not parse the MODIFY COLUMN layout for ${table}: "${statement}"`);
+    }
+    nextColumnByAnchor.set(columnAnchor, column);
   }
 
   const order = [anchor];
