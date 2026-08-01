@@ -9,7 +9,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { PostHogSpanProcessor } from "@posthog/ai/otel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiOnlySpanProcessor } from "./lib/ai-observability.ts";
-import { POSTHOG_API_KEY, POSTHOG_HOST } from "./lib/posthog-config.ts";
+import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_TRACES_URL } from "./lib/posthog-config.ts";
 
 const mockStart = vi.fn();
 const mockShutdown = vi.fn().mockResolvedValue(undefined);
@@ -202,7 +202,7 @@ describe("instrumentation", () => {
     startInstrumentation({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318" });
 
     expect(NodeSDK).toHaveBeenCalledOnce();
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(2);
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(config?.metricReader).toBeDefined();
@@ -220,20 +220,21 @@ describe("instrumentation", () => {
     });
   });
 
-  it("adds the PostHog AI processor in production without enabling generic auto-instrumentations", async () => {
+  it("adds the PostHog trace and AI processors in production", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     startInstrumentation({ DEPLOY_ENVIRONMENT: "production" });
 
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
-    expect(config?.spanProcessors).toHaveLength(2);
-    expect(config?.instrumentations).toEqual([]);
+    expect(config?.spanProcessors).toHaveLength(3);
+    expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
+    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(PostHogSpanProcessor).toHaveBeenCalledWith({
       projectToken: POSTHOG_API_KEY,
       host: POSTHOG_HOST,
     });
-    expect(config?.spanProcessors?.[1]).toBeInstanceOf(AiOnlySpanProcessor);
-    expect(getNodeAutoInstrumentations).not.toHaveBeenCalled();
+    expect(config?.spanProcessors?.[2]).toBeInstanceOf(AiOnlySpanProcessor);
+    expect(getNodeAutoInstrumentations).toHaveBeenCalledOnce();
   });
 
   it("keeps Axiom and PostHog AI processors together in production", async () => {
@@ -245,8 +246,8 @@ describe("instrumentation", () => {
     });
 
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
-    expect(config?.spanProcessors).toHaveLength(3);
-    expect(BatchSpanProcessor).toHaveBeenCalledOnce();
+    expect(config?.spanProcessors).toHaveLength(4);
+    expect(BatchSpanProcessor).toHaveBeenCalledTimes(2);
     expect(PostHogSpanProcessor).toHaveBeenCalledOnce();
   });
 
@@ -257,7 +258,7 @@ describe("instrumentation", () => {
       DEPLOY_ENVIRONMENT: "production",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
       exporter: expect.any(OTLPLogExporter),
@@ -272,6 +273,66 @@ describe("instrumentation", () => {
     );
   });
 
+  it.each([
+    "prod",
+    "production",
+  ])("adds a PostHog trace exporter in production even without Axiom endpoints (DEPLOY_ENVIRONMENT=%s)", async (deploymentEnvironment) => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      DEPLOY_ENVIRONMENT: deploymentEnvironment,
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
+    expect(config?.spanProcessors).toHaveLength(3);
+    expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
+    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
+    expect(OTLPTraceExporter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: POSTHOG_TRACES_URL,
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${POSTHOG_API_KEY}`,
+        }),
+      }),
+    );
+  });
+
+  it("keeps Axiom and PostHog trace exporters alongside each other in production with an Axiom endpoint", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      DEPLOY_ENVIRONMENT: "production",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
+    expect(config?.spanProcessors).toHaveLength(4);
+    expect(BatchSpanProcessor).toHaveBeenCalledTimes(2);
+  });
+
+  it("adds PostHog traces without PostHog logs for production services configured with explicit OTLP endpoints", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      NODE_ENV: "production",
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://collector:4318/v1/traces",
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://collector:4318/v1/logs",
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
+    expect(config?.spanProcessors).toHaveLength(4);
+    expect(config?.logRecordProcessors).toHaveLength(1);
+    expect(OTLPTraceExporter).toHaveBeenCalledTimes(2);
+    expect(OTLPTraceExporter).toHaveBeenLastCalledWith({
+      url: POSTHOG_TRACES_URL,
+      headers: {
+        Authorization: `Bearer ${POSTHOG_API_KEY}`,
+      },
+    });
+    expect(OTLPLogExporter).toHaveBeenCalledOnce();
+    expect(OTLPLogExporter).toHaveBeenCalledWith();
+  });
+
   it("only configures trace processors and auto instrumentations when only traces endpoint exists", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
@@ -279,7 +340,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://localhost:4318/v1/traces",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(2);
     expect(config?.logRecordProcessors).toHaveLength(0);
     expect(config?.metricReader).toBeUndefined();
@@ -294,7 +355,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://localhost:4318/v1/logs",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(config?.instrumentations).toEqual([]);
@@ -308,7 +369,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://localhost:4318/v1/metrics",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(0);
     expect(config?.metricReader).toBeDefined();

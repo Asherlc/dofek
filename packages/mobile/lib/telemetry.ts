@@ -124,10 +124,15 @@ export function initTelemetry() {
     posthogClient = new PostHog(POSTHOG_API_KEY, {
       host: POSTHOG_HOST,
       errorTracking: {
+        // Autocapture only genuine crashes. Console autocapture is
+        // intentionally omitted: React logs recoverable, handled warnings
+        // (e.g. "Element type is invalid") via console.error, and our own
+        // logger.error writes to console.error too, so capturing the console
+        // would mint inbox issues for handled dev-grade warnings and
+        // duplicate every error we already report via captureException.
         autocapture: {
           uncaughtExceptions: true,
           unhandledRejections: true,
-          console: ["error"],
         },
       },
     });

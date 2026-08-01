@@ -14,10 +14,57 @@ import {
   AiOnlySpanProcessor,
   registerAiTelemetry,
 } from "./lib/ai-observability.ts";
-import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_LOGS_URL } from "./lib/posthog-config.ts";
+import {
+  POSTHOG_API_KEY,
+  POSTHOG_HOST,
+  POSTHOG_LOGS_URL,
+  POSTHOG_TRACES_URL,
+} from "./lib/posthog-config.ts";
 
 function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
+}
+
+function createSpanProcessors(env: Record<string, string | undefined>): SpanProcessor[] {
+  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
+  const hasPostHogTraceExport =
+    isProductionDeployment(env.DEPLOY_ENVIRONMENT) ||
+    (env.NODE_ENV === "production" && hasAxiomTraceExport);
+
+  if (!hasAxiomTraceExport && !hasPostHogTraceExport) {
+    return [];
+  }
+
+  const processors: SpanProcessor[] = [new AiContextSpanProcessor()];
+
+  if (hasAxiomTraceExport) {
+    processors.push(new BatchSpanProcessor(new OTLPTraceExporter()));
+  }
+
+  if (hasPostHogTraceExport) {
+    processors.push(
+      new BatchSpanProcessor(
+        new OTLPTraceExporter({
+          url: POSTHOG_TRACES_URL,
+          headers: {
+            Authorization: `Bearer ${POSTHOG_API_KEY}`,
+          },
+        }),
+      ),
+    );
+    processors.push(
+      new AiOnlySpanProcessor(
+        new PostHogSpanProcessor({
+          projectToken: POSTHOG_API_KEY,
+          host: POSTHOG_HOST,
+        }),
+      ),
+    );
+  }
+
+  return processors;
 }
 
 function createLogRecordProcessors(env: Record<string, string | undefined>): LogRecordProcessor[] {
@@ -52,51 +99,19 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
   return processors;
 }
 
-function createSpanProcessors(env: Record<string, string | undefined>): SpanProcessor[] {
-  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
-  const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
-  const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
-  const hasPostHogAiExport = isProductionDeployment(env.DEPLOY_ENVIRONMENT);
-
-  if (!hasAxiomTraceExport && !hasPostHogAiExport) {
-    return [];
-  }
-
-  const processors: SpanProcessor[] = [new AiContextSpanProcessor()];
-
-  if (hasAxiomTraceExport) {
-    processors.push(new BatchSpanProcessor(new OTLPTraceExporter()));
-  }
-
-  if (hasPostHogAiExport) {
-    processors.push(
-      new AiOnlySpanProcessor(
-        new PostHogSpanProcessor({
-          projectToken: POSTHOG_API_KEY,
-          host: POSTHOG_HOST,
-        }),
-      ),
-    );
-  }
-
-  return processors;
-}
-
 /**
- * Starts OpenTelemetry instrumentation when OTLP export env vars or production
- * observability adapters are configured. Returns the SDK instance for shutdown,
- * or undefined if OTel is disabled.
+ * Starts OpenTelemetry instrumentation when a telemetry export is configured
+ * (OTLP env vars or a production PostHog export). Returns the SDK instance for
+ * shutdown, or undefined if OTel is disabled.
  */
 export function startInstrumentation(
   env: Record<string, string | undefined> = process.env,
 ): NodeSDK | undefined {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
-  const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
   const metricsEndpoint = env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
   const spanProcessors = createSpanProcessors(env);
   const hasTraceExport = spanProcessors.length > 0;
-  const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
   const logRecordProcessors = createLogRecordProcessors(env);
   const hasLogExport = logRecordProcessors.length > 0;
   const hasMetricExport = Boolean(endpoint || metricsEndpoint);
@@ -124,7 +139,7 @@ export function startInstrumentation(
       : undefined,
     instrumentations: [
       // Winston logs are bridged via @opentelemetry/winston-transport in logger.ts
-      ...(hasAxiomTraceExport
+      ...(hasTraceExport
         ? [
             getNodeAutoInstrumentations({
               "@opentelemetry/instrumentation-winston": { enabled: false },

@@ -36,14 +36,30 @@ vi.mock("@sentry/react-native", () => ({
   addBreadcrumb: mocks.mockAddBreadcrumb,
 }));
 
-const posthogMocks = vi.hoisted(() => ({
-  captureException: vi.fn(),
-  flush: vi.fn().mockResolvedValue(undefined),
-  register: vi.fn(),
-}));
+const posthogMocks = vi.hoisted(() => {
+  const captureException = vi.fn();
+  const flush = vi.fn().mockResolvedValue(undefined);
+  const register = vi.fn();
+  const mockPosthogConstructor = vi.fn((_apiKey: string, _options: PostHogClientOptions) => ({
+    captureException,
+    flush,
+    register,
+  }));
+  return { captureException, flush, register, mockPosthogConstructor };
+});
+
+type PostHogClientOptions = {
+  host: string;
+  errorTracking: {
+    autocapture: {
+      uncaughtExceptions: boolean;
+      unhandledRejections: boolean;
+    };
+  };
+};
 
 vi.mock("posthog-react-native", () => ({
-  default: vi.fn().mockImplementation(() => posthogMocks),
+  default: posthogMocks.mockPosthogConstructor,
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
@@ -71,6 +87,7 @@ describe("ios telemetry", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.stubGlobal("__DEV__", true);
 
     originalDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
     originalOtelEndpoint = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
@@ -78,6 +95,7 @@ describe("ios telemetry", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     if (originalDsn === undefined) {
       delete process.env.EXPO_PUBLIC_SENTRY_DSN;
     } else {
@@ -130,6 +148,26 @@ describe("ios telemetry", () => {
       }),
     ).toBe(0);
     expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
+  });
+
+  it("initializes PostHog with crash-only error autocapture in production builds", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    vi.stubGlobal("__DEV__", false);
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    expect(mocks.mockInit).toHaveBeenCalledWith(expect.objectContaining({ debug: false }));
+    expect(posthogMocks.mockPosthogConstructor).toHaveBeenCalledTimes(1);
+    const options = posthogMocks.mockPosthogConstructor.mock.calls[0]?.[1];
+    expect(options).toMatchObject({ host: "https://us.i.posthog.com" });
+    expect(options?.errorTracking.autocapture).toEqual({
+      uncaughtExceptions: true,
+      unhandledRejections: true,
+    });
+    expect(posthogMocks.register).toHaveBeenCalledWith({
+      service: "dofek-mobile",
+    });
   });
 
   it("delegates captureException to Sentry with a searchable source tag and extra context", async () => {

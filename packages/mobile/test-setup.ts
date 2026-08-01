@@ -3,6 +3,12 @@ import { beforeEach, vi } from "vitest";
 
 const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
 
+// __DEV__ is a Metro compile-time global in React Native. Vitest cannot
+// statically define it per-test, so expose it as a runtime global instead.
+// Default to true (matching the React Native dev environment); tests that
+// need to exercise production-only branches override it with vi.stubGlobal.
+vi.stubGlobal("__DEV__", true);
+
 // Suppress React DOM warnings about unknown elements (View, Text, etc.)
 // since we render RN component names as HTML tags in the mock.
 const originalError = console.error;
