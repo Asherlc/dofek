@@ -104,6 +104,11 @@ const statusCases = [
     message: "Support Tickets rejected the request. Review your message and try again.",
   },
   {
+    status: 408,
+    code: "GATEWAY_TIMEOUT" as const,
+    message: "Support Tickets timed out. Please try again shortly.",
+  },
+  {
     status: 399,
     code: "BAD_GATEWAY" as const,
     message: "PostHog Support Tickets is unavailable. Please try again shortly.",
@@ -195,7 +200,7 @@ describe("supportRouter", () => {
       makeCaller({ name: "Support User", email: "user@example.com" }).createTicket(ticketInput),
     ).rejects.toMatchObject({ code, message });
     expect(mockCaptureException).toHaveBeenCalledTimes(
-      status >= 500 || status < 300 || status === 401 || status === 403 ? 1 : 0,
+      status >= 500 || status < 300 || status === 401 || status === 403 || status === 408 ? 1 : 0,
     );
     expect(mockLoggerError).toHaveBeenCalledTimes(1);
   });

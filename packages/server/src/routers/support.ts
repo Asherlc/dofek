@@ -100,7 +100,7 @@ function mapPostHogError(error: unknown): {
     };
   }
 
-  if (error.status === 504) {
+  if (error.status === 408 || error.status === 504) {
     return {
       code: "GATEWAY_TIMEOUT",
       message: "Support Tickets timed out. Please try again shortly.",
@@ -168,7 +168,8 @@ export const supportRouter = router({
           error.status >= 500 ||
           error.status < 300 ||
           error.status === 401 ||
-          error.status === 403
+          error.status === 403 ||
+          error.status === 408
         ) {
           captureException(error);
         }
