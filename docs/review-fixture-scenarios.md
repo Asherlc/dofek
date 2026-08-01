@@ -31,6 +31,9 @@ daily body-weight samples for adaptive TDEE. The seed preserves unrelated
 metric-stream rows; see the
 [ClickHouse review seed](../scripts/seed-review-clickhouse.ts) and its
 [real-engine preservation test](../scripts/seed-review-clickhouse.integration.test.ts).
+The default and E2E Compose workflows use the same bounded ClickHouse profile
+for this analytics work; see the [testing resource profile](testing.md#isolated-browser-end-to-end-stack)
+and the [Compose definitions](../docker-compose.yml).
 Adaptive TDEE unavailable states remain explicit, isolated stories on both
 platforms:
 [web](../packages/web/src/components/AdaptiveTdeeChart.stories.tsx) and

@@ -35,6 +35,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:26.6.1.1193-alpine
     restart: unless-stopped
+    mem_limit: 1536m
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
