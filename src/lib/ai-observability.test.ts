@@ -1,6 +1,12 @@
-import { type Context, type ContextManager, context } from "@opentelemetry/api";
+import { type Context, type ContextManager, context, SpanKind } from "@opentelemetry/api";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import type { ReadableSpan, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { AiContextSpanProcessor, withAiGenerationContext } from "./ai-observability.ts";
+import {
+  AiContextSpanProcessor,
+  AiOnlySpanProcessor,
+  withAiGenerationContext,
+} from "./ai-observability.ts";
 
 class TestContextManager implements ContextManager {
   #activeContext = context.active();
@@ -37,6 +43,31 @@ class TestContextManager implements ContextManager {
   }
 }
 
+function makeReadableSpan(name: string, attributes: ReadableSpan["attributes"]): ReadableSpan {
+  return {
+    name,
+    kind: SpanKind.INTERNAL,
+    spanContext: () => ({
+      traceId: "00000000000000000000000000000000",
+      spanId: "0000000000000000",
+      traceFlags: 0,
+    }),
+    startTime: [0, 0],
+    endTime: [0, 0],
+    status: { code: 0 },
+    attributes,
+    links: [],
+    events: [],
+    duration: [0, 0],
+    ended: true,
+    resource: resourceFromAttributes({}),
+    instrumentationScope: { name: "test" },
+    droppedAttributesCount: 0,
+    droppedEventsCount: 0,
+    droppedLinksCount: 0,
+  };
+}
+
 describe("AI observability context", () => {
   beforeAll(() => {
     context.setGlobalContextManager(new TestContextManager());
@@ -71,5 +102,54 @@ describe("AI observability context", () => {
 
     await expect(processor.shutdown()).resolves.toBeUndefined();
     await expect(processor.forceFlush()).resolves.toBeUndefined();
+  });
+
+  it("forwards only AI spans to the delegate processor", () => {
+    const delegate = {
+      onStart: vi.fn(),
+      onEnd: vi.fn(),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+      forceFlush: vi.fn().mockResolvedValue(undefined),
+    } satisfies SpanProcessor;
+    const processor = new AiOnlySpanProcessor(delegate);
+    const nonAiSpan = makeReadableSpan("http.request", { "http.request.method": "GET" });
+    const aiSpan = makeReadableSpan("ai.generateText", {});
+
+    processor.onEnd(nonAiSpan);
+    processor.onEnd(aiSpan);
+
+    expect(delegate.onEnd).toHaveBeenCalledOnce();
+    expect(delegate.onEnd).toHaveBeenCalledWith(aiSpan);
+  });
+
+  it("recognizes AI spans by semantic-convention attributes", () => {
+    const delegate = {
+      onStart: vi.fn(),
+      onEnd: vi.fn(),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+      forceFlush: vi.fn().mockResolvedValue(undefined),
+    } satisfies SpanProcessor;
+    const processor = new AiOnlySpanProcessor(delegate);
+    const aiSpan = makeReadableSpan("llm.request", { "gen_ai.request.model": "test-model" });
+
+    processor.onEnd(aiSpan);
+
+    expect(delegate.onEnd).toHaveBeenCalledWith(aiSpan);
+  });
+
+  it("forwards lifecycle operations to the delegate", async () => {
+    const delegate = {
+      onStart: vi.fn(),
+      onEnd: vi.fn(),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+      forceFlush: vi.fn().mockResolvedValue(undefined),
+    } satisfies SpanProcessor;
+    const processor = new AiOnlySpanProcessor(delegate);
+
+    await processor.forceFlush();
+    await processor.shutdown();
+
+    expect(delegate.forceFlush).toHaveBeenCalledOnce();
+    expect(delegate.shutdown).toHaveBeenCalledOnce();
   });
 });

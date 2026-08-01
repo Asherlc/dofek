@@ -9,7 +9,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { PostHogSpanProcessor } from "@posthog/ai/otel";
-import { AiContextSpanProcessor } from "./lib/ai-observability.ts";
+import { AiContextSpanProcessor, AiOnlySpanProcessor } from "./lib/ai-observability.ts";
 import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_LOGS_URL } from "./lib/posthog-config.ts";
 
 function isProductionDeployment(environment: string | undefined): boolean {
@@ -66,10 +66,12 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
 
   if (hasPostHogAiExport) {
     processors.push(
-      new PostHogSpanProcessor({
-        projectToken: POSTHOG_API_KEY,
-        host: POSTHOG_HOST,
-      }),
+      new AiOnlySpanProcessor(
+        new PostHogSpanProcessor({
+          projectToken: POSTHOG_API_KEY,
+          host: POSTHOG_HOST,
+        }),
+      ),
     );
   }
 

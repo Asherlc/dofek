@@ -1,16 +1,10 @@
 import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { aiObservabilityMocks } from "../lib/test-helpers.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const cacheMocks = vi.hoisted(() => ({
   invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-}));
-
-const aiObservabilityMocks = vi.hoisted(() => ({
-  withAiGenerationContext: vi.fn(
-    async (_context: { userId?: string }, operation: () => Promise<unknown>): Promise<unknown> =>
-      operation(),
-  ),
 }));
 
 vi.mock("dofek/lib/error-reporting", () => ({
@@ -23,7 +17,10 @@ vi.mock("dofek/lib/cache", () => ({
   },
 }));
 
-vi.mock("dofek/lib/ai-observability", () => aiObservabilityMocks);
+vi.mock(
+  "dofek/lib/ai-observability",
+  async () => (await import("../lib/test-helpers.ts")).aiObservabilityMocks,
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");

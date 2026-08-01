@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
+import { aiObservabilityMocks } from "../lib/test-helpers.ts";
 
 // Mock @slack/bolt before importing bot.ts
 vi.mock("@slack/bolt", () => {
@@ -43,14 +44,10 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
   refineNutritionItems: vi.fn(),
 }));
 
-const aiObservabilityMocks = vi.hoisted(() => ({
-  withAiGenerationContext: vi.fn(
-    async (_context: { userId?: string }, operation: () => Promise<unknown>): Promise<unknown> =>
-      operation(),
-  ),
-}));
-
-vi.mock("dofek/lib/ai-observability", () => aiObservabilityMocks);
+vi.mock(
+  "dofek/lib/ai-observability",
+  async () => (await import("../lib/test-helpers.ts")).aiObservabilityMocks,
+);
 
 vi.mock("dofek/lib/cache", () => ({
   invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
