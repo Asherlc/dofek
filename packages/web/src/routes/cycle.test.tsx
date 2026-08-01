@@ -83,6 +83,15 @@ const state = vi.hoisted<TestState>(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    search,
+    to,
+  }: {
+    children: ReactNode;
+    search?: { tab?: string };
+    to: string;
+  }) => <a href={search?.tab ? `${to}?tab=${search.tab}` : to}>{children}</a>,
   createFileRoute: () => (options: { component: ComponentType }) => {
     state.capturedComponent = options.component;
     return {};
@@ -236,6 +245,25 @@ describe("CyclePage", () => {
 
     expect(screen.getByRole("note", { name: "Cycle tracking safety notice" })).toHaveTextContent(
       "Tracking estimates only. Do not use for birth control or diagnosis.",
+    );
+  });
+
+  it("shows privacy context and direct controls for cycle data", () => {
+    renderCyclePage();
+
+    const controls = screen.getByRole("region", { name: "Cycle data controls" });
+    expect(controls).toHaveTextContent("Cycle entries and notes are sensitive health data.");
+    expect(screen.getByRole("link", { name: "Review cycle history" })).toHaveAttribute(
+      "href",
+      "#period-history",
+    );
+    expect(screen.getByRole("link", { name: "Export all data" })).toHaveAttribute(
+      "href",
+      "/settings?tab=account",
+    );
+    expect(screen.getByRole("link", { name: "Delete all data" })).toHaveAttribute(
+      "href",
+      "/settings?tab=account",
     );
   });
 

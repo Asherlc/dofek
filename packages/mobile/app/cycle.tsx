@@ -1,8 +1,8 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { Stack } from "expo-router";
-import { useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import { useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { captureException } from "../lib/telemetry";
@@ -23,11 +23,14 @@ interface PeriodEditDraft {
 }
 
 export default function CycleScreen() {
+  const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
   const currentPhase = trpc.menstrualCycle.currentPhase.useQuery();
   const periodHistory = trpc.menstrualCycle.history.useQuery({ months: 6 });
   const [startDate, setStartDate] = useState(formatDateYmd());
   const [editDraft, setEditDraft] = useState<PeriodEditDraft | null>(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+  const [historyOffset, setHistoryOffset] = useState<number | null>(null);
   const maximumPeriodDate = localDateFromYmd(formatDateYmd());
   const utils = trpc.useUtils();
   const invalidateCycleData = async () => {
@@ -64,7 +67,47 @@ export default function CycleScreen() {
   return (
     <>
       <Stack.Screen options={{ ...rootStackScreenOptions, title: "Cycle Tracking" }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Privacy & data</Text>
+          <Text style={styles.privacyText}>
+            Cycle entries and notes are sensitive health data. Review what is stored here; export
+            all health data or permanently delete all account data from Account settings.
+          </Text>
+          <View style={styles.privacyActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Review cycle history"
+              onPress={() =>
+                scrollViewRef.current?.scrollTo({ animated: true, y: historyOffset ?? 0 })
+              }
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Review cycle history</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Export all data"
+              onPress={() => router.push({ pathname: "/settings", params: { tab: "account" } })}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Export all data</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete all data"
+              onPress={() => router.push({ pathname: "/settings", params: { tab: "account" } })}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteButtonText}>Delete all data</Text>
+            </Pressable>
+          </View>
+        </View>
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Current Phase</Text>
           {currentPhase.data !== undefined ? (
@@ -172,7 +215,10 @@ export default function CycleScreen() {
           ) : null}
         </View>
 
-        <View style={styles.card}>
+        <View
+          onLayout={(event) => setHistoryOffset(event.nativeEvent.layout.y)}
+          style={styles.card}
+        >
           <Text style={styles.sectionTitle}>Period History</Text>
           {periodHistory.data !== undefined ? (
             periodHistory.data.length > 0 ? (
@@ -495,6 +541,17 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.base,
     lineHeight: 20,
+  },
+  privacyText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.base,
+    lineHeight: 20,
+  },
+  privacyActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   emptyText: {
     color: colors.textTertiary,
