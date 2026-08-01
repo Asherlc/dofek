@@ -26,6 +26,11 @@ const POSTHOG_REQUEST_TIMEOUT_MS = 15_000;
 
 type SupportTicketOutcome = "success" | "failure";
 
+interface FetchedPostHogResponse {
+  response: Response;
+  timeoutSignal: AbortSignal;
+}
+
 function getStatusClass(error: unknown): string {
   if (!(error instanceof PostHogConversationsError)) {
     return "unknown";
@@ -45,19 +50,50 @@ function recordSupportTicketMetrics(
   supportTicketDuration.observe({ outcome }, (performance.now() - startedAt) / 1000);
 }
 
-async function fetchPostHog(url: string, init: RequestInit, operation: string): Promise<Response> {
+function createTimeoutError(operation: string): PostHogConversationsError {
+  return new PostHogConversationsError(
+    `PostHog ${operation} request timed out after ${POSTHOG_REQUEST_TIMEOUT_MS}ms`,
+    504,
+  );
+}
+
+async function fetchPostHog(
+  url: string,
+  init: RequestInit,
+  operation: string,
+): Promise<FetchedPostHogResponse> {
   const timeoutSignal = AbortSignal.timeout(POSTHOG_REQUEST_TIMEOUT_MS);
 
   try {
-    return await fetch(url, { ...init, signal: timeoutSignal });
+    return {
+      response: await fetch(url, { ...init, signal: timeoutSignal }),
+      timeoutSignal,
+    };
   } catch (error) {
     if (timeoutSignal.aborted) {
-      throw new PostHogConversationsError(
-        `PostHog ${operation} request timed out after ${POSTHOG_REQUEST_TIMEOUT_MS}ms`,
-        504,
-      );
+      throw createTimeoutError(operation);
     }
     throw error;
+  }
+}
+
+async function readPostHogJson(
+  fetchedResponse: FetchedPostHogResponse,
+  operation: string,
+): Promise<unknown> {
+  let rejectOnTimeout!: () => void;
+  const timeout = new Promise<never>((_, reject) => {
+    rejectOnTimeout = () => reject(createTimeoutError(operation));
+    fetchedResponse.timeoutSignal.addEventListener("abort", rejectOnTimeout);
+  });
+  if (fetchedResponse.timeoutSignal.aborted) {
+    rejectOnTimeout();
+  }
+
+  try {
+    return await Promise.race([fetchedResponse.response.json(), timeout]);
+  } finally {
+    fetchedResponse.timeoutSignal.removeEventListener("abort", rejectOnTimeout);
   }
 }
 
@@ -132,17 +168,20 @@ export class PostHogConversationsClient {
   }
 
   async #loadConversationToken(): Promise<string> {
-    const response = await fetchPostHog(
+    const fetchedResponse = await fetchPostHog(
       `${this.#config.host}/array/${encodeURIComponent(this.#config.apiKey)}/config`,
       { headers: { Accept: "application/json" } },
       "conversations config",
     );
+    const { response } = fetchedResponse;
 
     if (!response.ok) {
       throw createHttpError("conversations config", response);
     }
 
-    const config = conversationConfigSchema.parse(await response.json());
+    const config = conversationConfigSchema.parse(
+      await readPostHogJson(fetchedResponse, "conversations config"),
+    );
     if (!config.conversations.enabled) {
       throw new PostHogConversationsError(
         "PostHog Support Tickets are disabled for this project",
@@ -155,43 +194,65 @@ export class PostHogConversationsClient {
     return this.#conversationToken;
   }
 
+  async #createTicketRequest(input: PostHogSupportTicketInput): Promise<CreatedPostHogTicket> {
+    const conversationToken = await this.#getConversationToken();
+    const fetchedResponse = await fetchPostHog(
+      `${this.#config.host}${CONVERSATIONS_MESSAGE_PATH}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Conversations-Token": conversationToken,
+        },
+        body: JSON.stringify({
+          message: input.message.trim(),
+          traits: {
+            name: input.contactName,
+            email: input.contactEmail,
+          },
+          ticket_id: null,
+          widget_session_id: input.widgetSessionId,
+          distinct_id: input.distinctId,
+        }),
+      },
+      "ticket creation",
+    );
+    const { response } = fetchedResponse;
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        this.#conversationToken = null;
+        this.#conversationTokenExpiresAt = 0;
+      }
+      throw createHttpError("ticket creation", response);
+    }
+
+    const ticket = createTicketResponseSchema.parse(
+      await readPostHogJson(fetchedResponse, "ticket creation"),
+    );
+    return { ticketId: ticket.ticket_id };
+  }
+
+  async #createTicketWithRetry(input: PostHogSupportTicketInput): Promise<CreatedPostHogTicket> {
+    try {
+      return await this.#createTicketRequest(input);
+    } catch (error) {
+      if (
+        !(error instanceof PostHogConversationsError) ||
+        (error.status !== 401 && error.status !== 403)
+      ) {
+        throw error;
+      }
+      return await this.#createTicketRequest(input);
+    }
+  }
+
   async createTicket(input: PostHogSupportTicketInput): Promise<CreatedPostHogTicket> {
     const startedAt = performance.now();
     try {
-      const conversationToken = await this.#getConversationToken();
-      const response = await fetchPostHog(
-        `${this.#config.host}${CONVERSATIONS_MESSAGE_PATH}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Conversations-Token": conversationToken,
-          },
-          body: JSON.stringify({
-            message: input.message.trim(),
-            traits: {
-              name: input.contactName,
-              email: input.contactEmail,
-            },
-            ticket_id: null,
-            widget_session_id: input.widgetSessionId,
-            distinct_id: input.distinctId,
-          }),
-        },
-        "ticket creation",
-      );
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          this.#conversationToken = null;
-          this.#conversationTokenExpiresAt = 0;
-        }
-        throw createHttpError("ticket creation", response);
-      }
-
-      const ticket = createTicketResponseSchema.parse(await response.json());
+      const ticket = await this.#createTicketWithRetry(input);
       recordSupportTicketMetrics("success", startedAt);
-      return { ticketId: ticket.ticket_id };
+      return ticket;
     } catch (error) {
       recordSupportTicketMetrics("failure", startedAt, error);
       throw error;

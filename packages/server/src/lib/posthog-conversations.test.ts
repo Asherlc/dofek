@@ -184,10 +184,6 @@ describe("PostHogConversationsClient", () => {
 
       const client = new PostHogConversationsClient(config);
 
-      await expect(client.createTicket(ticketInput)).rejects.toMatchObject({
-        status,
-        name: "PostHogConversationsError",
-      });
       await expect(client.createTicket(ticketInput)).resolves.toEqual({
         ticketId: `ticket-${status}`,
       });
@@ -203,6 +199,22 @@ describe("PostHogConversationsClient", () => {
         }),
       );
     }
+  });
+
+  it("bounds retries when the refreshed token is also rejected", async () => {
+    fetchMock
+      .mockResolvedValueOnce(configResponse("token-1"))
+      .mockResolvedValueOnce(jsonResponse({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(configResponse("token-2"))
+      .mockResolvedValueOnce(jsonResponse({ detail: "expired" }, 401));
+
+    const client = new PostHogConversationsClient(config);
+
+    await expect(client.createTicket(ticketInput)).rejects.toMatchObject({
+      status: 401,
+      name: "PostHogConversationsError",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("keeps the cached token after unrelated HTTP errors", async () => {
@@ -332,6 +344,80 @@ describe("PostHogConversationsClient", () => {
       message: "PostHog ticket creation request timed out after 15000ms",
     });
     expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+  });
+
+  it("converts a stalled response body into a timeout error", async () => {
+    const configTimeoutController = new AbortController();
+    const ticketTimeoutController = new AbortController();
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValueOnce(configTimeoutController.signal)
+      .mockReturnValueOnce(ticketTimeoutController.signal);
+    let resolveJsonStarted!: () => void;
+    const jsonStarted = new Promise<void>((resolve) => {
+      resolveJsonStarted = resolve;
+    });
+    const response = new Response(null, { status: 200 });
+    vi.spyOn(response, "json").mockImplementation(() => {
+      resolveJsonStarted();
+      return new Promise<unknown>(() => {});
+    });
+    fetchMock.mockResolvedValueOnce(configResponse("conversation-token"));
+    fetchMock.mockResolvedValueOnce(response);
+
+    const pendingTicket = new PostHogConversationsClient(config).createTicket(ticketInput);
+    await jsonStarted;
+    ticketTimeoutController.abort();
+
+    await expect(pendingTicket).rejects.toMatchObject({
+      name: "PostHogConversationsError",
+      status: 504,
+      message: "PostHog ticket creation request timed out after 15000ms",
+    });
+    expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+  });
+
+  it("rejects a response body when its timeout signal is already aborted", async () => {
+    const configTimeoutController = new AbortController();
+    const ticketTimeoutController = new AbortController();
+    ticketTimeoutController.abort();
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValueOnce(configTimeoutController.signal)
+      .mockReturnValueOnce(ticketTimeoutController.signal);
+    const response = ticketResponse();
+    const jsonSpy = vi.spyOn(response, "json");
+    fetchMock.mockResolvedValueOnce(configResponse("conversation-token"));
+    fetchMock.mockResolvedValueOnce(response);
+
+    await expect(
+      new PostHogConversationsClient(config).createTicket(ticketInput),
+    ).rejects.toMatchObject({
+      name: "PostHogConversationsError",
+      status: 504,
+      message: "PostHog ticket creation request timed out after 15000ms",
+    });
+    expect(jsonSpy).toHaveBeenCalledTimes(1);
+    expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+  });
+
+  it("removes response body timeout listeners after parsing completes", async () => {
+    const configTimeoutController = new AbortController();
+    const ticketTimeoutController = new AbortController();
+    const configRemoveListener = vi.spyOn(configTimeoutController.signal, "removeEventListener");
+    const ticketRemoveListener = vi.spyOn(ticketTimeoutController.signal, "removeEventListener");
+    vi.spyOn(AbortSignal, "timeout")
+      .mockReturnValueOnce(configTimeoutController.signal)
+      .mockReturnValueOnce(ticketTimeoutController.signal);
+    fetchMock
+      .mockResolvedValueOnce(configResponse("conversation-token"))
+      .mockResolvedValueOnce(ticketResponse());
+
+    await expect(new PostHogConversationsClient(config).createTicket(ticketInput)).resolves.toEqual(
+      { ticketId: "ticket-1" },
+    );
+    expect(configRemoveListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(ticketRemoveListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 
   it("preserves non-timeout fetch failures", async () => {
