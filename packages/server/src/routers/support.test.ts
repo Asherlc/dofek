@@ -248,7 +248,7 @@ describe("supportRouter", () => {
       "User ID: user-1",
       "App version: ",
     ].join("\n");
-    const appVersion = "x".repeat(5_000 - descriptionWithoutAppVersion.length);
+    const appVersion = "🙂".repeat(5_000 - [...descriptionWithoutAppVersion].length);
     mockCreateTicket.mockResolvedValue({ ticketId: "ticket-limit" });
 
     await expect(

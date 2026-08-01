@@ -145,7 +145,7 @@ export const supportRouter = router({
         ctx.userId,
         ctx.appVersion,
       );
-      if (description.length > POSTHOG_WIDGET_MESSAGE_MAX_LENGTH) {
+      if ([...description].length > POSTHOG_WIDGET_MESSAGE_MAX_LENGTH) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Support message is too long after context is added. Shorten it and try again.",

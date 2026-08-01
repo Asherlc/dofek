@@ -58,6 +58,16 @@ function createTimeoutError(operation: string): PostHogConversationsError {
   );
 }
 
+function createInvalidResponseError(
+  fetchedResponse: FetchedPostHogResponse,
+  operation: string,
+): PostHogConversationsError {
+  return new PostHogConversationsError(
+    `PostHog ${operation} response was invalid`,
+    fetchedResponse.response.status,
+  );
+}
+
 async function fetchPostHog(
   url: string,
   init: RequestInit,
@@ -103,13 +113,18 @@ async function parsePostHogJson<T>(
   operation: string,
   schema: z.ZodType<T>,
 ): Promise<T> {
-  const payload = await readPostHogJson(fetchedResponse, operation);
+  let payload: unknown;
+  try {
+    payload = await readPostHogJson(fetchedResponse, operation);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+    throw createInvalidResponseError(fetchedResponse, operation);
+  }
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
-    throw new PostHogConversationsError(
-      `PostHog ${operation} response was invalid`,
-      fetchedResponse.response.status,
-    );
+    throw createInvalidResponseError(fetchedResponse, operation);
   }
   return parsed.data;
 }

@@ -368,6 +368,40 @@ describe("PostHogConversationsClient", () => {
     });
   });
 
+  it("normalizes invalid JSON responses without exposing the response body", async () => {
+    const upstreamBody = "<html>proxy error details</html>";
+    fetchMock.mockResolvedValueOnce(new Response(upstreamBody, { status: 200 }));
+
+    const error = await new PostHogConversationsClient(config)
+      .createTicket(ticketInput)
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toMatchObject({
+      name: "PostHogConversationsError",
+      status: 200,
+      message: "PostHog conversations config response was invalid",
+    });
+    expect(error).toHaveProperty("message", expect.not.stringContaining(upstreamBody));
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "failure",
+      status_class: "2xx",
+    });
+  });
+
+  it("preserves non-JSON response body failures", async () => {
+    const bodyError = new Error("response body unavailable");
+    const response = new Response(null, { status: 200 });
+    vi.spyOn(response, "json").mockRejectedValue(bodyError);
+    fetchMock.mockResolvedValueOnce(response);
+
+    await expect(new PostHogConversationsClient(config).createTicket(ticketInput)).rejects.toBe(
+      bodyError,
+    );
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "failure",
+      status_class: "unknown",
+    });
+  });
+
   it("converts timeout failures into service errors for config and ticket requests", async () => {
     const configTimeoutController = new AbortController();
     const timeoutSpy = vi
