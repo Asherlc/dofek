@@ -214,20 +214,62 @@ describe("BehaviorImpactChart", () => {
     expect(axis.getAttribute("class")).toContain("sm:grid");
   });
 
-  it("keeps the previous successful range visible while the next range loads", () => {
-    render(<BehaviorImpactChart days={90} />);
+  it("shows busy state instead of an empty state while replacing an empty result", () => {
+    mocks.impactSummaryUseQuery
+      .mockReturnValueOnce({
+        data: [],
+        error: null,
+        isFetching: false,
+        isLoading: false,
+        isPlaceholderData: false,
+        refetch: vi.fn(),
+      })
+      .mockReturnValueOnce({
+        data: [],
+        error: null,
+        isFetching: true,
+        isLoading: false,
+        isPlaceholderData: true,
+        refetch: vi.fn(),
+      });
 
-    const queryOptions: unknown = mocks.impactSummaryUseQuery.mock.calls[0]?.[1];
-    if (
-      !queryOptions ||
-      typeof queryOptions !== "object" ||
-      !("placeholderData" in queryOptions) ||
-      typeof queryOptions.placeholderData !== "function"
-    ) {
-      throw new Error("Expected previous-data placeholder");
-    }
+    const { rerender } = render(<BehaviorImpactChart days={90} />);
+    expect(screen.getByTestId("query-state-empty")).toBeDefined();
 
-    expect(queryOptions.placeholderData(cachedAssociationData)).toBe(cachedAssociationData);
+    rerender(<BehaviorImpactChart days={30} />);
+
+    expect(screen.getByRole("status", { name: "Loading behavior associations." })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.queryByTestId("query-state-empty")).toBeNull();
+  });
+
+  it("retains prior rows and offers retry after a range-change failure", () => {
+    const refetch = vi.fn();
+    mocks.impactSummaryUseQuery
+      .mockReturnValueOnce({
+        data: cachedAssociationData,
+        error: null,
+        isFetching: false,
+        isLoading: false,
+        refetch: vi.fn(),
+      })
+      .mockReturnValueOnce({
+        data: undefined,
+        error: new Error("Behavior associations could not be refreshed."),
+        isFetching: false,
+        isLoading: false,
+        refetch,
+      });
+
+    const { rerender } = render(<BehaviorImpactChart days={90} />);
+    rerender(<BehaviorImpactChart days={30} />);
+
+    expect(screen.getByText("Meditation")).toBeDefined();
+    expect(screen.getByText("Behavior associations could not be refreshed.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("announces an initial fetch as a named busy status", () => {

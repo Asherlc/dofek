@@ -1,7 +1,7 @@
 import { formatAssociationEstimateLabel } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import type { BehaviorAssociation } from "dofek-server/types";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { EvidenceDetails } from "./EvidenceDetails.tsx";
@@ -112,12 +112,23 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
 }
 
 export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
-  const { data, isLoading, isFetching, error, refetch } =
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } =
     trpc.behaviorImpact.impactSummary.useQuery(selectedRangeQueryInput(days), {
-      placeholderData: (previousData) => previousData,
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
     });
+  const lastSuccessfulData = useRef<typeof data>(undefined);
 
-  if (isLoading && data === undefined) {
+  useEffect(() => {
+    if (data !== undefined && !isPlaceholderData) {
+      lastSuccessfulData.current = data;
+    }
+  }, [data, isPlaceholderData]);
+
+  const displayData = data ?? lastSuccessfulData.current;
+  const isEmptyPlaceholder = isPlaceholderData && isFetching && data?.length === 0;
+
+  if ((isLoading && data === undefined) || isEmptyPlaceholder) {
     return (
       <QueryStatePanel
         contextLabel="Behavior associations"
@@ -128,7 +139,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
     );
   }
 
-  if (error && data === undefined) {
+  if (error && displayData === undefined) {
     return (
       <QueryStatePanel
         contextLabel="Behavior associations"
@@ -152,18 +163,19 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
     </output>
   ) : null;
 
-  const refreshError = error ? (
-    <QueryStatePanel
-      contextLabel="Behavior associations"
-      error={error}
-      height={96}
-      onRetry={() => void refetch()}
-      retryLabel="Retry behavior associations"
-      retrying={isFetching}
-    />
-  ) : null;
+  const refreshError =
+    error && displayData !== undefined ? (
+      <QueryStatePanel
+        contextLabel="Behavior associations"
+        error={error}
+        height={96}
+        onRetry={() => void refetch()}
+        retryLabel="Retry behavior associations"
+        retrying={isFetching}
+      />
+    ) : null;
 
-  if (data === undefined || data.length === 0) {
+  if (displayData === undefined || displayData.length === 0) {
     return (
       <div className="space-y-3">
         {refreshStatus}
@@ -178,7 +190,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
     );
   }
 
-  const associationRows = data.filter((item) => item.association);
+  const associationRows = displayData.filter((item) => item.association);
   if (associationRows.length === 0) {
     return (
       <div className="space-y-3">
