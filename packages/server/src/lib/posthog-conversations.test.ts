@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockSupportTicketDurationObserve, mockSupportTicketOperationsInc } = vi.hoisted(() => ({
-  mockSupportTicketDurationObserve: vi.fn(),
-  mockSupportTicketOperationsInc: vi.fn(),
-}));
+const { mockSupportTicketDurationObserve, mockSupportTicketOperationsInc, mockCaptureException } =
+  vi.hoisted(() => ({
+    mockSupportTicketDurationObserve: vi.fn(),
+    mockSupportTicketOperationsInc: vi.fn(),
+    mockCaptureException: vi.fn(),
+  }));
 
 vi.mock("./metrics.ts", () => ({
   supportTicketDuration: { observe: mockSupportTicketDurationObserve },
   supportTicketOperationsTotal: { inc: mockSupportTicketOperationsInc },
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: mockCaptureException,
 }));
 
 import {
@@ -61,6 +67,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   mockSupportTicketDurationObserve.mockReset();
   mockSupportTicketOperationsInc.mockReset();
+  mockCaptureException.mockReset();
 });
 
 afterEach(() => {
@@ -255,7 +262,13 @@ describe("PostHogConversationsClient", () => {
 
   it("does not expose upstream response bodies in HTTP errors", async () => {
     const upstreamBody = "support message and contact details";
-    fetchMock.mockResolvedValueOnce(new Response(upstreamBody, { status: 502 }));
+    const response = new Response(upstreamBody, { status: 502 });
+    const responseBody = response.body;
+    if (!responseBody) {
+      throw new Error("Expected an upstream response body");
+    }
+    const cancel = vi.spyOn(responseBody, "cancel");
+    fetchMock.mockResolvedValueOnce(response);
 
     const client = new PostHogConversationsClient(config);
     const error = await client
@@ -268,6 +281,38 @@ describe("PostHogConversationsClient", () => {
       message: "PostHog conversations config request failed with status 502",
     });
     expect(error).toHaveProperty("message", expect.not.stringContaining(upstreamBody));
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("reports failed response-body cancellation without replacing the HTTP error", async () => {
+    const cancellationError = new Error("body cancellation failed");
+    const response = new Response("upstream body", { status: 502 });
+    const responseBody = response.body;
+    if (!responseBody) {
+      throw new Error("Expected an upstream response body");
+    }
+    vi.spyOn(responseBody, "cancel").mockRejectedValue(cancellationError);
+    fetchMock.mockResolvedValueOnce(response);
+
+    await expect(
+      new PostHogConversationsClient(config).createTicket(ticketInput),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "PostHog conversations config request failed with status 502",
+    });
+    await Promise.resolve();
+    expect(mockCaptureException).toHaveBeenCalledWith(cancellationError);
+  });
+
+  it("handles HTTP errors without response bodies", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 502 }));
+
+    await expect(
+      new PostHogConversationsClient(config).createTicket(ticketInput),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "PostHog conversations config request failed with status 502",
+    });
   });
 
   it("reports ticket creation failures with their status", async () => {

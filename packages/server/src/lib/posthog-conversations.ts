@@ -1,3 +1,4 @@
+import { captureException } from "dofek/lib/error-reporting";
 import { POSTHOG_API_KEY, POSTHOG_HOST } from "dofek/lib/posthog-config";
 import { z } from "zod";
 import { supportTicketDuration, supportTicketOperationsTotal } from "./metrics.ts";
@@ -114,6 +115,12 @@ async function parsePostHogJson<T>(
 }
 
 function createHttpError(operation: string, response: Response): PostHogConversationsError {
+  const cancellation = response.body?.cancel();
+  if (cancellation) {
+    void cancellation.catch((error: unknown) => {
+      captureException(error);
+    });
+  }
   return new PostHogConversationsError(
     `PostHog ${operation} request failed with status ${response.status}`,
     response.status,
