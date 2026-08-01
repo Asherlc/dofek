@@ -5,7 +5,6 @@ import {
   type SleepNight,
   sleepNeedV1Schema,
   sleepNeedV2Schema,
-  type SleepNeedV2,
   toSleepNeedV1,
   toSleepNeedV2,
 } from "./sleep-need-contract.ts";
@@ -177,9 +176,10 @@ describe("sleep need contract", () => {
       nextAction: "Sync more sleep and recovery data.",
     });
     expect(result.availability).toBe("insufficient_data");
-    expect((result as Extract<SleepNeedV2, { availability: "insufficient_data" }>).reason).toBe(
-      "insufficient_baseline_history",
-    );
+    if (result.availability !== "insufficient_data") {
+      throw new Error("Expected insufficient-data sleep need");
+    }
+    expect(result.reason).toBe("insufficient_baseline_history");
   });
 
   it("returns a server-authored missing-load state when yesterday's load is absent", () => {
@@ -204,7 +204,7 @@ describe("sleep need contract", () => {
     });
   });
 
-  it("does not project sleep need to the legacy V1 DTO until its inputs are complete", () => {
+  it("preserves the legacy V1 DTO with canRecommend false until its inputs are complete", () => {
     const computation = buildSleepNeedComputation({
       baselineMinutes: 480,
       strainDebtMinutes: 0,
@@ -216,6 +216,13 @@ describe("sleep need contract", () => {
       hasYesterdayLoad: true,
     });
 
-    expect(toSleepNeedV1(computation)).toBeNull();
+    expect(toSleepNeedV1(computation)).toMatchObject({
+      baselineMinutes: 480,
+      strainDebtMinutes: 0,
+      accumulatedDebtMinutes: 0,
+      totalNeedMinutes: 480,
+      recentNights,
+      canRecommend: false,
+    });
   });
 });

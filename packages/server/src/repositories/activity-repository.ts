@@ -37,6 +37,7 @@ const activityListRowSchema = z.object({
   max_hr: z.number().nullable(),
   avg_power: z.number().nullable(),
   distance_meters: z.number().nullable(),
+  elevation_gain_m: z.number().nullable().default(null),
   total_count: z.coerce.number(),
 });
 
@@ -57,6 +58,7 @@ const activityListColumns = sql`
   NULL::smallint AS max_hr,
   NULL::double precision AS avg_power,
   NULL::double precision AS distance_meters,
+  NULL::double precision AS elevation_gain_m,
   COUNT(*) OVER()::int AS total_count
 `;
 
@@ -411,10 +413,7 @@ export class ActivityRepository extends BaseRepository {
     const rows = await this.#listRawRows(input);
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
-    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => ({
-      ...rest,
-      distance_state: activityMeasurementState("Distance", rest.distance_meters),
-    }));
+    const items = hydratedRows.map((row) => this.#toListItem(row));
     return { items, totalCount };
   }
 
@@ -433,10 +432,7 @@ export class ActivityRepository extends BaseRepository {
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows[0]?.total_count ?? 0;
-    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => ({
-      ...rest,
-      distance_state: activityMeasurementState("Distance", rest.distance_meters),
-    }));
+    const items = hydratedRows.map((row) => this.#toListItem(row));
     return { items, totalCount };
   }
 
@@ -448,10 +444,18 @@ export class ActivityRepository extends BaseRepository {
   ): Promise<Array<Record<string, unknown>>> {
     const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
     const hydratedRows = await this.#withActivitySummaries(rows);
-    return hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => ({
+    return hydratedRows.map((row) => this.#toListItem(row));
+  }
+
+  #toListItem<TRow extends { distance_meters: number | null; elevation_gain_m: number | null }>(
+    row: TRow,
+  ) {
+    const { total_count: _totalCount, member_activity_ids: _memberActivityIds, ...rest } = row;
+    return {
       ...rest,
-      distance_state: activityMeasurementState("Distance", rest.distance_meters),
-    }));
+      distance_state: activityMeasurementState("Distance", row.distance_meters),
+      elevation_state: activityMeasurementState("Elevation", row.elevation_gain_m),
+    };
   }
 
   #exactRangeRows(
@@ -693,10 +697,6 @@ export class ActivityRepository extends BaseRepository {
                 mapPreview:
                   routePreview ??
                   osmTilePreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
-                distanceMeters: summary.total_distance,
-                distanceState: activityMeasurementState("Distance", summary.total_distance),
-                elevationGainM: summary.elevation_gain_m,
-                elevationState: activityMeasurementState("Elevation", summary.elevation_gain_m),
               }
             : null,
       };

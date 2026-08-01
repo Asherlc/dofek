@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
+import { z } from "zod";
 import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 

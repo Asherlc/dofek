@@ -51,7 +51,12 @@ vi.mock("../components/charts/SleepBar", () => ({
 }));
 
 vi.mock("../components/charts/SparkLine", () => ({
-  SparkLine: () => null,
+  SparkLine: ({ data }: { data: (number | null)[] }) => (
+    <div
+      data-testid="sleep-sparkline"
+      data-values={data.map((value) => value ?? "null").join(",")}
+    />
+  ),
 }));
 
 describe("SleepScreen", () => {
@@ -130,6 +135,67 @@ describe("SleepScreen", () => {
     expect(screen.getByText("91%")).toBeTruthy();
     expect(screen.queryByText("5h 0m")).toBeNull();
     expect(screen.queryByText("50%")).toBeNull();
+  });
+
+  it("keeps missing duration nights as gaps in the duration trend", async () => {
+    mockSleepData = {
+      nightly: [
+        {
+          date: "2026-07-19",
+          startedAt: "2026-07-19T05:00:00.000Z",
+          endedAt: "2026-07-19T13:00:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: 0,
+            endUtcOffsetMinutes: 0,
+            source: "provider_offset",
+          },
+          durationMinutes: null,
+          sleepMinutes: null,
+          deepPct: null,
+          remPct: null,
+          lightPct: null,
+          awakePct: null,
+          efficiency: null,
+          stagingAvailable: false,
+          rollingAvgDuration: null,
+          durationState: { status: "missing", reason: "Sleep duration was not recorded." },
+          sleepState: { status: "missing", reason: "Sleep duration was not recorded." },
+          stageState: { status: "missing", reason: "Sleep stages were not reported." },
+        },
+        {
+          date: "2026-07-20",
+          startedAt: "2026-07-20T05:00:00.000Z",
+          endedAt: "2026-07-20T13:00:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: 0,
+            endUtcOffsetMinutes: 0,
+            source: "provider_offset",
+          },
+          durationMinutes: 480,
+          sleepMinutes: 450,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 93,
+          stagingAvailable: true,
+          rollingAvgDuration: 480,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
+        },
+      ],
+      sleepDebt: 30,
+      averageSleepMinutes: 450,
+      averageEfficiencyPercent: 93,
+    };
+
+    const { default: SleepScreen } = await import("./sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getByTestId("sleep-sparkline").getAttribute("data-values")).toBe("null,480");
   });
 
   it("identifies the most recent night when sleep stages were not reported", async () => {

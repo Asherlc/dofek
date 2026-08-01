@@ -194,9 +194,13 @@ pnpm tsx scripts/with-env.ts -- env \
   --select activity_summary_rows
 ```
 
-Choose the smallest lookback that contains the affected rows; the example is
-only illustrative and is not a deploy or request behavior. Do not put this
-rebuild in a request or deploy path.
+The lookback is a full-refresh retention boundary, not just the scope of the
+semantic change. It must span the oldest activity that should remain in
+`activity_summary_rows` (normally the entire activity history). A full refresh
+drops rows older than `initial_lookback_days`, and later incremental runs will
+not re-add those unchanged activities. The example is only illustrative and is
+not a deploy or request behavior. Do not put this rebuild in a request or
+deploy path.
 
 After both safe dbt build groups succeed, `scripts/warm-query-cache.ts` replays
 every live query key registered in Redis with its original user, timezone,

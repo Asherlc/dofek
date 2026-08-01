@@ -26,6 +26,10 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
       overlapSummary: null,
     },
     lastProcessedAt: "2026-07-14T08:50:00.000Z",
+    distanceMeters: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
+    elevationGainM: null,
+    elevationState: { status: "missing", reason: "Elevation not recorded" },
     location: null,
     stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
     ...overrides,
@@ -130,6 +134,10 @@ describe("ActivityCardContent", () => {
       <ActivityCardContent
         activity={activity({
           activityType: "running",
+          distanceMeters: 5000,
+          distanceState: { status: "available" },
+          elevationGainM: 120,
+          elevationState: { status: "available" },
           location: {
             mapPreview: {
               width: 256,
@@ -137,10 +145,6 @@ describe("ActivityCardContent", () => {
               tiles: [],
               routePath: null,
             },
-            distanceMeters: 5000,
-            distanceState: { status: "available" },
-            elevationGainM: 120,
-            elevationState: { status: "available" },
           },
         })}
         units={units}
@@ -165,6 +169,10 @@ describe("ActivityCardContent", () => {
       <ActivityCardContent
         activity={activity({
           activityType: "running",
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
           location: {
             mapPreview: {
               width: 256,
@@ -172,10 +180,6 @@ describe("ActivityCardContent", () => {
               tiles: [],
               routePath: null,
             },
-            distanceMeters: null,
-            distanceState: { status: "missing", reason: "Distance not recorded" },
-            elevationGainM: null,
-            elevationState: { status: "missing", reason: "Elevation not recorded" },
           },
         })}
         units={units}

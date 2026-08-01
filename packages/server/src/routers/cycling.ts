@@ -169,5 +169,7 @@ export const cyclingRouter = router({
     }),
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
+    activitiesOutputSchema,
+    { keyVersion: "cycling-activity-states-v1" },
   ),
 });

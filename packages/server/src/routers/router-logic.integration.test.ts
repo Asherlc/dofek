@@ -695,10 +695,7 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const data = result.result.data;
 
-      if (data === null) {
-        expect(data).toBeNull();
-        return;
-      }
+      expect(data).not.toBeNull();
 
       // With 30 nights of data and varied HRV, we should get a calculated baseline
       expect(data.baselineMinutes).toBeGreaterThan(0);
@@ -728,10 +725,7 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const data = result.result.data;
 
-      if (data === null) {
-        expect(data).toBeNull();
-        return;
-      }
+      expect(data).not.toBeNull();
 
       // If baseline > some nights' durations, there should be accumulated debt
       // (our test data varies 400-500 min, so if baseline is ~450, some nights are below)

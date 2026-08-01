@@ -819,7 +819,7 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
     expect(result.nightly[0]).toMatchObject({
       durationMinutes: 480,
-      sleepMinutes: 480,
+      sleepMinutes: null,
       deepPct: null,
       remPct: null,
       lightPct: null,
@@ -856,17 +856,14 @@ describe("recoveryRouter.sleepAnalytics", () => {
     });
   });
 
-  it.each([
-    ["non-Apple provider", "whoop", true],
-    ["Apple Health without staging", "apple_health", false],
-  ] as const)("preserves recorded duration for %s", async (_label, providerId, stagingAvailable) => {
+  it("preserves recorded duration for a non-Apple provider when staging is unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
       sensorStore: makeSensorStore([
         sleepNightRow({
-          provider_id: providerId,
-          staging_available: stagingAvailable,
+          provider_id: "whoop",
+          staging_available: false,
           deep_minutes: 30,
           rem_minutes: 30,
           light_minutes: 120,
@@ -878,6 +875,32 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
     expect(result.nightly[0]?.durationMinutes).toBe(480);
     expect(result.nightly[0]?.sleepMinutes).toBe(480);
+  });
+
+  it("keeps Apple Health sleep unavailable when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "apple_health",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      durationState: { status: "available" },
+      sleepMinutes: null,
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+    });
   });
 
   it("keeps Apple Health sleep unavailable when staging reports no stage minutes", async () => {

@@ -25,8 +25,16 @@ describe("activityDataStateSchema", () => {
     });
   });
 
+  it("rejects whitespace-only unavailable reasons", () => {
+    expect(activityDataStateSchema.safeParse({ status: "missing", reason: "   " }).success).toBe(
+      false,
+    );
+  });
+
   it("formats zero as an available value", () => {
-    expect(formatActivityMetric("Distance", 0, { status: "available" }, (value) => `${value} m`)).toEqual({
+    expect(
+      formatActivityMetric("Distance", 0, { status: "available" }, (value) => `${value} m`),
+    ).toEqual({
       status: "available",
       label: "Distance",
       value: "0 m",

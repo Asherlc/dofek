@@ -148,22 +148,17 @@ export function buildSleepNeedComputation({
   };
 }
 
-export function toSleepNeedV1(computation: SleepNeedComputation): SleepNeedResult | null {
-  if (
-    !computation.hasPreviousNight ||
-    !computation.hasYesterdayLoad ||
-    computation.baselineQualifyingNightCount < 7
-  ) {
-    return null;
-  }
-
+export function toSleepNeedV1(computation: SleepNeedComputation): SleepNeedResult {
   return sleepNeedV1Schema.parse({
     baselineMinutes: computation.baselineMinutes,
     strainDebtMinutes: computation.strainDebtMinutes,
     accumulatedDebtMinutes: computation.accumulatedDebtMinutes,
     totalNeedMinutes: computation.totalNeedMinutes,
     recentNights: computation.recentNights,
-    canRecommend: computation.hasPreviousNight,
+    canRecommend:
+      computation.hasPreviousNight &&
+      computation.hasYesterdayLoad &&
+      computation.baselineQualifyingNightCount >= 7,
   });
 }
 
@@ -193,17 +188,10 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
     };
   }
 
-  const basis =
-    computation.baselineQualifyingNightCount >= 7
-      ? "personalized_high_hrv_average"
-      : "generic_eight_hour_default";
+  const basis = "personalized_high_hrv_average" as const;
   const qualifyingNightNoun = computation.baselineQualifyingNightCount === 1 ? "night" : "nights";
-  const qualifyingNightVerb = computation.baselineQualifyingNightCount === 1 ? "is" : "are";
   const observedNightNoun = computation.debtObservedNightCount === 1 ? "night" : "nights";
-  const basisLabel =
-    basis === "personalized_high_hrv_average"
-      ? `Baseline uses the average of ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} followed by at-or-above-median heart rate variability.`
-      : `Baseline uses a generic 8-hour default because ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} ${qualifyingNightVerb} below the 7-night minimum.`;
+  const basisLabel = `Baseline uses the average of ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} followed by at-or-above-median heart rate variability.`;
 
   return sleepNeedV2Schema.parse({
     availability: "available",

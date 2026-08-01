@@ -18,6 +18,8 @@ const activityRowSchema = z.object({
   source_providers: z.array(z.string()).nullable(),
   distance_meters: z.number().nullable(),
   distance_state: activityDataStateSchema,
+  elevation_gain_m: z.number().nullable(),
+  elevation_state: activityDataStateSchema,
   location: z
     .object({
       centroidLat: z.number(),
@@ -36,10 +38,6 @@ const activityRowSchema = z.object({
         ),
         routePath: z.array(z.object({ x: z.number(), y: z.number() })).nullable(),
       }),
-      distanceMeters: z.number().nullable(),
-      distanceState: activityDataStateSchema,
-      elevationGainM: z.number().nullable(),
-      elevationState: activityDataStateSchema,
     })
     .nullable()
     .optional(),

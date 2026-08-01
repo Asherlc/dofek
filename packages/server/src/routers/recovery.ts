@@ -373,8 +373,11 @@ export const recoveryRouter = router({
         row.light_minutes != null &&
         row.awake_minutes != null;
       const computeSleepMinutes = (row: (typeof rows)[number]): number | null => {
-        if (row.provider_id !== "apple_health" || !row.staging_available) {
+        if (row.provider_id !== "apple_health") {
           return row.duration_minutes;
+        }
+        if (!row.staging_available) {
+          return null;
         }
         if (
           row.deep_minutes == null &&

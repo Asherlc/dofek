@@ -1,8 +1,8 @@
 import {
-  activityDataStateLabel,
-  formatActivityMetric,
   type ActivityDataState,
   type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
   formatDateForDisplay,
@@ -571,8 +571,7 @@ function ActivityOverview({
           "Distance",
           overview.totalDistanceMeters,
           overview.totalDistanceState,
-          (distanceMeters) =>
-            formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+          (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
         ),
         formatActivityMetric(
           "Elevation",
@@ -597,13 +596,6 @@ function ActivityOverview({
             key={item.label}
             className="rounded-lg border border-border bg-surface-solid p-3"
             data-state={isMetric ? item.status : undefined}
-            aria-label={
-              isMetric
-                ? item.status === "available"
-                  ? `${item.label} ${item.value}`
-                  : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
-                : undefined
-            }
           >
             <div className="text-lg font-semibold tabular-nums">
               {isMetric && item.status !== "available"

@@ -443,7 +443,15 @@ describe("TodayScreen independent loading states", () => {
     mockDashboardData = {
       ...mockDashboardData,
       sleep: {
-        lastNight: null,
+        lastNight: {
+          date: "2026-03-20",
+          durationMinutes: 480,
+          deepPct: 20,
+          remPct: 25,
+          lightPct: 45,
+          awakePct: 10,
+          stagingAvailable: true,
+        },
         sleepDebt: 0,
       },
       sleepNeed: {
@@ -457,9 +465,13 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    expect(screen.getByText("Sync at least 7 qualifying nights to estimate sleep need.")).toBeTruthy();
+    expect(
+      screen.getByText("Sync at least 7 qualifying nights to estimate sleep need."),
+    ).toBeTruthy();
     expect(screen.getByText("Sync more sleep and recovery data.")).toBeTruthy();
-    expect(screen.queryByText("SLEEP ESTIMATE")).toBeNull();
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
+    expect(screen.queryByText("SLEEP DATA NEEDED")).toBeNull();
   });
 
   it("renders the V2 sleep value as an uncalibrated heuristic estimate", async () => {

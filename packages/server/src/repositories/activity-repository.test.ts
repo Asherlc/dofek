@@ -384,6 +384,8 @@ describe("ActivityRepository", () => {
         max_hr: 171,
         avg_power: 220,
         distance_meters: 42000,
+        elevation_gain_m: 610,
+        elevation_state: { status: "available" },
       });
       expect(result.items[0]).not.toHaveProperty("member_activity_ids");
     });
@@ -432,11 +434,59 @@ describe("ActivityRepository", () => {
           centroidLat: 37.7749,
           centroidLng: -122.4194,
           mapPreview: osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]),
-          distanceMeters: 5000,
-          distanceState: { status: "available" },
-          elevationGainM: 120,
-          elevationState: { status: "available" },
         },
+        distance_meters: 5000,
+        distance_state: { status: "available" },
+        elevation_gain_m: 120,
+        elevation_state: { status: "available" },
+      });
+    });
+
+    it("keeps elevation value and state when a summary has no centroid", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "route-less-activity",
+          activity_type: "strength",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Strength Session",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          member_activity_ids: [],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "route-less-activity",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: 0,
+          elevation_gain_m: 0,
+          elevation_loss_m: null,
+          sample_count: 0,
+          centroid_lat: null,
+          centroid_lng: null,
+        },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(result.items[0]).toMatchObject({
+        location: null,
+        distance_meters: 0,
+        distance_state: { status: "available" },
+        elevation_gain_m: 0,
+        elevation_state: { status: "available" },
       });
     });
 

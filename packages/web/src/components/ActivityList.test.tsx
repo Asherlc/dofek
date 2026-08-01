@@ -57,14 +57,12 @@ describe("ActivityList", () => {
       source_providers: ["strava"],
       distance_meters: 5000,
       distance_state: { status: "available" },
+      elevation_gain_m: 120,
+      elevation_state: { status: "available" },
       location: {
         centroidLat: 37.7749,
         centroidLng: -122.4194,
         mapPreview,
-        distanceMeters: 5000,
-        distanceState: { status: "available" },
-        elevationGainM: 120,
-        elevationState: { status: "available" },
       },
     },
   ];
@@ -130,10 +128,6 @@ describe("ActivityList", () => {
                   { x: 305.85, y: 359.36 },
                 ],
               },
-              distanceMeters: 5000,
-              distanceState: { status: "available" },
-              elevationGainM: 120,
-              elevationState: { status: "available" },
             },
           },
         ]}

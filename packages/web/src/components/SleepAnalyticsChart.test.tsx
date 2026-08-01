@@ -55,6 +55,43 @@ describe("SleepAnalyticsChart", () => {
     expect(screen.getByText("Sleep analytics chart")).toBeTruthy();
   });
 
+  it("shows the server-authored state when every plotted sleep value is unavailable", () => {
+    const unavailableNight: SleepNightlyRow = {
+      ...night,
+      durationMinutes: null,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+      stagingAvailable: false,
+    };
+
+    render(<SleepAnalyticsChart nightly={[unavailableNight]} sleepDebt={30} />);
+
+    expect(screen.getByText(/Sleep duration was not recorded/)).toBeTruthy();
+    expect(
+      screen.getByText(/Sync sleep data from a source that reports sleep duration/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Sleep analytics chart")).toBeNull();
+  });
+
   it("does not render a missing duration as a measured zero", () => {
     const missingDurationNight: SleepNightlyRow = {
       ...night,

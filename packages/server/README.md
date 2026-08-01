@@ -45,7 +45,7 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 
 `calendar.weekList` owns both Training Stress Score calculation and availability explanations.
 Each activity stat is discriminated by `status`: an `available` stat contains its display-ready
-`value`, while an `unavailable` stat contains an actionable `reason` naming the missing duration,
+`value`, while a `missing` stat contains an actionable `reason` naming the missing duration,
 power/functional-threshold-power, or heart-rate/maximum-heart-rate prerequisite. Web and mobile
 render this contract without deriving metric availability. The numeric activity `tss` field remains
 nullable for consumers that need the score rather than its compact-card presentation.

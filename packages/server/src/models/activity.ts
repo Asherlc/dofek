@@ -1,5 +1,5 @@
-import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivityDataState } from "@dofek/format/activity-data-state";
+import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import type { ActivitySource } from "./activity-source.ts";
 import {

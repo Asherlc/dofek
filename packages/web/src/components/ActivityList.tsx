@@ -1,7 +1,7 @@
 import {
+  type ActivityDataState,
   activityDataStateLabel,
   formatActivityMetric,
-  type ActivityDataState,
 } from "@dofek/format/activity-data-state";
 import {
   formatDateMedium,
@@ -28,14 +28,12 @@ export interface Activity {
   source_providers: string[] | null;
   distance_meters: number | null;
   distance_state: ActivityDataState;
+  elevation_gain_m: number | null;
+  elevation_state: ActivityDataState;
   location?: {
     centroidLat: number;
     centroidLng: number;
     mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    distanceState: ActivityDataState;
-    elevationGainM: number | null;
-    elevationState: ActivityDataState;
   } | null;
 }
 
@@ -234,8 +232,7 @@ export function ActivityList({
           "Distance",
           activity.distance_meters,
           activity.distance_state,
-          (value) =>
-            `${formatNumber(units.convertDistance(value / 1000))} ${units.distanceLabel}`,
+          (value) => `${formatNumber(units.convertDistance(value / 1000))} ${units.distanceLabel}`,
         );
         if (metric.status !== "available") {
           return (
@@ -244,9 +241,7 @@ export function ActivityList({
             </span>
           );
         }
-        return (
-          <span data-state="available">{metric.value}</span>
-        );
+        return <span data-state="available">{metric.value}</span>;
       },
     },
     {

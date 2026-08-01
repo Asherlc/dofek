@@ -172,7 +172,17 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
 }
 
 export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
-  const hasSleepSummary = nightly.length > 0 && sleepDebt != null;
+  const hasMeasuredSleepValues = nightly.some(
+    (night) =>
+      night.durationMinutes != null ||
+      night.sleepMinutes != null ||
+      night.deepPct != null ||
+      night.remPct != null ||
+      night.lightPct != null ||
+      night.awakePct != null ||
+      night.rollingAvgDuration != null,
+  );
+  const hasSleepSummary = nightly.length > 0 && sleepDebt != null && hasMeasuredSleepValues;
   const option = hasSleepSummary ? buildSleepAnalyticsOption(nightly, sleepDebt) : {};
   const missingState = getFirstMissingSleepState(nightly);
   const emptyMessage = missingState

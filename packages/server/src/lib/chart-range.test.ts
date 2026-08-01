@@ -318,6 +318,30 @@ describe("selected chart range query builders", () => {
     expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
   });
 
+  it("versions cached custom-range responses when their output contract changes", async () => {
+    const testRouter = router({
+      activityVariability: selectedChartCustomRangeQuery(
+        "cyclingAdvanced.activityVariability",
+        1,
+        z.object({
+          days: selectedChartRangeSchema("cyclingAdvanced.activityVariability"),
+        }),
+        ({ input, range }) => ({ days: range.days, inputDays: input.days }),
+        z.object({ days: z.number().nullable(), inputDays: z.number().nullable() }),
+        { keyVersion: "activity-states-v1" },
+      ),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await caller.activityVariability({ days: null });
+
+    expect(cacheSetCalls.at(-1)?.key).toContain(":activity-states-v1:");
+  });
+
   it("rejects custom selected chart handlers without input", async () => {
     const testRouter = router({
       activityVariability: selectedChartCustomRangeQuery(

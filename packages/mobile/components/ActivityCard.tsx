@@ -1,8 +1,8 @@
 import {
-  activityDataStateLabel,
-  formatActivityMetric,
   type ActivityDataState,
   type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
@@ -43,7 +43,10 @@ function Stat({ value, label, unit }: { value: string | number; label: string; u
 function UnavailableStat({ metric }: { metric: ActivityMetric }) {
   if (metric.status === "available") return null;
   return (
-    <View style={styles.unavailableStat} accessibilityLabel={`${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`}>
+    <View
+      style={styles.unavailableStat}
+      accessibilityLabel={`${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`}
+    >
       <Text style={styles.statUnavailableTitle}>
         {metric.label} {activityDataStateLabel(metric.status)}
       </Text>
@@ -64,11 +67,8 @@ export function ActivityCard({
   distanceState,
   units,
 }: ActivityCardProps) {
-  const distanceMetric = formatActivityMetric(
-    "Distance",
-    distanceKm,
-    distanceState,
-    (value) => formatNumber(units.convertDistance(value), 2),
+  const distanceMetric = formatActivityMetric("Distance", distanceKm, distanceState, (value) =>
+    formatNumber(units.convertDistance(value), 2),
   );
 
   return (

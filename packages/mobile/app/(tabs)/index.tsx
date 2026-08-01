@@ -80,7 +80,7 @@ export default function TodayScreen() {
 
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
-  const isSleepDataMissing = sleepNeed != null && sleepNeed.availability !== "available";
+  const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
   const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
   const isLoading = shouldShowBlockingLoading({
@@ -393,7 +393,12 @@ export default function TodayScreen() {
                   </Text>
                 </View>
               </>
-            ) : null}
+            ) : (
+              <>
+                <Text style={styles.noDataText}>{sleepNeed.message}</Text>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
+              </>
+            )}
           </Card>
         </Animated.View>
       )}

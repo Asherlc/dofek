@@ -11,6 +11,10 @@ describe("ActivityMetricStrip", () => {
       <ActivityMetricStrip
         activity={{
           location: null,
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
           stats: [
             {
               status: "missing",
@@ -43,6 +47,10 @@ describe("ActivityMetricStrip", () => {
       <ActivityMetricStrip
         activity={{
           location: null,
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
           stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
         }}
         units={units}
@@ -58,11 +66,12 @@ describe("ActivityMetricStrip", () => {
       <ActivityMetricStrip
         activity={{
           location: {
-            distanceMeters: 10_000,
-            distanceState: { status: "available" },
-            elevationGainM: 250,
-            elevationState: { status: "available" },
+            mapPreview: {},
           },
+          distanceMeters: 10_000,
+          distanceState: { status: "available" },
+          elevationGainM: 250,
+          elevationState: { status: "available" },
           stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
         }}
         units={units}
@@ -79,11 +88,12 @@ describe("ActivityMetricStrip", () => {
       <ActivityMetricStrip
         activity={{
           location: {
-            distanceMeters: null,
-            distanceState: { status: "missing", reason: "Distance not recorded" },
-            elevationGainM: null,
-            elevationState: { status: "missing", reason: "Elevation not recorded" },
+            mapPreview: {},
           },
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
           stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
         }}
         units={units}
@@ -107,6 +117,10 @@ describe("ActivityMetricStrip", () => {
       <ActivityMetricStrip
         activity={{
           location: null,
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
           stats: [{ status, label: "Training Stress Score", reason: "Sync the source and retry." }],
         }}
         units={units}

@@ -22,6 +22,10 @@ const strengthActivity: ActivityCardData = {
     overlapSummary: null,
   },
   lastProcessedAt: "2026-07-14T08:50:00-07:00",
+  distanceMeters: null,
+  distanceState: { status: "missing", reason: "Distance not recorded" },
+  elevationGainM: null,
+  elevationState: { status: "missing", reason: "Elevation not recorded" },
   location: null,
   stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
 };
@@ -56,6 +60,10 @@ const mappedActivity: ActivityCardData = {
     overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
   },
   lastProcessedAt: "2026-07-14T08:45:00-07:00",
+  distanceMeters: 8530,
+  distanceState: { status: "available" },
+  elevationGainM: 493,
+  elevationState: { status: "available" },
   location: {
     mapPreview: {
       width: 512,
@@ -98,10 +106,6 @@ const mappedActivity: ActivityCardData = {
         { x: 438, y: 92 },
       ],
     },
-    distanceMeters: 8530,
-    distanceState: { status: "available" },
-    elevationGainM: 493,
-    elevationState: { status: "available" },
   },
   stats: [{ status: "available", label: "Training Stress Score", value: "41" }],
 };

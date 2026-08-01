@@ -44,10 +44,6 @@ const activityLocationSchema = z.object({
   centroidLat: z.number(),
   centroidLng: z.number(),
   mapPreview: mapPreviewSchema,
-  distanceMeters: z.number().nullable(),
-  distanceState: activityDataStateSchema,
-  elevationGainM: z.number().nullable(),
-  elevationState: activityDataStateSchema,
 });
 
 const activityStatSchema = z.discriminatedUnion("status", [
@@ -79,6 +75,10 @@ const calendarActivityEntrySchema = z.object({
   durationMin: z.number(),
   source: activityListSourceSchema,
   lastProcessedAt: timestampStringSchema.nullable(),
+  distanceMeters: z.number().nullable(),
+  distanceState: activityDataStateSchema,
+  elevationGainM: z.number().nullable(),
+  elevationState: activityDataStateSchema,
   location: activityLocationSchema.nullable(),
   tss: z.number().nullable(),
   stats: z.array(activityStatSchema),

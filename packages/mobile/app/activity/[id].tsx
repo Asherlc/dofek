@@ -148,7 +148,9 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
       {stats.map((stat) => {
-        const unavailableMetric = "status" in stat && stat.status !== "available" ? stat : null;
+        const metric = "status" in stat ? stat : null;
+        const availableMetric = metric?.status === "available" ? metric : null;
+        const unavailableMetric = metric && !availableMetric ? metric : null;
         const isUnavailable = unavailableMetric !== null;
         const accessibleLabel = unavailableMetric
           ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
@@ -166,11 +168,7 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
                 : stat.label}
             </Text>
             <Text style={statsStyles.value}>
-              {"status" in stat
-                ? stat.status === "available"
-                  ? stat.value
-                  : stat.reason
-                : stat.value}
+              {availableMetric ? availableMetric.value : (unavailableMetric?.reason ?? stat.value)}
             </Text>
           </View>
         );

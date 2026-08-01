@@ -31,6 +31,12 @@ describe("activity_sensor_summary_rows model", () => {
     expect(modelSql).not.toContain(
       "coalesce(elevation_per_activity.elevation_gain_m, CAST(0, 'Nullable(Float64)'))",
     );
+    expect(modelSql).toContain(
+      "elevation_per_activity.elevation_loss_m AS elevation_loss_m",
+    );
+    expect(modelSql).not.toContain(
+      "coalesce(elevation_per_activity.elevation_loss_m, CAST(0, 'Nullable(Float64)'))",
+    );
   });
 
   it("materializes only the reused dirty, sample, and power stages", () => {

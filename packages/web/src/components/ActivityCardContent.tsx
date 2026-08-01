@@ -1,11 +1,8 @@
 import {
-  activityDataStateLabel,
-  formatActivityMetric,
   type ActivityDataState,
   type ActivityMetric,
-} from "@dofek/format/activity-data-state";
-import type {
-  ActivityDataStateUnavailableStatus,
+  activityDataStateLabel,
+  formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import { formatDurationMinutes, formatRelativeTime } from "@dofek/format/format";
 import {
@@ -35,6 +32,10 @@ export interface ActivityCardData {
     overlapSummary: string | null;
   };
   lastProcessedAt: string | null;
+  distanceMeters: number | null;
+  distanceState: ActivityDataState;
+  elevationGainM: number | null;
+  elevationState: ActivityDataState;
   isProviderAbsent?: boolean;
   providerId?: string;
   providerAbsentAt?: string | null;
@@ -43,10 +44,7 @@ export interface ActivityCardData {
   stats: ActivityCardStat[];
 }
 
-export type ActivityCardLocation = ActivityMapLocation & {
-  distanceState: ActivityDataState;
-  elevationState: ActivityDataState;
-};
+export type ActivityCardLocation = ActivityMapLocation;
 
 export type ActivityCardStat = ActivityMetric;
 
@@ -156,21 +154,25 @@ function ActivityMetricGrid({
   activity,
   units,
 }: {
-  activity: Pick<ActivityCardData, "location" | "stats">;
+  activity: Pick<
+    ActivityCardData,
+    "location" | "stats" | "distanceMeters" | "distanceState" | "elevationGainM" | "elevationState"
+  >;
   units: UnitConverter;
 }) {
-  const metrics: ActivityCardStat[] = activity.location
+  const hasRouteMetrics =
+    activity.location != null ||
+    activity.distanceState.status === "available" ||
+    activity.elevationState.status === "available";
+  const metrics: ActivityCardStat[] = hasRouteMetrics
     ? [
-        formatActivityMetric(
-          "Distance",
-          activity.location.distanceMeters,
-          activity.location.distanceState,
-          (value) => formatMeasurementText(units.formatDistance(value / 1000)),
+        formatActivityMetric("Distance", activity.distanceMeters, activity.distanceState, (value) =>
+          formatMeasurementText(units.formatDistance(value / 1000)),
         ),
         formatActivityMetric(
           "Elevation",
-          activity.location.elevationGainM,
-          activity.location.elevationState,
+          activity.elevationGainM,
+          activity.elevationState,
           (value) => formatMeasurementText(units.formatElevation(value)),
         ),
       ]

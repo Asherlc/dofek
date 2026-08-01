@@ -462,9 +462,7 @@ describe("ActivityDetailScreen", () => {
 
     expect(screen.getByText("Distance unavailable")).toBeTruthy();
     expect(screen.getByText("Distance not recorded")).toBeTruthy();
-    expect(
-      screen.getByLabelText("Distance unavailable: Distance not recorded"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeTruthy();
   });
 
   it("preserves a server-provided zero detail distance without GPS", async () => {

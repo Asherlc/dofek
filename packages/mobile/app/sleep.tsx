@@ -129,10 +129,7 @@ export default function SleepScreen() {
       ? "--"
       : formatRecordLocalTime(lastNight.endedAt, lastNight.localTimeContext, "end");
 
-  const durationTrend = nightly
-    .slice(-14)
-    .map((n) => n.sleepMinutes)
-    .filter((minutes): minutes is number => minutes != null);
+  const durationTrend = nightly.slice(-14).map((n) => n.durationMinutes);
   const efficiencyTrend = nightly
     .slice(-14)
     .map((night) => night.efficiency)

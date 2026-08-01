@@ -33,10 +33,6 @@ export interface ActivityLocation {
   centroidLat: number;
   centroidLng: number;
   mapPreview: OsmTilePreview;
-  distanceMeters: number | null;
-  distanceState: ActivityDataState;
-  elevationGainM: number | null;
-  elevationState: ActivityDataState;
 }
 
 export type ActivityStat =
@@ -61,6 +57,10 @@ export interface CalendarActivityEntry {
   durationMin: number;
   source: ActivityListSourceDetail;
   lastProcessedAt: string | null;
+  distanceMeters: number | null;
+  distanceState: ActivityDataState;
+  elevationGainM: number | null;
+  elevationState: ActivityDataState;
   location: ActivityLocation | null;
   tss: number | null;
   stats: ActivityStat[];
@@ -129,6 +129,8 @@ const overviewRowSchema = z.object({
   total_minutes: z.coerce.number(),
   total_distance_meters: z.coerce.number().nullable(),
   total_elevation_gain_m: z.coerce.number().nullable(),
+  distance_measurement_count: z.coerce.number(),
+  elevation_measurement_count: z.coerce.number(),
 });
 
 const activityTypeRowSchema = z.object({
@@ -322,6 +324,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         partialAbsentSources: sourceAttribution.hasPartialAbsence
           ? sourceAttribution.partialAbsentSources()
           : undefined,
+        distanceMeters: row.total_distance,
+        distanceState: activityMeasurementState("Distance", row.total_distance),
+        elevationGainM: row.elevation_gain_m,
+        elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -330,10 +336,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 mapPreview:
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
-                distanceMeters: row.total_distance,
-                distanceState: activityMeasurementState("Distance", row.total_distance),
-                elevationGainM: row.elevation_gain_m,
-                elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -459,6 +461,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         durationMin: Math.round(row.duration_min * 10) / 10,
         source: buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
         lastProcessedAt: row.last_processed_at,
+        distanceMeters: row.total_distance,
+        distanceState: activityMeasurementState("Distance", row.total_distance),
+        elevationGainM: row.elevation_gain_m,
+        elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -467,10 +473,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 mapPreview:
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
-                distanceMeters: row.total_distance,
-                distanceState: activityMeasurementState("Distance", row.total_distance),
-                elevationGainM: row.elevation_gain_m,
-                elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -540,7 +542,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             count() AS activity_count,
             coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
             sumOrNull(location.total_distance) AS total_distance_meters,
-            sumOrNull(sensor.elevation_gain_m) AS total_elevation_gain_m
+            sumOrNull(sensor.elevation_gain_m) AS total_elevation_gain_m,
+            countIf(location.total_distance IS NOT NULL) AS distance_measurement_count,
+            countIf(sensor.elevation_gain_m IS NOT NULL) AS elevation_measurement_count
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_location_summary_rows AS location FINAL
             ON location.user_id = activity.user_id
@@ -578,24 +582,35 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       total_minutes: 0,
       total_distance_meters: null,
       total_elevation_gain_m: null,
+      distance_measurement_count: 0,
+      elevation_measurement_count: 0,
     };
 
+    const activityCount = Math.round(overview.activity_count);
+    const distanceComplete = overview.distance_measurement_count === activityCount;
+    const elevationComplete = overview.elevation_measurement_count === activityCount;
+    const totalDistanceMeters = distanceComplete ? overview.total_distance_meters : null;
+    const totalElevationGainM = elevationComplete ? overview.total_elevation_gain_m : null;
+
     return {
-      activityCount: Math.round(overview.activity_count),
+      activityCount,
       totalMinutes: Math.round(overview.total_minutes * 10) / 10,
       totalDistanceMeters:
-        overview.total_distance_meters == null
-          ? null
-          : Math.round(overview.total_distance_meters * 10) / 10,
-      totalDistanceState: activityMeasurementState("Distance", overview.total_distance_meters),
+        totalDistanceMeters == null ? null : Math.round(totalDistanceMeters * 10) / 10,
+      totalDistanceState: distanceComplete
+        ? activityMeasurementState("Distance", totalDistanceMeters)
+        : {
+            status: "missing",
+            reason: "Distance was not recorded for every activity.",
+          },
       totalElevationGainM:
-        overview.total_elevation_gain_m == null
-          ? null
-          : Math.round(overview.total_elevation_gain_m * 10) / 10,
-      totalElevationState: activityMeasurementState(
-        "Elevation",
-        overview.total_elevation_gain_m,
-      ),
+        totalElevationGainM == null ? null : Math.round(totalElevationGainM * 10) / 10,
+      totalElevationState: elevationComplete
+        ? activityMeasurementState("Elevation", totalElevationGainM)
+        : {
+            status: "missing",
+            reason: "Elevation was not recorded for every activity.",
+          },
       activityTypes: activityTypeRows.map((row) => row.activity_type),
     };
   }

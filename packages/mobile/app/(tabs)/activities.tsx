@@ -1,8 +1,8 @@
 import {
-  activityDataStateLabel,
-  formatActivityMetric,
   type ActivityDataState,
   type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
   formatDateForDisplay,
@@ -92,10 +92,9 @@ function formatActivityAccessibilityLabel(
     localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
-    location: {
-      distanceState: ActivityDataState;
-      elevationState: ActivityDataState;
-    } | null;
+    distanceState: ActivityDataState;
+    elevationState: ActivityDataState;
+    location: { mapPreview: unknown } | null;
     stats: ActivityMetric[];
   },
 ): string {
@@ -110,10 +109,14 @@ function formatActivityAccessibilityLabel(
     labelParts.push(activityTypeLabel);
   }
 
-  if (activity.location) {
+  const hasRouteMetrics =
+    activity.location != null ||
+    activity.distanceState.status === "available" ||
+    activity.elevationState.status === "available";
+  if (hasRouteMetrics) {
     for (const metric of [
-      { label: "Distance", state: activity.location.distanceState },
-      { label: "Elevation", state: activity.location.elevationState },
+      { label: "Distance", state: activity.distanceState },
+      { label: "Elevation", state: activity.elevationState },
     ]) {
       if (metric.state.status !== "available") {
         labelParts.push(
@@ -615,8 +618,7 @@ function ActivityOverview({
           "Distance",
           overview.totalDistanceMeters,
           overview.totalDistanceState,
-          (distanceMeters) =>
-            formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+          (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
         ),
         formatActivityMetric(
           "Elevation",
@@ -666,8 +668,6 @@ function ActivityOverview({
 interface ActivityMapTileProps {
   location: {
     mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
   };
 }
 

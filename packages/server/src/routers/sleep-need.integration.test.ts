@@ -232,7 +232,7 @@ describe("sleep-need router integration", () => {
             efficiency_pct, sleep_type
           ) VALUES
           (
-            'apple_health', ${TEST_USER_ID}, 'older-null-duration',
+            'apple_health', ${TEST_USER_ID}, 'older-null-duration-with-available-prior',
             ${missingNightStartedAt}, ${missingNightEndedAt},
             NULL, NULL, NULL, NULL, NULL,
             NULL, 'sleep'
@@ -454,12 +454,8 @@ describe("sleep data consistency: multiple sessions per date", () => {
   it("sleepNeed.calculate picks the longest session per date in SQL", async () => {
     await queryCache.invalidateAll();
     const endDate = new Date().toISOString().slice(0, 10);
-    const result = await query<SleepNeedResult | null>("sleepNeed.calculate", { endDate });
-
-    if (result === null) {
-      expect(result).toBeNull();
-      return;
-    }
+    const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
+    expect(result).not.toBeNull();
 
     // Each recent night should show the WHOOP session's 480 min (the longest),
     // not Apple Health's 330 min.
@@ -580,12 +576,8 @@ describe("after-midnight sleep attribution", () => {
   it("after-midnight sleep is attributed to the previous calendar night", async () => {
     await queryCache.invalidateAll();
     const endDate = new Date().toISOString().slice(0, 10);
-    const result = await query<SleepNeedResult | null>("sleepNeed.calculate", { endDate });
-
-    if (result === null) {
-      expect(result).toBeNull();
-      return;
-    }
+    const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
+    expect(result).not.toBeNull();
 
     // All 7 nights should have data — none should be missing because the
     // 1am start time was attributed to the next calendar day instead of the

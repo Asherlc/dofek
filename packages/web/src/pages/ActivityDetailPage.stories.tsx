@@ -57,6 +57,11 @@ const baseActivity: ActivityDetail = {
   sourceDecision: null,
 };
 
+const missingMetricState = (label: string) => ({
+  status: "missing" as const,
+  reason: `${label} not recorded`,
+});
+
 const headerMeta = {
   title: "Pages/ActivityDetail/ActivityHeader",
   component: ActivityHeader,
@@ -88,7 +93,9 @@ export const Running: HeaderStory = {
       activityType: "running",
       name: "Easy Run",
       avgPower: null,
+      avgPowerState: missingMetricState("Average power"),
       maxPower: null,
+      maxPowerState: missingMetricState("Maximum power"),
       totalDistance: 8000,
       elevationGain: 50,
       elevationLoss: 45,
@@ -105,15 +112,25 @@ export const Minimal: HeaderStory = {
       name: null,
       endedAt: null,
       avgHr: null,
+      avgHrState: missingMetricState("Average heart rate"),
       maxHr: null,
+      maxHrState: missingMetricState("Maximum heart rate"),
       avgPower: null,
+      avgPowerState: missingMetricState("Average power"),
       maxPower: null,
+      maxPowerState: missingMetricState("Maximum power"),
       avgSpeed: null,
+      avgSpeedState: missingMetricState("Average speed"),
       maxSpeed: null,
+      maxSpeedState: missingMetricState("Maximum speed"),
       avgCadence: null,
+      avgCadenceState: missingMetricState("Average cadence"),
       totalDistance: null,
+      totalDistanceState: missingMetricState("Distance"),
       elevationGain: null,
+      elevationGainState: missingMetricState("Elevation gain"),
       elevationLoss: null,
+      elevationLossState: missingMetricState("Elevation loss"),
       sourceProviders: [],
       sourceLinks: [],
     },

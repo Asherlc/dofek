@@ -298,8 +298,8 @@ export const sleepNeedRouter = router({
    */
   calculate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ endDate: endDateSchema }))
-    .output(sleepNeedV1Schema.nullable())
-    .query(async ({ ctx, input }): Promise<SleepNeedResult | null> => {
+    .output(sleepNeedV1Schema)
+    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
       return toSleepNeedV1(await calculateSleepNeed(ctx, input.endDate));
     }),
 

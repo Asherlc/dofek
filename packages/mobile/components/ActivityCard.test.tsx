@@ -85,9 +85,7 @@ describe("ActivityCard", () => {
     );
     expect(screen.getByText("Distance processing")).toBeTruthy();
     expect(screen.getByText("Distance is still processing")).toBeTruthy();
-    expect(
-      screen.getByLabelText("Distance processing: Distance is still processing"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Distance processing: Distance is still processing")).toBeTruthy();
   });
 
   it("shows specific icons for common activity types", () => {

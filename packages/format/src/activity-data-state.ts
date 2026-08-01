@@ -13,7 +13,7 @@ export const activityDataStateSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("available") }),
   z.object({
     status: activityDataStateUnavailableStatusSchema,
-    reason: z.string().min(1),
+    reason: z.string().trim().min(1),
   }),
 ]);
 

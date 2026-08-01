@@ -140,6 +140,8 @@ const activities: Activity[] = [
     source_providers: ["strava"],
     distance_meters: 5000,
     distance_state: { status: "available" },
+    elevation_gain_m: 120,
+    elevation_state: { status: "available" },
     location: {
       centroidLat: 37.7749,
       centroidLng: -122.4194,

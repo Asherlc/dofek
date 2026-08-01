@@ -12,6 +12,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import {
   heartRateZoneCountColumns,
@@ -19,7 +20,6 @@ import {
   heartRateZoneSumColumns,
 } from "./heart-rate-zone-sql.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
-import { activityMeasurementState } from "../services/activity-data-state.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 

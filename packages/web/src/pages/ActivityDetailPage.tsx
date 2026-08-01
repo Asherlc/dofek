@@ -442,24 +442,30 @@ export function ActivityHeader({
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
           {stats.map((s) => {
+            const metric = "status" in s ? s : null;
+            const unavailableMetric = metric?.status !== "available" ? metric : null;
             return (
               <section
                 key={s.label}
                 className="card px-4 py-3"
-                data-state={"status" in s ? s.status : undefined}
+                data-state={metric?.status}
                 aria-label={
-                  "status" in s && s.status !== "available"
-                    ? `${s.label} ${activityDataStateLabel(s.status)}: ${s.reason}`
+                  unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
                     : undefined
                 }
               >
                 <div className="text-xs text-subtle mb-0.5">
-                  {"status" in s && s.status !== "available"
-                    ? `${s.label} ${activityDataStateLabel(s.status)}`
+                  {unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
                     : s.label}
                 </div>
                 <div className="text-lg font-medium tabular-nums">
-                  {"status" in s ? (s.status === "available" ? s.value : s.reason) : s.value}
+                  {metric
+                    ? metric.status === "available"
+                      ? metric.value
+                      : metric.reason
+                    : s.value}
                 </div>
               </section>
             );
