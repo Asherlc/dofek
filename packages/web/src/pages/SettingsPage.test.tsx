@@ -153,6 +153,25 @@ beforeEach(() => {
 });
 
 describe("SettingsPage tabs", () => {
+  it("renders the complete settings tab contract in order", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(
+      screen.getAllByRole("tab").map((tab) => ({
+        id: tab.id,
+        label: tab.textContent,
+      })),
+    ).toEqual([
+      { id: "settings-tab-general", label: "General" },
+      { id: "settings-tab-health", label: "Health" },
+      { id: "settings-tab-connections", label: "Connections" },
+      { id: "settings-tab-account", label: "Account" },
+      { id: "settings-tab-advanced", label: "Advanced" },
+    ]);
+  });
+
   it("shows general settings by default", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
