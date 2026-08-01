@@ -1,3 +1,4 @@
+import { formatConditionalEffectLabel, NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { getConditionalTests } from "./conditional-tests.ts";
 import {
   classifyConfidence,
@@ -10,7 +11,8 @@ import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
 import { getCorrelationPairs } from "./correlation-pairs.ts";
 import { joinByDate } from "./data-join.ts";
 import { exhaustiveSweep } from "./discovery.ts";
-import { explainInsight, metricUnits } from "./explanation.ts";
+import { createInsightEvidence } from "./evidence.ts";
+import { explainInsight } from "./explanation.ts";
 import { computeMonthlyInsights } from "./monthly.ts";
 import { benjaminiHochberg, cohensD, describe, spearmanCorrelation, welchTTest } from "./stats.ts";
 import {
@@ -24,6 +26,38 @@ import {
   type NutritionRow,
   type SleepRow,
 } from "./types.ts";
+
+type ConditionalInsight = Pick<Insight, "whenTrue" | "whenFalse" | "metric">;
+
+interface CorrelationSample {
+  x: number;
+  y: number;
+  index: number;
+}
+
+function selectNonOverlappingCorrelationSamples(
+  samples: CorrelationSample[],
+  windowSize: number,
+): CorrelationSample[] {
+  const selected: CorrelationSample[] = [];
+  let lastSelectedIndex = Number.NEGATIVE_INFINITY;
+
+  for (const sample of samples) {
+    if (sample.index - lastSelectedIndex < windowSize) continue;
+    selected.push(sample);
+    lastSelectedIndex = sample.index;
+  }
+
+  return selected;
+}
+
+function conditionalEstimateLabel(insight: ConditionalInsight): string {
+  return formatConditionalEffectLabel(
+    insight.whenTrue.mean,
+    insight.whenFalse.mean,
+    insight.metric,
+  );
+}
 
 // ── Main engine ───────────────────────────────────────────────────────────
 
@@ -44,7 +78,8 @@ export function computeInsights(
   // 1. Conditional analysis (primary method)
   // Collect all candidates first, then apply FDR correction
   const conditionalCandidates: Array<Insight & { rawPValue: number }> = [];
-  for (const test of getConditionalTests()) {
+  const conditionalTests = getConditionalTests();
+  for (const test of conditionalTests) {
     const trueValues: number[] = [];
     const falseValues: number[] = [];
 
@@ -81,18 +116,12 @@ export function computeInsights(
     const trueStats = describe(trueValues);
     const falseStats = describe(falseValues);
 
-    const diff = trueStats.mean - falseStats.mean;
-    const baselineNearZero = Math.abs(falseStats.mean) < 1;
-    const pctDiff =
-      !baselineNearZero && falseStats.mean !== 0 ? (diff / Math.abs(falseStats.mean)) * 100 : 0;
-    const direction = diff > 0 ? "higher" : "lower";
-
     const scopePhrase = test.scope === "month" ? "during months with" : "on days with";
-    // Format message: use absolute diff when baseline is near zero, percentage otherwise
-    const unit = metricUnits[test.metric] ?? "";
-    const diffLabel = baselineNearZero
-      ? `${Math.abs(diff).toFixed(2)}${unit ? ` ${unit}` : ""} ${direction}`
-      : `${Math.abs(pctDiff).toFixed(0)}% ${direction}`;
+    const diffLabel = formatConditionalEffectLabel(trueStats.mean, falseStats.mean, test.metric);
+    const message =
+      diffLabel === NO_OBSERVED_DIFFERENCE
+        ? `Observed association: ${test.metric} showed no observed difference ${scopePhrase} ${test.action}`
+        : `Observed association: ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`;
 
     const confounders = findConfounders(test, joined);
     conditionalCandidates.push({
@@ -101,7 +130,7 @@ export function computeInsights(
       confidence,
       metric: test.metric,
       action: test.action,
-      message: `Your ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`,
+      message,
       detail: `${test.action}: avg ${trueStats.mean.toFixed(1)} vs ${falseStats.mean.toFixed(1)} without (n=${trueValues.length}/${falseValues.length})`,
       whenTrue: trueStats,
       whenFalse: falseStats,
@@ -131,10 +160,9 @@ export function computeInsights(
 
   // 2. Continuous correlations (supplementary)
   const correlationInsights: Array<Insight & { rawPValue: number }> = [];
-  for (const pair of getCorrelationPairs()) {
-    const xs: number[] = [];
-    const ys: number[] = [];
-    const indices: number[] = [];
+  const correlationPairs = getCorrelationPairs();
+  for (const pair of correlationPairs) {
+    const samples: CorrelationSample[] = [];
 
     for (let i = 0; i < joined.length; i++) {
       const day = joined[i];
@@ -142,13 +170,20 @@ export function computeInsights(
       const xValue = pair.xFn(day, joined, i);
       const yValue = pair.yFn(day, joined, i);
       if (xValue != null && yValue != null) {
-        xs.push(xValue);
-        ys.push(yValue);
-        indices.push(i);
+        samples.push({ x: xValue, y: yValue, index: i });
       }
     }
 
-    if (xs.length < 15) continue;
+    const inferenceSamples =
+      pair.scope === "month"
+        ? selectNonOverlappingCorrelationSamples(samples, MONTHLY_WINDOW_SIZE)
+        : samples;
+    const xs = inferenceSamples.map((sample) => sample.x);
+    const ys = inferenceSamples.map((sample) => sample.y);
+    const indices = inferenceSamples.map((sample) => sample.index);
+    const minimumSamples = pair.scope === "month" ? 5 : 15;
+
+    if (xs.length < minimumSamples) continue;
 
     const corr = spearmanCorrelation(xs, ys);
     if (Math.abs(corr.rho) < 0.2) continue;
@@ -159,10 +194,10 @@ export function computeInsights(
     const confounders = findCorrelationConfounders(pair.xName, pair.yName, xs, ys, joined, indices);
 
     const allPoints: Array<{ x: number; y: number; date: string }> = [];
-    for (let j = 0; j < indices.length; j++) {
-      const xVal = xs[j];
-      const yVal = ys[j];
-      const idx = indices[j];
+    for (const sample of samples) {
+      const xVal = sample.x;
+      const yVal = sample.y;
+      const idx = sample.index;
       if (xVal == null || yVal == null || idx == null) continue;
       const joinedDay = joined[idx];
       if (!joinedDay) continue;
@@ -203,6 +238,11 @@ export function computeInsights(
 
   // 3. Monthly body comp / nutrition insights
   const monthlyInsights = computeMonthlyInsights(joined);
+  const rollingMonthlyInsightIds = new Set([
+    ...conditionalTests.filter((test) => test.scope === "month").map((test) => test.id),
+    ...correlationPairs.filter((pair) => pair.scope === "month").map((pair) => pair.id),
+  ]);
+  const monthlyInsightIds = new Set(monthlyInsights.map((insight) => insight.id));
   insights.push(...monthlyInsights);
 
   // 4. Exhaustive pairwise discovery sweep
@@ -225,8 +265,18 @@ export function computeInsights(
 
   // Cap at 20 most significant insights to avoid noise
   const top = insights.slice(0, 20);
-  // Add human-readable explanations
+  // Add server-authored evidence and a safe human-readable explanation.
   for (const insight of top) {
+    const evidenceScope = rollingMonthlyInsightIds.has(insight.id)
+      ? "rolling_monthly"
+      : monthlyInsightIds.has(insight.id)
+        ? "monthly"
+        : "daily";
+    insight.evidence = createInsightEvidence(
+      insight.type,
+      insight.type === "conditional" ? conditionalEstimateLabel(insight) : undefined,
+      evidenceScope,
+    );
     insight.explanation = explainInsight(insight);
   }
   return top;

@@ -100,6 +100,16 @@ describe("behaviorImpactRouter", () => {
       expect(alcohol?.yesCount).toBe(10);
       expect(alcohol?.noCount).toBe(20);
       expect(alcohol?.sources).toEqual([{ providerId: "manual_review", label: "Manual review" }]);
+      expect(alcohol?.association).toEqual({
+        relationship: "descriptive_association",
+        direction: "lower",
+        estimateLabel: "21.4% lower",
+        method: "Relative difference in mean next-day readiness after Yes versus No.",
+        interpretation:
+          "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.",
+        uncertainty: "Uncertainty interval is unavailable for this descriptive comparison.",
+        observationWindow: "90 days",
+      });
 
       const meditation = result.find((r) => r.questionSlug === "meditation");
       expect(meditation).toBeDefined();
@@ -109,6 +119,37 @@ describe("behaviorImpactRouter", () => {
         { providerId: "manual_review", label: "Manual review" },
         { providerId: "whoop", label: "WHOOP (Cloud)" },
       ]);
+    });
+
+    it("returns unavailable association semantics for a zero No-group baseline", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              question_slug: "zero-baseline",
+              display_name: "Zero baseline",
+              category: "test",
+              avg_readiness_yes: 65,
+              avg_readiness_no: 0,
+              yes_count: 8,
+              no_count: 7,
+              provider_ids: ["manual_review"],
+            },
+          ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const [result] = await caller.impactSummary({ days: 90 });
+
+      expect(result?.impactPercent).toBeNull();
+      expect(result?.association).toMatchObject({
+        direction: "unavailable",
+        estimateLabel: "Estimate unavailable",
+        observationWindow: "90 days",
+      });
     });
 
     it("uses default days of 90", async () => {
@@ -165,6 +206,32 @@ describe("behaviorImpactRouter", () => {
       expect(queryText).toContain("dm.user_id =");
       expect(queryText).not.toContain("je.date >=");
       expect(queryText).not.toContain("dm.date >=");
+    });
+
+    it("authors the all-history observation window", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              question_slug: "meditation",
+              display_name: "Meditation",
+              category: "wellness",
+              avg_readiness_yes: 75,
+              avg_readiness_no: 60,
+              yes_count: 15,
+              no_count: 12,
+              provider_ids: ["manual_review"],
+            },
+          ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const [result] = await caller.impactSummary({ days: null });
+
+      expect(result?.association.observationWindow).toBe("all available history");
     });
   });
 });

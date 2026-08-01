@@ -17,6 +17,15 @@ const associationData = [
     yesCount: 18,
     noCount: 24,
     sources: [{ providerId: "manual_review", label: "Manual review" }],
+    association: {
+      relationship: "descriptive_association",
+      direction: "higher",
+      estimateLabel: "18.6% higher",
+      method: "Server-computed comparison method.",
+      interpretation: "Server interpretation: association, not causation or prescription.",
+      uncertainty: "Server uncertainty statement.",
+      observationWindow: "Server observation window.",
+    },
   },
   {
     questionSlug: "late-meal",
@@ -29,6 +38,15 @@ const associationData = [
       { providerId: "manual_review", label: "Manual review" },
       { providerId: "whoop", label: "WHOOP (Cloud)" },
     ],
+    association: {
+      relationship: "descriptive_association",
+      direction: "lower",
+      estimateLabel: "12.4% lower",
+      method: "Server-computed comparison method.",
+      interpretation: "Server interpretation: association, not causation or prescription.",
+      uncertainty: "Server uncertainty statement.",
+      observationWindow: "Server observation window.",
+    },
   },
 ];
 
@@ -58,20 +76,16 @@ describe("BehaviorImpactChart", () => {
     render(<BehaviorImpactChart days={90} />);
 
     expect(screen.getByText("Association with Next-Day Readiness")).toBeDefined();
+    expect(screen.getByText("Server-computed comparison method.")).toBeDefined();
     expect(
-      screen.getByText(
-        "Method: (mean next-day readiness after Yes − mean after No) ÷ mean after No × 100.",
-      ),
+      screen.getByText("Server interpretation: association, not causation or prescription."),
     ).toBeDefined();
-    expect(screen.getByText("Association does not establish causation.")).toBeDefined();
-    expect(
-      screen.getByText("Uncertainty interval: not available for this descriptive comparison."),
-    ).toBeDefined();
-    expect(screen.getByText("Selected window: 90 days")).toBeDefined();
+    expect(screen.getByText("Server uncertainty statement.")).toBeDefined();
+    expect(screen.getByText("Server observation window.")).toBeDefined();
     expect(screen.getByText("Yes n = 18 · No n = 24")).toBeDefined();
     expect(screen.getByText("Yes n = 14 · No n = 28")).toBeDefined();
-    expect(screen.getByText("18.6% higher")).toBeDefined();
-    expect(screen.getByText("12.4% lower")).toBeDefined();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeDefined();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeDefined();
     expect(screen.getByText("LOWER")).toBeDefined();
     expect(screen.getByText("HIGHER")).toBeDefined();
 
@@ -81,9 +95,69 @@ describe("BehaviorImpactChart", () => {
   });
 
   it("describes the all-history observation window", () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({
+        ...item,
+        association: { ...item.association, observationWindow: "all available history" },
+      })),
+      error: null,
+      isLoading: false,
+    });
+
     render(<BehaviorImpactChart days={null} />);
 
-    expect(screen.getByText("Selected window: all available history")).toBeDefined();
+    expect(screen.getByText("all available history")).toBeDefined();
+  });
+
+  it("uses the first association-bearing item for evidence in a partial cached response", () => {
+    const [firstItem, secondItem] = associationData;
+    mocks.query.mockReturnValue({
+      data: firstItem && secondItem ? [{ ...firstItem, association: undefined }, secondItem] : [],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Server-computed comparison method.")).toBeDefined();
+    expect(screen.getByText("Server observation window.")).toBeDefined();
+    expect(screen.getAllByTestId("readiness-association-bar")).toHaveLength(1);
+    expect(screen.getByText("Late meal")).toBeDefined();
+  });
+
+  it("shows an explicit state when cached rows contain no association evidence", () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({ ...item, association: undefined })),
+      error: null,
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Association evidence unavailable")).toBeDefined();
+    expect(
+      screen.getByText(
+        "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByTestId("readiness-association-axis")).toBeNull();
+    expect(screen.queryAllByTestId("readiness-association-bar")).toHaveLength(0);
+  });
+
+  it("does not duplicate the unavailable estimate label", () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({
+        ...item,
+        association: { ...item.association, estimateLabel: "Estimate unavailable" },
+      })),
+      error: null,
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getAllByText("Estimate unavailable")).toHaveLength(2);
+    expect(screen.queryByText("Estimate: Estimate unavailable")).toBeNull();
   });
 
   it("shows source labels and reveals raw IDs only through accessible technical details", () => {

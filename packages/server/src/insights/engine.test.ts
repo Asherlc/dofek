@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { type ConditionalTest, getConditionalTests } from "./conditional-tests.ts";
 import { classifyConfidence, classifyCorrelationConfidence, downsample } from "./confidence.ts";
 import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
@@ -534,6 +535,51 @@ describe("joinByDate()", () => {
 // ── computeInsights tests ───────────────────────────────────────────────
 
 describe("computeInsights()", () => {
+  it("keeps non-conditional evidence free of a conditional estimate label", () => {
+    const dates = dateRange("2025-01-01", 90);
+    const metrics = dates.map((date, index) =>
+      makeDailyRow(date, {
+        hrv: 40 + index,
+        resting_hr: 70 - index * 0.2,
+      }),
+    );
+    const sleep = dates.map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, { duration_minutes: 420 + index }),
+    );
+
+    const result = computeInsights(metrics, sleep, [], [], []);
+    const topInsight = result[0];
+    const correlation = result.find((insight) => insight.type === "correlation");
+
+    expect(topInsight?.type).toBe("correlation");
+    expect(correlation).toBe(topInsight);
+    expect(correlation?.evidence).toMatchObject({ relationship: "correlation" });
+    expect(Object.hasOwn(correlation?.evidence ?? {}, "estimateLabel")).toBe(false);
+  });
+
+  it("publishes no-observed-difference evidence and messaging for a rounded-zero conditional effect", () => {
+    const dates = dateRange("2025-01-01", 120);
+    const metrics = dates.map((date, index) =>
+      makeDailyRow(date, {
+        hrv: index <= 60 ? 100.004 + (index % 2) * 0.0001 : 100 + (index % 2) * 0.0001,
+      }),
+    );
+    const sleep = dates.map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, { duration_minutes: index <= 60 ? 480 : 300 }),
+    );
+
+    const insight = computeInsights(metrics, sleep, [], [], []).find(
+      (candidate) => candidate.id === "sleep-7h-hrv",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.message).toBe(
+      "Observed association: next-day HRV showed no observed difference on days with 7+ hours of sleep",
+    );
+    expect(insight?.message).not.toContain("is No observed difference");
+    expect(insight?.evidence?.estimateLabel).toBe(NO_OBSERVED_DIFFERENCE);
+  });
+
   it("returns empty array when fewer than 14 days of data", () => {
     const dates = dateRange("2025-01-01", 13);
     const metrics = dates.map((d) => makeDailyRow(d));
@@ -567,6 +613,13 @@ describe("computeInsights()", () => {
       expect(insight.confidence).toMatch(/^(strong|emerging|early)$/);
       expect(insight.message).toBeDefined();
       expect(insight.explanation).toBeDefined();
+      expect(insight.evidence).toEqual(
+        expect.objectContaining({
+          label: expect.stringMatching(/^Descriptive /),
+          interpretation: expect.stringContaining("does not establish"),
+          recommendation: expect.stringContaining("not a prescription"),
+        }),
+      );
     }
   });
 
@@ -1028,9 +1081,7 @@ describe("computeInsights()", () => {
     const correlations = result.filter((i) => i.type === "correlation" || i.type === "discovery");
     for (const insight of correlations) {
       if (insight.explanation) {
-        expect(
-          insight.explanation.startsWith("More") || insight.explanation.startsWith("Higher"),
-        ).toBe(true);
+        expect(insight.explanation.startsWith("Observed association:")).toBe(true);
       }
     }
   });
@@ -1189,6 +1240,133 @@ describe("computeInsights()", () => {
     for (const insight of monthlyConditionals) {
       // Monthly-scoped tests use "during months with" not "on days with"
       expect(insight.message).toContain("during months with");
+    }
+  });
+
+  it("labels rolling monthly conditional evidence with its rolling window", () => {
+    const dates = dateRange("2025-01-01", 900);
+    const metrics = dates.map((date, index) =>
+      makeDailyRow(date, {
+        hrv: Math.floor(index / 60) % 2 === 0 ? 70 : 30,
+      }),
+    );
+    const sleep = dates.map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, {
+        duration_minutes: Math.floor(index / 60) % 2 === 0 ? 480 : 300,
+      }),
+    );
+    const activities = dates.flatMap((date, index) => {
+      const highExerciseBlock = Math.floor(index / 60) % 2 === 0;
+      return highExerciseBlock
+        ? [makeActivityRow(`${date}T10:00:00Z`, `${date}T11:00:00Z`, "running")]
+        : [];
+    });
+    const bodyComp = dates.map((date, index) => {
+      const highExerciseBlock = Math.floor(index / 60) % 2 === 0;
+      const slope = highExerciseBlock ? 0.1 : -0.1;
+      return makeBodyCompRow(`${date}T08:00:00Z`, { weight_kg: 80 + index * slope });
+    });
+
+    const result = computeInsights(metrics, sleep, activities, [], bodyComp);
+    const insight = result.find((candidate) => candidate.id === "exercise-monthly-weight");
+
+    expect(insight).toBeDefined();
+    expect(insight?.evidence?.method).toContain("30-day rolling windows");
+    expect(insight?.evidence?.method).toContain("Benjamini–Hochberg");
+    expect(insight?.evidence?.observationWindow).toBe("30-day rolling windows");
+
+    const rollingConditionals = result.filter((candidate) =>
+      candidate.id.startsWith("exercise-monthly-"),
+    );
+    expect(rollingConditionals.length).toBeGreaterThan(0);
+    expect(
+      rollingConditionals.every(
+        (candidate) => candidate.evidence?.observationWindow === "30-day rolling windows",
+      ),
+    ).toBe(true);
+
+    const rollingCorrelation = result.find(
+      (candidate) => candidate.id === "exercise-30d-weight-delta",
+    );
+
+    expect(rollingCorrelation).toBeDefined();
+    expect(rollingCorrelation?.evidence?.method).toContain("overlapping 30-day rolling windows");
+    expect(rollingCorrelation?.evidence?.method).toContain(
+      "non-overlapping 30-day representatives",
+    );
+    expect(rollingCorrelation?.evidence?.observationWindow).toBe("30-day rolling windows");
+    expect(rollingCorrelation?.correlation?.n).toBeGreaterThanOrEqual(5);
+    expect(rollingCorrelation?.correlation?.n).toBeLessThan(40);
+
+    const dailyConditional = result.find((candidate) => candidate.id === "sleep-7h-hrv");
+    expect(dailyConditional).toBeDefined();
+    expect(dailyConditional?.evidence?.observationWindow).toBe("Daily observations");
+    expect(dailyConditional?.message).toContain(" is ");
+    expect(dailyConditional?.message).not.toContain("showed no observed difference");
+
+    const dailyCorrelation = result.find((candidate) => candidate.id === "sleep-dur-hrv");
+    expect(dailyCorrelation).toBeDefined();
+    expect(dailyCorrelation?.evidence?.observationWindow).toBe("Daily observations");
+  });
+
+  it("uses non-overlapping effective samples for fully observed rolling correlations", () => {
+    const dates = Array.from({ length: 450 }, (_, index) => {
+      const date = new Date("2025-01-01T00:00:00Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const metrics = dates.map((date) => makeDailyRow(date));
+    const nutrition = dates.map((date, index) =>
+      makeNutritionRow(date, { calories: 2000 + 500 * Math.sin(index / 10) }),
+    );
+    const bodyComp = dates.map((date, index) =>
+      makeBodyCompRow(`${date}T08:00:00Z`, {
+        weight_kg: 80 + 0.01 * index + 0.5 * Math.sin(index / 10),
+      }),
+    );
+
+    const result = computeInsights(metrics, [], [], nutrition, bodyComp);
+    const rollingCorrelation = result.find(
+      (candidate) => candidate.id === "calories-30d-weight-delta",
+    );
+
+    expect(rollingCorrelation).toBeDefined();
+    expect(rollingCorrelation?.correlation?.n).toBe(14);
+    expect(rollingCorrelation?.correlation?.rho).toBeCloseTo(0.9824175824, 10);
+    expect(rollingCorrelation?.confidence).toBe("early");
+    expect(rollingCorrelation?.evidence?.method).toContain(
+      "non-overlapping 30-day representatives",
+    );
+  });
+
+  it("keeps monthly conditional evidence labels aligned with their messages", () => {
+    const dates = dateRange("2025-01-01", 638);
+    const metrics = dates.map((date) => makeDailyRow(date));
+    const activities = dates.flatMap((date) => {
+      return date < "2025-11"
+        ? [makeActivityRow(`${date}T10:00:00Z`, `${date}T11:00:00Z`, "running")]
+        : [];
+    });
+    const bodyComp = dates.map((date) => {
+      const day = Number(date.slice(8, 10));
+      const highExerciseMonth = date < "2025-11";
+      const weight = highExerciseMonth ? 80 - day * 0.1 : 80 + day * 0.1;
+      return makeBodyCompRow(`${date}T08:00:00Z`, { weight_kg: weight });
+    });
+
+    const insight = computeInsights(metrics, [], activities, [], bodyComp).find(
+      (candidate) => candidate.id === "m-high-exercise-weight",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.evidence?.method).toContain("no multiple-comparison correction");
+    expect(insight?.evidence?.method).not.toContain("Benjamini");
+    const estimateLabel = insight?.evidence?.estimateLabel;
+    expect(estimateLabel).toBeDefined();
+    if (estimateLabel) {
+      expect(insight?.message).toContain(estimateLabel);
+      expect(insight?.message).toContain("monthly weight change that was");
+      expect(insight?.evidence?.observationWindow).toBe("Monthly aggregates");
     }
   });
 
@@ -2027,7 +2205,28 @@ describe("explainInsight()", () => {
 
   it("handles action ending with 'day'", () => {
     const result = explainInsight({ ...baseConditional, action: "cardio day" });
-    expect(result).toContain("it's a cardio day");
+    expect(result).toContain("On days when it's a cardio day,");
+  });
+
+  it("labels correlation explanations as observed associations", () => {
+    const correlationInsight: Omit<Insight, "explanation"> = {
+      id: "corr_prefix",
+      type: "correlation",
+      confidence: "strong",
+      action: "steps",
+      metric: "resting heart rate",
+      message: "",
+      effectSize: -0.6,
+      pValue: 0.001,
+      detail: "Spearman ρ = -0.60, n = 45",
+      whenTrue: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      whenFalse: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      dataPoints: [],
+    };
+
+    expect(explainInsight(correlationInsight)).toMatch(
+      /^Observed association: .*does not establish causation or prescribe a behavior change\.$/,
+    );
   });
 });
 
@@ -4234,6 +4433,70 @@ describe("getMonthlyCorrelations() — comprehensive extract tests", () => {
 // ── computeMonthlyInsights() — conditional analysis ─────────────────────
 
 describe("computeMonthlyInsights() — conditional analysis", () => {
+  it("uses the no-observed-difference branch for a rounded-zero monthly effect", () => {
+    const days: JoinedDay[] = [];
+    for (let monthIndex = 0; monthIndex < 22; monthIndex += 1) {
+      const highExerciseGroup = monthIndex < 11;
+      const exerciseDays = highExerciseGroup ? 15 + monthIndex : monthIndex - 11;
+      const isAboveMedianExercise = exerciseDays > 15;
+      const monthlyDelta = isAboveMedianExercise
+        ? 0.00001 * (monthIndex - 1)
+        : 0.001 + 0.00001 * monthIndex;
+
+      for (let day = 1; day <= 25; day += 1) {
+        const date = new Date(Date.UTC(2025, monthIndex, day)).toISOString().slice(0, 10);
+        days.push(
+          makeFullJoinedDay(date, {
+            exercise_minutes: day <= exerciseDays ? 60 : 0,
+            weight_kg: 80 + (day * monthlyDelta) / 20,
+          }),
+        );
+      }
+    }
+
+    const insight = computeMonthlyInsights(days).find(
+      (candidate) => candidate.id === "m-high-exercise-weight",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.message).toBe(
+      "Observed association: Months with more exercise had no observed difference in monthly weight change.",
+    );
+  });
+
+  it.each([
+    { expectedDirection: "higher", slopeDirection: 1 },
+    { expectedDirection: "lower", slopeDirection: -1 },
+  ])("describes a $expectedDirection monthly effect", ({ expectedDirection, slopeDirection }) => {
+    const days: JoinedDay[] = [];
+    for (let month = 1; month <= 24; month++) {
+      const highExerciseMonth = month <= 12;
+      const exerciseDayCount = highExerciseMonth ? Math.min(19 + month, 25) : 0;
+      const slope =
+        (highExerciseMonth ? slopeDirection : -slopeDirection) * (0.02 + (month % 5) * 0.001);
+
+      for (let day = 1; day <= 25; day++) {
+        const date = new Date(Date.UTC(2025, month - 1, day)).toISOString().slice(0, 10);
+        days.push(
+          makeFullJoinedDay(date, {
+            exercise_minutes: day <= exerciseDayCount ? 60 : 0,
+            cardio_minutes: day <= exerciseDayCount ? 30 : 0,
+            weight_kg: 80 + month * 0.01 + day * slope,
+          }),
+        );
+      }
+    }
+
+    const insight = computeMonthlyInsights(days).find(
+      (candidate) => candidate.id === "m-high-exercise-weight",
+    );
+
+    expect(insight?.message).toContain(
+      `Observed association: Months with more exercise had a monthly weight change that was`,
+    );
+    expect(insight?.message).toContain(` ${expectedDirection}.`);
+  });
+
   it("produces high-exercise-vs-low conditional insight with 10+ months", () => {
     // Need 10+ months with at least 20 days each and weight data
     const days: JoinedDay[] = [];

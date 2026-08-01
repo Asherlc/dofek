@@ -89,7 +89,7 @@ const meta = {
   title: "Training/PolarizationTrendChart",
   component: PolarizationTrendChart,
   tags: ["autodocs"],
-  args: { weeks, maxHr: 192, method },
+  args: { weeks, maxHr: 192, threshold: 2, method },
   decorators: [
     (Story) => (
       <div className="w-[760px] p-4">

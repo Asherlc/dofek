@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildKarvonenIntensityDistribution,
   buildTreffPolarizationWeek,
+  DEFAULT_POLARIZATION_THRESHOLD,
 } from "./training-distribution.ts";
 
 describe("buildKarvonenIntensityDistribution", () => {
@@ -51,14 +52,14 @@ describe("buildKarvonenIntensityDistribution", () => {
 });
 
 describe("buildTreffPolarizationWeek", () => {
-  it("classifies only an index strictly above 2 as polarized", () => {
+  it("classifies only an index strictly above the shared threshold as polarized", () => {
     expect(
       buildTreffPolarizationWeek({
         week: "2026-07-06",
         z1Seconds: 1,
         z2Seconds: 10,
         z3Seconds: 10,
-        polarizationIndex: 2,
+        polarizationIndex: DEFAULT_POLARIZATION_THRESHOLD,
       }),
     ).toMatchObject({
       status: "not_polarized",
@@ -71,7 +72,7 @@ describe("buildTreffPolarizationWeek", () => {
         z1Seconds: 1,
         z2Seconds: 10,
         z3Seconds: 10,
-        polarizationIndex: 2.001,
+        polarizationIndex: DEFAULT_POLARIZATION_THRESHOLD + 0.001,
       }),
     ).toMatchObject({
       status: "polarized",

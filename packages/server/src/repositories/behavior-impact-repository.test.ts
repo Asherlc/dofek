@@ -23,15 +23,37 @@ describe("BehaviorImpact", () => {
   it("computes negative impact when yes readiness < no readiness", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 55, avgReadinessNo: 70 }));
     expect(impact.impactPercent).toBeCloseTo(-21.4, 1);
+    expect(impact.association.direction).toBe("lower");
   });
 
   it("computes positive impact when yes readiness > no readiness", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 75, avgReadinessNo: 60 }));
     expect(impact.impactPercent).toBeCloseTo(25.0, 1);
+    expect(impact.association.direction).toBe("higher");
   });
 
-  it("returns 0 when avgReadinessNo is 0", () => {
-    expect(new BehaviorImpact(makeRow({ avgReadinessNo: 0 })).impactPercent).toBe(0);
+  it("uses a neutral direction when the group means are equal", () => {
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 60, avgReadinessNo: 60 }));
+    expect(impact.association.direction).toBe("no_difference");
+  });
+
+  it("derives direction from raw means when the displayed difference rounds to zero", () => {
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 60.0001, avgReadinessNo: 60 }));
+
+    expect(impact.impactPercent).toBe(0);
+    expect(impact.association.direction).toBe("higher");
+    expect(impact.association.estimateLabel).toBe("0.0% difference");
+  });
+
+  it("represents a zero No-group baseline as an unavailable association", () => {
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 65, avgReadinessNo: 0 }));
+
+    expect(impact.impactPercent).toBeNull();
+    expect(impact.association).toMatchObject({
+      direction: "unavailable",
+      estimateLabel: "Estimate unavailable",
+    });
+    expect(impact.association.direction).not.toBe("no_difference");
   });
 
   it("rounds to one decimal place", () => {
@@ -75,6 +97,15 @@ describe("BehaviorImpact", () => {
       yesCount: 15,
       noCount: 12,
       sources: [{ providerId: "manual_review", label: "Manual review" }],
+      association: {
+        relationship: "descriptive_association",
+        direction: "higher",
+        estimateLabel: "25.0% higher",
+        method: "Relative difference in mean next-day readiness after Yes versus No.",
+        interpretation:
+          "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.",
+        uncertainty: "Uncertainty interval is unavailable for this descriptive comparison.",
+      },
     });
   });
 
