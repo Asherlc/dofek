@@ -10,7 +10,7 @@ vi.mock("./DofekChart.tsx", () => ({
   ),
 }));
 
-import { SleepAnalyticsChart } from "./SleepAnalyticsChart.tsx";
+import { buildSleepAnalyticsOption, SleepAnalyticsChart } from "./SleepAnalyticsChart.tsx";
 
 const night: SleepNightlyRow = {
   providerId: null,
@@ -36,6 +36,9 @@ const night: SleepNightlyRow = {
   efficiency: 93.8,
   stagingAvailable: true,
   rollingAvgDuration: 450,
+  durationState: { status: "available" },
+  sleepState: { status: "available" },
+  stageState: { status: "available" },
 };
 
 describe("SleepAnalyticsChart", () => {
@@ -50,5 +53,64 @@ describe("SleepAnalyticsChart", () => {
     render(<SleepAnalyticsChart nightly={[night]} sleepDebt={30} />);
 
     expect(screen.getByText("Sleep analytics chart")).toBeTruthy();
+  });
+
+  it("does not render a missing duration as a measured zero", () => {
+    const missingDurationNight: SleepNightlyRow = {
+      ...night,
+      durationMinutes: null,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      efficiency: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+      stagingAvailable: false,
+    };
+
+    const option = buildSleepAnalyticsOption([missingDurationNight], 0);
+    const tooltip = option.tooltip;
+    if (
+      typeof tooltip !== "object" ||
+      tooltip === null ||
+      !("formatter" in tooltip) ||
+      typeof tooltip.formatter !== "function"
+    ) {
+      throw new Error("Expected tooltip formatter");
+    }
+    const formatter = tooltip.formatter;
+
+    const html = String(
+      formatter([
+        {
+          seriesName: "Deep",
+          value: [missingDurationNight.date, null],
+          color: "#123456",
+          marker: "",
+          dataIndex: 0,
+        },
+      ]),
+    );
+
+    expect(html).toContain("Sleep duration was not recorded.");
+    expect(html).toContain("Sync sleep data from a source that reports sleep duration.");
+    expect(html).not.toContain("0h 0m");
+    expect(html).not.toContain("Deep: 0m");
   });
 });

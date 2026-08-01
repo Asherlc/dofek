@@ -93,7 +93,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         ...dofekSeries.bar(
           "Actual",
           data.recentNights.map((n) => ({
-            value: n.actualMinutes ?? 0,
+            value: n.actualMinutes,
             itemStyle: {
               color: n.actualMinutes == null ? "#3a3a3e" : chartThemeColors.axisLabel,
             },

@@ -7,6 +7,7 @@ function makeSensorStore({
   metricDate = "2026-06-29",
   sleepDurationMinutes = 455,
   sleepNights,
+  yesterdayLoadRows = [{ load: 0 }],
 }: {
   metricDate?: string | Date;
   sleepDurationMinutes?: number | null;
@@ -15,6 +16,7 @@ function makeSensorStore({
     durationMinutes: number | null;
     stagingAvailable?: boolean;
   }>;
+  yesterdayLoadRows?: Array<{ load: number | null }>;
 } = {}): ActivitySensorStore {
   return {
     query: vi.fn(async <TSchema extends z.ZodType>(schema: TSchema, queryText: string) => {
@@ -48,7 +50,7 @@ function makeSensorStore({
         );
       } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
         expect(queryText).toContain("strain.is_deleted = 0");
-        rows = [{ load: 0 }];
+        rows = yesterdayLoadRows;
       } else if (queryText.includes("analytics.daily_strain")) {
         expect(queryText).toContain("strain.is_deleted = 0");
         rows = [{ metric_date: metricDate, daily_load: 120 }];
@@ -132,6 +134,34 @@ describe("loadDashboardOverview", () => {
     });
     expect(result.sleep.lastNight).toBeNull();
     expect(result.sleep.sleepDebt).toBe(0);
+  });
+
+  it("distinguishes no previous-day load row from a present zero load", async () => {
+    const noLoadRow = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({ yesterdayLoadRows: [] }),
+      userId: "user-1",
+    });
+    expect(noLoadRow.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      reason: "missing_previous_day_load",
+      message: "Sync yesterday's activity data to include training load in sleep need.",
+      nextAction: "Sync activity data for the previous day.",
+    });
+
+    const zeroLoadRow = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({ yesterdayLoadRows: [{ load: 0 }] }),
+      userId: "user-1",
+    });
+    expect(zeroLoadRow.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    });
   });
 
   it("does not manufacture stage percentages when the provider omitted staging", async () => {

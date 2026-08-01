@@ -795,7 +795,7 @@ describe("sleepNeedRouter", () => {
   const createCaller = createTestCallerFactory(sleepNeedRouter);
 
   describe("calculate", () => {
-    it("returns default baseline when insufficient data", async () => {
+    it("returns null when insufficient data", async () => {
       const rows = [
         {
           date: "2024-01-15",
@@ -815,8 +815,7 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({});
 
-      expect(result.baselineMinutes).toBe(480); // default 8hr
-      expect(result.totalNeedMinutes).toBeGreaterThanOrEqual(480);
+      expect(result).toBeNull();
     });
 
     it("computes personalized baseline from good nights", async () => {
@@ -860,8 +859,10 @@ describe("sleepNeedRouter", () => {
           })),
         ]),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2024-01-21" });
 
+      expect(result).not.toBeNull();
+      if (result === null) throw new Error("Expected personalized sleep need");
       expect(result.baselineMinutes).toBe(460);
       expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
       expect(result.recentNights).toHaveLength(7);
@@ -876,17 +877,10 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({});
 
-      expect(result.baselineMinutes).toBe(480);
-      expect(result.recentNights).toHaveLength(7);
-      // All 7 nights should be null (calendar-based)
-      for (const night of result.recentNights) {
-        expect(night.actualMinutes).toBeNull();
-        expect(night.debtMinutes).toBeNull();
-      }
-      expect(result.canRecommend).toBe(false);
+      expect(result).toBeNull();
     });
 
-    it("always returns exactly 7 recent nights even with sparse data", async () => {
+    it("returns null when sparse data cannot support the legacy result", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -907,15 +901,10 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.recentNights).toHaveLength(7);
-      // 6 nights should have null actualMinutes, 1 should have data
-      const withData = result.recentNights.filter((n) => n.actualMinutes !== null);
-      const withoutData = result.recentNights.filter((n) => n.actualMinutes === null);
-      expect(withData).toHaveLength(1);
-      expect(withoutData).toHaveLength(6);
+      expect(result).toBeNull();
     });
 
-    it("sets canRecommend=true when yesterday has sleep data", async () => {
+    it("returns null when yesterday has sleep data but the baseline is insufficient", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -936,10 +925,10 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.canRecommend).toBe(true);
+      expect(result).toBeNull();
     });
 
-    it("sets canRecommend=false when yesterday has no sleep data", async () => {
+    it("returns null when yesterday has no sleep data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
       const rows = [
         {
@@ -960,10 +949,10 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.canRecommend).toBe(false);
+      expect(result).toBeNull();
     });
 
-    it("shows null nights with neededMinutes still set", async () => {
+    it("returns null without sleep data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -972,10 +961,7 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Even null nights should have neededMinutes (the baseline)
-      for (const night of result.recentNights) {
-        expect(night.neededMinutes).toBe(480);
-      }
+      expect(result).toBeNull();
     });
   });
 });

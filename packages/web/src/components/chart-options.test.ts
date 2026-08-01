@@ -339,6 +339,9 @@ describe("SleepAnalyticsChart option builder", () => {
     sourceProviders: [],
     selectedSessionId: null,
     overlappingSessions: [],
+    durationState: { status: "available" as const },
+    sleepState: { status: "available" as const },
+    stageState: { status: "available" as const },
   };
   const sampleNightly = [
     {
@@ -434,6 +437,11 @@ describe("SleepAnalyticsChart option builder", () => {
           awakePct: null,
           efficiency: null,
           stagingAvailable: false,
+          stageState: {
+            status: "missing",
+            reason: "Sleep stages were not reported for this night.",
+            nextAction: "Sync sleep data from a source that reports sleep stages.",
+          },
         },
       ],
       0,
@@ -449,6 +457,7 @@ describe("SleepAnalyticsChart option builder", () => {
       },
     ]);
 
-    expect(html).toContain("Partial record: sleep stages were not reported");
+    expect(html).toContain("Sleep stages were not reported for this night.");
+    expect(html).toContain("Sync sleep data from a source that reports sleep stages.");
   });
 });

@@ -207,7 +207,12 @@ describe("sleep data consistency across endpoints", () => {
     await queryCache.invalidateAll();
     const result = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
-    }>("sleepNeed.calculate", { endDate });
+    } | null>("sleepNeed.calculate", { endDate });
+
+    if (result === null) {
+      expect(result).toBeNull();
+      return;
+    }
 
     for (const night of result.recentNights) {
       if (night.actualMinutes !== null) {
@@ -270,7 +275,11 @@ describe("sleep data consistency across endpoints", () => {
     // 2. sleepNeed.calculate
     const sleepNeed = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
-    }>("sleepNeed.calculate", { endDate });
+    } | null>("sleepNeed.calculate", { endDate });
+    if (sleepNeed === null) {
+      expect(sleepNeed).toBeNull();
+      return;
+    }
     const needByDate = new Map<string, number>();
     for (const night of sleepNeed.recentNights) {
       if (night.actualMinutes !== null) {

@@ -26,7 +26,80 @@ import { useProcessingStatus } from "../lib/useProcessingStatus";
 import { useRefresh } from "../lib/useRefresh";
 import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
-import type { SleepConsistencyRow } from "../types/api";
+import type { SleepAnalyticsDataState, SleepConsistencyRow, SleepNightlyRow } from "../types/api";
+
+type MissingSleepState = Extract<SleepAnalyticsDataState, { status: "missing" }>;
+
+function getMissingSleepStates(night: SleepNightlyRow): MissingSleepState[] {
+  const states = [night.durationState, night.sleepState, night.stageState].filter(
+    (state): state is MissingSleepState => state.status === "missing",
+  );
+  return states.filter(
+    (state, index) =>
+      states.findIndex(
+        (candidate) =>
+          candidate.reason === state.reason && candidate.nextAction === state.nextAction,
+      ) === index,
+  );
+}
+
+function hasStagePercentages(night: SleepNightlyRow): night is SleepNightlyRow & {
+  durationMinutes: number;
+  deepPct: number;
+  remPct: number;
+  lightPct: number;
+  awakePct: number;
+} {
+  return (
+    night.stageState.status === "available" &&
+    night.durationMinutes != null &&
+    night.deepPct != null &&
+    night.remPct != null &&
+    night.lightPct != null &&
+    night.awakePct != null
+  );
+}
+
+function SleepUnavailableDetails({
+  night,
+  compact = false,
+}: {
+  night: SleepNightlyRow;
+  compact?: boolean;
+}) {
+  const missingStates = getMissingSleepStates(night);
+  if (compact) {
+    return (
+      <View style={styles.stageUnavailableDetails}>
+        {missingStates.map((state) => (
+          <View key={`${state.reason}-${state.nextAction}`}>
+            <Text style={styles.stageUnavailable}>{state.reason}</Text>
+            <Text style={styles.stageUnavailableNextAction}>{state.nextAction}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.partialRecord}>
+      <Text style={styles.partialRecordTitle}>
+        {night.durationMinutes == null ? "Sleep data unavailable" : "Partial sleep record"}
+      </Text>
+      {night.durationMinutes != null && (
+        <Text style={styles.partialRecordDuration}>
+          {formatDurationMinutes(night.durationMinutes)} recorded
+        </Text>
+      )}
+      {missingStates.map((state) => (
+        <View key={`${state.reason}-${state.nextAction}`}>
+          <Text style={styles.partialRecordMessage}>{state.reason}</Text>
+          <Text style={styles.partialRecordNextAction}>{state.nextAction}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 export default function SleepScreen() {
   const { days, description, setDays } = useTimeRangePreference("sleep");
@@ -56,7 +129,10 @@ export default function SleepScreen() {
       ? "--"
       : formatRecordLocalTime(lastNight.endedAt, lastNight.localTimeContext, "end");
 
-  const durationTrend = nightly.slice(-14).map((n) => n.sleepMinutes);
+  const durationTrend = nightly
+    .slice(-14)
+    .map((n) => n.sleepMinutes)
+    .filter((minutes): minutes is number => minutes != null);
   const efficiencyTrend = nightly
     .slice(-14)
     .map((night) => night.efficiency)
@@ -111,24 +187,20 @@ export default function SleepScreen() {
                 description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
                 textStyle={styles.cardTitle}
               />
-              {lastNight.stagingAvailable ? (
+              {hasStagePercentages(lastNight) ? (
                 <SleepBar
                   durationMinutes={lastNight.durationMinutes}
-                  deepPercentage={lastNight.deepPct ?? 0}
-                  remPercentage={lastNight.remPct ?? 0}
-                  lightPercentage={lastNight.lightPct ?? 0}
-                  awakePercentage={lastNight.awakePct ?? 0}
+                  deepPercentage={lastNight.deepPct}
+                  remPercentage={lastNight.remPct}
+                  lightPercentage={lastNight.lightPct}
+                  awakePercentage={lastNight.awakePct}
                 />
+              ) : lastNight.durationMinutes === 0 && lastNight.stageState.status === "available" ? (
+                <Text style={styles.partialRecordDuration}>
+                  {formatDurationMinutes(lastNight.durationMinutes)} recorded
+                </Text>
               ) : (
-                <View style={styles.partialRecord}>
-                  <Text style={styles.partialRecordTitle}>Partial sleep record</Text>
-                  <Text style={styles.partialRecordDuration}>
-                    {formatDurationMinutes(lastNight.durationMinutes)} recorded
-                  </Text>
-                  <Text style={styles.partialRecordMessage}>
-                    Sleep stages were not reported for this night.
-                  </Text>
-                </View>
+                <SleepUnavailableDetails night={lastNight} />
               )}
               <Text style={styles.sleepTiming}>
                 {lastNightBedtime === "--" || lastNightWake === "--"
@@ -282,17 +354,22 @@ export default function SleepScreen() {
                     <View key={night.date} style={styles.nightlyRow}>
                       <Text style={styles.nightlyDate}>{formatDateLong(night.date)}</Text>
                       <View style={styles.nightlyBarContainer}>
-                        {night.stagingAvailable ? (
+                        {hasStagePercentages(night) ? (
                           <SleepBar
                             durationMinutes={night.durationMinutes}
-                            deepPercentage={night.deepPct ?? 0}
-                            remPercentage={night.remPct ?? 0}
-                            lightPercentage={night.lightPct ?? 0}
-                            awakePercentage={night.awakePct ?? 0}
+                            deepPercentage={night.deepPct}
+                            remPercentage={night.remPct}
+                            lightPercentage={night.lightPct}
+                            awakePercentage={night.awakePct}
                             showLegend={false}
                           />
+                        ) : night.durationMinutes === 0 &&
+                          night.stageState.status === "available" ? (
+                          <Text style={styles.stageUnavailable}>
+                            {formatDurationMinutes(night.durationMinutes)} recorded
+                          </Text>
                         ) : (
-                          <Text style={styles.stageUnavailable}>Stages not reported</Text>
+                          <SleepUnavailableDetails night={night} compact />
                         )}
                       </View>
                     </View>
@@ -379,6 +456,10 @@ const styles = StyleSheet.create({
   partialRecordMessage: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  partialRecordNextAction: {
+    fontSize: 13,
+    color: colors.textTertiary,
   },
   debtValue: {
     fontSize: 28,
@@ -474,5 +555,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     paddingVertical: 8,
+  },
+  stageUnavailableDetails: {
+    gap: 4,
+    paddingVertical: 8,
+  },
+  stageUnavailableNextAction: {
+    fontSize: 12,
+    color: colors.textTertiary,
   },
 });

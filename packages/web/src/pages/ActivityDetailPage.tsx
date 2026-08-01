@@ -1,7 +1,7 @@
 import {
+  type ActivityMetric,
   activityDataStateLabel,
   formatActivityMetric,
-  type ActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
   formatDateLong,
@@ -210,7 +210,7 @@ export function ActivityDetailPage() {
         <ActivitySourceDecisionCard decision={activity.sourceDecision} />
       ) : null}
 
-      <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
+      <ActivityHeader activity={activity} units={units} />
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
@@ -344,11 +344,9 @@ export function ActivityDetailPage() {
 export function ActivityHeader({
   activity,
   units,
-  hasGps,
 }: {
   activity: ActivityDetail;
   units: UnitConverter;
-  hasGps: boolean;
 }) {
   const durationMin =
     activity.startedAt && activity.endedAt
@@ -444,25 +442,26 @@ export function ActivityHeader({
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
           {stats.map((s) => {
-            const isUnavailable = "status" in s && s.status !== "available";
             return (
-              <div
+              <section
                 key={s.label}
                 className="card px-4 py-3"
                 data-state={"status" in s ? s.status : undefined}
                 aria-label={
-                  isUnavailable
+                  "status" in s && s.status !== "available"
                     ? `${s.label} ${activityDataStateLabel(s.status)}: ${s.reason}`
                     : undefined
                 }
               >
                 <div className="text-xs text-subtle mb-0.5">
-                  {isUnavailable ? `${s.label} ${activityDataStateLabel(s.status)}` : s.label}
+                  {"status" in s && s.status !== "available"
+                    ? `${s.label} ${activityDataStateLabel(s.status)}`
+                    : s.label}
                 </div>
                 <div className="text-lg font-medium tabular-nums">
-                  {isUnavailable ? s.reason : s.value}
+                  {"status" in s ? (s.status === "available" ? s.value : s.reason) : s.value}
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>

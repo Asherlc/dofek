@@ -8,6 +8,9 @@ const sourceEvidence = {
   sourceProviders: [],
   selectedSessionId: null,
   overlappingSessions: [],
+  durationState: { status: "available" as const },
+  sleepState: { status: "available" as const },
+  stageState: { status: "available" as const },
 };
 
 const nightly: SleepNightlyRow[] = [

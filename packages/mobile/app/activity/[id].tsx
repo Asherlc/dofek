@@ -1,15 +1,15 @@
 import {
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
   formatDurationSeconds,
   formatNumber,
 } from "@dofek/format/format";
-import {
-  activityDataStateLabel,
-  formatActivityMetric,
-  type ActivityMetric,
-} from "@dofek/format/activity-data-state";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
@@ -148,10 +148,10 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
       {stats.map((stat) => {
-        const isMetric = "status" in stat;
-        const isUnavailable = isMetric && stat.status !== "available";
-        const accessibleLabel = isUnavailable
-          ? `${stat.label} ${activityDataStateLabel(stat.status)}: ${stat.reason}`
+        const unavailableMetric = "status" in stat && stat.status !== "available" ? stat : null;
+        const isUnavailable = unavailableMetric !== null;
+        const accessibleLabel = unavailableMetric
+          ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
           : undefined;
         return (
           <View
@@ -161,9 +161,17 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
             accessibilityLabel={accessibleLabel}
           >
             <Text style={statsStyles.label}>
-              {isUnavailable ? `${stat.label} ${activityDataStateLabel(stat.status)}` : stat.label}
+              {unavailableMetric
+                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                : stat.label}
             </Text>
-            <Text style={statsStyles.value}>{isUnavailable ? stat.reason : stat.value}</Text>
+            <Text style={statsStyles.value}>
+              {"status" in stat
+                ? stat.status === "available"
+                  ? stat.value
+                  : stat.reason
+                : stat.value}
+            </Text>
           </View>
         );
       })}

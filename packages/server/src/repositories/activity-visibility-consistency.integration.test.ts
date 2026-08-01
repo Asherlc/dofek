@@ -215,14 +215,18 @@ describe("activity visibility consistency", () => {
       activityCount: 3,
       totalMinutes: 90,
       totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
       activityTypes: ["running", "walking"],
     });
     expect(unavailableOverview).toEqual({
       activityCount: 1,
       totalMinutes: 30,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: ["running", "walking"],
     });
     await expect(activityRepository.findById(AUTHORIZED_RUN_ID)).resolves.toMatchObject({
@@ -261,7 +265,9 @@ describe("activity visibility consistency", () => {
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: ["running", "walking"],
     });
     await expect(

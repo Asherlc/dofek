@@ -1,8 +1,8 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import {
   nutritionSourceResolutionSchema,
   selectedDateNutritionSummarySchema,
 } from "@dofek/nutrition/selected-date-summary";
-import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { z } from "zod";
 
 // ── Re-export server types used by iOS screens ──
@@ -11,6 +11,7 @@ export type {
   HrvVariabilityRow as HeartRateVariabilityRow,
   ReadinessComponents,
   ReadinessRow,
+  SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,

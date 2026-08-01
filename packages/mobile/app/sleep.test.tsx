@@ -110,6 +110,9 @@ describe("SleepScreen", () => {
           efficiency: 50,
           stagingAvailable: true,
           rollingAvgDuration: 300,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
         },
       ],
       sleepDebt: 30,
@@ -152,6 +155,13 @@ describe("SleepScreen", () => {
           efficiency: null,
           stagingAvailable: false,
           rollingAvgDuration: 480,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: {
+            status: "missing",
+            reason: "Sleep stages were not reported for this night.",
+            nextAction: "Sync sleep data from a source that reports sleep stages.",
+          },
         },
       ],
       sleepDebt: 0,
@@ -164,7 +174,62 @@ describe("SleepScreen", () => {
 
     expect(screen.getByText("Partial sleep record")).toBeTruthy();
     expect(screen.getByText("8h 0m recorded")).toBeTruthy();
-    expect(screen.getByText("Sleep stages were not reported for this night.")).toBeTruthy();
+    expect(screen.getAllByText("Sleep stages were not reported for this night.").length).toBe(2);
+  });
+
+  it("renders the server-authored missing duration state without a zero placeholder", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockSleepData = {
+      nightly: [
+        {
+          date: today,
+          startedAt: `${today}T08:00:00.000Z`,
+          endedAt: `${today}T16:00:00.000Z`,
+          localTimeContext: {
+            timezone: "UTC",
+            startUtcOffsetMinutes: 0,
+            endUtcOffsetMinutes: 0,
+            source: "provider_timezone",
+          },
+          durationMinutes: null,
+          sleepMinutes: null,
+          deepPct: null,
+          remPct: null,
+          lightPct: null,
+          awakePct: null,
+          efficiency: null,
+          stagingAvailable: false,
+          rollingAvgDuration: null,
+          durationState: {
+            status: "missing",
+            reason: "Sleep duration was not recorded.",
+            nextAction: "Sync sleep data from a source that reports sleep duration.",
+          },
+          sleepState: {
+            status: "missing",
+            reason: "Sleep duration was not recorded.",
+            nextAction: "Sync sleep data from a source that reports sleep duration.",
+          },
+          stageState: {
+            status: "missing",
+            reason: "Sleep stages were not reported for this night.",
+            nextAction: "Sync sleep data from a source that reports sleep stages.",
+          },
+        },
+      ],
+      sleepDebt: null,
+      averageSleepMinutes: null,
+      averageEfficiencyPercent: null,
+    };
+
+    const { default: SleepScreen } = await import("./sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getAllByText("Sleep duration was not recorded.").length).toBe(2);
+    expect(
+      screen.getAllByText("Sync sleep data from a source that reports sleep duration.").length,
+    ).toBe(2);
+    expect(screen.queryByText("0h 0m recorded")).toBeNull();
   });
 
   it("renders the stored local bedtime and wake time", async () => {
@@ -190,6 +255,9 @@ describe("SleepScreen", () => {
           efficiency: 90,
           stagingAvailable: true,
           rollingAvgDuration: 450,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
         },
       ],
       sleepDebt: 0,

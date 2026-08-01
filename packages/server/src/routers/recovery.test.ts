@@ -685,6 +685,96 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(result.averageEfficiencyPercent).toBeNull();
   });
 
+  it("preserves missing sleep values while keeping measured zeroes available", async () => {
+    const rows = [
+      sleepNightRow({
+        date: "2026-03-01",
+        duration_minutes: null,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+        deep_minutes: 0,
+        rem_minutes: 0,
+        light_minutes: 0,
+        awake_minutes: 0,
+        efficiency_pct: 0,
+        staging_available: true,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: true,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+    expect(result.nightly[1]).toMatchObject({
+      durationMinutes: 0,
+      sleepMinutes: 0,
+      rollingAvgDuration: 0,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.nightly[2]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.averageSleepMinutes).toBe(0);
+    expect(result.averageEfficiencyPercent).toBe(0);
+    expect(result.sleepDebt).toBe(480);
+  });
+
   it("maps ClickHouse rows to SleepNightlyRow format with rounding", async () => {
     const rows = [
       sleepAnalyticsRow({

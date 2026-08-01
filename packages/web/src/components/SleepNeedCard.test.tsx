@@ -78,7 +78,7 @@ const mockData = {
 } satisfies SleepNeedV2;
 
 const barItemSchema = z.object({
-  value: z.number(),
+  value: z.number().nullable(),
   itemStyle: z.object({ color: z.string() }),
 });
 
@@ -190,7 +190,7 @@ describe("SleepNeedCard", () => {
     expect(tooltipHtml).not.toContain("Debt:");
   });
 
-  it("renders placeholder bars for null nights (missing data)", () => {
+  it("preserves null nights instead of rendering measured zero bars", () => {
     capturedOption = null;
     const dataWithGaps = {
       ...mockData,
@@ -221,8 +221,8 @@ describe("SleepNeedCard", () => {
     render(<SleepNeedCard data={dataWithGaps} />);
     const bars = getBarSeriesData();
     expect(bars).toHaveLength(3);
-    // Null night should have value 0 and muted color
-    expect(bars[1]?.value).toBe(0);
+    // Null night should remain absent from the measured series.
+    expect(bars[1]?.value).toBeNull();
     expect(bars[1]?.itemStyle.color).toBe("#3a3a3e");
   });
 
