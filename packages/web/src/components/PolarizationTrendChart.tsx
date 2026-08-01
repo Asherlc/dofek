@@ -15,6 +15,7 @@ import { MethodExplanation } from "./MethodExplanation.tsx";
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
   maxHr: number | null;
+  threshold?: PolarizationTrendResult["threshold"];
   method: PolarizationTrendResult["method"] | null;
   loading?: boolean;
 }
@@ -41,14 +42,14 @@ function findWeekForAxisValue(
   return null;
 }
 
-export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
+export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshold = 2) {
   const piValues = weeks
     .map((w) => w.polarizationIndex)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const piMin = piValues.length > 0 ? Math.min(...piValues) : 0;
   const piMax = piValues.length > 0 ? Math.max(...piValues) : 2.5;
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;
-  const yMax = Math.ceil(Math.max(piMax, 2.5) * 10) / 10;
+  const yMax = Math.ceil(Math.max(piMax, threshold) * 10) / 10;
 
   const firstDate = weeks[0]?.week ?? "";
   const lastDate = weeks[weeks.length - 1]?.week ?? "";
@@ -102,8 +103,8 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
         name: "Treff heuristic",
         type: "line",
         data: [
-          [firstDate, 2.0],
-          [lastDate, 2.0],
+          [firstDate, threshold],
+          [lastDate, threshold],
         ],
         symbol: "none",
         lineStyle: { color: chartThemeColors.legendText, type: "dashed", width: 1 },
@@ -150,10 +151,11 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
 export function PolarizationTrendChart({
   weeks,
   maxHr,
+  threshold = 2,
   method,
   loading,
 }: PolarizationTrendChartProps) {
-  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks) : {};
+  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks, threshold) : {};
 
   return (
     <div>

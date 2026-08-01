@@ -1,3 +1,4 @@
+import { formatReadinessDifference } from "@dofek/format/format";
 import { type ProviderProvenance, resolveProviderProvenance } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -25,6 +26,24 @@ export interface BehaviorImpactRow {
   noCount: number;
   providerIds: string[];
 }
+
+export type BehaviorAssociationDirection = "higher" | "lower" | "no_difference";
+
+export interface BehaviorAssociationSemantics {
+  relationship: "descriptive_association";
+  direction: BehaviorAssociationDirection;
+  estimateLabel: string;
+  method: string;
+  interpretation: string;
+  uncertainty: string;
+}
+
+const BEHAVIOR_ASSOCIATION_METHOD =
+  "Relative difference in mean next-day readiness after Yes versus No.";
+const BEHAVIOR_ASSOCIATION_INTERPRETATION =
+  "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.";
+const BEHAVIOR_ASSOCIATION_UNCERTAINTY =
+  "Uncertainty interval is unavailable for this descriptive comparison.";
 
 /** A descriptive association between a boolean journal behavior and next-day readiness. */
 export class BehaviorImpact {
@@ -70,6 +89,21 @@ export class BehaviorImpact {
     );
   }
 
+  get association(): BehaviorAssociationSemantics {
+    const impactPercent = this.impactPercent;
+    const direction: BehaviorAssociationDirection =
+      impactPercent > 0 ? "higher" : impactPercent < 0 ? "lower" : "no_difference";
+
+    return {
+      relationship: "descriptive_association",
+      direction,
+      estimateLabel: formatReadinessDifference(impactPercent),
+      method: BEHAVIOR_ASSOCIATION_METHOD,
+      interpretation: BEHAVIOR_ASSOCIATION_INTERPRETATION,
+      uncertainty: BEHAVIOR_ASSOCIATION_UNCERTAINTY,
+    };
+  }
+
   toDetail() {
     return {
       questionSlug: this.questionSlug,
@@ -79,6 +113,7 @@ export class BehaviorImpact {
       yesCount: this.yesCount,
       noCount: this.noCount,
       sources: this.sources,
+      association: this.association,
     };
   }
 }

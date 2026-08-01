@@ -1,5 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
-import { operationalStatusColors } from "@dofek/scoring/colors";
+import type { InsightEvidence } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -24,6 +24,7 @@ export interface Insight {
   whenFalse: { mean: number; n: number };
   effectSize: number;
   pValue: number;
+  evidence?: InsightEvidence;
   explanation?: string;
   confounders?: string[];
   dataPoints?: Array<{ x: number; y: number; date: string }>;
@@ -33,47 +34,19 @@ export interface Insight {
   };
 }
 
-const confidenceBadge = {
-  strong: {
-    label: "Strong",
-    colors: operationalStatusColors.info,
-  },
-  emerging: {
-    label: "Emerging",
-    colors: operationalStatusColors.neutral,
-  },
-  early: {
-    label: "Early signal",
-    colors: operationalStatusColors.neutral,
-  },
-  insufficient: {
-    label: "Insufficient",
-    colors: operationalStatusColors.neutral,
-  },
-};
-
 interface CorrelationCardProps {
   insight: Insight;
 }
 
 export function CorrelationCard({ insight }: CorrelationCardProps) {
-  const badge = confidenceBadge[insight.confidence];
-
   return (
     <div className="card p-4 space-y-3">
       {/* Header */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="space-y-1">
         <p className="text-sm text-foreground font-medium leading-tight">{insight.message}</p>
-        <span
-          className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border"
-          style={{
-            backgroundColor: badge.colors.surface,
-            borderColor: badge.colors.border,
-            color: badge.colors.foreground,
-          }}
-        >
-          {badge.label}
-        </span>
+        {insight.evidence && (
+          <p className="text-xs text-muted font-medium">{insight.evidence.label}</p>
+        )}
       </div>
 
       {/* Visualization */}
@@ -83,8 +56,12 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
         <CorrelationViz insight={insight} />
       )}
 
-      {/* Explanation */}
-      {insight.explanation && <p className="text-xs text-muted italic">{insight.explanation}</p>}
+      {/* Server-authored evidence */}
+      {insight.evidence ? (
+        <InsightEvidenceDetails evidence={insight.evidence} />
+      ) : (
+        insight.explanation && <p className="text-xs text-muted italic">{insight.explanation}</p>
+      )}
 
       {/* Confounders */}
       {insight.confounders && insight.confounders.length > 0 && (
@@ -104,13 +81,19 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
   );
 }
 
+function InsightEvidenceDetails({ evidence }: { evidence: InsightEvidence }) {
+  return (
+    <div className="space-y-1 text-xs text-muted">
+      <p>{evidence.method}</p>
+      <p>{evidence.interpretation}</p>
+      <p>{evidence.limitations}</p>
+      <p>{evidence.recommendation}</p>
+    </div>
+  );
+}
+
 function ConditionalChart({ insight }: { insight: Insight }) {
   const { whenTrue, whenFalse, action } = insight;
-  const diff = whenTrue.mean - whenFalse.mean;
-  const baselineNearZero = Math.abs(whenFalse.mean) < 1;
-  const pctDiff =
-    !baselineNearZero && whenFalse.mean !== 0 ? (diff / Math.abs(whenFalse.mean)) * 100 : null;
-  const sign = diff > 0 ? "+" : "";
 
   const maxVal = Math.max(Math.abs(whenTrue.mean), Math.abs(whenFalse.mean));
 
@@ -171,10 +154,8 @@ function ConditionalChart({ insight }: { insight: Insight }) {
       <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />
       <p className="text-center text-xs text-subtle mt-1">
         <span className="text-muted">
-          {sign}
-          {pctDiff != null ? `${formatNumber(pctDiff, 0)}%` : formatValue(diff)}
-        </span>{" "}
-        difference
+          {insight.evidence?.estimateLabel ?? "Observed group comparison"}
+        </span>
       </p>
     </div>
   );
@@ -198,22 +179,6 @@ function CorrelationViz({ insight }: { insight: Insight }) {
 function ScatterPlot({ insight }: { insight: Insight }) {
   const points = insight.dataPoints ?? [];
   const rho = insight.effectSize;
-
-  // Compute simple linear regression for trend line
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const xMin = Math.min(...xs);
-  const xMax = Math.max(...xs);
-  const xMean = xs.reduce((a, b) => a + b, 0) / xs.length;
-  const yMean = ys.reduce((a, b) => a + b, 0) / ys.length;
-  let num = 0;
-  let den = 0;
-  for (let i = 0; i < xs.length; i++) {
-    num += ((xs[i] ?? 0) - xMean) * ((ys[i] ?? 0) - yMean);
-    den += ((xs[i] ?? 0) - xMean) ** 2;
-  }
-  const slope = den !== 0 ? num / den : 0;
-  const intercept = yMean - slope * xMean;
 
   const option = {
     grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 24, containLabel: true }),
@@ -241,17 +206,6 @@ function ScatterPlot({ insight }: { insight: Insight }) {
         points.map((p) => [p.x, p.y]),
         { color: chartThemeColors.legendText, symbolSize: 4, itemStyle: { opacity: 0.5 } },
       ),
-      {
-        ...dofekSeries.line(
-          "",
-          [
-            [xMin, slope * xMin + intercept],
-            [xMax, slope * xMax + intercept],
-          ],
-          { color: chartColors.blue, smooth: false, lineStyle: { type: "dashed" } },
-        ),
-        silent: true,
-      },
     ],
     tooltip: dofekTooltip({
       trigger: "item",

@@ -567,6 +567,13 @@ describe("computeInsights()", () => {
       expect(insight.confidence).toMatch(/^(strong|emerging|early)$/);
       expect(insight.message).toBeDefined();
       expect(insight.explanation).toBeDefined();
+      expect(insight.evidence).toEqual(
+        expect.objectContaining({
+          label: expect.stringMatching(/^Descriptive /),
+          interpretation: expect.stringContaining("does not establish"),
+          recommendation: expect.stringContaining("not a prescription"),
+        }),
+      );
     }
   });
 

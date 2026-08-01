@@ -31,15 +31,6 @@ export function formatDashboardRange(endDate: string, days: number): string {
   return `${formatDateShort(start, utc)} - ${formatDateShort(end, utc)}`;
 }
 
-export function correlationStrengthLabel(effectSize: number | null | undefined): string {
-  if (effectSize == null) return "Collecting signal";
-  const direction = effectSize >= 0 ? "positive" : "negative";
-  const magnitude = Math.abs(effectSize);
-  if (magnitude >= 0.6) return `Strong ${direction}`;
-  if (magnitude >= 0.35) return `Emerging ${direction}`;
-  return `Early ${direction}`;
-}
-
 export function trendPositionLabel(trend: DashboardTrendSnapshot): string {
   const { latestRestingHeartRate, averageRestingHeartRate } = trend;
   if (latestRestingHeartRate == null || averageRestingHeartRate == null) {
@@ -124,6 +115,7 @@ export function DashboardEvidenceOverview({
 }) {
   const units = useUnitConverter();
   const effectSize = topInsight?.effectSize;
+  const evidence = topInsight?.evidence;
   const correlationValue = effectSize == null ? "--" : Math.abs(effectSize).toFixed(2);
   const trendLabel = trendPositionLabel(trend);
   const restingHeartRateToneValue = restingHeartRateTone(trend);
@@ -179,7 +171,7 @@ export function DashboardEvidenceOverview({
                     {correlationValue}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-accent">
-                    {correlationStrengthLabel(effectSize)}
+                    {evidence?.label ?? "Descriptive relationship"}
                   </p>
                   <p className="text-xs text-muted">{days}-day signal</p>
                 </div>
@@ -193,11 +185,18 @@ export function DashboardEvidenceOverview({
                         yAxis: topInsight.metric,
                         yMetric: topInsight.metric,
                       }}
-                      tone={effectSize != null && effectSize < 0 ? "danger" : "accent"}
                     />
                   ) : null}
                 </MiniChartFrame>
               </div>
+              {evidence && (
+                <div className="mt-4 space-y-1 text-xs text-muted">
+                  <p>{evidence.method}</p>
+                  <p>{evidence.interpretation}</p>
+                  <p>{evidence.limitations}</p>
+                  <p>{evidence.recommendation}</p>
+                </div>
+              )}
             </div>
           )}
         </EvidenceCard>
@@ -246,7 +245,6 @@ export function DashboardEvidenceOverview({
                   yAxis: "Sleep",
                   yMetric: "Sleep consistency",
                 }}
-                tone="danger"
               />
             </MiniChartFrame>
           </div>
@@ -301,36 +299,7 @@ function chartDomain(values: number[]): { min: number; max: number } {
   return { min: minValue - padding, max: maxValue + padding };
 }
 
-function trendLine(points: ScatterPoint[]): { start: ScatterPoint; end: ScatterPoint } | null {
-  if (points.length < 2) return null;
-  const xMean = points.reduce((sum, point) => sum + point.xValue, 0) / points.length;
-  const yMean = points.reduce((sum, point) => sum + point.yValue, 0) / points.length;
-  const numerator = points.reduce(
-    (sum, point) => sum + (point.xValue - xMean) * (point.yValue - yMean),
-    0,
-  );
-  const denominator = points.reduce((sum, point) => sum + (point.xValue - xMean) ** 2, 0);
-  if (denominator === 0) return null;
-  const slope = numerator / denominator;
-  const intercept = yMean - slope * xMean;
-  const xValues = points.map((point) => point.xValue);
-  const startX = Math.min(...xValues);
-  const endX = Math.max(...xValues);
-  return {
-    start: { date: points[0]?.date ?? "", xValue: startX, yValue: slope * startX + intercept },
-    end: { date: points.at(-1)?.date ?? "", xValue: endX, yValue: slope * endX + intercept },
-  };
-}
-
-function MiniScatter({
-  points,
-  labels,
-  tone,
-}: {
-  points: ScatterPoint[];
-  labels: ChartLabels;
-  tone: "accent" | "danger";
-}) {
+function MiniScatter({ points, labels }: { points: ScatterPoint[]; labels: ChartLabels }) {
   const chart = { left: 28, right: 142, top: 12, bottom: 62 };
   const xDomain = chartDomain(points.map((point) => point.xValue));
   const yDomain = chartDomain(points.map((point) => point.yValue));
@@ -340,8 +309,7 @@ function MiniScatter({
     chart.left + ((value - xDomain.min) / xRange) * (chart.right - chart.left);
   const toY = (value: number) =>
     chart.bottom - ((value - yDomain.min) / yRange) * (chart.bottom - chart.top);
-  const line = trendLine(points);
-  const color = tone === "danger" ? "var(--color-danger)" : "var(--color-accent)";
+  const color = "var(--color-muted)";
 
   return (
     <svg viewBox="0 0 156 86" className="h-24 w-full" role="img" aria-hidden="true">
@@ -355,16 +323,6 @@ function MiniScatter({
         stroke="var(--color-border-strong)"
         strokeWidth="1"
       />
-      {line && (
-        <path
-          d={`M${toX(line.start.xValue)} ${toY(line.start.yValue)}L${toX(
-            line.end.xValue,
-          )} ${toY(line.end.yValue)}`}
-          stroke={color}
-          strokeWidth="1.5"
-          strokeDasharray="3 2"
-        />
-      )}
       <path
         d={`M${chart.right} ${chart.bottom}V${chart.bottom + 3}`}
         stroke="var(--color-border-strong)"

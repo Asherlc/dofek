@@ -319,7 +319,7 @@ export function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
             confidence: conf,
             metric: "monthly weight change",
             action: `above-median exercise (>${medExDays} days/mo)`,
-            message: `Months with more exercise have ${Math.abs(diff).toFixed(1)} kg ${diff < 0 ? "less" : "more"} weight change`,
+            message: `Observed association: Months with more exercise had ${Math.abs(diff).toFixed(1)} kg ${diff < 0 ? "less" : "more"} weight change`,
             detail: `High exercise months: avg ${trueStats.mean.toFixed(1)} kg vs ${falseStats.mean.toFixed(1)} kg (n=${highWeightDeltas.length}/${lowWeightDeltas.length})`,
             whenTrue: trueStats,
             whenFalse: falseStats,

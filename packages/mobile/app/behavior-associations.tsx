@@ -71,6 +71,14 @@ export default function BehaviorAssociationsScreen() {
           Uncertainty interval: not available for this descriptive comparison.
         </Text>
         <Text style={styles.evidenceText}>Selected window: {days} days</Text>
+        {data?.[0] ? (
+          <>
+            <Text style={styles.evidenceText}>{data[0].association.method}</Text>
+            <Text style={styles.evidenceText}>{data[0].association.interpretation}</Text>
+            <Text style={styles.evidenceText}>{data[0].association.uncertainty}</Text>
+            <Text style={styles.evidenceText}>{data[0].association.observationWindow}</Text>
+          </>
+        ) : null}
       </Card>
 
       {query.isLoading && !data ? (
@@ -108,6 +116,9 @@ export default function BehaviorAssociationsScreen() {
                 Yes n = {association.yesCount} · No n = {association.noCount}
               </Text>
               <ProviderSourceDetails sources={association.sources} />
+              <Text style={styles.associationEvidenceText}>
+                {association.association.estimateLabel}
+              </Text>
             </Card>
           ))}
         </>
@@ -157,6 +168,11 @@ const styles = StyleSheet.create({
   sample: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  associationEvidenceText: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 17,
   },
   sourceDetails: {
     gap: 2,

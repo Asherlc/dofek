@@ -1,5 +1,30 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { InsightEvidence } from "dofek-server/types";
 import { CorrelationCard } from "./CorrelationCard";
+
+const conditionalEvidence: InsightEvidence = {
+  relationship: "descriptive_association",
+  label: "Descriptive association",
+  method:
+    "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
+  interpretation:
+    "This observational association does not establish that the behavior caused the outcome.",
+  limitations:
+    "The displayed counts are the observed groups; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory comparison.",
+  recommendation: "This is not a prescription or recommendation to change the behavior.",
+  estimateLabel: "15% lower",
+};
+
+const correlationEvidence: InsightEvidence = {
+  relationship: "correlation",
+  label: "Descriptive correlation",
+  method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
+  interpretation:
+    "This correlation describes co-movement in the observed data; it does not establish causation.",
+  limitations:
+    "The displayed n is the number of paired observations; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory correlation.",
+  recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
+};
 
 const meta = {
   title: "Insights/CorrelationCard",
@@ -12,13 +37,14 @@ const meta = {
       confidence: "strong",
       metric: "Heart Rate Variability (HRV)",
       action: "Journal: Alcohol",
-      message: "Your heart rate variability is 15% lower on days after consuming alcohol.",
+      message:
+        "Observed association: heart rate variability was 15% lower on days after consuming alcohol.",
       detail: "Based on 42 days of data (p < 0.01).",
       whenTrue: { mean: 52, n: 12 },
       whenFalse: { mean: 61, n: 30 },
       effectSize: -0.45,
       pValue: 0.002,
-      explanation: "Alcohol disrupts the autonomic nervous system and degrades sleep quality.",
+      evidence: conditionalEvidence,
       confounders: ["Late bedtime", "Dehydration"],
     },
   },
@@ -38,12 +64,13 @@ export const EmergingSignal: Story = {
       confidence: "emerging",
       metric: "Deep Sleep",
       action: "Caffeine",
-      message: "Higher caffeine intake correlates with less deep sleep.",
+      message: "Higher caffeine intake is associated with less deep sleep.",
       detail: "Spearman rho = -0.32 (n=28).",
       whenTrue: { mean: 0, n: 28 }, // n is used for footer
       whenFalse: { mean: 0, n: 0 },
       effectSize: -0.32,
       pValue: 0.08,
+      evidence: correlationEvidence,
       dataPoints: [
         { x: 20, y: 115, date: "2026-03-01" },
         { x: 40, y: 118, date: "2026-03-02" },
@@ -78,13 +105,13 @@ export const NonZeroBasedRange: Story = {
       confidence: "emerging",
       metric: "Monthly body fat change",
       action: "Monthly exercise volume",
-      message:
-        "Monthly exercise volume is strongly negatively associated with monthly body fat change.",
+      message: "Monthly exercise volume is negatively associated with monthly body fat change.",
       detail: "Spearman rho = -0.73 (n=19).",
       whenTrue: { mean: 0, n: 19 },
       whenFalse: { mean: 0, n: 0 },
       effectSize: -0.73,
       pValue: 0.01,
+      evidence: correlationEvidence,
       dataPoints: [
         { x: 2_920, y: -0.1, date: "2025-01" },
         { x: 3_080, y: -0.3, date: "2025-02" },
@@ -104,12 +131,13 @@ export const Discovery: Story = {
       confidence: "early",
       metric: "Ready Score",
       action: "Journal: Magnesium",
-      message: "You tend to have higher readiness when you log Magnesium.",
+      message: "Observed association: readiness was higher on days when Magnesium was logged.",
       detail: "Early signal based on 10 entries.",
       whenTrue: { mean: 82, n: 4 },
       whenFalse: { mean: 75, n: 6 },
       effectSize: 0.25,
       pValue: 0.15,
+      evidence: { ...conditionalEvidence, estimateLabel: "9.3% higher" },
     },
   },
 };

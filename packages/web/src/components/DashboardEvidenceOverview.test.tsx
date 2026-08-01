@@ -2,7 +2,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  correlationStrengthLabel,
   DashboardEvidenceOverview,
   formatDashboardRange,
   trendPositionLabel,
@@ -11,12 +10,6 @@ import {
 describe("DashboardEvidenceOverview helpers", () => {
   it("formats the dashboard date range inclusively", () => {
     expect(formatDashboardRange("2026-05-27", 30)).toBe("Apr 28 - May 27");
-  });
-
-  it("labels correlation strength without exposing statistical jargon", () => {
-    expect(correlationStrengthLabel(0.72)).toBe("Strong positive");
-    expect(correlationStrengthLabel(-0.42)).toBe("Emerging negative");
-    expect(correlationStrengthLabel(undefined)).toBe("Collecting signal");
   });
 
   it("labels resting heart rate position against baseline", () => {
@@ -59,6 +52,14 @@ describe("DashboardEvidenceOverview", () => {
           whenFalse: { mean: 0, n: 30 },
           effectSize: 0.72,
           pValue: 0.01,
+          evidence: {
+            relationship: "correlation",
+            label: "Server-authored descriptive correlation",
+            method: "Server correlation method.",
+            interpretation: "Server interpretation: association does not establish causation.",
+            limitations: "Server limitations: missingness and confounding remain possible.",
+            recommendation: "Server recommendation: this is not a prescription.",
+          },
           dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],
         }}
         healthMonitor={<div>Latest values vs. rolling average</div>}
@@ -69,6 +70,10 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Overview")).toBeTruthy();
     expect(screen.getByText("Apr 28 - May 27")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(screen.getByText("Server-authored descriptive correlation")).toBeTruthy();
+    expect(
+      screen.getByText("Server interpretation: association does not establish causation."),
+    ).toBeTruthy();
     expect(screen.getByText("Recent trend")).toBeTruthy();
     expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();

@@ -75,6 +75,15 @@ describe("BehaviorImpact", () => {
       yesCount: 15,
       noCount: 12,
       sources: [{ providerId: "manual_review", label: "Manual review" }],
+      association: {
+        relationship: "descriptive_association",
+        direction: "higher",
+        estimateLabel: "25.0% higher",
+        method: "Relative difference in mean next-day readiness after Yes versus No.",
+        interpretation:
+          "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.",
+        uncertainty: "Uncertainty interval is unavailable for this descriptive comparison.",
+      },
     });
   });
 

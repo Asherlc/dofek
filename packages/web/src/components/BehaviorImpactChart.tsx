@@ -1,5 +1,6 @@
 import { formatReadinessDifference } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
+import type { BehaviorAssociationSemantics } from "dofek-server/types";
 import { useState } from "react";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -12,6 +13,7 @@ function ReadinessAssociationBar({
   yesCount,
   noCount,
   sources,
+  association,
 }: {
   label: string;
   readinessDifferencePercent: number;
@@ -19,6 +21,7 @@ function ReadinessAssociationBar({
   yesCount: number;
   noCount: number;
   sources: ProviderProvenance[];
+  association: BehaviorAssociationSemantics & { observationWindow: string };
 }) {
   const maxBar = 50; // max percentage width
   const barWidth = Math.min(Math.abs(readinessDifferencePercent), maxBar);
@@ -38,6 +41,7 @@ function ReadinessAssociationBar({
           Yes n = {yesCount} · No n = {noCount}
         </span>
         <ProviderSourceDetails sources={sources} />
+        <span className="block text-[10px] text-dim mt-1">{association.estimateLabel}</span>
       </div>
       <div className="flex min-w-0 items-center">
         {/* Lower relative difference */}
@@ -152,6 +156,10 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
           <p>Association does not establish causation.</p>
           <p>Uncertainty interval: not available for this descriptive comparison.</p>
           <p>Selected window: {formatObservationWindow(days)}</p>
+          <p>{data[0]?.association.method}</p>
+          <p>{data[0]?.association.interpretation}</p>
+          <p>{data[0]?.association.uncertainty}</p>
+          <p>{data[0]?.association.observationWindow}</p>
         </div>
         <div
           className="mb-1 hidden text-[10px] text-dim sm:grid sm:grid-cols-[10rem_minmax(0,1fr)_6rem] sm:gap-3"
@@ -174,6 +182,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
               yesCount={item.yesCount}
               noCount={item.noCount}
               sources={item.sources}
+              association={item.association}
             />
           ))}
         </div>

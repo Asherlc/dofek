@@ -10,6 +10,7 @@ import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
 import { getCorrelationPairs } from "./correlation-pairs.ts";
 import { joinByDate } from "./data-join.ts";
 import { exhaustiveSweep } from "./discovery.ts";
+import { createInsightEvidence } from "./evidence.ts";
 import { explainInsight, metricUnits } from "./explanation.ts";
 import { computeMonthlyInsights } from "./monthly.ts";
 import { benjaminiHochberg, cohensD, describe, spearmanCorrelation, welchTTest } from "./stats.ts";
@@ -24,6 +25,23 @@ import {
   type NutritionRow,
   type SleepRow,
 } from "./types.ts";
+
+function conditionalEstimateLabel(insight: Insight): string | undefined {
+  if (insight.type !== "conditional") return undefined;
+
+  const difference = insight.whenTrue.mean - insight.whenFalse.mean;
+  if (difference === 0) return "No observed difference";
+
+  const direction = difference > 0 ? "higher" : "lower";
+  const baselineNearZero = Math.abs(insight.whenFalse.mean) < 1;
+  const unit = metricUnits[insight.metric] ?? "";
+  if (baselineNearZero || insight.whenFalse.mean === 0) {
+    return `${Math.abs(difference).toFixed(2)}${unit ? ` ${unit}` : ""} ${direction}`;
+  }
+
+  const percentageDifference = (Math.abs(difference) / Math.abs(insight.whenFalse.mean)) * 100;
+  return `${percentageDifference.toFixed(0)}% ${direction}`;
+}
 
 // ── Main engine ───────────────────────────────────────────────────────────
 
@@ -101,7 +119,7 @@ export function computeInsights(
       confidence,
       metric: test.metric,
       action: test.action,
-      message: `Your ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`,
+      message: `Observed association: ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`,
       detail: `${test.action}: avg ${trueStats.mean.toFixed(1)} vs ${falseStats.mean.toFixed(1)} without (n=${trueValues.length}/${falseValues.length})`,
       whenTrue: trueStats,
       whenFalse: falseStats,
@@ -225,8 +243,9 @@ export function computeInsights(
 
   // Cap at 20 most significant insights to avoid noise
   const top = insights.slice(0, 20);
-  // Add human-readable explanations
+  // Add server-authored evidence and a safe human-readable explanation.
   for (const insight of top) {
+    insight.evidence = createInsightEvidence(insight.type, conditionalEstimateLabel(insight));
     insight.explanation = explainInsight(insight);
   }
   return top;

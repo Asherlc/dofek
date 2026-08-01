@@ -100,6 +100,16 @@ describe("behaviorImpactRouter", () => {
       expect(alcohol?.yesCount).toBe(10);
       expect(alcohol?.noCount).toBe(20);
       expect(alcohol?.sources).toEqual([{ providerId: "manual_review", label: "Manual review" }]);
+      expect(alcohol?.association).toEqual({
+        relationship: "descriptive_association",
+        direction: "lower",
+        estimateLabel: "21.4% lower",
+        method: "Relative difference in mean next-day readiness after Yes versus No.",
+        interpretation:
+          "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.",
+        uncertainty: "Uncertainty interval is unavailable for this descriptive comparison.",
+        observationWindow: "90 days",
+      });
 
       const meditation = result.find((r) => r.questionSlug === "meditation");
       expect(meditation).toBeDefined();

@@ -17,6 +17,15 @@ const associationData = [
     yesCount: 18,
     noCount: 24,
     sources: [{ providerId: "manual_review", label: "Manual review" }],
+    association: {
+      relationship: "descriptive_association",
+      direction: "higher",
+      estimateLabel: "Server estimate: 18.6% higher",
+      method: "Server-computed comparison method.",
+      interpretation: "Server interpretation: association, not causation or prescription.",
+      uncertainty: "Server uncertainty statement.",
+      observationWindow: "Server observation window.",
+    },
   },
   {
     questionSlug: "late-meal",
@@ -29,6 +38,15 @@ const associationData = [
       { providerId: "manual_review", label: "Manual review" },
       { providerId: "whoop", label: "WHOOP (Cloud)" },
     ],
+    association: {
+      relationship: "descriptive_association",
+      direction: "lower",
+      estimateLabel: "Server estimate: 12.4% lower",
+      method: "Server-computed comparison method.",
+      interpretation: "Server interpretation: association, not causation or prescription.",
+      uncertainty: "Server uncertainty statement.",
+      observationWindow: "Server observation window.",
+    },
   },
 ];
 
@@ -78,6 +96,19 @@ describe("BehaviorImpactChart", () => {
     for (const bar of screen.getAllByTestId("readiness-association-bar")) {
       expect(bar.getAttribute("data-tone")).toBe("neutral");
     }
+  });
+
+  it("renders relationship semantics supplied by the server", () => {
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Server-computed comparison method.")).toBeDefined();
+    expect(
+      screen.getByText("Server interpretation: association, not causation or prescription."),
+    ).toBeDefined();
+    expect(screen.getByText("Server uncertainty statement.")).toBeDefined();
+    expect(screen.getByText("Server observation window.")).toBeDefined();
+    expect(screen.getByText("Server estimate: 18.6% higher")).toBeDefined();
+    expect(screen.getByText("Server estimate: 12.4% lower")).toBeDefined();
   });
 
   it("describes the all-history observation window", () => {

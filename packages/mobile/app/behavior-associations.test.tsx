@@ -35,6 +35,15 @@ const associationData = [
     yesCount: 18,
     noCount: 24,
     sources: [{ providerId: "manual_review", label: "Manual review" }],
+    association: {
+      relationship: "descriptive_association",
+      direction: "higher",
+      estimateLabel: "Server estimate: 18.6% higher",
+      method: "Server-computed comparison method.",
+      interpretation: "Server interpretation: association, not causation or prescription.",
+      uncertainty: "Server uncertainty statement.",
+      observationWindow: "Server observation window.",
+    },
   },
   {
     questionSlug: "late-meal",
@@ -47,6 +56,15 @@ const associationData = [
       { providerId: "manual_review", label: "Manual review" },
       { providerId: "whoop", label: "WHOOP (Cloud)" },
     ],
+    association: {
+      relationship: "descriptive_association",
+      direction: "lower",
+      estimateLabel: "Server estimate: 12.4% lower",
+      method: "Server-computed comparison method.",
+      interpretation: "Server interpretation: association, not causation or prescription.",
+      uncertainty: "Server uncertainty statement.",
+      observationWindow: "Server observation window.",
+    },
   },
 ];
 
@@ -89,6 +107,20 @@ describe("BehaviorAssociationsScreen", () => {
     expect(screen.getByText("18.6% higher")).toBeTruthy();
     expect(screen.getByText("12.4% lower")).toBeTruthy();
     expect(mocks.queryInputs.at(-1)).toEqual({ days: 90 });
+  });
+
+  it("renders relationship semantics supplied by the server", async () => {
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("Server-computed comparison method.")).toBeTruthy();
+    expect(
+      screen.getByText("Server interpretation: association, not causation or prescription."),
+    ).toBeTruthy();
+    expect(screen.getByText("Server uncertainty statement.")).toBeTruthy();
+    expect(screen.getByText("Server observation window.")).toBeTruthy();
+    expect(screen.getByText("Server estimate: 18.6% higher")).toBeTruthy();
+    expect(screen.getByText("Server estimate: 12.4% lower")).toBeTruthy();
   });
 
   it("queries the selected observation window", async () => {
