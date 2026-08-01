@@ -1,3 +1,7 @@
+import type {
+  ActivityDataState,
+  ActivityDataStateUnavailableStatus,
+} from "@dofek/format/activity-data-state";
 import { formatDurationMinutes, formatRelativeTime } from "@dofek/format/format";
 import {
   formatRecordLocalTime,
@@ -30,13 +34,18 @@ export interface ActivityCardData {
   providerId?: string;
   providerAbsentAt?: string | null;
   partialAbsentSources?: ProviderAbsentSource[];
-  location: ActivityMapLocation | null;
+  location: ActivityCardLocation | null;
   stats: ActivityCardStat[];
 }
 
+export type ActivityCardLocation = ActivityMapLocation & {
+  distanceState: ActivityDataState;
+  elevationState: ActivityDataState;
+};
+
 export type ActivityCardStat =
   | { status: "available"; label: string; value: string }
-  | { status: "unavailable"; label: string; reason: string };
+  | { status: ActivityDataStateUnavailableStatus; label: string; reason: string };
 
 interface ActivityCardContentProps {
   activity: ActivityCardData;
@@ -149,22 +158,18 @@ function ActivityMetricGrid({
 }) {
   const metrics: ActivityCardStat[] = activity.location
     ? [
-        {
-          status: "available",
-          label: "Distance",
-          value:
-            activity.location.distanceMeters != null
-              ? formatMeasurementText(units.formatDistance(activity.location.distanceMeters / 1000))
-              : "—",
-        },
-        {
-          status: "available",
-          label: "Elevation",
-          value:
-            activity.location.elevationGainM != null
-              ? formatMeasurementText(units.formatElevation(activity.location.elevationGainM))
-              : "—",
-        },
+        formatLocationMetric(
+          "Distance",
+          activity.location.distanceMeters,
+          activity.location.distanceState,
+          (value) => formatMeasurementText(units.formatDistance(value / 1000)),
+        ),
+        formatLocationMetric(
+          "Elevation",
+          activity.location.elevationGainM,
+          activity.location.elevationState,
+          (value) => formatMeasurementText(units.formatElevation(value)),
+        ),
       ]
     : activity.stats;
 
@@ -177,12 +182,31 @@ function ActivityMetricGrid({
             <div className="mt-1 text-[11px] leading-tight text-muted">{metric.label}</div>
           </div>
         ) : (
-          <div key={metric.label} className="col-span-2 min-w-0">
-            <div className="text-sm font-semibold">{metric.label} unavailable</div>
+          <div key={metric.label} className="col-span-2 min-w-0" data-state={metric.status}>
+            <div className="text-sm font-semibold">
+              {metric.label} {metric.status === "missing" ? "unavailable" : metric.status}
+            </div>
             <div className="mt-1 text-xs leading-relaxed text-muted">{metric.reason}</div>
           </div>
         ),
       )}
     </div>
   );
+}
+
+function formatLocationMetric(
+  label: string,
+  value: number | null,
+  state: ActivityDataState,
+  formatValue: (value: number) => string,
+): ActivityCardStat {
+  if (state.status === "available" && value != null) {
+    return { status: "available", label, value: formatValue(value) };
+  }
+
+  return {
+    status: state.status === "available" ? "missing" : state.status,
+    label,
+    reason: state.status === "available" ? `${label} unavailable` : state.reason,
+  };
 }

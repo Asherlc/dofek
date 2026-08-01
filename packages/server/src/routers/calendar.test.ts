@@ -100,7 +100,7 @@ describe("calendarRouter", () => {
             tss: null,
             stats: [
               {
-                status: "unavailable",
+                status: "missing",
                 label: "Training Stress Score",
                 reason:
                   "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
@@ -164,7 +164,7 @@ describe("calendarRouter", () => {
             tss: null,
             stats: [
               {
-                status: "unavailable",
+                status: "missing",
                 label: "Training Stress Score",
                 reason:
                   "Record average power, or record average heart rate and set maximum heart rate.",
@@ -188,7 +188,7 @@ describe("calendarRouter", () => {
           expect.objectContaining({
             stats: [
               {
-                status: "unavailable",
+                status: "missing",
                 label: "Training Stress Score",
                 reason:
                   "Record average power, or record average heart rate and set maximum heart rate.",
@@ -245,12 +245,14 @@ describe("calendarRouter", () => {
                 ],
               },
               distanceMeters: 5000,
+              distanceState: { status: "available" },
               elevationGainM: 120,
+              elevationState: { status: "available" },
             },
             tss: null,
             stats: [
               {
-                status: "unavailable",
+                status: "missing",
                 label: "Training Stress Score",
                 reason:
                   "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
@@ -293,7 +295,9 @@ describe("calendarRouter", () => {
                 ],
               },
               distanceMeters: 5000,
+              distanceState: { status: "available" },
               elevationGainM: 120,
+              elevationState: { status: "available" },
             },
           }),
         ],

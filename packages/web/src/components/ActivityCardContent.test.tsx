@@ -103,7 +103,7 @@ describe("ActivityCardContent", () => {
         activity={activity({
           stats: [
             {
-              status: "unavailable",
+              status: "missing",
               label: "Training Stress Score",
               reason:
                 "Record average power, or record average heart rate and set maximum heart rate.",
@@ -138,7 +138,9 @@ describe("ActivityCardContent", () => {
               routePath: null,
             },
             distanceMeters: 5000,
+            distanceState: { status: "available" },
             elevationGainM: 120,
+            elevationState: { status: "available" },
           },
         })}
         units={units}
@@ -156,5 +158,56 @@ describe("ActivityCardContent", () => {
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
     expect(screen.getByTestId("activity-secondary-inset").className).toContain("rounded-lg");
     expect(screen.getByText("Route")).toBeDefined();
+  });
+
+  it("does not present missing route measurements as available dashes", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          activityType: "running",
+          location: {
+            mapPreview: {
+              width: 256,
+              height: 256,
+              tiles: [],
+              routePath: null,
+            },
+            distanceMeters: null,
+            distanceState: { status: "missing", reason: "Distance not recorded" },
+            elevationGainM: null,
+            elevationState: { status: "missing", reason: "Elevation not recorded" },
+          },
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText("Distance unavailable")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
+  });
+
+  it.each([
+    "stale",
+    "failed",
+    "processing",
+    "conflicting",
+  ] as const)("renders a distinct %s server-authored state", (status) => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          stats: [{ status, label: "Training Stress Score", reason: "Sync the source and retry." }],
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
+    expect(screen.getByText("Sync the source and retry.")).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
   });
 });

@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { ActivityVariabilityModel, VerticalAscentModel } from "./cycling-advanced-models.ts";
 import { buildPmcChartFromRows, loadPmcChartParameters } from "./pmc-repository.ts";
@@ -397,6 +398,7 @@ export class CyclingAnalyticsRepository {
         provider_id: row.provider_id,
         source_providers: row.source_providers,
         distance_meters: row.distance_meters,
+        distance_state: activityMeasurementState("Distance", row.distance_meters),
       }));
 
     return {

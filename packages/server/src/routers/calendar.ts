@@ -1,3 +1,7 @@
+import {
+  activityDataStateSchema,
+  activityDataStateUnavailableStatusSchema,
+} from "@dofek/format/activity-data-state";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -41,7 +45,9 @@ const activityLocationSchema = z.object({
   centroidLng: z.number(),
   mapPreview: mapPreviewSchema,
   distanceMeters: z.number().nullable(),
+  distanceState: activityDataStateSchema,
   elevationGainM: z.number().nullable(),
+  elevationState: activityDataStateSchema,
 });
 
 const activityStatSchema = z.discriminatedUnion("status", [
@@ -51,9 +57,9 @@ const activityStatSchema = z.discriminatedUnion("status", [
     value: z.string(),
   }),
   z.object({
-    status: z.literal("unavailable"),
+    status: activityDataStateUnavailableStatusSchema,
     label: z.string(),
-    reason: z.string(),
+    reason: z.string().min(1),
   }),
 ]);
 

@@ -317,7 +317,9 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLng: 180,
       mapPreview: osmTilePreview([{ lat: 90, lng: 180 }]),
       distanceMeters: 5000,
+      distanceState: { status: "available" },
       elevationGainM: 125,
+      elevationState: { status: "available" },
     });
   });
 
@@ -809,13 +811,66 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLng: -122.4,
       mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
       distanceMeters: 5000,
+      distanceState: { status: "available" },
       elevationGainM: 125,
+      elevationState: { status: "available" },
     });
     expect(sensorStore.query).toHaveBeenCalledTimes(3);
     expect(sensorStore.query).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("FROM analytics.deduped_location"),
       expect.anything(),
+    );
+  });
+
+  it("authors missing and available states without treating zero as missing", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "missing-route-measurements",
+          activity_type: "running",
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        }),
+        makeActivityRow({
+          id: "zero-route-measurements",
+          activity_type: "running",
+          total_distance: 0,
+          elevation_gain_m: 0,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+    const activities = result[0]?.activities ?? [];
+
+    expect(
+      activities.find((activity) => activity.id === "missing-route-measurements")?.location,
+    ).toEqual(
+      expect.objectContaining({
+        distanceMeters: null,
+        distanceState: { status: "missing", reason: "Distance not recorded" },
+        elevationGainM: null,
+        elevationState: { status: "missing", reason: "Elevation not recorded" },
+      }),
+    );
+    expect(
+      activities.find((activity) => activity.id === "zero-route-measurements")?.location,
+    ).toEqual(
+      expect.objectContaining({
+        distanceMeters: 0,
+        distanceState: { status: "available" },
+        elevationGainM: 0,
+        elevationState: { status: "available" },
+      }),
     );
   });
 
@@ -864,7 +919,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Record average power, or record average heart rate and set maximum heart rate.",
@@ -890,7 +945,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason: "Record an activity duration greater than zero.",
           },
@@ -929,7 +984,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Set functional threshold power, or record average heart rate and set maximum heart rate.",
@@ -1028,7 +1083,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Record average power and set functional threshold power, or set maximum heart rate.",
@@ -1060,7 +1115,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Record average power and set functional threshold power, or set maximum heart rate above resting heart rate.",
@@ -1340,7 +1395,9 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLng: -122.4,
       mapPreview: routePreview,
       distanceMeters: 5000,
+      distanceState: { status: "available" },
       elevationGainM: 125,
+      elevationState: { status: "available" },
     });
   });
 
@@ -1571,7 +1628,9 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLng: -122.4194,
       mapPreview: routePreview,
       distanceMeters: 5000,
+      distanceState: { status: "available" },
       elevationGainM: 125,
+      elevationState: { status: "available" },
     });
   });
 
@@ -1628,7 +1687,9 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLng: -122.4,
       mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
       distanceMeters: 5000,
+      distanceState: { status: "available" },
       elevationGainM: 125,
+      elevationState: { status: "available" },
     });
   });
 
@@ -1691,7 +1752,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.tss).toBeNull();
     expect(result[0]?.activities[0]?.stats).toEqual([
       {
-        status: "unavailable",
+        status: "missing",
         label: "Training Stress Score",
         reason:
           "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",

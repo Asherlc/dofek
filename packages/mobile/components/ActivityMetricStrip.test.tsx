@@ -13,7 +13,7 @@ describe("ActivityMetricStrip", () => {
           location: null,
           stats: [
             {
-              status: "unavailable",
+              status: "missing",
               label: "Training Stress Score",
               reason:
                 "Record average power, or record average heart rate and set maximum heart rate.",
@@ -52,7 +52,12 @@ describe("ActivityMetricStrip", () => {
     render(
       <ActivityMetricStrip
         activity={{
-          location: { distanceMeters: 10_000, elevationGainM: 250 },
+          location: {
+            distanceMeters: 10_000,
+            distanceState: { status: "available" },
+            elevationGainM: 250,
+            elevationState: { status: "available" },
+          },
           stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
         }}
         units={units}
@@ -62,5 +67,47 @@ describe("ActivityMetricStrip", () => {
     expect(screen.getByText("10.0 km")).toBeDefined();
     expect(screen.getByText("250 m")).toBeDefined();
     expect(screen.queryByText("Training Stress Score")).toBeNull();
+  });
+
+  it("does not present missing route measurements as available dashes", () => {
+    render(
+      <ActivityMetricStrip
+        activity={{
+          location: {
+            distanceMeters: null,
+            distanceState: { status: "missing", reason: "Distance not recorded" },
+            elevationGainM: null,
+            elevationState: { status: "missing", reason: "Elevation not recorded" },
+          },
+          stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+        }}
+        units={units}
+      />,
+    );
+
+    expect(screen.getByText("Distance unavailable")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
+  });
+
+  it.each([
+    "stale",
+    "failed",
+    "processing",
+    "conflicting",
+  ] as const)("renders a distinct %s server-authored state", (status) => {
+    render(
+      <ActivityMetricStrip
+        activity={{
+          location: null,
+          stats: [{ status, label: "Training Stress Score", reason: "Sync the source and retry." }],
+        }}
+        units={units}
+      />,
+    );
+
+    expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
+    expect(screen.getByText("Sync the source and retry.")).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
   });
 });

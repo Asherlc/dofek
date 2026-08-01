@@ -307,6 +307,10 @@ describe("ActivityRepository", () => {
       expect(result.totalCount).toBe(1);
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty("id", "abc-123");
+      expect(result.items[0]).toHaveProperty("distance_state", {
+        status: "missing",
+        reason: "Distance not recorded",
+      });
     });
 
     it("returns items and totalCount", async () => {
@@ -429,7 +433,9 @@ describe("ActivityRepository", () => {
           centroidLng: -122.4194,
           mapPreview: osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]),
           distanceMeters: 5000,
+          distanceState: { status: "available" },
           elevationGainM: 120,
+          elevationState: { status: "available" },
         },
       });
     });

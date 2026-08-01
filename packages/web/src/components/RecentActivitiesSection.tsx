@@ -1,3 +1,4 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { formatDateYmd } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -15,7 +16,8 @@ const activityRowSchema = z.object({
   name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()).nullable(),
-  distance_meters: z.number().nullable().optional(),
+  distance_meters: z.number().nullable(),
+  distance_state: activityDataStateSchema,
   location: z
     .object({
       centroidLat: z.number(),
@@ -35,7 +37,9 @@ const activityRowSchema = z.object({
         routePath: z.array(z.object({ x: z.number(), y: z.number() })).nullable(),
       }),
       distanceMeters: z.number().nullable(),
+      distanceState: activityDataStateSchema,
       elevationGainM: z.number().nullable(),
+      elevationState: activityDataStateSchema,
     })
     .nullable()
     .optional(),

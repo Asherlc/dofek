@@ -31,7 +31,7 @@ const unavailableTrainingStressActivity: ActivityCardData = {
   id: "strength-unavailable",
   stats: [
     {
-      status: "unavailable",
+      status: "missing",
       label: "Training Stress Score",
       reason: "Record average power, or record average heart rate and set maximum heart rate.",
     },
@@ -99,7 +99,9 @@ const mappedActivity: ActivityCardData = {
       ],
     },
     distanceMeters: 8530,
+    distanceState: { status: "available" },
     elevationGainM: 493,
+    elevationState: { status: "available" },
   },
   stats: [{ status: "available", label: "Training Stress Score", value: "41" }],
 };

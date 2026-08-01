@@ -1,3 +1,7 @@
+import type {
+  ActivityDataState,
+  ActivityDataStateUnavailableStatus,
+} from "@dofek/format/activity-data-state";
 import {
   localTimeContextUnknown,
   localTimeSourceSchema,
@@ -17,6 +21,7 @@ import {
   type ActivityListSourceDetail,
   buildActivityListSource,
 } from "../models/activity-source-decision.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -29,7 +34,9 @@ export interface ActivityLocation {
   centroidLng: number;
   mapPreview: OsmTilePreview;
   distanceMeters: number | null;
+  distanceState: ActivityDataState;
   elevationGainM: number | null;
+  elevationState: ActivityDataState;
 }
 
 export type ActivityStat =
@@ -39,7 +46,7 @@ export type ActivityStat =
       value: string;
     }
   | {
-      status: "unavailable";
+      status: ActivityDataStateUnavailableStatus;
       label: string;
       reason: string;
     };
@@ -322,7 +329,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
                 distanceMeters: row.total_distance,
+                distanceState: activityMeasurementState("Distance", row.total_distance),
                 elevationGainM: row.elevation_gain_m,
+                elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -457,7 +466,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
                 distanceMeters: row.total_distance,
+                distanceState: activityMeasurementState("Distance", row.total_distance),
                 elevationGainM: row.elevation_gain_m,
+                elevationState: activityMeasurementState("Elevation", row.elevation_gain_m),
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -678,14 +689,14 @@ type ActivityTrainingStress =
       score: number;
     }
   | {
-      status: "unavailable";
+      status: "missing";
       reason: string;
     };
 
 function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
   if (input.durationMin <= 0) {
     return {
-      status: "unavailable",
+      status: "missing",
       reason: "Record an activity duration greater than zero.",
     };
   }
@@ -714,7 +725,7 @@ function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress 
     };
   }
   return {
-    status: "unavailable",
+    status: "missing",
     reason: formatTrainingStressUnavailableReason(input, effectiveMaxHr, effectiveRestingHr),
   };
 }
@@ -756,10 +767,10 @@ function capitalize(value: string): string {
 }
 
 function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
-  if (trainingStress.status === "unavailable") {
+  if (trainingStress.status === "missing") {
     return [
       {
-        status: "unavailable",
+        status: "missing",
         label: "Training Stress Score",
         reason: trainingStress.reason,
       },

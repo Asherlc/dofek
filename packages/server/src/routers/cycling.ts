@@ -1,3 +1,4 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
@@ -79,6 +80,7 @@ const activityItemSchema = z.object({
   provider_id: z.string(),
   source_providers: z.array(z.string()),
   distance_meters: z.number().nullable(),
+  distance_state: activityDataStateSchema,
 });
 const activitiesOutputSchema = z.object({
   activities: z.object({ items: z.array(activityItemSchema), totalCount: z.number() }),

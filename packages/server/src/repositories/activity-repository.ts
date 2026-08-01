@@ -13,6 +13,7 @@ import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { activitySourceSchema } from "../models/activity-source.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -410,7 +411,10 @@ export class ActivityRepository extends BaseRepository {
     const rows = await this.#listRawRows(input);
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
-    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => rest);
+    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => ({
+      ...rest,
+      distance_state: activityMeasurementState("Distance", rest.distance_meters),
+    }));
     return { items, totalCount };
   }
 
@@ -429,7 +433,10 @@ export class ActivityRepository extends BaseRepository {
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows[0]?.total_count ?? 0;
-    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => rest);
+    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => ({
+      ...rest,
+      distance_state: activityMeasurementState("Distance", rest.distance_meters),
+    }));
     return { items, totalCount };
   }
 
@@ -441,7 +448,10 @@ export class ActivityRepository extends BaseRepository {
   ): Promise<Array<Record<string, unknown>>> {
     const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
     const hydratedRows = await this.#withActivitySummaries(rows);
-    return hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => rest);
+    return hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => ({
+      ...rest,
+      distance_state: activityMeasurementState("Distance", rest.distance_meters),
+    }));
   }
 
   #exactRangeRows(
@@ -684,7 +694,9 @@ export class ActivityRepository extends BaseRepository {
                   routePreview ??
                   osmTilePreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
                 distanceMeters: summary.total_distance,
+                distanceState: activityMeasurementState("Distance", summary.total_distance),
                 elevationGainM: summary.elevation_gain_m,
+                elevationState: activityMeasurementState("Elevation", summary.elevation_gain_m),
               }
             : null,
       };

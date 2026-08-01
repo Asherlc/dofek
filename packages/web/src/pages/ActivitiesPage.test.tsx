@@ -441,6 +441,8 @@ describe("ActivitiesPage", () => {
                 mapPreview,
                 distanceMeters: 5000,
                 elevationGainM: 120,
+                distanceState: { status: "available" },
+                elevationState: { status: "available" },
               },
             }),
           ],

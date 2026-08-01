@@ -159,7 +159,9 @@ function createStoryData() {
             centroidLng: -122.4194,
             mapPreview,
             distanceMeters: 32400,
+            distanceState: { status: "available" },
             elevationGainM: 412,
+            elevationState: { status: "available" },
           },
           tss: 78.4,
           stats: [{ status: "available", label: "Training Stress Score", value: "78.4" }],
@@ -192,7 +194,7 @@ function createStoryData() {
           tss: null,
           stats: [
             {
-              status: "unavailable",
+              status: "missing",
               label: "Training Stress Score",
               reason:
                 "Record average power, or record average heart rate and set maximum heart rate.",
