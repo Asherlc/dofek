@@ -308,6 +308,14 @@ WHERE database IN ('ingest', 'analytics')
 ORDER BY create_time DESC;
 ```
 
+The physical part proof starts with active parts that currently match the
+account predicate and follows their `MergeParts` and `MutatePart` ancestry
+through `system.part_log`. It does not treat unrelated inactive parts as
+account data: ClickHouse keeps inactive parts in `system.parts` while they are
+awaiting cleanup, and the part log records the source parts for merge and
+mutation events. See [system.parts](https://clickhouse.com/docs/reference/system-tables/parts)
+and [system.part_log](https://clickhouse.com/docs/reference/system-tables/part_log).
+
 The ClickHouse proof enumerates every table in the managed databases before it
 classifies engines. MergeTree-family engines are physically erased; `View`,
 `MaterializedView`, and `Null` are explicitly treated as engines without their

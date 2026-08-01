@@ -23,7 +23,7 @@ function migrationStatements(file: string): string[] {
     );
 }
 
-describe("0059 account erasure migration (integration)", () => {
+describe("0062 account erasure migration (integration)", () => {
   let admin: Client;
   let database: Client;
   let databaseName: string;
@@ -48,7 +48,7 @@ describe("0059 account erasure migration (integration)", () => {
 
     const migrationsDirectory = resolve(import.meta.dirname, "../../drizzle");
     const preAccountErasureMigrations = readdirSync(migrationsDirectory)
-      .filter((file) => file.endsWith(".sql") && file !== "0059_account_erasure.sql")
+      .filter((file) => file.endsWith(".sql") && file !== "0062_account_erasure.sql")
       .sort();
     for (const migration of preAccountErasureMigrations) {
       for (const statement of migrationStatements(resolve(migrationsDirectory, migration))) {
@@ -85,7 +85,7 @@ describe("0059 account erasure migration (integration)", () => {
     );
 
     for (const statement of migrationStatements(
-      resolve(migrationsDirectory, "0059_account_erasure.sql"),
+      resolve(migrationsDirectory, "0062_account_erasure.sql"),
     )) {
       await database.query(statement);
     }

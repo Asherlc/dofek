@@ -194,7 +194,9 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
     });
     await expect(findAccountErasureStatus(context.db, accepted.statusToken)).resolves.toEqual(
       expect.objectContaining({
+        completedAt: retentionVerificationAt.toISOString(),
         currentPhase: "completed",
+        deadlineMissed: false,
         message: null,
         status: "completed",
       }),

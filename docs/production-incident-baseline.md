@@ -7,6 +7,59 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-01: ClickHouse account-erasure proof tracked unrelated inactive parts
+
+### Symptoms
+
+The ClickHouse account-erasure integration retried the provider/read-model
+case and timed out while waiting for 33, then 42, then 57 physical parts.
+
+### User Impact
+
+No production user impact was identified. The issue blocked the account-
+erasure implementation's physical-deletion validation.
+
+### Evidence
+
+The first fatal line was
+`ClickHouse account erasure timed out waiting for 33 physical part(s) to be removed`.
+The corresponding `system.mutations` rows were `is_done = 1`, had
+`parts_to_do = 0`, and no failure reason. `system.parts` showed the retained
+parts were inactive historical merge/mutation outputs, and `system.part_log`
+showed their block and lineage chains. ClickHouse documents inactive parts as
+parts awaiting cleanup and exposes merge/mutation ancestry through its system
+tables: [system.parts](https://clickhouse.com/docs/reference/system-tables/parts)
+and [system.part_log](https://clickhouse.com/docs/reference/system-tables/part_log).
+
+### Root Cause
+
+The proof added every inactive part in each managed table to the account's
+physical reference set, so unrelated historical parts from previous mutation
+attempts could keep an otherwise completed erasure waiting.
+
+### Fix or Mitigation
+
+The proof now seeds references from active parts matching the account
+predicate, follows their `MergeParts`/`MutatePart` ancestry, and adds the
+completed mutation's part lineage after `mutations_sync = 2`. It does not add
+timeouts, retries, or cleanup workarounds.
+
+### Validation
+
+The new lineage unit tests, focused account-erasure unit suites, root/server/
+web/mobile typechecks, and the Docker-free unit/mobile run completed their
+relevant checks; the full unit/mobile run reached 14,842 passing tests but
+reported one Vitest worker timeout in the existing Compose-environment test.
+The ClickHouse integration rerun remains unavailable while the local Docker
+daemon does not answer `docker info` and the repository Compose wrapper cannot
+start its dependencies.
+
+### Remaining Risk
+
+The real ClickHouse regression and full account-erasure integration file must
+pass on a responsive ClickHouse instance before merge. The physical proof
+continues to fail closed when detached parts remain.
+
 ## 2026-07-25: Locked-device workout route queries generated Sentry errors
 
 ### Symptoms

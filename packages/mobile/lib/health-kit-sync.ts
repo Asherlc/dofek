@@ -618,7 +618,14 @@ export async function syncHealthKitObserverChanges(
 ): Promise<SyncResult> {
   const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
   const typeIdentifiers = new Set(options.typeIdentifiers);
-  const startDate = syncWindowStart(1, minimumSampleDate);
+  // A reset native anchor must replay every sample after the device cutoff so
+  // the next account does not miss HealthKit history that belongs after the
+  // previous account was erased. Once the anchor is persisted, native code
+  // keeps subsequent observer queries incremental.
+  const startDate =
+    minimumSampleDate === null
+      ? syncWindowStart(1, null)
+      : syncWindowStart(null, minimumSampleDate);
   const endDate = new Date().toISOString();
   const cutoffCalendarDate =
     minimumSampleDate === null ? null : localCalendarDate(minimumSampleDate);

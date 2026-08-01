@@ -52,7 +52,7 @@ describe("processAccountErasureJob", () => {
       ACCOUNT_ERASURE_ACTIVE_PHASES,
     );
     expect(deps.markWaiting).not.toHaveBeenCalled();
-    expect(deps.finalize).toHaveBeenCalledWith(request);
+    expect(deps.finalize).toHaveBeenCalledWith(request, new Date("2026-08-25T12:00:00.001Z"));
   });
 
   it("persists the replay wait after initial erasure and does not claim completion", async () => {
@@ -151,7 +151,7 @@ describe("processAccountErasureJob", () => {
     await processAccountErasureJob(request, deps, new Date("2026-08-25T12:00:00.001Z"));
 
     expect(deps.runPhase.mock.calls.map(([phase]) => phase)).toEqual(["retention_verification"]);
-    expect(deps.finalize).toHaveBeenCalledWith(request);
+    expect(deps.finalize).toHaveBeenCalledWith(request, new Date("2026-08-25T12:00:00.001Z"));
   });
 
   it("does not checkpoint failed phases and still attempts every independent effect", async () => {

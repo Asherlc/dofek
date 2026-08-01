@@ -134,6 +134,7 @@ describe("processAccountErasureRequest", () => {
       database,
       request.id,
       "worker-1",
+      new Date("2026-08-25T12:00:00.001Z"),
     );
   });
 

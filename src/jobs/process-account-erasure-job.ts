@@ -52,7 +52,7 @@ export interface AccountErasureRequest {
 }
 
 export interface AccountErasureJobDependencies {
-  finalize(request: AccountErasureRequest): Promise<void>;
+  finalize(request: AccountErasureRequest, completedAt: Date): Promise<void>;
   loadCompletedPhases(requestId: string): Promise<ReadonlySet<string>>;
   markCompleted(
     requestId: string,
@@ -200,6 +200,6 @@ export async function processAccountErasureJob(
     };
   }
   await runPhaseStrictly(request, dependencies, completed, "retention_verification");
-  await dependencies.finalize(request);
+  await dependencies.finalize(request, now);
   return { status: "completed" };
 }

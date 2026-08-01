@@ -137,9 +137,9 @@ export async function processAccountErasureRequest(
         userId: request.userId,
       },
       {
-        finalize: async () => {
+        finalize: async (_request, completedAt) => {
           await heartbeat.stop();
-          await completeAccountErasure(database, request.id, leaseOwner);
+          await completeAccountErasure(database, request.id, leaseOwner, completedAt);
         },
         loadCompletedPhases: () => loadAccountErasureCheckpoints(database, request.id),
         markCompleted: async (completedRequestId, phase, details) => {

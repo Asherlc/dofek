@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/node";
 import type { OAuthConfig, TokenSet } from "dofek/auth/oauth";
-import type { SyncDatabase, TransactionDatabase } from "dofek/db";
+import type { Database, SyncDatabase, TransactionDatabase } from "dofek/db";
 import {
   AccountErasureIdentityFencedError,
   AccountErasureUserFencedError,
@@ -46,6 +46,8 @@ interface DeferredReconnectFailure {
   error: unknown;
 }
 
+type ProviderAuthorizationOperationDatabase = SyncDatabase & Pick<Database, "transaction">;
+
 const WAHOO_TOKEN_LIMIT_ERROR = "Too many unrevoked access tokens";
 
 function isWahooTokenLimitError(error: unknown): boolean {
@@ -53,7 +55,7 @@ function isWahooTokenLimitError(error: unknown): boolean {
 }
 
 async function removeRevokedAuthorization(
-  db: SyncDatabase,
+  db: ProviderAuthorizationOperationDatabase,
   providerId: string,
   userId: string,
 ): Promise<void> {
@@ -233,7 +235,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
 
     let issuedTokens: TokenSet | null = null;
     const completeOAuthConnection = async (
-      operationDb: SyncDatabase,
+      operationDb: ProviderAuthorizationOperationDatabase,
       identityLockTransaction?: TransactionDatabase,
     ): Promise<DeferredReconnectFailure | undefined> => {
       let existingTokens: TokenSet | null = null;

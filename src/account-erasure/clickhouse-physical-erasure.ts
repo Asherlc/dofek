@@ -4,8 +4,15 @@ import type { ClickHouseCommandClient } from "../db/clickhouse.ts";
 
 const countRowsSchema = z.tuple([z.object({ count: z.coerce.number().int().nonnegative() })]);
 const partRowsSchema = z.array(z.object({ part_name: z.string().min(1) }));
+const partLineageRowsSchema = z.array(
+  z.object({
+    merged_from: z.array(z.string().min(1)),
+    part_name: z.string().min(1),
+  }),
+);
 const mutationRowsSchema = z.array(z.object({ mutation_id: z.string().min(1) }));
 const PHYSICAL_PART_QUERY_BATCH_SIZE = 500;
+const partLogEventTypes = ["MergeParts", "MutatePart"];
 const nonStorageTableEngines = new Set(["MaterializedView", "Null", "View"]);
 
 export type ClickHouseManagedTableEngineKind = "merge-tree" | "non-storage" | "unsupported-storage";
@@ -69,24 +76,83 @@ async function listMatchingActiveParts(
   return partRowsSchema.parse(await result.json()).map((row) => row.part_name);
 }
 
-async function listInactiveParts(
+async function listPartLineage(
   client: ClickHousePhysicalErasureClient,
   table: ClickHousePhysicalErasureTable,
+  seedPartNames: readonly string[],
+): Promise<string[]> {
+  const lineage = new Set(seedPartNames);
+  let pendingPartNames = [...lineage];
+  while (pendingPartNames.length > 0) {
+    const discoveredPartNames = new Set<string>();
+    for (
+      let offset = 0;
+      offset < pendingPartNames.length;
+      offset += PHYSICAL_PART_QUERY_BATCH_SIZE
+    ) {
+      const partNameBatch = pendingPartNames.slice(offset, offset + PHYSICAL_PART_QUERY_BATCH_SIZE);
+      const result = await client.query({
+        query: `SELECT part_name, merged_from
+          FROM system.part_log
+          WHERE database = {database:String}
+            AND table = {table:String}
+            AND event_type IN {event_types:Array(String)}
+            AND part_name IN {part_names:Array(String)}`,
+        query_params: {
+          database: table.database,
+          event_types: partLogEventTypes,
+          part_names: partNameBatch,
+          table: table.name,
+        },
+        format: "JSONEachRow",
+        clickhouse_settings: { log_queries: 0 },
+      });
+      for (const row of partLineageRowsSchema.parse(await result.json())) {
+        for (const sourcePartName of row.merged_from) {
+          if (!lineage.has(sourcePartName)) {
+            discoveredPartNames.add(sourcePartName);
+          }
+        }
+      }
+    }
+    for (const discoveredPartName of discoveredPartNames) {
+      lineage.add(discoveredPartName);
+    }
+    pendingPartNames = [...discoveredPartNames];
+  }
+  return [...lineage];
+}
+
+async function flushClickHouseSystemLogs(client: ClickHousePhysicalErasureClient): Promise<void> {
+  await client.command({
+    query: "SYSTEM FLUSH LOGS",
+    clickhouse_settings: { log_queries: 0 },
+  });
+}
+
+async function listMutationPartLineage(
+  client: ClickHousePhysicalErasureClient,
+  table: ClickHousePhysicalErasureTable,
+  mutationIds: readonly string[],
 ): Promise<string[]> {
   const result = await client.query({
-    query: `SELECT name AS part_name
-      FROM system.parts
+    query: `SELECT part_name, merged_from
+      FROM system.part_log
       WHERE database = {database:String}
         AND table = {table:String}
-        AND active = 0`,
+        AND event_type = 'MutatePart'
+        AND hasAny(mutation_ids, {mutation_id_values:Array(String)})`,
     query_params: {
       database: table.database,
+      mutation_id_values: mutationIds,
       table: table.name,
     },
     format: "JSONEachRow",
     clickhouse_settings: { log_queries: 0 },
   });
-  return partRowsSchema.parse(await result.json()).map((row) => row.part_name);
+  return partLineageRowsSchema
+    .parse(await result.json())
+    .flatMap((row) => [row.part_name, ...row.merged_from]);
 }
 
 async function assertNoDetachedParts(
@@ -136,11 +202,9 @@ export async function prepareClickHousePhysicalErasure(
   predicate: ClickHousePhysicalErasurePredicate,
 ): Promise<ClickHousePhysicalErasureTarget> {
   await assertNoDetachedParts(client, table);
+  const matchingActivePartNames = await listMatchingActiveParts(client, table, predicate);
   return {
-    partNames: new Set([
-      ...(await listMatchingActiveParts(client, table, predicate)),
-      ...(await listInactiveParts(client, table)),
-    ]),
+    partNames: new Set(await listPartLineage(client, table, matchingActivePartNames)),
     predicate,
     table,
   };
@@ -191,22 +255,11 @@ export async function applyClickHousePhysicalErasureMutation(
     .parse(await mutationResult.json())
     .map((row) => row.mutation_id);
   if (mutationIds.length > 0) {
-    await client.command({
-      query: `KILL MUTATION
-        WHERE database = {database:String}
-          AND table = {table:String}
-          AND mutation_id IN {mutation_ids:Array(String)}
-        SYNC`,
-      query_params: {
-        database: target.table.database,
-        mutation_ids: mutationIds,
-        table: target.table.name,
-      },
-      clickhouse_settings: { log_queries: 0 },
-    });
-  }
-  for (const inactivePart of await listInactiveParts(client, target.table)) {
-    target.partNames.add(inactivePart);
+    await flushClickHouseSystemLogs(client);
+    const mutationPartNames = await listMutationPartLineage(client, target.table, mutationIds);
+    for (const partName of await listPartLineage(client, target.table, mutationPartNames)) {
+      target.partNames.add(partName);
+    }
   }
   await assertNoDetachedParts(client, target.table);
 }
