@@ -9,13 +9,13 @@
   --color-border: rgba(74, 158, 122, 0.18);
   --color-border-strong: rgba(74, 158, 122, 0.3);
   --color-accent: #2d7a56;
-  --color-accent-secondary: #4a9e7a;
+  --color-accent-secondary: #2d7a56;
   --color-on-accent: #ffffff;
   --color-danger: #d7332f;
   --color-foreground: #1a2e1a;
   --color-muted: #4a6a4a;
   --color-subtle: #577458;
-  --color-dim: #6b8a6b;
+  --color-dim: #4a6a4a;
   --color-skeleton: rgba(74, 158, 122, 0.1);
 
   /* ── Fonts ── */
@@ -43,7 +43,7 @@ html {
     --color-foreground: #e8f0ea;
     --color-muted: #b4c9b9;
     --color-subtle: #92ad98;
-    --color-dim: #718b78;
+    --color-dim: #92ad98;
     --color-skeleton: rgba(130, 190, 151, 0.14);
   }
 }
