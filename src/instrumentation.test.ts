@@ -205,6 +205,40 @@ describe("instrumentation", () => {
     );
   });
 
+  it("adds a PostHog trace exporter in production even without Axiom endpoints", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      DEPLOY_ENVIRONMENT: "production",
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    expect(config?.spanProcessors).toHaveLength(1);
+    expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
+    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
+    expect(OTLPTraceExporter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: expect.stringContaining("/i/v1/traces"),
+        headers: expect.objectContaining({
+          Authorization: expect.stringContaining("Bearer "),
+        }),
+      }),
+    );
+  });
+
+  it("keeps Axiom and PostHog trace exporters alongside each other in production with an Axiom endpoint", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      DEPLOY_ENVIRONMENT: "production",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    expect(config?.spanProcessors).toHaveLength(2);
+    expect(BatchSpanProcessor).toHaveBeenCalledTimes(2);
+  });
+
   it("only configures trace processors and auto instrumentations when only traces endpoint exists", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
