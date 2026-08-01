@@ -21384,3 +21384,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Future append-incremental serving columns must
   be added with an explicit `AFTER` clause; the new order-equality test guards
   the three current tables.
+
+## 2026-08-01 — Shared review Compose ClickHouse was unbounded
+
+- **Status:** Fixed in source; Docker-backed runtime validation is delegated to
+  CI because this Codex environment has no usable Docker daemon.
+- **Symptoms:** The review analytics step
+  `pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml exec -T server ./entrypoint.sh analytics-e2e`
+  failed with `NameResolutionError("HTTPConnection(host='clickhouse', port=8123): Failed to resolve 'clickhouse' ([Errno -2] Name does not resolve)")`.
+- **User impact:** The review UI could not complete its ClickHouse analytics
+  seed, preventing analytics-backed UI states from being audited.
+- **Evidence:** The ClickHouse container immediately exited with code 137 and
+  `OOMKilled=true`. The default Compose ClickHouse service had no container
+  memory ceiling, despite mounting a 3 GiB ClickHouse server setting. The E2E
+  service had neither a container ceiling nor that tracked server setting.
+  The review seed itself inserts a fixed 90 body-weight rows, and the E2E
+  entrypoint already runs the two dbt groups sequentially with one thread, so
+  the failure was shared-VM resource isolation rather than an unbounded seed
+  loop.
+- **Root cause:** Both review Compose paths allowed ClickHouse to allocate
+  outside a cgroup boundary; concurrent workspaces could exhaust the shared VM,
+  after which dbt reported DNS failure because the ClickHouse container had
+  disappeared.
+- **Fix / mitigation:** Add a 1536 MiB `mem_limit` to both default and E2E
+  ClickHouse services, lower the local tracked server setting to 1280 MiB, and
+  mount that same setting in E2E. The bounded profile leaves 256 MiB between
+  tracked allocations and the container boundary. No retry, timeout, fallback,
+  or warn-and-continue behavior was added. Docker documents the Compose
+  [`mem_limit`](https://docs.docker.com/reference/compose-file/services/#mem_limit)
+  resource ceiling, and ClickHouse documents
+  [`max_server_memory_usage`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#max_server_memory_usage).
+- **Validation:** Static diff/schema validation is required for this change.
+  The complete migration, seed, dbt, and E2E runtime sequence was not runnable
+  locally because the environment has no Docker daemon; CI must recreate the
+  services and verify the effective cgroup and ClickHouse settings before
+  merge.
+- **Remaining risk / follow-up:** The inner value is based on the prior review
+  run's measured approximately 1.07 GiB ClickHouse RSS and preserves 256 MiB
+  of outer headroom. If CI reaches the tracked limit, capture query memory and
+  container inspection before changing the profile; do not relax the boundary
+  with waits or retries.
