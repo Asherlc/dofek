@@ -243,9 +243,11 @@ function emitLog(
   data?: Record<string, unknown>,
 ) {
   const logData =
-    currentTelemetryRoute && data?.route === undefined
-      ? { ...data, route: currentTelemetryRoute }
-      : data;
+    typeof data?.route === "string"
+      ? { ...data, route: normalizeTelemetryRoute(data.route) }
+      : currentTelemetryRoute && (data === undefined || !("route" in data))
+        ? { ...data, route: currentTelemetryRoute }
+        : data;
   const sanitizedData = sanitizeLogAttributes(logData);
   Sentry.addBreadcrumb({
     category,

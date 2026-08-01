@@ -290,6 +290,7 @@ describe("ios telemetry", () => {
 
   it("does not retain a malformed explicit route or fall back to the global route", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
 
     const mod = await import("./telemetry");
     mod.initTelemetry();
@@ -299,6 +300,7 @@ describe("ios telemetry", () => {
       source: "react-query",
       route: "?token=secret",
     });
+    mod.logger.error("invalid-route", "request failed", { route: "?token=secret" });
 
     expect(mocks.mockCaptureException).toHaveBeenCalledWith(
       expect.any(Error),
@@ -309,7 +311,24 @@ describe("ios telemetry", () => {
         },
       }),
     );
-    expect(JSON.stringify(mocks.mockCaptureException.mock.calls)).not.toContain("secret");
+    expect(mocks.mockAddBreadcrumb).toHaveBeenLastCalledWith({
+      category: "invalid-route",
+      message: "request failed",
+      level: "error",
+    });
+    expect(mocks.mockEmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        body: "[invalid-route] request failed",
+        attributes: undefined,
+      }),
+    );
+    expect(
+      JSON.stringify([
+        mocks.mockCaptureException.mock.calls,
+        mocks.mockAddBreadcrumb.mock.calls,
+        mocks.mockEmit.mock.calls,
+      ]),
+    ).not.toContain("secret");
   });
 
   it("drops transient background HealthKit network errors from Sentry and PostHog", async () => {
@@ -462,7 +481,7 @@ describe("ios telemetry", () => {
       message: "Nutrition tab selected",
       level: "info",
       data: {
-        route: "food",
+        route: "/food",
         selected: true,
         count: 1,
       },

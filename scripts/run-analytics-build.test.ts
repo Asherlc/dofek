@@ -228,39 +228,42 @@ describe("runAnalyticsBuild", () => {
   it("fingerprints failed models instead of skipped dependents", async () => {
     const recordRun = vi.fn(async () => ({ datasets: 2, failed: 2 }));
 
-    await expect(
-      runAnalyticsBuild({
-        selectedModels: ["provider_stats", "provider_stats_downstream"],
-        artifactDirectory: "/tmp/dofek-dbt-test",
-        microbatchBounds: TEST_MICROBATCH_BOUNDS,
-        runDbt: async () => 1,
-        readArtifact: createArtifactReader("dbt-run-3", [
-          {
-            uniqueId: "model.dofek.provider_stats",
-            name: "provider_stats",
-            status: "error",
-            executionTime: 1,
-            message: "Code: 159 TIMEOUT_EXCEEDED",
-          },
-          {
-            uniqueId: "model.dofek.provider_stats_downstream",
-            name: "provider_stats_downstream",
-            status: "skipped",
-            executionTime: 0,
-            message: "depends on failed model",
-          },
-        ]),
-        recordRun,
-      }),
-    ).rejects.toMatchObject({
-      constructor: AnalyticsBuildError,
-      failures: [
-        expect.objectContaining({
+    const error = await runAnalyticsBuild({
+      selectedModels: ["provider_stats", "provider_stats_downstream"],
+      artifactDirectory: "/tmp/dofek-dbt-test",
+      microbatchBounds: TEST_MICROBATCH_BOUNDS,
+      runDbt: async () => 1,
+      readArtifact: createArtifactReader("dbt-run-3", [
+        {
+          uniqueId: "model.dofek.provider_stats",
+          name: "provider_stats",
+          status: "error",
+          executionTime: 1,
+          message: "Code: 159 TIMEOUT_EXCEEDED",
+        },
+        {
+          uniqueId: "model.dofek.provider_stats_downstream",
+          name: "provider_stats_downstream",
+          status: "skipped",
+          executionTime: 0,
+          message: "depends on failed model",
+        },
+      ]),
+      recordRun,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(AnalyticsBuildError);
+    if (error instanceof AnalyticsBuildError) {
+      expect(error.failures).toEqual([
+        {
           modelName: "provider_stats",
+          status: "failed",
+          errorCode: "dbt_model_failed",
+          message: "Code: 159 TIMEOUT_EXCEEDED",
           category: "timeout",
-        }),
-      ],
-    });
+        },
+      ]);
+    }
 
     await expect(
       runAnalyticsBuild({
