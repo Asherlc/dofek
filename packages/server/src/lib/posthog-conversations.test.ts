@@ -167,22 +167,26 @@ describe("PostHogConversationsClient", () => {
     );
   });
 
-  it("rejects when Support Tickets are disabled", async () => {
-    fetchMock.mockResolvedValueOnce(configResponse("conversation-token", false));
+  it("rejects when Support Tickets are disabled in object or boolean config", async () => {
+    fetchMock
+      .mockResolvedValueOnce(configResponse("conversation-token", false))
+      .mockResolvedValueOnce(jsonResponse({ conversations: false }));
 
-    const client = new PostHogConversationsClient(config);
-
-    await expect(client.createTicket(ticketInput)).rejects.toMatchObject({
-      name: "PostHogConversationsError",
-      status: 503,
-      message: "PostHog Support Tickets are disabled for this project",
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    for (let index = 0; index < 2; index += 1) {
+      await expect(
+        new PostHogConversationsClient(config).createTicket(ticketInput),
+      ).rejects.toMatchObject({
+        name: "PostHogConversationsError",
+        status: 503,
+        message: "PostHog Support Tickets are disabled for this project",
+      });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("includes bounded upstream response details in HTTP errors", async () => {
-    const detail = "x".repeat(2_500);
-    fetchMock.mockResolvedValueOnce(jsonResponse({ detail }, 502));
+  it("does not expose upstream response bodies in HTTP errors", async () => {
+    const upstreamBody = "support message and contact details";
+    fetchMock.mockResolvedValueOnce(new Response(upstreamBody, { status: 502 }));
 
     const client = new PostHogConversationsClient(config);
     const error = await client
@@ -192,38 +196,12 @@ describe("PostHogConversationsClient", () => {
     expect(error).toBeInstanceOf(PostHogConversationsError);
     expect(error).toMatchObject({
       status: 502,
-      message:
-        `PostHog conversations config request failed with status 502: ${JSON.stringify({ detail })}`.slice(
-          0,
-          2_000 + "PostHog conversations config request failed with status 502: ".length,
-        ),
+      message: "PostHog conversations config request failed with status 502",
     });
-    expect(error).toHaveProperty("message", expect.not.stringContaining(detail));
+    expect(error).toHaveProperty("message", expect.not.stringContaining(upstreamBody));
   });
 
-  it("handles empty and unreadable upstream error bodies", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("", { status: 503 }));
-
-    const client = new PostHogConversationsClient(config);
-    await expect(client.createTicket(ticketInput)).rejects.toMatchObject({
-      status: 503,
-      message: "PostHog conversations config request failed with status 503",
-    });
-
-    const unreadableResponse = new Response("not returned", { status: 500 });
-    vi.spyOn(unreadableResponse, "text").mockRejectedValueOnce(new Error("body unavailable"));
-    fetchMock.mockReset();
-    fetchMock.mockResolvedValueOnce(unreadableResponse);
-
-    await expect(
-      new PostHogConversationsClient(config).createTicket(ticketInput),
-    ).rejects.toMatchObject({
-      status: 500,
-      message: "PostHog conversations config request failed with status 500",
-    });
-  });
-
-  it("reports ticket creation failures with their response body", async () => {
+  it("reports ticket creation failures with their status", async () => {
     fetchMock
       .mockResolvedValueOnce(configResponse("conversation-token"))
       .mockResolvedValueOnce(new Response("  invalid message  ", { status: 422 }));
@@ -232,7 +210,7 @@ describe("PostHogConversationsClient", () => {
 
     await expect(client.createTicket(ticketInput)).rejects.toMatchObject({
       status: 422,
-      message: "PostHog ticket creation request failed with status 422: invalid message",
+      message: "PostHog ticket creation request failed with status 422",
     });
   });
 

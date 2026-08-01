@@ -188,7 +188,7 @@ describe("PostHogConversationsClient", () => {
       }),
     ).rejects.toMatchObject({
       status: 422,
-      message: expect.stringContaining('{"detail":"nope"}'),
+      message: "PostHog ticket creation request failed with status 422",
     });
   });
 

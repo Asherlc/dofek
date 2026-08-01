@@ -2,10 +2,17 @@ import { POSTHOG_API_KEY, POSTHOG_HOST } from "dofek/lib/posthog-config";
 import { z } from "zod";
 
 const conversationConfigSchema = z.object({
-  conversations: z.object({
-    enabled: z.boolean(),
-    token: z.string().trim().min(1),
-  }),
+  conversations: z.union([
+    z.object({
+      enabled: z.literal(true),
+      token: z.string().trim().min(1),
+    }),
+    z.object({
+      enabled: z.literal(false),
+      token: z.string().trim().optional(),
+    }),
+    z.literal(false).transform(() => ({ enabled: false as const, token: undefined })),
+  ]),
 });
 
 const createTicketResponseSchema = z.object({
@@ -15,7 +22,6 @@ const createTicketResponseSchema = z.object({
 const CONVERSATIONS_CONFIG_TTL_MS = 5 * 60 * 1000;
 const CONVERSATIONS_MESSAGE_PATH = "/api/conversations/v1/widget/message";
 const POSTHOG_REQUEST_TIMEOUT_MS = 15_000;
-const MAX_UPSTREAM_ERROR_BODY_LENGTH = 2_000;
 
 async function fetchPostHog(url: string, init: RequestInit, operation: string): Promise<Response> {
   const timeoutSignal = AbortSignal.timeout(POSTHOG_REQUEST_TIMEOUT_MS);
@@ -33,24 +39,11 @@ async function fetchPostHog(url: string, init: RequestInit, operation: string): 
   }
 }
 
-async function getUpstreamErrorBody(response: Response): Promise<string | null> {
-  try {
-    const body = (await response.text()).trim();
-    return body ? body.slice(0, MAX_UPSTREAM_ERROR_BODY_LENGTH) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function createHttpError(
-  operation: string,
-  response: Response,
-): Promise<PostHogConversationsError> {
-  const body = await getUpstreamErrorBody(response);
-  const message = body
-    ? `PostHog ${operation} request failed with status ${response.status}: ${body}`
-    : `PostHog ${operation} request failed with status ${response.status}`;
-  return new PostHogConversationsError(message, response.status);
+function createHttpError(operation: string, response: Response): PostHogConversationsError {
+  return new PostHogConversationsError(
+    `PostHog ${operation} request failed with status ${response.status}`,
+    response.status,
+  );
 }
 
 export interface PostHogConversationsConfig {
@@ -109,7 +102,7 @@ export class PostHogConversationsClient {
     );
 
     if (!response.ok) {
-      throw await createHttpError("conversations config", response);
+      throw createHttpError("conversations config", response);
     }
 
     const config = conversationConfigSchema.parse(await response.json());
@@ -154,7 +147,7 @@ export class PostHogConversationsClient {
         this.#conversationToken = null;
         this.#conversationTokenExpiresAt = 0;
       }
-      throw await createHttpError("ticket creation", response);
+      throw createHttpError("ticket creation", response);
     }
 
     const ticket = createTicketResponseSchema.parse(await response.json());
