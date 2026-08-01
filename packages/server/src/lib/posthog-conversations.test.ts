@@ -1,4 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockSupportTicketDurationObserve, mockSupportTicketOperationsInc } = vi.hoisted(() => ({
+  mockSupportTicketDurationObserve: vi.fn(),
+  mockSupportTicketOperationsInc: vi.fn(),
+}));
+
+vi.mock("./metrics.ts", () => ({
+  supportTicketDuration: { observe: mockSupportTicketDurationObserve },
+  supportTicketOperationsTotal: { inc: mockSupportTicketOperationsInc },
+}));
+
 import {
   getPostHogConversationsClient,
   PostHogConversationsClient,
@@ -48,6 +59,8 @@ function getFetchCall(index: number): [RequestInfo | URL, RequestInit | undefine
 beforeEach(() => {
   fetchMock = vi.fn<typeof globalThis.fetch>();
   vi.stubGlobal("fetch", fetchMock);
+  mockSupportTicketDurationObserve.mockReset();
+  mockSupportTicketOperationsInc.mockReset();
 });
 
 afterEach(() => {
@@ -92,6 +105,14 @@ describe("PostHogConversationsClient", () => {
       }),
       signal: expect.any(AbortSignal),
     });
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "success",
+      status_class: "2xx",
+    });
+    expect(mockSupportTicketDurationObserve).toHaveBeenCalledWith(
+      { outcome: "success" },
+      expect.any(Number),
+    );
   });
 
   it("reuses a cached token until the configuration TTL expires", async () => {
@@ -113,6 +134,19 @@ describe("PostHogConversationsClient", () => {
       expect.objectContaining({
         headers: expect.objectContaining({ "X-Conversations-Token": "token-2" }),
       }),
+    );
+  });
+
+  it("records ticket latency in seconds", async () => {
+    vi.spyOn(performance, "now").mockReturnValueOnce(1_000).mockReturnValueOnce(1_250);
+    fetchMock.mockResolvedValueOnce(configResponse("conversation-token"));
+    fetchMock.mockResolvedValueOnce(ticketResponse());
+
+    await new PostHogConversationsClient(config).createTicket(ticketInput);
+
+    expect(mockSupportTicketDurationObserve).toHaveBeenCalledWith(
+      { outcome: "success" },
+      0.25,
     );
   });
 
@@ -212,6 +246,14 @@ describe("PostHogConversationsClient", () => {
       status: 422,
       message: "PostHog ticket creation request failed with status 422",
     });
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "failure",
+      status_class: "4xx",
+    });
+    expect(mockSupportTicketDurationObserve).toHaveBeenCalledWith(
+      { outcome: "failure" },
+      expect.any(Number),
+    );
   });
 
   it("rejects malformed configuration and ticket payloads", async () => {
@@ -276,6 +318,10 @@ describe("PostHogConversationsClient", () => {
     await expect(new PostHogConversationsClient(config).createTicket(ticketInput)).rejects.toBe(
       networkError,
     );
+    expect(mockSupportTicketOperationsInc).toHaveBeenCalledWith({
+      outcome: "failure",
+      status_class: "unknown",
+    });
   });
 });
 

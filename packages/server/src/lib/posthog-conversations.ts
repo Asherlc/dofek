@@ -1,5 +1,6 @@
 import { POSTHOG_API_KEY, POSTHOG_HOST } from "dofek/lib/posthog-config";
 import { z } from "zod";
+import { supportTicketDuration, supportTicketOperationsTotal } from "./metrics.ts";
 
 const conversationConfigSchema = z.object({
   conversations: z.union([
@@ -22,6 +23,27 @@ const createTicketResponseSchema = z.object({
 const CONVERSATIONS_CONFIG_TTL_MS = 5 * 60 * 1000;
 const CONVERSATIONS_MESSAGE_PATH = "/api/conversations/v1/widget/message";
 const POSTHOG_REQUEST_TIMEOUT_MS = 15_000;
+
+type SupportTicketOutcome = "success" | "failure";
+
+function getStatusClass(error: unknown): string {
+  if (!(error instanceof PostHogConversationsError)) {
+    return "unknown";
+  }
+  return `${Math.floor(error.status / 100)}xx`;
+}
+
+function recordSupportTicketMetrics(
+  outcome: SupportTicketOutcome,
+  startedAt: number,
+  error?: unknown,
+): void {
+  supportTicketOperationsTotal.inc({
+    outcome,
+    status_class: outcome === "success" ? "2xx" : getStatusClass(error),
+  });
+  supportTicketDuration.observe({ outcome }, (performance.now() - startedAt) / 1000);
+}
 
 async function fetchPostHog(url: string, init: RequestInit, operation: string): Promise<Response> {
   const timeoutSignal = AbortSignal.timeout(POSTHOG_REQUEST_TIMEOUT_MS);
@@ -119,39 +141,46 @@ export class PostHogConversationsClient {
   }
 
   async createTicket(input: PostHogSupportTicketInput): Promise<CreatedPostHogTicket> {
-    const conversationToken = await this.#getConversationToken();
-    const response = await fetchPostHog(
-      `${this.#config.host}${CONVERSATIONS_MESSAGE_PATH}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Conversations-Token": conversationToken,
-        },
-        body: JSON.stringify({
-          message: input.message.trim(),
-          traits: {
-            name: input.contactName,
-            email: input.contactEmail,
+    const startedAt = performance.now();
+    try {
+      const conversationToken = await this.#getConversationToken();
+      const response = await fetchPostHog(
+        `${this.#config.host}${CONVERSATIONS_MESSAGE_PATH}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Conversations-Token": conversationToken,
           },
-          ticket_id: null,
-          widget_session_id: input.widgetSessionId,
-          distinct_id: input.distinctId,
-        }),
-      },
-      "ticket creation",
-    );
+          body: JSON.stringify({
+            message: input.message.trim(),
+            traits: {
+              name: input.contactName,
+              email: input.contactEmail,
+            },
+            ticket_id: null,
+            widget_session_id: input.widgetSessionId,
+            distinct_id: input.distinctId,
+          }),
+        },
+        "ticket creation",
+      );
 
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        this.#conversationToken = null;
-        this.#conversationTokenExpiresAt = 0;
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.#conversationToken = null;
+          this.#conversationTokenExpiresAt = 0;
+        }
+        throw createHttpError("ticket creation", response);
       }
-      throw createHttpError("ticket creation", response);
-    }
 
-    const ticket = createTicketResponseSchema.parse(await response.json());
-    return { ticketId: ticket.ticket_id };
+      const ticket = createTicketResponseSchema.parse(await response.json());
+      recordSupportTicketMetrics("success", startedAt);
+      return { ticketId: ticket.ticket_id };
+    } catch (error) {
+      recordSupportTicketMetrics("failure", startedAt, error);
+      throw error;
+    }
   }
 }
 
