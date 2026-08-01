@@ -45,6 +45,7 @@ function UnavailableStat({ metric }: { metric: ActivityMetric }) {
   return (
     <View
       style={styles.unavailableStat}
+      accessible={true}
       accessibilityLabel={`${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`}
     >
       <Text style={styles.statUnavailableTitle}>
