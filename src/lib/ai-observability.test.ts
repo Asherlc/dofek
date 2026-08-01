@@ -1,4 +1,4 @@
-import { context, SpanKind } from "@opentelemetry/api";
+import { type Context, context, SpanKind } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import type { ReadableSpan, SpanProcessor } from "@opentelemetry/sdk-trace-base";
@@ -6,8 +6,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   AiContextSpanProcessor,
   AiOnlySpanProcessor,
+  registerAiTelemetry,
   withAiGenerationContext,
 } from "./ai-observability.ts";
+
+const aiTelemetryMocks = vi.hoisted(() => ({
+  registerTelemetry: vi.fn(),
+  OpenTelemetry: vi.fn().mockImplementation(() => ({})),
+}));
+
+vi.mock("ai", () => ({
+  registerTelemetry: aiTelemetryMocks.registerTelemetry,
+}));
+
+vi.mock("@ai-sdk/otel", () => ({
+  OpenTelemetry: aiTelemetryMocks.OpenTelemetry,
+}));
 
 function makeReadableSpan(name: string, attributes: ReadableSpan["attributes"]): ReadableSpan {
   return {
@@ -46,6 +60,14 @@ describe("AI observability context", () => {
     context.disable();
   });
 
+  it("registers the AI SDK telemetry integration only once", () => {
+    registerAiTelemetry();
+    registerAiTelemetry();
+
+    expect(aiTelemetryMocks.OpenTelemetry).toHaveBeenCalledOnce();
+    expect(aiTelemetryMocks.registerTelemetry).toHaveBeenCalledOnce();
+  });
+
   it("adds the current user ID as a standard OpenTelemetry span attribute", async () => {
     const span = { setAttribute: vi.fn() };
     const processor = new AiContextSpanProcessor();
@@ -67,6 +89,32 @@ describe("AI observability context", () => {
     expect(span.setAttribute).not.toHaveBeenCalled();
   });
 
+  it("does not add a user attribute for an empty user ID", async () => {
+    const span = { setAttribute: vi.fn() };
+    const processor = new AiContextSpanProcessor();
+
+    await withAiGenerationContext({ userId: "" }, async () => {
+      await Promise.resolve();
+      processor.onStart(span, context.active());
+    });
+
+    expect(span.setAttribute).not.toHaveBeenCalled();
+  });
+
+  it("does not add a user attribute when the active context contains an empty user ID", () => {
+    const span = { setAttribute: vi.fn() };
+    const processor = new AiContextSpanProcessor();
+    const emptyUserContext: Context = {
+      getValue: () => "",
+      setValue: () => context.active(),
+      deleteValue: () => context.active(),
+    };
+
+    processor.onStart(span, emptyUserContext);
+
+    expect(span.setAttribute).not.toHaveBeenCalled();
+  });
+
   it("supports processor shutdown and flush", async () => {
     const processor = new AiContextSpanProcessor();
 
@@ -83,13 +131,19 @@ describe("AI observability context", () => {
     } satisfies SpanProcessor;
     const processor = new AiOnlySpanProcessor(delegate);
     const nonAiSpan = makeReadableSpan("http.request", { "http.request.method": "GET" });
+    const mixedAttributeSpan = makeReadableSpan("http.request", {
+      "http.request.method": "GET",
+      "gen_ai.request.model": "test-model",
+    });
     const aiSpan = makeReadableSpan("ai.generateText", {});
 
     processor.onEnd(nonAiSpan);
+    processor.onEnd(mixedAttributeSpan);
     processor.onEnd(aiSpan);
 
-    expect(delegate.onEnd).toHaveBeenCalledOnce();
-    expect(delegate.onEnd).toHaveBeenCalledWith(aiSpan);
+    expect(delegate.onEnd).toHaveBeenCalledTimes(2);
+    expect(delegate.onEnd).toHaveBeenNthCalledWith(1, mixedAttributeSpan);
+    expect(delegate.onEnd).toHaveBeenNthCalledWith(2, aiSpan);
   });
 
   it("recognizes AI spans by semantic-convention attributes", () => {
