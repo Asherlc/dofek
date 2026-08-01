@@ -10,8 +10,88 @@ type CssColor = {
   rgb: RgbColor;
 };
 
+function extractBalancedBlock(css: string, openingBraceIndex: number): string {
+  let depth = 0;
+  let quote: '"' | "'" | undefined;
+
+  for (let index = openingBraceIndex; index < css.length; index += 1) {
+    const character = css[index];
+
+    if (quote) {
+      if (character === "\\") {
+        index += 1;
+      } else if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return css.slice(openingBraceIndex + 1, index);
+      }
+    }
+  }
+
+  throw new Error("Unclosed CSS block in contrast test");
+}
+
+function extractBlockAfter(css: string, selector: RegExp, label: string): string {
+  const selectorMatch = selector.exec(css);
+  if (!selectorMatch) {
+    throw new Error(`Could not find ${label} block`);
+  }
+
+  const openingBraceIndex = css.indexOf("{", selectorMatch.index + selectorMatch[0].length);
+  if (openingBraceIndex === -1) {
+    throw new Error(`Could not find opening brace for ${label} block`);
+  }
+
+  return extractBalancedBlock(css, openingBraceIndex);
+}
+
+function readThemeBlock(css: string, theme: "light" | "dark"): string {
+  const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  if (theme === "light") {
+    return extractBlockAfter(cssWithoutComments, /@theme\b/i, "light theme");
+  }
+
+  const darkMediaBlock = extractBlockAfter(
+    cssWithoutComments,
+    /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/i,
+    "dark color scheme",
+  );
+  return extractBlockAfter(darkMediaBlock, /:root\b/i, "dark theme");
+}
+
+function readThemeToken(css: string, theme: "light" | "dark", token: string): string {
+  const themeBlock = readThemeBlock(css, theme);
+  const propertyName = `--color-${token}`;
+
+  for (const declaration of themeBlock.split(";")) {
+    const colonIndex = declaration.indexOf(":");
+    if (colonIndex === -1 || declaration.slice(0, colonIndex).trim() !== propertyName) {
+      continue;
+    }
+
+    const value = declaration.slice(colonIndex + 1).trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  throw new Error(`Could not find ${token} in ${theme} theme`);
+}
+
 function parseColor(value: string): CssColor {
-  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  const normalizedValue = value.trim();
+  const hex = /^#([0-9a-f]{6})$/i.exec(normalizedValue);
   if (hex?.[1]) {
     return {
       alpha: 1,
@@ -23,7 +103,9 @@ function parseColor(value: string): CssColor {
     };
   }
 
-  const rgba = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(0|1|0?\.\d+)\s*\)$/i.exec(value);
+  const rgba = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(0|1|0?\.\d+)\s*\)$/i.exec(
+    normalizedValue,
+  );
   if (rgba?.[1] && rgba[2] && rgba[3] && rgba[4]) {
     return {
       alpha: Number.parseFloat(rgba[4]),
@@ -31,7 +113,9 @@ function parseColor(value: string): CssColor {
     };
   }
 
-  throw new Error(`Unsupported CSS color: ${value}`);
+  throw new Error(
+    `Unsupported CSS color syntax in contrast test (expected #rrggbb or rgba()): ${normalizedValue}`,
+  );
 }
 
 function compositeOver(foreground: CssColor, background: RgbColor): RgbColor {
@@ -60,47 +144,92 @@ function contrastRatio(foreground: RgbColor, background: RgbColor): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function readThemeToken(theme: "light" | "dark", token: string): string {
-  const themeBlock =
-    theme === "light"
-      ? indexCss.match(/@theme\s*{([\s\S]*?)\n}/)?.[1]
-      : indexCss.match(
-          /@media \(prefers-color-scheme: dark\)\s*{\s*:root\s*{([\s\S]*?)\n\s*}\s*}/,
-        )?.[1];
-  if (!themeBlock) throw new Error(`Could not find ${theme} theme block`);
+function colorChroma(rgb: RgbColor): number {
+  return Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]);
+}
 
-  const prefix = `--color-${token}:`;
-  const line = themeBlock.split("\n").find((candidate) => candidate.trimStart().startsWith(prefix));
-  const value = line
-    ?.slice(line.indexOf(":") + 1)
-    .trim()
-    .replace(/;$/, "");
-  if (!value) throw new Error(`Could not find ${token} in ${theme} theme`);
-  return value;
+function colorDistance(first: RgbColor, second: RgbColor): number {
+  return Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]);
 }
 
 describe("web color tokens", () => {
+  it("reads reformatted theme blocks and current CSS color syntax", () => {
+    const reformattedCss = `
+      @theme
+      {
+        --color-page:
+          #EEF3ED
+        ;
+        --color-surface: rgba(
+          255, 255, 255, 0.65
+        )
+        ;
+      }
+
+      @media (
+        prefers-color-scheme:
+          dark
+      )
+      {
+        :root
+        {
+          --color-page: #0C1410
+        }
+      }
+    `;
+
+    expect(parseColor(readThemeToken(reformattedCss, "light", "page"))).toEqual({
+      alpha: 1,
+      rgb: [238, 243, 237],
+    });
+    expect(parseColor(readThemeToken(reformattedCss, "light", "surface"))).toEqual({
+      alpha: 0.65,
+      rgb: [255, 255, 255],
+    });
+    expect(readThemeToken(reformattedCss, "dark", "page")).toBe("#0C1410");
+  });
+
   it("keeps tiny-label and secondary-tab tokens at WCAG AA contrast in both themes", () => {
     const themes = [{ name: "light" }, { name: "dark" }] as const;
 
     for (const theme of themes) {
-      const page = parseColor(readThemeToken(theme.name, "page"));
-      const surface = parseColor(readThemeToken(theme.name, "surface"));
-      const surfaceSolid = parseColor(readThemeToken(theme.name, "surface-solid"));
+      const page = parseColor(readThemeToken(indexCss, theme.name, "page"));
+      const surface = parseColor(readThemeToken(indexCss, theme.name, "surface"));
+      const surfaceSolid = parseColor(readThemeToken(indexCss, theme.name, "surface-solid"));
 
       for (const token of ["accent-secondary", "subtle", "dim"] as const) {
-        const foreground = parseColor(readThemeToken(theme.name, token)).rgb;
+        const foreground = parseColor(readThemeToken(indexCss, theme.name, token));
         for (const [backgroundName, background] of [
           ["page", page.rgb],
           ["surface", compositeOver(surface, page.rgb)],
           ["surface-solid", surfaceSolid.rgb],
         ] as const) {
+          const effectiveForeground = compositeOver(foreground, background);
           expect(
-            contrastRatio(foreground, background),
+            contrastRatio(effectiveForeground, background),
             `${theme.name} ${token} on ${backgroundName}`,
           ).toBeGreaterThanOrEqual(4.5);
         }
       }
     }
+
+    const lightPage = parseColor(readThemeToken(indexCss, "light", "page"));
+    const lightSubtle = parseColor(readThemeToken(indexCss, "light", "subtle"));
+    const lightDim = parseColor(readThemeToken(indexCss, "light", "dim"));
+    const subtleOnPage = compositeOver(lightSubtle, lightPage.rgb);
+    const dimOnPage = compositeOver(lightDim, lightPage.rgb);
+
+    expect(
+      contrastRatio(dimOnPage, lightPage.rgb),
+      "light dim should be less prominent than light subtle",
+    ).toBeLessThan(contrastRatio(subtleOnPage, lightPage.rgb));
+    expect(
+      colorChroma(dimOnPage),
+      "light dim should be less chromatic than light subtle",
+    ).toBeLessThan(colorChroma(subtleOnPage));
+    expect(
+      colorDistance(dimOnPage, subtleOnPage),
+      "light dim and subtle should remain perceivably distinct",
+    ).toBeGreaterThan(16);
   });
 });
