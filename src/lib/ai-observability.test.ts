@@ -154,7 +154,7 @@ describe("AI observability context", () => {
       forceFlush: vi.fn().mockResolvedValue(undefined),
     } satisfies SpanProcessor;
     const processor = new AiOnlySpanProcessor(delegate);
-    const aiSpan = makeReadableSpan("llm.request", { "gen_ai.request.model": "test-model" });
+    const aiSpan = makeReadableSpan("custom.operation", { "gen_ai.request.model": "test-model" });
 
     processor.onEnd(aiSpan);
 

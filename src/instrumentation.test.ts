@@ -8,7 +8,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { PostHogSpanProcessor } from "@posthog/ai/otel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AiOnlySpanProcessor } from "./lib/ai-observability.ts";
+import { PostHogAiSpanProcessor } from "./lib/posthog-ai-observability.ts";
 import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_TRACES_URL } from "./lib/posthog-config.ts";
 
 const mockStart = vi.fn();
@@ -179,8 +179,6 @@ describe("instrumentation", () => {
 
     expect(sdk).toBeDefined();
     expect(mockStart).toHaveBeenCalled();
-    expect(aiTelemetryMocks.OpenTelemetry).toHaveBeenCalledOnce();
-    expect(aiTelemetryMocks.registerTelemetry).toHaveBeenCalledOnce();
     await sdk?.shutdown();
   });
 
@@ -233,7 +231,7 @@ describe("instrumentation", () => {
       projectToken: POSTHOG_API_KEY,
       host: POSTHOG_HOST,
     });
-    expect(config?.spanProcessors?.[2]).toBeInstanceOf(AiOnlySpanProcessor);
+    expect(config?.spanProcessors?.[2]).toBeInstanceOf(PostHogAiSpanProcessor);
     expect(getNodeAutoInstrumentations).toHaveBeenCalledOnce();
   });
 

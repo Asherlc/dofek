@@ -105,7 +105,7 @@ describe("refineNutritionItems", () => {
     expect(result.items[2]?.foodName).toBe("Butter");
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({
-        experimental_telemetry: {
+        telemetry: {
           functionId: "nutrition.refine_items",
           isEnabled: true,
           recordInputs: false,

@@ -8,12 +8,8 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { PostHogSpanProcessor } from "@posthog/ai/otel";
-import {
-  AiContextSpanProcessor,
-  AiOnlySpanProcessor,
-  registerAiTelemetry,
-} from "./lib/ai-observability.ts";
+import { AiContextSpanProcessor, registerAiTelemetry } from "./lib/ai-observability.ts";
+import { PostHogAiSpanProcessor } from "./lib/posthog-ai-observability.ts";
 import {
   POSTHOG_API_KEY,
   POSTHOG_HOST,
@@ -55,12 +51,10 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
       ),
     );
     processors.push(
-      new AiOnlySpanProcessor(
-        new PostHogSpanProcessor({
-          projectToken: POSTHOG_API_KEY,
-          host: POSTHOG_HOST,
-        }),
-      ),
+      new PostHogAiSpanProcessor({
+        projectToken: POSTHOG_API_KEY,
+        host: POSTHOG_HOST,
+      }),
     );
   }
 

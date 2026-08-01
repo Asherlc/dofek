@@ -87,7 +87,7 @@ describe("analyzeNutritionItems", () => {
     expect(result.provider).toBe("gemini");
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({
-        experimental_telemetry: {
+        telemetry: {
           functionId: "nutrition.analyze_items",
           isEnabled: true,
           recordInputs: false,

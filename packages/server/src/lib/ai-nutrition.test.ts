@@ -76,7 +76,7 @@ describe("analyzeNutrition", () => {
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: "a big plate of roasted vegetables",
-        experimental_telemetry: {
+        telemetry: {
           functionId: "nutrition.analyze",
           isEnabled: true,
           recordInputs: false,
