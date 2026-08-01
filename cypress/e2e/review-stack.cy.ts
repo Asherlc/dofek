@@ -1,17 +1,20 @@
 const reviewSessionId = "dev-session";
 
 function trpcInput(input: Record<string, unknown>): string {
-  return encodeURIComponent(JSON.stringify(input));
+  return encodeURIComponent(JSON.stringify({ json: input }));
 }
 
 describe("Review stack canonical activity routes", () => {
   beforeEach(() => {
-    cy.visit("/login");
+    // cy.login() creates the disposable Cypress test user. This smoke test
+    // must use the deterministic review user created by the stack seed.
     cy.setCookie("session", reviewSessionId, { path: "/" });
   });
 
   it("opens the seeded activity list and resolves every listed canonical ID in detail", () => {
+    cy.intercept("POST", "**/api/trpc/*calendar.weekList*").as("activityCalendar");
     cy.visit("/activities");
+    cy.wait("@activityCalendar").its("response.statusCode").should("eq", 200);
     cy.url().should("include", "/activities");
     cy.contains("Activity log").should("be.visible");
 

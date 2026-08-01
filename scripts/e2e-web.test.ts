@@ -116,7 +116,11 @@ describe("e2e-web", () => {
         cypressArguments: ["--", "--spec", "cypress/e2e/review-stack.cy.ts"],
       }),
     ).toMatchObject({
-      commands: ["e2e:web:up", "e2e:web:run --spec cypress/e2e/review-stack.cy.ts", "e2e:web:down"],
+      commands: [
+        "e2e:web:up",
+        "e2e:web:run -- --spec cypress/e2e/review-stack.cy.ts",
+        "e2e:web:down",
+      ],
       status: 0,
     });
   });

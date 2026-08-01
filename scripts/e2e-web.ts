@@ -16,7 +16,10 @@ function runScript(script: string, args: string[] = []): number {
 let firstStatus = runScript("e2e:web:up");
 if (firstStatus === 0) {
   const cypressArguments = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
-  firstStatus = runScript("e2e:web:run", cypressArguments);
+  firstStatus = runScript(
+    "e2e:web:run",
+    cypressArguments.length > 0 ? ["--", ...cypressArguments] : [],
+  );
 }
 
 const teardownStatus = runScript("e2e:web:down");

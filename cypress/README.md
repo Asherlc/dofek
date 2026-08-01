@@ -64,10 +64,10 @@ builds the analytics models, and then runs the browser suite:
 pnpm e2e:web
 ```
 
-Run the review-stack canonical-ID smoke test by itself when the stack is already available:
+Run the review-stack canonical-ID smoke test against the existing seeded stack:
 
 ```bash
-pnpm e2e:web -- --spec cypress/e2e/review-stack.cy.ts
+pnpm e2e:web:reuse -- --spec cypress/e2e/review-stack.cy.ts
 ```
 
 Reuse an existing E2E stack for repeated runs:
