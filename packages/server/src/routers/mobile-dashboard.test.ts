@@ -762,7 +762,7 @@ describe("mobileDashboard.dashboard", () => {
     );
   });
 
-  it("does not return default sleep coach numbers when no sleep rows exist", async () => {
+  it("returns a non-recommending legacy sleep shape when no sleep rows exist", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([]);
     execute.mockResolvedValueOnce([]);
@@ -779,7 +779,15 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.readiness).toBeNull();
     expect(result.sleep?.lastNight).toBeNull();
-    expect(result.sleepNeed).toBeNull();
+    expect(result.sleepNeed).toEqual(
+      expect.objectContaining({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        totalNeedMinutes: 480,
+        canRecommend: false,
+      }),
+    );
     expect(result.strain).toEqual({
       dailyStrain: 0,
       acuteLoad: 0,
@@ -1021,10 +1029,10 @@ describe("mobileDashboard.recovery", () => {
 });
 
 describe("mobileDashboard.training", () => {
-  it("uses a versioned cache key for its progressive-overload contract", () => {
+  it("uses a versioned cache key for its activity-state contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-progressive-overload-v1",
+      keyVersion: "training-activity-states-v1",
     });
   });
 

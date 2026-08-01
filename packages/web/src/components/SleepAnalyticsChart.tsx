@@ -33,8 +33,10 @@ function getMissingSleepStates(night: SleepNightlyRow): MissingSleepState[] {
   );
 }
 
-function getFirstMissingSleepState(nightly: SleepNightlyRow[]): MissingSleepState | null {
-  for (const night of nightly) {
+function getLatestMissingSleepState(nightly: SleepNightlyRow[]): MissingSleepState | null {
+  for (let nightIndex = nightly.length - 1; nightIndex >= 0; nightIndex -= 1) {
+    const night = nightly[nightIndex];
+    if (!night) continue;
     const state = getMissingSleepStates(night)[0];
     if (state) return state;
   }
@@ -172,7 +174,8 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
 }
 
 export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
-  const hasMeasuredSleepValues = nightly.some(
+  const summaryNights = nightly.slice(-14);
+  const hasMeasuredSleepValues = summaryNights.some(
     (night) =>
       night.durationMinutes != null ||
       night.sleepMinutes != null ||
@@ -184,7 +187,7 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
   );
   const hasSleepSummary = nightly.length > 0 && sleepDebt != null && hasMeasuredSleepValues;
   const option = hasSleepSummary ? buildSleepAnalyticsOption(nightly, sleepDebt) : {};
-  const missingState = getFirstMissingSleepState(nightly);
+  const missingState = getLatestMissingSleepState(summaryNights);
   const emptyMessage = missingState
     ? `${missingState.reason} ${missingState.nextAction}`
     : "No sleep data";

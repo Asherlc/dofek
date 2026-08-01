@@ -126,7 +126,6 @@ describe("trainingRouter access window gating", () => {
           hr_samples: 3600,
           power_samples: 0,
           distance_meters: 10500,
-          distance_state: { status: "available" },
         },
       ],
     ]);

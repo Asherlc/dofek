@@ -197,7 +197,7 @@ export const mobileDashboardRouter = router({
 
   training: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "training-progressive-overload-v1",
+    keyVersion: "training-activity-states-v1",
   })
     .input(dateWindowInput)
     .output(mobileTrainingTabOutputSchema)

@@ -97,7 +97,7 @@ describe("SleepAnalyticsChart", () => {
       ...night,
       durationMinutes: null,
       sleepMinutes: null,
-      deepPct: null,
+      deepPct: 20,
       remPct: null,
       lightPct: null,
       awakePct: null,
@@ -137,7 +137,7 @@ describe("SleepAnalyticsChart", () => {
       formatter([
         {
           seriesName: "Deep",
-          value: [missingDurationNight.date, null],
+          value: [missingDurationNight.date, 20],
           color: "#123456",
           marker: "",
           dataIndex: 0,
@@ -149,5 +149,66 @@ describe("SleepAnalyticsChart", () => {
     expect(html).toContain("Sync sleep data from a source that reports sleep duration.");
     expect(html).not.toContain("0h 0m");
     expect(html).not.toContain("Deep: 0m");
+  });
+
+  it("uses the latest missing reason from the recent summary window", () => {
+    const olderUnavailableNight: SleepNightlyRow = {
+      ...night,
+      date: "2026-06-01",
+      durationMinutes: null,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Older sleep data is unavailable.",
+        nextAction: "Review the older sleep source.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Older sleep data is unavailable.",
+        nextAction: "Review the older sleep source.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Older sleep data is unavailable.",
+        nextAction: "Review the older sleep source.",
+      },
+    };
+    const recentUnavailableNight: SleepNightlyRow = {
+      ...olderUnavailableNight,
+      date: "2026-07-20",
+      durationState: {
+        status: "missing",
+        reason: "Recent sleep duration is unavailable.",
+        nextAction: "Sync the recent sleep source.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Recent sleep duration is unavailable.",
+        nextAction: "Sync the recent sleep source.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Recent sleep stages are unavailable.",
+        nextAction: "Sync the recent sleep source.",
+      },
+    };
+
+    render(
+      <SleepAnalyticsChart
+        nightly={[
+          olderUnavailableNight,
+          ...Array.from({ length: 14 }, () => recentUnavailableNight),
+        ]}
+        sleepDebt={30}
+      />,
+    );
+
+    expect(screen.getByText(/Recent sleep duration is unavailable/)).toBeTruthy();
+    expect(screen.queryByText(/Older sleep data is unavailable/)).toBeNull();
   });
 });

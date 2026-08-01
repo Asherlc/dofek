@@ -1,4 +1,8 @@
-import { type RecordLocalTimeContext, recordLocalHour } from "@dofek/format/record-local-time";
+import {
+  type RecordLocalTimeContext,
+  recordLocalHour,
+  recordLocalTimeContextSchema,
+} from "@dofek/format/record-local-time";
 import {
   type ReadinessComponents,
   ReadinessScore,
@@ -120,6 +124,57 @@ export interface SleepAnalyticsResult {
   averageSleepMinutes: number | null;
   averageEfficiencyPercent: number | null;
 }
+
+const sleepAnalyticsDataStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available") }),
+  z.object({
+    status: z.literal("missing"),
+    reason: z.string().trim().min(1),
+    nextAction: z.string().trim().min(1),
+  }),
+]);
+
+const sleepOverlappingSessionSchema = z.object({
+  sessionId: z.string(),
+  providerId: z.string(),
+  sourceName: z.string().nullable(),
+  sourceProviders: z.array(z.string()),
+  localTimeContext: recordLocalTimeContextSchema,
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  durationMinutes: z.number().nullable(),
+});
+
+const sleepNightlyRowSchema = z.object({
+  date: z.string(),
+  durationMinutes: z.number().nullable(),
+  sleepMinutes: z.number().nullable(),
+  deepPct: z.number().nullable(),
+  remPct: z.number().nullable(),
+  lightPct: z.number().nullable(),
+  awakePct: z.number().nullable(),
+  efficiency: z.number().nullable(),
+  stagingAvailable: z.boolean(),
+  rollingAvgDuration: z.number().nullable(),
+  durationState: sleepAnalyticsDataStateSchema,
+  sleepState: sleepAnalyticsDataStateSchema,
+  stageState: sleepAnalyticsDataStateSchema,
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  localTimeContext: recordLocalTimeContextSchema,
+  providerId: z.string().nullable(),
+  sourceName: z.string().nullable(),
+  sourceProviders: z.array(z.string()),
+  selectedSessionId: z.string().nullable(),
+  overlappingSessions: z.array(sleepOverlappingSessionSchema),
+});
+
+const sleepAnalyticsOutputSchema = z.object({
+  nightly: z.array(sleepNightlyRowSchema),
+  sleepDebt: z.number().nullable(),
+  averageSleepMinutes: z.number().nullable(),
+  averageEfficiencyPercent: z.number().nullable(),
+}) satisfies z.ZodType<SleepAnalyticsResult>;
 
 export interface SleepConsistencyRow {
   date: string;
@@ -505,6 +560,7 @@ export const recoveryRouter = router({
         averageEfficiencyPercent,
       };
     },
+    { outputSchema: sleepAnalyticsOutputSchema },
   ),
 
   /**
