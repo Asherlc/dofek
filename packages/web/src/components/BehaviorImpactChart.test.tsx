@@ -125,6 +125,22 @@ describe("BehaviorImpactChart", () => {
     expect(screen.getByText("Late meal")).toBeDefined();
   });
 
+  it("does not duplicate the unavailable estimate label", () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({
+        ...item,
+        association: { ...item.association, estimateLabel: "Estimate unavailable" },
+      })),
+      error: null,
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getAllByText("Estimate unavailable")).toHaveLength(2);
+    expect(screen.queryByText("Estimate: Estimate unavailable")).toBeNull();
+  });
+
   it("shows source labels and reveals raw IDs only through accessible technical details", () => {
     render(<BehaviorImpactChart days={90} />);
 

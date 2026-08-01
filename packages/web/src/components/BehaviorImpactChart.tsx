@@ -1,3 +1,4 @@
+import { formatAssociationEstimateLabel } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import type { BehaviorAssociation } from "dofek-server/types";
 import { useState } from "react";
@@ -69,7 +70,7 @@ function ReadinessAssociationBar({
       </div>
       <div className="sm:text-right">
         <span className="text-xs font-medium text-blue-300">
-          Estimate: {association.estimateLabel}
+          {formatAssociationEstimateLabel(association.estimateLabel)}
         </span>
       </div>
     </div>

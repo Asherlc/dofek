@@ -27,8 +27,9 @@ import {
   type SleepRow,
 } from "./types.ts";
 
-function conditionalEstimateLabel(insight: Insight): string | undefined {
-  if (insight.type !== "conditional") return undefined;
+type ConditionalInsight = Extract<Insight, { type: "conditional" }>;
+
+function conditionalEstimateLabel(insight: ConditionalInsight): string {
   return formatConditionalEffectLabel(
     insight.whenTrue.mean,
     insight.whenFalse.mean,
@@ -137,7 +138,8 @@ export function computeInsights(
 
   // 2. Continuous correlations (supplementary)
   const correlationInsights: Array<Insight & { rawPValue: number }> = [];
-  for (const pair of getCorrelationPairs()) {
+  const correlationPairs = getCorrelationPairs();
+  for (const pair of correlationPairs) {
     const xs: number[] = [];
     const ys: number[] = [];
     const indices: number[] = [];
@@ -209,9 +211,10 @@ export function computeInsights(
 
   // 3. Monthly body comp / nutrition insights
   const monthlyInsights = computeMonthlyInsights(joined);
-  const rollingMonthlyInsightIds = new Set(
-    conditionalTests.filter((test) => test.scope === "month").map((test) => test.id),
-  );
+  const rollingMonthlyInsightIds = new Set([
+    ...conditionalTests.filter((test) => test.scope === "month").map((test) => test.id),
+    ...correlationPairs.filter((pair) => pair.scope === "month").map((pair) => pair.id),
+  ]);
   const monthlyInsightIds = new Set(monthlyInsights.map((insight) => insight.id));
   insights.push(...monthlyInsights);
 
@@ -244,7 +247,7 @@ export function computeInsights(
         : "daily";
     insight.evidence = createInsightEvidence(
       insight.type,
-      conditionalEstimateLabel(insight),
+      insight.type === "conditional" ? conditionalEstimateLabel(insight) : undefined,
       evidenceScope,
     );
     insight.explanation = explainInsight(insight);

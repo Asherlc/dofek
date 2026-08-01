@@ -1,4 +1,5 @@
 import { formatDateMedium, formatDateYmd, formatNumber } from "@dofek/format/format";
+import { DEFAULT_POLARIZATION_THRESHOLD } from "@dofek/training/training-distribution";
 import type { PolarizationTrendResult, PolarizationWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -19,8 +20,6 @@ interface PolarizationTrendChartProps {
   method: PolarizationTrendResult["method"] | null;
   loading?: boolean;
 }
-
-const DEFAULT_POLARIZATION_THRESHOLD = 2;
 
 function normalizePolarizationThreshold(threshold: number | null | undefined): number {
   return typeof threshold === "number" && Number.isFinite(threshold)
@@ -160,7 +159,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
 export function PolarizationTrendChart({
   weeks,
   maxHr,
-  threshold = 2,
+  threshold,
   method,
   loading,
 }: PolarizationTrendChartProps) {

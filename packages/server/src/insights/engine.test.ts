@@ -547,13 +547,14 @@ describe("computeInsights()", () => {
       makeSleepRow(`${date}T00:00:00Z`, { duration_minutes: 420 + index }),
     );
 
-    const correlation = computeInsights(metrics, sleep, [], [], []).find(
-      (insight) => insight.type === "correlation",
-    );
+    const result = computeInsights(metrics, sleep, [], [], []);
+    const topInsight = result[0];
+    const correlation = result.find((insight) => insight.type === "correlation");
 
-    expect(correlation).toBeDefined();
+    expect(topInsight?.type).toBe("correlation");
+    expect(correlation).toBe(topInsight);
     expect(correlation?.evidence).toMatchObject({ relationship: "correlation" });
-    expect(correlation?.evidence).not.toHaveProperty("estimateLabel");
+    expect(Object.hasOwn(correlation?.evidence ?? {}, "estimateLabel")).toBe(false);
   });
 
   it("publishes no-observed-difference evidence and messaging for a rounded-zero conditional effect", () => {
@@ -575,6 +576,7 @@ describe("computeInsights()", () => {
     expect(insight?.message).toBe(
       "Observed association: next-day HRV showed no observed difference on days with 7+ hours of sleep",
     );
+    expect(insight?.message).not.toContain("is No observed difference");
     expect(insight?.evidence?.estimateLabel).toBe(NO_OBSERVED_DIFFERENCE);
   });
 
@@ -1243,7 +1245,16 @@ describe("computeInsights()", () => {
 
   it("labels rolling monthly conditional evidence with its rolling window", () => {
     const dates = dateRange("2025-01-01", 900);
-    const metrics = dates.map((date) => makeDailyRow(date));
+    const metrics = dates.map((date, index) =>
+      makeDailyRow(date, {
+        hrv: Math.floor(index / 60) % 2 === 0 ? 70 : 30,
+      }),
+    );
+    const sleep = dates.map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, {
+        duration_minutes: Math.floor(index / 60) % 2 === 0 ? 480 : 300,
+      }),
+    );
     const activities = dates.flatMap((date, index) => {
       const highExerciseBlock = Math.floor(index / 60) % 2 === 0;
       return highExerciseBlock
@@ -1256,14 +1267,41 @@ describe("computeInsights()", () => {
       return makeBodyCompRow(`${date}T08:00:00Z`, { weight_kg: 80 + index * slope });
     });
 
-    const insight = computeInsights(metrics, [], activities, [], bodyComp).find(
-      (candidate) => candidate.id === "exercise-monthly-weight",
-    );
+    const result = computeInsights(metrics, sleep, activities, [], bodyComp);
+    const insight = result.find((candidate) => candidate.id === "exercise-monthly-weight");
 
     expect(insight).toBeDefined();
     expect(insight?.evidence?.method).toContain("30-day rolling windows");
     expect(insight?.evidence?.method).toContain("Benjamini–Hochberg");
     expect(insight?.evidence?.observationWindow).toBe("30-day rolling windows");
+
+    const rollingConditionals = result.filter((candidate) =>
+      candidate.id.startsWith("exercise-monthly-"),
+    );
+    expect(rollingConditionals.length).toBeGreaterThan(0);
+    expect(
+      rollingConditionals.every(
+        (candidate) => candidate.evidence?.observationWindow === "30-day rolling windows",
+      ),
+    ).toBe(true);
+
+    const rollingCorrelation = result.find(
+      (candidate) => candidate.id === "exercise-30d-weight-delta",
+    );
+
+    expect(rollingCorrelation).toBeDefined();
+    expect(rollingCorrelation?.evidence?.method).toContain("overlapping 30-day rolling windows");
+    expect(rollingCorrelation?.evidence?.observationWindow).toBe("30-day rolling windows");
+
+    const dailyConditional = result.find((candidate) => candidate.id === "sleep-7h-hrv");
+    expect(dailyConditional).toBeDefined();
+    expect(dailyConditional?.evidence?.observationWindow).toBe("Daily observations");
+    expect(dailyConditional?.message).toContain(" is ");
+    expect(dailyConditional?.message).not.toContain("showed no observed difference");
+
+    const dailyCorrelation = result.find((candidate) => candidate.id === "sleep-dur-hrv");
+    expect(dailyCorrelation).toBeDefined();
+    expect(dailyCorrelation?.evidence?.observationWindow).toBe("Daily observations");
   });
 
   it("keeps monthly conditional evidence labels aligned with their messages", () => {

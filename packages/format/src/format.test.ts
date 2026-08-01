@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatAssociationEstimateLabel,
   formatBodyCompositionNumber,
   formatBodyCompositionPercent,
   formatCalories,
@@ -197,6 +198,16 @@ describe("formatReadinessDifference", () => {
 
   it("returns a placeholder for a non-finite difference", () => {
     expect(formatReadinessDifference(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatAssociationEstimateLabel", () => {
+  it("keeps the server-authored unavailable label intact", () => {
+    expect(formatAssociationEstimateLabel("Estimate unavailable")).toBe("Estimate unavailable");
+  });
+
+  it("adds the estimate prefix to numeric server labels", () => {
+    expect(formatAssociationEstimateLabel("18.6% higher")).toBe("Estimate: 18.6% higher");
   });
 });
 

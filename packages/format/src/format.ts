@@ -269,6 +269,13 @@ export function formatReadinessDifference(value: number): string {
   return "0.0% difference";
 }
 
+export function formatAssociationEstimateLabel(estimateLabel: string): string {
+  const normalizedLabel = estimateLabel.trim();
+  return /^Estimate(?::|\s)/.test(normalizedLabel)
+    ? normalizedLabel
+    : `Estimate: ${normalizedLabel}`;
+}
+
 export type NullableNumber = number | null | undefined;
 
 export interface FormattedMeasurementPart {

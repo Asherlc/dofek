@@ -154,6 +154,25 @@ describe("BehaviorAssociationsScreen", () => {
     expect(screen.queryByText("Estimate: 18.6% higher")).toBeNull();
   });
 
+  it("does not duplicate the unavailable estimate label", async () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({
+        ...item,
+        association: { ...item.association, estimateLabel: "Estimate unavailable" },
+      })),
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getAllByText("Estimate unavailable")).toHaveLength(2);
+    expect(screen.queryByText("Estimate: Estimate unavailable")).toBeNull();
+  });
+
   it("shows source labels and reveals raw IDs only through accessible technical details", async () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);

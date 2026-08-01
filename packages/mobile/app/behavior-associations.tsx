@@ -1,3 +1,4 @@
+import { formatAssociationEstimateLabel } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -109,7 +110,7 @@ export default function BehaviorAssociationsScreen() {
               <ProviderSourceDetails sources={association.sources} />
               {association.association ? (
                 <Text style={styles.estimate}>
-                  Estimate: {association.association.estimateLabel}
+                  {formatAssociationEstimateLabel(association.association.estimateLabel)}
                 </Text>
               ) : null}
             </Card>

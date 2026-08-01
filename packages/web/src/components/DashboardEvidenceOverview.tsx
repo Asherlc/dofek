@@ -119,7 +119,11 @@ export function DashboardEvidenceOverview({
   const evidence = topInsight?.evidence;
   const relationship =
     evidence?.relationship ??
-    (topInsight?.type === "conditional" ? "descriptive_association" : undefined);
+    (topInsight?.type === "conditional"
+      ? "descriptive_association"
+      : topInsight?.type === "correlation"
+        ? "correlation"
+        : undefined);
   const relationshipHeading =
     relationship === "descriptive_association"
       ? "Association"
