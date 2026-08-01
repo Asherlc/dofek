@@ -27,7 +27,7 @@ import {
   type SleepRow,
 } from "./types.ts";
 
-type ConditionalInsight = Extract<Insight, { type: "conditional" }>;
+type ConditionalInsight = Pick<Insight, "whenTrue" | "whenFalse" | "metric">;
 
 function conditionalEstimateLabel(insight: ConditionalInsight): string {
   return formatConditionalEffectLabel(

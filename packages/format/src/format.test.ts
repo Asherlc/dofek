@@ -209,6 +209,17 @@ describe("formatAssociationEstimateLabel", () => {
   it("adds the estimate prefix to numeric server labels", () => {
     expect(formatAssociationEstimateLabel("18.6% higher")).toBe("Estimate: 18.6% higher");
   });
+
+  it("normalizes surrounding whitespace without duplicating a server prefix", () => {
+    expect(formatAssociationEstimateLabel("  Estimate unavailable  ")).toBe("Estimate unavailable");
+    expect(formatAssociationEstimateLabel(" 18.6% higher ")).toBe("Estimate: 18.6% higher");
+  });
+
+  it("prefixes labels that mention Estimate away from the start", () => {
+    expect(formatAssociationEstimateLabel("relative Estimate effect")).toBe(
+      "Estimate: relative Estimate effect",
+    );
+  });
 });
 
 describe("formatSleepDebt", () => {
