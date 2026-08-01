@@ -189,7 +189,7 @@ describe("supportRouter", () => {
     await expect(
       makeCaller({ name: "Support User", email: "user@example.com" }).createTicket(ticketInput),
     ).rejects.toMatchObject({ code, message });
-    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledTimes(status >= 500 ? 1 : 0);
     expect(mockLoggerError).toHaveBeenCalledTimes(1);
   });
 
@@ -202,6 +202,7 @@ describe("supportRouter", () => {
       code: "BAD_GATEWAY",
       message: "PostHog Support Tickets is unavailable. Please try again shortly.",
     });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
     expect(mockLoggerError).toHaveBeenCalledTimes(1);
   });
 

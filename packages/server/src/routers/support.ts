@@ -163,7 +163,9 @@ export const supportRouter = router({
         logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
         return { ticketId: ticket.ticketId };
       } catch (error) {
-        captureException(error);
+        if (!(error instanceof PostHogConversationsError) || error.status >= 500) {
+          captureException(error);
+        }
         logger.error(
           `[support] ticket creation failed userId=${ctx.userId} message=${
             error instanceof Error ? error.message : String(error)
