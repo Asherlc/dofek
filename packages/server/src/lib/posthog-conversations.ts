@@ -103,6 +103,11 @@ async function readPostHogJson(
 
   try {
     return await Promise.race([fetchedResponse.response.json(), timeout]);
+  } catch (error) {
+    if (fetchedResponse.timeoutSignal.aborted) {
+      throw createTimeoutError(operation);
+    }
+    throw error;
   } finally {
     fetchedResponse.timeoutSignal.removeEventListener("abort", rejectOnTimeout);
   }

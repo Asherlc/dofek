@@ -456,7 +456,13 @@ describe("PostHogConversationsClient", () => {
     const response = new Response(null, { status: 200 });
     vi.spyOn(response, "json").mockImplementation(() => {
       resolveJsonStarted();
-      return new Promise<unknown>(() => {});
+      return new Promise<unknown>((_, reject) => {
+        ticketTimeoutController.signal.addEventListener(
+          "abort",
+          () => reject(ticketTimeoutController.signal.reason),
+          { once: true },
+        );
+      });
     });
     fetchMock.mockResolvedValueOnce(configResponse("conversation-token"));
     fetchMock.mockResolvedValueOnce(response);
@@ -471,6 +477,31 @@ describe("PostHogConversationsClient", () => {
       message: "PostHog ticket creation request timed out after 15000ms",
     });
     expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+  });
+
+  it("normalizes a response-body rejection that races the timeout abort", async () => {
+    const configTimeoutController = new AbortController();
+    const ticketTimeoutController = new AbortController();
+    vi.spyOn(AbortSignal, "timeout")
+      .mockReturnValueOnce(configTimeoutController.signal)
+      .mockReturnValueOnce(ticketTimeoutController.signal);
+    const bodyError = new Error("response aborted");
+    const response = new Response(null, { status: 200 });
+    vi.spyOn(response, "json").mockImplementation(() => {
+      ticketTimeoutController.abort();
+      return Promise.reject(bodyError);
+    });
+    fetchMock
+      .mockResolvedValueOnce(configResponse("conversation-token"))
+      .mockResolvedValueOnce(response);
+
+    await expect(
+      new PostHogConversationsClient(config).createTicket(ticketInput),
+    ).rejects.toMatchObject({
+      name: "PostHogConversationsError",
+      status: 504,
+      message: "PostHog ticket creation request timed out after 15000ms",
+    });
   });
 
   it("rejects a response body when its timeout signal is already aborted", async () => {
