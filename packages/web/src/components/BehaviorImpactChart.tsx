@@ -112,38 +112,68 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
 }
 
 export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
-  const { data, isLoading, error } = trpc.behaviorImpact.impactSummary.useQuery(
-    selectedRangeQueryInput(days),
-  );
+  const { data, isLoading, isFetching, error, refetch } =
+    trpc.behaviorImpact.impactSummary.useQuery(selectedRangeQueryInput(days), {
+      placeholderData: (previousData) => previousData,
+    });
 
-  if (isLoading && !data) {
+  if (isLoading && data === undefined) {
     return (
-      <div className="card p-6 animate-pulse">
-        <div className="h-4 bg-surface-hover rounded w-48 mb-4" />
-        <div className="space-y-3">
-          <div className="h-5 bg-surface-hover rounded" />
-          <div className="h-5 bg-surface-hover rounded" />
-          <div className="h-5 bg-surface-hover rounded" />
-          <div className="h-5 bg-surface-hover rounded" />
-        </div>
-      </div>
+      <QueryStatePanel
+        contextLabel="Behavior associations"
+        variant="loading"
+        message="Loading behavior associations."
+        height={120}
+      />
     );
   }
 
-  if (error && !data) {
-    return <QueryStatePanel contextLabel="Behavior associations" error={error} height={120} />;
+  if (error && data === undefined) {
+    return (
+      <QueryStatePanel
+        contextLabel="Behavior associations"
+        error={error}
+        height={120}
+        onRetry={() => void refetch()}
+        retryLabel="Retry behavior associations"
+        retrying={isFetching}
+      />
+    );
   }
 
-  if (!data || data.length === 0) {
+  const refreshStatus = isFetching ? (
+    <output
+      className="text-xs text-dim"
+      aria-label="Refreshing behavior associations."
+      aria-live="polite"
+      aria-busy="true"
+    >
+      Refreshing behavior associations…
+    </output>
+  ) : null;
+
+  const refreshError = error ? (
+    <QueryStatePanel
+      contextLabel="Behavior associations"
+      error={error}
+      height={96}
+      onRetry={() => void refetch()}
+      retryLabel="Retry behavior associations"
+      retrying={isFetching}
+    />
+  ) : null;
+
+  if (data === undefined || data.length === 0) {
     return (
-      <div className="card p-6">
-        <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
-          Behavior Associations
-        </h3>
-        <p className="text-xs text-dim">
-          Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in
-          each group to describe their association with next-day readiness.
-        </p>
+      <div className="space-y-3">
+        {refreshStatus}
+        {refreshError}
+        <QueryStatePanel
+          contextLabel="Behavior associations"
+          variant="empty"
+          message="Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
+          height={120}
+        />
       </div>
     );
   }
@@ -152,9 +182,8 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
   if (associationRows.length === 0) {
     return (
       <div className="space-y-3">
-        {error && (
-          <QueryStatePanel contextLabel="Behavior associations" error={error} height={96} />
-        )}
+        {refreshStatus}
+        {refreshError}
         <div className="card p-6">
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
             Association evidence unavailable
@@ -169,7 +198,8 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
 
   return (
     <div className="space-y-3">
-      {error && <QueryStatePanel contextLabel="Behavior associations" error={error} height={96} />}
+      {refreshStatus}
+      {refreshError}
       <div className="card p-6">
         <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
           Association with Next-Day Readiness

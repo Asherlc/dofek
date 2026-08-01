@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BehaviorImpactChart } from "./BehaviorImpactChart.tsx";
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn(),
+  impactSummaryUseQuery: vi.fn(),
 }));
 
 const associationData = [
@@ -50,11 +50,13 @@ const associationData = [
   },
 ];
 
+const cachedAssociationData = associationData.slice(0, 1);
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     behaviorImpact: {
       impactSummary: {
-        useQuery: mocks.query,
+        useQuery: mocks.impactSummaryUseQuery,
       },
     },
   },
@@ -64,11 +66,13 @@ describe("BehaviorImpactChart", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
-    mocks.query.mockReset();
-    mocks.query.mockReturnValue({
+    mocks.impactSummaryUseQuery.mockReset();
+    mocks.impactSummaryUseQuery.mockReturnValue({
       data: associationData,
       error: null,
+      isFetching: false,
       isLoading: false,
+      refetch: vi.fn(),
     });
   });
 
@@ -95,7 +99,7 @@ describe("BehaviorImpactChart", () => {
   });
 
   it("describes the all-history observation window", () => {
-    mocks.query.mockReturnValue({
+    mocks.impactSummaryUseQuery.mockReturnValue({
       data: associationData.map((item) => ({
         ...item,
         association: { ...item.association, observationWindow: "all available history" },
@@ -111,7 +115,7 @@ describe("BehaviorImpactChart", () => {
 
   it("uses the first association-bearing item for evidence in a partial cached response", () => {
     const [firstItem, secondItem] = associationData;
-    mocks.query.mockReturnValue({
+    mocks.impactSummaryUseQuery.mockReturnValue({
       data: firstItem && secondItem ? [{ ...firstItem, association: undefined }, secondItem] : [],
       error: null,
       isLoading: false,
@@ -126,7 +130,7 @@ describe("BehaviorImpactChart", () => {
   });
 
   it("shows an explicit state when cached rows contain no association evidence", () => {
-    mocks.query.mockReturnValue({
+    mocks.impactSummaryUseQuery.mockReturnValue({
       data: associationData.map((item) => ({ ...item, association: undefined })),
       error: null,
       isLoading: false,
@@ -144,8 +148,26 @@ describe("BehaviorImpactChart", () => {
     expect(screen.queryAllByTestId("readiness-association-bar")).toHaveLength(0);
   });
 
+  it("offers retry after a refresh failure when cached rows contain no association evidence", () => {
+    const refetch = vi.fn();
+    mocks.impactSummaryUseQuery.mockReturnValue({
+      data: associationData.map((item) => ({ ...item, association: undefined })),
+      error: new Error("Behavior evidence could not be refreshed."),
+      isFetching: false,
+      isLoading: false,
+      refetch,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Association evidence unavailable")).toBeDefined();
+    expect(screen.getByText("Behavior evidence could not be refreshed.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
   it("does not duplicate the unavailable estimate label", () => {
-    mocks.query.mockReturnValue({
+    mocks.impactSummaryUseQuery.mockReturnValue({
       data: associationData.map((item) => ({
         ...item,
         association: { ...item.association, estimateLabel: "Estimate unavailable" },
@@ -192,53 +214,103 @@ describe("BehaviorImpactChart", () => {
     expect(axis.getAttribute("class")).toContain("sm:grid");
   });
 
-  it("uses association language in the insufficient-data state", () => {
-    mocks.query.mockReturnValue({ data: [], error: null, isLoading: false });
-
+  it("keeps the previous successful range visible while the next range loads", () => {
     render(<BehaviorImpactChart days={90} />);
 
-    expect(
-      screen.getByText(
-        "Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
-      ),
-    ).toBeDefined();
+    const queryOptions: unknown = mocks.impactSummaryUseQuery.mock.calls[0]?.[1];
+    if (
+      !queryOptions ||
+      typeof queryOptions !== "object" ||
+      !("placeholderData" in queryOptions) ||
+      typeof queryOptions.placeholderData !== "function"
+    ) {
+      throw new Error("Expected previous-data placeholder");
+    }
+
+    expect(queryOptions.placeholderData(cachedAssociationData)).toBe(cachedAssociationData);
   });
 
-  it("surfaces the server error message", () => {
-    mocks.query.mockReturnValue({
+  it("announces an initial fetch as a named busy status", () => {
+    mocks.impactSummaryUseQuery.mockReturnValue({
       data: undefined,
-      error: new Error("Behavior association data is unavailable."),
-      isLoading: false,
-    });
-
-    render(<BehaviorImpactChart days={90} />);
-
-    expect(screen.getByText("Behavior association data is unavailable.")).toBeDefined();
-  });
-
-  it("keeps cached associations visible while loading", () => {
-    mocks.query.mockReturnValue({
-      data: associationData,
       error: null,
+      isFetching: true,
       isLoading: true,
+      refetch: vi.fn(),
     });
 
     render(<BehaviorImpactChart days={90} />);
 
-    expect(screen.getAllByTestId("readiness-association-bar")).toHaveLength(2);
-    expect(screen.queryByText("Behavior association data is unavailable.")).toBeNull();
+    const status = screen.getByRole("status", { name: "Loading behavior associations." });
+    expect(status).toHaveAttribute("aria-busy", "true");
   });
 
-  it("keeps cached associations visible alongside a refresh error", () => {
-    mocks.query.mockReturnValue({
-      data: associationData,
-      error: new Error("Behavior association data is unavailable."),
+  it("keeps cached associations visible while announcing a background refresh", () => {
+    mocks.impactSummaryUseQuery.mockReturnValue({
+      data: cachedAssociationData,
+      error: null,
+      isFetching: true,
       isLoading: false,
+      refetch: vi.fn(),
     });
 
     render(<BehaviorImpactChart days={90} />);
 
-    expect(screen.getAllByTestId("readiness-association-bar")).toHaveLength(2);
-    expect(screen.getByText("Behavior association data is unavailable.")).toBeDefined();
+    expect(screen.getByText("Meditation")).toBeDefined();
+    expect(
+      screen.getByRole("status", { name: "Refreshing behavior associations." }),
+    ).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows the server error and retries an initial failure", () => {
+    const refetch = vi.fn();
+    mocks.impactSummaryUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Behavior analysis is unavailable for this account."),
+      isFetching: false,
+      isLoading: false,
+      refetch,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Behavior analysis is unavailable for this account.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("retains cached associations and offers retry after a refresh failure", () => {
+    const refetch = vi.fn();
+    mocks.impactSummaryUseQuery.mockReturnValue({
+      data: cachedAssociationData,
+      error: new Error("Behavior associations could not be refreshed."),
+      isFetching: false,
+      isLoading: false,
+      refetch,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Meditation")).toBeDefined();
+    expect(screen.getByText("Behavior associations could not be refreshed.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("renders a distinct empty state after a successful zero-row response", () => {
+    mocks.impactSummaryUseQuery.mockReturnValue({
+      data: [],
+      error: null,
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByTestId("query-state-empty")).toHaveTextContent(
+      "Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
