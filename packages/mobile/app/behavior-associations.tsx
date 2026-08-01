@@ -16,6 +16,9 @@ const DAY_OPTIONS = [
   { label: "1y", value: 365 },
 ];
 
+const NO_ASSOCIATION_EVIDENCE_MESSAGE =
+  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
+
 function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
   const [expanded, setExpanded] = useState(false);
   const sourceNames = sources.map((source) => source.label).join(", ");
@@ -50,7 +53,8 @@ export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
-  const evidence = data?.find((item) => item.association)?.association;
+  const associationRows = data?.filter((item) => item.association) ?? [];
+  const evidence = associationRows[0]?.association;
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.container}>
@@ -91,6 +95,22 @@ export default function BehaviorAssociationsScreen() {
           title="Not enough journal data yet"
           message="Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
         />
+      ) : associationRows.length === 0 ? (
+        <>
+          {query.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(query.error)}
+              onRetry={() => void query.refetch()}
+              retryLabel="Retry behavior associations"
+            />
+          ) : null}
+          <QueryStatePanel
+            variant="empty"
+            title="Association evidence unavailable"
+            message={NO_ASSOCIATION_EVIDENCE_MESSAGE}
+          />
+        </>
       ) : (
         <>
           {query.error ? (
@@ -101,7 +121,7 @@ export default function BehaviorAssociationsScreen() {
               retryLabel="Retry behavior associations"
             />
           ) : null}
-          {data.map((association) => (
+          {associationRows.map((association) => (
             <Card key={association.questionSlug} title={association.displayName}>
               <Text style={styles.category}>{association.category}</Text>
               <Text style={styles.sample}>

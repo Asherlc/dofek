@@ -125,6 +125,25 @@ describe("BehaviorImpactChart", () => {
     expect(screen.getByText("Late meal")).toBeDefined();
   });
 
+  it("shows an explicit state when cached rows contain no association evidence", () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({ ...item, association: undefined })),
+      error: null,
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Association evidence unavailable")).toBeDefined();
+    expect(
+      screen.getByText(
+        "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByTestId("readiness-association-axis")).toBeNull();
+    expect(screen.queryAllByTestId("readiness-association-bar")).toHaveLength(0);
+  });
+
   it("does not duplicate the unavailable estimate label", () => {
     mocks.query.mockReturnValue({
       data: associationData.map((item) => ({

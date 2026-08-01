@@ -37,6 +37,14 @@ describe("BehaviorImpact", () => {
     expect(impact.association.direction).toBe("no_difference");
   });
 
+  it("derives direction from raw means when the displayed difference rounds to zero", () => {
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 60.0001, avgReadinessNo: 60 }));
+
+    expect(impact.impactPercent).toBe(0);
+    expect(impact.association.direction).toBe("higher");
+    expect(impact.association.estimateLabel).toBe("0.0% difference");
+  });
+
   it("represents a zero No-group baseline as an unavailable association", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 65, avgReadinessNo: 0 }));
 

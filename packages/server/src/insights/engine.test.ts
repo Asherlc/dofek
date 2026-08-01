@@ -1291,7 +1291,12 @@ describe("computeInsights()", () => {
 
     expect(rollingCorrelation).toBeDefined();
     expect(rollingCorrelation?.evidence?.method).toContain("overlapping 30-day rolling windows");
+    expect(rollingCorrelation?.evidence?.method).toContain(
+      "non-overlapping 30-day representatives",
+    );
     expect(rollingCorrelation?.evidence?.observationWindow).toBe("30-day rolling windows");
+    expect(rollingCorrelation?.correlation?.n).toBeGreaterThanOrEqual(5);
+    expect(rollingCorrelation?.correlation?.n).toBeLessThan(40);
 
     const dailyConditional = result.find((candidate) => candidate.id === "sleep-7h-hrv");
     expect(dailyConditional).toBeDefined();
@@ -1302,6 +1307,36 @@ describe("computeInsights()", () => {
     const dailyCorrelation = result.find((candidate) => candidate.id === "sleep-dur-hrv");
     expect(dailyCorrelation).toBeDefined();
     expect(dailyCorrelation?.evidence?.observationWindow).toBe("Daily observations");
+  });
+
+  it("uses non-overlapping effective samples for fully observed rolling correlations", () => {
+    const dates = Array.from({ length: 450 }, (_, index) => {
+      const date = new Date("2025-01-01T00:00:00Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const metrics = dates.map((date) => makeDailyRow(date));
+    const nutrition = dates.map((date, index) =>
+      makeNutritionRow(date, { calories: 2000 + 500 * Math.sin(index / 10) }),
+    );
+    const bodyComp = dates.map((date, index) =>
+      makeBodyCompRow(`${date}T08:00:00Z`, {
+        weight_kg: 80 + 0.01 * index + 0.5 * Math.sin(index / 10),
+      }),
+    );
+
+    const result = computeInsights(metrics, [], [], nutrition, bodyComp);
+    const rollingCorrelation = result.find(
+      (candidate) => candidate.id === "calories-30d-weight-delta",
+    );
+
+    expect(rollingCorrelation).toBeDefined();
+    expect(rollingCorrelation?.correlation?.n).toBe(14);
+    expect(rollingCorrelation?.correlation?.rho).toBeCloseTo(0.9824175824, 10);
+    expect(rollingCorrelation?.confidence).toBe("early");
+    expect(rollingCorrelation?.evidence?.method).toContain(
+      "non-overlapping 30-day representatives",
+    );
   });
 
   it("keeps monthly conditional evidence labels aligned with their messages", () => {

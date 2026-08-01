@@ -182,6 +182,33 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("-0.42", { exact: true })).toBeTruthy();
   });
 
+  it("normalizes a negative correlation that rounds to zero", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "rounded-negative-correlation",
+          type: "correlation",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Sleep duration",
+          message: "Sleep duration is associated with next-day HRV.",
+          detail: "Spearman rho=-0.004",
+          whenTrue: { mean: 60, n: 20 },
+          whenFalse: { mean: 55, n: 20 },
+          effectSize: -0.004,
+          pValue: 0.9,
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("0.00", { exact: true })).toBeTruthy();
+    expect(screen.queryByText("-0.00", { exact: true })).toBeNull();
+  });
+
   it("renders axes and hover details from API-backed chart points", () => {
     render(
       <DashboardEvidenceOverview

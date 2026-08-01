@@ -154,6 +154,28 @@ describe("BehaviorAssociationsScreen", () => {
     expect(screen.queryByText("Estimate: 18.6% higher")).toBeNull();
   });
 
+  it("shows an explicit state when cached rows contain no association evidence", async () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({ ...item, association: undefined })),
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("Association evidence unavailable")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Meditation")).toBeNull();
+    expect(screen.queryByText("Late meal")).toBeNull();
+  });
+
   it("does not duplicate the unavailable estimate label", async () => {
     mocks.query.mockReturnValue({
       data: associationData.map((item) => ({

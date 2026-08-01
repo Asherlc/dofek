@@ -206,6 +206,10 @@ describe("formatAssociationEstimateLabel", () => {
     expect(formatAssociationEstimateLabel("Estimate unavailable")).toBe("Estimate unavailable");
   });
 
+  it("keeps a bare Estimate label from gaining a duplicate prefix", () => {
+    expect(formatAssociationEstimateLabel("Estimate")).toBe("Estimate");
+  });
+
   it("adds the estimate prefix to numeric server labels", () => {
     expect(formatAssociationEstimateLabel("18.6% higher")).toBe("Estimate: 18.6% higher");
   });

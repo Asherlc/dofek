@@ -271,7 +271,7 @@ export function formatReadinessDifference(value: number): string {
 
 export function formatAssociationEstimateLabel(estimateLabel: string): string {
   const normalizedLabel = estimateLabel.trim();
-  return /^Estimate(?::|\s)/.test(normalizedLabel)
+  return /^Estimate(?::|\s|$)/.test(normalizedLabel)
     ? normalizedLabel
     : `Estimate: ${normalizedLabel}`;
 }

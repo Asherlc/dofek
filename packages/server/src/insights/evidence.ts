@@ -49,7 +49,7 @@ export function createInsightEvidence(
       scope === "monthly"
         ? "Spearman rank correlation over paired monthly observations; no multiple-comparison correction is applied."
         : scope === "rolling_monthly"
-          ? "Spearman rank correlation over paired observations from overlapping 30-day rolling windows with Benjamini–Hochberg screening."
+          ? "Spearman rank correlation over paired observations from overlapping 30-day rolling windows; dependence-aware inference uses non-overlapping 30-day representatives with Benjamini–Hochberg screening."
           : "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
     interpretation:
       "This correlation describes co-movement in the observed data; it does not establish causation.",

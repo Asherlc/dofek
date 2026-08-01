@@ -29,6 +29,28 @@ import {
 
 type ConditionalInsight = Pick<Insight, "whenTrue" | "whenFalse" | "metric">;
 
+interface CorrelationSample {
+  x: number;
+  y: number;
+  index: number;
+}
+
+function selectNonOverlappingCorrelationSamples(
+  samples: CorrelationSample[],
+  windowSize: number,
+): CorrelationSample[] {
+  const selected: CorrelationSample[] = [];
+  let lastSelectedIndex = Number.NEGATIVE_INFINITY;
+
+  for (const sample of samples) {
+    if (sample.index - lastSelectedIndex < windowSize) continue;
+    selected.push(sample);
+    lastSelectedIndex = sample.index;
+  }
+
+  return selected;
+}
+
 function conditionalEstimateLabel(insight: ConditionalInsight): string {
   return formatConditionalEffectLabel(
     insight.whenTrue.mean,
@@ -140,9 +162,7 @@ export function computeInsights(
   const correlationInsights: Array<Insight & { rawPValue: number }> = [];
   const correlationPairs = getCorrelationPairs();
   for (const pair of correlationPairs) {
-    const xs: number[] = [];
-    const ys: number[] = [];
-    const indices: number[] = [];
+    const samples: CorrelationSample[] = [];
 
     for (let i = 0; i < joined.length; i++) {
       const day = joined[i];
@@ -150,13 +170,20 @@ export function computeInsights(
       const xValue = pair.xFn(day, joined, i);
       const yValue = pair.yFn(day, joined, i);
       if (xValue != null && yValue != null) {
-        xs.push(xValue);
-        ys.push(yValue);
-        indices.push(i);
+        samples.push({ x: xValue, y: yValue, index: i });
       }
     }
 
-    if (xs.length < 15) continue;
+    const inferenceSamples =
+      pair.scope === "month"
+        ? selectNonOverlappingCorrelationSamples(samples, MONTHLY_WINDOW_SIZE)
+        : samples;
+    const xs = inferenceSamples.map((sample) => sample.x);
+    const ys = inferenceSamples.map((sample) => sample.y);
+    const indices = inferenceSamples.map((sample) => sample.index);
+    const minimumSamples = pair.scope === "month" ? 5 : 15;
+
+    if (xs.length < minimumSamples) continue;
 
     const corr = spearmanCorrelation(xs, ys);
     if (Math.abs(corr.rho) < 0.2) continue;
@@ -167,10 +194,10 @@ export function computeInsights(
     const confounders = findCorrelationConfounders(pair.xName, pair.yName, xs, ys, joined, indices);
 
     const allPoints: Array<{ x: number; y: number; date: string }> = [];
-    for (let j = 0; j < indices.length; j++) {
-      const xVal = xs[j];
-      const yVal = ys[j];
-      const idx = indices[j];
+    for (const sample of samples) {
+      const xVal = sample.x;
+      const yVal = sample.y;
+      const idx = sample.index;
       if (xVal == null || yVal == null || idx == null) continue;
       const joinedDay = joined[idx];
       if (!joinedDay) continue;

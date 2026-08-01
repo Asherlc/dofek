@@ -7,6 +7,9 @@ import { trpc } from "../lib/trpc.ts";
 import { EvidenceDetails } from "./EvidenceDetails.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
+const NO_ASSOCIATION_EVIDENCE_MESSAGE =
+  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
+
 function ReadinessAssociationBar({
   label,
   readinessDifferencePercent,
@@ -145,7 +148,24 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
     );
   }
 
-  const evidence = data.find((item) => item.association)?.association;
+  const associationRows = data.filter((item) => item.association);
+  if (associationRows.length === 0) {
+    return (
+      <div className="space-y-3">
+        {error && (
+          <QueryStatePanel contextLabel="Behavior associations" error={error} height={96} />
+        )}
+        <div className="card p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
+            Association evidence unavailable
+          </h3>
+          <p className="text-xs text-dim">{NO_ASSOCIATION_EVIDENCE_MESSAGE}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const evidence = associationRows[0]?.association;
 
   return (
     <div className="space-y-3">
@@ -190,7 +210,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
           <span />
         </div>
         <div className="divide-y divide-border">
-          {data.map((item) =>
+          {associationRows.map((item) =>
             item.association ? (
               <ReadinessAssociationBar
                 key={item.questionSlug}

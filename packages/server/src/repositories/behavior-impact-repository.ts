@@ -125,7 +125,11 @@ export class BehaviorImpact {
     }
 
     const direction: BehaviorAssociationDirection =
-      impactPercent > 0 ? "higher" : impactPercent < 0 ? "lower" : "no_difference";
+      this.#row.avgReadinessYes > this.#row.avgReadinessNo
+        ? "higher"
+        : this.#row.avgReadinessYes < this.#row.avgReadinessNo
+          ? "lower"
+          : "no_difference";
 
     return {
       relationship: "descriptive_association",
