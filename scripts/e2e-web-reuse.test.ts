@@ -50,6 +50,18 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
     try {
       execFileSync(
         resolve("node_modules/.bin/tsx"),
+        [resolve("scripts/e2e-web-reuse.ts"), "--up-only"],
+        {
+          env: {
+            ...process.env,
+            COMMAND_LOG_PATH: commandLogPath,
+            PATH: `${binaryDirectory}:${process.env.PATH ?? ""}`,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      execFileSync(
+        resolve("node_modules/.bin/tsx"),
         [resolve("scripts/e2e-web-reuse.ts"), "--", "--spec", "cypress/e2e/review-stack.cy.ts"],
         {
           env: {
@@ -69,7 +81,7 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         (command) => command.command === "pnpm" && command.arguments.includes("compose"),
       );
 
-      expect(composeCommands).toHaveLength(10);
+      expect(composeCommands).toHaveLength(20);
       expect(
         composeCommands.every((command) =>
           command.arguments
@@ -78,7 +90,9 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
             .startsWith("compose -- --project-suffix e2e -f docker-compose.e2e.yml"),
         ),
       ).toBe(true);
-      expect(composeCommands.map((command) => command.arguments.at(-1))).toEqual([
+      const composeServices = composeCommands.map((command) => command.arguments.at(-1));
+      expect(composeServices).toHaveLength(20);
+      expect(composeServices.slice(0, 10)).toEqual([
         "redpanda",
         "migrate",
         "migrate",
@@ -90,12 +104,14 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         "analytics",
         "server",
       ]);
-      expect(commands.filter((command) => command.command === "docker")).toEqual([
-        { command: "docker", arguments: ["wait", "one-shot-container"] },
-        { command: "docker", arguments: ["wait", "one-shot-container"] },
-        { command: "docker", arguments: ["wait", "one-shot-container"] },
-        { command: "docker", arguments: ["wait", "one-shot-container"] },
-      ]);
+      expect(composeServices.slice(10)).toEqual(composeServices.slice(0, 10));
+      const dockerCommands = commands.filter((command) => command.command === "docker");
+      expect(dockerCommands).toHaveLength(8);
+      expect(
+        dockerCommands.every(
+          (command) => command.arguments.join("\0") === "wait\0one-shot-container",
+        ),
+      ).toBe(true);
       expect(
         commands.find(
           (command) => command.command === "pnpm" && command.arguments.includes("cypress"),
