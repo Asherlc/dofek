@@ -42,8 +42,8 @@ function runScenario({
     `#!/usr/bin/env node
 const { appendFileSync, rmSync, writeFileSync } = require("node:fs");
 const command = process.argv[2];
-const arguments = process.argv.slice(3);
-appendFileSync(process.env.COMMAND_LOG_PATH, [command, ...arguments].join(" ") + "\\n");
+const args = process.argv.slice(3);
+appendFileSync(process.env.COMMAND_LOG_PATH, [command, ...args].join(" ") + "\\n");
 if (command === "e2e:web:up") {
   writeFileSync(process.env.RESOURCE_PATH, "running");
   process.exit(Number(process.env.UP_STATUS));

@@ -7,6 +7,97 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-01: Review-stack detail smoke test encoded tRPC input incorrectly
+
+### Symptoms
+
+The web E2E job failed in `review-stack.cy.ts` while resolving a seeded activity
+from the activity list. The server returned a tRPC input-validation error even
+though the list contained an activity detail URL.
+
+### User Impact
+
+There was no production or end-user impact. The defect blocked CI validation of
+the review-stack smoke path and could have hidden a real seeded-detail routing
+regression.
+
+### Evidence
+
+The first fatal failure was in
+[E2E job 91422675339](https://github.com/Asherlc/dofek/actions/runs/30720067429/job/91422675339):
+`activity.byId` received `expected string, received undefined`. The request URL
+contained the concrete seeded UUID
+`81cdc747-227a-4473-b1df-e97a4e34e49b`, proving the seed/list fixture produced
+an activity ID. The smoke helper encoded the query as `{ json: { id } }`, while
+the server's GET tRPC parser expects the input object itself.
+
+### Root Cause
+
+The review-stack Cypress helper used the batched/client envelope for a direct
+GET tRPC request. The server therefore parsed no top-level `id`, and Zod
+reported it as undefined; seed ordering and fixture creation were not the
+cause.
+
+### Fix or Mitigation
+
+Encode the direct `{ id }` object and validate/extract the canonical ID before
+queueing the detail request. No seed data, server validation, retry, or timeout
+was weakened.
+
+### Validation
+
+The focused review-stack test and static checks must pass against a fresh CI
+stack; local Docker-backed E2E execution is separately dependent on available
+Compose resources.
+
+### Remaining Risk
+
+The focused CI smoke path should be rerun after this change to verify the
+seeded list, direct tRPC detail lookups, and detail-page navigation together.
+
+## 2026-08-01: Local review-stack E2E was blocked by host AIO limits
+
+### Symptoms
+
+The focused review-stack command could not reach its seed services because the
+workspace Redpanda container exited during Compose readiness.
+
+### User Impact
+
+There was no production or end-user impact. Local Docker-backed validation of
+the review-stack smoke test was blocked; CI remains the runtime validation path.
+
+### Evidence
+
+The exact command was
+`pnpm e2e:web:reuse -- --spec cypress/e2e/review-stack.cy.ts`. The first fatal
+container line was `Could not initialize seastar: std::runtime_error (Your
+system does not satisfy minimum AIO requirements. Set /proc/sys/fs/aio-max-nr
+to at least 65539)`. The database, ClickHouse, and Redis containers were
+healthy, while Redpanda exited with code 1 before migration or seed ran.
+
+### Root Cause
+
+The local host's `/proc/sys/fs/aio-max-nr` is below Redpanda's required minimum;
+the failure is an environment prerequisite, not an E2E assertion or seed
+ordering failure.
+
+### Fix or Mitigation
+
+No repository workaround was added. Only this worktree's E2E containers,
+network, and volume were removed after capturing the logs.
+
+### Validation
+
+The targeted lifecycle tests, Biome checks, and TypeScript typecheck passed.
+The live focused E2E run remains unvalidated locally until the host AIO limit is
+raised or CI provides a compatible runner.
+
+### Remaining Risk
+
+Run the focused smoke test in CI and retain the host prerequisite in the local
+E2E runbook if this environment is expected to run Redpanda-backed tests.
+
 ## 2026-07-29: Sentry React Native upgrade mixed binary and source Cocoa SDKs
 
 ### Symptoms

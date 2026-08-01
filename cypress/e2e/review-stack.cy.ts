@@ -1,8 +1,11 @@
 import { REVIEW_SEED_SESSION_ID, REVIEW_SEED_USER_ID } from "../support/commands";
 
 function trpcInput(input: Record<string, unknown>): string {
-  return encodeURIComponent(JSON.stringify({ json: input }));
+  return encodeURIComponent(JSON.stringify(input));
 }
+
+const canonicalActivityPath =
+  /^\/activity\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 describe("Review stack canonical activity routes", () => {
   beforeEach(() => {
@@ -27,13 +30,11 @@ describe("Review stack canonical activity routes", () => {
         }));
 
         for (const activity of activities) {
-          expect(activity.detailPath).to.match(
-            /^\/activity\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-          );
-          const activityId = activity.detailPath?.split("/").at(-1);
-          expect(activityId).to.match(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-          );
+          const activityId = activity.detailPath?.match(canonicalActivityPath)?.[1];
+          expect(activity.detailPath).to.match(canonicalActivityPath);
+          if (!activityId) {
+            throw new Error("The seeded activity list did not contain a canonical activity ID");
+          }
 
           cy.request(`/api/trpc/activity.byId?input=${trpcInput({ id: activityId })}`).then(
             (response) => {

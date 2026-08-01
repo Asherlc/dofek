@@ -60,6 +60,14 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
+      execFileSync(resolve("node_modules/.bin/tsx"), [resolve("scripts/e2e-web-reuse.ts")], {
+        env: {
+          ...process.env,
+          COMMAND_LOG_PATH: commandLogPath,
+          PATH: `${binaryDirectory}:${process.env.PATH ?? ""}`,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       execFileSync(
         resolve("node_modules/.bin/tsx"),
         [resolve("scripts/e2e-web-reuse.ts"), "--", "--spec", "cypress/e2e/review-stack.cy.ts"],
@@ -81,7 +89,7 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         (command) => command.command === "pnpm" && command.arguments.includes("compose"),
       );
 
-      expect(composeCommands).toHaveLength(20);
+      expect(composeCommands).toHaveLength(22);
       expect(
         composeCommands.every((command) =>
           command.arguments
@@ -91,8 +99,20 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         ),
       ).toBe(true);
       const composeServices = composeCommands.map((command) => command.arguments.at(-1));
-      expect(composeServices).toHaveLength(20);
-      expect(composeServices.slice(0, 10)).toEqual([
+      expect(composeServices).toHaveLength(22);
+      expect(composeServices).toEqual([
+        "redpanda",
+        "migrate",
+        "migrate",
+        "analytics",
+        "analytics",
+        "server",
+        "redpanda",
+        "migrate",
+        "migrate",
+        "analytics",
+        "analytics",
+        "server",
         "redpanda",
         "migrate",
         "migrate",
@@ -104,7 +124,25 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         "analytics",
         "server",
       ]);
-      expect(composeServices.slice(10)).toEqual(composeServices.slice(0, 10));
+      expect(composeCommands.filter((command) => command.arguments.at(-1) === "seed")).toHaveLength(
+        2,
+      );
+      expect(
+        composeCommands.filter((command) => command.arguments.at(-1) === "review-seed-clickhouse"),
+      ).toHaveLength(2);
+      expect(
+        composeCommands
+          .filter(
+            (command) =>
+              command.arguments.includes("up") && command.arguments.at(-1) === "analytics",
+          )
+          .every((command) => command.arguments.includes("--no-deps")),
+      ).toBe(true);
+      expect(
+        composeCommands
+          .filter((command) => command.arguments.at(-1) === "server")
+          .every((command) => command.arguments.includes("--no-deps")),
+      ).toBe(true);
       const dockerCommands = commands.filter((command) => command.command === "docker");
       expect(dockerCommands).toHaveLength(8);
       expect(
@@ -113,13 +151,16 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         ),
       ).toBe(true);
       expect(
-        commands.find(
+        commands.filter(
           (command) => command.command === "pnpm" && command.arguments.includes("cypress"),
         ),
-      ).toEqual({
-        command: "pnpm",
-        arguments: ["exec", "cypress", "run", "--spec", "cypress/e2e/review-stack.cy.ts"],
-      });
+      ).toEqual([
+        { command: "pnpm", arguments: ["exec", "cypress", "run"] },
+        {
+          command: "pnpm",
+          arguments: ["exec", "cypress", "run", "--spec", "cypress/e2e/review-stack.cy.ts"],
+        },
+      ]);
     } finally {
       rmSync(testDirectory, { force: true, recursive: true });
     }
