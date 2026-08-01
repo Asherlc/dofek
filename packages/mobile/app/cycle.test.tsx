@@ -4,6 +4,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockPush } = vi.hoisted(() => ({ mockPush: vi.fn() }));
+
 interface Period {
   id: string;
   startDate: string;
@@ -82,6 +84,7 @@ const state = vi.hoisted<TestState>(() => ({
 
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
+  useRouter: () => ({ push: mockPush }),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -210,6 +213,7 @@ describe("CycleScreen", () => {
     state.updateMutationInput = null;
     state.deleteMutationError = null;
     state.deleteMutationInput = null;
+    mockPush.mockClear();
     vi.clearAllMocks();
   });
 
@@ -263,6 +267,24 @@ describe("CycleScreen", () => {
         "Cycle tracking safety notice. Tracking estimates only. Do not use for birth control or diagnosis.",
       ),
     ).toBeTruthy();
+  });
+
+  it("shows privacy context and direct controls for cycle data", async () => {
+    const { default: CycleScreen } = await import("./cycle");
+
+    render(<CycleScreen />);
+
+    expect(screen.getByText(/Cycle entries and notes are sensitive health data\./)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Review cycle history" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Export all data" }));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/settings", params: { tab: "account" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete all data" }));
+    expect(mockPush).toHaveBeenLastCalledWith({
+      pathname: "/settings",
+      params: { tab: "account" },
+    });
   });
 
   it("renders the server-provided estimate method and observed uncertainty", async () => {

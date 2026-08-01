@@ -39,18 +39,60 @@ import { styles } from "./settings.styles";
 import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
-type SettingsTab = "general" | "health" | "connections" | "account" | "advanced";
+type SettingsCategory =
+  | "account"
+  | "data-sources"
+  | "goals-models"
+  | "privacy-export"
+  | "notifications"
+  | "billing"
+  | "advanced";
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
 ];
-const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "health", label: "Health" },
-  { id: "connections", label: "Connections" },
-  { id: "account", label: "Account" },
-  { id: "advanced", label: "Advanced" },
+const SETTINGS_CATEGORIES: readonly {
+  id: SettingsCategory;
+  label: string;
+  searchText: string;
+}[] = [
+  {
+    id: "account",
+    label: "Account",
+    searchText: "account linked accounts password help support",
+  },
+  {
+    id: "data-sources",
+    label: "Data Sources",
+    searchText: "data sources providers Zepp integrations",
+  },
+  {
+    id: "goals-models",
+    label: "Goals & Models",
+    searchText:
+      "goals models primary goal units cycle tracking journal trends health reports goal weight algorithm personalization",
+  },
+  {
+    id: "privacy-export",
+    label: "Privacy/Export",
+    searchText: "privacy export data export download delete danger zone",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    searchText: "notifications medication reminders medication doses",
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    searchText: "billing subscription access checkout",
+  },
+  {
+    id: "advanced",
+    label: "Advanced",
+    searchText: "advanced dashboard layout developer tools diagnostics",
+  },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
 const IOS_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: ${PASSWORD_MAX_LENGTH};`;
@@ -100,8 +142,19 @@ function SettingsPasswordInput({
   );
 }
 
-function isSettingsTab(value: unknown): value is SettingsTab {
-  return SETTINGS_TABS.some((tab) => tab.id === value);
+function isSettingsCategory(value: unknown): value is SettingsCategory {
+  return SETTINGS_CATEGORIES.some((category) => category.id === value);
+}
+
+const LEGACY_SETTINGS_CATEGORY_MAP: Readonly<Record<string, SettingsCategory>> = {
+  connections: "data-sources",
+  general: "goals-models",
+  health: "goals-models",
+};
+
+function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined {
+  if (isSettingsCategory(value)) return value;
+  return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
 }
 
 function formatLocalizedDateTime(date: Date | null | undefined): string {
@@ -127,12 +180,27 @@ export default function SettingsScreen() {
   }>();
   const focusedReminderId =
     typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
-  const requestedTab: SettingsTab = isSettingsTab(searchParams.tab)
-    ? searchParams.tab
+  const normalizedRequestedCategory = normalizeSettingsCategory(searchParams.tab);
+  const requestedCategory: SettingsCategory = normalizedRequestedCategory
+    ? normalizedRequestedCategory
     : searchParams.focus === "medicationReminders"
-      ? "health"
-      : "general";
-  const [activeTab, setActiveTab] = useState<SettingsTab>(requestedTab);
+      ? "notifications"
+      : "account";
+  const [categorySearch, setCategorySearch] = useState("");
+  const normalizedCategorySearch = categorySearch.trim().toLowerCase();
+  const visibleCategories = SETTINGS_CATEGORIES.filter(
+    (category) =>
+      normalizedCategorySearch.length === 0 ||
+      `${category.label} ${category.searchText}`.toLowerCase().includes(normalizedCategorySearch),
+  );
+  const [selectedCategory, setSelectedCategory] = useState<SettingsCategory>(requestedCategory);
+  useEffect(() => {
+    setSelectedCategory(requestedCategory);
+  }, [requestedCategory]);
+  const activeCategory =
+    visibleCategories.find((category) => category.id === selectedCategory)?.id ??
+    visibleCategories[0]?.id ??
+    null;
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
@@ -186,10 +254,6 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
-
-  useEffect(() => {
-    setActiveTab(requestedTab);
-  }, [requestedTab]);
 
   useEffect(() => {
     if (
@@ -268,9 +332,10 @@ export default function SettingsScreen() {
     );
   }
 
-  function handleTabChange(tab: SettingsTab) {
-    setActiveTab(tab);
-    router.setParams({ tab });
+  function handleCategoryChange(category: SettingsCategory) {
+    setCategorySearch("");
+    setSelectedCategory(category);
+    router.setParams({ tab: category });
   }
 
   const { refreshing, onRefresh } = useRefresh();
@@ -286,33 +351,47 @@ export default function SettingsScreen() {
         />
       }
     >
+      <TextInput
+        accessibilityLabel="Search settings"
+        value={categorySearch}
+        onChangeText={setCategorySearch}
+        placeholder="Search settings"
+        placeholderTextColor={colors.textSecondary}
+        style={styles.searchInput}
+        returnKeyType="search"
+      />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabsScrollView}
         contentContainerStyle={styles.tabs}
       >
-        {SETTINGS_TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
+        {visibleCategories.map((category) => {
+          const isActive = activeCategory === category.id;
           return (
             <TouchableOpacity
-              key={tab.id}
+              key={category.id}
               style={[styles.tab, isActive && styles.tabSelected]}
-              onPress={() => handleTabChange(tab.id)}
+              onPress={() => handleCategoryChange(category.id)}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel={tab.label}
+              accessibilityLabel={category.label}
               accessibilityState={{ selected: isActive }}
               aria-selected={isActive}
             >
-              <Text style={[styles.tabText, isActive && styles.tabTextSelected]}>{tab.label}</Text>
+              <Text style={[styles.tabText, isActive && styles.tabTextSelected]}>
+                {category.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
+      {visibleCategories.length === 0 ? (
+        <Text style={styles.noSearchResults}>No settings categories match “{categorySearch}”.</Text>
+      ) : null}
 
       {/* ── Data Sources ── */}
-      {activeTab === "connections" ? (
+      {activeCategory === "data-sources" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Sources</Text>
           <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
@@ -372,7 +451,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Health Tracking ── */}
-      {activeTab === "health" ? (
+      {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Health Tracking</Text>
           <Text style={styles.sectionDescription}>Log and review personal health events</Text>
@@ -406,7 +485,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Health Reports ── */}
-      {activeTab === "health" ? (
+      {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Health Reports</Text>
           <Text style={styles.sectionDescription}>
@@ -428,7 +507,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Password ── */}
-      {activeTab === "account" ? (
+      {activeCategory === "account" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Password</Text>
           <Text style={styles.sectionDescription}>Set or change your email login password</Text>
@@ -505,17 +584,17 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeTab === "connections" ? <ZeppPairingCard /> : null}
+      {activeCategory === "data-sources" ? <ZeppPairingCard /> : null}
 
       {/* ── Primary Goal ── */}
-      {activeTab === "general" ? (
+      {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <PrimaryGoalSelector />
         </View>
       ) : null}
 
       {/* ── Units ── */}
-      {activeTab === "general" ? (
+      {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Units</Text>
           <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
@@ -551,7 +630,7 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeTab === "health" ? (
+      {activeCategory === "notifications" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medication Reminders</Text>
           <Text style={styles.sectionDescription}>
@@ -563,7 +642,7 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeTab === "health" ? (
+      {activeCategory === "notifications" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medication Doses</Text>
           <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
@@ -573,12 +652,8 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeTab === "account" ? (
-        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
-      ) : null}
-
       {/* ── Billing ── */}
-      {activeTab === "account" ? (
+      {activeCategory === "billing" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Billing</Text>
           <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
@@ -672,12 +747,12 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeTab === "general" ? (
+      {activeCategory === "goals-models" ? (
         <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
       ) : null}
 
       {/* ── Algorithm Personalization ── */}
-      {activeTab === "general" ? (
+      {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
           <Text style={styles.sectionDescription}>
@@ -690,7 +765,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Integrations ── */}
-      {activeTab === "connections" ? (
+      {activeCategory === "data-sources" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Integrations</Text>
           <Text style={styles.sectionDescription}>Connect external services</Text>
@@ -700,8 +775,12 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
+      {activeCategory === "privacy-export" ? (
+        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+      ) : null}
+
       {/* ── Help & Support ── */}
-      {activeTab === "account" ? (
+      {activeCategory === "account" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Help & Support</Text>
           <Text style={styles.sectionDescription}>Get help from our team</Text>
@@ -721,7 +800,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Developer Tools ── */}
-      {activeTab === "advanced" ? (
+      {activeCategory === "advanced" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Developer Tools</Text>
           <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
@@ -784,7 +863,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Danger Zone ── */}
-      {activeTab === "account" ? (
+      {activeCategory === "privacy-export" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           <Text style={styles.sectionDescription}>
@@ -815,7 +894,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Logout ── */}
-      {activeTab === "account" ? (
+      {activeCategory === "privacy-export" ? (
         <View style={styles.section}>
           <TouchableOpacity
             style={styles.logoutButton}

@@ -49,6 +49,8 @@ export interface TreffPolarizationWeek extends TreffPolarizationWeekInput {
 const INTENSITY_EXPLANATION =
   "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model. It does not classify training polarization.";
 
+export const DEFAULT_POLARIZATION_THRESHOLD = 2;
+
 function roundedPercent(seconds: number, totalSeconds: number): number {
   return totalSeconds > 0 ? Math.round((seconds / totalSeconds) * 1000) / 10 : 0;
 }
@@ -108,7 +110,7 @@ export function buildTreffPolarizationWeek(
     };
   }
 
-  if (input.polarizationIndex > 2) {
+  if (input.polarizationIndex > DEFAULT_POLARIZATION_THRESHOLD) {
     return {
       ...input,
       totalSeconds,

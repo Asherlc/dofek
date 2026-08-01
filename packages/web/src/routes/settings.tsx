@@ -1,18 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SettingsPage } from "../pages/SettingsPage.tsx";
-import { isSettingsTab, type SettingsTab } from "../pages/settingsTabs.ts";
+import { normalizeSettingsCategory, type SettingsCategory } from "../pages/settingsCategories.ts";
 
 export const Route = createFileRoute("/settings")({
   validateSearch: (
     search: Record<string, unknown>,
   ): {
-    tab?: SettingsTab;
+    tab?: SettingsCategory;
     zeppPair?: string;
-  } => ({
-    ...(isSettingsTab(search.tab) ? { tab: search.tab } : {}),
-    ...(typeof search.zeppPair === "string" && search.zeppPair.length > 0
-      ? { zeppPair: search.zeppPair }
-      : {}),
-  }),
+  } => {
+    const tab = normalizeSettingsCategory(search.tab);
+    return {
+      ...(tab ? { tab } : {}),
+      ...(typeof search.zeppPair === "string" && search.zeppPair.length > 0
+        ? { zeppPair: search.zeppPair }
+        : {}),
+    };
+  },
   component: SettingsPage,
 });

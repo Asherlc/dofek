@@ -7,6 +7,97 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-01: Review-stack detail smoke test encoded tRPC input incorrectly
+
+### Symptoms
+
+The web E2E job failed in `review-stack.cy.ts` while resolving a seeded activity
+from the activity list. The server returned a tRPC input-validation error even
+though the list contained an activity detail URL.
+
+### User Impact
+
+There was no production or end-user impact. The defect blocked CI validation of
+the review-stack smoke path and could have hidden a real seeded-detail routing
+regression.
+
+### Evidence
+
+The first fatal failure was in
+[E2E job 91422675339](https://github.com/Asherlc/dofek/actions/runs/30720067429/job/91422675339):
+`activity.byId` received `expected string, received undefined`. The request URL
+contained the concrete seeded UUID
+`81cdc747-227a-4473-b1df-e97a4e34e49b`, proving the seed/list fixture produced
+an activity ID. The smoke helper encoded the query as `{ json: { id } }`, while
+the server's GET tRPC parser expects the input object itself.
+
+### Root Cause
+
+The review-stack Cypress helper used the batched/client envelope for a direct
+GET tRPC request. The server therefore parsed no top-level `id`, and Zod
+reported it as undefined; seed ordering and fixture creation were not the
+cause.
+
+### Fix or Mitigation
+
+Encode the direct `{ id }` object and validate/extract the canonical ID before
+queueing the detail request. No seed data, server validation, retry, or timeout
+was weakened.
+
+### Validation
+
+The focused review-stack test and static checks must pass against a fresh CI
+stack; local Docker-backed E2E execution is separately dependent on available
+Compose resources.
+
+### Remaining Risk
+
+The focused CI smoke path should be rerun after this change to verify the
+seeded list, direct tRPC detail lookups, and detail-page navigation together.
+
+## 2026-08-01: Local review-stack E2E was blocked by host AIO limits
+
+### Symptoms
+
+The focused review-stack command could not reach its seed services because the
+workspace Redpanda container exited during Compose readiness.
+
+### User Impact
+
+There was no production or end-user impact. Local Docker-backed validation of
+the review-stack smoke test was blocked; CI remains the runtime validation path.
+
+### Evidence
+
+The exact command was
+`pnpm e2e:web:reuse -- --spec cypress/e2e/review-stack.cy.ts`. The first fatal
+container line was `Could not initialize seastar: std::runtime_error (Your
+system does not satisfy minimum AIO requirements. Set /proc/sys/fs/aio-max-nr
+to at least 65539)`. The database, ClickHouse, and Redis containers were
+healthy, while Redpanda exited with code 1 before migration or seed ran.
+
+### Root Cause
+
+The local host's `/proc/sys/fs/aio-max-nr` is below Redpanda's required minimum;
+the failure is an environment prerequisite, not an E2E assertion or seed
+ordering failure.
+
+### Fix or Mitigation
+
+No repository workaround was added. Only this worktree's E2E containers,
+network, and volume were removed after capturing the logs.
+
+### Validation
+
+The targeted lifecycle tests, Biome checks, and TypeScript typecheck passed.
+The live focused E2E run remains unvalidated locally until the host AIO limit is
+raised or CI provides a compatible runner.
+
+### Remaining Risk
+
+Run the focused smoke test in CI and retain the host prerequisite in the local
+E2E runbook if this environment is expected to run Redpanda-backed tests.
+
 ## 2026-07-29: Sentry React Native upgrade mixed binary and source Cocoa SDKs
 
 ### Symptoms
@@ -18433,10 +18524,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Billing height delta, zero Data Sources height delta, zero normalized
   downstream movement, and CLS `0.0000`; both routes passed without retries.
   The tab-aware regression now measures Data Sources on
-  `/settings?tab=connections` and redirected `/providers`, and Billing on
-  `/settings?tab=account`. Its post-merge local browser rerun is blocked by the
-  shared Docker disk incident recorded below; exact-head CI validation is
-  pending.
+  `/settings?tab=data-sources` and redirected `/providers`, and Billing on
+  `/settings?tab=billing` ([Cypress spec](../cypress/e2e/settings-layout-stability.cy.ts)).
+  Its post-merge local browser rerun is blocked by the shared Docker disk
+  incident recorded below; exact-head CI validation is pending.
 - **Remaining risk / follow-up:** Confirm production field CLS after rollout
   because synthetic page-load tests cannot represent every provider inventory,
   viewport, font, or long-lived session. The provider catalog now scrolls
@@ -21385,6 +21476,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   be added with an explicit `AFTER` clause; the new order-equality test guards
   the three current tables.
 
+## 2026-08-01 — Concurrent workspace Docker resources block #2199 validation
+
+- **Status:** Unresolved local infrastructure issue; no production impact.
+- **Symptoms:** `pnpm e2e:web -- --spec cypress/e2e/review-stack.cy.ts` remained
+  at Docker build step 45/126 for approximately seven minutes while another
+  workspace was running a concurrent cold build. The focused integration command
+  then failed before tests started with `failed to create network
+  issue-2199_default: Error response from daemon: all predefined address pools
+  have been fully subnetted`.
+- **User impact:** The new browser smoke test and the existing real-database
+  activity suites could not complete locally. No application service started
+  and no production data or service was affected.
+- **Evidence:** The first failure came from
+  `pnpm test:integration -- packages/server/src/routers/activity-dedup.integration.test.ts packages/server/src/repositories/activity-visibility-consistency.integration.test.ts`
+  through the repository Compose wrapper. The E2E build showed concurrent
+  `issue-2199-e2e` and another workspace build sharing Docker Desktop's builder.
+- **Root cause:** The shared Docker Desktop environment is exhausted both at
+  the builder/resource layer and in its predefined network address pools by
+  concurrent workspace stacks; this is not a repository test assertion failure.
+- **Fix / mitigation:** Stopped only the stalled #2199 E2E command and ran
+  `pnpm e2e:web:down` plus the default-project scoped Compose teardown. No other
+  workspace resources were removed or pruned.
+- **Validation:** The review-stack Compose file passes `config --quiet`; the
+  focused lifecycle tests pass all 6 tests. The live E2E and database suites
+  remain unvalidated locally until Docker resources and network pools are
+  reclaimed.
+- **Remaining risk / follow-up:** Run the focused E2E and integration commands
+  in a Docker environment with available builder capacity and project networks;
+  CI remains the next executable validation of the seeded browser path.
+
 ## 2026-08-01 — Shared review Compose ClickHouse was unbounded
 
 - **Status:** Fixed in source; Docker-backed runtime validation is delegated to
@@ -21462,3 +21583,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   full CI run. Do not merge until the separately failing E2E gate is resolved;
   investigate any new hosted failure as new evidence rather than weakening a
   gate.
+## 2026-08-01 — Full E2E analytics exceeded the shared review ClickHouse cap
+
+- **Status:** Fixed in source; the new E2E profile is awaiting a fresh CI run.
+- **Symptoms:** CI run `30717385680`, job `91415540159`, failed after the
+  seeded stack completed its relational and ClickHouse seed steps. The
+  `analytics` service exited while building `daily_recovery_inputs`.
+- **User impact:** The #2199 browser smoke test could not start because the
+  E2E analytics prerequisite failed. There was no production impact.
+- **Evidence:** The first fatal line was `Code: 241 ... memory limit exceeded:
+  would use 1.27 GiB ... current RSS: 1012.07 MiB, maximum: 1.25 GiB` from
+  ClickHouse while executing `daily_recovery_inputs`. The seed services had
+  already exited successfully, so this was not a seed ordering or Cypress
+  assertion failure.
+- **Root cause:** The merged shared review profile sized the E2E container and
+  server cap for the small review seed, but CI also runs the complete historical
+  analytics build. That workload needs more than the 1280 MiB server cap even
+  with one dbt thread.
+- **Fix / mitigation:** Keep the 1536/1280 MiB bounded profile for the default
+  shared-VM service, and give the isolated full E2E analytics stack a separate
+  2048/1792 MiB bounded profile. This raises only the explicitly isolated CI
+  workload's budget; it adds no retry, wait, or warn-and-continue behavior.
+- **Validation:** Static Compose/config checks passed before CI. A fresh CI run
+  must verify that the analytics build and browser smoke test complete under the
+  separate profile.
+- **Remaining risk / follow-up:** If the larger E2E profile still reaches its
+  cap, capture the failing model's query memory and rendered container limit
+  before changing the budget again.

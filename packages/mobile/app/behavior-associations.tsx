@@ -1,4 +1,4 @@
-import { formatReadinessDifference } from "@dofek/format/format";
+import { formatAssociationEstimateLabel } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -15,6 +15,9 @@ const DAY_OPTIONS = [
   { label: "180d", value: 180 },
   { label: "1y", value: 365 },
 ];
+
+const NO_ASSOCIATION_EVIDENCE_MESSAGE =
+  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
 
 function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -50,6 +53,8 @@ export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
+  const associationRows = data?.filter((item) => item.association) ?? [];
+  const evidence = associationRows[0]?.association;
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.container}>
@@ -62,16 +67,18 @@ export default function BehaviorAssociationsScreen() {
 
       <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
 
-      <Card title="Evidence">
-        <Text style={styles.evidenceText}>
-          Method: (mean next-day readiness after Yes − mean after No) ÷ mean after No × 100.
-        </Text>
-        <Text style={styles.evidenceText}>Association does not establish causation.</Text>
-        <Text style={styles.evidenceText}>
-          Uncertainty interval: not available for this descriptive comparison.
-        </Text>
-        <Text style={styles.evidenceText}>Selected window: {days} days</Text>
-      </Card>
+      {evidence ? (
+        <Card title="Evidence">
+          <View style={styles.evidenceDetails}>
+            <Text style={styles.evidenceText}>Method: {evidence.method}</Text>
+            <Text style={styles.evidenceText}>Interpretation: {evidence.interpretation}</Text>
+            <Text style={styles.evidenceText}>Uncertainty: {evidence.uncertainty}</Text>
+            <Text style={styles.evidenceText}>
+              Observation window: {evidence.observationWindow}
+            </Text>
+          </View>
+        </Card>
+      ) : null}
 
       {query.isLoading && !data ? (
         <QueryStatePanel variant="loading" />
@@ -88,6 +95,22 @@ export default function BehaviorAssociationsScreen() {
           title="Not enough journal data yet"
           message="Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
         />
+      ) : associationRows.length === 0 ? (
+        <>
+          {query.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(query.error)}
+              onRetry={() => void query.refetch()}
+              retryLabel="Retry behavior associations"
+            />
+          ) : null}
+          <QueryStatePanel
+            variant="empty"
+            title="Association evidence unavailable"
+            message={NO_ASSOCIATION_EVIDENCE_MESSAGE}
+          />
+        </>
       ) : (
         <>
           {query.error ? (
@@ -98,16 +121,18 @@ export default function BehaviorAssociationsScreen() {
               retryLabel="Retry behavior associations"
             />
           ) : null}
-          {data.map((association) => (
+          {associationRows.map((association) => (
             <Card key={association.questionSlug} title={association.displayName}>
               <Text style={styles.category}>{association.category}</Text>
-              <Text style={styles.difference}>
-                {formatReadinessDifference(association.impactPercent)}
-              </Text>
               <Text style={styles.sample}>
                 Yes n = {association.yesCount} · No n = {association.noCount}
               </Text>
               <ProviderSourceDetails sources={association.sources} />
+              {association.association ? (
+                <Text style={styles.estimate}>
+                  {formatAssociationEstimateLabel(association.association.estimateLabel)}
+                </Text>
+              ) : null}
             </Card>
           ))}
         </>
@@ -144,19 +169,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  evidenceDetails: {
+    gap: 2,
+  },
   category: {
     color: colors.textTertiary,
     fontSize: 12,
     textTransform: "capitalize",
   },
-  difference: {
-    color: colors.blue,
-    fontSize: 22,
-    fontWeight: "700",
-  },
   sample: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  estimate: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 17,
   },
   sourceDetails: {
     gap: 2,

@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { SettingsTab } from "../pages/settingsTabs.ts";
+import { normalizeSettingsCategory, type SettingsCategory } from "../pages/settingsCategories.ts";
 
 const captured: {
   validateSearch:
     | ((search: Record<string, unknown>) => {
-        tab?: SettingsTab;
+        tab?: SettingsCategory;
         zeppPair?: string;
       })
     | null;
@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
     () =>
     (options: {
       validateSearch?: (search: Record<string, unknown>) => {
-        tab?: SettingsTab;
+        tab?: SettingsCategory;
         zeppPair?: string;
       };
     }) => {
@@ -34,17 +34,29 @@ beforeAll(async () => {
 
 describe("settings search validation", () => {
   it("keeps valid tab and Zepp pairing deep-link values", () => {
-    expect(captured.validateSearch?.({ tab: "connections", zeppPair: "ABC234" })).toEqual({
-      tab: "connections",
+    expect(captured.validateSearch?.({ tab: "data-sources", zeppPair: "ABC234" })).toEqual({
+      tab: "data-sources",
       zeppPair: "ABC234",
     });
   });
 
+  it.each([
+    ["connections", "data-sources"],
+    ["general", "goals-models"],
+    ["health", "goals-models"],
+    ["account", "account"],
+  ] as const)("normalizes the legacy %s tab to %s", (legacyTab, currentCategory) => {
+    expect(normalizeSettingsCategory(legacyTab)).toBe(currentCategory);
+    expect(captured.validateSearch?.({ tab: legacyTab })).toEqual({ tab: currentCategory });
+  });
+
   it("keeps the Advanced tab deep-link value", () => {
+    expect(normalizeSettingsCategory("advanced")).toBe("advanced");
     expect(captured.validateSearch?.({ tab: "advanced" })).toEqual({ tab: "advanced" });
   });
 
   it("drops invalid or empty settings search values", () => {
     expect(captured.validateSearch?.({ tab: "unknown", zeppPair: "" })).toEqual({});
+    expect(captured.validateSearch?.({ tab: ["connections"] })).toEqual({});
   });
 });

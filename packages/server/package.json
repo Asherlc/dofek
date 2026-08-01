@@ -42,7 +42,7 @@
     "@stdlib/stats-pcorrtest": "0.2.3",
     "@stdlib/stats-ranks": "0.2.3",
     "@trpc/server": "11.18.0",
-    "ai": "7.0.9",
+    "ai": "7.0.47",
     "arctic": "3.7.0",
     "compression": "1.8.1",
     "cookie-parser": "1.4.7",
