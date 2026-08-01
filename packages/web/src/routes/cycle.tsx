@@ -1,6 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -66,6 +66,38 @@ function CyclePage() {
   return (
     <PageLayout title="Cycle Tracking" subtitle="Menstrual cycle phases and history">
       <div className="space-y-6">
+        <section aria-label="Cycle data controls" className="card border-accent/30 bg-surface p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
+            Privacy & data
+          </h3>
+          <p className="text-sm text-muted">
+            Cycle entries and notes are sensitive health data. Review what is stored here; export
+            all health data or permanently delete all account data from Account settings.
+          </p>
+          <nav aria-label="Cycle data actions" className="mt-4 flex flex-wrap gap-2">
+            <a
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
+              href="#period-history"
+            >
+              Review cycle history
+            </a>
+            <Link
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
+              search={{ tab: "account" }}
+              to="/settings"
+            >
+              Export all data
+            </Link>
+            <Link
+              className="rounded border border-danger px-3 py-2 text-sm text-danger hover:bg-surface-hover"
+              search={{ tab: "account" }}
+              to="/settings"
+            >
+              Delete all data
+            </Link>
+          </nav>
+        </section>
+
         <div className="card p-6">
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
             Current Phase
@@ -151,7 +183,7 @@ function CyclePage() {
           ) : null}
         </div>
 
-        <div className="card p-6">
+        <div className="card p-6" id="period-history">
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
             Period History
           </h3>
