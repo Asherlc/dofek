@@ -7,6 +7,7 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { POSTHOG_API_KEY, POSTHOG_TRACES_URL } from "./lib/posthog-config.ts";
 
 const mockStart = vi.fn();
 const mockShutdown = vi.fn().mockResolvedValue(undefined);
@@ -166,7 +167,7 @@ describe("instrumentation", () => {
     startInstrumentation({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318" });
 
     expect(NodeSDK).toHaveBeenCalledOnce();
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(config?.metricReader).toBeDefined();
@@ -190,7 +191,7 @@ describe("instrumentation", () => {
       DEPLOY_ENVIRONMENT: "production",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
       exporter: expect.any(OTLPLogExporter),
@@ -205,22 +206,25 @@ describe("instrumentation", () => {
     );
   });
 
-  it("adds a PostHog trace exporter in production even without Axiom endpoints", async () => {
+  it.each([
+    "prod",
+    "production",
+  ])("adds a PostHog trace exporter in production even without Axiom endpoints (DEPLOY_ENVIRONMENT=%s)", async (deploymentEnvironment) => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     startInstrumentation({
-      DEPLOY_ENVIRONMENT: "production",
+      DEPLOY_ENVIRONMENT: deploymentEnvironment,
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(OTLPTraceExporter).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: expect.stringContaining("/i/v1/traces"),
+        url: POSTHOG_TRACES_URL,
         headers: expect.objectContaining({
-          Authorization: expect.stringContaining("Bearer "),
+          Authorization: `Bearer ${POSTHOG_API_KEY}`,
         }),
       }),
     );
@@ -234,7 +238,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(2);
     expect(BatchSpanProcessor).toHaveBeenCalledTimes(2);
   });
@@ -246,7 +250,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://localhost:4318/v1/traces",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(0);
     expect(config?.metricReader).toBeUndefined();
@@ -261,7 +265,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://localhost:4318/v1/logs",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(config?.instrumentations).toEqual([]);
@@ -275,7 +279,7 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://localhost:4318/v1/metrics",
     });
 
-    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(0);
     expect(config?.metricReader).toBeDefined();
