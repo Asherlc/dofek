@@ -130,9 +130,10 @@ jobs:
           DEBUG: true
           RELEASE_CHANNEL: production
           SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
-        # EOAS 2.3.22 passes Expo's --dump-sourcemap alias to the export it
-        # publishes, leaving the exact final dist available for Sentry upload.
-        run: npx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dump-sourcemap
+        # EOAS 2.3.22 is the compatible Expo Open OTA publisher; eoas@3.1.0
+        # is a different npm project. Keep the invocation on the pinned pnpm
+        # toolchain and pass the sourcemap alias to the published export.
+        run: pnpm dlx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dump-sourcemap
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         env:

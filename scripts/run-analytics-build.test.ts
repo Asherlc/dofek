@@ -155,7 +155,9 @@ describe("runAnalyticsBuild", () => {
       }),
     ).rejects.toMatchObject({
       constructor: AnalyticsBuildError,
-      message: "dbt build failed with exit code 1: provider_stats: database error",
+      message:
+        "dbt build failed with exit code 1: provider_stats: database error; analytics processing recorded 1 failed dataset(s)",
+      processingFailedCount: 1,
       failures: [
         expect.objectContaining({
           modelName: "provider_stats",

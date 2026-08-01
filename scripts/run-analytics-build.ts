@@ -74,7 +74,12 @@ export async function runAnalyticsBuild({
     failedModels.length > 0 ? failedModels : incompleteModels.map(createAnalyticsBuildFailure);
 
   if (exitCode !== 0) {
-    throw new AnalyticsBuildError(exitCode, incompleteFailures, "process-failed");
+    throw new AnalyticsBuildError(
+      exitCode,
+      incompleteFailures,
+      "process-failed",
+      processingResult.failed,
+    );
   }
   if (!artifacts.succeeded) {
     throw new AnalyticsBuildError(
