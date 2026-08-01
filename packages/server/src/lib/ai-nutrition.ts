@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { generateText, Output, type TelemetryOptions } from "ai";
 import { z } from "zod";
 import { runWithProviderFallback } from "./ai/fallback-runner.ts";
 import { getConfiguredAiProviders } from "./ai/providers.ts";
@@ -118,6 +118,13 @@ Guidelines:
 - Use your knowledge of USDA food composition data.
 - Estimate detailed micronutrients (vitamins, minerals, omega fatty acids, and caffeine) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
+const nutritionTelemetry = (functionId: string): TelemetryOptions => ({
+  functionId,
+  isEnabled: true,
+  recordInputs: false,
+  recordOutputs: false,
+});
+
 export interface AnalyzeResult {
   nutrition: AiNutritionResult;
   provider: string;
@@ -134,6 +141,7 @@ export async function analyzeNutrition(description: string): Promise<AnalyzeResu
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionSchema }),
+        telemetry: nutritionTelemetry("nutrition.analyze"),
         system: SYSTEM_PROMPT,
         prompt: description,
       });
@@ -183,6 +191,7 @@ export async function refineNutritionItems(
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
+        telemetry: nutritionTelemetry("nutrition.refine_items"),
         system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.${localTime ? `\n\nThe user's local time is ${localTime}.` : ""}`,
         messages: [
           { role: "user", content: "Here's what I ate: the items below" },
@@ -219,6 +228,7 @@ export async function analyzeNutritionItems(
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
+        telemetry: nutritionTelemetry("nutrition.analyze_items"),
         system,
         prompt: description,
       });

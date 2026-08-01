@@ -17,6 +17,22 @@ export const styles = StyleSheet.create({
     width: "100%",
   },
 
+  // ── Search ──
+  searchInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    color: colors.text,
+    fontSize: 15,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  noSearchResults: {
+    color: colors.textTertiary,
+    fontSize: 14,
+    marginBottom: 24,
+  },
+
   // ── Tabs ──
   tabsScrollView: {
     marginBottom: 24,

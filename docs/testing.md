@@ -77,15 +77,14 @@ The failure branch preserves container state and complete service logs before
 teardown. Both paths remove only this isolated project's containers and fresh
 volumes.
 
-The default and isolated E2E Compose workflows apply the same bounded ClickHouse
-review profile: a 1536 MiB container ceiling and a 1280 MiB
-`max_server_memory_usage` setting. The E2E service mounts the same
-[`memory-limits.xml`](../deploy/clickhouse/config.d/memory-limits.xml) used by
-the default service, so review analytics cannot silently run without the
-tracked server cap. The 256 MiB gap leaves room for ClickHouse process memory
-that is outside its tracked query allocation while the container ceiling
-contains shared-VM pressure. Docker documents `mem_limit` as the Compose
-service memory ceiling ([service reference](https://docs.docker.com/reference/compose-file/services/#mem_limit));
+The default Compose service uses a bounded ClickHouse review profile: a 1536
+MiB container ceiling and a 1280 MiB `max_server_memory_usage` setting. The
+isolated E2E service uses its own bounded profile: a 2048 MiB container ceiling
+and a 1792 MiB `max_server_memory_usage` setting. The E2E profile is larger
+because the CI browser stack runs the complete seeded analytics build, not just
+the small review fixture; both profiles retain an explicit server cap and a
+256 MiB outer headroom gap. Docker documents `mem_limit` as the Compose service
+memory ceiling ([service reference](https://docs.docker.com/reference/compose-file/services/#mem_limit));
 ClickHouse documents `max_server_memory_usage` in its
 [server settings reference](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#max_server_memory_usage).
 
