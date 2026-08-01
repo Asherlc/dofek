@@ -75,8 +75,9 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
 }
 
 /**
- * Starts OpenTelemetry instrumentation when OTLP export env vars are set.
- * Returns the SDK instance for shutdown, or undefined if OTel is disabled.
+ * Starts OpenTelemetry instrumentation when a telemetry export is configured
+ * (OTLP env vars or a production PostHog export). Returns the SDK instance for
+ * shutdown, or undefined if OTel is disabled.
  */
 export function startInstrumentation(
   env: Record<string, string | undefined> = process.env,
