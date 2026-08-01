@@ -146,10 +146,6 @@ const activities: Activity[] = [
       centroidLat: 37.7749,
       centroidLng: -122.4194,
       mapPreview,
-      distanceMeters: 5000,
-      distanceState: { status: "available" },
-      elevationGainM: 120,
-      elevationState: { status: "available" },
     },
   },
   {
@@ -162,6 +158,8 @@ const activities: Activity[] = [
     source_providers: ["wahoo"],
     distance_meters: null,
     distance_state: { status: "missing", reason: "Distance not recorded" },
+    elevation_gain_m: null,
+    elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
   },
 ];
 

@@ -399,6 +399,8 @@ export class CyclingAnalyticsRepository {
         source_providers: row.source_providers,
         distance_meters: row.distance_meters,
         distance_state: activityMeasurementState("Distance", row.distance_meters),
+        elevation_gain_m: row.elevation_gain_meters,
+        elevation_state: activityMeasurementState("Elevation gain", row.elevation_gain_meters),
       }));
 
     return {

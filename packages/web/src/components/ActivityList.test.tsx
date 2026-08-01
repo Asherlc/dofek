@@ -151,6 +151,8 @@ describe("ActivityList", () => {
         source_providers: ["strava"],
         distance_meters: null,
         distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 
@@ -260,6 +262,8 @@ describe("ActivityList", () => {
         source_providers: ["apple"],
         distance_meters: null,
         distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
     renderWithUnits(<ActivityList activities={activityWithoutStats} />);
@@ -278,6 +282,8 @@ describe("ActivityList", () => {
         source_providers: ["apple"],
         distance_meters: 0,
         distance_state: { status: "available" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 
@@ -299,6 +305,8 @@ describe("ActivityList", () => {
         source_providers: ["strava"],
         distance_meters: null,
         distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 

@@ -81,6 +81,8 @@ const activityItemSchema = z.object({
   source_providers: z.array(z.string()),
   distance_meters: z.number().nullable(),
   distance_state: activityDataStateSchema,
+  elevation_gain_m: z.number().nullable(),
+  elevation_state: activityDataStateSchema,
 });
 const activitiesOutputSchema = z.object({
   activities: z.object({ items: z.array(activityItemSchema), totalCount: z.number() }),

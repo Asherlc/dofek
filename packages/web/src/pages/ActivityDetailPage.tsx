@@ -444,6 +444,8 @@ export function ActivityHeader({
           {stats.map((s) => {
             const metric = "status" in s ? s : null;
             const unavailableMetric = metric?.status !== "available" ? metric : null;
+            const displayedValue =
+              "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
             return (
               <section
                 key={s.label}
@@ -460,13 +462,7 @@ export function ActivityHeader({
                     ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
                     : s.label}
                 </div>
-                <div className="text-lg font-medium tabular-nums">
-                  {metric
-                    ? metric.status === "available"
-                      ? metric.value
-                      : metric.reason
-                    : s.value}
-                </div>
+                <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
               </section>
             );
           })}

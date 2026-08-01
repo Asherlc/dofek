@@ -298,6 +298,8 @@ describe("CyclingAnalyticsRepository", () => {
           source_providers: ["wahoo"],
           distance_meters: 40000,
           distance_state: { status: "available" },
+          elevation_gain_m: 500,
+          elevation_state: { status: "available" },
         },
       ],
     });

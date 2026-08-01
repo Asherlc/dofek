@@ -447,9 +447,14 @@ export class ActivityRepository extends BaseRepository {
     return hydratedRows.map((row) => this.#toListItem(row));
   }
 
-  #toListItem<TRow extends { distance_meters: number | null; elevation_gain_m: number | null }>(
-    row: TRow,
-  ) {
+  #toListItem<
+    TRow extends {
+      distance_meters: number | null;
+      elevation_gain_m: number | null;
+      total_count?: number;
+      member_activity_ids?: string[];
+    },
+  >(row: TRow) {
     const { total_count: _totalCount, member_activity_ids: _memberActivityIds, ...rest } = row;
     return {
       ...rest,
