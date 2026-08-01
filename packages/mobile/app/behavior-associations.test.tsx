@@ -188,6 +188,22 @@ describe("BehaviorAssociationsScreen", () => {
         "Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
       ),
     ).toBeTruthy();
+    expect(screen.queryByText("Evidence")).toBeNull();
+  });
+
+  it("does not render a blank evidence card while the initial query is loading", async () => {
+    mocks.query.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+      isFetching: true,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.queryByText("Evidence")).toBeNull();
   });
 
   it("surfaces the server error and retries it", async () => {
@@ -203,6 +219,7 @@ describe("BehaviorAssociationsScreen", () => {
     render(<BehaviorAssociationsScreen />);
 
     expect(screen.getByText("Behavior association data is unavailable.")).toBeTruthy();
+    expect(screen.queryByText("Evidence")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
     expect(mocks.refetch).toHaveBeenCalledOnce();
   });

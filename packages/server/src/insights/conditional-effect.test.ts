@@ -26,6 +26,14 @@ describe("formatConditionalEffectLabel", () => {
     expect(formatConditionalEffectLabel(-0.75, -0.5, "next-day HRV")).toBe("0.25 ms lower");
   });
 
+  it("uses absolute units when a negative baseline would make a percentage misleading", () => {
+    expect(formatConditionalEffectLabel(-2.5, -2, "next-day HRV")).toBe("0.50 ms lower");
+  });
+
+  it("uses absolute units when the means cross zero", () => {
+    expect(formatConditionalEffectLabel(-0.5, 2, "next-day HRV")).toBe("2.50 ms lower");
+  });
+
   it("omits a unit when the metric has no configured unit", () => {
     expect(formatConditionalEffectLabel(0.75, 0.5, "unconfigured metric")).toBe("0.25 higher");
   });

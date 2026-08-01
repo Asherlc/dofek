@@ -62,8 +62,8 @@ export default function BehaviorAssociationsScreen() {
 
       <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
 
-      <Card title="Evidence">
-        {evidence ? (
+      {evidence ? (
+        <Card title="Evidence">
           <View style={styles.evidenceDetails}>
             <Text style={styles.evidenceText}>Method: {evidence.method}</Text>
             <Text style={styles.evidenceText}>Interpretation: {evidence.interpretation}</Text>
@@ -72,8 +72,8 @@ export default function BehaviorAssociationsScreen() {
               Observation window: {evidence.observationWindow}
             </Text>
           </View>
-        ) : null}
-      </Card>
+        </Card>
+      ) : null}
 
       {query.isLoading && !data ? (
         <QueryStatePanel variant="loading" />

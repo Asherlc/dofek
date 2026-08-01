@@ -89,6 +89,45 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.queryByText("Export confidence")).toBeNull();
   });
 
+  it("derives the dashboard relationship heading and value from conditional evidence", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "conditional-insight",
+          type: "conditional",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Meditation",
+          message: "Observed association: Meditation was 12.4% higher.",
+          detail: "Observed groups",
+          whenTrue: { mean: 62, n: 18 },
+          whenFalse: { mean: 55, n: 24 },
+          effectSize: 0.42,
+          pValue: 0.12,
+          evidence: {
+            relationship: "descriptive_association",
+            label: "Descriptive association",
+            method: "Server comparison method.",
+            interpretation: "Server interpretation: association does not establish causation.",
+            limitations: "Server limitations.",
+            recommendation: "Server recommendation.",
+            estimateLabel: "12.4% higher",
+          },
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Key association")).toBeTruthy();
+    expect(screen.getByText("Association", { exact: true })).toBeTruthy();
+    expect(screen.getByText("12.4% higher")).toBeTruthy();
+    expect(screen.queryByText("Correlation", { exact: true })).toBeNull();
+    expect(screen.queryByText("0.42", { exact: true })).toBeNull();
+  });
+
   it("renders axes and hover details from API-backed chart points", () => {
     render(
       <DashboardEvidenceOverview

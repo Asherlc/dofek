@@ -117,7 +117,21 @@ export function DashboardEvidenceOverview({
   const units = useUnitConverter();
   const effectSize = topInsight?.effectSize;
   const evidence = topInsight?.evidence;
-  const correlationValue = effectSize == null ? "--" : Math.abs(effectSize).toFixed(2);
+  const relationship =
+    evidence?.relationship ??
+    (topInsight?.type === "conditional" ? "descriptive_association" : undefined);
+  const relationshipHeading =
+    relationship === "descriptive_association"
+      ? "Association"
+      : relationship === "correlation"
+        ? "Correlation"
+        : "Relationship";
+  const relationshipValue =
+    relationship === "descriptive_association"
+      ? evidence?.estimateLabel?.trim() || "--"
+      : relationship === "correlation" && effectSize != null
+        ? Math.abs(effectSize).toFixed(2)
+        : "--";
   const trendLabel = trendPositionLabel(trend);
   const restingHeartRateToneValue = restingHeartRateTone(trend);
   const formatRestingHeartRate = (value: number) =>
@@ -155,7 +169,7 @@ export function DashboardEvidenceOverview({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        <EvidenceCard eyebrow="Key correlation">
+        <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
           {insightError ? (
             insightError
           ) : (
@@ -166,10 +180,10 @@ export function DashboardEvidenceOverview({
               <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                    Correlation
+                    {relationshipHeading}
                   </p>
                   <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
-                    {correlationValue}
+                    {relationshipValue}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-accent">
                     {evidence?.label?.trim() || "Descriptive relationship"}
