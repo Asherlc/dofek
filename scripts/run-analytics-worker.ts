@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
+import type { AnalyticsRefreshStep } from "../src/analytics-worker.ts";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import { initProductionSentry } from "../src/lib/sentry.ts";
@@ -59,10 +60,7 @@ async function closeServer(server: Server): Promise<void> {
 
 interface AnalyticsWorkerDependencies {
   now(): Date;
-  reportFailure(
-    error: unknown,
-    tags: { analyticsRefreshStep: "analytics-build" | "query-cache-warm" },
-  ): void;
+  reportFailure(error: unknown, tags: { analyticsRefreshStep: AnalyticsRefreshStep }): void;
   runAnalyticsBuildFromEnvironment(): Promise<void>;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
   warmQueryCacheFromEnvironment(): Promise<void>;

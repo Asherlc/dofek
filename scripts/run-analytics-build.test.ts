@@ -166,4 +166,111 @@ describe("runAnalyticsBuild", () => {
 
     expect(recordRun).toHaveBeenCalledOnce();
   });
+
+  it("fingerprints failed models instead of skipped dependents", async () => {
+    const recordRun = vi.fn(async () => ({ datasets: 2, failed: 2 }));
+
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: ["provider_stats", "provider_stats_downstream"],
+        artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: {
+          sensor_scalar_sample_begin: "2025-02-03",
+          deduped_sensor_begin: "2025-02-03",
+          activity_sensor_sample_begin: "2025-02-03",
+          activity_location_sample_begin: "2025-04-05",
+        },
+        runDbt: async () => 1,
+        readArtifact: async (name) =>
+          name === "manifest.json"
+            ? {
+                metadata: {
+                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
+                },
+                nodes: {
+                  "model.dofek.provider_stats": {
+                    unique_id: "model.dofek.provider_stats",
+                    name: "provider_stats",
+                    resource_type: "model",
+                  },
+                  "model.dofek.provider_stats_downstream": {
+                    unique_id: "model.dofek.provider_stats_downstream",
+                    name: "provider_stats_downstream",
+                    resource_type: "model",
+                  },
+                },
+              }
+            : {
+                metadata: { invocation_id: "dbt-run-3" },
+                results: [
+                  {
+                    unique_id: "model.dofek.provider_stats",
+                    status: "error",
+                    execution_time: 1,
+                    message: "Code: 159 TIMEOUT_EXCEEDED",
+                  },
+                  {
+                    unique_id: "model.dofek.provider_stats_downstream",
+                    status: "skipped",
+                    execution_time: 0,
+                    message: "depends on failed model",
+                  },
+                ],
+              },
+        recordRun,
+      }),
+    ).rejects.toMatchObject({
+      constructor: AnalyticsBuildError,
+      failures: [
+        expect.objectContaining({
+          modelName: "provider_stats",
+          category: "timeout",
+        }),
+      ],
+    });
+
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: ["provider_stats"],
+        artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: {
+          sensor_scalar_sample_begin: "2025-02-03",
+          deduped_sensor_begin: "2025-02-03",
+          activity_sensor_sample_begin: "2025-02-03",
+          activity_location_sample_begin: "2025-04-05",
+        },
+        runDbt: async () => 0,
+        readArtifact: async (name) =>
+          name === "manifest.json"
+            ? {
+                metadata: {
+                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
+                },
+                nodes: {
+                  "model.dofek.provider_stats": {
+                    unique_id: "model.dofek.provider_stats",
+                    name: "provider_stats",
+                    resource_type: "model",
+                  },
+                },
+              }
+            : {
+                metadata: { invocation_id: "dbt-run-4" },
+                results: [
+                  {
+                    unique_id: "model.dofek.provider_stats",
+                    status: "skipped",
+                    execution_time: 0,
+                    message: null,
+                  },
+                ],
+              },
+        recordRun,
+      }),
+    ).rejects.toMatchObject({
+      constructor: AnalyticsBuildError,
+      exitCode: 0,
+      message: "dbt build did not complete every required analytics model: provider_stats: skipped",
+    });
+  });
 });

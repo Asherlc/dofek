@@ -198,11 +198,12 @@ function sanitizePostHogProperties(
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
+  const hasExplicitRoute = typeof context.route === "string";
   const explicitRoute =
     typeof context.route === "string" ? normalizeTelemetryRoute(context.route) : undefined;
   const telemetryContext =
-    explicitRoute || currentTelemetryRoute
-      ? { ...context, route: explicitRoute ?? currentTelemetryRoute }
+    hasExplicitRoute || currentTelemetryRoute
+      ? { ...context, route: hasExplicitRoute ? explicitRoute : currentTelemetryRoute }
       : context;
   const source = typeof context.source === "string" ? context.source : undefined;
   // Suppress non-actionable transient background HealthKit network failures from

@@ -61,17 +61,17 @@ import LoginScreen from "./login";
 try {
   initTelemetry();
 } catch (error: unknown) {
-  captureException(error, { source: "bootstrap-telemetry-init" });
+  captureException(error, { source: "bootstrap-telemetry-init", route: "/bootstrap" });
 }
 
 try {
   startStartupTelemetry();
 } catch (error: unknown) {
-  captureException(error, { source: "startup-telemetry-init" });
+  captureException(error, { source: "startup-telemetry-init", route: "/bootstrap" });
 }
 
 SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
-  captureException(error, { source: "splash-screen-prevent-auto-hide" });
+  captureException(error, { source: "splash-screen-prevent-auto-hide", route: "/splash" });
 });
 
 /**
@@ -170,9 +170,11 @@ function AuthGate() {
 
   const [queryClient] = useState(createAppQueryClient);
 
+  const telemetryRoute = user ? pathname : "/login";
+
   useEffect(() => {
-    setTelemetryRoute(pathname);
-  }, [pathname]);
+    setTelemetryRoute(telemetryRoute);
+  }, [telemetryRoute]);
 
   useEffect(() => {
     finishStartupPhase("javascript", "ready");

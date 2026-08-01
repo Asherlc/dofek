@@ -9,6 +9,8 @@ export type AnalyticsFailureCategory =
   | "skipped"
   | "unknown";
 
+export type AnalyticsBuildErrorReason = "process-failed" | "incomplete";
+
 export interface AnalyticsBuildFailure {
   modelName: string;
   status: DbtModelResult["status"];
@@ -43,7 +45,7 @@ export function classifyAnalyticsFailure(
   if (/\b(?:code\s*:?\s*241|memory(?:_limit_exceeded)?|out of memory)\b/i.test(text)) {
     return "memory";
   }
-  if (/\b(?:code\s*:?\s*62|syntax error|parser error)\b/i.test(text)) {
+  if (/\b(?:code\s*:?\s*62|syntax[_ ]error|parser error)\b/i.test(text)) {
     return "syntax";
   }
   if (
@@ -71,18 +73,28 @@ export function createAnalyticsBuildFailure(
 export class AnalyticsBuildError extends Error {
   readonly exitCode: number;
   readonly failures: readonly AnalyticsBuildFailure[];
+  readonly reason: AnalyticsBuildErrorReason;
 
-  constructor(exitCode: number, failures: readonly AnalyticsBuildFailure[]) {
+  constructor(
+    exitCode: number,
+    failures: readonly AnalyticsBuildFailure[],
+    reason: AnalyticsBuildErrorReason = exitCode === 0 ? "incomplete" : "process-failed",
+  ) {
     const detail = failures
       .map(
         (failure) =>
           `${failure.modelName}: ${failure.message ?? failure.errorCode ?? failure.status}`,
       )
       .join("; ");
-    super(`dbt build failed with exit code ${exitCode}${detail ? `: ${detail}` : ""}`);
+    const summary =
+      reason === "incomplete"
+        ? "dbt build did not complete every required analytics model"
+        : `dbt build failed with exit code ${exitCode}`;
+    super(`${summary}${detail ? `: ${detail}` : ""}`);
     this.name = "AnalyticsBuildError";
     this.exitCode = exitCode;
     this.failures = [...failures];
+    this.reason = reason;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

@@ -234,6 +234,30 @@ describe("ios telemetry", () => {
     );
   });
 
+  it("does not retain a malformed explicit route or fall back to the global route", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/settings");
+
+    mod.captureException(new Error("request failed"), {
+      source: "react-query",
+      route: "?token=secret",
+    });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: undefined,
+        },
+      }),
+    );
+    expect(JSON.stringify(mocks.mockCaptureException.mock.calls)).not.toContain("secret");
+  });
+
   it("drops transient background HealthKit network errors from Sentry and PostHog", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";

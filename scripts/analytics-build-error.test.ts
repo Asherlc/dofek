@@ -13,6 +13,9 @@ describe("analytics build failures", () => {
     expect(classifyAnalyticsFailure("dbt_model_failed", "Code: 407 Convert overflow")).toBe(
       "overflow",
     );
+    expect(classifyAnalyticsFailure("dbt_model_failed", "SYNTAX_ERROR in model SQL")).toBe(
+      "syntax",
+    );
   });
 
   it("keeps model and category metadata on the thrown build error", () => {
@@ -36,5 +39,21 @@ describe("analytics build failures", () => {
         category: "timeout",
       },
     ]);
+  });
+
+  it("describes a zero-exit incomplete build without claiming dbt failed", () => {
+    const failure = createAnalyticsBuildFailure({
+      name: "provider_stats",
+      status: "skipped",
+      errorCode: null,
+      message: null,
+    });
+
+    const error = new AnalyticsBuildError(0, [failure]);
+
+    expect(error.reason).toBe("incomplete");
+    expect(error.message).toBe(
+      "dbt build did not complete every required analytics model: provider_stats: skipped",
+    );
   });
 });

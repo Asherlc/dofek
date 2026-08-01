@@ -40,6 +40,7 @@ describe("app bootstrap telemetry guard", () => {
     await expect(import("./_layout")).resolves.toBeDefined();
     expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
       source: "bootstrap-telemetry-init",
+      route: "/bootstrap",
     });
   });
 });

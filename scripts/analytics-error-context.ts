@@ -1,7 +1,8 @@
+import type { AnalyticsRefreshStep } from "../src/analytics-worker.ts";
 import { AnalyticsBuildError } from "./analytics-build-error.ts";
 
 export type AnalyticsRefreshTags = {
-  analyticsRefreshStep: "analytics-build" | "query-cache-warm";
+  analyticsRefreshStep: AnalyticsRefreshStep;
 };
 
 export interface AnalyticsFailureCaptureContext {
@@ -21,7 +22,7 @@ export function buildAnalyticsFailureCaptureContext(
   if (!failure) {
     return {
       tags: { ...tags },
-      fingerprint: ["analytics-build", "unknown", "unknown"],
+      fingerprint: [tags.analyticsRefreshStep, "unknown", "unknown"],
     };
   }
 
@@ -32,6 +33,6 @@ export function buildAnalyticsFailureCaptureContext(
       analyticsFailureCategory: failure.category,
       analyticsFailedModels: error.failures.map((item) => item.modelName).join(","),
     },
-    fingerprint: ["analytics-build", failure.modelName, failure.category],
+    fingerprint: [tags.analyticsRefreshStep, failure.modelName, failure.category],
   };
 }

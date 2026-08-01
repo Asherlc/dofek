@@ -66,17 +66,20 @@ export async function runAnalyticsBuild({
     runId: artifacts.invocationId,
     modelResults: artifacts.models,
   });
-  const failedModels = artifacts.models
-    .filter((model) => model.status !== "succeeded")
+  const incompleteModels = artifacts.models.filter((model) => model.status !== "succeeded");
+  const failedModels = incompleteModels
+    .filter((model) => model.status === "failed")
     .map(createAnalyticsBuildFailure);
+  const incompleteFailures =
+    failedModels.length > 0 ? failedModels : incompleteModels.map(createAnalyticsBuildFailure);
 
   if (exitCode !== 0) {
-    throw new AnalyticsBuildError(exitCode, failedModels);
+    throw new AnalyticsBuildError(exitCode, incompleteFailures, "process-failed");
   }
-  if (!artifacts.succeeded || processingResult.failed > 0) {
-    if (!artifacts.succeeded) {
-      throw new AnalyticsBuildError(exitCode, failedModels);
-    }
+  if (!artifacts.succeeded) {
+    throw new AnalyticsBuildError(exitCode, incompleteFailures, "incomplete");
+  }
+  if (processingResult.failed > 0) {
     throw new Error("dbt build did not complete every required analytics model");
   }
   return processingResult;

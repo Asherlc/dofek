@@ -32,4 +32,14 @@ describe("buildAnalyticsFailureCaptureContext", () => {
       tags,
     });
   });
+
+  it("uses the refresh step in the fallback fingerprint", () => {
+    const error = new AnalyticsBuildError(0, []);
+    const tags = { analyticsRefreshStep: "query-cache-warm" as const };
+
+    expect(buildAnalyticsFailureCaptureContext(error, tags)).toEqual({
+      tags,
+      fingerprint: ["query-cache-warm", "unknown", "unknown"],
+    });
+  });
 });

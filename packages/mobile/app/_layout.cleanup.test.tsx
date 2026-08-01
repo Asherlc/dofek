@@ -21,11 +21,13 @@ const {
   mockMarkAppInteractive,
   mockStartStartupPhase,
   mockStartStartupTelemetry,
+  mockSetTelemetryRoute,
 } = vi.hoisted(() => ({
   mockFinishStartupPhase: vi.fn(),
   mockMarkAppInteractive: vi.fn(),
   mockStartStartupPhase: vi.fn(),
   mockStartStartupTelemetry: vi.fn(),
+  mockSetTelemetryRoute: vi.fn(),
 }));
 interface MockAuthStateValue {
   user: { id: string } | null;
@@ -136,7 +138,7 @@ vi.mock("../lib/server", () => ({
 vi.mock("../lib/telemetry", () => ({
   initTelemetry: vi.fn(),
   captureException: vi.fn(),
-  setTelemetryRoute: vi.fn(),
+  setTelemetryRoute: mockSetTelemetryRoute,
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
@@ -271,6 +273,26 @@ describe("RootLayout background cleanup", () => {
       expect(mockMarkAppInteractive).toHaveBeenCalledWith({
         serviceBootstrapExpected: true,
       });
+      expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/settings");
+    });
+  });
+
+  it("uses the login route while the authenticated shell is unauthenticated", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/login");
     });
   });
 
