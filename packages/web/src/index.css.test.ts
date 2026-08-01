@@ -43,11 +43,13 @@ function compositeOver(foreground: CssColor, background: RgbColor): RgbColor {
 }
 
 function relativeLuminance(rgb: RgbColor): number {
-  const linearChannel = (start: number) => {
-    const channel = rgb[start] / 255;
+  const linearChannel = (value: number) => {
+    const channel = value / 255;
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
   };
-  return 0.2126 * linearChannel(0) + 0.7152 * linearChannel(1) + 0.0722 * linearChannel(2);
+  return (
+    0.2126 * linearChannel(rgb[0]) + 0.7152 * linearChannel(rgb[1]) + 0.0722 * linearChannel(rgb[2])
+  );
 }
 
 function contrastRatio(foreground: RgbColor, background: RgbColor): number {
