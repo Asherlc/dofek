@@ -147,6 +147,32 @@ describe("PostHogConversationsClient", () => {
     expect(mockSupportTicketDurationObserve).toHaveBeenCalledWith({ outcome: "success" }, 0.25);
   });
 
+  it("shares an in-flight config request across concurrent ticket submissions", async () => {
+    let resolveConfig!: (response: Response) => void;
+    const configPromise = new Promise<Response>((resolve) => {
+      resolveConfig = resolve;
+    });
+    fetchMock.mockImplementation((input) => {
+      if (String(input).endsWith("/config")) {
+        return configPromise;
+      }
+      return Promise.resolve(ticketResponse());
+    });
+
+    const client = new PostHogConversationsClient(config);
+    const firstTicket = client.createTicket(ticketInput);
+    const secondTicket = client.createTicket(ticketInput);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveConfig(configResponse("conversation-token"));
+
+    await expect(Promise.all([firstTicket, secondTicket])).resolves.toEqual([
+      { ticketId: "ticket-1" },
+      { ticketId: "ticket-1" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("refreshes the cached token after 401 and 403 responses", async () => {
     for (const status of [401, 403]) {
       fetchMock.mockReset();

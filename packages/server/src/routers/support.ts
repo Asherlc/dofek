@@ -3,7 +3,10 @@ import { userProfile } from "dofek/db/schema/reference";
 import { captureException } from "dofek/lib/error-reporting";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getPostHogConversationsClient } from "../lib/posthog-conversations.ts";
+import {
+  getPostHogConversationsClient,
+  PostHogConversationsError,
+} from "../lib/posthog-conversations.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -37,6 +40,75 @@ function buildDescription(
     `User ID: ${userId}`,
     `App version: ${appVersion ?? "unknown"}`,
   ].join("\n");
+}
+
+type SupportTicketErrorCode =
+  | "BAD_GATEWAY"
+  | "BAD_REQUEST"
+  | "GATEWAY_TIMEOUT"
+  | "SERVICE_UNAVAILABLE"
+  | "TOO_MANY_REQUESTS"
+  | "UNPROCESSABLE_CONTENT";
+
+function mapPostHogError(error: unknown): {
+  code: SupportTicketErrorCode;
+  message: string;
+} {
+  if (!(error instanceof PostHogConversationsError)) {
+    return {
+      code: "BAD_GATEWAY",
+      message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+    };
+  }
+
+  if (error.status === 401 || error.status === 403) {
+    return {
+      code: "SERVICE_UNAVAILABLE",
+      message:
+        "Support Tickets could not authenticate this request. Please contact the administrator.",
+    };
+  }
+
+  if (error.status === 422) {
+    return {
+      code: "UNPROCESSABLE_CONTENT",
+      message: "Support Tickets rejected the request. Review your message and try again.",
+    };
+  }
+
+  if (error.status === 429) {
+    return {
+      code: "TOO_MANY_REQUESTS",
+      message: "Support Tickets is rate-limited. Please wait a moment before trying again.",
+    };
+  }
+
+  if (error.status === 503) {
+    return {
+      code: "SERVICE_UNAVAILABLE",
+      message:
+        "Support Tickets is not available for this project. Please contact the administrator.",
+    };
+  }
+
+  if (error.status === 504) {
+    return {
+      code: "GATEWAY_TIMEOUT",
+      message: "Support Tickets timed out. Please try again shortly.",
+    };
+  }
+
+  if (error.status >= 400 && error.status < 500) {
+    return {
+      code: "BAD_REQUEST",
+      message: "Support Tickets rejected the request. Review your message and try again.",
+    };
+  }
+
+  return {
+    code: "BAD_GATEWAY",
+    message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+  };
 }
 
 export const supportRouter = router({
@@ -75,9 +147,10 @@ export const supportRouter = router({
             error instanceof Error ? error.message : String(error)
           }`,
         );
+        const mappedError = mapPostHogError(error);
         throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+          code: mappedError.code,
+          message: mappedError.message,
           cause: error,
         });
       }

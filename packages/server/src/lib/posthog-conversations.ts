@@ -103,6 +103,7 @@ export class PostHogConversationsError extends Error {
 export class PostHogConversationsClient {
   #conversationToken: string | null = null;
   #conversationTokenExpiresAt = 0;
+  #conversationTokenRequest: Promise<string> | null = null;
   readonly #config: PostHogConversationsConfig;
 
   constructor(config: PostHogConversationsConfig) {
@@ -117,6 +118,20 @@ export class PostHogConversationsClient {
       return this.#conversationToken;
     }
 
+    if (this.#conversationTokenRequest) {
+      return this.#conversationTokenRequest;
+    }
+
+    const tokenRequest = this.#loadConversationToken();
+    this.#conversationTokenRequest = tokenRequest;
+    try {
+      return await tokenRequest;
+    } finally {
+      this.#conversationTokenRequest = null;
+    }
+  }
+
+  async #loadConversationToken(): Promise<string> {
     const response = await fetchPostHog(
       `${this.#config.host}/array/${encodeURIComponent(this.#config.apiKey)}/config`,
       { headers: { Accept: "application/json" } },
