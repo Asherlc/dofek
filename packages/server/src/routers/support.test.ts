@@ -270,6 +270,19 @@ describe("supportRouter", () => {
         message,
       }),
     ).resolves.toEqual({ ticketId: "ticket-limit" });
+
+    expect(mockCreateTicket).toHaveBeenCalledTimes(1);
+    const request = mockCreateTicket.mock.calls[0]?.[0];
+    expect(request).toBeDefined();
+    if (
+      !request ||
+      typeof request !== "object" ||
+      !("message" in request) ||
+      typeof request.message !== "string"
+    ) {
+      throw new Error("Expected PostHog request message");
+    }
+    expect([...request.message]).toHaveLength(5_000);
   });
 
   it("uses the explicit email when the profile is missing", async () => {
