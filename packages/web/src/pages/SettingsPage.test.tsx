@@ -5,7 +5,14 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type SettingsSearch = {
-  tab?: "general" | "health" | "connections" | "account";
+  tab?:
+    | "account"
+    | "data-sources"
+    | "goals-models"
+    | "privacy-export"
+    | "notifications"
+    | "billing"
+    | "advanced";
   zeppPair?: string;
 };
 
@@ -152,32 +159,68 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("SettingsPage tabs", () => {
-  it("shows general settings by default", async () => {
+describe("SettingsPage categories", () => {
+  it("shows searchable categories with Account selected by default", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText("Units")).toBeTruthy();
-    expect(screen.queryByText("Data Sources")).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search settings" })).toBeTruthy();
+    for (const category of [
+      "Account",
+      "Data Sources",
+      "Goals & Models",
+      "Privacy/Export",
+      "Notifications",
+      "Billing",
+      "Advanced",
+    ]) {
+      expect(screen.getByRole("tab", { name: category })).toBeTruthy();
+    }
+    expect(screen.getByRole("tab", { name: "Account" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Password")).toBeTruthy();
+    expect(screen.queryByText("DataSourcesPanel")).toBeNull();
   });
 
-  it("renders only connection settings for a connections deep link", async () => {
-    mockSearch = { tab: "connections" };
+  it("filters categories and opens the matching section from a search term", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
     render(<SettingsPage />);
 
-    expect(screen.getByText("Data Sources")).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "medication" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Notifications" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Account" })).toBeNull();
+    expect(screen.getByText("Medication Reminders")).toBeTruthy();
+  });
+
+  it("renders only data-source settings for a deep link", async () => {
+    mockSearch = { tab: "data-sources" };
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("DataSourcesPanel")).toBeTruthy();
     expect(screen.getByText("Zepp App Pairing")).toBeTruthy();
-    expect(screen.getByText("MCP")).toBeTruthy();
     expect(screen.getByText("Integrations")).toBeTruthy();
-    expect(screen.queryByText("Billing")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Billing" })).toBeNull();
+  });
+
+  it("keeps advanced settings separate from data sources", async () => {
+    mockSearch = { tab: "advanced" };
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("MCP")).toBeTruthy();
+    expect(screen.getByText("Dashboard Layout")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Data Sources" })).toBeNull();
   });
 
   it("shows and disconnects each active Zepp app independently", async () => {
-    mockSearch = { tab: "connections" };
+    mockSearch = { tab: "data-sources" };
     mockZeppConnections = [{ connectionType: "zepp-main" }, { connectionType: "zepp-workout" }];
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
@@ -201,28 +244,28 @@ describe("SettingsPage tabs", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("tab", { name: "Connections" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("tab", { name: "Data Sources" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByText("Data Sources")).toBeTruthy();
+    expect(screen.getByText("DataSourcesPanel")).toBeTruthy();
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
     const pairingNavigation = mockNavigate.mock.calls[0]?.[0];
     expect(pairingNavigation?.replace).toBe(true);
     expect(applySearch(pairingNavigation, { zeppPair: "ABC234" })).toEqual({
-      tab: "connections",
+      tab: "data-sources",
       zeppPair: undefined,
     });
   });
 
   it("preserves other search state when changing tabs", async () => {
-    mockSearch = { tab: "connections" };
+    mockSearch = { tab: "data-sources" };
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
     render(<SettingsPage />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Account" }));
     const tabNavigation = mockNavigate.mock.calls[0]?.[0];
-    expect(applySearch(tabNavigation, { tab: "connections", zeppPair: "ABC234" })).toEqual({
+    expect(applySearch(tabNavigation, { tab: "data-sources", zeppPair: "ABC234" })).toEqual({
       tab: "account",
       zeppPair: "ABC234",
     });
@@ -240,7 +283,7 @@ describe("SettingsPage tabs", () => {
   });
 
   it("reserves the resolved billing height across subscription states", async () => {
-    mockSearch = { tab: "account" };
+    mockSearch = { tab: "billing" };
     mockBillingStatusQuery.mockReturnValue({
       data: undefined,
       error: null,

@@ -62,7 +62,7 @@ export function NutritionAnalyticsPage() {
             />
             <Link
               className="inline-flex text-sm font-medium text-accent hover:underline"
-              search={{ tab: "connections" }}
+              search={{ tab: "data-sources" }}
               to="/settings"
             >
               Review data sources
