@@ -26,4 +26,19 @@ describe("ProviderAbsentBanner", () => {
     const link = screen.getByRole("link", { name: "Review Strava connection" });
     expect(link.getAttribute("href")).toBe("/providers/strava");
   });
+
+  it("labels Apple Health remediation links with the destination provider", () => {
+    render(
+      <ProviderAbsentBanner
+        activity={{
+          providerId: "apple_health",
+          subsource: "Strava",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        }}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "Review Apple Health connection" });
+    expect(link.getAttribute("href")).toBe("/providers/apple_health");
+  });
 });
