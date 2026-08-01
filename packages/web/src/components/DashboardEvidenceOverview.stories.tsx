@@ -1,5 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { InsightEvidence } from "dofek-server/types";
 import { DashboardEvidenceOverview } from "./DashboardEvidenceOverview";
+
+const evidence: InsightEvidence = {
+  relationship: "correlation",
+  label: "Descriptive correlation",
+  method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
+  interpretation:
+    "This correlation describes co-movement in the observed data; it does not establish causation.",
+  limitations:
+    "The displayed n is the number of paired observations; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory correlation.",
+  recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
+};
 
 const meta = {
   title: "Dashboard/DashboardEvidenceOverview",
@@ -47,6 +59,7 @@ const meta = {
       whenFalse: { mean: 0, n: 30 },
       effectSize: 0.72,
       pValue: 0.01,
+      evidence,
       dataPoints: [
         { x: 55, y: 65, date: "2026-05-23" },
         { x: 60, y: 70, date: "2026-05-24" },
