@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/react-native";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import * as Notifications from "expo-notifications";
-import { Stack, useRouter } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -35,7 +35,7 @@ import {
   startStartupPhase,
   startStartupTelemetry,
 } from "../lib/startup-telemetry";
-import { captureException, initTelemetry, logger } from "../lib/telemetry";
+import { captureException, initTelemetry, logger, setTelemetryRoute } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
@@ -164,10 +164,15 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
     useAuth();
+  const pathname = usePathname();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
   const startupInteractiveMarkedRef = useRef(false);
 
   const [queryClient] = useState(createAppQueryClient);
+
+  useEffect(() => {
+    setTelemetryRoute(pathname);
+  }, [pathname]);
 
   useEffect(() => {
     finishStartupPhase("javascript", "ready");

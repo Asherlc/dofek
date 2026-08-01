@@ -6,6 +6,7 @@ import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analy
 import { captureException } from "../src/lib/error-reporting.ts";
 import { initProductionSentry } from "../src/lib/sentry.ts";
 import { logger } from "../src/logger.ts";
+import { buildAnalyticsFailureCaptureContext } from "./analytics-error-context.ts";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -102,7 +103,7 @@ export async function runAnalyticsWorker(): Promise<void> {
   const worker = createAnalyticsWorkerFromEnvironment(process.env, {
     now: () => new Date(),
     reportFailure: (error, tags) => {
-      captureException(error, { tags });
+      captureException(error, buildAnalyticsFailureCaptureContext(error, tags));
       logger.error(
         `[analytics-worker] ${tags.analyticsRefreshStep} failed: ${errorMessage(error)}`,
       );

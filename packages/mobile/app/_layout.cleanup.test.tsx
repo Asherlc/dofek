@@ -84,6 +84,7 @@ vi.mock("expo-router", async () => {
   return {
     Stack,
     useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+    usePathname: () => "/settings",
   };
 });
 
@@ -135,6 +136,7 @@ vi.mock("../lib/server", () => ({
 vi.mock("../lib/telemetry", () => ({
   initTelemetry: vi.fn(),
   captureException: vi.fn(),
+  setTelemetryRoute: vi.fn(),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 

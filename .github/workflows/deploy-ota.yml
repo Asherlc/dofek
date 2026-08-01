@@ -122,15 +122,20 @@ jobs:
       # Run the same command up front so the real Metro/expo error is visible.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
-        run: pnpm expo export --output-dir dist --platform ios
+        env:
+          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
+        run: pnpm expo export --output-dir dist --platform ios --source-maps external
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
           DEBUG: true
           RELEASE_CHANNEL: production
+          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
         run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive --packageRunner pnpm
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
+        env:
+          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
         run: pnpm exec sentry-expo-upload-sourcemaps dist
 
       - uses: ./.github/actions/append-dispatcher-run-summary

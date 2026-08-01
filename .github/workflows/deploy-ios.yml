@@ -238,6 +238,9 @@ jobs:
           mkdir -p ~/private_keys
           echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
       - name: Archive (Release, signed)
+        env:
+          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
+          SENTRY_DIST: ${{ steps.build-number.outputs.value }}
         run: |
           set -o pipefail
           TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)

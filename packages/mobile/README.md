@@ -227,6 +227,12 @@ and hardware described there.
 ## Mobile Telemetry
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
+Exceptions also include the current Expo Router pathname in Sentry, PostHog, and
+OTLP context. UUID and numeric path segments are normalized to `:id`, so route
+context identifies the screen without copying record identifiers into telemetry.
+Production PostHog error autocapture is limited to uncaught exceptions and
+unhandled rejections; handled application failures go through the shared
+`captureException` path so they retain the same route and source context.
 
 Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
 native `App Start` span. The lifecycle attributes time to the Expo
@@ -275,3 +281,17 @@ Workflow key requirements:
 - `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+
+Source-map and release correlation:
+
+- The signed iOS archive sets `SENTRY_RELEASE` to the deployed commit and
+  `SENTRY_DIST` to the generated build number. The Sentry Expo integration
+  uploads the map from that exact native archive during the Xcode build; EAS
+  Build likewise uploads source maps automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
+- The OTA workflow exports the iOS bundle with external source maps and uploads
+  the same `dist` directory with `sentry-expo-upload-sourcemaps`. Expo documents
+  this export/upload sequence for OTA updates, and Hermes exports produce the
+  bytecode maps needed for symbolication ([Expo OTA Sentry guidance](https://docs.expo.dev/guides/using-sentry/), [Expo Hermes source maps](https://docs.expo.dev/guides/using-hermes/)).
+- Keep native archive uploads and OTA uploads separate: an OTA map must be
+  uploaded from the export that produced the published update, while native
+  symbols belong to the archive build.

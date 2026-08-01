@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { AnalyticsBuildError } from "./analytics-build-error.ts";
 import { runAnalyticsBuild, runAnalyticsBuildFromEnvironment } from "./run-analytics-build.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -152,7 +153,16 @@ describe("runAnalyticsBuild", () => {
               },
         recordRun,
       }),
-    ).rejects.toThrow("dbt build failed with exit code 1: provider_stats: database error");
+    ).rejects.toMatchObject({
+      constructor: AnalyticsBuildError,
+      message: "dbt build failed with exit code 1: provider_stats: database error",
+      failures: [
+        expect.objectContaining({
+          modelName: "provider_stats",
+          category: "unknown",
+        }),
+      ],
+    });
 
     expect(recordRun).toHaveBeenCalledOnce();
   });

@@ -12,6 +12,7 @@ import {
 import { recordAnalyticsRunForPendingProcessing } from "../src/processing/analytics-processing.ts";
 import { PRODUCTION_DBT_MODELS } from "../src/processing/dataset-contracts.ts";
 import { parseDbtRunArtifacts } from "../src/processing/dbt-run-results.ts";
+import { AnalyticsBuildError, createAnalyticsBuildFailure } from "./analytics-build-error.ts";
 
 interface RunAnalyticsBuildInput {
   selectedModels: readonly string[];
@@ -65,17 +66,17 @@ export async function runAnalyticsBuild({
     runId: artifacts.invocationId,
     modelResults: artifacts.models,
   });
+  const failedModels = artifacts.models
+    .filter((model) => model.status !== "succeeded")
+    .map(createAnalyticsBuildFailure);
 
   if (exitCode !== 0) {
-    const failureDetails = artifacts.models
-      .filter((model) => model.status !== "succeeded")
-      .map((model) => `${model.name}: ${model.message ?? model.errorCode ?? model.status}`)
-      .join("; ");
-    throw new Error(
-      `dbt build failed with exit code ${exitCode}${failureDetails ? `: ${failureDetails}` : ""}`,
-    );
+    throw new AnalyticsBuildError(exitCode, failedModels);
   }
   if (!artifacts.succeeded || processingResult.failed > 0) {
+    if (!artifacts.succeeded) {
+      throw new AnalyticsBuildError(exitCode, failedModels);
+    }
     throw new Error("dbt build did not complete every required analytics model");
   }
   return processingResult;

@@ -191,6 +191,49 @@ describe("ios telemetry", () => {
     });
   });
 
+  it("adds the sanitized current route to error context", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/activity/550e8400-e29b-41d4-a716-446655440000");
+
+    mod.captureException(new Error("request failed"), { source: "react-query" });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: "/activity/:id",
+        },
+      }),
+    );
+  });
+
+  it("keeps an explicitly supplied route over the global route", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/settings");
+
+    mod.captureException(new Error("request failed"), {
+      source: "react-query",
+      route: "/providers",
+    });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: "/providers",
+        },
+      }),
+    );
+  });
+
   it("drops transient background HealthKit network errors from Sentry and PostHog", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
