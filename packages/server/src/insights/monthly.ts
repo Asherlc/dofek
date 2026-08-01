@@ -319,8 +319,8 @@ export function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
           );
           const message =
             effectLabel === NO_OBSERVED_DIFFERENCE
-              ? "Observed association: Months with more exercise showed no observed difference in weight change."
-              : `Observed association: Months with more exercise had ${effectLabel} weight change.`;
+              ? `Observed association: Months with more exercise had ${effectLabel.toLowerCase()} in monthly weight change.`
+              : `Observed association: Months with more exercise had a monthly weight change that was ${effectLabel}.`;
 
           insights.push({
             id: "m-high-exercise-weight",

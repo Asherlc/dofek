@@ -144,6 +144,8 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
     );
   }
 
+  const evidence = data.find((item) => item.association)?.association;
+
   return (
     <div className="space-y-3">
       {error && <QueryStatePanel contextLabel="Behavior associations" error={error} height={96} />}
@@ -151,26 +153,26 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
         <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
           Association with Next-Day Readiness
         </h3>
-        {data[0]?.association ? (
+        {evidence ? (
           <EvidenceDetails
             className="mb-4"
             textClassName="text-dim"
             details={[
-              { key: "method", label: "Method", value: data[0].association.method },
+              { key: "method", label: "Method", value: evidence.method },
               {
                 key: "interpretation",
                 label: "Interpretation",
-                value: data[0].association.interpretation,
+                value: evidence.interpretation,
               },
               {
                 key: "uncertainty",
                 label: "Uncertainty",
-                value: data[0].association.uncertainty,
+                value: evidence.uncertainty,
               },
               {
                 key: "observation-window",
                 label: "Observation window",
-                value: data[0].association.observationWindow,
+                value: evidence.observationWindow,
               },
             ]}
           />

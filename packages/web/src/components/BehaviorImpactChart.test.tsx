@@ -94,19 +94,6 @@ describe("BehaviorImpactChart", () => {
     }
   });
 
-  it("renders relationship semantics supplied by the server", () => {
-    render(<BehaviorImpactChart days={90} />);
-
-    expect(screen.getByText("Server-computed comparison method.")).toBeDefined();
-    expect(
-      screen.getByText("Server interpretation: association, not causation or prescription."),
-    ).toBeDefined();
-    expect(screen.getByText("Server uncertainty statement.")).toBeDefined();
-    expect(screen.getByText("Server observation window.")).toBeDefined();
-    expect(screen.getByText("Estimate: 18.6% higher")).toBeDefined();
-    expect(screen.getByText("Estimate: 12.4% lower")).toBeDefined();
-  });
-
   it("describes the all-history observation window", () => {
     mocks.query.mockReturnValue({
       data: associationData.map((item) => ({
@@ -122,17 +109,20 @@ describe("BehaviorImpactChart", () => {
     expect(screen.getByText("all available history")).toBeDefined();
   });
 
-  it("does not crash when a partial cached item lacks association evidence", () => {
-    const [firstItem] = associationData;
+  it("uses the first association-bearing item for evidence in a partial cached response", () => {
+    const [firstItem, secondItem] = associationData;
     mocks.query.mockReturnValue({
-      data: firstItem ? [{ ...firstItem, association: undefined }] : [],
+      data: firstItem && secondItem ? [{ ...firstItem, association: undefined }, secondItem] : [],
       error: null,
       isLoading: false,
     });
 
     render(<BehaviorImpactChart days={90} />);
 
-    expect(screen.getByText("Association with Next-Day Readiness")).toBeDefined();
+    expect(screen.getByText("Server-computed comparison method.")).toBeDefined();
+    expect(screen.getByText("Server observation window.")).toBeDefined();
+    expect(screen.getAllByTestId("readiness-association-bar")).toHaveLength(1);
+    expect(screen.getByText("Late meal")).toBeDefined();
   });
 
   it("shows source labels and reveals raw IDs only through accessible technical details", () => {

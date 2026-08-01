@@ -60,6 +60,7 @@ describe("DashboardEvidenceOverview", () => {
             limitations:
               "Server limitations: missing observations and confounding remain possible.",
             recommendation: "Server recommendation: this is not a prescription.",
+            observationWindow: "Daily observations",
           },
           dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],
         }}
@@ -75,6 +76,10 @@ describe("DashboardEvidenceOverview", () => {
     expect(
       screen.getByText("Server interpretation: association does not establish causation."),
     ).toBeTruthy();
+    const observationWindow = screen.getByText("Daily observations");
+    expect(observationWindow.parentElement?.textContent).toContain(
+      "Observation window: Daily observations",
+    );
     expect(screen.getByText("Recent trend")).toBeTruthy();
     expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();

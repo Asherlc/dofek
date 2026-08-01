@@ -88,7 +88,7 @@ describe("CorrelationCard", () => {
       confidence: "emerging",
       metric: "Metric",
       action: "Action",
-      message: "Conditional relationship",
+      message: "Observed association: Metric is Server estimate label.",
       detail: "n=20",
       whenTrue: { mean: 12, n: 10 },
       whenFalse: { mean: 10, n: 10 },
@@ -109,7 +109,9 @@ describe("CorrelationCard", () => {
 
     const option = JSON.parse(screen.getByTestId("correlation-chart").dataset.option ?? "{}");
     expect(option.series[0].data[1].itemStyle.color).toBe(chartColors.blue);
-    expect(screen.getByText("Server estimate label.")).toHaveClass("text-muted");
+    expect(
+      screen.getByText("Observed association: Metric is Server estimate label."),
+    ).toBeDefined();
     expect(screen.queryByText("+20%")).toBeNull();
     expect(screen.queryByText("Emerging")).toBeNull();
   });

@@ -139,16 +139,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
     ],
   };
 
-  return (
-    <div>
-      <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />
-      <p className="text-center text-xs text-subtle mt-1">
-        <span className="text-muted">
-          {insight.evidence?.estimateLabel?.trim() || "Observed group comparison"}
-        </span>
-      </p>
-    </div>
-  );
+  return <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />;
 }
 
 function CorrelationViz({ insight }: { insight: Insight }) {

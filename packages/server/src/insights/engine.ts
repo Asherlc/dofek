@@ -55,7 +55,8 @@ export function computeInsights(
   // 1. Conditional analysis (primary method)
   // Collect all candidates first, then apply FDR correction
   const conditionalCandidates: Array<Insight & { rawPValue: number }> = [];
-  for (const test of getConditionalTests()) {
+  const conditionalTests = getConditionalTests();
+  for (const test of conditionalTests) {
     const trueValues: number[] = [];
     const falseValues: number[] = [];
 
@@ -208,7 +209,10 @@ export function computeInsights(
 
   // 3. Monthly body comp / nutrition insights
   const monthlyInsights = computeMonthlyInsights(joined);
-  const monthlyInsightSet = new Set(monthlyInsights);
+  const rollingMonthlyInsightIds = new Set(
+    conditionalTests.filter((test) => test.scope === "month").map((test) => test.id),
+  );
+  const monthlyInsightIds = new Set(monthlyInsights.map((insight) => insight.id));
   insights.push(...monthlyInsights);
 
   // 4. Exhaustive pairwise discovery sweep
@@ -233,10 +237,15 @@ export function computeInsights(
   const top = insights.slice(0, 20);
   // Add server-authored evidence and a safe human-readable explanation.
   for (const insight of top) {
+    const evidenceScope = rollingMonthlyInsightIds.has(insight.id)
+      ? "rolling_monthly"
+      : monthlyInsightIds.has(insight.id)
+        ? "monthly"
+        : "daily";
     insight.evidence = createInsightEvidence(
       insight.type,
       conditionalEstimateLabel(insight),
-      monthlyInsightSet.has(insight) ? "monthly" : "daily",
+      evidenceScope,
     );
     insight.explanation = explainInsight(insight);
   }

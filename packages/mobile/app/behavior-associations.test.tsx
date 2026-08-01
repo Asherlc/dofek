@@ -133,6 +133,27 @@ describe("BehaviorAssociationsScreen", () => {
     expect(mocks.queryInputs.at(-1)).toEqual({ days: 30 });
   });
 
+  it("skips partial cached rows without losing server evidence from later rows", async () => {
+    const [firstAssociation, secondAssociation] = associationData;
+    mocks.query.mockReturnValue({
+      data:
+        firstAssociation && secondAssociation
+          ? [{ ...firstAssociation, association: undefined }, secondAssociation]
+          : [],
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.refetch,
+    });
+
+    const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
+    render(<BehaviorAssociationsScreen />);
+
+    expect(screen.getByText("Method: Server-computed comparison method.")).toBeTruthy();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeTruthy();
+    expect(screen.queryByText("Estimate: 18.6% higher")).toBeNull();
+  });
+
   it("shows source labels and reveals raw IDs only through accessible technical details", async () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);

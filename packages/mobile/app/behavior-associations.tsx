@@ -49,7 +49,7 @@ export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
-  const evidence = data?.[0]?.association;
+  const evidence = data?.find((item) => item.association)?.association;
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.container}>
@@ -107,7 +107,11 @@ export default function BehaviorAssociationsScreen() {
                 Yes n = {association.yesCount} · No n = {association.noCount}
               </Text>
               <ProviderSourceDetails sources={association.sources} />
-              <Text style={styles.estimate}>Estimate: {association.association.estimateLabel}</Text>
+              {association.association ? (
+                <Text style={styles.estimate}>
+                  Estimate: {association.association.estimateLabel}
+                </Text>
+              ) : null}
             </Card>
           ))}
         </>

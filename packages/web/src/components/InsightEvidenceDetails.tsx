@@ -3,7 +3,7 @@ import { EvidenceDetails } from "./EvidenceDetails.tsx";
 
 type InsightEvidenceDetailFields = Pick<
   InsightEvidence,
-  "method" | "interpretation" | "limitations" | "recommendation"
+  "method" | "interpretation" | "limitations" | "recommendation" | "observationWindow"
 >;
 
 interface InsightEvidenceDetailsProps {
@@ -19,6 +19,11 @@ export function InsightEvidenceDetails({ evidence, className }: InsightEvidenceD
         { key: "interpretation", value: evidence.interpretation },
         { key: "limitations", value: evidence.limitations },
         { key: "recommendation", value: evidence.recommendation },
+        {
+          key: "observation-window",
+          label: "Observation window",
+          value: evidence.observationWindow,
+        },
       ]}
       className={className}
     />

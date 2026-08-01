@@ -45,6 +45,7 @@ describe("BehaviorImpact", () => {
       direction: "unavailable",
       estimateLabel: "Estimate unavailable",
     });
+    expect(impact.association.direction).not.toBe("no_difference");
   });
 
   it("rounds to one decimal place", () => {

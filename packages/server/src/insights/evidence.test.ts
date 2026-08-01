@@ -13,6 +13,7 @@ describe("createInsightEvidence", () => {
       limitations:
         "The displayed counts are the observed groups; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory comparison.",
       recommendation: "This is not a prescription or recommendation to change the behavior.",
+      observationWindow: "Daily observations",
       estimateLabel: "25% higher",
     });
   });
@@ -28,6 +29,7 @@ describe("createInsightEvidence", () => {
       limitations:
         "The displayed n is the number of paired observations; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory correlation.",
       recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
+      observationWindow: "Daily observations",
     });
   });
 
@@ -35,8 +37,22 @@ describe("createInsightEvidence", () => {
     expect(createInsightEvidence("conditional", undefined, "monthly").method).toBe(
       "Observed-group mean comparison across monthly aggregates (with versus without the behavior) using Welch's t-test; no multiple-comparison correction is applied.",
     );
+    expect(createInsightEvidence("conditional", undefined, "monthly").observationWindow).toBe(
+      "Monthly aggregates",
+    );
     expect(createInsightEvidence("correlation", undefined, "monthly").method).toBe(
       "Spearman rank correlation over paired monthly observations; no multiple-comparison correction is applied.",
     );
+    expect(createInsightEvidence("correlation", undefined, "monthly").observationWindow).toBe(
+      "Monthly aggregates",
+    );
+  });
+
+  it("describes rolling monthly analyses separately from daily analyses", () => {
+    const evidence = createInsightEvidence("conditional", undefined, "rolling_monthly");
+
+    expect(evidence.method).toContain("overlapping 30-day rolling windows");
+    expect(evidence.method).toContain("Benjamini–Hochberg");
+    expect(evidence.observationWindow).toBe("30-day rolling windows");
   });
 });

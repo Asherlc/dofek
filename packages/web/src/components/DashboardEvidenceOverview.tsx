@@ -174,7 +174,6 @@ export function DashboardEvidenceOverview({
                   <p className="mt-1 text-xs font-semibold text-accent">
                     {evidence?.label?.trim() || "Descriptive relationship"}
                   </p>
-                  <p className="text-xs text-muted">{days}-day signal</p>
                 </div>
                 <MiniChartFrame data={topInsight ? insightChartPoints : []}>
                   {topInsight ? (

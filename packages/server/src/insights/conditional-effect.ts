@@ -13,9 +13,10 @@ export function formatConditionalEffectLabel(
 
   const direction = difference > 0 ? "higher" : "lower";
   const unit = metricUnits[metric] ?? "";
+  const absoluteMetric = metric === "monthly weight change" || metric === "monthly body fat change";
   const baselineNearZero = Math.abs(falseMean) < 1;
 
-  if (baselineNearZero) {
+  if (absoluteMetric || baselineNearZero) {
     const absoluteDifference = Math.abs(difference);
     if (Number(absoluteDifference.toFixed(2)) === 0) return NO_OBSERVED_DIFFERENCE;
     return `${absoluteDifference.toFixed(2)}${unit ? ` ${unit}` : ""} ${direction}`;

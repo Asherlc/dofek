@@ -207,5 +207,31 @@ describe("behaviorImpactRouter", () => {
       expect(queryText).not.toContain("je.date >=");
       expect(queryText).not.toContain("dm.date >=");
     });
+
+    it("authors the all-history observation window", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              question_slug: "meditation",
+              display_name: "Meditation",
+              category: "wellness",
+              avg_readiness_yes: 75,
+              avg_readiness_no: 60,
+              yes_count: 15,
+              no_count: 12,
+              provider_ids: ["manual_review"],
+            },
+          ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const [result] = await caller.impactSummary({ days: null });
+
+      expect(result?.association.observationWindow).toBe("all available history");
+    });
   });
 });

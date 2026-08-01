@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { type ConditionalTest, getConditionalTests } from "./conditional-tests.ts";
 import { classifyConfidence, classifyCorrelationConfidence, downsample } from "./confidence.ts";
 import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
 import { getCorrelationPairs } from "./correlation-pairs.ts";
 import { classifyActivity, type JoinedDay, joinByDate, rollingAvg } from "./data-join.ts";
 import { exhaustiveSweep, getAllMetrics, isValidCausalDirection } from "./discovery.ts";
-import { NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { computeInsights } from "./engine.ts";
 import { explainInsight } from "./explanation.ts";
 import {
@@ -552,17 +552,15 @@ describe("computeInsights()", () => {
     );
 
     expect(correlation).toBeDefined();
-    expect(correlation?.evidence?.estimateLabel).toBeUndefined();
+    expect(correlation?.evidence).toMatchObject({ relationship: "correlation" });
+    expect(correlation?.evidence).not.toHaveProperty("estimateLabel");
   });
 
   it("publishes no-observed-difference evidence and messaging for a rounded-zero conditional effect", () => {
     const dates = dateRange("2025-01-01", 120);
     const metrics = dates.map((date, index) =>
       makeDailyRow(date, {
-        hrv:
-          index <= 60
-            ? 100.004 + (index % 2) * 0.0001
-            : 100 + (index % 2) * 0.0001,
+        hrv: index <= 60 ? 100.004 + (index % 2) * 0.0001 : 100 + (index % 2) * 0.0001,
       }),
     );
     const sleep = dates.map((date, index) =>
@@ -574,7 +572,9 @@ describe("computeInsights()", () => {
     );
 
     expect(insight).toBeDefined();
-    expect(insight?.message).toContain("no observed difference");
+    expect(insight?.message).toBe(
+      "Observed association: next-day HRV showed no observed difference on days with 7+ hours of sleep",
+    );
     expect(insight?.evidence?.estimateLabel).toBe(NO_OBSERVED_DIFFERENCE);
   });
 
@@ -1241,6 +1241,31 @@ describe("computeInsights()", () => {
     }
   });
 
+  it("labels rolling monthly conditional evidence with its rolling window", () => {
+    const dates = dateRange("2025-01-01", 900);
+    const metrics = dates.map((date) => makeDailyRow(date));
+    const activities = dates.flatMap((date, index) => {
+      const highExerciseBlock = Math.floor(index / 60) % 2 === 0;
+      return highExerciseBlock
+        ? [makeActivityRow(`${date}T10:00:00Z`, `${date}T11:00:00Z`, "running")]
+        : [];
+    });
+    const bodyComp = dates.map((date, index) => {
+      const highExerciseBlock = Math.floor(index / 60) % 2 === 0;
+      const slope = highExerciseBlock ? 0.1 : -0.1;
+      return makeBodyCompRow(`${date}T08:00:00Z`, { weight_kg: 80 + index * slope });
+    });
+
+    const insight = computeInsights(metrics, [], activities, [], bodyComp).find(
+      (candidate) => candidate.id === "exercise-monthly-weight",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.evidence?.method).toContain("30-day rolling windows");
+    expect(insight?.evidence?.method).toContain("Benjamini–Hochberg");
+    expect(insight?.evidence?.observationWindow).toBe("30-day rolling windows");
+  });
+
   it("keeps monthly conditional evidence labels aligned with their messages", () => {
     const dates = dateRange("2025-01-01", 638);
     const metrics = dates.map((date) => makeDailyRow(date));
@@ -1265,7 +1290,11 @@ describe("computeInsights()", () => {
     expect(insight?.evidence?.method).not.toContain("Benjamini");
     const estimateLabel = insight?.evidence?.estimateLabel;
     expect(estimateLabel).toBeDefined();
-    if (estimateLabel) expect(insight?.message).toContain(estimateLabel);
+    if (estimateLabel) {
+      expect(insight?.message).toContain(estimateLabel);
+      expect(insight?.message).toContain("monthly weight change that was");
+      expect(insight?.evidence?.observationWindow).toBe("Monthly aggregates");
+    }
   });
 
   it("correlation message includes strength descriptor", () => {
@@ -4357,7 +4386,9 @@ describe("computeMonthlyInsights() — conditional analysis", () => {
     );
 
     expect(insight).toBeDefined();
-    expect(insight?.message).toContain("no observed difference");
+    expect(insight?.message).toBe(
+      "Observed association: Months with more exercise had no observed difference in monthly weight change.",
+    );
   });
 
   it.each([
@@ -4387,9 +4418,10 @@ describe("computeMonthlyInsights() — conditional analysis", () => {
       (candidate) => candidate.id === "m-high-exercise-weight",
     );
 
-    expect(insight?.message).toContain(`Observed association: Months with more exercise had`);
-    expect(insight?.message).toContain(`weight change.`);
-    expect(insight?.message).toContain(` ${expectedDirection} weight change.`);
+    expect(insight?.message).toContain(
+      `Observed association: Months with more exercise had a monthly weight change that was`,
+    );
+    expect(insight?.message).toContain(` ${expectedDirection}.`);
   });
 
   it("produces high-exercise-vs-low conditional insight with 10+ months", () => {
