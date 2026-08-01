@@ -179,8 +179,8 @@ importers:
         specifier: 3.4.8
         version: 3.4.8
       posthog-node:
-        specifier: 5.28.0
-        version: 5.28.0(rxjs@7.8.2)
+        specifier: 5.47.3
+        version: 5.47.3(rxjs@7.8.2)
       prom-client:
         specifier: 15.1.3
         version: 15.1.3
@@ -13754,8 +13754,8 @@ packages:
   posthog-js@1.374.2:
     resolution: {integrity: sha512-6z1xGlVocd3NmSZlJNFfpedLIHLcejuuQPxvrpHDvtyVI9tN1NPqbM7T7coXw2It6gdZ/nAgDuZkNxfIut+Spw==}
 
-  posthog-node@5.28.0:
-    resolution: {integrity: sha512-EETYV0zA+7BLQmXzY+vGyDMoQK8uHf8f/1utbRjKncI41gPkw+4piGP7l4UT5Luld+4vQpJPOR1q1YrbXm7XjQ==}
+  posthog-node@5.47.3:
+    resolution: {integrity: sha512-mhKaZOGLgD5aKKTj6xNRE2K9vRJnRIj4FNZeguDNnCR0k8RKJh71KO78+UqVdOONBsMzoqb01AD/B+TtsK7YSw==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       rxjs: ^7.0.0
@@ -31740,9 +31740,9 @@ snapshots:
       query-selector-shadow-dom: 1.0.1
       web-vitals: 5.2.0
 
-  posthog-node@5.28.0(rxjs@7.8.2):
+  posthog-node@5.47.3(rxjs@7.8.2):
     dependencies:
-      '@posthog/core': 1.23.2
+      '@posthog/core': 1.46.1
     optionalDependencies:
       rxjs: 7.8.2
 
