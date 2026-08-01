@@ -1,4 +1,5 @@
 import { formatDateMedium, formatDurationMinutes, formatNumber } from "@dofek/format/format";
+import { dedupeSleepMissingStates } from "@dofek/format/sleep-data-state";
 import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepAnalyticsDataState, SleepNightlyRow } from "dofek-server/types";
@@ -24,13 +25,7 @@ function getMissingSleepStates(night: SleepNightlyRow): MissingSleepState[] {
   const states = [night.durationState, night.sleepState, night.stageState].filter(
     (state): state is MissingSleepState => state.status === "missing",
   );
-  return states.filter(
-    (state, index) =>
-      states.findIndex(
-        (candidate) =>
-          candidate.reason === state.reason && candidate.nextAction === state.nextAction,
-      ) === index,
-  );
+  return dedupeSleepMissingStates(states);
 }
 
 function getLatestMissingSleepState(nightly: SleepNightlyRow[]): MissingSleepState | null {

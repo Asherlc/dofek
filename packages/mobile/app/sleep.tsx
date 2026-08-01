@@ -9,6 +9,7 @@ import {
   isYesterday,
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import { dedupeSleepMissingStates } from "@dofek/format/sleep-data-state";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -34,13 +35,7 @@ function getMissingSleepStates(night: SleepNightlyRow): MissingSleepState[] {
   const states = [night.durationState, night.sleepState, night.stageState].filter(
     (state): state is MissingSleepState => state.status === "missing",
   );
-  return states.filter(
-    (state, index) =>
-      states.findIndex(
-        (candidate) =>
-          candidate.reason === state.reason && candidate.nextAction === state.nextAction,
-      ) === index,
-  );
+  return dedupeSleepMissingStates(states);
 }
 
 function hasStagePercentages(night: SleepNightlyRow): night is SleepNightlyRow & {
