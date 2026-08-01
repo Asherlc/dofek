@@ -111,3 +111,6 @@ minimumReleaseAgeExclude:
   - expo-sharing@57.0.8
   - expo-task-manager@57.0.7
   - expo-updates@57.0.11
+  - '@posthog/core@1.46.1'
+  - posthog-node@5.47.3
+  - posthog-react-native@4.61.2
