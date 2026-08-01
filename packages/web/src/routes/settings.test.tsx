@@ -23,15 +23,10 @@ vi.mock("@tanstack/react-router", () => ({
     },
 }));
 
-vi.mock("../pages/SettingsPage.tsx", () => ({
-  SettingsPage: () => null,
-  isSettingsTab: (value: unknown) =>
-    value === "general" ||
-    value === "health" ||
-    value === "connections" ||
-    value === "account" ||
-    value === "advanced",
-}));
+vi.mock("../pages/SettingsPage.tsx", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../pages/SettingsPage.tsx")>();
+  return { ...actual, SettingsPage: () => null };
+});
 
 beforeAll(async () => {
   await import("./settings.tsx");
