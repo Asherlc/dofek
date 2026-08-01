@@ -6,8 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 interface Technique {
   id: string;
   name: string;
+  purpose?: string;
   description: string;
   possibleBenefit?: string;
+  difficulty?: string;
+  durationSeconds?: number;
   safety: {
     position: string;
     warnings: string[];
@@ -103,8 +106,11 @@ describe("BreathworkScreen", () => {
         {
           id: "box-breathing",
           name: "Box Breathing",
+          purpose: "Calm focus",
           description: "Equal-length inhale, hold, exhale, and hold phases.",
           possibleBenefit: "Regular practice may support a more positive mood.",
+          difficulty: "Beginner",
+          durationSeconds: 64,
           safety: {
             position: "Practice seated or lying down in a comfortable, safe place.",
             warnings: ["Do not force or strain your breath."],
@@ -119,7 +125,10 @@ describe("BreathworkScreen", () => {
         {
           id: "wim-hof",
           name: "Power Breathing",
+          purpose: "An energizing practice",
           description: "30 rounds of 2-second inhales followed by 2-second exhales.",
+          difficulty: "Advanced",
+          durationSeconds: 120,
           safety: {
             position: "Practice only while seated or lying down in a safe place.",
             warnings: [
@@ -161,11 +170,25 @@ describe("BreathworkScreen", () => {
     expect(screen.getByRole("button", { name: "Start Session" })).toBeTruthy();
   });
 
+  it("shows duration and difficulty and exposes the full description to assistive tech", async () => {
+    const { default: BreathworkScreen } = await import("./breathwork");
+    render(<BreathworkScreen />);
+
+    expect(screen.getByText("Calm focus")).toBeTruthy();
+    expect(screen.getByText(/Duration: 1m/)).toBeTruthy();
+    expect(screen.getByText(/Difficulty: Beginner/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: /Box Breathing.*Calm focus.*Equal-length inhale, hold, exhale, and hold phases\..*Duration: 1m.*Difficulty: Beginner/,
+      }),
+    ).toBeTruthy();
+  });
+
   it("shows material power breathing warnings before Start", async () => {
     const { default: BreathworkScreen } = await import("./breathwork");
     render(<BreathworkScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Power Breathing" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Power Breathing/ }));
 
     expect(
       screen.getByText("Intense rounds can, in rare cases, cause loss of consciousness."),
@@ -200,6 +223,7 @@ describe("BreathworkScreen", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     const { default: BreathworkScreen } = await import("./breathwork");
@@ -232,7 +256,7 @@ describe("BreathworkScreen", () => {
     });
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(screen.getByText("How do you feel now?")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Box Breathing" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: /^Box Breathing/ })).toHaveProperty("disabled", true);
 
     fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
     expect(mocks.mutate).toHaveBeenCalledWith(
@@ -260,6 +284,7 @@ describe("BreathworkScreen", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     const { default: BreathworkScreen } = await import("./breathwork");
@@ -296,6 +321,7 @@ describe("BreathworkScreen", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     const { default: BreathworkScreen } = await import("./breathwork");
@@ -359,6 +385,7 @@ describe("BreathworkScreen", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     const { default: BreathworkScreen } = await import("./breathwork");
