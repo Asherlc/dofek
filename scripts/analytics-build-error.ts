@@ -49,7 +49,7 @@ export function classifyAnalyticsFailure(
     return "syntax";
   }
   if (
-    /\b(?:code\s*:?\s*(?:60|81)|unknown_(?:table|database|identifier)|unknown (?:table|database|identifier)|table .* not found|no such table)\b/i.test(
+    /\b(?:code\s*:?\s*(?:47|60|81)|unknown_(?:table|database|identifier)|unknown (?:table|database|identifier)|table .* not found|no such table)\b/i.test(
       text,
     )
   ) {

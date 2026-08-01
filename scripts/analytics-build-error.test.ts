@@ -16,6 +16,7 @@ describe("analytics build failures", () => {
     expect(classifyAnalyticsFailure("dbt_model_failed", "SYNTAX_ERROR in model SQL")).toBe(
       "syntax",
     );
+    expect(classifyAnalyticsFailure("dbt_model_failed", "Code: 47")).toBe("dependency");
   });
 
   it("keeps model and category metadata on the thrown build error", () => {

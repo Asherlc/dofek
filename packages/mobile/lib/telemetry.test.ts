@@ -211,12 +211,16 @@ describe("ios telemetry", () => {
     );
   });
 
-  it("redacts UUID routes from versions 6 through 8", async () => {
+  it.each([
+    "550e8400-e29b-61d4-a716-446655440000",
+    "550e8400-e29b-71d4-a716-446655440000",
+    "550e8400-e29b-81d4-a716-446655440000",
+  ])("redacts UUID routes from versions 6 through 8 (%s)", async (uuid) => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
 
     const mod = await import("./telemetry");
     mod.initTelemetry();
-    mod.setTelemetryRoute("/activity/550e8400-e29b-61d4-a716-446655440000");
+    mod.setTelemetryRoute(`/activity/${uuid}`);
 
     mod.captureException(new Error("request failed"), { source: "react-query" });
 
