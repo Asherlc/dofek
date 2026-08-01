@@ -94,6 +94,11 @@ const ticketInput = {
 
 const statusCases = [
   {
+    status: 200,
+    code: "BAD_GATEWAY" as const,
+    message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+  },
+  {
     status: 400,
     code: "BAD_REQUEST" as const,
     message: "Support Tickets rejected the request. Review your message and try again.",
@@ -189,7 +194,9 @@ describe("supportRouter", () => {
     await expect(
       makeCaller({ name: "Support User", email: "user@example.com" }).createTicket(ticketInput),
     ).rejects.toMatchObject({ code, message });
-    expect(mockCaptureException).toHaveBeenCalledTimes(status >= 500 ? 1 : 0);
+    expect(mockCaptureException).toHaveBeenCalledTimes(
+      status >= 500 || status < 300 || status === 401 || status === 403 ? 1 : 0,
+    );
     expect(mockLoggerError).toHaveBeenCalledTimes(1);
   });
 

@@ -163,7 +163,13 @@ export const supportRouter = router({
         logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
         return { ticketId: ticket.ticketId };
       } catch (error) {
-        if (!(error instanceof PostHogConversationsError) || error.status >= 500) {
+        if (
+          !(error instanceof PostHogConversationsError) ||
+          error.status >= 500 ||
+          error.status < 300 ||
+          error.status === 401 ||
+          error.status === 403
+        ) {
           captureException(error);
         }
         logger.error(
