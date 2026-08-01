@@ -37,15 +37,15 @@ vi.mock("@sentry/react-native", () => ({
 }));
 
 const posthogMocks = vi.hoisted(() => {
-  const posthogClient = {
-    captureException: vi.fn(),
-    flush: vi.fn().mockResolvedValue(undefined),
-    register: vi.fn(),
-  };
-  const mockPosthogConstructor = vi.fn(
-    (_apiKey: string, _options: PostHogClientOptions) => posthogClient,
-  );
-  return { posthogClient, mockPosthogConstructor };
+  const captureException = vi.fn();
+  const flush = vi.fn().mockResolvedValue(undefined);
+  const register = vi.fn();
+  const mockPosthogConstructor = vi.fn((_apiKey: string, _options: PostHogClientOptions) => ({
+    captureException,
+    flush,
+    register,
+  }));
+  return { captureException, flush, register, mockPosthogConstructor };
 });
 
 type PostHogClientOptions = {
@@ -195,7 +195,7 @@ describe("ios telemetry", () => {
       uncaughtExceptions: true,
       unhandledRejections: true,
     });
-    expect(posthogMocks.posthogClient.register).toHaveBeenCalledWith({
+    expect(posthogMocks.register).toHaveBeenCalledWith({
       service: "dofek-mobile",
     });
   });
