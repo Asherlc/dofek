@@ -3,7 +3,7 @@ import { userProfile } from "dofek/db/schema/reference";
 import { captureException } from "dofek/lib/error-reporting";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getZohoDeskClient } from "../lib/zoho-desk.ts";
+import { getPostHogConversationsClient } from "../lib/posthog-conversations.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -18,10 +18,21 @@ const createTicketInput = z.object({
  * Build the ticket description sent to support agents. Includes the user's
  * message plus identifying context so agents can locate the account.
  */
-function buildDescription(message: string, userId: string, appVersion?: string): string {
-  return [message, "", "---", `User ID: ${userId}`, `App version: ${appVersion ?? "unknown"}`].join(
-    "\n",
-  );
+function buildDescription(
+  subject: string,
+  message: string,
+  userId: string,
+  appVersion?: string,
+): string {
+  return [
+    `Subject: ${subject}`,
+    "",
+    message,
+    "",
+    "---",
+    `User ID: ${userId}`,
+    `App version: ${appVersion ?? "unknown"}`,
+  ].join("\n");
 }
 
 export const supportRouter = router({
@@ -41,16 +52,15 @@ export const supportRouter = router({
     }
 
     try {
-      const ticket = await getZohoDeskClient().createTicket({
-        subject: input.subject,
-        description: buildDescription(input.message, ctx.userId, ctx.appVersion),
+      const ticket = await getPostHogConversationsClient().createTicket({
+        message: buildDescription(input.subject, input.message, ctx.userId, ctx.appVersion),
         contactEmail,
         contactName: profile?.name ?? contactEmail,
+        distinctId: ctx.userId,
+        widgetSessionId: crypto.randomUUID(),
       });
-      logger.info(
-        `[support] ticket created userId=${ctx.userId} ticketNumber=${ticket.ticketNumber}`,
-      );
-      return { ticketNumber: ticket.ticketNumber };
+      logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
+      return { ticketId: ticket.ticketId };
     } catch (error) {
       captureException(error);
       logger.error(

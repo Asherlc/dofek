@@ -33,7 +33,7 @@ export function SupportPanel() {
         <p className="text-sm text-foreground">
           Thanks — your request was submitted. Our team will reply by email.
         </p>
-        <p className="text-xs text-subtle">Reference number: #{createTicket.data.ticketNumber}</p>
+        <p className="text-xs text-subtle">Ticket ID: {createTicket.data.ticketId}</p>
         <button
           type="button"
           onClick={() => createTicket.reset()}

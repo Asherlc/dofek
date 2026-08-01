@@ -13,13 +13,13 @@ export function SupportPanel({
   onReset,
   isPending,
   errorMessage,
-  ticketNumber,
+  ticketId,
 }: {
   onSubmit: (draft: SupportTicketDraft) => void;
   onReset: () => void;
   isPending: boolean;
   errorMessage?: string | null;
-  ticketNumber?: string | null;
+  ticketId?: string | null;
 }) {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -41,13 +41,13 @@ export function SupportPanel({
     onReset();
   }
 
-  if (ticketNumber) {
+  if (ticketId) {
     return (
       <View style={styles.container}>
         <Text style={styles.successText}>
           Thanks — your request was submitted. Our team will reply by email.
         </Text>
-        <Text style={styles.dimText}>Reference number: #{ticketNumber}</Text>
+        <Text style={styles.dimText}>Ticket ID: {ticketId}</Text>
         <TouchableOpacity
           style={styles.secondaryButton}
           onPress={handleReset}

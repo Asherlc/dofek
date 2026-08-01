@@ -32,6 +32,7 @@
     "./lib/custom-auth-providers": "./src/lib/custom-auth-providers.ts",
     "./lib/sentry": "./src/lib/sentry.ts",
     "./lib/posthog": "./src/lib/posthog.ts",
+    "./lib/posthog-config": "./src/lib/posthog-config.ts",
     "./lib/error-reporting": "./src/lib/error-reporting.ts",
     "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",
