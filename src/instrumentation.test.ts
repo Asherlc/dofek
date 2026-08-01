@@ -243,6 +243,29 @@ describe("instrumentation", () => {
     expect(BatchSpanProcessor).toHaveBeenCalledTimes(2);
   });
 
+  it("adds PostHog traces without PostHog logs for production services configured with explicit OTLP endpoints", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      NODE_ENV: "production",
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://collector:4318/v1/traces",
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://collector:4318/v1/logs",
+    });
+
+    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
+    expect(config?.spanProcessors).toHaveLength(2);
+    expect(config?.logRecordProcessors).toHaveLength(1);
+    expect(OTLPTraceExporter).toHaveBeenCalledTimes(2);
+    expect(OTLPTraceExporter).toHaveBeenLastCalledWith({
+      url: POSTHOG_TRACES_URL,
+      headers: {
+        Authorization: `Bearer ${POSTHOG_API_KEY}`,
+      },
+    });
+    expect(OTLPLogExporter).toHaveBeenCalledOnce();
+    expect(OTLPLogExporter).toHaveBeenCalledWith();
+  });
+
   it("only configures trace processors and auto instrumentations when only traces endpoint exists", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 

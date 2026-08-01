@@ -18,7 +18,9 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
   const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
-  const hasPostHogTraceExport = isProductionDeployment(env.DEPLOY_ENVIRONMENT);
+  const hasPostHogTraceExport =
+    isProductionDeployment(env.DEPLOY_ENVIRONMENT) ||
+    (env.NODE_ENV === "production" && hasAxiomTraceExport);
 
   const processors: SpanProcessor[] = [];
 
