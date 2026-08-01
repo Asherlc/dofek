@@ -280,6 +280,7 @@ describe("Settings layout stability", () => {
   }
 
   it("keeps account settings stable while Billing resolves", () => {
+    cy.intercept("POST", /\/api\/trpc\/.*auth\.linkedAccounts/).as("linkedAccounts");
     cy.intercept("POST", /\/api\/trpc\/.*billing\.status/, (request) => {
       request.on("response", (response) => {
         response.setDelay(TARGET_RESPONSE_DELAY_MS);
@@ -296,6 +297,8 @@ describe("Settings layout stability", () => {
     cy.visit("/settings?tab=account", {
       onBeforeLoad: installLayoutShiftObserver,
     });
+    cy.wait("@linkedAccounts");
+    cy.contains("main", "Loading linked accounts...").should("not.exist");
     cy.window().then((win) => waitForStableLayout(win, false));
     cy.contains("main", "Loading subscription status...").should("exist");
     cy.contains("main section h3", "Linked Accounts").then(($heading) => {
