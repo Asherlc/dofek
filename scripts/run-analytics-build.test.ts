@@ -167,6 +167,55 @@ describe("runAnalyticsBuild", () => {
     expect(recordRun).toHaveBeenCalledOnce();
   });
 
+  it("preserves processing failures when dbt artifacts are incomplete", async () => {
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 2 }));
+
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: ["provider_stats"],
+        artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: {
+          sensor_scalar_sample_begin: "2025-02-03",
+          deduped_sensor_begin: "2025-02-03",
+          activity_sensor_sample_begin: "2025-02-03",
+          activity_location_sample_begin: "2025-04-05",
+        },
+        runDbt: async () => 0,
+        readArtifact: async (name) =>
+          name === "manifest.json"
+            ? {
+                metadata: {
+                  dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json",
+                },
+                nodes: {
+                  "model.dofek.provider_stats": {
+                    unique_id: "model.dofek.provider_stats",
+                    name: "provider_stats",
+                    resource_type: "model",
+                  },
+                },
+              }
+            : {
+                metadata: { invocation_id: "dbt-run-combined-failure" },
+                results: [
+                  {
+                    unique_id: "model.dofek.provider_stats",
+                    status: "error",
+                    execution_time: 1,
+                    message: "database error",
+                  },
+                ],
+              },
+        recordRun,
+      }),
+    ).rejects.toMatchObject({
+      constructor: AnalyticsBuildError,
+      message:
+        "dbt build did not complete every required analytics model: provider_stats: database error; analytics processing recorded 2 failed dataset(s)",
+      processingFailedCount: 2,
+    });
+  });
+
   it("reports pending-processing failures separately from dbt failures", async () => {
     const recordRun = vi.fn(async () => ({ datasets: 3, failed: 2 }));
 
@@ -316,7 +365,8 @@ describe("runAnalyticsBuild", () => {
     ).rejects.toMatchObject({
       constructor: AnalyticsBuildError,
       exitCode: 0,
-      message: "dbt build did not complete every required analytics model: provider_stats: skipped",
+      message:
+        "dbt build did not complete every required analytics model: provider_stats: skipped; analytics processing recorded 2 failed dataset(s)",
     });
   });
 });

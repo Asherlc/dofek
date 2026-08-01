@@ -77,7 +77,12 @@ export async function runAnalyticsBuild({
     throw new AnalyticsBuildError(exitCode, incompleteFailures, "process-failed");
   }
   if (!artifacts.succeeded) {
-    throw new AnalyticsBuildError(exitCode, incompleteFailures, "incomplete");
+    throw new AnalyticsBuildError(
+      exitCode,
+      incompleteFailures,
+      "incomplete",
+      processingResult.failed,
+    );
   }
   if (processingResult.failed > 0) {
     throw new Error(

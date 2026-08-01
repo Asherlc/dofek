@@ -92,12 +92,14 @@ export function createAnalyticsBuildFailure(
 export class AnalyticsBuildError extends Error {
   readonly exitCode: number;
   readonly failures: readonly AnalyticsBuildFailure[];
+  readonly processingFailedCount: number;
   readonly reason: AnalyticsBuildErrorReason;
 
   constructor(
     exitCode: number,
     failures: readonly AnalyticsBuildFailure[],
     reason: AnalyticsBuildErrorReason = exitCode === 0 ? "incomplete" : "process-failed",
+    processingFailedCount = 0,
   ) {
     const detail = failures
       .map(
@@ -109,10 +111,15 @@ export class AnalyticsBuildError extends Error {
       reason === "incomplete"
         ? "dbt build did not complete every required analytics model"
         : `dbt build failed with exit code ${exitCode}`;
-    super(`${summary}${detail ? `: ${detail}` : ""}`);
+    const processingDetail =
+      processingFailedCount > 0
+        ? `; analytics processing recorded ${processingFailedCount} failed dataset(s)`
+        : "";
+    super(`${summary}${detail ? `: ${detail}` : ""}${processingDetail}`);
     this.name = "AnalyticsBuildError";
     this.exitCode = exitCode;
     this.failures = [...failures];
+    this.processingFailedCount = processingFailedCount;
     this.reason = reason;
     Object.setPrototypeOf(this, new.target.prototype);
   }
