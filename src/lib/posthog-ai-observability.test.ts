@@ -1,7 +1,8 @@
-import { SpanKind } from "@opentelemetry/api";
+import { context, SpanKind } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import type { ReadableSpan, SpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const posthogMocks = vi.hoisted(() => ({
   delegate: {
@@ -19,7 +20,24 @@ vi.mock("@posthog/ai/otel", () => ({
   PostHogSpanProcessor: posthogMocks.PostHogSpanProcessor,
 }));
 
+import { withAiGenerationContext } from "./ai-observability.ts";
 import { PostHogAiSpanProcessor } from "./posthog-ai-observability.ts";
+
+function makeSpan(): Span {
+  return {
+    ...makeReadableSpan("gen_ai.generate", {}),
+    setAttribute: vi.fn(),
+    setAttributes: vi.fn(),
+    addEvent: vi.fn(),
+    addLink: vi.fn(),
+    addLinks: vi.fn(),
+    setStatus: vi.fn(),
+    updateName: vi.fn(),
+    end: vi.fn(),
+    isRecording: vi.fn(() => true),
+    recordException: vi.fn(),
+  } satisfies Span;
+}
 
 function makeReadableSpan(name: string, attributes: ReadableSpan["attributes"]): ReadableSpan {
   return {
@@ -47,35 +65,65 @@ function makeReadableSpan(name: string, attributes: ReadableSpan["attributes"]):
 }
 
 describe("PostHog AI observability adapter", () => {
+  const contextManager = new AsyncLocalStorageContextManager();
+
+  beforeAll(() => {
+    context.setGlobalContextManager(contextManager.enable());
+  });
+
+  afterAll(() => {
+    contextManager.disable();
+    context.disable();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("maps the generic user identity to PostHog at the adapter boundary", () => {
+  it("maps the generic user identity onto the live span at the adapter boundary", async () => {
     const processor = new PostHogAiSpanProcessor({
       projectToken: "phc_test",
     });
-    const span = makeReadableSpan("gen_ai.generate", {
-      "user.id": "user-123",
-      "gen_ai.request.model": "test-model",
-    });
+    const span = makeSpan();
 
-    processor.onEnd(span);
+    await withAiGenerationContext({ userId: "user-123" }, async () => {
+      processor.onStart(span, context.active());
+    });
 
     expect(posthogMocks.PostHogSpanProcessor).toHaveBeenCalledWith({
       projectToken: "phc_test",
     });
-    expect(posthogMocks.delegate.onEnd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        attributes: expect.objectContaining({
-          "user.id": "user-123",
-          posthog_distinct_id: "user-123",
-        }),
-      }),
-    );
+    expect(span.setAttribute).toHaveBeenCalledWith("posthog_distinct_id", "user-123");
+    expect(posthogMocks.delegate.onStart).toHaveBeenCalledWith(span, expect.anything());
   });
 
   it("does not add a provider identity without a generic user identity", () => {
+    const processor = new PostHogAiSpanProcessor({
+      projectToken: "phc_test",
+    });
+    const span = makeSpan();
+
+    processor.onStart(span, context.active());
+
+    expect(span.setAttribute).not.toHaveBeenCalled();
+    expect(posthogMocks.delegate.onStart).toHaveBeenCalledWith(span, expect.anything());
+  });
+
+  it("does not add a provider identity for an empty user identity", async () => {
+    const processor = new PostHogAiSpanProcessor({
+      projectToken: "phc_test",
+    });
+    const span = makeSpan();
+
+    await withAiGenerationContext({ userId: "" }, async () => {
+      processor.onStart(span, context.active());
+    });
+
+    expect(span.setAttribute).not.toHaveBeenCalled();
+    expect(posthogMocks.delegate.onStart).toHaveBeenCalledWith(span, expect.anything());
+  });
+
+  it("forwards the original ended span unchanged", () => {
     const processor = new PostHogAiSpanProcessor({
       projectToken: "phc_test",
     });
@@ -86,26 +134,7 @@ describe("PostHog AI observability adapter", () => {
     processor.onEnd(span);
 
     expect(posthogMocks.delegate.onEnd).toHaveBeenCalledWith(span);
-  });
-
-  it("does not add a provider identity for empty or non-string user identities", () => {
-    const processor = new PostHogAiSpanProcessor({
-      projectToken: "phc_test",
-    });
-    const emptyUserIdSpan = makeReadableSpan("gen_ai.generate", {
-      "user.id": "",
-      "gen_ai.request.model": "test-model",
-    });
-    const nonStringUserIdSpan = makeReadableSpan("gen_ai.generate", {
-      "user.id": true,
-      "gen_ai.request.model": "test-model",
-    });
-
-    processor.onEnd(emptyUserIdSpan);
-    processor.onEnd(nonStringUserIdSpan);
-
-    expect(posthogMocks.delegate.onEnd).toHaveBeenNthCalledWith(1, emptyUserIdSpan);
-    expect(posthogMocks.delegate.onEnd).toHaveBeenNthCalledWith(2, nonStringUserIdSpan);
+    expect(posthogMocks.delegate.onEnd.mock.calls[0]?.[0]).toBe(span);
   });
 
   it("forwards lifecycle operations to the PostHog processor", async () => {

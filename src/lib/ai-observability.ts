@@ -34,11 +34,17 @@ export function withAiGenerationContext<T>(
   return context.with(nextContext, operation);
 }
 
+/** Returns the generic user identity attached to an AI generation context. */
+export function getAiGenerationUserId(parentContext: Context): string | undefined {
+  const userId = parentContext.getValue(AI_USER_ID_CONTEXT_KEY);
+  return typeof userId === "string" && userId.length > 0 ? userId : undefined;
+}
+
 /** Adds standard user context to spans created during an AI operation. */
 export class AiContextSpanProcessor implements SpanProcessor {
   onStart(span: SpanAttributeTarget, parentContext: Context): void {
-    const userId = parentContext.getValue(AI_USER_ID_CONTEXT_KEY);
-    if (typeof userId === "string" && userId.length > 0) {
+    const userId = getAiGenerationUserId(parentContext);
+    if (userId) {
       span.setAttribute("user.id", userId);
     }
   }

@@ -1,6 +1,7 @@
 import type { Context } from "@opentelemetry/api";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { PostHogSpanProcessor, type PostHogSpanProcessorOptions } from "@posthog/ai/otel";
+import { getAiGenerationUserId } from "./ai-observability.ts";
 
 /** Adds PostHog-specific AI identity at the provider export boundary. */
 export class PostHogAiSpanProcessor implements SpanProcessor {
@@ -10,10 +11,17 @@ export class PostHogAiSpanProcessor implements SpanProcessor {
     this.#delegate = new PostHogSpanProcessor(options);
   }
 
-  onStart(_span: Span, _parentContext: Context): void {}
+  onStart(span: Span, parentContext: Context): void {
+    const userId = getAiGenerationUserId(parentContext);
+    if (userId) {
+      span.setAttribute("posthog_distinct_id", userId);
+    }
+
+    this.#delegate.onStart(span, parentContext);
+  }
 
   onEnd(span: ReadableSpan): void {
-    this.#delegate.onEnd(addPostHogIdentity(span));
+    this.#delegate.onEnd(span);
   }
 
   shutdown(): Promise<void> {
@@ -23,19 +31,4 @@ export class PostHogAiSpanProcessor implements SpanProcessor {
   forceFlush(): Promise<void> {
     return this.#delegate.forceFlush();
   }
-}
-
-function addPostHogIdentity(span: ReadableSpan): ReadableSpan {
-  const userId = span.attributes["user.id"];
-  if (typeof userId !== "string" || userId.length === 0) {
-    return span;
-  }
-
-  return {
-    ...span,
-    attributes: {
-      ...span.attributes,
-      posthog_distinct_id: userId,
-    },
-  };
 }
