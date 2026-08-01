@@ -21454,3 +21454,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   of outer headroom. If CI reaches the tracked limit, capture query memory and
   container inspection before changing the profile; do not relax the boundary
   with waits or retries.
+
+## 2026-08-01 — Full E2E analytics exceeded the shared review ClickHouse cap
+
+- **Status:** Fixed in source; the new E2E profile is awaiting a fresh CI run.
+- **Symptoms:** CI run `30717385680`, job `91415540159`, failed after the
+  seeded stack completed its relational and ClickHouse seed steps. The
+  `analytics` service exited while building `daily_recovery_inputs`.
+- **User impact:** The #2199 browser smoke test could not start because the
+  E2E analytics prerequisite failed. There was no production impact.
+- **Evidence:** The first fatal line was `Code: 241 ... memory limit exceeded:
+  would use 1.27 GiB ... current RSS: 1012.07 MiB, maximum: 1.25 GiB` from
+  ClickHouse while executing `daily_recovery_inputs`. The seed services had
+  already exited successfully, so this was not a seed ordering or Cypress
+  assertion failure.
+- **Root cause:** The merged shared review profile sized the E2E container and
+  server cap for the small review seed, but CI also runs the complete historical
+  analytics build. That workload needs more than the 1280 MiB server cap even
+  with one dbt thread.
+- **Fix / mitigation:** Keep the 1536/1280 MiB bounded profile for the default
+  shared-VM service, and give the isolated full E2E analytics stack a separate
+  2048/1792 MiB bounded profile. This raises only the explicitly isolated CI
+  workload's budget; it adds no retry, wait, or warn-and-continue behavior.
+- **Validation:** Static Compose/config checks passed before CI. A fresh CI run
+  must verify that the analytics build and browser smoke test complete under the
+  separate profile.
+- **Remaining risk / follow-up:** If the larger E2E profile still reaches its
+  cap, capture the failing model's query memory and rendered container limit
+  before changing the budget again.
