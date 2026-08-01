@@ -1,3 +1,4 @@
+import { formatConditionalEffectLabel, NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { classifyConfidence, classifyCorrelationConfidence } from "./confidence.ts";
 import type { JoinedDay } from "./data-join.ts";
 import { cohensD, describe, spearmanCorrelation, welchTTest } from "./stats.ts";
@@ -311,7 +312,15 @@ export function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
           const tResult = welchTTest(highWeightDeltas, lowWeightDeltas);
           const trueStats = describe(highWeightDeltas);
           const falseStats = describe(lowWeightDeltas);
-          const diff = trueStats.mean - falseStats.mean;
+          const effectLabel = formatConditionalEffectLabel(
+            trueStats.mean,
+            falseStats.mean,
+            "monthly weight change",
+          );
+          const message =
+            effectLabel === NO_OBSERVED_DIFFERENCE
+              ? "Observed association: Months with more exercise showed no observed difference in weight change."
+              : `Observed association: Months with more exercise had ${effectLabel} weight change.`;
 
           insights.push({
             id: "m-high-exercise-weight",
@@ -319,7 +328,7 @@ export function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
             confidence: conf,
             metric: "monthly weight change",
             action: `above-median exercise (>${medExDays} days/mo)`,
-            message: `Observed association: Months with more exercise had ${Math.abs(diff).toFixed(1)} kg ${diff < 0 ? "less" : "more"} weight change`,
+            message,
             detail: `High exercise months: avg ${trueStats.mean.toFixed(1)} kg vs ${falseStats.mean.toFixed(1)} kg (n=${highWeightDeltas.length}/${lowWeightDeltas.length})`,
             whenTrue: trueStats,
             whenFalse: falseStats,

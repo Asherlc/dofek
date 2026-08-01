@@ -56,7 +56,7 @@ describe("CorrelationCard", () => {
         label: "Descriptive correlation",
         method: "Server correlation method.",
         interpretation: "Server interpretation: association does not establish causation.",
-        limitations: "Server limitations: missingness and confounding remain possible.",
+        limitations: "Server limitations: missing observations and confounding remain possible.",
         recommendation: "Server recommendation: this is not a prescription.",
       },
       dataPoints: [
@@ -73,7 +73,7 @@ describe("CorrelationCard", () => {
       screen.getByText("Server interpretation: association does not establish causation."),
     ).toBeDefined();
     expect(
-      screen.getByText("Server limitations: missingness and confounding remain possible."),
+      screen.getByText("Server limitations: missing observations and confounding remain possible."),
     ).toBeDefined();
     expect(screen.getByText("Server recommendation: this is not a prescription.")).toBeDefined();
     expect(screen.queryByText("Strong")).toBeNull();
@@ -99,7 +99,7 @@ describe("CorrelationCard", () => {
         label: "Descriptive association",
         method: "Server comparison method.",
         interpretation: "Server interpretation: association does not establish causation.",
-        limitations: "Server limitations: missingness and confounding remain possible.",
+        limitations: "Server limitations: missing observations and confounding remain possible.",
         recommendation: "Server recommendation: this is not a prescription.",
         estimateLabel: "Server estimate label.",
       },

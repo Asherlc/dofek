@@ -38,7 +38,7 @@ const associationData = [
     association: {
       relationship: "descriptive_association",
       direction: "higher",
-      estimateLabel: "Server estimate: 18.6% higher",
+      estimateLabel: "18.6% higher",
       method: "Server-computed comparison method.",
       interpretation: "Server interpretation: association, not causation or prescription.",
       uncertainty: "Server uncertainty statement.",
@@ -59,7 +59,7 @@ const associationData = [
     association: {
       relationship: "descriptive_association",
       direction: "lower",
-      estimateLabel: "Server estimate: 12.4% lower",
+      estimateLabel: "12.4% lower",
       method: "Server-computed comparison method.",
       interpretation: "Server interpretation: association, not causation or prescription.",
       uncertainty: "Server uncertainty statement.",
@@ -92,20 +92,18 @@ describe("BehaviorAssociationsScreen", () => {
     expect(
       screen.getByText("How your daily behaviors are associated with next-day readiness"),
     ).toBeTruthy();
+    expect(screen.getByText("Method: Server-computed comparison method.")).toBeTruthy();
     expect(
       screen.getByText(
-        "Method: (mean next-day readiness after Yes − mean after No) ÷ mean after No × 100.",
+        "Interpretation: Server interpretation: association, not causation or prescription.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Association does not establish causation.")).toBeTruthy();
-    expect(
-      screen.getByText("Uncertainty interval: not available for this descriptive comparison."),
-    ).toBeTruthy();
-    expect(screen.getByText("Selected window: 90 days")).toBeTruthy();
+    expect(screen.getByText("Uncertainty: Server uncertainty statement.")).toBeTruthy();
+    expect(screen.getByText("Observation window: Server observation window.")).toBeTruthy();
     expect(screen.getByText("Yes n = 18 · No n = 24")).toBeTruthy();
     expect(screen.getByText("Yes n = 14 · No n = 28")).toBeTruthy();
-    expect(screen.getByText("18.6% higher")).toBeTruthy();
-    expect(screen.getByText("12.4% lower")).toBeTruthy();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeTruthy();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeTruthy();
     expect(mocks.queryInputs.at(-1)).toEqual({ days: 90 });
   });
 
@@ -113,14 +111,16 @@ describe("BehaviorAssociationsScreen", () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);
 
-    expect(screen.getByText("Server-computed comparison method.")).toBeTruthy();
+    expect(screen.getByText("Method: Server-computed comparison method.")).toBeTruthy();
     expect(
-      screen.getByText("Server interpretation: association, not causation or prescription."),
+      screen.getByText(
+        "Interpretation: Server interpretation: association, not causation or prescription.",
+      ),
     ).toBeTruthy();
-    expect(screen.getByText("Server uncertainty statement.")).toBeTruthy();
-    expect(screen.getByText("Server observation window.")).toBeTruthy();
-    expect(screen.getByText("Server estimate: 18.6% higher")).toBeTruthy();
-    expect(screen.getByText("Server estimate: 12.4% lower")).toBeTruthy();
+    expect(screen.getByText("Uncertainty: Server uncertainty statement.")).toBeTruthy();
+    expect(screen.getByText("Observation window: Server observation window.")).toBeTruthy();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeTruthy();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeTruthy();
   });
 
   it("queries the selected observation window", async () => {
@@ -129,7 +129,7 @@ describe("BehaviorAssociationsScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "30d" }));
 
-    expect(screen.getByText("Selected window: 30 days")).toBeTruthy();
+    expect(screen.getByText("Observation window: Server observation window.")).toBeTruthy();
     expect(mocks.queryInputs.at(-1)).toEqual({ days: 30 });
   });
 
@@ -216,8 +216,8 @@ describe("BehaviorAssociationsScreen", () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);
 
-    expect(screen.getByText("18.6% higher")).toBeTruthy();
-    expect(screen.getByText("12.4% lower")).toBeTruthy();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeTruthy();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeTruthy();
   });
 
   it("keeps cached associations and retry visible after a refresh error", async () => {
@@ -232,8 +232,8 @@ describe("BehaviorAssociationsScreen", () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);
 
-    expect(screen.getByText("18.6% higher")).toBeTruthy();
-    expect(screen.getByText("12.4% lower")).toBeTruthy();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeTruthy();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeTruthy();
     expect(screen.getByText("Behavior association data is unavailable.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
     expect(mocks.refetch).toHaveBeenCalledOnce();

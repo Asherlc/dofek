@@ -121,6 +121,37 @@ describe("behaviorImpactRouter", () => {
       ]);
     });
 
+    it("returns unavailable association semantics for a zero No-group baseline", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              question_slug: "zero-baseline",
+              display_name: "Zero baseline",
+              category: "test",
+              avg_readiness_yes: 65,
+              avg_readiness_no: 0,
+              yes_count: 8,
+              no_count: 7,
+              provider_ids: ["manual_review"],
+            },
+          ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const [result] = await caller.impactSummary({ days: 90 });
+
+      expect(result?.impactPercent).toBeNull();
+      expect(result?.association).toMatchObject({
+        direction: "unavailable",
+        estimateLabel: "Estimate unavailable",
+        observationWindow: "90 days",
+      });
+    });
+
     it("uses default days of 90", async () => {
       const executeMock = vi.fn().mockResolvedValue([]);
       const caller = createCaller({

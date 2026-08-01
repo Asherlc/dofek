@@ -23,15 +23,28 @@ describe("BehaviorImpact", () => {
   it("computes negative impact when yes readiness < no readiness", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 55, avgReadinessNo: 70 }));
     expect(impact.impactPercent).toBeCloseTo(-21.4, 1);
+    expect(impact.association.direction).toBe("lower");
   });
 
   it("computes positive impact when yes readiness > no readiness", () => {
     const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 75, avgReadinessNo: 60 }));
     expect(impact.impactPercent).toBeCloseTo(25.0, 1);
+    expect(impact.association.direction).toBe("higher");
   });
 
-  it("returns 0 when avgReadinessNo is 0", () => {
-    expect(new BehaviorImpact(makeRow({ avgReadinessNo: 0 })).impactPercent).toBe(0);
+  it("uses a neutral direction when the group means are equal", () => {
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 60, avgReadinessNo: 60 }));
+    expect(impact.association.direction).toBe("no_difference");
+  });
+
+  it("represents a zero No-group baseline as an unavailable association", () => {
+    const impact = new BehaviorImpact(makeRow({ avgReadinessYes: 65, avgReadinessNo: 0 }));
+
+    expect(impact.impactPercent).toBeNull();
+    expect(impact.association).toMatchObject({
+      direction: "unavailable",
+      estimateLabel: "Estimate unavailable",
+    });
   });
 
   it("rounds to one decimal place", () => {

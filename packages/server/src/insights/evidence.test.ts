@@ -30,4 +30,13 @@ describe("createInsightEvidence", () => {
       recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
     });
   });
+
+  it("does not claim multiple-comparison correction for monthly analyses", () => {
+    expect(createInsightEvidence("conditional", undefined, "monthly").method).toBe(
+      "Observed-group mean comparison across monthly aggregates (with versus without the behavior) using Welch's t-test; no multiple-comparison correction is applied.",
+    );
+    expect(createInsightEvidence("correlation", undefined, "monthly").method).toBe(
+      "Spearman rank correlation over paired monthly observations; no multiple-comparison correction is applied.",
+    );
+  });
 });

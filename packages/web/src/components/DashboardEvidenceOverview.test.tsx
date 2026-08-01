@@ -57,7 +57,8 @@ describe("DashboardEvidenceOverview", () => {
             label: "Server-authored descriptive correlation",
             method: "Server correlation method.",
             interpretation: "Server interpretation: association does not establish causation.",
-            limitations: "Server limitations: missingness and confounding remain possible.",
+            limitations:
+              "Server limitations: missing observations and confounding remain possible.",
             recommendation: "Server recommendation: this is not a prescription.",
           },
           dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],

@@ -1,3 +1,4 @@
+import { formatConditionalEffectLabel, NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { getConditionalTests } from "./conditional-tests.ts";
 import {
   classifyConfidence,
@@ -11,7 +12,7 @@ import { getCorrelationPairs } from "./correlation-pairs.ts";
 import { joinByDate } from "./data-join.ts";
 import { exhaustiveSweep } from "./discovery.ts";
 import { createInsightEvidence } from "./evidence.ts";
-import { explainInsight, metricUnits } from "./explanation.ts";
+import { explainInsight } from "./explanation.ts";
 import { computeMonthlyInsights } from "./monthly.ts";
 import { benjaminiHochberg, cohensD, describe, spearmanCorrelation, welchTTest } from "./stats.ts";
 import {
@@ -28,19 +29,11 @@ import {
 
 function conditionalEstimateLabel(insight: Insight): string | undefined {
   if (insight.type !== "conditional") return undefined;
-
-  const difference = insight.whenTrue.mean - insight.whenFalse.mean;
-  if (difference === 0) return "No observed difference";
-
-  const direction = difference > 0 ? "higher" : "lower";
-  const baselineNearZero = Math.abs(insight.whenFalse.mean) < 1;
-  const unit = metricUnits[insight.metric] ?? "";
-  if (baselineNearZero || insight.whenFalse.mean === 0) {
-    return `${Math.abs(difference).toFixed(2)}${unit ? ` ${unit}` : ""} ${direction}`;
-  }
-
-  const percentageDifference = (Math.abs(difference) / Math.abs(insight.whenFalse.mean)) * 100;
-  return `${percentageDifference.toFixed(0)}% ${direction}`;
+  return formatConditionalEffectLabel(
+    insight.whenTrue.mean,
+    insight.whenFalse.mean,
+    insight.metric,
+  );
 }
 
 // ── Main engine ───────────────────────────────────────────────────────────
@@ -99,18 +92,12 @@ export function computeInsights(
     const trueStats = describe(trueValues);
     const falseStats = describe(falseValues);
 
-    const diff = trueStats.mean - falseStats.mean;
-    const baselineNearZero = Math.abs(falseStats.mean) < 1;
-    const pctDiff =
-      !baselineNearZero && falseStats.mean !== 0 ? (diff / Math.abs(falseStats.mean)) * 100 : 0;
-    const direction = diff > 0 ? "higher" : "lower";
-
     const scopePhrase = test.scope === "month" ? "during months with" : "on days with";
-    // Format message: use absolute diff when baseline is near zero, percentage otherwise
-    const unit = metricUnits[test.metric] ?? "";
-    const diffLabel = baselineNearZero
-      ? `${Math.abs(diff).toFixed(2)}${unit ? ` ${unit}` : ""} ${direction}`
-      : `${Math.abs(pctDiff).toFixed(0)}% ${direction}`;
+    const diffLabel = formatConditionalEffectLabel(trueStats.mean, falseStats.mean, test.metric);
+    const message =
+      diffLabel === NO_OBSERVED_DIFFERENCE
+        ? `Observed association: ${test.metric} showed no observed difference ${scopePhrase} ${test.action}`
+        : `Observed association: ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`;
 
     const confounders = findConfounders(test, joined);
     conditionalCandidates.push({
@@ -119,7 +106,7 @@ export function computeInsights(
       confidence,
       metric: test.metric,
       action: test.action,
-      message: `Observed association: ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`,
+      message,
       detail: `${test.action}: avg ${trueStats.mean.toFixed(1)} vs ${falseStats.mean.toFixed(1)} without (n=${trueValues.length}/${falseValues.length})`,
       whenTrue: trueStats,
       whenFalse: falseStats,
@@ -221,6 +208,7 @@ export function computeInsights(
 
   // 3. Monthly body comp / nutrition insights
   const monthlyInsights = computeMonthlyInsights(joined);
+  const monthlyInsightSet = new Set(monthlyInsights);
   insights.push(...monthlyInsights);
 
   // 4. Exhaustive pairwise discovery sweep
@@ -245,7 +233,11 @@ export function computeInsights(
   const top = insights.slice(0, 20);
   // Add server-authored evidence and a safe human-readable explanation.
   for (const insight of top) {
-    insight.evidence = createInsightEvidence(insight.type, conditionalEstimateLabel(insight));
+    insight.evidence = createInsightEvidence(
+      insight.type,
+      conditionalEstimateLabel(insight),
+      monthlyInsightSet.has(insight) ? "monthly" : "daily",
+    );
     insight.explanation = explainInsight(insight);
   }
   return top;

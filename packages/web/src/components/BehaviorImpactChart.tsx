@@ -1,9 +1,9 @@
-import { formatReadinessDifference } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import type { BehaviorAssociation } from "dofek-server/types";
 import { useState } from "react";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
+import { EvidenceDetails } from "./EvidenceDetails.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 function ReadinessAssociationBar({
@@ -16,7 +16,7 @@ function ReadinessAssociationBar({
   association,
 }: {
   label: string;
-  readinessDifferencePercent: number;
+  readinessDifferencePercent: number | null;
   category: string;
   yesCount: number;
   noCount: number;
@@ -24,9 +24,12 @@ function ReadinessAssociationBar({
   association: BehaviorAssociation;
 }) {
   const maxBar = 50; // max percentage width
-  const barWidth = Math.min(Math.abs(readinessDifferencePercent), maxBar);
-  const isHigher = readinessDifferencePercent >= 0;
-  const value = formatReadinessDifference(readinessDifferencePercent);
+  const barWidth =
+    readinessDifferencePercent === null
+      ? 0
+      : Math.min(Math.abs(readinessDifferencePercent), maxBar);
+  const isHigher = association.direction === "higher";
+  const isLower = association.direction === "lower";
 
   return (
     <div
@@ -41,12 +44,11 @@ function ReadinessAssociationBar({
           Yes n = {yesCount} · No n = {noCount}
         </span>
         <ProviderSourceDetails sources={sources} />
-        <span className="block text-[10px] text-dim mt-1">{association.estimateLabel}</span>
       </div>
       <div className="flex min-w-0 items-center">
         {/* Lower relative difference */}
         <div className="flex-1 flex justify-end">
-          {!isHigher && (
+          {isLower && (
             <div
               className="h-5 rounded-l bg-blue-500 transition-all"
               style={{ width: `${(barWidth / maxBar) * 100}%` }}
@@ -66,7 +68,9 @@ function ReadinessAssociationBar({
         </div>
       </div>
       <div className="sm:text-right">
-        <span className="text-xs font-medium text-blue-300">{value}</span>
+        <span className="text-xs font-medium text-blue-300">
+          Estimate: {association.estimateLabel}
+        </span>
       </div>
     </div>
   );
@@ -101,10 +105,6 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
       )}
     </span>
   );
-}
-
-function formatObservationWindow(days: TimeRangeDays): string {
-  return days === null ? "all available history" : `${days} days`;
 }
 
 export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
@@ -151,16 +151,30 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
         <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
           Association with Next-Day Readiness
         </h3>
-        <div className="mb-4 space-y-1 text-xs text-dim">
-          <p>Method: (mean next-day readiness after Yes − mean after No) ÷ mean after No × 100.</p>
-          <p>Association does not establish causation.</p>
-          <p>Uncertainty interval: not available for this descriptive comparison.</p>
-          <p>Selected window: {formatObservationWindow(days)}</p>
-          <p>{data[0]?.association.method}</p>
-          <p>{data[0]?.association.interpretation}</p>
-          <p>{data[0]?.association.uncertainty}</p>
-          <p>{data[0]?.association.observationWindow}</p>
-        </div>
+        {data[0]?.association ? (
+          <EvidenceDetails
+            className="mb-4"
+            textClassName="text-dim"
+            details={[
+              { key: "method", label: "Method", value: data[0].association.method },
+              {
+                key: "interpretation",
+                label: "Interpretation",
+                value: data[0].association.interpretation,
+              },
+              {
+                key: "uncertainty",
+                label: "Uncertainty",
+                value: data[0].association.uncertainty,
+              },
+              {
+                key: "observation-window",
+                label: "Observation window",
+                value: data[0].association.observationWindow,
+              },
+            ]}
+          />
+        ) : null}
         <div
           className="mb-1 hidden text-[10px] text-dim sm:grid sm:grid-cols-[10rem_minmax(0,1fr)_6rem] sm:gap-3"
           data-testid="readiness-association-axis"
@@ -173,18 +187,20 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
           <span />
         </div>
         <div className="divide-y divide-border">
-          {data.map((item) => (
-            <ReadinessAssociationBar
-              key={item.questionSlug}
-              label={item.displayName}
-              readinessDifferencePercent={item.impactPercent}
-              category={item.category}
-              yesCount={item.yesCount}
-              noCount={item.noCount}
-              sources={item.sources}
-              association={item.association}
-            />
-          ))}
+          {data.map((item) =>
+            item.association ? (
+              <ReadinessAssociationBar
+                key={item.questionSlug}
+                label={item.displayName}
+                readinessDifferencePercent={item.impactPercent}
+                category={item.category}
+                yesCount={item.yesCount}
+                noCount={item.noCount}
+                sources={item.sources}
+                association={item.association}
+              />
+            ) : null,
+          )}
         </div>
       </div>
     </div>

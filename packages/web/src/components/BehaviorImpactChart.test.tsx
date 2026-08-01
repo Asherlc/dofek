@@ -20,7 +20,7 @@ const associationData = [
     association: {
       relationship: "descriptive_association",
       direction: "higher",
-      estimateLabel: "Server estimate: 18.6% higher",
+      estimateLabel: "18.6% higher",
       method: "Server-computed comparison method.",
       interpretation: "Server interpretation: association, not causation or prescription.",
       uncertainty: "Server uncertainty statement.",
@@ -41,7 +41,7 @@ const associationData = [
     association: {
       relationship: "descriptive_association",
       direction: "lower",
-      estimateLabel: "Server estimate: 12.4% lower",
+      estimateLabel: "12.4% lower",
       method: "Server-computed comparison method.",
       interpretation: "Server interpretation: association, not causation or prescription.",
       uncertainty: "Server uncertainty statement.",
@@ -76,20 +76,16 @@ describe("BehaviorImpactChart", () => {
     render(<BehaviorImpactChart days={90} />);
 
     expect(screen.getByText("Association with Next-Day Readiness")).toBeDefined();
+    expect(screen.getByText("Server-computed comparison method.")).toBeDefined();
     expect(
-      screen.getByText(
-        "Method: (mean next-day readiness after Yes − mean after No) ÷ mean after No × 100.",
-      ),
+      screen.getByText("Server interpretation: association, not causation or prescription."),
     ).toBeDefined();
-    expect(screen.getByText("Association does not establish causation.")).toBeDefined();
-    expect(
-      screen.getByText("Uncertainty interval: not available for this descriptive comparison."),
-    ).toBeDefined();
-    expect(screen.getByText("Selected window: 90 days")).toBeDefined();
+    expect(screen.getByText("Server uncertainty statement.")).toBeDefined();
+    expect(screen.getByText("Server observation window.")).toBeDefined();
     expect(screen.getByText("Yes n = 18 · No n = 24")).toBeDefined();
     expect(screen.getByText("Yes n = 14 · No n = 28")).toBeDefined();
-    expect(screen.getByText("18.6% higher")).toBeDefined();
-    expect(screen.getByText("12.4% lower")).toBeDefined();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeDefined();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeDefined();
     expect(screen.getByText("LOWER")).toBeDefined();
     expect(screen.getByText("HIGHER")).toBeDefined();
 
@@ -107,14 +103,36 @@ describe("BehaviorImpactChart", () => {
     ).toBeDefined();
     expect(screen.getByText("Server uncertainty statement.")).toBeDefined();
     expect(screen.getByText("Server observation window.")).toBeDefined();
-    expect(screen.getByText("Server estimate: 18.6% higher")).toBeDefined();
-    expect(screen.getByText("Server estimate: 12.4% lower")).toBeDefined();
+    expect(screen.getByText("Estimate: 18.6% higher")).toBeDefined();
+    expect(screen.getByText("Estimate: 12.4% lower")).toBeDefined();
   });
 
   it("describes the all-history observation window", () => {
+    mocks.query.mockReturnValue({
+      data: associationData.map((item) => ({
+        ...item,
+        association: { ...item.association, observationWindow: "all available history" },
+      })),
+      error: null,
+      isLoading: false,
+    });
+
     render(<BehaviorImpactChart days={null} />);
 
-    expect(screen.getByText("Selected window: all available history")).toBeDefined();
+    expect(screen.getByText("all available history")).toBeDefined();
+  });
+
+  it("does not crash when a partial cached item lacks association evidence", () => {
+    const [firstItem] = associationData;
+    mocks.query.mockReturnValue({
+      data: firstItem ? [{ ...firstItem, association: undefined }] : [],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<BehaviorImpactChart days={90} />);
+
+    expect(screen.getByText("Association with Next-Day Readiness")).toBeDefined();
   });
 
   it("shows source labels and reveals raw IDs only through accessible technical details", () => {

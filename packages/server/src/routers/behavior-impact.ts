@@ -1,23 +1,16 @@
-import type { ProviderProvenance } from "@dofek/providers/providers";
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import {
   type BehaviorAssociation,
+  type BehaviorImpactDetail,
   BehaviorImpactRepository,
   behaviorAssociationSchema,
 } from "../repositories/behavior-impact-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
-export interface BehaviorImpact {
-  questionSlug: string;
-  displayName: string;
-  category: string;
-  impactPercent: number;
-  yesCount: number;
-  noCount: number;
-  sources: ProviderProvenance[];
+export type BehaviorImpact = Omit<BehaviorImpactDetail, "association"> & {
   association: BehaviorAssociation;
-}
+};
 
 function observationWindow(days: number | null): string {
   return days === null ? "all available history" : `${days} days`;
@@ -28,7 +21,7 @@ const behaviorImpactOutputSchema = z.array(
     questionSlug: z.string(),
     displayName: z.string(),
     category: z.string(),
-    impactPercent: z.number(),
+    impactPercent: z.number().nullable(),
     yesCount: z.number().int().nonnegative(),
     noCount: z.number().int().nonnegative(),
     sources: z.array(z.object({ providerId: z.string(), label: z.string() })),
@@ -55,7 +48,7 @@ export const behaviorImpactRouter = router({
     {
       min: 7,
       max: 365,
-      keyVersion: "association-semantics-v1",
+      keyVersion: "association-semantics-v2",
       outputSchema: behaviorImpactOutputSchema,
     },
   ),

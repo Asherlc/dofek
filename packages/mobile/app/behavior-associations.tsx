@@ -1,4 +1,3 @@
-import { formatReadinessDifference } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -50,6 +49,7 @@ export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
+  const evidence = data?.[0]?.association;
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.container}>
@@ -63,21 +63,15 @@ export default function BehaviorAssociationsScreen() {
       <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
 
       <Card title="Evidence">
-        <Text style={styles.evidenceText}>
-          Method: (mean next-day readiness after Yes − mean after No) ÷ mean after No × 100.
-        </Text>
-        <Text style={styles.evidenceText}>Association does not establish causation.</Text>
-        <Text style={styles.evidenceText}>
-          Uncertainty interval: not available for this descriptive comparison.
-        </Text>
-        <Text style={styles.evidenceText}>Selected window: {days} days</Text>
-        {data?.[0] ? (
-          <>
-            <Text style={styles.evidenceText}>{data[0].association.method}</Text>
-            <Text style={styles.evidenceText}>{data[0].association.interpretation}</Text>
-            <Text style={styles.evidenceText}>{data[0].association.uncertainty}</Text>
-            <Text style={styles.evidenceText}>{data[0].association.observationWindow}</Text>
-          </>
+        {evidence ? (
+          <View style={styles.evidenceDetails}>
+            <Text style={styles.evidenceText}>Method: {evidence.method}</Text>
+            <Text style={styles.evidenceText}>Interpretation: {evidence.interpretation}</Text>
+            <Text style={styles.evidenceText}>Uncertainty: {evidence.uncertainty}</Text>
+            <Text style={styles.evidenceText}>
+              Observation window: {evidence.observationWindow}
+            </Text>
+          </View>
         ) : null}
       </Card>
 
@@ -109,16 +103,11 @@ export default function BehaviorAssociationsScreen() {
           {data.map((association) => (
             <Card key={association.questionSlug} title={association.displayName}>
               <Text style={styles.category}>{association.category}</Text>
-              <Text style={styles.difference}>
-                {formatReadinessDifference(association.impactPercent)}
-              </Text>
               <Text style={styles.sample}>
                 Yes n = {association.yesCount} · No n = {association.noCount}
               </Text>
               <ProviderSourceDetails sources={association.sources} />
-              <Text style={styles.associationEvidenceText}>
-                {association.association.estimateLabel}
-              </Text>
+              <Text style={styles.estimate}>Estimate: {association.association.estimateLabel}</Text>
             </Card>
           ))}
         </>
@@ -155,21 +144,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  evidenceDetails: {
+    gap: 2,
+  },
   category: {
     color: colors.textTertiary,
     fontSize: 12,
     textTransform: "capitalize",
   },
-  difference: {
-    color: colors.blue,
-    fontSize: 22,
-    fontWeight: "700",
-  },
   sample: {
     color: colors.textSecondary,
     fontSize: 12,
   },
-  associationEvidenceText: {
+  estimate: {
     color: colors.textTertiary,
     fontSize: 12,
     lineHeight: 17,

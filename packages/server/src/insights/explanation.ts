@@ -54,10 +54,10 @@ export function explainInsight(insight: Omit<Insight, "explanation">): string {
         trueM >= 0 ? `+${trueM.toFixed(2)} ${unitLabel}` : `${trueM.toFixed(2)} ${unitLabel}`;
       const withoutDesc =
         falseM >= 0 ? `+${falseM.toFixed(2)} ${unitLabel}` : `${falseM.toFixed(2)} ${unitLabel}`;
-      return `Observed association: In months with ${actionPhrase}, ${what} ${freq} changed by ${withDesc}/mo vs ${withoutDesc}/mo without. This does not establish causation or prescribe a behavior change.`;
+      return `Observed association: In months when ${actionPhrase}, ${what} ${freq} changed by ${withDesc}/mo vs ${withoutDesc}/mo without. This does not establish causation or prescribe a behavior change.`;
     }
     const direction = higher ? "higher" : "lower";
-    return `Observed association: On days with ${actionPhrase}, ${metric} was ${freq} ${fmtDiff} ${direction} (${trueM.toFixed(1)} vs ${falseM.toFixed(1)}${unit ? ` ${unit}` : ""}). This does not establish causation or prescribe a behavior change.`;
+    return `Observed association: On days when ${actionPhrase}, ${metric} was ${freq} ${fmtDiff} ${direction} (${trueM.toFixed(1)} vs ${falseM.toFixed(1)}${unit ? ` ${unit}` : ""}). This does not establish causation or prescribe a behavior change.`;
   }
 
   if (type === "correlation" || type === "discovery") {
@@ -67,7 +67,7 @@ export function explainInsight(insight: Omit<Insight, "explanation">): string {
       ? "More"
       : "Higher";
     const upOrDown = effectSize > 0 ? "higher" : "lower";
-    return `${moreOrHigher} ${action} was associated with ${upOrDown} ${metric} in the observed data. This does not establish causation or prescribe a behavior change.`;
+    return `Observed association: ${moreOrHigher} ${action} was associated with ${upOrDown} ${metric} in the observed data. This does not establish causation or prescribe a behavior change.`;
   }
 
   return "";

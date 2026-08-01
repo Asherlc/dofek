@@ -1035,9 +1035,7 @@ describe("computeInsights()", () => {
     const correlations = result.filter((i) => i.type === "correlation" || i.type === "discovery");
     for (const insight of correlations) {
       if (insight.explanation) {
-        expect(
-          insight.explanation.startsWith("More") || insight.explanation.startsWith("Higher"),
-        ).toBe(true);
+        expect(insight.explanation.startsWith("Observed association:")).toBe(true);
       }
     }
   });
@@ -1197,6 +1195,33 @@ describe("computeInsights()", () => {
       // Monthly-scoped tests use "during months with" not "on days with"
       expect(insight.message).toContain("during months with");
     }
+  });
+
+  it("keeps monthly conditional evidence labels aligned with their messages", () => {
+    const dates = dateRange("2025-01-01", 638);
+    const metrics = dates.map((date) => makeDailyRow(date));
+    const activities = dates.flatMap((date) => {
+      return date < "2025-11"
+        ? [makeActivityRow(`${date}T10:00:00Z`, `${date}T11:00:00Z`, "running")]
+        : [];
+    });
+    const bodyComp = dates.map((date) => {
+      const day = Number(date.slice(8, 10));
+      const highExerciseMonth = date < "2025-11";
+      const weight = highExerciseMonth ? 80 - day * 0.1 : 80 + day * 0.1;
+      return makeBodyCompRow(`${date}T08:00:00Z`, { weight_kg: weight });
+    });
+
+    const insight = computeInsights(metrics, [], activities, [], bodyComp).find(
+      (candidate) => candidate.id === "m-high-exercise-weight",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.evidence?.method).toContain("no multiple-comparison correction");
+    expect(insight?.evidence?.method).not.toContain("Benjamini");
+    const estimateLabel = insight?.evidence?.estimateLabel;
+    expect(estimateLabel).toBeDefined();
+    if (estimateLabel) expect(insight?.message).toContain(estimateLabel);
   });
 
   it("correlation message includes strength descriptor", () => {
@@ -2034,7 +2059,28 @@ describe("explainInsight()", () => {
 
   it("handles action ending with 'day'", () => {
     const result = explainInsight({ ...baseConditional, action: "cardio day" });
-    expect(result).toContain("it's a cardio day");
+    expect(result).toContain("On days when it's a cardio day,");
+  });
+
+  it("labels correlation explanations as observed associations", () => {
+    const correlationInsight: Omit<Insight, "explanation"> = {
+      id: "corr_prefix",
+      type: "correlation",
+      confidence: "strong",
+      action: "steps",
+      metric: "resting heart rate",
+      message: "",
+      effectSize: -0.6,
+      pValue: 0.001,
+      detail: "Spearman ρ = -0.60, n = 45",
+      whenTrue: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      whenFalse: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
+      dataPoints: [],
+    };
+
+    expect(explainInsight(correlationInsight)).toMatch(
+      /^Observed association: .*does not establish causation or prescribe a behavior change\.$/,
+    );
   });
 });
 
@@ -4241,6 +4287,38 @@ describe("getMonthlyCorrelations() — comprehensive extract tests", () => {
 // ── computeMonthlyInsights() — conditional analysis ─────────────────────
 
 describe("computeMonthlyInsights() — conditional analysis", () => {
+  it.each([
+    { expectedDirection: "higher", slopeDirection: 1 },
+    { expectedDirection: "lower", slopeDirection: -1 },
+  ])("describes a $expectedDirection monthly effect", ({ expectedDirection, slopeDirection }) => {
+    const days: JoinedDay[] = [];
+    for (let month = 1; month <= 24; month++) {
+      const highExerciseMonth = month <= 12;
+      const exerciseDayCount = highExerciseMonth ? Math.min(19 + month, 25) : 0;
+      const slope =
+        (highExerciseMonth ? slopeDirection : -slopeDirection) * (0.02 + (month % 5) * 0.001);
+
+      for (let day = 1; day <= 25; day++) {
+        const date = new Date(Date.UTC(2025, month - 1, day)).toISOString().slice(0, 10);
+        days.push(
+          makeFullJoinedDay(date, {
+            exercise_minutes: day <= exerciseDayCount ? 60 : 0,
+            cardio_minutes: day <= exerciseDayCount ? 30 : 0,
+            weight_kg: 80 + month * 0.01 + day * slope,
+          }),
+        );
+      }
+    }
+
+    const insight = computeMonthlyInsights(days).find(
+      (candidate) => candidate.id === "m-high-exercise-weight",
+    );
+
+    expect(insight?.message).toContain(`Observed association: Months with more exercise had`);
+    expect(insight?.message).toContain(`weight change.`);
+    expect(insight?.message).toContain(` ${expectedDirection} weight change.`);
+  });
+
   it("produces high-exercise-vs-low conditional insight with 10+ months", () => {
     // Need 10+ months with at least 20 days each and weight data
     const days: JoinedDay[] = [];

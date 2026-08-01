@@ -1,4 +1,5 @@
 export type InsightAnalysisType = "conditional" | "correlation" | "discovery";
+export type InsightEvidenceScope = "daily" | "monthly";
 
 export interface InsightEvidence {
   relationship: "descriptive_association" | "correlation";
@@ -13,13 +14,16 @@ export interface InsightEvidence {
 export function createInsightEvidence(
   analysisType: InsightAnalysisType,
   estimateLabel?: string,
+  scope: InsightEvidenceScope = "daily",
 ): InsightEvidence {
   if (analysisType === "conditional") {
     return {
       relationship: "descriptive_association",
       label: "Descriptive association",
       method:
-        "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
+        scope === "monthly"
+          ? "Observed-group mean comparison across monthly aggregates (with versus without the behavior) using Welch's t-test; no multiple-comparison correction is applied."
+          : "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
       interpretation:
         "This observational association does not establish that the behavior caused the outcome.",
       limitations:
@@ -32,7 +36,10 @@ export function createInsightEvidence(
   return {
     relationship: "correlation",
     label: "Descriptive correlation",
-    method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
+    method:
+      scope === "monthly"
+        ? "Spearman rank correlation over paired monthly observations; no multiple-comparison correction is applied."
+        : "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
     interpretation:
       "This correlation describes co-movement in the observed data; it does not establish causation.",
     limitations:
