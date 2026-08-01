@@ -612,9 +612,7 @@ export default function StrainScreen() {
                       maxHr={activity.max_hr ?? null}
                       avgPower={activity.avg_power ?? null}
                       distanceKm={
-                        activity.distance_meters == null
-                          ? null
-                          : activity.distance_meters / 1000
+                        activity.distance_meters == null ? null : activity.distance_meters / 1000
                       }
                       distanceState={activity.distance_state}
                       units={units}

@@ -65,6 +65,34 @@ describe("SleepAnalyticsChart", () => {
     expect(screen.getByText("Sleep analytics chart")).toBeTruthy();
   });
 
+  it("shows unavailable state when a night has duration but no plotted values", () => {
+    const durationOnlyNight: SleepNightlyRow = {
+      ...night,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      rollingAvgDuration: null,
+      stagingAvailable: false,
+      sleepState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    };
+
+    render(<SleepAnalyticsChart nightly={[durationOnlyNight]} sleepDebt={30} />);
+
+    expect(screen.getByText(/Sleep stages were not reported/)).toBeTruthy();
+    expect(screen.queryByText("Sleep analytics chart")).toBeNull();
+  });
+
   it("plots the same recent window used by the measured-value check", () => {
     const nightly = Array.from({ length: 15 }, (_, index) => ({
       ...night,

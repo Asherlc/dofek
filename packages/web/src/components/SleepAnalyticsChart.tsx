@@ -172,8 +172,6 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
   const summaryNights = nightly.slice(-14);
   const hasMeasuredSleepValues = summaryNights.some(
     (night) =>
-      night.durationMinutes != null ||
-      night.sleepMinutes != null ||
       night.deepPct != null ||
       night.remPct != null ||
       night.lightPct != null ||

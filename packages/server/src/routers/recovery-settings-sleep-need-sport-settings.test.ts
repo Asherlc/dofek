@@ -915,6 +915,25 @@ describe("sleepNeedRouter", () => {
         recentNights: expect.any(Array),
         canRecommend: false,
       });
+      expect(result.recentNights).toHaveLength(7);
+      const withData = result.recentNights.filter((night) => night.actualMinutes !== null);
+      const withoutData = result.recentNights.filter((night) => night.actualMinutes === null);
+      expect(withData).toEqual([
+        expect.objectContaining({
+          date: "2026-03-14",
+          actualMinutes: 420,
+          neededMinutes: 480,
+          debtMinutes: 60,
+        }),
+      ]);
+      expect(withoutData).toHaveLength(6);
+      for (const night of withoutData) {
+        expect(night).toMatchObject({
+          actualMinutes: null,
+          neededMinutes: 480,
+          debtMinutes: null,
+        });
+      }
     });
 
     it("keeps the legacy recommendation unavailable when the baseline is insufficient", async () => {
@@ -988,6 +1007,9 @@ describe("sleepNeedRouter", () => {
         recentNights: expect.any(Array),
         canRecommend: false,
       });
+      for (const night of result.recentNights) {
+        expect(night.neededMinutes).toBe(480);
+      }
     });
   });
 });

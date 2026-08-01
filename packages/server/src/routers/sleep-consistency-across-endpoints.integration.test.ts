@@ -250,7 +250,7 @@ describe("sleep data consistency across endpoints", () => {
     const result = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
     }>("sleepNeed.calculate", { endDate });
-    expect(result).not.toBeNull();
+    expect(result).toBeDefined();
 
     for (const night of result.recentNights) {
       if (night.actualMinutes !== null) {

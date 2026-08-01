@@ -234,7 +234,7 @@ describe("loadDashboardOverview", () => {
       endDate: "2026-07-01",
       sensorStore: makeSensorStore({
         sleepNights: [
-          { date: "2026-06-29", durationMinutes: null },
+          { date: "2026-06-22", durationMinutes: null },
           ...Array.from({ length: 8 }, (_, index) => ({
             date: addDays("2026-06-23", index),
             durationMinutes: 480,
