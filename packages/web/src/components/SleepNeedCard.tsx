@@ -34,11 +34,14 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     );
   }
 
-  if (data.availability === "missing_previous_night") {
+  if (data.availability !== "available") {
     return (
       <div className="card p-6">
         <h3 className="text-muted text-sm font-medium mb-2">Sleep Need Tonight</h3>
         <p className="text-lg text-dim">{data.message}</p>
+        {data.availability === "insufficient_data" && (
+          <p className="text-subtle text-sm mt-2">{data.nextAction}</p>
+        )}
       </div>
     );
   }

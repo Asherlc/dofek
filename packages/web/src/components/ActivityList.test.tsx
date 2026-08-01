@@ -269,7 +269,7 @@ describe("ActivityList", () => {
       },
     ];
     renderWithUnits(<ActivityList activities={activityWithoutStats} />);
-    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Distance unavailable: Distance not recorded")).toBeDefined();
   });
 
   it("keeps a recorded zero distance distinct from a missing distance", () => {

@@ -241,6 +241,22 @@ describe("SleepNeedCard", () => {
     expect(screen.queryByTestId("echarts")).toBeNull();
   });
 
+  it("shows the server-authored next action for insufficient data", () => {
+    capturedOption = null;
+    const insufficientData: SleepNeedV2 = {
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    };
+
+    render(<SleepNeedCard data={insufficientData} />);
+
+    expect(screen.getByText(insufficientData.message)).toBeDefined();
+    expect(screen.getByText(insufficientData.nextAction)).toBeDefined();
+    expect(screen.queryByTestId("echarts")).toBeNull();
+  });
+
   it("shows the available estimate basis and coverage", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);

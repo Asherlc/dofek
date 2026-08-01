@@ -1,3 +1,9 @@
+import {
+  activityDataStateLabel,
+  formatActivityMetric,
+  type ActivityDataState,
+  type ActivityMetric,
+} from "@dofek/format/activity-data-state";
 import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
@@ -13,7 +19,8 @@ interface ActivityCardProps {
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
-  distanceKm?: number | null;
+  distanceKm: number | null;
+  distanceState: ActivityDataState;
   units: UnitConverter;
 }
 
@@ -33,6 +40,18 @@ function Stat({ value, label, unit }: { value: string | number; label: string; u
   );
 }
 
+function UnavailableStat({ metric }: { metric: ActivityMetric }) {
+  if (metric.status === "available") return null;
+  return (
+    <View style={styles.unavailableStat} accessibilityLabel={`${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`}>
+      <Text style={styles.statUnavailableTitle}>
+        {metric.label} {activityDataStateLabel(metric.status)}
+      </Text>
+      <Text style={styles.statUnavailableReason}>{metric.reason}</Text>
+    </View>
+  );
+}
+
 export function ActivityCard({
   name,
   activityType,
@@ -42,8 +61,16 @@ export function ActivityCard({
   maxHr,
   avgPower,
   distanceKm,
+  distanceState,
   units,
 }: ActivityCardProps) {
+  const distanceMetric = formatActivityMetric(
+    "Distance",
+    distanceKm,
+    distanceState,
+    (value) => formatNumber(units.convertDistance(value), 2),
+  );
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -61,12 +88,10 @@ export function ActivityCard({
       <View style={styles.separator} />
 
       <View style={styles.stats}>
-        {distanceKm != null && distanceKm > 0 && (
-          <Stat
-            value={formatNumber(units.convertDistance(distanceKm), 2)}
-            label="Distance"
-            unit={units.distanceLabel}
-          />
+        {distanceMetric.status === "available" ? (
+          <Stat value={distanceMetric.value} label="Distance" unit={units.distanceLabel} />
+        ) : (
+          <UnavailableStat metric={distanceMetric} />
         )}
         {avgHr != null && <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />}
         {maxHr != null && <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />}
@@ -118,6 +143,10 @@ const styles = StyleSheet.create({
   stat: {
     minWidth: 60,
   },
+  unavailableStat: {
+    minWidth: 120,
+    maxWidth: 190,
+  },
   statValueRow: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -140,6 +169,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     fontWeight: "600",
     letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  statUnavailableTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  statUnavailableReason: {
+    fontSize: 11,
+    color: colors.textSecondary,
     marginTop: 2,
   },
 });

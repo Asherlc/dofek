@@ -1,3 +1,4 @@
+import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import {
   buildKarvonenIntensityDistribution,
@@ -18,6 +19,7 @@ import {
   heartRateZoneSumColumns,
 } from "./heart-rate-zone-sql.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
@@ -74,7 +76,9 @@ const activityStatsRowSchema = z.object({
   distance_meters: z.coerce.number().nullable(),
 });
 
-export type ActivityStatsRow = z.infer<typeof activityStatsRowSchema>;
+export type ActivityStatsRow = z.infer<typeof activityStatsRowSchema> & {
+  distance_state: ActivityDataState;
+};
 
 const rawActivityCountRowSchema = z.object({
   activity_count: z.coerce.number(),
@@ -283,12 +287,16 @@ export class TrainingRepository extends BaseRepository {
       ORDER BY a.started_at DESC`,
       { userId: this.userId, ...range.params(), ...params },
     );
-    return activityRepositoryFor(
+    const visibleRows = await activityRepositoryFor(
       this.db,
       this.userId,
       this.timezone,
       this.accessWindow,
     ).filterToVisibleActivities(rows);
+    return visibleRows.map((row) => ({
+      ...row,
+      distance_state: activityMeasurementState("Distance", row.distance_meters),
+    }));
   }
 
   async #queryWeeklyVolume(days: RangeDays): Promise<WeeklyVolumeRow[]> {

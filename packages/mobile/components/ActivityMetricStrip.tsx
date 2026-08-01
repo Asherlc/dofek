@@ -1,14 +1,16 @@
+import {
+  activityDataStateLabel,
+  formatActivityMetric,
+  type ActivityMetric,
+} from "@dofek/format/activity-data-state";
 import type {
   ActivityDataState,
-  ActivityDataStateUnavailableStatus,
 } from "@dofek/format/activity-data-state";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
-type ActivityStat =
-  | { status: "available"; label: string; value: string }
-  | { status: ActivityDataStateUnavailableStatus; label: string; reason: string };
+type ActivityStat = ActivityMetric;
 
 type ActivityLocation = {
   distanceMeters: number | null;
@@ -30,13 +32,13 @@ export function ActivityMetricStrip({
   const stats: ActivityStat[] =
     activity.location != null
       ? [
-          formatLocationMetric(
+          formatActivityMetric(
             "Distance",
             activity.location.distanceMeters,
             activity.location.distanceState,
             (value) => formatMeasurementText(units.formatDistance(value / 1000)),
           ),
-          formatLocationMetric(
+          formatActivityMetric(
             "Elevation",
             activity.location.elevationGainM,
             activity.location.elevationState,
@@ -57,10 +59,10 @@ export function ActivityMetricStrip({
           <View
             key={stat.label}
             style={styles.statBadge}
-            accessibilityLabel={`${stat.label} ${stat.status}`}
+            accessibilityLabel={`${stat.label} ${activityDataStateLabel(stat.status)}: ${stat.reason}`}
           >
             <Text style={styles.statUnavailableTitle}>
-              {stat.label} {stat.status === "missing" ? "unavailable" : stat.status}
+              {stat.label} {activityDataStateLabel(stat.status)}
             </Text>
             <Text style={styles.statUnavailableReason}>{stat.reason}</Text>
           </View>
@@ -68,23 +70,6 @@ export function ActivityMetricStrip({
       )}
     </View>
   );
-}
-
-function formatLocationMetric(
-  label: string,
-  value: number | null,
-  state: ActivityDataState,
-  formatValue: (value: number) => string,
-): ActivityStat {
-  if (state.status === "available" && value != null) {
-    return { status: "available", label, value: formatValue(value) };
-  }
-
-  return {
-    status: state.status === "available" ? "missing" : state.status,
-    label,
-    reason: state.status === "available" ? `${label} unavailable` : state.reason,
-  };
 }
 
 const styles = StyleSheet.create({

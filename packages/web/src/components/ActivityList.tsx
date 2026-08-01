@@ -1,4 +1,8 @@
-import type { ActivityDataState } from "@dofek/format/activity-data-state";
+import {
+  activityDataStateLabel,
+  formatActivityMetric,
+  type ActivityDataState,
+} from "@dofek/format/activity-data-state";
 import {
   formatDateMedium,
   formatDurationMinutes,
@@ -226,23 +230,22 @@ export function ActivityList({
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
       renderCell: (activity) => {
-        if (activity.distance_state.status !== "available") {
+        const metric = formatActivityMetric(
+          "Distance",
+          activity.distance_meters,
+          activity.distance_state,
+          (value) =>
+            `${formatNumber(units.convertDistance(value / 1000))} ${units.distanceLabel}`,
+        );
+        if (metric.status !== "available") {
           return (
-            <span data-state={activity.distance_state.status}>
-              {activity.distance_state.status === "missing"
-                ? activity.distance_state.reason
-                : `Distance ${activity.distance_state.status}: ${activity.distance_state.reason}`}
+            <span data-state={metric.status}>
+              {metric.label} {activityDataStateLabel(metric.status)}: {metric.reason}
             </span>
           );
         }
-        if (activity.distance_meters == null) {
-          return <span data-state="missing">Distance not recorded</span>;
-        }
         return (
-          <span data-state="available">
-            {formatNumber(units.convertDistance(activity.distance_meters / 1000))}{" "}
-            {units.distanceLabel}
-          </span>
+          <span data-state="available">{metric.value}</span>
         );
       },
     },

@@ -112,7 +112,9 @@ const activityOverviewSchema = z.object({
   activityCount: z.number().int().nonnegative(),
   totalMinutes: z.number().nonnegative(),
   totalDistanceMeters: z.number().nonnegative().nullable(),
+  totalDistanceState: activityDataStateSchema,
   totalElevationGainM: z.number().nonnegative().nullable(),
+  totalElevationState: activityDataStateSchema,
   activityTypes: z.array(z.string()),
 });
 

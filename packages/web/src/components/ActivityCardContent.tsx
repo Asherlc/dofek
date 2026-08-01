@@ -1,5 +1,10 @@
+import {
+  activityDataStateLabel,
+  formatActivityMetric,
+  type ActivityDataState,
+  type ActivityMetric,
+} from "@dofek/format/activity-data-state";
 import type {
-  ActivityDataState,
   ActivityDataStateUnavailableStatus,
 } from "@dofek/format/activity-data-state";
 import { formatDurationMinutes, formatRelativeTime } from "@dofek/format/format";
@@ -43,9 +48,7 @@ export type ActivityCardLocation = ActivityMapLocation & {
   elevationState: ActivityDataState;
 };
 
-export type ActivityCardStat =
-  | { status: "available"; label: string; value: string }
-  | { status: ActivityDataStateUnavailableStatus; label: string; reason: string };
+export type ActivityCardStat = ActivityMetric;
 
 interface ActivityCardContentProps {
   activity: ActivityCardData;
@@ -158,13 +161,13 @@ function ActivityMetricGrid({
 }) {
   const metrics: ActivityCardStat[] = activity.location
     ? [
-        formatLocationMetric(
+        formatActivityMetric(
           "Distance",
           activity.location.distanceMeters,
           activity.location.distanceState,
           (value) => formatMeasurementText(units.formatDistance(value / 1000)),
         ),
-        formatLocationMetric(
+        formatActivityMetric(
           "Elevation",
           activity.location.elevationGainM,
           activity.location.elevationState,
@@ -184,7 +187,7 @@ function ActivityMetricGrid({
         ) : (
           <div key={metric.label} className="col-span-2 min-w-0" data-state={metric.status}>
             <div className="text-sm font-semibold">
-              {metric.label} {metric.status === "missing" ? "unavailable" : metric.status}
+              {metric.label} {activityDataStateLabel(metric.status)}
             </div>
             <div className="mt-1 text-xs leading-relaxed text-muted">{metric.reason}</div>
           </div>
@@ -192,21 +195,4 @@ function ActivityMetricGrid({
       )}
     </div>
   );
-}
-
-function formatLocationMetric(
-  label: string,
-  value: number | null,
-  state: ActivityDataState,
-  formatValue: (value: number) => string,
-): ActivityCardStat {
-  if (state.status === "available" && value != null) {
-    return { status: "available", label, value: formatValue(value) };
-  }
-
-  return {
-    status: state.status === "available" ? "missing" : state.status,
-    label,
-    reason: state.status === "available" ? `${label} unavailable` : state.reason,
-  };
 }

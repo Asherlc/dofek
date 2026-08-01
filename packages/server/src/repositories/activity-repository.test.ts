@@ -612,6 +612,79 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("search and listRange", () => {
+    it("search returns the public distance state for a missing measurement", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "search-activity",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Morning Run",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.search({
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+        query: "Morning",
+        limit: 20,
+      });
+
+      expect(result).toEqual({
+        totalCount: 1,
+        items: [
+          expect.objectContaining({
+            id: "search-activity",
+            distance_meters: null,
+            distance_state: {
+              status: "missing",
+              reason: "Distance not recorded",
+            },
+          }),
+        ],
+      });
+      expect(result.items[0]).not.toHaveProperty("total_count");
+    });
+
+    it("listRange preserves a recorded zero and emits an available distance state", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "zero-distance-activity",
+          activity_type: "strength",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Strength Session",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: 0,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.listRange("2024-01-01", "2024-01-31", ["strength"]);
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: "zero-distance-activity",
+          distance_meters: 0,
+          distance_state: { status: "available" },
+        }),
+      ]);
+      expect(result[0]).not.toHaveProperty("total_count");
+    });
+  });
+
   describe("findById", () => {
     it("returns null when not found", async () => {
       const { repo } = makeRepositoryWithSensorStore([]);

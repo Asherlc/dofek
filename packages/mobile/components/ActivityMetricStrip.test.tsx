@@ -24,6 +24,11 @@ describe("ActivityMetricStrip", () => {
       />,
     );
 
+    expect(
+      screen.getByLabelText(
+        "Training Stress Score unavailable: Record average power, or record average heart rate and set maximum heart rate.",
+      ),
+    ).toBeDefined();
     expect(screen.getByText("Training Stress Score unavailable")).toBeDefined();
     expect(
       screen.getByText(
@@ -87,6 +92,8 @@ describe("ActivityMetricStrip", () => {
 
     expect(screen.getByText("Distance unavailable")).toBeDefined();
     expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Elevation not recorded")).toBeDefined();
     expect(screen.queryByText("—")).toBeNull();
   });
 

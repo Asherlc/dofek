@@ -159,7 +159,7 @@ describe("loadDashboardOverview", () => {
     });
   });
 
-  it("provides server-computed debt recovery in the available V2 state", async () => {
+  it("reports insufficient baseline history instead of a generic V2 estimate", async () => {
     const result = await loadDashboardOverview({
       accessWindow: { kind: "full" },
       endDate: "2026-06-30",
@@ -167,11 +167,11 @@ describe("loadDashboardOverview", () => {
       userId: "user-1",
     });
 
-    expect(result.sleepNeedV2).toMatchObject({
-      availability: "available",
-      accumulatedDebtMinutes: 25,
-      debtRecoveryMinutes: 6,
-      totalNeedMinutes: 486,
+    expect(result.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
     });
   });
 
@@ -188,20 +188,11 @@ describe("loadDashboardOverview", () => {
       userId: "user-1",
     });
 
-    expect(result.sleepNeedV2).toMatchObject({
-      availability: "available",
-      accumulatedDebtMinutes: 0,
-      debtRecoveryMinutes: 0,
-      totalNeedMinutes: 480,
-    });
-    if (result.sleepNeedV2.availability !== "available") {
-      throw new Error("Expected available sleep need");
-    }
-    expect(
-      result.sleepNeedV2.recentNights.find((night) => night.date === "2026-06-29"),
-    ).toMatchObject({
-      actualMinutes: null,
-      debtMinutes: null,
+    expect(result.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
     });
   });
 
@@ -222,12 +213,11 @@ describe("loadDashboardOverview", () => {
       userId: "user-1",
     });
 
-    expect(result.sleepNeedV2).toMatchObject({
-      availability: "available",
-      accumulatedDebtMinutes: 0,
-      estimateMetadata: {
-        debtObservedNightCount: 13,
-      },
+    expect(result.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
     });
   });
 });

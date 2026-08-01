@@ -439,6 +439,29 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByText("8h 37m")).toBeNull();
   });
 
+  it("renders the server-authored next action for insufficient sleep need data", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: {
+        lastNight: null,
+        sleepDebt: 0,
+      },
+      sleepNeed: {
+        availability: "insufficient_data",
+        reason: "insufficient_baseline_history",
+        message: "Sync at least 7 qualifying nights to estimate sleep need.",
+        nextAction: "Sync more sleep and recovery data.",
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Sync at least 7 qualifying nights to estimate sleep need.")).toBeTruthy();
+    expect(screen.getByText("Sync more sleep and recovery data.")).toBeTruthy();
+    expect(screen.queryByText("SLEEP ESTIMATE")).toBeNull();
+  });
+
   it("renders the V2 sleep value as an uncalibrated heuristic estimate", async () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);

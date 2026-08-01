@@ -79,7 +79,9 @@ export interface ActivityOverview {
   activityCount: number;
   totalMinutes: number;
   totalDistanceMeters: number | null;
+  totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
+  totalElevationState: ActivityDataState;
   activityTypes: string[];
 }
 
@@ -515,7 +517,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityCount: 0,
         totalMinutes: 0,
         totalDistanceMeters: null,
+        totalDistanceState: activityMeasurementState("Distance", null),
         totalElevationGainM: null,
+        totalElevationState: activityMeasurementState("Elevation", null),
         activityTypes: [],
       };
     }
@@ -583,10 +587,15 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         overview.total_distance_meters == null
           ? null
           : Math.round(overview.total_distance_meters * 10) / 10,
+      totalDistanceState: activityMeasurementState("Distance", overview.total_distance_meters),
       totalElevationGainM:
         overview.total_elevation_gain_m == null
           ? null
           : Math.round(overview.total_elevation_gain_m * 10) / 10,
+      totalElevationState: activityMeasurementState(
+        "Elevation",
+        overview.total_elevation_gain_m,
+      ),
       activityTypes: activityTypeRows.map((row) => row.activity_type),
     };
   }

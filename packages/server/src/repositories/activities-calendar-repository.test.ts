@@ -582,7 +582,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 1,
       totalMinutes: 60.2,
       totalDistanceMeters: 10000.1,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 120.1,
+      totalElevationState: { status: "available" },
       activityTypes: ["cycling", "running"],
     });
     expect(sensorStore.query).toHaveBeenNthCalledWith(
@@ -619,7 +621,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 1,
       totalMinutes: 60,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: ["walking"],
     });
   });
@@ -635,7 +639,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: [],
     });
     expect(sensorStore.query).not.toHaveBeenCalled();
@@ -677,7 +683,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 1,
       totalMinutes: 45,
       totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 100,
+      totalElevationState: { status: "available" },
       activityTypes: ["running"],
     });
     await expect(
@@ -690,7 +698,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: ["running"],
     });
     for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {

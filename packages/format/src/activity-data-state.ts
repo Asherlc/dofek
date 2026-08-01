@@ -21,3 +21,32 @@ export type ActivityDataState = z.infer<typeof activityDataStateSchema>;
 export type ActivityDataStateUnavailableStatus = z.infer<
   typeof activityDataStateUnavailableStatusSchema
 >;
+
+export type ActivityMetric =
+  | { status: "available"; label: string; value: string }
+  | { status: ActivityDataStateUnavailableStatus; label: string; reason: string };
+
+export function activityDataStateLabel(status: ActivityDataState["status"]): string {
+  return status === "missing" ? "unavailable" : status;
+}
+
+export function formatActivityMetric(
+  label: string,
+  value: number | null,
+  state: ActivityDataState,
+  formatValue: (value: number) => string,
+): ActivityMetric {
+  if (state.status !== "available") {
+    return { status: state.status, label, reason: state.reason };
+  }
+
+  if (value == null) {
+    return {
+      status: "failed",
+      label,
+      reason: `${label} was marked available but no value was returned.`,
+    };
+  }
+
+  return { status: "available", label, value: formatValue(value) };
+}

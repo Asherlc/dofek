@@ -173,6 +173,31 @@ defines these flags as the supported historical backfill controls and
 recommends providing both bounds:
 <https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 
+When the semantics of an `activity_summary_rows` field change, existing
+append-incremental rows are not rewritten by the model change alone. After the
+upstream activity sensor and location summaries are current, run an explicit,
+monitored rebuild whose `initial_lookback_days` covers every affected activity:
+dbt recommends rebuilding an incremental model when its logic changes because
+historical transformations remain in the target table, using `--full-refresh`
+for the rebuild:
+<https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=dev \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt build \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --full-refresh \
+  --vars '{"initial_lookback_days": 3650}' \
+  --select activity_summary_rows
+```
+
+Choose the smallest lookback that contains the affected rows; the example is
+only illustrative and is not a deploy or request behavior. Do not put this
+rebuild in a request or deploy path.
+
 After both safe dbt build groups succeed, `scripts/warm-query-cache.ts` replays
 every live query key registered in Redis with its original user, timezone,
 procedure path, and input. Refresh mode bypasses the old value and overwrites it

@@ -2,6 +2,7 @@ import {
   nutritionSourceResolutionSchema,
   selectedDateNutritionSummarySchema,
 } from "@dofek/nutrition/selected-date-summary";
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { z } from "zod";
 
 // ── Re-export server types used by iOS screens ──
@@ -30,6 +31,7 @@ export const ActivityRowSchema = z.object({
   max_hr: z.number().nullable().optional(),
   avg_power: z.number().nullable().optional(),
   distance_meters: z.number().nullable().optional(),
+  distance_state: activityDataStateSchema,
 });
 
 export type ActivityRow = z.infer<typeof ActivityRowSchema>;

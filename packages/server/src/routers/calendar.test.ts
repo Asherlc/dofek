@@ -329,7 +329,9 @@ describe("calendarRouter", () => {
       activityCount: 2,
       totalMinutes: 150,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: ["cycling", "running"],
     });
     const caller = createCaller({
@@ -343,7 +345,9 @@ describe("calendarRouter", () => {
       activityCount: 2,
       totalMinutes: 150,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation not recorded" },
       activityTypes: ["cycling", "running"],
     });
   });
@@ -353,7 +357,9 @@ describe("calendarRouter", () => {
       activityCount: 1,
       totalMinutes: 60,
       totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 120,
+      totalElevationState: { status: "available" },
       activityTypes: ["cycling", "running"],
     });
     const caller = createCaller({

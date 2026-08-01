@@ -98,7 +98,7 @@ function makeSensorStore(
 ): SensorStore {
   const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
     const querySql = String(queryText);
-    if (querySql.includes("analytics.daily_strain") && querySql.includes("coalesce")) {
+    if (querySql.includes("analytics.daily_strain") && querySql.includes(" AS load")) {
       return [{ load: yesterdayLoad }];
     }
     if (querySql.includes("analytics.daily_strain")) return dailyLoads;
@@ -248,7 +248,7 @@ describe("mobileDashboard.dashboardV2", () => {
     }
   });
 
-  it("returns the available projection with server-computed debt recovery", async () => {
+  it("returns the insufficient-data projection when baseline history is short", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
       userId: "user-1",
@@ -263,11 +263,11 @@ describe("mobileDashboard.dashboardV2", () => {
 
     const result = await caller.dashboardV2({ endDate: "2026-03-28" });
 
-    expect(result.sleepNeed).toMatchObject({
-      availability: "available",
-      accumulatedDebtMinutes: 60,
-      debtRecoveryMinutes: 15,
-      totalNeedMinutes: 495,
+    expect(result.sleepNeed).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
     });
   });
 });

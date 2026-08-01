@@ -186,6 +186,8 @@ describe("ActivityCardContent", () => {
 
     expect(screen.getByText("Distance unavailable")).toBeDefined();
     expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Elevation not recorded")).toBeDefined();
     expect(screen.queryByText("—")).toBeNull();
   });
 

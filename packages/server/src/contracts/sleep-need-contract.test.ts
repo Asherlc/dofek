@@ -5,6 +5,7 @@ import {
   type SleepNight,
   sleepNeedV1Schema,
   sleepNeedV2Schema,
+  type SleepNeedV2,
   toSleepNeedV1,
   toSleepNeedV2,
 } from "./sleep-need-contract.ts";
@@ -27,10 +28,11 @@ describe("sleep need contract", () => {
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
-      baselineQualifyingNightCount: 1,
+      baselineQualifyingNightCount: 7,
       debtObservedNightCount: 1,
       recentNights,
       hasPreviousNight: true,
+      hasYesterdayLoad: true,
     });
 
     expect(toSleepNeedV2(computation)).toEqual({
@@ -41,8 +43,8 @@ describe("sleep need contract", () => {
       debtRecoveryMinutes: 23,
       totalNeedMinutes: 515,
       estimateMetadata: {
-        basis: "generic_eight_hour_default",
-        baselineQualifyingNightCount: 1,
+        basis: "personalized_high_hrv_average",
+        baselineQualifyingNightCount: 7,
         debtObservedNightCount: 1,
         methodVersion: "sleep-need-heuristic-v1",
         uncertainty: "not_established",
@@ -54,7 +56,7 @@ describe("sleep need contract", () => {
           debtRecovery: "Debt recovery",
         },
         basisLabel:
-          "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+          "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
         coverageLabel:
           "Sleep-debt input uses 1 observed night from the model's recent-night window.",
         methodLabel: "Method: sleep-need-heuristic-v1",
@@ -71,10 +73,11 @@ describe("sleep need contract", () => {
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
-      baselineQualifyingNightCount: 1,
+      baselineQualifyingNightCount: 7,
       debtObservedNightCount: 1,
       recentNights,
       hasPreviousNight: false,
+      hasYesterdayLoad: true,
     });
 
     const result = toSleepNeedV2(computation);
@@ -100,6 +103,7 @@ describe("sleep need contract", () => {
       debtObservedNightCount: 0,
       recentNights,
       hasPreviousNight: true,
+      hasYesterdayLoad: true,
     });
 
     const result = toSleepNeedV2(computation);
@@ -123,10 +127,11 @@ describe("sleep need contract", () => {
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
-      baselineQualifyingNightCount: 1,
+      baselineQualifyingNightCount: 7,
       debtObservedNightCount: 1,
       recentNights,
-      hasPreviousNight: false,
+      hasPreviousNight: true,
+      hasYesterdayLoad: true,
     });
 
     const result = sleepNeedV1Schema.parse(toSleepNeedV1(computation));
@@ -137,7 +142,7 @@ describe("sleep need contract", () => {
       accumulatedDebtMinutes: 90,
       totalNeedMinutes: 515,
       recentNights,
-      canRecommend: false,
+      canRecommend: true,
     });
     expect(Object.keys(result).sort()).toEqual(
       [
@@ -149,5 +154,68 @@ describe("sleep need contract", () => {
         "totalNeedMinutes",
       ].sort(),
     );
+  });
+
+  it("returns a server-authored insufficient-baseline state instead of a generic estimate", () => {
+    const result = toSleepNeedV2(
+      buildSleepNeedComputation({
+        baselineMinutes: 480,
+        strainDebtMinutes: 12,
+        accumulatedDebtMinutes: 90,
+        baselineQualifyingNightCount: 6,
+        debtObservedNightCount: 1,
+        recentNights,
+        hasPreviousNight: true,
+        hasYesterdayLoad: true,
+      }),
+    );
+
+    expect(result).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    });
+    expect(result.availability).toBe("insufficient_data");
+    expect((result as Extract<SleepNeedV2, { availability: "insufficient_data" }>).reason).toBe(
+      "insufficient_baseline_history",
+    );
+  });
+
+  it("returns a server-authored missing-load state when yesterday's load is absent", () => {
+    const result = toSleepNeedV2(
+      buildSleepNeedComputation({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        baselineQualifyingNightCount: 7,
+        debtObservedNightCount: 1,
+        recentNights,
+        hasPreviousNight: true,
+        hasYesterdayLoad: false,
+      }),
+    );
+
+    expect(result).toEqual({
+      availability: "insufficient_data",
+      reason: "missing_previous_day_load",
+      message: "Sync yesterday's activity data to include training load in sleep need.",
+      nextAction: "Sync activity data for the previous day.",
+    });
+  });
+
+  it("does not project sleep need to the legacy V1 DTO until its inputs are complete", () => {
+    const computation = buildSleepNeedComputation({
+      baselineMinutes: 480,
+      strainDebtMinutes: 0,
+      accumulatedDebtMinutes: 0,
+      baselineQualifyingNightCount: 6,
+      debtObservedNightCount: 1,
+      recentNights,
+      hasPreviousNight: true,
+      hasYesterdayLoad: true,
+    });
+
+    expect(toSleepNeedV1(computation)).toBeNull();
   });
 });

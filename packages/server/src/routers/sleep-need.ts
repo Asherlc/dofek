@@ -151,9 +151,9 @@ async function calculateSleepNeed(
   // Yesterday's training load comes from the compact ClickHouse activity-load read model.
   // The sleep + HRV part of the query stays in PG; we inject the load value as a parameter.
   const loadRows = await sensorStore.query(
-    z.object({ load: z.coerce.number() }),
+    z.object({ load: z.coerce.number().nullable() }),
     `SELECT
-          coalesce(sum(daily_load), 0) AS load
+          sumOrNull(daily_load) AS load
         FROM analytics.daily_strain FINAL
         WHERE user_id = {userId:UUID}
           AND is_deleted = 0
@@ -162,7 +162,7 @@ async function calculateSleepNeed(
         `,
     { userId: ctx.userId, timezone: ctx.timezone, endDate },
   );
-  const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
+  const yesterdayLoadFromCh = loadRows[0]?.load ?? null;
 
   const sleepRows = await fetchSleepNights({
     sensorStore,
@@ -221,7 +221,7 @@ async function calculateSleepNeed(
         )
       : 480; // default to 8 hours if insufficient data
 
-  const yesterdayLoad = Number(yesterdayLoadFromCh);
+  const yesterdayLoad = yesterdayLoadFromCh ?? 0;
 
   // Strain debt: ~1 minute extra sleep per 5 units of load, capped at 60 min
   const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
@@ -288,6 +288,7 @@ async function calculateSleepNeed(
     hasPreviousNight: sleepRows.some(
       (sleepRow) => sleepRow.date === yesterdayStr && sleepRow.duration_minutes != null,
     ),
+    hasYesterdayLoad: yesterdayLoadFromCh != null,
   });
 }
 
@@ -297,8 +298,8 @@ export const sleepNeedRouter = router({
    */
   calculate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ endDate: endDateSchema }))
-    .output(sleepNeedV1Schema)
-    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
+    .output(sleepNeedV1Schema.nullable())
+    .query(async ({ ctx, input }): Promise<SleepNeedResult | null> => {
       return toSleepNeedV1(await calculateSleepNeed(ctx, input.endDate));
     }),
 

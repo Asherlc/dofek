@@ -1,7 +1,9 @@
 import {
-  formatActivityOverviewDistance,
-  formatActivityOverviewElevation,
-} from "@dofek/format/activity-overview";
+  activityDataStateLabel,
+  formatActivityMetric,
+  type ActivityDataState,
+  type ActivityMetric,
+} from "@dofek/format/activity-data-state";
 import {
   formatDateForDisplay,
   formatDateYmd,
@@ -549,7 +551,9 @@ interface ActivityOverviewData {
   activityCount: number;
   totalMinutes: number;
   totalDistanceMeters: number | null;
+  totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
+  totalElevationState: ActivityDataState;
 }
 
 function ActivityOverview({
@@ -559,40 +563,59 @@ function ActivityOverview({
   overview: ActivityOverviewData | undefined;
   units: ReturnType<typeof useUnitConverter>;
 }) {
-  const items = [
-    { label: "Activities", value: overview ? String(overview.activityCount) : "—" },
-    {
-      label: "Time",
-      value: overview ? formatDurationMinutes(overview.totalMinutes) : "—",
-    },
-    {
-      label: "Distance",
-      value: overview
-        ? formatActivityOverviewDistance(overview.totalDistanceMeters, (distanceMeters) =>
+  const items: Array<ActivityMetric | { label: string; value: string }> = overview
+    ? [
+        { label: "Activities", value: String(overview.activityCount) },
+        { label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
+        formatActivityMetric(
+          "Distance",
+          overview.totalDistanceMeters,
+          overview.totalDistanceState,
+          (distanceMeters) =>
             formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
-          )
-        : "—",
-    },
-    {
-      label: "Elevation",
-      value: overview
-        ? formatActivityOverviewElevation(overview.totalElevationGainM, (elevationMeters) =>
-            formatMeasurementText(units.formatElevation(elevationMeters)),
-          )
-        : "—",
-    },
-  ];
+        ),
+        formatActivityMetric(
+          "Elevation",
+          overview.totalElevationGainM,
+          overview.totalElevationState,
+          (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+        ),
+      ]
+    : [
+        { label: "Activities", value: "Loading…" },
+        { label: "Time", value: "Loading…" },
+        { label: "Distance", value: "Loading…" },
+        { label: "Elevation", value: "Loading…" },
+      ];
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {items.map((item) => (
-        <div key={item.label} className="rounded-lg border border-border bg-surface-solid p-3">
-          <div className="text-lg font-semibold tabular-nums">{item.value}</div>
-          <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
-            {item.label}
+      {items.map((item) => {
+        const isMetric = "status" in item;
+        return (
+          <div
+            key={item.label}
+            className="rounded-lg border border-border bg-surface-solid p-3"
+            data-state={isMetric ? item.status : undefined}
+            aria-label={
+              isMetric
+                ? item.status === "available"
+                  ? `${item.label} ${item.value}`
+                  : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
+                : undefined
+            }
+          >
+            <div className="text-lg font-semibold tabular-nums">
+              {isMetric && item.status !== "available"
+                ? `${item.label} ${activityDataStateLabel(item.status)}`
+                : item.value}
+            </div>
+            <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+              {isMetric && item.status !== "available" ? item.reason : item.label}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

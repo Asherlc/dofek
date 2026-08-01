@@ -72,4 +72,21 @@ describe("SleepOverviewCards", () => {
     expect(screen.getByTestId("sleep-need-card")).toBeDefined();
     expect(screen.getByTestId("sleep-performance-card")).toBeDefined();
   });
+
+  it("keeps insufficient-data sleep need full width", () => {
+    render(
+      <SleepOverviewCards
+        sleepNeed={{
+          availability: "insufficient_data",
+          reason: "missing_previous_day_load",
+          message: "Sync yesterday's activity data to include training load in sleep need.",
+          nextAction: "Sync activity data for the previous day.",
+        }}
+        sleepPerformance={null}
+      />,
+    );
+
+    expect(screen.getByTestId("sleep-overview-cards").className).not.toContain("lg:grid-cols-2");
+    expect(screen.queryByTestId("sleep-performance-card")).toBeNull();
+  });
 });

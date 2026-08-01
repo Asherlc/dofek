@@ -65,6 +65,7 @@ interface SleepNeedFixtureRow {
   median_hrv?: number | null;
   good_recovery?: boolean;
   yesterday_load?: number;
+  hasYesterdayLoad?: boolean;
   efficiency_pct?: number | null;
   provider_id?: string | null;
   source_name?: string | null;
@@ -75,6 +76,20 @@ function addDays(dateString: string, days: number): string {
   const date = new Date(`${dateString}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function completeSleepNeedRows(
+  overrides: Partial<SleepNeedFixtureRow> = {},
+): SleepNeedFixtureRow[] {
+  return Array.from({ length: 7 }, (_, index) => ({
+    date: addDays("2026-03-15", index - 7),
+    duration_minutes: 480,
+    next_day_hrv: 50,
+    median_hrv: 45,
+    good_recovery: true,
+    yesterday_load: 0,
+    ...overrides,
+  }));
 }
 
 function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
@@ -110,10 +125,14 @@ function toHrvRows(rows: SleepNeedFixtureRow[]) {
 
 function createCalculateCaller(rows: SleepNeedFixtureRow[]) {
   const yesterdayLoad = rows[0]?.yesterday_load ?? 0;
+  const hasYesterdayLoad = rows[0]?.hasYesterdayLoad ?? true;
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(toHrvRows(rows)) },
     userId: "user-1",
-    sensorStore: makeMockSensorStore([[{ load: yesterdayLoad }], toClickHouseSleepRows(rows)]),
+    sensorStore: makeMockSensorStore([
+      hasYesterdayLoad ? [{ load: yesterdayLoad }] : [],
+      toClickHouseSleepRows(rows),
+    ]),
   });
 }
 
@@ -158,7 +177,7 @@ describe("sleepNeedRouter", () => {
       });
     });
 
-    it("returns the server-owned heuristic estimate and observed input counts", async () => {
+    it("returns an insufficient-data state when baseline history is short", async () => {
       const caller = createCalculateCaller([
         {
           date: "2026-03-14",
@@ -170,33 +189,36 @@ describe("sleepNeedRouter", () => {
 
       const result = await caller.calculateV2({ endDate: "2026-03-15" });
 
-      expect(result).toMatchObject({
-        availability: "available",
-        baselineMinutes: 480,
-        strainDebtMinutes: 20,
-        accumulatedDebtMinutes: 90,
-        debtRecoveryMinutes: 23,
-        totalNeedMinutes: 523,
-        estimateMetadata: {
-          basis: "generic_eight_hour_default",
-          baselineQualifyingNightCount: 1,
-          debtObservedNightCount: 1,
-          methodVersion: "sleep-need-heuristic-v1",
-          uncertainty: "not_established",
-        },
+      expect(result).toEqual({
+        availability: "insufficient_data",
+        reason: "insufficient_baseline_history",
+        message: "Sync at least 7 qualifying nights to estimate sleep need.",
+        nextAction: "Sync more sleep and recovery data.",
+      });
+    });
+
+    it("returns an insufficient-data state when yesterday's load is missing", async () => {
+      const caller = createCalculateCaller([
+        ...completeSleepNeedRows({ hasYesterdayLoad: false }),
+      ]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toEqual({
+        availability: "insufficient_data",
+        reason: "missing_previous_day_load",
+        message: "Sync yesterday's activity data to include training load in sleep need.",
+        nextAction: "Sync activity data for the previous day.",
       });
     });
 
     it("excludes older missing durations from debt and recent-night values", async () => {
       const caller = createCalculateCaller([
         {
-          date: "2026-03-13",
+          date: "2026-03-01",
           duration_minutes: null,
         },
-        {
-          date: "2026-03-14",
-          duration_minutes: 480,
-        },
+        ...completeSleepNeedRows(),
       ]);
 
       const result = await caller.calculateV2({ endDate: "2026-03-15" });
@@ -207,19 +229,16 @@ describe("sleepNeedRouter", () => {
         debtRecoveryMinutes: 0,
         totalNeedMinutes: 480,
         estimateMetadata: {
-          baselineQualifyingNightCount: 0,
-          debtObservedNightCount: 1,
+          baselineQualifyingNightCount: 7,
+          debtObservedNightCount: 7,
           basisLabel:
-            "Baseline uses a generic 8-hour default because 0 qualifying nights are below the 7-night minimum.",
+            "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
         },
       });
       if (result.availability !== "available") {
         throw new Error("Expected available sleep need");
       }
-      expect(result.recentNights.find((night) => night.date === "2026-03-13")).toMatchObject({
-        actualMinutes: null,
-        debtMinutes: null,
-      });
+      expect(result.recentNights.find((night) => night.date === "2026-03-01")).toBeUndefined();
     });
   });
 
@@ -239,7 +258,7 @@ describe("sleepNeedRouter", () => {
       });
     });
 
-    it("returns default baseline (480 min) when no data", async () => {
+    it("returns null when no data can support the legacy recommendation", async () => {
       const sensorStore = makeMockSensorStore([]);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -248,18 +267,10 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480);
-      expect(result.strainDebtMinutes).toBe(0);
-      expect(result.accumulatedDebtMinutes).toBe(0);
-      expect(result.totalNeedMinutes).toBe(480);
-      // Calendar-based: always 7 nights (null for missing)
-      expect(result.recentNights).toHaveLength(7);
-      for (const night of result.recentNights) {
-        expect(night.actualMinutes).toBeNull();
-      }
-      expect(result.canRecommend).toBe(false);
+      expect(result).toBeNull();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(queryText).toContain("analytics.daily_strain FINAL");
+      expect(queryText).toContain("sumOrNull(daily_load)");
       expect(queryText).toContain("is_deleted = 0");
       expect(queryText).toContain("toDate(toTimeZone(toDateTime(date), {timezone:String}))");
       expect(queryText).not.toContain("analytics.activity_summary");
@@ -293,13 +304,13 @@ describe("sleepNeedRouter", () => {
       }));
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // Average of 450, 455, 460, 465, 470, 475, 480, 485, 490, 495 = 472.5
       expect(result.baselineMinutes).toBe(473); // rounded
     });
 
-    it("uses default baseline of 480 when fewer than 7 good recovery nights", async () => {
+    it("returns null when fewer than 7 good recovery nights are available", async () => {
       const rows = Array.from({ length: 5 }, (_, i) => ({
         date: `2026-03-${String(i + 1).padStart(2, "0")}`,
         duration_minutes: 450,
@@ -312,7 +323,7 @@ describe("sleepNeedRouter", () => {
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480);
+      expect(result).toBeNull();
     });
 
     it("excludes bad recovery nights from baseline calculation", async () => {
@@ -338,43 +349,24 @@ describe("sleepNeedRouter", () => {
       ];
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // Only good nights (420 min each) count for baseline
       expect(result.baselineMinutes).toBe(420);
     });
 
     it("computes strain debt from yesterday's load, capped at 60 minutes", async () => {
-      const rows = [
-        {
-          date: "2026-03-01",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 200, // 200 / 5 = 40 min
-        },
-      ];
+      const rows = completeSleepNeedRows({ yesterday_load: 200 });
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Only 1 good night < 7 -> baseline defaults to 480
       // strainDebt = Math.min(60, Math.round(200 / 5)) = Math.min(60, 40) = 40
       expect(result.strainDebtMinutes).toBe(40);
     });
 
     it("caps strain debt at 60 minutes for very high load", async () => {
-      const rows = [
-        {
-          date: "2026-03-01",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 500, // 500 / 5 = 100, capped to 60
-        },
-      ];
+      const rows = completeSleepNeedRows({ yesterday_load: 500 });
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
@@ -383,24 +375,8 @@ describe("sleepNeedRouter", () => {
     });
 
     it("uses yesterday_load from first row in array", async () => {
-      const rows = [
-        {
-          date: "2026-02-28",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 150,
-        },
-        {
-          date: "2026-03-01",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 0, // different value in second row
-        },
-      ];
+      const rows = completeSleepNeedRows({ yesterday_load: 150 });
+      rows[1] = { ...rows[1], yesterday_load: 0 };
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
@@ -418,7 +394,7 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.strainDebtMinutes).toBe(0);
+      expect(result).toBeNull();
     });
 
     it("computes accumulated sleep debt over last 14 nights", async () => {
@@ -564,7 +540,7 @@ describe("sleepNeedRouter", () => {
       }));
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // baseline = 420, actual = 420, debt = 0
       // Only check nights that have data (some calendar dates may be null)
@@ -597,7 +573,7 @@ describe("sleepNeedRouter", () => {
       ];
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // baseline = (8*480 + 2*520)/10 = (3840 + 1040)/10 = 488
       // Recent nights at 520 have debtMinutes = max(0, 488-520) = 0
@@ -611,7 +587,7 @@ describe("sleepNeedRouter", () => {
       // Some good nights with 0 duration should be excluded
       const rows = [
         ...Array.from({ length: 7 }, (_, i) => ({
-          date: `2026-03-${String(i + 1).padStart(2, "0")}`,
+          date: `2026-03-${String(i + 8).padStart(2, "0")}`,
           duration_minutes: 480,
           next_day_hrv: 55,
           median_hrv: 45,
@@ -619,7 +595,7 @@ describe("sleepNeedRouter", () => {
           yesterday_load: 0,
         })),
         {
-          date: "2026-03-08",
+          date: "2026-03-07",
           duration_minutes: 0,
           next_day_hrv: 55,
           median_hrv: 45,
@@ -691,15 +667,11 @@ describe("sleepNeedRouter", () => {
       });
     });
 
-    it("uses null provenance for recent nights without sleep data", async () => {
+    it("returns null when recent nights have no sleep data", async () => {
       const caller = createCalculateCaller([]);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      for (const night of result.recentNights) {
-        expect(night.providerId).toBeNull();
-        expect(night.sourceName).toBeNull();
-        expect(night.sourceProviders).toEqual([]);
-      }
+      expect(result).toBeNull();
     });
   });
 

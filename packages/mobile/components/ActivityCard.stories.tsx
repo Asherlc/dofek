@@ -17,6 +17,7 @@ const meta = {
     maxHr: 172,
     avgPower: null,
     distanceKm: 8.5,
+    distanceState: { status: "available" },
     units: metricUnits,
   },
 } satisfies Meta<typeof ActivityCard>;

@@ -16,8 +16,12 @@ function stripStyle({
 }
 
 vi.mock("react-native", () => ({
-  View: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", stripStyle(props), ...(children != null ? [children] : [])),
+  View: ({ children, accessibilityLabel, ...props }: Record<string, unknown>) =>
+    React.createElement(
+      "div",
+      stripStyle({ ...props, "aria-label": accessibilityLabel }),
+      ...(children != null ? [children] : []),
+    ),
   Text: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("span", stripStyle(props), ...(children != null ? [children] : [])),
   ScrollView: ({ children, ...props }: Record<string, unknown>) =>
@@ -295,16 +299,27 @@ const baseCyclingActivity = {
   sourceLinks: [],
   sourceDecision: null,
   avgHr: 145,
+  avgHrState: { status: "available" },
   maxHr: 172,
+  maxHrState: { status: "available" },
   avgPower: 220,
+  avgPowerState: { status: "available" },
   maxPower: 350,
+  maxPowerState: { status: "available" },
   avgSpeed: 30,
+  avgSpeedState: { status: "available" },
   maxSpeed: 50,
+  maxSpeedState: { status: "available" },
   avgCadence: 88,
+  avgCadenceState: { status: "available" },
   totalDistance: 30000,
+  totalDistanceState: { status: "available" },
   elevationGain: 400,
+  elevationGainState: { status: "available" },
   elevationLoss: 380,
+  elevationLossState: { status: "available" },
   sampleCount: 200,
+  sampleCountState: { status: "available" },
 };
 
 const streamPointsWithHrAndPower = Array.from({ length: 5 }, (_, index) => ({
@@ -428,6 +443,60 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("renders server-authored detail state when a metric is unavailable without GPS", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        totalDistance: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockStreamQuery.mockReturnValue({ data: [], isLoading: false });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Distance unavailable")).toBeTruthy();
+    expect(screen.getByText("Distance not recorded")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Distance unavailable: Distance not recorded"),
+    ).toBeTruthy();
+  });
+
+  it("preserves a server-provided zero detail distance without GPS", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        totalDistance: 0,
+        totalDistanceState: { status: "available" },
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockStreamQuery.mockReturnValue({ data: [], isLoading: false });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("0 km")).toBeTruthy();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+  });
+
+  it("surfaces the activity detail server error", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Activity detail is temporarily unavailable"),
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Activity detail is temporarily unavailable")).toBeTruthy();
   });
 
   it("uses layman-readable accessible names for activity export formats", async () => {

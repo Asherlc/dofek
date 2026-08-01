@@ -1,4 +1,6 @@
 import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
+import type { ActivityDataState } from "@dofek/format/activity-data-state";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import type { ActivitySource } from "./activity-source.ts";
 import {
   ActivitySourceAttribution,
@@ -33,16 +35,27 @@ export interface ActivityDetail {
   sourceLinks: SourceLink[];
   sourceDecision: ActivitySourceDecisionDetail | null;
   avgHr: number | null;
+  avgHrState: ActivityDataState;
   maxHr: number | null;
+  maxHrState: ActivityDataState;
   avgPower: number | null;
+  avgPowerState: ActivityDataState;
   maxPower: number | null;
+  maxPowerState: ActivityDataState;
   avgSpeed: number | null;
+  avgSpeedState: ActivityDataState;
   maxSpeed: number | null;
+  maxSpeedState: ActivityDataState;
   avgCadence: number | null;
+  avgCadenceState: ActivityDataState;
   totalDistance: number | null;
+  totalDistanceState: ActivityDataState;
   elevationGain: number | null;
+  elevationGainState: ActivityDataState;
   elevationLoss: number | null;
+  elevationLossState: ActivityDataState;
   sampleCount: number | null;
+  sampleCountState: ActivityDataState;
   providerAbsentAt: string | null;
 }
 
@@ -214,16 +227,27 @@ export class Activity {
         this.#lookupProvider,
       ),
       avgHr: this.avgHr,
+      avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,
+      maxHrState: activityMeasurementState("Maximum heart rate", this.maxHr),
       avgPower: this.avgPower,
+      avgPowerState: activityMeasurementState("Average power", this.avgPower),
       maxPower: this.maxPower,
+      maxPowerState: activityMeasurementState("Maximum power", this.maxPower),
       avgSpeed: this.avgSpeed,
+      avgSpeedState: activityMeasurementState("Average speed", this.avgSpeed),
       maxSpeed: this.maxSpeed,
+      maxSpeedState: activityMeasurementState("Maximum speed", this.maxSpeed),
       avgCadence: this.avgCadence,
+      avgCadenceState: activityMeasurementState("Average cadence", this.avgCadence),
       totalDistance: this.totalDistance,
+      totalDistanceState: activityMeasurementState("Distance", this.totalDistance),
       elevationGain: this.elevationGain,
+      elevationGainState: activityMeasurementState("Elevation gain", this.elevationGain),
       elevationLoss: this.elevationLoss,
+      elevationLossState: activityMeasurementState("Elevation loss", this.elevationLoss),
       sampleCount: this.sampleCount,
+      sampleCountState: activityMeasurementState("Sample count", this.sampleCount),
       providerAbsentAt: this.providerAbsentAt,
     };
   }

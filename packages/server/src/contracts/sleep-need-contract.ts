@@ -2,6 +2,12 @@ import { z } from "zod";
 
 export const MISSING_PREVIOUS_NIGHT_MESSAGE =
   "Sync last night's sleep data to see tonight's sleep need.";
+export const INSUFFICIENT_BASELINE_HISTORY_MESSAGE =
+  "Sync at least 7 qualifying nights to estimate sleep need.";
+export const MISSING_PREVIOUS_DAY_LOAD_MESSAGE =
+  "Sync yesterday's activity data to include training load in sleep need.";
+export const INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION = "Sync more sleep and recovery data.";
+export const MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION = "Sync activity data for the previous day.";
 
 export const sleepNightSchema = z
   .object({
@@ -76,9 +82,19 @@ const missingPreviousNightSleepNeedV2Schema = z
   })
   .strict();
 
+const insufficientDataSleepNeedV2Schema = z
+  .object({
+    availability: z.literal("insufficient_data"),
+    reason: z.enum(["insufficient_baseline_history", "missing_previous_day_load"]),
+    message: z.string().min(1),
+    nextAction: z.string().min(1),
+  })
+  .strict();
+
 export const sleepNeedV2Schema = z.discriminatedUnion("availability", [
   availableSleepNeedV2Schema,
   missingPreviousNightSleepNeedV2Schema,
+  insufficientDataSleepNeedV2Schema,
 ]);
 
 export type SleepNeedV2 = z.infer<typeof sleepNeedV2Schema>;
@@ -93,6 +109,7 @@ export interface SleepNeedComputation {
   debtObservedNightCount: number;
   recentNights: SleepNight[];
   hasPreviousNight: boolean;
+  hasYesterdayLoad: boolean;
 }
 
 interface BuildSleepNeedComputationInput {
@@ -103,6 +120,7 @@ interface BuildSleepNeedComputationInput {
   debtObservedNightCount: number;
   recentNights: SleepNight[];
   hasPreviousNight: boolean;
+  hasYesterdayLoad: boolean;
 }
 
 export function buildSleepNeedComputation({
@@ -113,6 +131,7 @@ export function buildSleepNeedComputation({
   debtObservedNightCount,
   recentNights,
   hasPreviousNight,
+  hasYesterdayLoad,
 }: BuildSleepNeedComputationInput): SleepNeedComputation {
   const debtRecoveryMinutes = Math.round(accumulatedDebtMinutes * 0.25);
   return {
@@ -125,10 +144,19 @@ export function buildSleepNeedComputation({
     debtObservedNightCount,
     recentNights,
     hasPreviousNight,
+    hasYesterdayLoad,
   };
 }
 
-export function toSleepNeedV1(computation: SleepNeedComputation): SleepNeedResult {
+export function toSleepNeedV1(computation: SleepNeedComputation): SleepNeedResult | null {
+  if (
+    !computation.hasPreviousNight ||
+    !computation.hasYesterdayLoad ||
+    computation.baselineQualifyingNightCount < 7
+  ) {
+    return null;
+  }
+
   return sleepNeedV1Schema.parse({
     baselineMinutes: computation.baselineMinutes,
     strainDebtMinutes: computation.strainDebtMinutes,
@@ -144,6 +172,24 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
     return {
       availability: "missing_previous_night",
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
+    };
+  }
+
+  if (!computation.hasYesterdayLoad) {
+    return {
+      availability: "insufficient_data",
+      reason: "missing_previous_day_load",
+      message: MISSING_PREVIOUS_DAY_LOAD_MESSAGE,
+      nextAction: MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION,
+    };
+  }
+
+  if (computation.baselineQualifyingNightCount < 7) {
+    return {
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: INSUFFICIENT_BASELINE_HISTORY_MESSAGE,
+      nextAction: INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION,
     };
   }
 

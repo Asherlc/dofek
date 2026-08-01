@@ -18,7 +18,9 @@ let mockOverviewQuery: {
         activityCount: number;
         totalMinutes: number;
         totalDistanceMeters: number | null;
+        totalDistanceState: { status: "available" } | { status: "missing"; reason: string };
         totalElevationGainM: number | null;
+        totalElevationState: { status: "available" } | { status: "missing"; reason: string };
         activityTypes: string[];
       }
     | undefined;
@@ -194,7 +196,9 @@ describe("ActivitiesPage", () => {
         activityCount: 0,
         totalMinutes: 0,
         totalDistanceMeters: 0,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 0,
+        totalElevationState: { status: "available" },
         activityTypes: [],
       },
       isLoading: false,
@@ -319,7 +323,9 @@ describe("ActivitiesPage", () => {
         activityCount: 12,
         totalMinutes: 615,
         totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
         activityTypes: ["running", "cycling"],
       },
       isLoading: false,
@@ -341,7 +347,9 @@ describe("ActivitiesPage", () => {
         activityCount: 2,
         totalMinutes: 90,
         totalDistanceMeters: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
         totalElevationGainM: null,
+        totalElevationState: { status: "missing", reason: "Elevation not recorded" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -360,7 +368,9 @@ describe("ActivitiesPage", () => {
       activityCount: 2,
       totalMinutes: 90,
       totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
       activityTypes: ["running"],
     };
     rerender(<ActivitiesPage />);
@@ -375,7 +385,9 @@ describe("ActivitiesPage", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -594,7 +606,9 @@ describe("ActivitiesPage", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,

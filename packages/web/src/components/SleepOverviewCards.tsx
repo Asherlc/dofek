@@ -16,7 +16,7 @@ export function SleepOverviewCards({
   sleepPerformance,
   sleepPerformanceLoading,
 }: SleepOverviewCardsProps) {
-  const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
+  const isSleepDataMissing = sleepNeed != null && sleepNeed.availability !== "available";
 
   return (
     <div

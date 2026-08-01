@@ -1,4 +1,9 @@
 import {
+  activityDataStateLabel,
+  formatActivityMetric,
+  type ActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateLong,
   formatDateTime,
   formatDurationSeconds,
@@ -358,37 +363,61 @@ export function ActivityHeader({
     return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
   };
 
-  const stats: Array<{ label: string; value: string }> = [];
+  const stats: Array<ActivityMetric | { label: string; value: string }> = [];
 
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
-  if (hasGps && activity.totalDistance != null)
-    stats.push({
-      label: "Distance",
-      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
-    });
-  if (hasGps && activity.elevationGain != null)
-    stats.push({
-      label: "Elevation Gain",
-      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
-    });
-  if (activity.avgHr != null)
-    stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
-  if (activity.maxHr != null)
-    stats.push({ label: "Max Heart Rate", value: `${Math.round(activity.maxHr)} bpm` });
-  if (activity.avgPower != null)
-    stats.push({ label: "Avg Power", value: `${Math.round(activity.avgPower)} W` });
-  if (activity.maxPower != null)
-    stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
-  if (hasGps && activity.avgSpeed != null)
-    stats.push({
-      label: "Avg Speed",
-      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
-    });
-  if (activity.avgCadence != null)
-    stats.push({
-      label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
-    });
+  stats.push(
+    formatActivityMetric(
+      "Distance",
+      activity.totalDistance,
+      activity.totalDistanceState,
+      (distanceMeters) =>
+        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+    ),
+    formatActivityMetric(
+      "Elevation Gain",
+      activity.elevationGain,
+      activity.elevationGainState,
+      (elevationMeters) =>
+        `${Math.round(units.convertElevation(elevationMeters))} ${units.elevationLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Heart Rate",
+      activity.avgHr,
+      activity.avgHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Max Heart Rate",
+      activity.maxHr,
+      activity.maxHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Avg Power",
+      activity.avgPower,
+      activity.avgPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Max Power",
+      activity.maxPower,
+      activity.maxPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Avg Speed",
+      activity.avgSpeed,
+      activity.avgSpeedState,
+      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Cadence",
+      activity.avgCadence,
+      activity.avgCadenceState,
+      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+    ),
+  );
 
   return (
     <div>
@@ -414,12 +443,28 @@ export function ActivityHeader({
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {stats.map((s) => (
-            <div key={s.label} className="card px-4 py-3">
-              <div className="text-xs text-subtle mb-0.5">{s.label}</div>
-              <div className="text-lg font-medium tabular-nums">{s.value}</div>
-            </div>
-          ))}
+          {stats.map((s) => {
+            const isUnavailable = "status" in s && s.status !== "available";
+            return (
+              <div
+                key={s.label}
+                className="card px-4 py-3"
+                data-state={"status" in s ? s.status : undefined}
+                aria-label={
+                  isUnavailable
+                    ? `${s.label} ${activityDataStateLabel(s.status)}: ${s.reason}`
+                    : undefined
+                }
+              >
+                <div className="text-xs text-subtle mb-0.5">
+                  {isUnavailable ? `${s.label} ${activityDataStateLabel(s.status)}` : s.label}
+                </div>
+                <div className="text-lg font-medium tabular-nums">
+                  {isUnavailable ? s.reason : s.value}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -326,7 +326,7 @@ SELECT
     if(
         activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'),
         CAST(0, 'Nullable(Float64)'),
-        coalesce(location_summary.total_distance, CAST(0, 'Nullable(Float64)'))
+        location_summary.total_distance
     ) AS total_distance,
     location_summary.centroid_lat AS centroid_lat,
     location_summary.centroid_lng AS centroid_lng,
@@ -335,8 +335,8 @@ SELECT
     sensor_summary.avg_right_torque_eff AS avg_right_torque_eff,
     sensor_summary.avg_left_pedal_smooth AS avg_left_pedal_smooth,
     sensor_summary.avg_right_pedal_smooth AS avg_right_pedal_smooth,
-    coalesce(sensor_summary.elevation_gain_m, CAST(0, 'Nullable(Float64)')) AS elevation_gain_m,
-    coalesce(sensor_summary.elevation_loss_m, CAST(0, 'Nullable(Float64)')) AS elevation_loss_m,
+    sensor_summary.elevation_gain_m AS elevation_gain_m,
+    sensor_summary.elevation_loss_m AS elevation_loss_m,
     sensor_summary.avg_stance_time AS avg_stance_time,
     sensor_summary.avg_vertical_osc AS avg_vertical_osc,
     sensor_summary.avg_ground_contact_time AS avg_ground_contact_time,
