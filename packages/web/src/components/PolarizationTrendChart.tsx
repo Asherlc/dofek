@@ -1,4 +1,5 @@
 import { formatDateMedium, formatDateYmd, formatNumber } from "@dofek/format/format";
+import { DEFAULT_POLARIZATION_THRESHOLD } from "@dofek/training/training-distribution";
 import type { PolarizationTrendResult, PolarizationWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -15,8 +16,15 @@ import { MethodExplanation } from "./MethodExplanation.tsx";
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
   maxHr: number | null;
+  threshold?: PolarizationTrendResult["threshold"];
   method: PolarizationTrendResult["method"] | null;
   loading?: boolean;
+}
+
+function normalizePolarizationThreshold(threshold: number | null | undefined): number {
+  return typeof threshold === "number" && Number.isFinite(threshold)
+    ? threshold
+    : DEFAULT_POLARIZATION_THRESHOLD;
 }
 
 function formatMinutes(seconds: number): string {
@@ -41,14 +49,15 @@ function findWeekForAxisValue(
   return null;
 }
 
-export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
+export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshold?: number | null) {
+  const effectiveThreshold = normalizePolarizationThreshold(threshold);
   const piValues = weeks
     .map((w) => w.polarizationIndex)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const piMin = piValues.length > 0 ? Math.min(...piValues) : 0;
   const piMax = piValues.length > 0 ? Math.max(...piValues) : 2.5;
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;
-  const yMax = Math.ceil(Math.max(piMax, 2.5) * 10) / 10;
+  const yMax = Math.ceil(Math.max(piMax, effectiveThreshold) * 10) / 10;
 
   const firstDate = weeks[0]?.week ?? "";
   const lastDate = weeks[weeks.length - 1]?.week ?? "";
@@ -102,8 +111,8 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
         name: "Treff heuristic",
         type: "line",
         data: [
-          [firstDate, 2.0],
-          [lastDate, 2.0],
+          [firstDate, effectiveThreshold],
+          [lastDate, effectiveThreshold],
         ],
         symbol: "none",
         lineStyle: { color: chartThemeColors.legendText, type: "dashed", width: 1 },
@@ -150,10 +159,12 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
 export function PolarizationTrendChart({
   weeks,
   maxHr,
+  threshold,
   method,
   loading,
 }: PolarizationTrendChartProps) {
-  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks) : {};
+  const effectiveThreshold = normalizePolarizationThreshold(threshold);
+  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks, effectiveThreshold) : {};
 
   return (
     <div>

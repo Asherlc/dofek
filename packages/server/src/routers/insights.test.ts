@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { collectSqlText, createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -14,7 +16,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -56,6 +61,13 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 
 describe("insightsRouter", () => {
   describe("compute", () => {
+    it("versions the server-authored evidence cache contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "insights-evidence-v1",
+      });
+    });
+
     it("returns computed insights", async () => {
       const caller = makeCaller([]);
       const result = await caller.compute({ days: 90, endDate: "2026-03-28" });
