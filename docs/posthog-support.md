@@ -36,8 +36,8 @@ No support-specific environment variables are required. The existing public
 PostHog project key and US host are defined in
 [`src/lib/posthog-config.ts`](../src/lib/posthog-config.ts). Keep Support
 Tickets enabled for project `347753`; the server fails the submission with an
-actionable upstream error when the project configuration or message request
-fails.
+specific retry message when the project configuration or message request fails,
+while the detailed upstream failure is captured in Sentry and server logs.
 
 Manage submitted tickets at the project's
 [Support Tickets inbox](https://us.posthog.com/project/347753/support/tickets).

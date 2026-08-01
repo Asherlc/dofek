@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   PostHogConversationsClient,
   type PostHogConversationsConfig,
@@ -138,6 +138,38 @@ describe("PostHogConversationsClient", () => {
         distinctId: "user-1",
         widgetSessionId: "widget-session-1",
       }),
-    ).rejects.toBeInstanceOf(PostHogConversationsError);
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining('{"detail":"nope"}'),
+    });
+  });
+
+  it("turns a request timeout into a PostHogConversationsError", async () => {
+    const timeoutController = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    mswServer.use(
+      http.get(configUrl, () => {
+        timeoutController.abort();
+        return HttpResponse.json({ conversations: { enabled: true, token: "conversation-token" } });
+      }),
+    );
+
+    try {
+      const client = new PostHogConversationsClient(config);
+      await expect(
+        client.createTicket({
+          message: "Help",
+          contactEmail: "user@example.com",
+          contactName: "Asher",
+          distinctId: "user-1",
+          widgetSessionId: "widget-session-1",
+        }),
+      ).rejects.toMatchObject({
+        status: 504,
+        message: expect.stringContaining("request timed out"),
+      });
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 });

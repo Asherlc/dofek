@@ -14,6 +14,44 @@ const createTicketResponseSchema = z.object({
 
 const CONVERSATIONS_CONFIG_TTL_MS = 5 * 60 * 1000;
 const CONVERSATIONS_MESSAGE_PATH = "/api/conversations/v1/widget/message";
+const POSTHOG_REQUEST_TIMEOUT_MS = 15_000;
+const MAX_UPSTREAM_ERROR_BODY_LENGTH = 2_000;
+
+async function fetchPostHog(url: string, init: RequestInit, operation: string): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(POSTHOG_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...init, signal: timeoutSignal });
+  } catch (error) {
+    if (timeoutSignal.aborted) {
+      throw new PostHogConversationsError(
+        `PostHog ${operation} request timed out after ${POSTHOG_REQUEST_TIMEOUT_MS}ms`,
+        504,
+      );
+    }
+    throw error;
+  }
+}
+
+async function getUpstreamErrorBody(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.text()).trim();
+    return body ? body.slice(0, MAX_UPSTREAM_ERROR_BODY_LENGTH) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function createHttpError(
+  operation: string,
+  response: Response,
+): Promise<PostHogConversationsError> {
+  const body = await getUpstreamErrorBody(response);
+  const message = body
+    ? `PostHog ${operation} request failed with status ${response.status}: ${body}`
+    : `PostHog ${operation} request failed with status ${response.status}`;
+  return new PostHogConversationsError(message, response.status);
+}
 
 export interface PostHogConversationsConfig {
   apiKey: string;
@@ -64,16 +102,14 @@ export class PostHogConversationsClient {
       return this.#conversationToken;
     }
 
-    const response = await fetch(
+    const response = await fetchPostHog(
       `${this.#config.host}/array/${encodeURIComponent(this.#config.apiKey)}/config`,
       { headers: { Accept: "application/json" } },
+      "conversations config",
     );
 
     if (!response.ok) {
-      throw new PostHogConversationsError(
-        `PostHog conversations config request failed with status ${response.status}`,
-        response.status,
-      );
+      throw await createHttpError("conversations config", response);
     }
 
     const config = conversationConfigSchema.parse(await response.json());
@@ -91,29 +127,30 @@ export class PostHogConversationsClient {
 
   async createTicket(input: PostHogSupportTicketInput): Promise<CreatedPostHogTicket> {
     const conversationToken = await this.#getConversationToken();
-    const response = await fetch(`${this.#config.host}${CONVERSATIONS_MESSAGE_PATH}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Conversations-Token": conversationToken,
-      },
-      body: JSON.stringify({
-        message: input.message.trim(),
-        traits: {
-          name: input.contactName,
-          email: input.contactEmail,
+    const response = await fetchPostHog(
+      `${this.#config.host}${CONVERSATIONS_MESSAGE_PATH}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Conversations-Token": conversationToken,
         },
-        ticket_id: null,
-        widget_session_id: input.widgetSessionId,
-        distinct_id: input.distinctId,
-      }),
-    });
+        body: JSON.stringify({
+          message: input.message.trim(),
+          traits: {
+            name: input.contactName,
+            email: input.contactEmail,
+          },
+          ticket_id: null,
+          widget_session_id: input.widgetSessionId,
+          distinct_id: input.distinctId,
+        }),
+      },
+      "ticket creation",
+    );
 
     if (!response.ok) {
-      throw new PostHogConversationsError(
-        `PostHog ticket creation failed with status ${response.status}`,
-        response.status,
-      );
+      throw await createHttpError("ticket creation", response);
     }
 
     const ticket = createTicketResponseSchema.parse(await response.json());

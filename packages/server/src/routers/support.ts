@@ -70,7 +70,7 @@ export const supportRouter = router({
       );
       throw new TRPCError({
         code: "BAD_GATEWAY",
-        message: "We couldn't submit your request right now. Please try again shortly.",
+        message: "PostHog Support Tickets is unavailable. Please try again shortly.",
         cause: error,
       });
     }

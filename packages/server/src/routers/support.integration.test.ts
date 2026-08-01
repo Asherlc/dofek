@@ -32,7 +32,14 @@ describe("support router", () => {
   const sessionCookies: Record<string, string> = {};
 
   beforeAll(async () => {
-    mswServer.listen({ onUnhandledRequest: "bypass" });
+    mswServer.listen({
+      onUnhandledRequest(request) {
+        if (new URL(request.url).hostname === "localhost") {
+          return;
+        }
+        throw new Error(`[MSW] Unhandled external request: ${request.method} ${request.url}`);
+      },
+    });
     testCtx = await setupTestDatabase();
 
     for (const [id, email] of [
@@ -171,5 +178,8 @@ describe("support router", () => {
     });
 
     expect(body.error?.data?.code).toBe("BAD_GATEWAY");
+    expect(body.error?.message).toBe(
+      "PostHog Support Tickets is unavailable. Please try again shortly.",
+    );
   });
 });
