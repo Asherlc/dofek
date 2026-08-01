@@ -1,8 +1,11 @@
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
-import type { BehaviorAssociationSemantics } from "../repositories/behavior-impact-repository.ts";
-import { BehaviorImpactRepository } from "../repositories/behavior-impact-repository.ts";
+import {
+  type BehaviorAssociation,
+  BehaviorImpactRepository,
+  behaviorAssociationSchema,
+} from "../repositories/behavior-impact-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
 export interface BehaviorImpact {
@@ -13,7 +16,7 @@ export interface BehaviorImpact {
   yesCount: number;
   noCount: number;
   sources: ProviderProvenance[];
-  association: BehaviorAssociationSemantics & { observationWindow: string };
+  association: BehaviorAssociation;
 }
 
 function observationWindow(days: number | null): string {
@@ -29,15 +32,7 @@ const behaviorImpactOutputSchema = z.array(
     yesCount: z.number().int().nonnegative(),
     noCount: z.number().int().nonnegative(),
     sources: z.array(z.object({ providerId: z.string(), label: z.string() })),
-    association: z.object({
-      relationship: z.literal("descriptive_association"),
-      direction: z.enum(["higher", "lower", "no_difference"]),
-      estimateLabel: z.string(),
-      method: z.string(),
-      interpretation: z.string(),
-      uncertainty: z.string(),
-      observationWindow: z.string(),
-    }),
+    association: behaviorAssociationSchema,
   }),
 );
 

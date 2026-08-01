@@ -12,7 +12,7 @@ export type {
 } from "./contracts/report-empty-state.ts";
 export type { InsightEvidence } from "./insights/evidence.ts";
 export type { ActivityDetail } from "./models/activity.ts";
-export type { BehaviorAssociationSemantics } from "./repositories/behavior-impact-repository.ts";
+export type { BehaviorAssociation } from "./repositories/behavior-impact-repository.ts";
 export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 
 // Recovery router types

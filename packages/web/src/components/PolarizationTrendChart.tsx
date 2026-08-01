@@ -20,6 +20,14 @@ interface PolarizationTrendChartProps {
   loading?: boolean;
 }
 
+const DEFAULT_POLARIZATION_THRESHOLD = 2;
+
+function normalizePolarizationThreshold(threshold: number | null | undefined): number {
+  return typeof threshold === "number" && Number.isFinite(threshold)
+    ? threshold
+    : DEFAULT_POLARIZATION_THRESHOLD;
+}
+
 function formatMinutes(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const mins = Math.round((seconds % 3600) / 60);
@@ -42,14 +50,15 @@ function findWeekForAxisValue(
   return null;
 }
 
-export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshold = 2) {
+export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshold?: number | null) {
+  const effectiveThreshold = normalizePolarizationThreshold(threshold);
   const piValues = weeks
     .map((w) => w.polarizationIndex)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const piMin = piValues.length > 0 ? Math.min(...piValues) : 0;
   const piMax = piValues.length > 0 ? Math.max(...piValues) : 2.5;
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;
-  const yMax = Math.ceil(Math.max(piMax, threshold) * 10) / 10;
+  const yMax = Math.ceil(Math.max(piMax, effectiveThreshold) * 10) / 10;
 
   const firstDate = weeks[0]?.week ?? "";
   const lastDate = weeks[weeks.length - 1]?.week ?? "";
@@ -103,8 +112,8 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
         name: "Treff heuristic",
         type: "line",
         data: [
-          [firstDate, threshold],
-          [lastDate, threshold],
+          [firstDate, effectiveThreshold],
+          [lastDate, effectiveThreshold],
         ],
         symbol: "none",
         lineStyle: { color: chartThemeColors.legendText, type: "dashed", width: 1 },
@@ -155,7 +164,8 @@ export function PolarizationTrendChart({
   method,
   loading,
 }: PolarizationTrendChartProps) {
-  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks, threshold) : {};
+  const effectiveThreshold = normalizePolarizationThreshold(threshold);
+  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks, effectiveThreshold) : {};
 
   return (
     <div>

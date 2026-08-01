@@ -11,6 +11,7 @@ import {
 } from "../lib/chartTheme.ts";
 import { CorrelationStrengthBar } from "./CorrelationStrengthBar.tsx";
 import { DofekChart } from "./DofekChart.tsx";
+import { InsightEvidenceDetails } from "./InsightEvidenceDetails.tsx";
 
 export interface Insight {
   id: string;
@@ -44,7 +45,7 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       {/* Header */}
       <div className="space-y-1">
         <p className="text-sm text-foreground font-medium leading-tight">{insight.message}</p>
-        {insight.evidence && (
+        {insight.evidence?.label?.trim() && (
           <p className="text-xs text-muted font-medium">{insight.evidence.label}</p>
         )}
       </div>
@@ -77,17 +78,6 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
 
       {/* Stats footer */}
       <p className="text-[11px] text-dim">{insight.detail}</p>
-    </div>
-  );
-}
-
-function InsightEvidenceDetails({ evidence }: { evidence: InsightEvidence }) {
-  return (
-    <div className="space-y-1 text-xs text-muted">
-      <p>{evidence.method}</p>
-      <p>{evidence.interpretation}</p>
-      <p>{evidence.limitations}</p>
-      <p>{evidence.recommendation}</p>
     </div>
   );
 }
@@ -154,7 +144,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
       <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />
       <p className="text-center text-xs text-subtle mt-1">
         <span className="text-muted">
-          {insight.evidence?.estimateLabel ?? "Observed group comparison"}
+          {insight.evidence?.estimateLabel?.trim() || "Observed group comparison"}
         </span>
       </p>
     </div>

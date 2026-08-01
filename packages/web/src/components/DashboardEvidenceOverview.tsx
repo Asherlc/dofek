@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartContainer } from "./ChartContainer.tsx";
 import type { Insight } from "./CorrelationCard.tsx";
+import { InsightEvidenceDetails } from "./InsightEvidenceDetails.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export interface DashboardTrendSnapshot {
@@ -171,7 +172,7 @@ export function DashboardEvidenceOverview({
                     {correlationValue}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-accent">
-                    {evidence?.label ?? "Descriptive relationship"}
+                    {evidence?.label?.trim() || "Descriptive relationship"}
                   </p>
                   <p className="text-xs text-muted">{days}-day signal</p>
                 </div>
@@ -189,14 +190,7 @@ export function DashboardEvidenceOverview({
                   ) : null}
                 </MiniChartFrame>
               </div>
-              {evidence && (
-                <div className="mt-4 space-y-1 text-xs text-muted">
-                  <p>{evidence.method}</p>
-                  <p>{evidence.interpretation}</p>
-                  <p>{evidence.limitations}</p>
-                  <p>{evidence.recommendation}</p>
-                </div>
-              )}
+              {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
             </div>
           )}
         </EvidenceCard>

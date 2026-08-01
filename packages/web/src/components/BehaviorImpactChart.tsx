@@ -1,6 +1,6 @@
 import { formatReadinessDifference } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
-import type { BehaviorAssociationSemantics } from "dofek-server/types";
+import type { BehaviorAssociation } from "dofek-server/types";
 import { useState } from "react";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -21,7 +21,7 @@ function ReadinessAssociationBar({
   yesCount: number;
   noCount: number;
   sources: ProviderProvenance[];
-  association: BehaviorAssociationSemantics & { observationWindow: string };
+  association: BehaviorAssociation;
 }) {
   const maxBar = 50; // max percentage width
   const barWidth = Math.min(Math.abs(readinessDifferencePercent), maxBar);

@@ -29,14 +29,25 @@ export interface BehaviorImpactRow {
 
 export type BehaviorAssociationDirection = "higher" | "lower" | "no_difference";
 
-export interface BehaviorAssociationSemantics {
+export interface BehaviorAssociation {
   relationship: "descriptive_association";
   direction: BehaviorAssociationDirection;
   estimateLabel: string;
   method: string;
   interpretation: string;
   uncertainty: string;
+  observationWindow: string;
 }
+
+export const behaviorAssociationSchema = z.object({
+  relationship: z.literal("descriptive_association"),
+  direction: z.enum(["higher", "lower", "no_difference"]),
+  estimateLabel: z.string(),
+  method: z.string(),
+  interpretation: z.string(),
+  uncertainty: z.string(),
+  observationWindow: z.string(),
+});
 
 const BEHAVIOR_ASSOCIATION_METHOD =
   "Relative difference in mean next-day readiness after Yes versus No.";
@@ -89,7 +100,7 @@ export class BehaviorImpact {
     );
   }
 
-  get association(): BehaviorAssociationSemantics {
+  get association(): Omit<BehaviorAssociation, "observationWindow"> {
     const impactPercent = this.impactPercent;
     const direction: BehaviorAssociationDirection =
       impactPercent > 0 ? "higher" : impactPercent < 0 ? "lower" : "no_difference";
