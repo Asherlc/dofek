@@ -14,6 +14,18 @@ import { POSTHOG_API_KEY, POSTHOG_HOST } from "./lib/posthog-config.ts";
 const mockStart = vi.fn();
 const mockShutdown = vi.fn().mockResolvedValue(undefined);
 const mockAutoInstrumentations = { bundle: "auto" };
+const aiTelemetryMocks = vi.hoisted(() => ({
+  registerTelemetry: vi.fn(),
+  OpenTelemetry: vi.fn().mockImplementation(() => ({})),
+}));
+
+vi.mock("ai", () => ({
+  registerTelemetry: aiTelemetryMocks.registerTelemetry,
+}));
+
+vi.mock("@ai-sdk/otel", () => ({
+  OpenTelemetry: aiTelemetryMocks.OpenTelemetry,
+}));
 
 vi.mock("@opentelemetry/sdk-node", () => ({
   NodeSDK: vi.fn().mockImplementation(() => ({
@@ -105,6 +117,8 @@ describe("instrumentation", () => {
     vi.mocked(BatchLogRecordProcessor).mockClear();
     vi.mocked(PeriodicExportingMetricReader).mockClear();
     vi.mocked(getNodeAutoInstrumentations).mockClear();
+    aiTelemetryMocks.registerTelemetry.mockClear();
+    aiTelemetryMocks.OpenTelemetry.mockClear();
     mockStart.mockClear();
     mockShutdown.mockClear();
   });
@@ -165,6 +179,8 @@ describe("instrumentation", () => {
 
     expect(sdk).toBeDefined();
     expect(mockStart).toHaveBeenCalled();
+    expect(aiTelemetryMocks.OpenTelemetry).toHaveBeenCalledOnce();
+    expect(aiTelemetryMocks.registerTelemetry).toHaveBeenCalledOnce();
     await sdk?.shutdown();
   });
 

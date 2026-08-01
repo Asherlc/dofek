@@ -1,13 +1,26 @@
+import { OpenTelemetry } from "@ai-sdk/otel";
 import { type Context, context, createContextKey } from "@opentelemetry/api";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { registerTelemetry } from "ai";
 
 const AI_USER_ID_CONTEXT_KEY = createContextKey("dofek.ai.user_id");
 const AI_SPAN_PREFIXES = ["gen_ai.", "llm.", "ai.", "traceloop."] as const;
+let aiTelemetryRegistered = false;
 
 type SpanAttributeTarget = Pick<Span, "setAttribute">;
 
 export interface AiGenerationContext {
   userId?: string;
+}
+
+/** Registers the AI SDK's provider-neutral OpenTelemetry integration once. */
+export function registerAiTelemetry(): void {
+  if (aiTelemetryRegistered) {
+    return;
+  }
+
+  registerTelemetry(new OpenTelemetry());
+  aiTelemetryRegistered = true;
 }
 
 /** Runs an AI operation with generic request context available to OTel processors. */

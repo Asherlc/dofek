@@ -9,7 +9,11 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { PostHogSpanProcessor } from "@posthog/ai/otel";
-import { AiContextSpanProcessor, AiOnlySpanProcessor } from "./lib/ai-observability.ts";
+import {
+  AiContextSpanProcessor,
+  AiOnlySpanProcessor,
+  registerAiTelemetry,
+} from "./lib/ai-observability.ts";
 import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_LOGS_URL } from "./lib/posthog-config.ts";
 
 function isProductionDeployment(environment: string | undefined): boolean {
@@ -98,6 +102,10 @@ export function startInstrumentation(
   const hasMetricExport = Boolean(endpoint || metricsEndpoint);
   if (!hasTraceExport && !hasLogExport && !hasMetricExport) {
     return undefined;
+  }
+
+  if (hasTraceExport) {
+    registerAiTelemetry();
   }
 
   const serviceName = env.OTEL_SERVICE_NAME ?? "dofek";

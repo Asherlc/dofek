@@ -1,4 +1,5 @@
-import { type Context, type ContextManager, context, SpanKind } from "@opentelemetry/api";
+import { context, SpanKind } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import type { ReadableSpan, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -7,41 +8,6 @@ import {
   AiOnlySpanProcessor,
   withAiGenerationContext,
 } from "./ai-observability.ts";
-
-class TestContextManager implements ContextManager {
-  #activeContext = context.active();
-
-  active(): Context {
-    return this.#activeContext;
-  }
-
-  with<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-    nextContext: Context,
-    operation: F,
-    _thisArg?: ThisParameterType<F>,
-    ...args: A
-  ): ReturnType<F> {
-    const previousContext = this.#activeContext;
-    this.#activeContext = nextContext;
-    try {
-      return operation(...args);
-    } finally {
-      this.#activeContext = previousContext;
-    }
-  }
-
-  bind<T>(_nextContext: Context, target: T): T {
-    return target;
-  }
-
-  enable(): this {
-    return this;
-  }
-
-  disable(): this {
-    return this;
-  }
-}
 
 function makeReadableSpan(name: string, attributes: ReadableSpan["attributes"]): ReadableSpan {
   return {
@@ -69,11 +35,14 @@ function makeReadableSpan(name: string, attributes: ReadableSpan["attributes"]):
 }
 
 describe("AI observability context", () => {
+  const contextManager = new AsyncLocalStorageContextManager();
+
   beforeAll(() => {
-    context.setGlobalContextManager(new TestContextManager());
+    context.setGlobalContextManager(contextManager.enable());
   });
 
   afterAll(() => {
+    contextManager.disable();
     context.disable();
   });
 
@@ -82,6 +51,7 @@ describe("AI observability context", () => {
     const processor = new AiContextSpanProcessor();
 
     await withAiGenerationContext({ userId: "user-123" }, async () => {
+      await Promise.resolve();
       processor.onStart(span, context.active());
     });
 
