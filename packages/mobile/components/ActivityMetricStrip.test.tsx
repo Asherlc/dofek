@@ -107,6 +107,27 @@ describe("ActivityMetricStrip", () => {
     expect(screen.queryByText("—")).toBeNull();
   });
 
+  it("renders an unavailable route state instead of falling back to activity stats", () => {
+    render(
+      <ActivityMetricStrip
+        activity={{
+          location: null,
+          distanceMeters: null,
+          distanceState: { status: "processing", reason: "Distance is still processing." },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
+          stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+        }}
+        units={units}
+      />,
+    );
+
+    expect(screen.getByText("Distance processing")).toBeDefined();
+    expect(screen.getByText("Distance is still processing.")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.queryByText("Training Stress Score")).toBeNull();
+  });
+
   it.each([
     "stale",
     "failed",

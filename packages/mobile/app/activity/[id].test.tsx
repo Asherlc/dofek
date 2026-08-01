@@ -465,6 +465,33 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeTruthy();
   });
 
+  it("renders reasons for every unavailable activity metric state", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        totalDistance: null,
+        totalDistanceState: { status: "processing", reason: "Distance is being recomputed" },
+        elevationGain: null,
+        elevationGainState: { status: "failed", reason: "Elevation processing failed" },
+        avgHr: null,
+        avgHrState: { status: "conflicting", reason: "Heart-rate sources disagree" },
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockStreamQuery.mockReturnValue({ data: [], isLoading: false });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Distance processing")).toBeTruthy();
+    expect(screen.getByText("Distance is being recomputed")).toBeTruthy();
+    expect(screen.getByText("Elevation Gain failed")).toBeTruthy();
+    expect(screen.getByText("Elevation processing failed")).toBeTruthy();
+    expect(screen.getByText("Avg Heart Rate conflicting")).toBeTruthy();
+    expect(screen.getByText("Heart-rate sources disagree")).toBeTruthy();
+  });
+
   it("preserves a server-provided zero detail distance without GPS", async () => {
     mockByIdQuery.mockReturnValue({
       data: {

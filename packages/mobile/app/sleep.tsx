@@ -9,7 +9,7 @@ import {
   isYesterday,
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
-import { dedupeSleepMissingStates } from "@dofek/format/sleep-data-state";
+import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -27,16 +27,7 @@ import { useProcessingStatus } from "../lib/useProcessingStatus";
 import { useRefresh } from "../lib/useRefresh";
 import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
-import type { SleepAnalyticsDataState, SleepConsistencyRow, SleepNightlyRow } from "../types/api";
-
-type MissingSleepState = Extract<SleepAnalyticsDataState, { status: "missing" }>;
-
-function getMissingSleepStates(night: SleepNightlyRow): MissingSleepState[] {
-  const states = [night.durationState, night.sleepState, night.stageState].filter(
-    (state): state is MissingSleepState => state.status === "missing",
-  );
-  return dedupeSleepMissingStates(states);
-}
+import type { SleepConsistencyRow, SleepNightlyRow } from "../types/api";
 
 function hasStagePercentages(night: SleepNightlyRow): night is SleepNightlyRow & {
   durationMinutes: number;
@@ -94,6 +85,31 @@ function SleepUnavailableDetails({
       ))}
     </View>
   );
+}
+
+function renderStageContent(night: SleepNightlyRow, compact = false) {
+  if (hasStagePercentages(night)) {
+    return (
+      <SleepBar
+        durationMinutes={night.durationMinutes}
+        deepPercentage={night.deepPct}
+        remPercentage={night.remPct}
+        lightPercentage={night.lightPct}
+        awakePercentage={night.awakePct}
+        showLegend={!compact}
+      />
+    );
+  }
+
+  if (night.durationMinutes === 0 && night.stageState.status === "available") {
+    return (
+      <Text style={compact ? styles.stageUnavailable : styles.partialRecordDuration}>
+        {formatDurationMinutes(night.durationMinutes)} recorded
+      </Text>
+    );
+  }
+
+  return <SleepUnavailableDetails night={night} compact={compact} />;
 }
 
 export default function SleepScreen() {
@@ -179,21 +195,7 @@ export default function SleepScreen() {
                 description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
                 textStyle={styles.cardTitle}
               />
-              {hasStagePercentages(lastNight) ? (
-                <SleepBar
-                  durationMinutes={lastNight.durationMinutes}
-                  deepPercentage={lastNight.deepPct}
-                  remPercentage={lastNight.remPct}
-                  lightPercentage={lastNight.lightPct}
-                  awakePercentage={lastNight.awakePct}
-                />
-              ) : lastNight.durationMinutes === 0 && lastNight.stageState.status === "available" ? (
-                <Text style={styles.partialRecordDuration}>
-                  {formatDurationMinutes(lastNight.durationMinutes)} recorded
-                </Text>
-              ) : (
-                <SleepUnavailableDetails night={lastNight} />
-              )}
+              {renderStageContent(lastNight)}
               <Text style={styles.sleepTiming}>
                 {lastNightBedtime === "--" || lastNightWake === "--"
                   ? "Local sleep time unavailable"
@@ -346,23 +348,7 @@ export default function SleepScreen() {
                     <View key={night.date} style={styles.nightlyRow}>
                       <Text style={styles.nightlyDate}>{formatDateLong(night.date)}</Text>
                       <View style={styles.nightlyBarContainer}>
-                        {hasStagePercentages(night) ? (
-                          <SleepBar
-                            durationMinutes={night.durationMinutes}
-                            deepPercentage={night.deepPct}
-                            remPercentage={night.remPct}
-                            lightPercentage={night.lightPct}
-                            awakePercentage={night.awakePct}
-                            showLegend={false}
-                          />
-                        ) : night.durationMinutes === 0 &&
-                          night.stageState.status === "available" ? (
-                          <Text style={styles.stageUnavailable}>
-                            {formatDurationMinutes(night.durationMinutes)} recorded
-                          </Text>
-                        ) : (
-                          <SleepUnavailableDetails night={night} compact />
-                        )}
+                        {renderStageContent(night, true)}
                       </View>
                     </View>
                   ))}

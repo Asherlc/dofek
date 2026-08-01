@@ -67,6 +67,44 @@ describe("sleep need contract", () => {
     });
   });
 
+  it("rejects available V2 metadata without a personalized seven-night basis", () => {
+    const result = toSleepNeedV2(
+      buildSleepNeedComputation({
+        baselineMinutes: 480,
+        strainDebtMinutes: 12,
+        accumulatedDebtMinutes: 90,
+        baselineQualifyingNightCount: 7,
+        debtObservedNightCount: 1,
+        recentNights,
+        hasPreviousNight: true,
+        hasYesterdayLoad: true,
+      }),
+    );
+
+    if (result.availability !== "available") {
+      throw new Error("Expected available sleep need");
+    }
+
+    expect(
+      sleepNeedV2Schema.safeParse({
+        ...result,
+        estimateMetadata: {
+          ...result.estimateMetadata,
+          basis: "generic_eight_hour_default",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      sleepNeedV2Schema.safeParse({
+        ...result,
+        estimateMetadata: {
+          ...result.estimateMetadata,
+          baselineQualifyingNightCount: 6,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("builds a strict missing-previous-night V2 variant without recommendation values", () => {
     const computation = buildSleepNeedComputation({
       baselineMinutes: 480,

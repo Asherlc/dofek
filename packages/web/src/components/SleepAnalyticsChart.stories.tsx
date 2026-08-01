@@ -121,6 +121,39 @@ const nightly: SleepNightlyRow[] = [
   },
 ];
 
+const referenceNight = nightly[0];
+if (!referenceNight) {
+  throw new Error("SleepAnalyticsChart stories require a reference night.");
+}
+
+const unavailableNight: SleepNightlyRow = {
+  ...referenceNight,
+  durationMinutes: null,
+  sleepMinutes: null,
+  deepPct: null,
+  remPct: null,
+  lightPct: null,
+  awakePct: null,
+  efficiency: null,
+  stagingAvailable: false,
+  rollingAvgDuration: null,
+  durationState: {
+    status: "missing",
+    reason: "Sleep duration was not recorded.",
+    nextAction: "Sync sleep data from a source that reports sleep duration.",
+  },
+  sleepState: {
+    status: "missing",
+    reason: "Sleep duration was not recorded.",
+    nextAction: "Sync sleep data from a source that reports sleep duration.",
+  },
+  stageState: {
+    status: "missing",
+    reason: "Sleep stages were not reported for this night.",
+    nextAction: "Sync sleep data from a source that reports sleep stages.",
+  },
+};
+
 const meta = {
   title: "Sleep/SleepAnalyticsChart",
   component: SleepAnalyticsChart,
@@ -141,4 +174,5 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Loading: Story = { args: { nightly: [], sleepDebt: null, loading: true } };
 export const Empty: Story = { args: { nightly: [], sleepDebt: null } };
+export const Unavailable: Story = { args: { nightly: [unavailableNight], sleepDebt: 0 } };
 export const SleepSurplus: Story = { args: { sleepDebt: -72 } };

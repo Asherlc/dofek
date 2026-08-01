@@ -149,12 +149,12 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
     <View style={statsStyles.grid}>
       {stats.map((stat) => {
         const metric = "status" in stat ? stat : null;
-        const availableMetric = metric?.status === "available" ? metric : null;
-        const unavailableMetric = metric && !availableMetric ? metric : null;
+        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
         const isUnavailable = unavailableMetric !== null;
         const accessibleLabel = unavailableMetric
           ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
           : undefined;
+        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
         return (
           <View
             key={stat.label}
@@ -167,9 +167,7 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
                 ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
                 : stat.label}
             </Text>
-            <Text style={statsStyles.value}>
-              {availableMetric ? availableMetric.value : (unavailableMetric?.reason ?? stat.value)}
-            </Text>
+            <Text style={statsStyles.value}>{displayedValue}</Text>
           </View>
         );
       })}

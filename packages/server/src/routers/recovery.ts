@@ -421,7 +421,14 @@ export const recoveryRouter = router({
         reason: "Sleep stages were not reported for this night.",
         nextAction: "Sync sleep data from a source that reports sleep stages.",
       };
-      const hasStageMinutes = (row: (typeof rows)[number]): boolean =>
+      const hasStageMinutes = (
+        row: (typeof rows)[number],
+      ): row is (typeof rows)[number] & {
+        deep_minutes: number;
+        rem_minutes: number;
+        light_minutes: number;
+        awake_minutes: number;
+      } =>
         row.staging_available &&
         row.deep_minutes != null &&
         row.rem_minutes != null &&
@@ -431,18 +438,10 @@ export const recoveryRouter = router({
         if (row.provider_id !== "apple_health") {
           return row.duration_minutes;
         }
-        if (!row.staging_available) {
+        if (!hasStageMinutes(row)) {
           return null;
         }
-        if (
-          row.deep_minutes == null &&
-          row.rem_minutes == null &&
-          row.light_minutes == null &&
-          row.awake_minutes == null
-        ) {
-          return null;
-        }
-        return (row.deep_minutes ?? 0) + (row.rem_minutes ?? 0) + (row.light_minutes ?? 0);
+        return row.deep_minutes + row.rem_minutes + row.light_minutes;
       };
 
       const nightly = rows.map((row, rowIndex) => {

@@ -39,6 +39,19 @@ export const UnavailableRouteMetrics: Story = {
   },
 };
 
+export const Empty: Story = {
+  args: {
+    activity: {
+      location: null,
+      distanceMeters: null,
+      distanceState: { status: "missing", reason: "Distance is not applicable." },
+      elevationGainM: null,
+      elevationState: { status: "missing", reason: "Elevation is not applicable." },
+      stats: [],
+    },
+  },
+};
+
 export const ActivityStats: Story = {
   args: {
     activity: {

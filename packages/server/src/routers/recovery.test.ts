@@ -160,8 +160,8 @@ function sleepDebtRow(date: string, sleepMinutes: number, durationMinutes = slee
   return sleepNightRow({
     date,
     duration_minutes: durationMinutes,
-    deep_minutes: null,
-    rem_minutes: null,
+    deep_minutes: 0,
+    rem_minutes: 0,
     light_minutes: sleepMinutes,
     awake_minutes: Math.max(0, durationMinutes - sleepMinutes),
     efficiency_pct: durationMinutes > 0 ? (sleepMinutes / durationMinutes) * 100 : null,
@@ -936,11 +936,11 @@ describe("recoveryRouter.sleepAnalytics", () => {
   });
 
   it.each([
-    ["deep_minutes", 90, 90],
-    ["rem_minutes", 105, 105],
-    ["light_minutes", 255, 255],
-    ["awake_minutes", 30, 0],
-  ] as const)("derives Apple Health sleep minutes when only %s is reported", async (presentStage, stageMinutes, expectedSleepMinutes) => {
+    ["deep_minutes", 90],
+    ["rem_minutes", 105],
+    ["light_minutes", 255],
+    ["awake_minutes", 30],
+  ] as const)("keeps Apple Health sleep unavailable when only %s is reported", async (presentStage, stageMinutes) => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
@@ -957,12 +957,12 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const result = await caller.sleepAnalytics({});
 
     expect(result.nightly[0]).toMatchObject({
-      sleepMinutes: expectedSleepMinutes,
+      sleepMinutes: null,
       deepPct: null,
       remPct: null,
       lightPct: null,
       awakePct: null,
-      sleepState: { status: "available" },
+      sleepState: { status: "missing" },
       stageState: { status: "missing" },
     });
   });

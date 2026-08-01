@@ -49,6 +49,13 @@ const sleepNeedEstimateMetadataSchema = z
   })
   .strict();
 
+const availableSleepNeedEstimateMetadataSchema = sleepNeedEstimateMetadataSchema
+  .extend({
+    basis: z.literal("personalized_high_hrv_average"),
+    baselineQualifyingNightCount: z.number().int().min(7),
+  })
+  .strict();
+
 const sleepNeedRecommendationSchema = z
   .object({
     baselineMinutes: z.number(),
@@ -71,7 +78,7 @@ const availableSleepNeedV2Schema = sleepNeedRecommendationSchema
   .extend({
     availability: z.literal("available"),
     debtRecoveryMinutes: z.number(),
-    estimateMetadata: sleepNeedEstimateMetadataSchema,
+    estimateMetadata: availableSleepNeedEstimateMetadataSchema,
   })
   .strict();
 
@@ -198,7 +205,7 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
     };
   }
 
-  const basis = "personalized_high_hrv_average" as const;
+  const basis = "personalized_high_hrv_average";
   const qualifyingNightNoun = computation.baselineQualifyingNightCount === 1 ? "night" : "nights";
   const observedNightNoun = computation.debtObservedNightCount === 1 ? "night" : "nights";
   const basisLabel = `Baseline uses the average of ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} followed by at-or-above-median heart rate variability.`;

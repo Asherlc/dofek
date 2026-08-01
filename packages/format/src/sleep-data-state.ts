@@ -4,6 +4,9 @@ export interface SleepMissingDataState {
   nextAction: string;
 }
 
+export type SleepAnalyticsDataState = { status: "available" } | SleepMissingDataState;
+export type MissingSleepState = Extract<SleepAnalyticsDataState, { status: "missing" }>;
+
 export function dedupeSleepMissingStates<T extends SleepMissingDataState>(
   states: readonly T[],
 ): T[] {
@@ -14,4 +17,15 @@ export function dedupeSleepMissingStates<T extends SleepMissingDataState>(
     seen.add(key);
     return true;
   });
+}
+
+export function getMissingSleepStates(night: {
+  durationState: SleepAnalyticsDataState;
+  sleepState: SleepAnalyticsDataState;
+  stageState: SleepAnalyticsDataState;
+}): MissingSleepState[] {
+  const states = [night.durationState, night.sleepState, night.stageState].filter(
+    (state): state is MissingSleepState => state.status === "missing",
+  );
+  return dedupeSleepMissingStates(states);
 }

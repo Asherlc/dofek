@@ -21424,3 +21424,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   of outer headroom. If CI reaches the tracked limit, capture query memory and
   container inspection before changing the profile; do not relax the boundary
   with waits or retries.
+
+## 2026-08-01 — PR #2367 integration validation hit local AIO and ClickHouse restarts
+
+- **Status:** Unresolved local validation blocker; no production impact.
+- **Symptoms:** The targeted
+  `sleep-consistency-across-endpoints.integration.test.ts` suite could not
+  reach its test bodies. The first direct run lacked `TEST_DATABASE_URL`; the
+  repository-managed retry then failed during the ClickHouse `v_activity`
+  fixture rebuild with `ClickHouse test command failed ... socket hang up`, and
+  the bounded direct retry timed out its `beforeAll` hook after 120 seconds.
+- **User impact:** No production or end-user impact. The PR's focused unit,
+  mobile, typecheck, lint, analytics-policy, and static analytics-model checks
+  passed, but the database-backed consistency suite remains unverified locally.
+- **Evidence:** The workspace Redpanda log repeatedly reported
+  `Your system does not satisfy minimum AIO requirements` and requested
+  `aio-max-nr` of at least 65539; the kernel documents `aio-nr` and
+  `aio-max-nr` as the current and maximum system-wide asynchronous I/O request
+  counts ([kernel AIO sysctls](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)).
+  ClickHouse was healthy before the retry but restarted nine times during the
+  first integration run (`OOMKilled=false`, exit code 0), coinciding with the
+  socket reset. The second run reached the 120-second hook boundary without a
+  test assertion failure.
+- **Root cause:** The local Docker environment did not provide stable AIO and
+  ClickHouse capacity for the integration fixture rebuild; the precise cause
+  of the clean ClickHouse restarts remains unconfirmed.
+- **Fix / mitigation:** Used the repository's `test:integration` wrapper to
+  provision `TEST_DATABASE_URL`, retried the same suite once with the generated
+  environment, and stopped after the repeated infrastructure failure. No
+  timeout, retry, test skip, or production workaround was added.
+- **Remaining risk / follow-up:** Re-run the exact integration suite on a host
+  with stable AIO and ClickHouse service state before relying on its runtime
+  coverage. Capture ClickHouse container events and query/resource evidence if
+  the socket reset recurs; do not raise test timeouts to hide it.
+- **Follow-up validation:** A second repository-managed run on the same date
+  reproduced the failure after 58 seconds while copying `provider_priority`
+  from the temporary Postgres fixture (`socket hang up`); all five consistency
+  tests were skipped before their bodies ran. The isolated current-schema
+  analytics summary integration passed in the same workspace, so this remains
+  a fixture-environment failure rather than evidence against the new model
+  behavior.

@@ -258,9 +258,13 @@ elevation_per_activity AS (
             sum(if(altitude - prev_altitude > 0, altitude - prev_altitude, 0)),
             'Nullable(Float64)'
         ) AS elevation_gain_m,
-        CAST(
-            sum(if(altitude - prev_altitude < 0, abs(altitude - prev_altitude), 0)),
-            'Nullable(Float64)'
+        if(
+            countIf(altitude - prev_altitude < 0) = 0,
+            CAST(null, 'Nullable(Float64)'),
+            CAST(
+                sumIf(abs(altitude - prev_altitude), altitude - prev_altitude < 0),
+                'Nullable(Float64)'
+            )
         ) AS elevation_loss_m
     FROM altitude_deltas
     WHERE prev_altitude IS NOT null

@@ -26,8 +26,8 @@ export function ActivityMetricStrip({
 }) {
   const hasRouteMetrics =
     activity.location != null ||
-    activity.distanceState.status === "available" ||
-    activity.elevationState.status === "available";
+    activity.distanceState.status !== "missing" ||
+    activity.elevationState.status !== "missing";
   const stats: ActivityStat[] = hasRouteMetrics
     ? [
         formatActivityMetric("Distance", activity.distanceMeters, activity.distanceState, (value) =>

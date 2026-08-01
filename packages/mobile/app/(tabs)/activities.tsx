@@ -114,8 +114,8 @@ function formatActivityAccessibilityLabel(
 
   const hasRouteMetrics =
     activity.location != null ||
-    activity.distanceState.status === "available" ||
-    activity.elevationState.status === "available";
+    activity.distanceState.status !== "missing" ||
+    activity.elevationState.status !== "missing";
   if (hasRouteMetrics) {
     const routeMetrics = [
       formatActivityMetric(

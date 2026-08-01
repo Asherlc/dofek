@@ -32,8 +32,8 @@ const mockData = {
   debtRecoveryMinutes: 23,
   totalNeedMinutes: 515,
   estimateMetadata: {
-    basis: "generic_eight_hour_default",
-    baselineQualifyingNightCount: 1,
+    basis: "personalized_high_hrv_average",
+    baselineQualifyingNightCount: 7,
     debtObservedNightCount: 1,
     methodVersion: "sleep-need-heuristic-v1",
     uncertainty: "not_established",
@@ -45,7 +45,7 @@ const mockData = {
       debtRecovery: "Debt recovery",
     },
     basisLabel:
-      "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+      "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
     coverageLabel: "Sleep-debt input uses 1 observed night from the model's recent-night window.",
     methodLabel: "Method: sleep-need-heuristic-v1",
     uncertaintyLabel: "Uncertainty: not established",
@@ -261,7 +261,7 @@ describe("SleepNeedCard", () => {
     render(<SleepNeedCard data={mockData} />);
     expect(
       screen.getByText(
-        "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
       ),
     ).toBeDefined();
     expect(

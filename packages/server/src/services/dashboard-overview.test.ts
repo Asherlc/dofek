@@ -128,7 +128,7 @@ describe("loadDashboardOverview", () => {
     });
   });
 
-  it("keeps the legacy dashboard sleep need unavailable when there are no sleep rows", async () => {
+  it("returns the non-recommending legacy sleep shape when there are no sleep rows", async () => {
     const result = await loadDashboardOverview({
       accessWindow: { kind: "full" },
       endDate: "2026-07-01",
@@ -136,7 +136,18 @@ describe("loadDashboardOverview", () => {
       userId: "user-1",
     });
 
-    expect(result.sleepNeed).toBeNull();
+    expect(result.sleepNeed).toEqual({
+      baselineMinutes: 480,
+      strainDebtMinutes: 0,
+      accumulatedDebtMinutes: 0,
+      totalNeedMinutes: 480,
+      recentNights: expect.any(Array),
+      canRecommend: false,
+    });
+    expect(result.sleepNeed?.recentNights).toHaveLength(7);
+    expect(result.sleepNeed?.recentNights.every((night) => night.actualMinutes === null)).toBe(
+      true,
+    );
     expect(result.sleepNeedV2).toEqual({
       availability: "missing_previous_night",
       message: "Sync last night's sleep data to see tonight's sleep need.",
