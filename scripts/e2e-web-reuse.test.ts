@@ -50,7 +50,7 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
     try {
       execFileSync(
         resolve("node_modules/.bin/tsx"),
-        [resolve("scripts/e2e-web-reuse.ts"), "--up-only"],
+        [resolve("scripts/e2e-web-reuse.ts"), "--", "--spec", "cypress/e2e/review-stack.cy.ts"],
         {
           env: {
             ...process.env,
@@ -96,6 +96,14 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         { command: "docker", arguments: ["wait", "one-shot-container"] },
         { command: "docker", arguments: ["wait", "one-shot-container"] },
       ]);
+      expect(
+        commands.find(
+          (command) => command.command === "pnpm" && command.arguments.includes("cypress"),
+        ),
+      ).toEqual({
+        command: "pnpm",
+        arguments: ["exec", "cypress", "run", "--spec", "cypress/e2e/review-stack.cy.ts"],
+      });
     } finally {
       rmSync(testDirectory, { force: true, recursive: true });
     }

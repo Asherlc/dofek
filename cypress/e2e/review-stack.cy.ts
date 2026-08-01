@@ -27,9 +27,13 @@ describe("Review stack canonical activity routes", () => {
         }));
 
         for (const activity of activities) {
-          expect(activity.detailPath).to.match(/^\/activity\/[0-9a-f-]{36}$/);
+          expect(activity.detailPath).to.match(
+            /^\/activity\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+          );
           const activityId = activity.detailPath?.split("/").at(-1);
-          expect(activityId).to.match(/^[0-9a-f-]{36}$/);
+          expect(activityId).to.match(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+          );
 
           cy.request(`/api/trpc/activity.byId?input=${trpcInput({ id: activityId })}`).then(
             (response) => {
