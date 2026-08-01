@@ -5,6 +5,7 @@ import { findConfounders, findCorrelationConfounders } from "./confounders.ts";
 import { getCorrelationPairs } from "./correlation-pairs.ts";
 import { classifyActivity, type JoinedDay, joinByDate, rollingAvg } from "./data-join.ts";
 import { exhaustiveSweep, getAllMetrics, isValidCausalDirection } from "./discovery.ts";
+import { NO_OBSERVED_DIFFERENCE } from "./conditional-effect.ts";
 import { computeInsights } from "./engine.ts";
 import { explainInsight } from "./explanation.ts";
 import {
@@ -534,6 +535,49 @@ describe("joinByDate()", () => {
 // ── computeInsights tests ───────────────────────────────────────────────
 
 describe("computeInsights()", () => {
+  it("keeps non-conditional evidence free of a conditional estimate label", () => {
+    const dates = dateRange("2025-01-01", 90);
+    const metrics = dates.map((date, index) =>
+      makeDailyRow(date, {
+        hrv: 40 + index,
+        resting_hr: 70 - index * 0.2,
+      }),
+    );
+    const sleep = dates.map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, { duration_minutes: 420 + index }),
+    );
+
+    const correlation = computeInsights(metrics, sleep, [], [], []).find(
+      (insight) => insight.type === "correlation",
+    );
+
+    expect(correlation).toBeDefined();
+    expect(correlation?.evidence?.estimateLabel).toBeUndefined();
+  });
+
+  it("publishes no-observed-difference evidence and messaging for a rounded-zero conditional effect", () => {
+    const dates = dateRange("2025-01-01", 120);
+    const metrics = dates.map((date, index) =>
+      makeDailyRow(date, {
+        hrv:
+          index <= 60
+            ? 100.004 + (index % 2) * 0.0001
+            : 100 + (index % 2) * 0.0001,
+      }),
+    );
+    const sleep = dates.map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, { duration_minutes: index <= 60 ? 480 : 300 }),
+    );
+
+    const insight = computeInsights(metrics, sleep, [], [], []).find(
+      (candidate) => candidate.id === "sleep-7h-hrv",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.message).toContain("no observed difference");
+    expect(insight?.evidence?.estimateLabel).toBe(NO_OBSERVED_DIFFERENCE);
+  });
+
   it("returns empty array when fewer than 14 days of data", () => {
     const dates = dateRange("2025-01-01", 13);
     const metrics = dates.map((d) => makeDailyRow(d));
@@ -4287,6 +4331,35 @@ describe("getMonthlyCorrelations() — comprehensive extract tests", () => {
 // ── computeMonthlyInsights() — conditional analysis ─────────────────────
 
 describe("computeMonthlyInsights() — conditional analysis", () => {
+  it("uses the no-observed-difference branch for a rounded-zero monthly effect", () => {
+    const days: JoinedDay[] = [];
+    for (let monthIndex = 0; monthIndex < 22; monthIndex += 1) {
+      const highExerciseGroup = monthIndex < 11;
+      const exerciseDays = highExerciseGroup ? 15 + monthIndex : monthIndex - 11;
+      const isAboveMedianExercise = exerciseDays > 15;
+      const monthlyDelta = isAboveMedianExercise
+        ? 0.00001 * (monthIndex - 1)
+        : 0.001 + 0.00001 * monthIndex;
+
+      for (let day = 1; day <= 25; day += 1) {
+        const date = new Date(Date.UTC(2025, monthIndex, day)).toISOString().slice(0, 10);
+        days.push(
+          makeFullJoinedDay(date, {
+            exercise_minutes: day <= exerciseDays ? 60 : 0,
+            weight_kg: 80 + (day * monthlyDelta) / 20,
+          }),
+        );
+      }
+    }
+
+    const insight = computeMonthlyInsights(days).find(
+      (candidate) => candidate.id === "m-high-exercise-weight",
+    );
+
+    expect(insight).toBeDefined();
+    expect(insight?.message).toContain("no observed difference");
+  });
+
   it.each([
     { expectedDirection: "higher", slopeDirection: 1 },
     { expectedDirection: "lower", slopeDirection: -1 },
