@@ -1,14 +1,13 @@
 import type { Context } from "@opentelemetry/api";
 import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { PostHogSpanProcessor, type PostHogSpanProcessorOptions } from "@posthog/ai/otel";
-import { AiOnlySpanProcessor } from "./ai-observability.ts";
 
-/** Adds PostHog-specific AI identity only at the provider export boundary. */
+/** Adds PostHog-specific AI identity at the provider export boundary. */
 export class PostHogAiSpanProcessor implements SpanProcessor {
-  #delegate: AiOnlySpanProcessor;
+  #delegate: PostHogSpanProcessor;
 
   constructor(options: PostHogSpanProcessorOptions) {
-    this.#delegate = new AiOnlySpanProcessor(new PostHogSpanProcessor(options));
+    this.#delegate = new PostHogSpanProcessor(options);
   }
 
   onStart(_span: Span, _parentContext: Context): void {}

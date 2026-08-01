@@ -112,7 +112,6 @@ describe("PostHog AI observability adapter", () => {
     const processor = new PostHogAiSpanProcessor({
       projectToken: "phc_test",
     });
-
     await expect(processor.shutdown()).resolves.toBeUndefined();
     await expect(processor.forceFlush()).resolves.toBeUndefined();
 
