@@ -39,7 +39,7 @@ import { styles } from "./settings.styles";
 import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
-type SettingsTab = "general" | "health" | "connections" | "account";
+type SettingsTab = "general" | "health" | "connections" | "account" | "advanced";
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },
@@ -50,6 +50,7 @@ const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
   { id: "health", label: "Health" },
   { id: "connections", label: "Connections" },
   { id: "account", label: "Account" },
+  { id: "advanced", label: "Advanced" },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
 const IOS_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: ${PASSWORD_MAX_LENGTH};`;
@@ -572,6 +573,10 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
+      {activeTab === "account" ? (
+        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+      ) : null}
+
       {/* ── Billing ── */}
       {activeTab === "account" ? (
         <View style={styles.section}>
@@ -695,10 +700,6 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeTab === "account" ? (
-        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
-      ) : null}
-
       {/* ── Help & Support ── */}
       {activeTab === "account" ? (
         <View style={styles.section}>
@@ -720,7 +721,7 @@ export default function SettingsScreen() {
       ) : null}
 
       {/* ── Developer Tools ── */}
-      {activeTab === "account" ? (
+      {activeTab === "advanced" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Developer Tools</Text>
           <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>

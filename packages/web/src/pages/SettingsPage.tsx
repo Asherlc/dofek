@@ -17,13 +17,14 @@ import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContex
 import { trpc } from "../lib/trpc.ts";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
 
-export type SettingsTab = "general" | "health" | "connections" | "account";
+export type SettingsTab = "general" | "health" | "connections" | "account" | "advanced";
 
 const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "health", label: "Health" },
   { id: "connections", label: "Connections" },
   { id: "account", label: "Account" },
+  { id: "advanced", label: "Advanced" },
 ];
 
 export function isSettingsTab(value: unknown): value is SettingsTab {
@@ -139,83 +140,6 @@ export function SettingsPage() {
         aria-labelledby={`settings-tab-${activeTab}`}
         className="space-y-6 sm:space-y-7"
       >
-        {activeTab === "account" ? (
-          <PageSection title="Billing" subtitle="Manage subscription and access window">
-            {billingStatus.isLoading ? (
-              <p className={`${billingRegionClassName} text-sm text-subtle`}>
-                Loading subscription status...
-              </p>
-            ) : billingStatus.error ? (
-              <p className={`${billingRegionClassName} text-sm text-red-400`}>
-                {billingStatus.error.message}
-              </p>
-            ) : billingStatus.data ? (
-              <div className={`${billingRegionClassName} space-y-3`}>
-                <p className="text-sm text-subtle">
-                  {billingStatus.data.access.kind === "limited"
-                    ? `Your access is limited to your signup week (${getSignupWeekLabel(
-                        billingStatus.data.access.startDate,
-                        billingStatus.data.access.endDateExclusive,
-                      )}).`
-                    : "You currently have full access to your data."}
-                </p>
-                <div className="space-y-1">
-                  {billingStatus.data.access.kind === "limited" ? (
-                    <p className="text-xs text-muted">
-                      New data is available only for this first 7 calendar days after account
-                      creation.
-                    </p>
-                  ) : billingStatus.data.access.reason === "stripe_subscription" &&
-                    billingStatus.data.stripeSubscriptionStatus ? (
-                    <p className="text-xs text-muted">
-                      Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
-                    </p>
-                  ) : null}
-                  {billingStatus.data.access.reason === "paid_grant" ? (
-                    <p className="text-xs text-muted">
-                      Existing account access is already granted.
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {!billingStatus.data.hasFullAccess && (
-                    <button
-                      type="button"
-                      onClick={() => checkoutSessionMutation.mutate()}
-                      disabled={checkoutSessionMutation.isPending}
-                      className="px-3 py-2 rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
-                    >
-                      {checkoutSessionMutation.isPending
-                        ? "Opening checkout..."
-                        : "Subscribe to Full Access"}
-                    </button>
-                  )}
-                  {billingStatus.data.canManageBilling && (
-                    <button
-                      type="button"
-                      onClick={() => portalSessionMutation.mutate()}
-                      disabled={portalSessionMutation.isPending}
-                      className="px-3 py-2 rounded border border-border-strong text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-                    >
-                      {portalSessionMutation.isPending
-                        ? "Opening billing portal..."
-                        : "Manage Billing"}
-                    </button>
-                  )}
-                </div>
-                {checkoutSessionMutation.error ? (
-                  <p className="text-sm text-red-400">{checkoutSessionMutation.error.message}</p>
-                ) : null}
-                {portalSessionMutation.error ? (
-                  <p className="text-sm text-red-400">{portalSessionMutation.error.message}</p>
-                ) : null}
-              </div>
-            ) : (
-              <div className={billingRegionClassName} />
-            )}
-          </PageSection>
-        ) : null}
-
         {activeTab === "connections" ? (
           <PageSection title="Data Sources" subtitle="Connect and manage health data providers">
             <DataSourcesPanel />
@@ -315,7 +239,7 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "connections" ? (
+        {activeTab === "advanced" ? (
           <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
             <McpTokensPanel />
           </PageSection>
@@ -411,6 +335,83 @@ export function SettingsPage() {
         {activeTab === "account" ? (
           <PageSection title="Data Export" subtitle="Download all your data">
             <ExportPanel />
+          </PageSection>
+        ) : null}
+
+        {activeTab === "account" ? (
+          <PageSection title="Billing" subtitle="Manage subscription and access window">
+            {billingStatus.isLoading ? (
+              <p className={`${billingRegionClassName} text-sm text-subtle`}>
+                Loading subscription status...
+              </p>
+            ) : billingStatus.error ? (
+              <p className={`${billingRegionClassName} text-sm text-red-400`}>
+                {billingStatus.error.message}
+              </p>
+            ) : billingStatus.data ? (
+              <div className={`${billingRegionClassName} space-y-3`}>
+                <p className="text-sm text-subtle">
+                  {billingStatus.data.access.kind === "limited"
+                    ? `Your access is limited to your signup week (${getSignupWeekLabel(
+                        billingStatus.data.access.startDate,
+                        billingStatus.data.access.endDateExclusive,
+                      )}).`
+                    : "You currently have full access to your data."}
+                </p>
+                <div className="space-y-1">
+                  {billingStatus.data.access.kind === "limited" ? (
+                    <p className="text-xs text-muted">
+                      New data is available only for this first 7 calendar days after account
+                      creation.
+                    </p>
+                  ) : billingStatus.data.access.reason === "stripe_subscription" &&
+                    billingStatus.data.stripeSubscriptionStatus ? (
+                    <p className="text-xs text-muted">
+                      Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
+                    </p>
+                  ) : null}
+                  {billingStatus.data.access.reason === "paid_grant" ? (
+                    <p className="text-xs text-muted">
+                      Existing account access is already granted.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {!billingStatus.data.hasFullAccess && (
+                    <button
+                      type="button"
+                      onClick={() => checkoutSessionMutation.mutate()}
+                      disabled={checkoutSessionMutation.isPending}
+                      className="px-3 py-2 rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
+                    >
+                      {checkoutSessionMutation.isPending
+                        ? "Opening checkout..."
+                        : "Subscribe to Full Access"}
+                    </button>
+                  )}
+                  {billingStatus.data.canManageBilling && (
+                    <button
+                      type="button"
+                      onClick={() => portalSessionMutation.mutate()}
+                      disabled={portalSessionMutation.isPending}
+                      className="px-3 py-2 rounded border border-border-strong text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
+                    >
+                      {portalSessionMutation.isPending
+                        ? "Opening billing portal..."
+                        : "Manage Billing"}
+                    </button>
+                  )}
+                </div>
+                {checkoutSessionMutation.error ? (
+                  <p className="text-sm text-red-400">{checkoutSessionMutation.error.message}</p>
+                ) : null}
+                {portalSessionMutation.error ? (
+                  <p className="text-sm text-red-400">{portalSessionMutation.error.message}</p>
+                ) : null}
+              </div>
+            ) : (
+              <div className={billingRegionClassName} />
+            )}
           </PageSection>
         ) : null}
 

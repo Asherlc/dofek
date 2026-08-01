@@ -463,14 +463,34 @@ describe("SettingsScreen data sources", () => {
   });
 
   it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
+    mockSearchParams = { tab: "advanced" };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
+    ).toBeTruthy();
+  });
+
+  it("orders account data controls before billing", async () => {
     mockSearchParams = { tab: "account" };
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
-    expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
+    const password = screen.getByText("Password");
+    const dataExport = screen.getByText("Data Export");
+    const billing = screen.getByText("Billing");
     expect(
-      screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
+      password.compareDocumentPosition(billing) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      dataExport.compareDocumentPosition(billing) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -815,7 +835,7 @@ describe("SettingsScreen export UI rendering", () => {
 
 describe("SettingsScreen OTA debug details", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "advanced" };
   });
 
   it("renders OTA created time in the local timezone format", async () => {

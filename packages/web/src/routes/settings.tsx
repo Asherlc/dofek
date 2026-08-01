@@ -5,7 +5,7 @@ export const Route = createFileRoute("/settings")({
   validateSearch: (
     search: Record<string, unknown>,
   ): {
-    tab?: "general" | "health" | "connections" | "account";
+    tab?: "general" | "health" | "connections" | "account" | "advanced";
     zeppPair?: string;
   } => ({
     ...(isSettingsTab(search.tab) ? { tab: search.tab } : {}),

@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 const captured: {
   validateSearch:
     | ((search: Record<string, unknown>) => {
-        tab?: "general" | "health" | "connections" | "account";
+        tab?: "general" | "health" | "connections" | "account" | "advanced";
         zeppPair?: string;
       })
     | null;
@@ -14,7 +14,7 @@ vi.mock("@tanstack/react-router", () => ({
     () =>
     (options: {
       validateSearch?: (search: Record<string, unknown>) => {
-        tab?: "general" | "health" | "connections" | "account";
+        tab?: "general" | "health" | "connections" | "account" | "advanced";
         zeppPair?: string;
       };
     }) => {
@@ -26,7 +26,11 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../pages/SettingsPage.tsx", () => ({
   SettingsPage: () => null,
   isSettingsTab: (value: unknown) =>
-    value === "general" || value === "health" || value === "connections" || value === "account",
+    value === "general" ||
+    value === "health" ||
+    value === "connections" ||
+    value === "account" ||
+    value === "advanced",
 }));
 
 beforeAll(async () => {
@@ -39,6 +43,10 @@ describe("settings search validation", () => {
       tab: "connections",
       zeppPair: "ABC234",
     });
+  });
+
+  it("keeps the Advanced tab deep-link value", () => {
+    expect(captured.validateSearch?.({ tab: "advanced" })).toEqual({ tab: "advanced" });
   });
 
   it("drops invalid or empty settings search values", () => {

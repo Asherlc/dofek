@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type SettingsSearch = {
-  tab?: "general" | "health" | "connections" | "account";
+  tab?: "general" | "health" | "connections" | "account" | "advanced";
   zeppPair?: string;
 };
 
@@ -171,9 +171,42 @@ describe("SettingsPage tabs", () => {
 
     expect(screen.getByText("Data Sources")).toBeTruthy();
     expect(screen.getByText("Zepp App Pairing")).toBeTruthy();
-    expect(screen.getByText("MCP")).toBeTruthy();
     expect(screen.getByText("Integrations")).toBeTruthy();
+    expect(screen.queryByText("MCP")).toBeNull();
     expect(screen.queryByText("Billing")).toBeNull();
+  });
+
+  it("orders normal account settings before billing", async () => {
+    mockSearch = { tab: "account" };
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(
+      Array.from(document.querySelectorAll("section"), (section) =>
+        section.getAttribute("aria-label"),
+      ),
+    ).toEqual([
+      "Linked Accounts",
+      "Password",
+      "Data Export",
+      "Billing",
+      "Help & Support",
+      "Danger Zone",
+    ]);
+  });
+
+  it("places MCP settings under Advanced", async () => {
+    mockSearch = { tab: "advanced" };
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("tab", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("MCP")).toBeTruthy();
+    expect(screen.queryByText("Data Sources")).toBeNull();
   });
 
   it("shows and disconnects each active Zepp app independently", async () => {
