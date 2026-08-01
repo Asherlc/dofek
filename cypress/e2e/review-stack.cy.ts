@@ -1,4 +1,4 @@
-const reviewSessionId = "dev-session";
+import { REVIEW_SEED_SESSION_ID, REVIEW_SEED_USER_ID } from "../support/commands";
 
 function trpcInput(input: Record<string, unknown>): string {
   return encodeURIComponent(JSON.stringify({ json: input }));
@@ -6,9 +6,9 @@ function trpcInput(input: Record<string, unknown>): string {
 
 describe("Review stack canonical activity routes", () => {
   beforeEach(() => {
-    // cy.login() creates the disposable Cypress test user. This smoke test
-    // must use the deterministic review user created by the stack seed.
-    cy.setCookie("session", reviewSessionId, { path: "/" });
+    // This smoke test uses the deterministic review user created by the stack seed.
+    cy.setCookie("session", REVIEW_SEED_SESSION_ID, { path: "/" });
+    cy.request("/api/auth/me").its("body.id").should("eq", REVIEW_SEED_USER_ID);
   });
 
   it("opens the seeded activity list and resolves every listed canonical ID in detail", () => {

@@ -70,6 +70,11 @@ Run the review-stack canonical-ID smoke test against the existing seeded stack:
 pnpm e2e:web:reuse -- --spec cypress/e2e/review-stack.cy.ts
 ```
 
+This spec intentionally bypasses `cy.login()` and `cy.cleanTestData()` because it
+validates the deterministic user and session created by the review seed. The fixed
+identifiers live in `support/commands.ts` and the spec verifies that session resolves
+to the seeded review user before checking activity routes.
+
 Reuse an existing E2E stack for repeated runs:
 
 ```bash

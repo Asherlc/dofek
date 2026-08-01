@@ -1,6 +1,8 @@
 import { TEST_USER_ID } from "./test-user";
 
 const TEST_SESSION_ID = "e2e-test-session-token-cypress";
+export const REVIEW_SEED_USER_ID = "00000000-0000-4000-8000-000000000001";
+export const REVIEW_SEED_SESSION_ID = "dev-session";
 
 declare global {
   namespace Cypress {
