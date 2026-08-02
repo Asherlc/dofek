@@ -45,6 +45,7 @@
     "fkey",
     "hashtext",
     "xact",
+    "savepoint",
     "btrim",
     "nextval",
     "postgis",
