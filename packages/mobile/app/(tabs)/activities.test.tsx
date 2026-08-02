@@ -343,6 +343,7 @@ describe("ActivitiesScreen", () => {
     expect(
       screen.getByText("2 matched source records · Wahoo selected by source priority"),
     ).toBeDefined();
+    expect(screen.getByText("Source overlap")).toBeDefined();
     expect(screen.getByText("Processed 1m ago")).toBeDefined();
   });
 

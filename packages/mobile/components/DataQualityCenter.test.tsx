@@ -1,0 +1,50 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import type { DataQualityOverview } from "../../server/src/repositories/data-quality-repository";
+import { DataQualityCenter } from "./DataQualityCenter";
+
+const overview: DataQualityOverview = {
+  generatedAt: "2026-07-22T12:00:00.000Z",
+  window: { days: 30, endDate: "2026-07-22" },
+  overallStatus: "attention",
+  overallMessage: "1 data quality check needs review.",
+  checks: [
+    {
+      key: "coverage",
+      label: "Missing days",
+      status: "attention",
+      title: "Coverage gaps",
+      message: "Nutrition data is missing for 5 of the last 30 days.",
+      count: 5,
+      lastObservedDate: null,
+      details: [],
+    },
+    {
+      key: "source_overlap",
+      label: "Source overlap",
+      status: "attention",
+      title: "Some records have overlapping sources",
+      message: "Review the source decisions before interpreting these records.",
+      count: 2,
+      lastObservedDate: "2026-07-21",
+      details: ["Nutrition: 2 overlapping days."],
+    },
+  ],
+};
+
+describe("DataQualityCenter", () => {
+  it("renders server-authored checks and review actions", () => {
+    render(<DataQualityCenter data={overview} />);
+
+    expect(screen.getByText("Data quality")).toBeTruthy();
+    expect(screen.getByText("1 data quality check needs review.")).toBeTruthy();
+    expect(screen.getByText("Nutrition: 2 overlapping days.")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Review nutrition" })).not.toHaveLength(0);
+  });
+
+  it("shows its loading state", () => {
+    render(<DataQualityCenter loading />);
+
+    expect(screen.getByText("Loading data quality…")).toBeTruthy();
+  });
+});

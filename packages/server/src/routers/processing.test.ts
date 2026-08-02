@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockAlerts, mockHistory, mockStatus } = vi.hoisted(() => ({
-  mockAlerts: vi.fn(),
-  mockHistory: vi.fn(),
-  mockStatus: vi.fn(),
-}));
+const { mockAlerts, mockDataQuality, mockEnsureProvidersRegistered, mockHistory, mockStatus } =
+  vi.hoisted(() => ({
+    mockAlerts: vi.fn(),
+    mockDataQuality: vi.fn(),
+    mockEnsureProvidersRegistered: vi.fn(),
+    mockHistory: vi.fn(),
+    mockStatus: vi.fn(),
+  }));
 
 vi.mock("../repositories/processing-repository.ts", () => ({
   ProcessingRepository: class {
@@ -13,6 +16,14 @@ vi.mock("../repositories/processing-repository.ts", () => ({
     status = mockStatus;
     history = mockHistory;
   },
+}));
+vi.mock("../repositories/data-quality-repository.ts", () => ({
+  DataQualityRepository: class {
+    overview = mockDataQuality;
+  },
+}));
+vi.mock("./sync-helpers.ts", () => ({
+  ensureProvidersRegistered: mockEnsureProvidersRegistered,
 }));
 
 import { processingRouter } from "./processing.ts";
@@ -23,6 +34,7 @@ const userId = "10000000-0000-4000-8000-000000000001";
 describe("processingRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
   });
 
   it("validates the processing history response at runtime", async () => {
@@ -93,6 +105,47 @@ describe("processingRouter", () => {
           providerLabel: "Garmin",
           action: "retry_sync",
         }),
+      ],
+    });
+  });
+
+  it("returns the server-owned data quality overview", async () => {
+    mockDataQuality.mockResolvedValue({
+      generatedAt: "2026-07-22T12:00:00.000Z",
+      window: { days: 30, endDate: "2026-07-22" },
+      overallStatus: "attention",
+      overallMessage: "1 data quality check needs review.",
+      checks: [
+        {
+          key: "source_overlap",
+          label: "Source overlap",
+          status: "attention",
+          title: "Some records have overlapping sources",
+          message: "Review the source decisions before interpreting these records.",
+          count: 2,
+          lastObservedDate: "2026-07-21",
+          details: ["Nutrition: 2 overlapping days."],
+        },
+      ],
+    });
+    const caller = createCaller({ db: {}, userId, timezone: "UTC" });
+
+    await expect(caller.dataQuality({ endDate: "2026-07-22" })).resolves.toEqual({
+      generatedAt: "2026-07-22T12:00:00.000Z",
+      window: { days: 30, endDate: "2026-07-22" },
+      overallStatus: "attention",
+      overallMessage: "1 data quality check needs review.",
+      checks: [
+        {
+          key: "source_overlap",
+          label: "Source overlap",
+          status: "attention",
+          title: "Some records have overlapping sources",
+          message: "Review the source decisions before interpreting these records.",
+          count: 2,
+          lastObservedDate: "2026-07-21",
+          details: ["Nutrition: 2 overlapping days."],
+        },
       ],
     });
   });
