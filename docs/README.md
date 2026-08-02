@@ -48,6 +48,7 @@ the exact section.
 | [file-upload-architecture.md](file-upload-architecture.md) | Durable browser import uploads, R2 object verification, transactional outbox delivery, and recovery. |
 | [app-password-auth.md](app-password-auth.md) | Email/password login, password reset, and Settings password management. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
+| [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
 | [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, experiments, goals, trust, and onboarding. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |

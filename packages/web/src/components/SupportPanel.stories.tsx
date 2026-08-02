@@ -28,7 +28,7 @@ function createMockObservable(
           observer.error?.(new TRPCClientError("We couldn't submit your request right now."));
           return { unsubscribe: () => {} };
         }
-        observer.next?.({ result: { data: { ticketNumber: "1042" } } });
+        observer.next?.({ result: { data: { ticketId: "ticket-1042" } } });
       }
       observer.complete?.();
       return { unsubscribe: () => {} };
