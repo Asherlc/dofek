@@ -143,7 +143,7 @@ describe("TrackingScreen", () => {
     const { default: TrackingScreen } = await import("./tracking");
     render(<TrackingScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expect(mocks.queryInputs.at(-1)).toMatchObject({ days: 7 });
   });

@@ -1,3 +1,5 @@
+import { POWER_UNIT_LABEL, WORK_UNIT_LABEL } from "@dofek/format/units";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
@@ -10,6 +12,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface PowerCurvePoint {
@@ -80,14 +83,10 @@ export function PowerCurveChart({
 
   if (modelCurveData.length > 0 && model) {
     series.push(
-      dofekSeries.line(
-        `Critical Power model (${model.cp}W, anaerobic work capacity=${Math.round(model.wPrime / 1000)}kJ)`,
-        modelCurveData,
-        {
-          color: chartColors.orange,
-          lineStyle: { type: "dashed" },
-        },
-      ),
+      dofekSeries.line("Sustainable power model", modelCurveData, {
+        color: chartColors.orange,
+        lineStyle: { type: "dashed" },
+      }),
     );
   }
 
@@ -112,7 +111,7 @@ export function PowerCurveChart({
       trigger: "item",
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, watts] = params.data;
-        return `${escapeTooltipHtml(params.seriesName)}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
+        return `${escapeTooltipHtml(params.seriesName)}<br/>${formatDuration(seconds)}: <strong>${watts}${POWER_UNIT_LABEL}</strong>`;
       },
     }),
     xAxis: {
@@ -137,12 +136,25 @@ export function PowerCurveChart({
   };
 
   return (
-    <DofekChart
-      option={option}
-      loading={loading}
-      empty={data.length === 0}
-      height={280}
-      emptyMessage="No power data"
-    />
+    <div>
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={280}
+        emptyMessage="No power data"
+      />
+      {modelCurveData.length > 0 && model ? (
+        <MethodExplanation
+          className="mt-2"
+          technicalName={`${TRAINING_TERMINOLOGY.criticalPower.technicalName} + ${TRAINING_TERMINOLOGY.anaerobicWorkCapacity.technicalName}`}
+          lines={[
+            TRAINING_TERMINOLOGY.criticalPower.details,
+            TRAINING_TERMINOLOGY.anaerobicWorkCapacity.details,
+            `Current fit: ${model.cp}${POWER_UNIT_LABEL} sustainable cycling power and ${Math.round(model.wPrime / 1000)}${WORK_UNIT_LABEL} short-burst power reserve.`,
+          ]}
+        />
+      ) : null}
+    </div>
   );
 }

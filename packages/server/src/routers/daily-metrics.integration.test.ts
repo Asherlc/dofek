@@ -8,6 +8,44 @@ import { DailyMetricsRepository } from "../repositories/daily-metrics-repository
 import { restingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
+function recoveryBaselineRow(date: string) {
+  return {
+    date,
+    hrv: 55,
+    resting_hr: 50,
+    respiratory_rate: 14,
+    efficiency_pct: 90,
+    hrv_mean_30d: 55,
+    hrv_sd_30d: 5,
+    hrv_z_score: 0,
+    hrv_baseline_sample_count: 28,
+    hrv_baseline_coverage: 0.8,
+    hrv_mean_7d: 55,
+    hrv_mean_previous_28d: 55,
+    rhr_mean_30d: 50,
+    rhr_sd_30d: 2,
+    resting_hr_z_score: 0,
+    rhr_baseline_sample_count: 28,
+    rhr_baseline_coverage: 0.8,
+    rhr_mean_7d: 50,
+    rhr_mean_previous_28d: 50,
+    rr_mean_30d: 14,
+    rr_sd_30d: 1,
+    respiratory_rate_z_score: 0,
+    rr_baseline_sample_count: 28,
+    rr_baseline_coverage: 0.8,
+    rr_mean_7d: 14,
+    rr_mean_previous_28d: 14,
+    efficiency_mean_30d: 90,
+    efficiency_sd_30d: 2,
+    efficiency_z_score: 0,
+    efficiency_baseline_sample_count: 28,
+    efficiency_baseline_coverage: 0.8,
+    efficiency_mean_7d: 90,
+    efficiency_mean_previous_28d: 90,
+  };
+}
+
 /**
  * Integration tests for dailyMetrics data correctness.
  *
@@ -65,6 +103,18 @@ describe("dailyMetrics data correctness", () => {
           ON CONFLICT DO NOTHING`,
     );
 
+    // ── Insert one evidence-only day outside the selected range ──
+    for (const i of [34]) {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.daily_metrics (
+              date, provider_id, user_id, hrv, steps, spo2_avg, skin_temp_c
+            ) VALUES (
+              CURRENT_DATE - ${i}::int,
+              'apple_health', ${dashboardTestUserId}, 55, 7500, 97, 33.2
+            ) ON CONFLICT DO NOTHING`,
+      );
+    }
+
     // ── Insert 27 health-data days inside the 30-day window ──
     for (let i = 29; i >= 3; i--) {
       const hrv = 50 + Math.round(Math.sin(i * 0.3) * 10);
@@ -72,10 +122,10 @@ describe("dailyMetrics data correctness", () => {
       const spo2 = 96 + Math.round(Math.sin(i * 0.5) * 2);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps, spo2_avg
+              date, provider_id, user_id, hrv, steps, spo2_avg, skin_temp_c
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'apple_health', ${dashboardTestUserId}, ${hrv}, ${steps}, ${spo2}
+              'apple_health', ${dashboardTestUserId}, ${hrv}, ${steps}, ${spo2}, ${33 + i / 100}
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -94,10 +144,17 @@ describe("dailyMetrics data correctness", () => {
       );
     }
 
-    // Refresh the materialized view
-
-    // Start server
-    const app = createApp(testCtx.db, makeMockSensorStore());
+    // Start server. The trends route reads both ClickHouse datasets on every
+    // request, so select the fixture by query rather than exhausting a
+    // one-shot response queue as the test suite makes multiple requests.
+    const sensorStore = makeMockSensorStore();
+    sensorStore.query.mockImplementation(async (schema, query) => {
+      const rows = query.includes("FROM analytics.daily_recovery")
+        ? [recoveryBaselineRow(endDate)]
+        : [{ date: endDate, resting_hr: 50 }];
+      return rows.map((row) => schema.parse(row));
+    });
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -200,6 +257,57 @@ describe("dailyMetrics data correctness", () => {
       expect(result.avg_steps).toBeGreaterThan(5000);
       expect(result.avg_steps).toBeLessThan(15000);
       expect(result.stddev_steps).toBeGreaterThan(0);
+    });
+
+    it("returns server-authored provenance and comparison context for dashboard metrics", async () => {
+      const result = await query<{
+        baselineRelative: Array<{ metric: string }>;
+        healthStatus: Array<{
+          metric: string;
+          provenance: {
+            latestDate: string | null;
+            sourceProviders: string[];
+            observedDays: number;
+            windowDays: number;
+          } | null;
+          comparison: {
+            recentDays: number;
+            baselineDays: number;
+            recentMean: number | null;
+            baselineMean: number | null;
+            delta: number | null;
+          } | null;
+        }>;
+      }>("dailyMetrics.trends", { days: 30, endDate });
+
+      expect(result.baselineRelative.map((metric) => metric.metric)).toContain("hrv");
+      const expectedMetrics = ["hrv", "spo2", "steps", "skin_temperature"];
+      for (const metric of expectedMetrics) {
+        const status = result.healthStatus.find((candidate) => candidate.metric === metric);
+        expect(status).toBeDefined();
+        expect(status?.provenance).toEqual({
+          latestDate: subtractDays(endDate, 3),
+          sourceProviders: ["apple_health"],
+          observedDays: 28,
+          windowDays: 35,
+        });
+        expect(status?.comparison).toEqual(
+          expect.objectContaining({
+            recentDays: 7,
+            baselineDays: 28,
+            recentMean: expect.any(Number),
+            baselineMean: expect.any(Number),
+            delta: expect.any(Number),
+          }),
+        );
+      }
+    });
+
+    it("uses exactly 35 dates for unbounded metric evidence", async () => {
+      const repo = new DailyMetricsRepository(testCtx.db, dashboardTestUserId, "UTC");
+      const result = await repo.getTrends(null, endDate);
+
+      expect(result?.metric_evidence?.steps?.observedDays).toBe(28);
     });
 
     it("returns exact observed-day counts for baseline progress", async () => {

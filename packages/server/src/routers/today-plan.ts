@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { epistemicStatusSchema } from "../contracts/epistemic-status-contract.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { loadTodayPlan } from "../services/today-plan.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -11,6 +12,7 @@ const supportingFactSchema = z.object({
 const todayPlanResultSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ready"),
+    epistemicStatus: epistemicStatusSchema,
     date: z.string(),
     action: z.object({
       id: z.literal("strain_target"),
@@ -19,6 +21,7 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
       zone: z.enum(["Push", "Maintain", "Recovery"]),
     }),
     supportingFacts: z.tuple([supportingFactSchema, supportingFactSchema]),
+    caveats: z.array(z.string()),
     confidence: z.enum(["high", "moderate", "low"]),
     freshness: z.object({
       recoveryDate: z.string().nullable(),
@@ -28,6 +31,7 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
   }),
   z.object({
     status: z.literal("insufficient_data"),
+    epistemicStatus: epistemicStatusSchema,
     date: z.string(),
     action: z.null(),
     supportingFacts: z.tuple([]),
@@ -42,7 +46,10 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
 ]);
 
 export const todayPlanRouter = router({
-  get: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  get: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "today-plan-evidence-v2",
+  })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .output(todayPlanResultSchema)
     .query(({ ctx, input }) =>

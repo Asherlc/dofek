@@ -139,7 +139,7 @@ describe("HealthspanScoreCard", () => {
 
   it("renders trend badge when trend is present", () => {
     render(<HealthspanScoreCard data={makeData({ trend: "improving" })} />);
-    expect(screen.getByText("Improving")).toBeDefined();
+    expect(screen.getByText("Weekly trend across your recorded scores: Improving")).toBeDefined();
   });
 
   it("does not render trend badge when trend is null", () => {

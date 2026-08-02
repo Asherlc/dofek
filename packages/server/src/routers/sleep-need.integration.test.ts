@@ -138,6 +138,7 @@ describe("sleep-need router integration", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result).not.toHaveProperty("totalNeedMinutes");
@@ -153,13 +154,14 @@ describe("sleep-need router integration", () => {
       "sleepNeed.calculateV2",
       input,
       "UTC",
-      "sleep-need-metadata-v1",
+      "sleep-need-metadata-v2",
     );
     await queryCache.set(legacyKey, { availability: "legacy-contract" }, CacheTTL.SHORT);
     await queryCache.set(
       versionedKey,
       {
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       },
       CacheTTL.SHORT,
@@ -169,6 +171,7 @@ describe("sleep-need router integration", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
   });
@@ -204,6 +207,7 @@ describe("sleep-need router integration", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result).not.toHaveProperty("totalNeedMinutes");

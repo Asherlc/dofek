@@ -1,10 +1,12 @@
 import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { EstimatedOneRepMaxRow } from "dofek-server/types";
 import { useState } from "react";
 import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip, seriesColor } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface EstimatedMaxChartProps {
   exercises: EstimatedOneRepMaxRow[];
@@ -51,7 +53,9 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
         showMaxLabel: true,
       },
     }),
-    yAxis: dofekAxis.value({ name: `Estimated 1-Rep Max (${units.weightLabel})` }),
+    yAxis: dofekAxis.value({
+      name: `${TRAINING_TERMINOLOGY.estimatedOneRepMax.plainLabel} (${units.weightLabel})`,
+    }),
     series,
   };
 
@@ -101,6 +105,11 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
         empty={exercises.length === 0}
         emptyMessage="No estimated max data"
         height={280}
+      />
+      <MethodExplanation
+        className="mt-2"
+        technicalName={TRAINING_TERMINOLOGY.estimatedOneRepMax.technicalName}
+        lines={[TRAINING_TERMINOLOGY.estimatedOneRepMax.details]}
       />
     </div>
   );

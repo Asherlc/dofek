@@ -492,6 +492,7 @@ export function CorrelationExplorerPage() {
                 <h3 className="text-xs text-subtle uppercase tracking-wider">
                   Correlation Evidence
                 </h3>
+                <p className="text-xs text-subtle">{data.epistemicStatus.label}</p>
 
                 {data.availability === "available" ? (
                   <>

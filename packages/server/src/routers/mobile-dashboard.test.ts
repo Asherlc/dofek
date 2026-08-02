@@ -236,6 +236,21 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
 }
 
 describe("mobileDashboard.dashboardV2", () => {
+  it("versions the changed dashboard and recovery response contracts", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "mobile-dashboard-contract-v1",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "mobile-dashboard-contract-v2",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "health-status-evidence-v4",
+    });
+  });
+
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -260,10 +275,27 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
     expect(result.sleepNeed).not.toHaveProperty("recentNights");
+  });
+
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("uses full access when the context has no access window", async () => {
@@ -325,6 +357,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",
@@ -343,6 +376,22 @@ describe("mobileDashboard.dashboard", () => {
     await expect(caller.dashboard({ endDate: "2026-03-28" })).rejects.toThrow(
       "mobileDashboard.dashboard requires the ClickHouse activity analytics store",
     );
+  });
+
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("identifies only today and yesterday as recent", () => {

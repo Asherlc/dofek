@@ -222,6 +222,7 @@ describe("Dashboard", () => {
     mockTodayPlanQuery.mockReturnValue({
       data: {
         status: "ready",
+        epistemicStatus: { kind: "suggested", label: "Suggested" },
         date: "2026-05-27",
         action: {
           id: "strain_target",
@@ -233,6 +234,7 @@ describe("Dashboard", () => {
           { label: "Recovery", value: "60/100" },
           { label: "Strain target", value: "12" },
         ],
+        caveats: [],
         confidence: "moderate",
         freshness: { recoveryDate: "2026-05-27", sleepDate: null },
         missingInputs: ["sleep"],
@@ -715,6 +717,8 @@ describe("buildHealthMetrics", () => {
       statusLabel: "Moving as intended",
       evaluationRule: "Below your baseline, where lower values support this metric",
       explanation: "Resting Heart Rate is below your baseline.",
+      provenance: null,
+      comparison: null,
       baselineProgress: {
         requiredObservationDays: 3,
         observedObservationDays: 3,

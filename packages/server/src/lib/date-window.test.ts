@@ -276,6 +276,10 @@ describe("endDateSchema", () => {
   it("rejects non-numeric segments", () => {
     expect(() => endDateSchema.parse("abcd-ef-gh")).toThrow(z.ZodError);
   });
+
+  it("rejects impossible calendar dates", () => {
+    expect(() => endDateSchema.parse("2026-02-29")).toThrow(z.ZodError);
+  });
 });
 
 describe("dateWindowStart", () => {

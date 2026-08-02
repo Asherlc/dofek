@@ -17,6 +17,12 @@ const destinations = [
     title: "Cycle tracking",
     description: "Review cycle phases and record period dates.",
   },
+  {
+    to: "/data-quality",
+    title: "Data quality",
+    description:
+      "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
+  },
 ] as const;
 
 export function MorePage() {

@@ -159,14 +159,14 @@ describe("LandingPage", () => {
 
     expect(screen.getByText("Illustrative example")).toBeTruthy();
     expect(screen.getByText("Daily summary")).toBeTruthy();
-    expect(screen.getByText("Today's recovery picture")).toBeTruthy();
+    expect(screen.getByText("Example recovery picture")).toBeTruthy();
     expect(screen.getByText("May 27, 2026 · Example data")).toBeTruthy();
     expect(screen.getByText("74%")).toBeTruthy();
     expect(screen.getByText("Near baseline")).toBeTruthy();
     expect(screen.getByText("7h 42m")).toBeTruthy();
     expect(screen.getByText("96% of need")).toBeTruthy();
     expect(screen.getByText("Health monitor")).toBeTruthy();
-    expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(screen.getByText("Illustrative relationship")).toBeTruthy();
     expect(screen.getByText("Recent trend")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();
     expect(screen.queryByText("Connected source coverage")).toBeNull();
@@ -185,10 +185,17 @@ describe("LandingPage", () => {
     ).toBeTruthy();
   });
 
+  it("labels the fixed-date preview as an illustrative example", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("Example recovery picture")).toBeTruthy();
+    expect(screen.queryByText("Today's recovery picture")).toBeNull();
+  });
+
   it("places the concrete recovery preview before mobile proof points", () => {
     render(<LandingPage />);
 
-    const dailySummary = screen.getByText("Today's recovery picture");
+    const dailySummary = screen.getByText("Example recovery picture");
     const proofPoint = screen.getByText("Connect sources");
 
     expect(
@@ -196,17 +203,26 @@ describe("LandingPage", () => {
     ).toBeTruthy();
   });
 
-  it("demonstrates value, comparison, confidence, source, and action in the preview", () => {
+  it("labels the relationship preview as illustrative rather than a measured result", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("r = 0.72")).toBeTruthy();
-    expect(screen.getByText("Strong positive")).toBeTruthy();
-    expect(screen.getByText("24 paired days of 30")).toBeTruthy();
+    expect(screen.getByText("Illustrative relationship")).toBeTruthy();
+    expect(screen.getByText("Illustrative sample")).toBeTruthy();
+    expect(screen.getByText("Example points")).toBeTruthy();
+    expect(screen.getByText("No measured correlation")).toBeTruthy();
     expect(
-      screen.getByText("Example sources: Oura sleep + Apple Health heart rate variability (HRV)"),
+      screen.getByText("No sample size or confidence interval is shown for this illustration."),
     ).toBeTruthy();
-    expect(screen.getByText("Confidence: moderate; association, not causation.")).toBeTruthy();
-    expect(screen.getByText("Next: compare late meals on the same nights.")).toBeTruthy();
+    expect(screen.getByText("Example source types: sleep + heart rate variability")).toBeTruthy();
+    expect(screen.getByText("Illustrative data only—not a measured Dofek result.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Real relationships can reflect missing observations or other factors; association does not establish causation.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Next: connect sources to compare your own paired records."),
+    ).toBeTruthy();
 
     expect(screen.getByText("+3 bpm vs prior 7 days")).toBeTruthy();
     expect(screen.getByText("7 of 7 nights")).toBeTruthy();
@@ -229,7 +245,7 @@ describe("LandingPage", () => {
 
     expect(
       screen.getByRole("img", {
-        name: "Example correlation scatter plot. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
+        name: "Illustrative scatter plot for demonstration only. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
       }),
     ).toBeTruthy();
     expect(

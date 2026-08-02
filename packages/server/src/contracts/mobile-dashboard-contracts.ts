@@ -1,6 +1,10 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { z } from "zod";
-import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
+import {
+  baselineComparisonDirectionSchema,
+  baselineRelativeMetricSchema,
+} from "./baseline-relative-metrics.ts";
+import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
@@ -119,6 +123,27 @@ export const healthMetricKeySchema = z.enum([
 
 export const healthMetricIntentSchema = z.enum(["higher", "lower", "maintain", "neutral"]);
 
+export const HEALTH_METRIC_EVIDENCE_WINDOW_DAYS = 35;
+
+export const healthMetricProvenanceSchema = z.object({
+  latestDate: dateSchema.nullable(),
+  sourceProviders: z.array(z.string()),
+  observedDays: z.number().int().nonnegative(),
+  windowDays: z.number().int().positive(),
+});
+
+export const healthMetricComparisonSchema = z.object({
+  recentDays: z.number().int().positive(),
+  baselineDays: z.number().int().positive(),
+  recentMean: z.number().nullable(),
+  baselineMean: z.number().nullable(),
+  delta: z.number().nullable(),
+  direction: baselineComparisonDirectionSchema,
+});
+
+export type HealthMetricProvenance = z.infer<typeof healthMetricProvenanceSchema>;
+export type HealthMetricComparison = z.infer<typeof healthMetricComparisonSchema>;
+
 export const baselineProgressBlockerSchema = z.enum([
   "missing_source_data",
   "collecting",
@@ -162,6 +187,8 @@ export const healthStatusMetricSchema = z.object({
   statusLabel: z.string(),
   evaluationRule: z.string(),
   explanation: z.string(),
+  provenance: healthMetricProvenanceSchema.nullable(),
+  comparison: healthMetricComparisonSchema.nullable(),
   baselineProgress: baselineProgressSchema,
 });
 
@@ -201,7 +228,9 @@ export const mobileRecoveryTabOutputSchema = z.object({
     z.object({
       date: dateSchema,
       rawWeight: nonnegativeNumberSchema.nullable(),
+      rawWeightStatus: epistemicStatusSchema.nullable(),
       smoothedWeight: nonnegativeNumberSchema,
+      smoothedWeightStatus: epistemicStatusSchema,
       weeklyChange: z.number().nullable(),
       interpolated: z.boolean(),
     }),

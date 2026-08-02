@@ -1,10 +1,16 @@
+import {
+  formatHealthProvenanceSource,
+  formatHealthProvenanceSummary,
+} from "@dofek/providers/health-provenance";
 import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
-import { StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 interface HealthStatusCardsProps {
   metrics: HealthStatusMetric[];
   formatValue?: (metric: HealthStatusMetric) => string;
+  formatComparisonValue?: (metric: HealthStatusMetric, value: number) => string;
 }
 
 function statusColor(status: HealthStatusMetric["statusColor"]): string {
@@ -33,7 +39,13 @@ function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
   return "×";
 }
 
-export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsProps) {
+export function HealthStatusCards({
+  metrics,
+  formatValue,
+  formatComparisonValue,
+}: HealthStatusCardsProps) {
+  const [expandedMetric, setExpandedMetric] = useState<HealthStatusMetric["metric"] | null>(null);
+
   if (metrics.length === 0) return null;
 
   return (
@@ -41,6 +53,8 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
       <Text style={styles.heading}>HEALTH STATUS</Text>
       {metrics.map((metric) => {
         const baseline = metric.baselineText;
+        const provenance = metric.provenance;
+        const expanded = expandedMetric === metric.metric;
         return (
           <View key={metric.metric} style={styles.card}>
             <View style={styles.titleRow}>
@@ -74,6 +88,58 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
             </Text>
             <Text style={styles.rule}>{metric.evaluationRule}</Text>
             <Text style={styles.explanation}>{metric.explanation}</Text>
+            {provenance ? (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${expanded ? "Hide" : "Show"} source details for ${metric.label}`}
+                  accessibilityState={{ expanded }}
+                  onPress={() => setExpandedMetric(expanded ? null : metric.metric)}
+                  style={styles.provenanceDisclosure}
+                >
+                  <Text style={styles.provenanceSummary}>
+                    {formatHealthProvenanceSummary(provenance)}
+                  </Text>
+                  <Text style={styles.provenanceAction}>
+                    {expanded ? "Hide details" : "Details"}
+                  </Text>
+                </Pressable>
+                {expanded ? (
+                  <View style={styles.provenanceDetails}>
+                    <Text style={styles.provenance}>
+                      Source: {formatHealthProvenanceSource(provenance)}
+                    </Text>
+                    <Text style={styles.provenance}>
+                      Latest recorded date: {provenance.latestDate ?? "Unavailable"}
+                    </Text>
+                    <Text style={styles.provenance}>
+                      Coverage: {provenance.observedDays}/{provenance.windowDays} days
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            {metric.comparison ? (
+              <Text style={styles.provenance}>
+                {metric.comparison.recentDays}d avg{" "}
+                {metric.comparison.recentMean == null
+                  ? "—"
+                  : (formatComparisonValue?.(metric, metric.comparison.recentMean) ??
+                    String(metric.comparison.recentMean))}{" "}
+                vs prior {metric.comparison.baselineDays}d avg{" "}
+                {metric.comparison.baselineMean == null
+                  ? "—"
+                  : (formatComparisonValue?.(metric, metric.comparison.baselineMean) ??
+                    String(metric.comparison.baselineMean))}{" "}
+                ·{" "}
+                {metric.comparison.delta == null
+                  ? "—"
+                  : metric.comparison.delta > 0
+                    ? `+${formatComparisonValue?.(metric, metric.comparison.delta) ?? metric.comparison.delta}`
+                    : (formatComparisonValue?.(metric, metric.comparison.delta) ??
+                      metric.comparison.delta)}
+              </Text>
+            ) : null}
             {metric.baselineProgress.blocker !== null ? (
               <View
                 accessibilityLabel={`${metric.label} baseline progress`}
@@ -153,6 +219,36 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 17,
+  },
+  provenance: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  provenanceDisclosure: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    justifyContent: "space-between",
+    paddingVertical: spacing.xs,
+  },
+  provenanceSummary: {
+    color: colors.textTertiary,
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  provenanceAction: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+  },
+  provenanceDetails: {
+    borderLeftColor: colors.surfaceSecondary,
+    borderLeftWidth: 2,
+    gap: spacing.xs,
+    paddingLeft: spacing.sm,
   },
   progress: {
     gap: spacing.xs,

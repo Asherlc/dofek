@@ -16,6 +16,12 @@ const operationId = "30000000-0000-4000-8000-000000000001";
 
 const succeededProviderModels = [
   {
+    name: "provider_metric_stream_daily",
+    status: "succeeded" as const,
+    errorCode: null,
+    message: null,
+  },
+  {
     name: "provider_change_watermark",
     status: "succeeded" as const,
     errorCode: null,
@@ -42,6 +48,17 @@ describe("buildProcessingAnalyticsEvents", () => {
         modelResults: succeededProviderModels,
       }),
     ).toEqual([
+      {
+        operationId,
+        datasetKey: "providers",
+        modelName: "provider_metric_stream_daily",
+        status: "succeeded",
+        errorCode: null,
+        errorMessage: null,
+        message: "Analytics calculation completed",
+        servingWatermark: "dbt-run-1",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_metric_stream_daily:succeeded`,
+      },
       {
         operationId,
         datasetKey: "providers",
@@ -85,6 +102,12 @@ describe("buildProcessingAnalyticsEvents", () => {
         pendingDatasets: [{ operationId, datasetKey: "providers" }],
         modelResults: [
           {
+            name: "provider_metric_stream_daily",
+            status: "succeeded",
+            errorCode: null,
+            message: null,
+          },
+          {
             name: "provider_change_watermark",
             status: "succeeded",
             errorCode: null,
@@ -99,6 +122,17 @@ describe("buildProcessingAnalyticsEvents", () => {
         ],
       }),
     ).toEqual([
+      {
+        operationId,
+        datasetKey: "providers",
+        modelName: "provider_metric_stream_daily",
+        status: "succeeded",
+        errorCode: null,
+        errorMessage: null,
+        message: "Analytics calculation completed",
+        servingWatermark: "dbt-run-1",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_metric_stream_daily:succeeded`,
+      },
       {
         operationId,
         datasetKey: "providers",
@@ -161,9 +195,11 @@ describe("buildProcessingAnalyticsEvents", () => {
 
     expect(new Set(events.map((event) => event.idempotencyKey))).toHaveLength(events.length);
     expect(events.map((event) => event.idempotencyKey)).toEqual([
+      `dbt-run-shared:${operationId}:providers:provider_metric_stream_daily:succeeded`,
       `dbt-run-shared:${operationId}:providers:provider_change_watermark:succeeded`,
       `dbt-run-shared:${operationId}:providers:provider_stats:succeeded`,
       `dbt-run-shared:${operationId}:providers:aggregate:succeeded`,
+      `dbt-run-shared:${secondOperationId}:providers:provider_metric_stream_daily:succeeded`,
       `dbt-run-shared:${secondOperationId}:providers:provider_change_watermark:succeeded`,
       `dbt-run-shared:${secondOperationId}:providers:provider_stats:succeeded`,
       `dbt-run-shared:${secondOperationId}:providers:aggregate:succeeded`,
@@ -223,7 +259,7 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
         modelResults: succeededProviderModels,
       }),
     ).resolves.toEqual({ datasets: 1, failed: 0 });
-    expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenCalledTimes(4);
+    expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenCalledTimes(5);
     expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenNthCalledWith(
       1,
       database,
@@ -232,16 +268,16 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
         stage: "analytics",
         status: "succeeded",
         datasetKey: "providers",
-        modelName: "provider_change_watermark",
+        modelName: "provider_metric_stream_daily",
         servingWatermark: "dbt-run-1",
         message: "Analytics calculation completed",
         errorCode: null,
         errorMessage: null,
-        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_change_watermark:succeeded`,
+        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_metric_stream_daily:succeeded`,
       },
     );
     expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenNthCalledWith(
-      4,
+      5,
       database,
       {
         operationId,
@@ -266,7 +302,7 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
         modelResults: [],
       }),
     ).resolves.toEqual({ datasets: 1, failed: 1 });
-    expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenCalledTimes(3);
+    expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenCalledTimes(4);
     expect(processingEventStoreMocks.appendProcessingStageEvent).not.toHaveBeenCalledWith(
       database,
       expect.objectContaining({ stage: "cache_refresh" }),

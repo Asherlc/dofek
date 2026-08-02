@@ -7,6 +7,7 @@ import {
   formatNumber,
   formatSpO2,
 } from "@dofek/format/format";
+import { formatHealthspanTrendContext } from "@dofek/format/healthspan-context";
 import { formatMeasurementText } from "@dofek/format/units";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
@@ -36,6 +37,7 @@ import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -60,13 +62,6 @@ const RECOVERY_SCORE_BANDS = SCORE_ZONES.map((zone) => {
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function trendArrow(trend: string | null): string {
-  if (trend === "improving") return "\u2191";
-  if (trend === "declining") return "\u2193";
-  if (trend === "stable") return "\u2192";
-  return "";
 }
 
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
@@ -192,6 +187,10 @@ export default function RecoveryScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const todayPlanQuery = trpc.todayPlan.get.useQuery(
+    { days: 30, endDate },
+    { enabled: isHydrated },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
   const recoveryData = isHydrated ? recoveryQuery.data : undefined;
 
@@ -261,6 +260,7 @@ export default function RecoveryScreen() {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.recovery.invalidate(),
+        utils.todayPlan.get.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -287,6 +287,12 @@ export default function RecoveryScreen() {
         data={processingStatus.data}
         error={processingStatus.error}
         loading={processingStatus.isLoading}
+      />
+
+      <TodayPlanCard
+        plan={todayPlanQuery.data}
+        loading={todayPlanQuery.isLoading}
+        error={todayPlanQuery.error}
       />
 
       {recoveryQuery.isError ? (
@@ -329,6 +335,15 @@ export default function RecoveryScreen() {
               return `${formatBodyCompositionNumber(metric.value)}%`;
             }
             return `${formatNumber(metric.value, 0)} bpm`;
+          }}
+          formatComparisonValue={(metric, value) => {
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperatureDelta(value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(value);
+            if (metric.metric === "hrv") return formatHRV(value);
+            if (metric.metric === "steps") return formatNumber(value, 0);
+            return formatNumber(value);
           }}
         />
       )}
@@ -595,7 +610,7 @@ export default function RecoveryScreen() {
                   </Text>
                   {healthspan.trend != null && (
                     <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
-                      {trendArrow(healthspan.trend)} {healthspan.trend}
+                      {formatHealthspanTrendContext(healthspan.trend)}
                     </Text>
                   )}
                 </View>
@@ -611,9 +626,11 @@ export default function RecoveryScreen() {
                   <Text style={styles.weightValue}>
                     {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  {latestWeight.rawWeight != null && (
+                  <Text style={styles.weightScale}>{latestWeight.smoothedWeightStatus?.label}</Text>
+                  {latestWeight.rawWeight != null && latestWeight.rawWeightStatus != null && (
                     <Text style={styles.weightScale}>
-                      Scale: {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                      {latestWeight.rawWeightStatus.label}:{" "}
+                      {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
                     </Text>
                   )}
                   <Text style={styles.weightExplanation}>
@@ -811,7 +828,6 @@ const styles = StyleSheet.create({
   healthspanTrend: {
     fontSize: 13,
     fontWeight: "500",
-    textTransform: "capitalize",
   },
   healthspanAvailabilitySummary: {
     color: colors.text,

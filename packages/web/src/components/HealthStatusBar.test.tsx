@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HealthStatusBar } from "./HealthStatusBar.tsx";
 
@@ -19,6 +19,8 @@ const serverMetric = {
   statusLabel: "Near baseline",
   evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
   explanation: "Skin Temperature is close to your usual range.",
+  provenance: null,
+  comparison: null,
   baselineProgress: {
     requiredObservationDays: 3,
     observedObservationDays: 3,
@@ -150,6 +152,49 @@ describe("HealthStatusBar", () => {
         "30d baseline 60.0 ± 6.0 · 2.0 SD above baseline · 7d vs prior 28d +5.0 · 24/30 baseline days",
       ),
     ).toBeDefined();
+  });
+
+  it("renders server-authored provenance and comparison context", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "spo2",
+            provenance: {
+              latestDate: "2026-07-30",
+              sourceProviders: ["whoop"],
+              observedDays: 3,
+              windowDays: 30,
+            },
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 97.2,
+              baselineMean: 96.4,
+              delta: 0.8,
+              direction: "increasing",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
+    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeDefined();
+
+    const detailsButton = screen.getByRole("button", {
+      name: "Show source details for Skin Temperature",
+    });
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
+
+    fireEvent.click(detailsButton);
+
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Source: WHOOP (Cloud)")).toBeDefined();
+    expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeDefined();
+    expect(screen.getByText("Coverage: 3/30 days")).toBeDefined();
   });
 
   it("renders structured units while preserving the exact server status", () => {

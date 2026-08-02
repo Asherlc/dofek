@@ -67,8 +67,8 @@ function StrengthTab() {
         </Section>
 
         <Section
-          title="Estimated 1-Rep Max"
-          subtitle="Estimated max single-rep strength per exercise over time"
+          title="Estimated single-rep strength"
+          subtitle="Estimated maximum weight for one repetition per exercise over time"
         >
           {estimatedMax.error && !estimatedMax.data ? (
             <QueryStatePanel error={estimatedMax.error} />

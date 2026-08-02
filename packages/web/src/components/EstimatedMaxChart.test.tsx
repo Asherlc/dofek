@@ -114,4 +114,14 @@ describe("EstimatedMaxChart", () => {
       showMaxLabel: true,
     });
   });
+
+  it("leads with plain-language strength and keeps e1RM method details expandable", () => {
+    render(<EstimatedMaxChart exercises={exercises} />);
+
+    expect(screen.getByText("How this is calculated")).toBeVisible();
+    expect(screen.getByText(/Estimated 1-Rep Max \(e1RM\)/)).not.toBeVisible();
+    expect(screen.getByTestId("estimated-max-chart").dataset.option).toContain(
+      "Estimated single-rep strength",
+    );
+  });
 });

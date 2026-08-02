@@ -13,6 +13,24 @@ export function compactWhitespace(value: string): string {
   return value.replace(/\s+/g, " ");
 }
 
+export function renderDbtModelSql(
+  modelSql: string,
+  options: { isIncremental: boolean },
+): string {
+  return modelSql
+    .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
+    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
+    .trimStart()
+    .replace(
+      /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
+      (
+        _match: string,
+        incrementalSql: string,
+        nonIncrementalSql: string | undefined,
+      ) => (options.isIncremental ? incrementalSql : (nonIncrementalSql ?? "")),
+    );
+}
+
 function skipSqlLineComment(sql: string, startIndex: number): number {
   let cursorIndex = startIndex + 2;
   while (cursorIndex < sql.length && sql[cursorIndex] !== "\n") {

@@ -127,7 +127,7 @@ describe("BehaviorAssociationsScreen", () => {
     const { default: BehaviorAssociationsScreen } = await import("./behavior-associations");
     render(<BehaviorAssociationsScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "30d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "30d" }));
 
     expect(screen.getByText("Observation window: Server observation window.")).toBeTruthy();
     expect(mocks.queryInputs.at(-1)).toEqual({ days: 30 });

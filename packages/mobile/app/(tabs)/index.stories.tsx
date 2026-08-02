@@ -72,10 +72,12 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
       sleepNeed: sleepDataUnavailable
         ? {
             availability: "missing_previous_night",
+            epistemicStatus: { kind: "unavailable", label: "Unavailable" },
             message: MISSING_PREVIOUS_NIGHT_MESSAGE,
           }
         : {
             availability: "available",
+            epistemicStatus: { kind: "estimated", label: "Estimated" },
             baselineMinutes: 480,
             strainDebtMinutes: 16,
             accumulatedDebtMinutes: 28,
@@ -107,6 +109,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
           },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: todayDate,
+      summaryDateContext: { effectiveDate: todayDate, timezone: "UTC" },
     },
   );
 
@@ -114,6 +117,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
     [["todayPlan", "get"], { input: { endDate: todayDate }, type: "query" }],
     {
       status: "ready",
+      epistemicStatus: { kind: "suggested", label: "Suggested" },
       date: todayDate,
       action: {
         id: "strain_target",
@@ -130,6 +134,11 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
             { label: "Recovery", value: "82/100" },
             { label: "Sleep performance", value: "88 (Good)" },
           ],
+      caveats: sleepDataUnavailable
+        ? [
+            "Sleep performance was unavailable, so this plan uses recovery and recent workload instead.",
+          ]
+        : [],
       confidence: sleepDataUnavailable ? "moderate" : "high",
       freshness: {
         recoveryDate: todayDate,

@@ -310,7 +310,7 @@ Source-map and release correlation:
   build number. The Sentry Expo integration uploads the map from that exact
   native archive during the Xcode build; EAS Build likewise uploads source maps
   automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
-- The production OTA workflow pins EOAS 2.3.22 and passes its `--dump-sourcemap`
+- The production OTA workflow pins EOAS 2.3.22 and passes its `--dumpSourcemap`
   option, passes the same commit release into the published JavaScript runtime,
   and makes the export emit the Hermes source maps; that final `dist` directory
   is uploaded with

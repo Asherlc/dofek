@@ -207,6 +207,9 @@ export function Dashboard() {
             spo2: formatSpO2Measurement,
             skin_temperature: (value) => units.formatTemperature(value),
           }}
+          comparisonFormatters={{
+            skin_temperature: (value) => units.formatTemperatureDelta(value),
+          }}
           units={{
             hrv: "ms",
             respiratory_rate: "breaths/min",
@@ -246,6 +249,7 @@ export function Dashboard() {
       <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <DailyOverview
         endDate={endDate}
+        summaryDateContext={sleepPerformance.data?.summaryDateContext}
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         strainTarget={strainTarget.data}

@@ -5,6 +5,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
@@ -188,16 +189,14 @@ export default function LoginScreen() {
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
     (providers?.nativeApple ?? false);
-  const allProviders = providers
-    ? [
-        ...providers.identity
-          .filter((id) => !(useNativeApple && id === "apple"))
-          .map((id) => ({ id, isData: false })),
-        ...providers.data.map((id) => ({ id, isData: true })),
-      ]
-    : [];
+  const providerGroups = groupConfiguredAuthProviders(
+    providers ?? { identity: [], data: [] },
+    useNativeApple ? ["apple"] : [],
+  );
+  const { identityProviders, dataProviders, showDataProviders } = providerGroups;
+  const showIdentityProviders = providerGroups.showIdentityProviders || useNativeApple;
   const showPasswordAuth = providers?.password ?? false;
-  const showOAuthProviders = allProviders.length > 0 || useNativeApple;
+  const showOAuthProviders = showIdentityProviders || showDataProviders;
   const passwordResetDisabled = loggingIn || !email.trim();
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
   const passwordResetHint = !loggingIn && !email.trim() ? "Enter your email to continue." : null;
@@ -540,7 +539,7 @@ export default function LoginScreen() {
               </View>
             ) : null}
 
-            {showPasswordAuth && showOAuthProviders ? (
+            {showPasswordAuth && showIdentityProviders ? (
               <Text style={styles.dividerText}>or continue with</Text>
             ) : null}
 
@@ -553,11 +552,11 @@ export default function LoginScreen() {
                 onPress={() => handleLogin("apple", false)}
               />
             ) : null}
-            {allProviders.map(({ id, isData }) => (
+            {identityProviders.map((id) => (
               <TouchableOpacity
                 key={id}
                 style={styles.providerButton}
-                onPress={() => handleLogin(id, isData)}
+                onPress={() => handleLogin(id, false)}
                 disabled={loggingIn}
                 accessibilityRole="button"
                 accessibilityLabel={`Sign in with ${providerLabel(id)}`}
@@ -569,6 +568,30 @@ export default function LoginScreen() {
                 </View>
               </TouchableOpacity>
             ))}
+
+            {showDataProviders ? (
+              <View testID="data-provider-section" style={styles.dataProviderSection}>
+                <Text style={styles.dataProviderHeading}>Sign in with a health data provider</Text>
+                <View style={styles.dataProviderList}>
+                  {dataProviders.map((id) => (
+                    <TouchableOpacity
+                      key={id}
+                      style={styles.providerButton}
+                      onPress={() => handleLogin(id, true)}
+                      disabled={loggingIn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Sign in with ${providerLabel(id)}`}
+                      accessibilityState={{ busy: loggingIn, disabled: loggingIn }}
+                    >
+                      <View style={styles.providerButtonContent}>
+                        <ProviderLogo provider={id} serverUrl={serverUrl} size={20} />
+                        <Text style={styles.providerText}>Sign in with {providerLabel(id)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -622,6 +645,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   providerList: {
+    gap: 12,
+  },
+  dataProviderSection: {
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  dataProviderHeading: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  dataProviderList: {
     gap: 12,
   },
   passwordSection: {

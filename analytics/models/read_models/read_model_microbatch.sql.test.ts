@@ -92,6 +92,7 @@ describe("production analytics read-model build", () => {
       "activity_power_curve",
       "cycling_activity",
       "daily_cycling",
+      "provider_metric_stream_daily",
       "provider_change_watermark",
       "provider_stats",
     ]);

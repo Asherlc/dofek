@@ -1,3 +1,4 @@
+import { getEpistemicStatus } from "@dofek/scoring/epistemic-status";
 import { circularMovingBlockBootstrapInterval } from "@dofek/stats/block-bootstrap";
 import {
   CORRELATION_METRICS,
@@ -432,6 +433,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     const additionalSamplesRequired = MIN_CORRELATION_PAIRS - pairCount;
     return {
       availability: "insufficient" as const,
+      epistemicStatus: getEpistemicStatus("unavailable"),
       dataPoints: analysis.pairs,
       sampleCount: pairCount,
       additionalSamplesRequired,
@@ -467,6 +469,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
 
   return {
     availability: "available" as const,
+    epistemicStatus: getEpistemicStatus("associated"),
     spearmanRho: spearman.rho,
     spearmanPValue: spearman.pValue,
     pearsonR: pearson.r,
@@ -492,6 +495,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
     return {
       analysisVersion: 2 as const,
       availability: "insufficient" as const,
+      epistemicStatus: getEpistemicStatus("unavailable"),
       dataPoints: analysis.pairs,
       sampleCount: pairCount,
       additionalSamplesRequired,
@@ -530,6 +534,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
   return {
     analysisVersion: 2 as const,
     availability: "available" as const,
+    epistemicStatus: getEpistemicStatus("associated"),
     spearmanRho,
     regression,
     dataPoints: downsample(analysis.pairs, MAX_DATA_POINTS),

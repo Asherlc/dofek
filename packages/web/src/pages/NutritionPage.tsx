@@ -276,79 +276,6 @@ export function NutritionPage() {
           )}
         </div>
 
-        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">AI meal input</h3>
-            <p className="text-xs text-subtle">
-              Describe what you ate and automatically split it into items to log.
-            </p>
-          </div>
-          <form onSubmit={handleAiMealSubmit} className="space-y-3">
-            <textarea
-              value={aiMealInput}
-              onChange={(event) => handleAiMealInputChange(event.target.value)}
-              placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
-              className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-            {aiMealInputError && (
-              <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
-                {aiMealInputError}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={
-                !aiMealInput.trim() ||
-                analyzeItemsMutation.isPending ||
-                createAiEntryMutation.isPending
-              }
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {analyzeItemsMutation.isPending || createAiEntryMutation.isPending
-                ? "Logging..."
-                : "Log with AI"}
-            </button>
-          </form>
-          {pendingAiMealItems.length > 0 && (
-            <div className="rounded-lg border border-border bg-page/60 p-3 space-y-3">
-              <div className="text-sm font-semibold text-foreground">Review AI meal</div>
-              <div className="space-y-2">
-                {pendingAiMealItems.map((item) => (
-                  <div
-                    key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface-solid px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">{item.foodName}</div>
-                      <div className="text-xs text-subtle">{item.foodDescription}</div>
-                    </div>
-                    <div className="text-xs font-semibold text-foreground whitespace-nowrap">
-                      {formatCalories(item.calories)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPendingAiMealItems([])}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmAiMeal}
-                  disabled={createAiEntryMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Loading state */}
         {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
 
@@ -356,6 +283,11 @@ export function NutritionPage() {
 
         {selectedDateFood && (
           <>
+            {/* Daily summary */}
+            {selectedDateFood.intakeContext && (
+              <NutritionIntakeContext context={selectedDateFood.intakeContext} />
+            )}
+
             {selectedDateFood.resolution.sourceProviders.length > 0 &&
               selectedDateFood.resolution.status === "available" && (
                 <section
@@ -391,11 +323,6 @@ export function NutritionPage() {
                   Sources: {selectedDateFood.resolution.sourceLabels.join(", ")}
                 </p>
               </div>
-            )}
-
-            {/* Daily summary */}
-            {selectedDateFood.intakeContext && (
-              <NutritionIntakeContext context={selectedDateFood.intakeContext} />
             )}
 
             {selectedDateFood.summary && (
@@ -529,6 +456,80 @@ export function NutritionPage() {
               })}
           </>
         )}
+
+        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">AI meal input</h3>
+            <p className="text-xs text-subtle">
+              Describe what you ate and automatically split it into items to log.
+            </p>
+          </div>
+          <form onSubmit={handleAiMealSubmit} className="space-y-3">
+            <textarea
+              value={aiMealInput}
+              onChange={(event) => handleAiMealInputChange(event.target.value)}
+              placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
+              className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            {aiMealInputError && (
+              <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                {aiMealInputError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={
+                !aiMealInput.trim() ||
+                analyzeItemsMutation.isPending ||
+                createAiEntryMutation.isPending
+              }
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {analyzeItemsMutation.isPending || createAiEntryMutation.isPending
+                ? "Logging..."
+                : "Log with AI"}
+            </button>
+          </form>
+          {pendingAiMealItems.length > 0 && (
+            <div className="rounded-lg border border-border bg-page/60 p-3 space-y-3">
+              <div className="text-sm font-semibold text-foreground">Review AI meal</div>
+              <div className="space-y-2">
+                {pendingAiMealItems.map((item) => (
+                  <div
+                    key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface-solid px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">{item.foodName}</div>
+                      <div className="text-xs text-subtle">{item.foodDescription}</div>
+                    </div>
+                    <div className="text-xs font-semibold text-foreground whitespace-nowrap">
+                      {formatCalories(item.calories)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingAiMealItems([])}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAiMeal}
+                  disabled={createAiEntryMutation.isPending}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="text-center text-xs font-medium text-subtle">
           <a
             href="https://www.fatsecret.com/"

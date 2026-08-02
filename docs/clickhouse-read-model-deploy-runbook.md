@@ -259,13 +259,49 @@ Interpret the evidence in this order:
    budget; ClickHouse documents that setting as an execution limit, not a
    query optimization ([`max_execution_time`](https://clickhouse.com/docs/operations/settings/settings#max_execution_time)).
 3. Record the model-specific failure fingerprint and leave the dirty watermark
-   visible until a dbt-owned compact provider-count source is implemented and
-   validated against tombstones and replacements. The split design calls for
-   that compact source explicitly ([slow-query optimization design](superpowers/specs/2026-06-04-slow-query-optimization-split-design.md)).
+   visible until the dbt-owned `provider_metric_stream_daily` source is caught
+   up and validated against tombstones and replacements. The rollout and
+   readiness checks are documented in the remediation section below.
 
 Never mark the refresh successful merely because the worker retries. Verify
 the next `QueryFinish` row, the analytics processing marker, and the affected
 read-model freshness before closing the incident.
+
+## Provider metric-count remediation (migration 0068)
+
+The durable remediation is the bounded daily model documented in
+[`clickhouse-metric-stream.md`](clickhouse-metric-stream.md#daily-provider-metric-count-rollout).
+Migration `0068_provider_metric_stream_daily_counts` creates the day-change
+invalidation state and the covering
+`by_provider_current_state_recorded_at` projection. The deploy migration does
+not materialize the projection or bootstrap historical keys; those are explicit
+operator actions because `MATERIALIZE PROJECTION` rewrites existing parts
+([ClickHouse projection maintenance](https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key)).
+
+Use this stop-gated sequence after the migration succeeds:
+
+1. Materialize `by_provider_current_state_recorded_at`. Stop on any non-empty
+   `latest_fail_reason`, and do not continue until the relevant mutation has
+   `is_done = 1` with an empty `latest_fail_reason`.
+2. Verify that `system.parts` reports at least one active
+   `ingest.metric_stream` part and that every active part has the projection.
+3. Bootstrap `analytics.metric_stream_day_change` from
+   `ingest.metric_stream` in explicit provider/date windows, forcing
+   `by_provider_current_state_recorded_at` for each bounded batch. Record the
+   last completed window as the resume checkpoint; never use an unrestricted
+   historical `GROUP BY`. Then observe the bounded
+   `provider_metric_stream_daily` batches.
+4. Keep the provider watermark dirty until the day-marker readiness query is
+   empty; do not publish a partial provider count.
+5. Confirm a successful `provider_stats` `QueryFinish`, analytics processing
+   success, and provider-inventory freshness.
+
+If raw metric-stream rows still appear in the `provider_stats` query after the
+daily model is deployed, stop and capture the rendered dbt SQL and
+`system.query_log` evidence. Do not raise execution limits, add retries, or
+turn the daily model into a warning-only step. dbt's incremental model contract
+keeps the serving transformation bounded and stateful:
+[dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
 ## Local Validation
 

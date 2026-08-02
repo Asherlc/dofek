@@ -4,6 +4,7 @@ import { TodayPlanCard } from "./TodayPlanCard";
 
 const readyPlan: TodayPlanResult = {
   status: "ready",
+  epistemicStatus: { kind: "suggested", label: "Suggested" },
   date: "2026-07-26",
   action: {
     id: "strain_target",
@@ -15,6 +16,7 @@ const readyPlan: TodayPlanResult = {
     { label: "Recovery", value: "82/100" },
     { label: "Sleep performance", value: "88 (Good)" },
   ],
+  caveats: [],
   confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",
@@ -25,6 +27,7 @@ const readyPlan: TodayPlanResult = {
 
 const insufficientPlan: TodayPlanResult = {
   status: "insufficient_data",
+  epistemicStatus: { kind: "unavailable", label: "Unavailable" },
   date: "2026-07-26",
   action: null,
   supportingFacts: [],

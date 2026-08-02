@@ -19,6 +19,8 @@ function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMet
     statusLabel: "Moving as intended",
     evaluationRule: "Above your baseline, where higher values support this metric",
     explanation: "Heart Rate Variability (HRV) is above your baseline.",
+    provenance: null,
+    comparison: null,
     baselineProgress: {
       requiredObservationDays: 3,
       observedObservationDays: 3,
@@ -70,6 +72,21 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Success: Story = {};
+
+export const SourceDisclosure: Story = {
+  args: {
+    metrics: [
+      hrvMetric({
+        provenance: {
+          latestDate: "2026-07-30",
+          sourceProviders: ["whoop"],
+          observedDays: 5,
+          windowDays: 7,
+        },
+      }),
+    ],
+  },
+};
 
 export const Warning: Story = {
   args: {

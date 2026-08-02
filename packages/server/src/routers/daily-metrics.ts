@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
+import { HEALTH_METRIC_EVIDENCE_WINDOW_DAYS } from "../contracts/mobile-dashboard-contracts.ts";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -109,6 +110,10 @@ export const dailyMetricsRouter = router({
         trends,
         baselineRelative,
         processingStatus,
+        Math.max(
+          range.days ?? HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
+          HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
+        ),
       );
       const restingHeartRateStatus = healthStatus.find(
         (metric) => metric.metric === "resting_heart_rate",
@@ -121,8 +126,9 @@ export const dailyMetricsRouter = router({
         });
       }
 
+      const { metric_evidence: _metricEvidence, ...publicTrends } = trends;
       return {
-        ...trends,
+        ...publicTrends,
         restingHeartRateTrendLabel: buildRestingHeartRateTrendLabel({
           latest: trends.latest_resting_hr,
           average: trends.avg_resting_hr,
@@ -135,6 +141,7 @@ export const dailyMetricsRouter = router({
     {
       keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
       outputSchema: trendsRowSchema
+        .omit({ metric_evidence: true })
         .extend({
           baselineRelative: z.array(baselineRelativeMetricSchema),
           healthStatus: z.array(healthStatusMetricSchema),

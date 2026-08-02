@@ -59,6 +59,10 @@ const mockSleepPerformance = {
   providerId: "whoop",
   sourceName: null,
   sourceProviders: ["whoop"],
+  summaryDateContext: {
+    effectiveDate: today,
+    timezone: "America/Los_Angeles",
+  },
 };
 
 /** Find the closest <button> ancestor of an element. */
@@ -273,6 +277,30 @@ describe("DailyOverview", () => {
     );
     // "Sleep" appears both in the ring label and the always-mounted recovery breakdown
     expect(screen.getAllByText("Sleep").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders the server-authored date and timezone for the daily and sleep summaries", () => {
+    render(
+      <DailyOverview
+        endDate="2026-08-02"
+        summaryDateContext={{
+          effectiveDate: "2026-08-02",
+          timezone: "America/Los_Angeles",
+        }}
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={{ ...mockSleepPerformance, sleepDate: "2026-08-01" }}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    expect(screen.getByText("Sun, Aug 2, 2026 · America/Los_Angeles")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sleep score breakdown" }));
+
+    expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
   });
 
   it("renders contextual descriptions below each score ring", () => {
@@ -685,6 +713,10 @@ describe("DailyOverview", () => {
           providerId: "whoop",
           sourceName: null,
           sourceProviders: ["whoop"],
+          summaryDateContext: {
+            effectiveDate: today,
+            timezone: "America/Los_Angeles",
+          },
         }}
         readinessLoading={false}
         workloadLoading={false}

@@ -26,6 +26,11 @@ export function NutritionDataQualityPanel({
       <h2 id="nutrition-data-quality-title" className="font-medium text-foreground">
         Nutrition data quality
       </h2>
+      {dataQuality.overlapDays > 0 ? (
+        <p className="w-fit rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+          Source overlap to review
+        </p>
+      ) : null}
       <p className="text-sm text-muted">{messages.recorded}</p>
       <p className="text-sm text-muted">{messages.coverage}</p>
       <p className="text-sm text-muted">{messages.overlap}</p>

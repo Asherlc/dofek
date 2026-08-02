@@ -145,6 +145,13 @@ export const CompactDashboardMetrics: Story = {
         statusLabel: "Moving as intended",
         evaluationRule: "Above your baseline, where higher values support this metric",
         explanation: "Heart Rate Variability (HRV) is above your baseline.",
+        provenance: {
+          latestDate: "2026-07-30",
+          sourceProviders: ["whoop"],
+          observedDays: 5,
+          windowDays: 7,
+        },
+        comparison: null,
       },
       {
         metric: "steps",

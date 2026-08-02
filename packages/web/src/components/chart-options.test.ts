@@ -133,7 +133,7 @@ describe("PolarizationTrendChart option builder", () => {
 
     const option = buildPolarizationTrendOption(weeksWithGap);
     const series = getSeriesArray(option);
-    const polarizationSeries = series.find((s) => s.name === "Polarization Index");
+    const polarizationSeries = series.find((s) => s.name === "Easy-to-hard balance");
     expect(polarizationSeries).toBeDefined();
     if (!polarizationSeries) throw new Error("Expected polarization series");
     expect(polarizationSeries.data).toHaveLength(2);
@@ -150,7 +150,7 @@ describe("PolarizationTrendChart option builder", () => {
         value: ["2024-01-01", 2.5],
         dataIndex: 0,
         color: "",
-        seriesName: "Polarization Index",
+        seriesName: "Easy-to-hard balance",
       },
     ]);
     expect(html).toContain("<80% max HR");
@@ -177,7 +177,7 @@ describe("PolarizationTrendChart option builder", () => {
   it("renders threshold as a regular line series at y=2.0", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
     const allSeries = getSeriesArray(option);
-    const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
+    const thresholdSeries = allSeries.find((s) => s.name === "Reference balance level");
     expect(thresholdSeries).toBeDefined();
     if (!thresholdSeries) throw new Error("Expected threshold series");
     expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
@@ -187,7 +187,7 @@ describe("PolarizationTrendChart option builder", () => {
   it("renders the threshold supplied by the server instead of a client heuristic", () => {
     const option = buildPolarizationTrendOption(sampleWeeks, 2.5);
     const allSeries = getSeriesArray(option);
-    const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
+    const thresholdSeries = allSeries.find((s) => s.name === "Reference balance level");
     expect(thresholdSeries).toBeDefined();
     if (!thresholdSeries) throw new Error("Expected threshold series");
     expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.5]);
@@ -198,7 +198,7 @@ describe("PolarizationTrendChart option builder", () => {
     for (const threshold of [undefined, null, Number.NaN]) {
       const option = buildPolarizationTrendOption(sampleWeeks, threshold);
       const allSeries = getSeriesArray(option);
-      const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
+      const thresholdSeries = allSeries.find((s) => s.name === "Reference balance level");
       expect(thresholdSeries).toBeDefined();
       if (!thresholdSeries) throw new Error("Expected threshold series");
       expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2]);
@@ -234,7 +234,7 @@ describe("PolarizationTrendChart option builder", () => {
     ];
     const option = buildPolarizationTrendOption(weeksWithBoundary);
     const allSeries = getSeriesArray(option);
-    const polarizationIndexSeries = allSeries.find((s) => s.name === "Polarization Index");
+    const polarizationIndexSeries = allSeries.find((s) => s.name === "Easy-to-hard balance");
     if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
     // The heuristic is descriptive, so neither side is encoded as good or bad.
     expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", {
@@ -328,7 +328,7 @@ describe("PolarizationTrendChart option builder", () => {
         value: ["2024-01-01", null],
         dataIndex: 0,
         color: "",
-        seriesName: "Polarization Index",
+        seriesName: "Easy-to-hard balance",
       },
     ]);
     expect(html).toContain("Insufficient data");

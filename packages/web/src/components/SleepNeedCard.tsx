@@ -38,6 +38,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     return (
       <div className="card p-6">
         <h3 className="text-muted text-sm font-medium mb-2">Sleep Need Tonight</h3>
+        <p className="text-subtle text-xs mb-2">{data.epistemicStatus.label}</p>
         <p className="text-lg text-dim">{data.message}</p>
         {data.availability === "insufficient_data" && (
           <p className="text-subtle text-sm mt-2">{data.nextAction}</p>
@@ -119,7 +120,9 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     <div className="card p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-muted text-sm font-medium mb-1">Estimated sleep need tonight</h3>
+          <h3 className="text-muted text-sm font-medium mb-1">
+            {data.epistemicStatus.label} sleep need tonight
+          </h3>
           <p className="text-4xl font-bold text-blue-400">
             {`${data.estimateMetadata.valueQualifier} ${formatDurationMinutes(data.totalNeedMinutes)}`}
           </p>

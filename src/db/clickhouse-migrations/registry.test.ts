@@ -141,31 +141,31 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window"),
       ]),
     });
-    expect(migrations.at(-7)?.id).toBe("0061_provider_current_state_projection");
-    expect(migrations.at(-6)?.id).toBe("0062_daily_recovery_baseline_context");
-    expect(migrations.at(-5)).toMatchObject({
+    expect(migrations.at(-8)?.id).toBe("0061_provider_current_state_projection");
+    expect(migrations.at(-7)?.id).toBe("0062_daily_recovery_baseline_context");
+    expect(migrations.at(-6)).toMatchObject({
       id: "0063_record_local_time_context",
       statements: expect.arrayContaining([
         expect.stringContaining("start_utc_offset_minutes"),
         expect.stringContaining("local_time_source"),
       ]),
     });
-    expect(migrations.at(-4)).toMatchObject({
+    expect(migrations.at(-5)).toMatchObject({
       id: "0064_activity_summary_freshness",
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         expect.stringContaining("climbing_seconds,\n  refreshed_at"),
       ],
     });
-    expect(migrations.at(-3)?.id).toBe("0065_sleep_staging_available");
-    expect(migrations.at(-2)).toMatchObject({
+    expect(migrations.at(-4)?.id).toBe("0065_sleep_staging_available");
+    expect(migrations.at(-3)).toMatchObject({
       id: "0066_daily_sleep_overlap_evidence",
       statements: expect.arrayContaining([
         expect.stringContaining("selected_session_id Nullable(UUID)"),
         expect.stringContaining("overlapping_sessions Array(Tuple("),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(migrations.at(-2)).toMatchObject({
       id: "0067_repair_local_time_column_order",
       statements: expect.arrayContaining([
         expect.stringContaining(
@@ -176,6 +176,21 @@ describe("clickHouseMigrations", () => {
         ),
       ]),
       run: expect.any(Function),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0068_provider_metric_stream_daily_counts",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.metric_stream_day_change"),
+        expect.stringContaining("ORDER BY (user_id, provider_id, recorded_date)"),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.metric_stream_day_change_ingest",
+        ),
+        expect.stringContaining("FROM ingest.metric_stream"),
+        expect.stringContaining("toDate(recorded_at) AS recorded_date"),
+        expect.stringContaining(
+          "ADD PROJECTION IF NOT EXISTS by_provider_current_state_recorded_at",
+        ),
+      ]),
     });
   });
 

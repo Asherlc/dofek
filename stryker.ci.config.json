@@ -58,6 +58,7 @@
     "!packages/zepp/setting/**"
   ],
   "ignorePatterns": [
+    "packages/training/src/terminology.ts",
     "dist/**",
     "packages/mobile/modules/whoop-ble/.build/**",
     ".adal/**",

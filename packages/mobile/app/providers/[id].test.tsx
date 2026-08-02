@@ -71,9 +71,15 @@ vi.mock("react-native", () => ({
       showsHorizontalScrollIndicator: _sh,
       horizontal: _h,
       refreshControl: _rc,
+      accessibilityLabel,
+      accessibilityRole,
       ...rest
     } = props;
-    return React.createElement("div", rest, children);
+    return React.createElement(
+      "div",
+      { ...rest, "aria-label": accessibilityLabel, role: accessibilityRole },
+      children,
+    );
   },
   RefreshControl: () => null,
   TouchableOpacity: ({
@@ -1239,6 +1245,26 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("exposes the active record type as a selected tab", async () => {
+      mockAvailableDataTypesQuery.mockReturnValue({
+        data: ["activities", "sleepSessions"],
+        isLoading: false,
+        isError: false,
+        error: null,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByRole("tablist", { name: "Record types" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Activities" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      expect(screen.getByRole("tab", { name: "Sleep" }).getAttribute("aria-selected")).toBe(
+        "false",
+      );
+    });
+
     it("shows provider statistics failures while retaining known provider details", async () => {
       mockProviderStatsQuery.mockReturnValue({
         data: undefined,

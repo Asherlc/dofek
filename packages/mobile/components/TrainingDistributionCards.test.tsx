@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { Alert } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/open-external-url", () => ({
@@ -11,7 +12,9 @@ import { openExternalUrl } from "../lib/open-external-url";
 import { TrainingDistributionCards } from "./TrainingDistributionCards";
 
 describe("TrainingDistributionCards", () => {
-  it("renders server-computed Karvonen percentages without classifying them", () => {
+  it("leads with a plain description and keeps the server explanation accessible", () => {
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+
     render(
       <TrainingDistributionCards
         intensityDistribution={{
@@ -29,15 +32,31 @@ describe("TrainingDistributionCards", () => {
       />,
     );
 
-    expect(screen.getByText("Karvonen Intensity Distribution")).toBeTruthy();
+    expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(screen.getByText("25%")).toBeTruthy();
     expect(screen.getByText("Aerobic")).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
-    expect(screen.getByText("Server-provided descriptive Karvonen explanation.")).toBeTruthy();
+    expect(
+      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Server-provided descriptive Karvonen explanation.")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "About How this is calculated for Heart-rate zone distribution",
+      }),
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      "How this is calculated for Heart-rate zone distribution",
+      expect.stringContaining("Server-provided descriptive Karvonen explanation."),
+      [{ text: "Close" }],
+    );
+    alertSpy.mockRestore();
   });
 
   it("renders the exact Treff status and explanation returned by the server", () => {
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+
     render(
       <TrainingDistributionCards
         intensityDistribution={null}
@@ -76,13 +95,36 @@ describe("TrainingDistributionCards", () => {
       />,
     );
 
-    expect(screen.getByText("Cycling Polarization")).toBeTruthy();
+    expect(screen.getByText("Easy-to-hard training balance")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(screen.getByText("The exact 2.00 boundary is not polarized.")).toBeTruthy();
+    expect(
+      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
+    ).toBeTruthy();
     expect(screen.getByText("80% easy · 10% threshold · 10% high")).toBeTruthy();
+    expect(screen.getByText("Easy-to-hard balance 2.000")).toBeTruthy();
+    expect(screen.queryByText("The exact 2.00 boundary is not polarized.")).toBeNull();
+    expect(screen.queryByText("Server-provided Treff formula.")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "About How this is calculated for Easy-to-hard training balance",
+      }),
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      "How this is calculated for Easy-to-hard training balance",
+      expect.stringContaining("Technical name: Polarization Index"),
+      [{ text: "Close" }],
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      "How this is calculated for Easy-to-hard training balance",
+      expect.stringContaining("The exact 2.00 boundary is not polarized."),
+      [{ text: "Close" }],
+    );
+    alertSpy.mockRestore();
   });
 
   it("renders the server insufficient-data status instead of inventing a classification", () => {
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+
     render(
       <TrainingDistributionCards
         intensityDistribution={null}
@@ -122,7 +164,21 @@ describe("TrainingDistributionCards", () => {
     );
 
     expect(screen.getByText("Insufficient data")).toBeTruthy();
-    expect(screen.getByText("Polarization needs time in every Treff zone.")).toBeTruthy();
+    expect(
+      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Polarization needs time in every Treff zone.")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "About How this is calculated for Easy-to-hard training balance",
+      }),
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      "How this is calculated for Easy-to-hard training balance",
+      expect.stringContaining("Polarization needs time in every Treff zone."),
+      [{ text: "Close" }],
+    );
+    alertSpy.mockRestore();
   });
 
   it("renders server-computed monotony inputs, descriptive method, and source", () => {
@@ -157,15 +213,16 @@ describe("TrainingDistributionCards", () => {
       />,
     );
 
-    expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
-    expect(screen.getByText("Monotony 2.18")).toBeTruthy();
-    expect(screen.getByText("Strain 2460.0")).toBeTruthy();
+    expect(screen.getByText("Training variety and total load")).toBeTruthy();
+    expect(screen.getByText("Training variety 2.18")).toBeTruthy();
+    expect(screen.getByText("Weekly load strain 2460.0")).toBeTruthy();
+    expect(screen.getByText("Average daily load 161.14 · daily variation 73.92")).toBeTruthy();
+    expect(screen.queryByText(method.formula)).toBeNull();
     expect(
-      screen.getByText("Daily mean 161.14 · population standard deviation (SD) 73.92"),
+      screen.getByRole("button", {
+        name: "About How this is calculated for Training variety and total load",
+      }),
     ).toBeTruthy();
-    expect(screen.getByText(method.formula)).toBeTruthy();
-    expect(screen.getByText(method.calendar)).toBeTruthy();
-    expect(screen.getByText(method.interpretation)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("link", { name: method.source.title }));
     expect(openExternalUrl).toHaveBeenCalledWith(method.source.url, "training-monotony-source");

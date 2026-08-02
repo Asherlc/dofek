@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HealthStatusCards } from "./HealthStatusCards";
 
@@ -187,6 +187,62 @@ describe("HealthStatusCards", () => {
     expect(screen.getByText("Server-selected rule.")).toBeTruthy();
     expect(screen.getByText("Server-selected explanation.")).toBeTruthy();
     expect(screen.queryByText(/abnormal/i)).toBeNull();
+  });
+
+  it("renders server-authored provenance and comparison context", () => {
+    render(
+      <HealthStatusCards
+        metrics={[
+          {
+            metric: "spo2",
+            label: "Blood Oxygen Saturation (SpO2)",
+            value: 97.2,
+            baseline: 96.4,
+            sampleDeviation: 0.4,
+            deviation: 2,
+            direction: "above",
+            intent: "neutral",
+            statusToken: "near_baseline",
+            statusColor: "positive",
+            statusLabel: "Near baseline",
+            evaluationRule: "Server-selected rule.",
+            explanation: "Server-selected explanation.",
+            provenance: {
+              latestDate: "2026-07-30",
+              sourceProviders: ["whoop"],
+              observedDays: 3,
+              windowDays: 30,
+            },
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 97.2,
+              baselineMean: 96.4,
+              delta: 0.8,
+              direction: "increasing",
+            },
+            baselineProgress: readyBaselineProgress,
+          },
+        ]}
+        formatComparisonValue={(_, value) => value.toFixed(1)}
+      />,
+    );
+
+    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeTruthy();
+    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeTruthy();
+
+    const detailsButton = screen.getByRole("button", {
+      name: "Show source details for Blood Oxygen Saturation (SpO2)",
+    });
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
+
+    fireEvent.click(detailsButton);
+
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Source: WHOOP (Cloud)")).toBeTruthy();
+    expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeTruthy();
+    expect(screen.getByText("Coverage: 3/30 days")).toBeTruthy();
   });
 
   it.each([
