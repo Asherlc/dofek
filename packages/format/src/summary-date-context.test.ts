@@ -1,4 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const { formatDateLongMock } = vi.hoisted(() => ({
+  formatDateLongMock: vi.fn(),
+}));
+
+vi.mock("./format.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./format.ts")>();
+  formatDateLongMock.mockImplementation(actual.formatDateLong);
+  return { ...actual, formatDateLong: formatDateLongMock };
+});
+
 import { formatSummaryDateContext } from "./summary-date-context.ts";
 
 describe("formatSummaryDateContext", () => {
@@ -9,5 +20,16 @@ describe("formatSummaryDateContext", () => {
         timezone: "America/Los_Angeles",
       }),
     ).toBe("Sun, Aug 2, 2026 · America/Los_Angeles");
+  });
+
+  it("formats date-only values in UTC before displaying the user timezone", () => {
+    formatDateLongMock.mockClear();
+
+    formatSummaryDateContext({
+      effectiveDate: "2026-08-02",
+      timezone: "Pacific/Kiritimati",
+    });
+
+    expect(formatDateLongMock).toHaveBeenCalledWith("2026-08-02", { timeZone: "UTC" });
   });
 });
