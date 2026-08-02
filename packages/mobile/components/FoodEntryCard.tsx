@@ -1,6 +1,7 @@
 import { formatCalories, formatGrams } from "@dofek/format/format";
 import {
   foodEntryNutrientDetailsFromLegacyColumns,
+  formatFoodEntryNutrientDetailsForAccessibility,
   groupFoodEntryNutrientDetails,
 } from "@dofek/nutrition/food-entry-nutrition";
 import { useState } from "react";
@@ -30,6 +31,22 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
   const displayName = entry.food_name ?? "Unnamed nutrition entry";
   const nutrientDetails = foodEntryNutrientDetailsFromLegacyColumns(entry);
   const nutrientGroups = groupFoodEntryNutrientDetails(nutrientDetails);
+  const macroAccessibilityLabels = [
+    entry.protein_g == null ? null : `Protein: ${formatGrams(entry.protein_g)}`,
+    entry.carbs_g == null ? null : `Carbs: ${formatGrams(entry.carbs_g)}`,
+    entry.fat_g == null ? null : `Fat: ${formatGrams(entry.fat_g)}`,
+  ];
+  const accessibilityLabel = [
+    `${expanded ? "Hide" : "Show"} details for ${displayName}`,
+    entry.food_description?.trim() ? entry.food_description : null,
+    ...macroAccessibilityLabels,
+    `Calories: ${formatCalories(entry.calories ?? 0)}`,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(". ");
+  const detailsAccessibilityLabel =
+    formatFoodEntryNutrientDetailsForAccessibility(nutrientDetails) ||
+    "No nutrient details recorded";
 
   function handleLongPress() {
     Alert.alert("Delete Entry", `Remove "${displayName}"?`, [
@@ -46,7 +63,12 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
         onPress={() => setExpanded((current) => !current)}
         onLongPress={handleLongPress}
         accessibilityRole="button"
-        accessibilityLabel={`${expanded ? "Hide" : "Show"} details for ${displayName}`}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={
+          expanded
+            ? "Detailed nutrient values are shown below."
+            : "Double tap to show detailed nutrient values."
+        }
         accessibilityState={{ busy: deleting, disabled: deleting, expanded }}
       >
         <View style={styles.leftSection}>
@@ -62,7 +84,7 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
         <Text style={styles.calories}>{formatCalories(entry.calories ?? 0)}</Text>
       </TouchableOpacity>
       {expanded ? (
-        <View style={styles.details}>
+        <View style={styles.details} accessible accessibilityLabel={detailsAccessibilityLabel}>
           {nutrientGroups.length > 0 ? (
             nutrientGroups.map((group) => (
               <View key={group.label} style={styles.detailGroup}>
