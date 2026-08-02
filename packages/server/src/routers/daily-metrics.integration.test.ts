@@ -9,6 +9,44 @@ import { DailyMetricsRepository } from "../repositories/daily-metrics-repository
 import { restingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
+function recoveryBaselineRow(date: string) {
+  return {
+    date,
+    hrv: 55,
+    resting_hr: 50,
+    respiratory_rate: 14,
+    efficiency_pct: 90,
+    hrv_mean_30d: 55,
+    hrv_sd_30d: 5,
+    hrv_z_score: 0,
+    hrv_baseline_sample_count: 28,
+    hrv_baseline_coverage: 0.8,
+    hrv_mean_7d: 55,
+    hrv_mean_previous_28d: 55,
+    rhr_mean_30d: 50,
+    rhr_sd_30d: 2,
+    resting_hr_z_score: 0,
+    rhr_baseline_sample_count: 28,
+    rhr_baseline_coverage: 0.8,
+    rhr_mean_7d: 50,
+    rhr_mean_previous_28d: 50,
+    rr_mean_30d: 14,
+    rr_sd_30d: 1,
+    respiratory_rate_z_score: 0,
+    rr_baseline_sample_count: 28,
+    rr_baseline_coverage: 0.8,
+    rr_mean_7d: 14,
+    rr_mean_previous_28d: 14,
+    efficiency_mean_30d: 90,
+    efficiency_sd_30d: 2,
+    efficiency_z_score: 0,
+    efficiency_baseline_sample_count: 28,
+    efficiency_baseline_coverage: 0.8,
+    efficiency_mean_7d: 90,
+    efficiency_mean_previous_28d: 90,
+  };
+}
+
 /**
  * Integration tests for dailyMetrics data correctness.
  *
@@ -94,10 +132,11 @@ describe("dailyMetrics data correctness", () => {
       );
     }
 
-    // Refresh the materialized view
-
     // Start server
-    const app = createApp(testCtx.db, makeMockSensorStore());
+    const app = createApp(
+      testCtx.db,
+      makeMockSensorStore([[{ date: endDate, resting_hr: 50 }], [recoveryBaselineRow(endDate)]]),
+    );
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -204,6 +243,7 @@ describe("dailyMetrics data correctness", () => {
 
     it("returns server-authored provenance and comparison context for dashboard metrics", async () => {
       const result = await query<{
+        baselineRelative: Array<{ metric: string }>;
         healthStatus: Array<{
           metric: string;
           provenance: {
@@ -222,6 +262,7 @@ describe("dailyMetrics data correctness", () => {
         }>;
       }>("dailyMetrics.trends", { days: 30, endDate });
 
+      expect(result.baselineRelative.map((metric) => metric.metric)).toContain("hrv");
       const expectedMetrics = ["hrv", "spo2", "steps", "skin_temperature"];
       for (const metric of expectedMetrics) {
         const status = result.healthStatus.find((candidate) => candidate.metric === metric);
