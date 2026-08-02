@@ -314,7 +314,10 @@ describe("CycleScreen", () => {
     fireEvent.change(notesInput, { target: { value: "Cramps and poor sleep" } });
     fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
 
-    expect((notesInput as HTMLInputElement).value).toBe("");
+    if (!(notesInput instanceof HTMLInputElement)) {
+      throw new Error("Period symptoms or context input is not an HTML input");
+    }
+    expect(notesInput.value).toBe("");
   });
 
   it("renders the server-provided estimate method and observed uncertainty", async () => {
