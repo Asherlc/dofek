@@ -1,31 +1,55 @@
-import type { ActivityDataState } from "./activity-data-state.ts";
+import { z } from "zod";
+import { activityDataStateSchema } from "./activity-data-state.ts";
+import { formatDurationMinutes } from "./format.ts";
+import { formatMeasurementText, type UnitConverter } from "./units.ts";
 
 type FormatMeasuredValue = (value: number) => string;
 
-export type ActivityOverviewChangeTrend = "higher" | "lower" | "unchanged" | "unavailable";
+export const activityOverviewTrendSchema = z.enum(["higher", "lower", "unchanged", "unavailable"]);
 
-export interface ActivityOverviewChange {
-  magnitude: number | null;
-  trend: ActivityOverviewChangeTrend;
-}
+export const activityOverviewChangeSchema = z.object({
+  magnitude: z.number().nonnegative().nullable(),
+  trend: activityOverviewTrendSchema,
+});
 
-export interface ActivityOverviewMeasurementChange extends ActivityOverviewChange {
-  state: ActivityDataState;
-}
+export const activityOverviewMeasurementChangeSchema = activityOverviewChangeSchema.extend({
+  state: activityDataStateSchema,
+});
 
-export interface ActivityOverviewComparison {
-  periodLabel: string;
-  activityCount: ActivityOverviewChange;
-  totalMinutes: ActivityOverviewChange;
-  totalDistanceMeters: ActivityOverviewMeasurementChange;
-  totalElevationGainM: ActivityOverviewMeasurementChange;
-}
+export const activityOverviewComparisonSchema = z.object({
+  periodLabel: z.string().trim().min(1),
+  activityCount: activityOverviewChangeSchema,
+  totalMinutes: activityOverviewChangeSchema,
+  totalDistanceMeters: activityOverviewMeasurementChangeSchema,
+  totalElevationGainM: activityOverviewMeasurementChangeSchema,
+});
+
+export type ActivityOverviewChangeTrend = z.infer<typeof activityOverviewTrendSchema>;
+
+export type ActivityOverviewChange = z.infer<typeof activityOverviewChangeSchema>;
+
+export type ActivityOverviewMeasurementChange = z.infer<
+  typeof activityOverviewMeasurementChangeSchema
+>;
+
+export type ActivityOverviewComparison = z.infer<typeof activityOverviewComparisonSchema>;
 
 export type ActivityOverviewKey =
   | "activityCount"
   | "totalMinutes"
   | "totalDistanceMeters"
   | "totalElevationGainM";
+
+export function createActivityOverviewComparisonFormatters(
+  units: Pick<UnitConverter, "formatDistance" | "formatElevation">,
+): Record<ActivityOverviewKey, (value: number) => string> {
+  return {
+    activityCount: (value) => String(value),
+    totalMinutes: (value) => formatDurationMinutes(value),
+    totalDistanceMeters: (value) => formatMeasurementText(units.formatDistance(value / 1000)),
+    totalElevationGainM: (value) => formatMeasurementText(units.formatElevation(value)),
+  };
+}
 
 function formatAvailableMeasurement(
   value: number | null,

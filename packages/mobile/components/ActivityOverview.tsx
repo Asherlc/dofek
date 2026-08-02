@@ -6,8 +6,8 @@ import {
 } from "@dofek/format/activity-data-state";
 import {
   type ActivityOverviewComparison,
-  type ActivityOverviewKey,
   activityOverviewChangeForKey,
+  createActivityOverviewComparisonFormatters,
   formatActivityOverviewChange,
 } from "@dofek/format/activity-overview";
 import { formatDurationMinutes } from "@dofek/format/format";
@@ -73,12 +73,7 @@ export function ActivityOverview({
         },
       ];
 
-  const formatComparisonMagnitude: Record<ActivityOverviewKey, (value: number) => string> = {
-    activityCount: (value) => String(value),
-    totalMinutes: (value) => formatDurationMinutes(value),
-    totalDistanceMeters: (value) => formatMeasurementText(units.formatDistance(value / 1000)),
-    totalElevationGainM: (value) => formatMeasurementText(units.formatElevation(value)),
-  };
+  const formatComparisonMagnitude = createActivityOverviewComparisonFormatters(units);
 
   return (
     <View style={styles.overviewGrid}>

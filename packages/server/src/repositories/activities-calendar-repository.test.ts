@@ -669,14 +669,14 @@ describe("ActivitiesCalendarRepository", () => {
       },
     });
 
-    expect(sensorStore.query.mock.calls[0]?.[1]).toContain("currentWindowStart");
+    expect(sensorStore.query.mock.calls[0]?.[1]).toContain("previousWindowStart");
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
       expect.any(String),
       expect.objectContaining({
-        windowStart: "2026-01-23",
-        currentWindowStart: "2026-02-20",
+        previousWindowStart: "2026-01-24",
+        currentWindowStart: "2026-02-21",
         endDateExclusive: "2026-03-21",
       }),
     );
@@ -689,9 +689,9 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      expect.stringContaining("activity_date < toDate({endDateExclusive:String})"),
+      expect.stringContaining("activity_date >= toDate({currentWindowStart:String})"),
       expect.objectContaining({
-        windowStart: "2026-02-20",
+        currentWindowStart: "2026-02-21",
         endDateExclusive: "2026-03-21",
         activityIds: ["running-activity"],
       }),

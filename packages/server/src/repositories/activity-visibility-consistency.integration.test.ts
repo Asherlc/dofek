@@ -19,6 +19,7 @@ import { TrainingRepository } from "./training-repository.ts";
 const AUTHORIZED_RUN_ID = "11111111-1111-4111-8111-111111111111";
 const AUTHORIZED_WALK_ID = "22222222-2222-4222-8222-222222222222";
 const MEASURED_ZERO_RUN_ID = "77777777-7777-4777-8777-777777777777";
+const CURRENT_WINDOW_START_ID = "88888888-8888-4888-8888-888888888888";
 const UNAUTHORIZED_RIDE_ID = "33333333-3333-4333-8333-333333333333";
 const BEFORE_LOCAL_ACCESS_ID = "44444444-4444-4444-8444-444444444444";
 const BEFORE_LOCAL_END_ID = "55555555-5555-4555-8555-555555555555";
@@ -76,6 +77,10 @@ describe("activity visibility consistency", () => {
           (
             ${MEASURED_ZERO_RUN_ID}, 'issue_2060', ${TEST_USER_ID}, 'measured-zero-run', 'running',
             '2026-03-14T10:00:00Z', '2026-03-14T10:15:00Z', 'Measured Zero Run'
+          ),
+          (
+            ${CURRENT_WINDOW_START_ID}, 'issue_2060', ${TEST_USER_ID}, 'current-window-start', 'running',
+            '2026-03-08T10:00:00Z', '2026-03-08T10:15:00Z', 'Current Window Start'
           ),
           (
             ${UNAUTHORIZED_RIDE_ID}, 'issue_2060', ${TEST_USER_ID}, 'unauthorized-ride', 'cycling',
@@ -402,9 +407,9 @@ describe("activity visibility consistency", () => {
       totalMinutes: 60,
       activityTypes: ["running"],
       comparison: {
-        periodLabel: "previous 1 weeks",
-        activityCount: { magnitude: 2, trend: "higher" },
-        totalMinutes: { magnitude: 60, trend: "higher" },
+        periodLabel: "previous 1 week",
+        activityCount: { magnitude: 1, trend: "higher" },
+        totalMinutes: { magnitude: 45, trend: "higher" },
       },
     });
   });

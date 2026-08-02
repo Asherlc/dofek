@@ -358,6 +358,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("10h 15m")).toBeDefined();
     expect(screen.getByText("42.3 km")).toBeDefined();
     expect(screen.getByText("520 m")).toBeDefined();
+    expect(screen.queryByText(/vs previous/)).toBeNull();
   });
 
   it("renders server-computed changes from the previous comparable period", () => {

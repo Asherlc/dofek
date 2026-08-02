@@ -2,10 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActivityOverviewComparison } from "./activity-overview.ts";
 import {
   activityOverviewChangeForKey,
+  activityOverviewComparisonSchema,
+  createActivityOverviewComparisonFormatters,
   formatActivityOverviewChange,
   formatActivityOverviewDistance,
   formatActivityOverviewElevation,
 } from "./activity-overview.ts";
+import { UnitConverter } from "./units.ts";
 
 describe("activity overview availability formatting", () => {
   it("uses shared copy when a measurement was not recorded", () => {
@@ -125,5 +128,40 @@ describe("activity overview availability formatting", () => {
     expect(activityOverviewChangeForKey(comparison, "totalElevationGainM")).toBe(
       comparison.totalElevationGainM,
     );
+  });
+
+  it("validates the shared comparison contract used by the calendar router", () => {
+    const comparison: ActivityOverviewComparison = {
+      periodLabel: "previous 4 weeks",
+      activityCount: { magnitude: 1, trend: "higher" },
+      totalMinutes: { magnitude: 2, trend: "lower" },
+      totalDistanceMeters: {
+        magnitude: 3,
+        trend: "unchanged",
+        state: { status: "available" },
+      },
+      totalElevationGainM: {
+        magnitude: null,
+        trend: "unavailable",
+        state: { status: "missing", reason: "No elevation" },
+      },
+    };
+
+    expect(activityOverviewComparisonSchema.parse(comparison)).toEqual(comparison);
+    expect(() =>
+      activityOverviewComparisonSchema.parse({
+        ...comparison,
+        activityCount: { magnitude: -1, trend: "higher" },
+      }),
+    ).toThrow();
+  });
+
+  it("provides stable-key comparison magnitude formatters for both clients", () => {
+    const formatters = createActivityOverviewComparisonFormatters(new UnitConverter("metric"));
+
+    expect(formatters.activityCount(2)).toBe("2");
+    expect(formatters.totalMinutes(90)).toBe("1h 30m");
+    expect(formatters.totalDistanceMeters(1200)).toBe("1.2 km");
+    expect(formatters.totalElevationGainM(125)).toBe("125 m");
   });
 });

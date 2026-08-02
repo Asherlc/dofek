@@ -520,8 +520,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
   async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
     const days = input.weeks * 7;
-    const currentWindowStart = dateWindowStartString(input.endDate, days);
-    const previousWindowStart = dateWindowStartString(input.endDate, days * 2);
+    const currentWindowStart = dateWindowStartString(input.endDate, days - 1);
+    const previousWindowStart = dateWindowStartString(input.endDate, days * 2 - 1);
     const endDateExclusive = dateWindowEndExclusiveString(input.endDate);
     const activityRepository = activityRepositoryFor(
       this.db,
@@ -548,13 +548,25 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const activityTypeFilter = activityTypeFilterSql(input);
     const queryParams = {
-      ...activitySummaryQueryParams(this.userId, this.timezone, previousWindowStart, input),
+      ...activitySummaryQueryParams(
+        this.userId,
+        this.timezone,
+        previousWindowStart,
+        input,
+        "previousWindowStart",
+      ),
       currentWindowStart,
       endDateExclusive,
       activityIds: visibleActivityIds,
     };
     const typeQueryParams = {
-      ...activitySummaryQueryParams(this.userId, this.timezone, currentWindowStart, {}),
+      ...activitySummaryQueryParams(
+        this.userId,
+        this.timezone,
+        currentWindowStart,
+        {},
+        "currentWindowStart",
+      ),
       endDateExclusive,
       activityIds: currentVisibleActivityIds,
     };
@@ -596,34 +608,34 @@ export class ActivitiesCalendarRepository extends BaseRepository {
               AND summary.elevation_gain_m IS NOT NULL
             ) AS current_elevation_measurement_count,
             countIf(
-              activity_date >= toDate({windowStart:String})
+              activity_date >= toDate({previousWindowStart:String})
               AND activity_date < toDate({currentWindowStart:String})
             ) AS previous_activity_count,
             coalesce(
               sumIf(
                 dateDiff('second', activity.started_at, activity.ended_at) / 60.0,
-                activity_date >= toDate({windowStart:String})
+                activity_date >= toDate({previousWindowStart:String})
                 AND activity_date < toDate({currentWindowStart:String})
               ),
               0
             ) AS previous_total_minutes,
             sumOrNullIf(
               summary.total_distance,
-              activity_date >= toDate({windowStart:String})
+              activity_date >= toDate({previousWindowStart:String})
               AND activity_date < toDate({currentWindowStart:String})
             ) AS previous_total_distance_meters,
             sumOrNullIf(
               summary.elevation_gain_m,
-              activity_date >= toDate({windowStart:String})
+              activity_date >= toDate({previousWindowStart:String})
               AND activity_date < toDate({currentWindowStart:String})
             ) AS previous_total_elevation_gain_m,
             countIf(
-              activity_date >= toDate({windowStart:String})
+              activity_date >= toDate({previousWindowStart:String})
               AND activity_date < toDate({currentWindowStart:String})
               AND summary.total_distance IS NOT NULL
             ) AS previous_distance_measurement_count,
             countIf(
-              activity_date >= toDate({windowStart:String})
+              activity_date >= toDate({previousWindowStart:String})
               AND activity_date < toDate({currentWindowStart:String})
               AND summary.elevation_gain_m IS NOT NULL
             ) AS previous_elevation_measurement_count
@@ -635,7 +647,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
-            AND activity_date >= toDate({windowStart:String})
+            AND activity_date >= toDate({previousWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
             ${activityTypeFilter}`,
         queryParams,
@@ -650,7 +662,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
-            AND activity_date >= toDate({windowStart:String})
+            AND activity_date >= toDate({currentWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
           ORDER BY activity_type ASC`,
         typeQueryParams,
@@ -730,24 +742,57 @@ export function mergeDayGroups(
     .sort((left, right) => right.date.localeCompare(left.date));
 }
 
+type AvailableActivityOverviewMeasurement = {
+  value: number;
+  state: { status: "available" };
+};
+
+type UnavailableActivityOverviewMeasurement = {
+  value: null;
+  state: Exclude<ActivityDataState, { status: "available" }>;
+};
+
+type ActivityOverviewMeasurement =
+  | AvailableActivityOverviewMeasurement
+  | UnavailableActivityOverviewMeasurement;
+
 interface ActivityOverviewPeriod {
   activityCount: number;
   totalMinutes: number;
-  totalDistanceMeters: number | null;
-  totalDistanceState: ActivityDataState;
-  totalElevationGainM: number | null;
-  totalElevationState: ActivityDataState;
+  totalDistance: ActivityOverviewMeasurement;
+  totalElevation: ActivityOverviewMeasurement;
 }
 
 function emptyActivityOverviewPeriod(): ActivityOverviewPeriod {
   return {
     activityCount: 0,
     totalMinutes: 0,
-    totalDistanceMeters: null,
-    totalDistanceState: activityMeasurementState("Distance", null),
-    totalElevationGainM: null,
-    totalElevationState: activityMeasurementState("Elevation gain", null),
+    totalDistance: overviewMeasurement("Distance", null, true),
+    totalElevation: overviewMeasurement("Elevation gain", null, true),
   };
+}
+
+function overviewMeasurement(
+  label: string,
+  value: number | null,
+  complete: boolean,
+): ActivityOverviewMeasurement {
+  if (!complete) {
+    return {
+      value: null,
+      state: {
+        status: "missing",
+        reason: `${label} was not recorded for every activity.`,
+      },
+    };
+  }
+  if (value == null) {
+    return {
+      value: null,
+      state: { status: "missing", reason: `${label} not recorded` },
+    };
+  }
+  return { value, state: { status: "available" } };
 }
 
 function overviewPeriodFromRow(
@@ -781,20 +826,8 @@ function overviewPeriodFromRow(
   return {
     activityCount,
     totalMinutes,
-    totalDistanceMeters: completeDistance,
-    totalDistanceState: distanceComplete
-      ? activityMeasurementState("Distance", completeDistance)
-      : {
-          status: "missing",
-          reason: "Distance was not recorded for every activity.",
-        },
-    totalElevationGainM: completeElevation,
-    totalElevationState: elevationComplete
-      ? activityMeasurementState("Elevation gain", completeElevation)
-      : {
-          status: "missing",
-          reason: "Elevation gain was not recorded for every activity.",
-        },
+    totalDistance: overviewMeasurement("Distance", completeDistance, distanceComplete),
+    totalElevation: overviewMeasurement("Elevation gain", completeElevation, elevationComplete),
   };
 }
 
@@ -805,24 +838,19 @@ function createActivityOverview(
   weeks: number,
 ): ActivityOverview {
   return {
-    ...current,
+    activityCount: current.activityCount,
+    totalMinutes: current.totalMinutes,
+    totalDistanceMeters: current.totalDistance.value,
+    totalDistanceState: current.totalDistance.state,
+    totalElevationGainM: current.totalElevation.value,
+    totalElevationState: current.totalElevation.state,
     activityTypes,
     comparison: {
-      periodLabel: `previous ${weeks} weeks`,
+      periodLabel: `previous ${weeks} ${weeks === 1 ? "week" : "weeks"}`,
       activityCount: createChange(current.activityCount, previous.activityCount, 0),
       totalMinutes: createChange(current.totalMinutes, previous.totalMinutes, 1),
-      totalDistanceMeters: createMeasurementChange(
-        current.totalDistanceMeters,
-        current.totalDistanceState,
-        previous.totalDistanceMeters,
-        previous.totalDistanceState,
-      ),
-      totalElevationGainM: createMeasurementChange(
-        current.totalElevationGainM,
-        current.totalElevationState,
-        previous.totalElevationGainM,
-        previous.totalElevationState,
-      ),
+      totalDistanceMeters: createMeasurementChange(current.totalDistance, previous.totalDistance),
+      totalElevationGainM: createMeasurementChange(current.totalElevation, previous.totalElevation),
     },
   };
 }
@@ -835,37 +863,31 @@ function createChange(current: number, previous: number, decimals: 0 | 1): Activ
   };
 }
 
+function isAvailableMeasurement(
+  measurement: ActivityOverviewMeasurement,
+): measurement is AvailableActivityOverviewMeasurement {
+  return measurement.state.status === "available";
+}
+
 function createMeasurementChange(
-  current: number | null,
-  currentState: ActivityDataState,
-  previous: number | null,
-  previousState: ActivityDataState,
+  current: ActivityOverviewMeasurement,
+  previous: ActivityOverviewMeasurement,
 ): ActivityOverviewMeasurementChange {
-  if (currentState.status !== "available") {
-    return { magnitude: null, trend: "unavailable", state: currentState };
+  if (!isAvailableMeasurement(current)) {
+    return { magnitude: null, trend: "unavailable", state: current.state };
   }
-  if (previousState.status !== "available") {
+  if (!isAvailableMeasurement(previous)) {
     return {
       magnitude: null,
       trend: "unavailable",
       state: {
-        status: previousState.status,
-        reason: `Previous period: ${previousState.reason}`,
-      },
-    };
-  }
-  if (current == null || previous == null) {
-    return {
-      magnitude: null,
-      trend: "unavailable",
-      state: {
-        status: "failed",
-        reason: "A complete comparison value was not returned.",
+        status: previous.state.status,
+        reason: `Previous period: ${previous.state.reason}`,
       },
     };
   }
 
-  const difference = roundMetric(current - previous, 1);
+  const difference = roundMetric(current.value - previous.value, 1);
   return {
     magnitude: Math.abs(difference),
     trend: trendForDifference(difference),
@@ -897,11 +919,15 @@ function activitySummaryQueryParams(
   timezone: string,
   windowStart: string,
   input: Pick<WeekListInput, "activityType">,
+  windowStartParameterName:
+    | "windowStart"
+    | "currentWindowStart"
+    | "previousWindowStart" = "windowStart",
 ) {
   return {
     userId,
     timezone,
-    windowStart,
+    [windowStartParameterName]: windowStart,
     ...(input.activityType ? { activityType: input.activityType } : {}),
   };
 }
