@@ -39,9 +39,9 @@ export function AccessibleChart({ title, summary, rows, children }: AccessibleCh
           </Pressable>
           {expanded && (
             <View accessibilityRole="list" style={styles.list}>
-              {rows.map((row, index) => (
+              {rows.map((row) => (
                 <View
-                  key={`${index}-${row.label}-${row.value}`}
+                  key={`${row.label}-${row.value}`}
                   accessible
                   accessibilityLabel={`${row.label}: ${row.value}`}
                   style={styles.row}

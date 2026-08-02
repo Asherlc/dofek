@@ -154,9 +154,9 @@ function ChartDataDisclosure({
                   </tr>
                 </thead>
                 <tbody>
-                  {table.rows.map((row, rowIndex) => (
+                  {table.rows.map((row) => (
                     <tr
-                      key={`${rowIndex}-${row.series}-${row.category}-${row.value}`}
+                      key={`${row.series}-${row.category}-${row.value}`}
                       className="border-t border-border"
                     >
                       <th scope="row" className="px-3 py-2 font-medium">
