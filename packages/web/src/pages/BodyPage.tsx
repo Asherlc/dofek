@@ -1,5 +1,6 @@
 import { formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
 import { useMemo } from "react";
 import { z } from "zod";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
@@ -23,7 +24,6 @@ import { WeightPredictionSummary } from "../components/WeightPredictionSummary.t
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { chartColors } from "../lib/chartTheme.ts";
-import { healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";

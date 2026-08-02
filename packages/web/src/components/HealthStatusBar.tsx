@@ -5,9 +5,9 @@ import {
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
+import type { HealthMetricKey, HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useCountUp } from "../hooks/useCountUp.ts";
-import type { HealthMetricKey, HealthStatusMetric } from "../lib/healthStatus.ts";
 
 interface HealthStatusBarProps {
   baselineRelative?: BaselineRelativeMetric[];
@@ -82,6 +82,10 @@ function MetricDisplay({
   formatter?: FormattedMeasurementFormatter;
   unit?: string;
 }) {
+  if (metric.valueText != null) {
+    return <>{metric.valueText}</>;
+  }
+
   if (formatter) {
     return <>{renderMeasurementParts(formatter(metric.value))}</>;
   }
@@ -101,6 +105,7 @@ function formatBaseline(
   formatter?: FormattedMeasurementFormatter,
 ): string {
   if (metric.baseline == null) return "";
+  if (metric.baselineText != null) return metric.baselineText;
   return formatter ? formatter(metric.baseline).text : formatNumber(metric.baseline);
 }
 
@@ -150,9 +155,11 @@ export function HealthStatusBar({
               >
                 {statusSymbols[metric.statusToken]}
               </span>
-              <span className="text-xs text-muted uppercase tracking-wider">{metric.label}</span>
+              <span className="min-w-0 text-[11px] leading-tight text-muted uppercase tracking-wide">
+                {metric.label}
+              </span>
             </div>
-            <div className="text-lg font-semibold font-mono tabular-nums">
+            <div className="whitespace-nowrap text-lg font-semibold font-mono tabular-nums">
               <MetricDisplay metric={metric} formatter={formatter} unit={units[metric.metric]} />
             </div>
             <div className="text-[10px] text-subtle">

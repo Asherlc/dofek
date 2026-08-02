@@ -35,6 +35,7 @@ import {
   formatSpO2,
   formatSpO2Measurement,
   formatStandardDeviation,
+  formatSteps,
   formatTableCellValue,
   formatTime,
   formatTimeOnly,
@@ -761,6 +762,10 @@ describe("domain metric formatters", () => {
         { type: "unit", value: "ms" },
       ],
     });
+  });
+
+  it("formats steps as a grouped integer", () => {
+    expect(formatSteps(7639.6)).toBe("7,640");
   });
 
   it("formats standard deviations with up to 2 decimals and no unit", () => {

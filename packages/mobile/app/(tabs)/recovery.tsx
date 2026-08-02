@@ -317,7 +317,6 @@ export default function RecoveryScreen() {
             if (metric.metric === "skin_temperature") {
               return formatMeasurementText(units.formatTemperature(metric.value));
             }
-            if (metric.metric === "hrv") return formatHRV(metric.value);
             if (metric.metric === "spo2") return formatSpO2(metric.value);
             if (metric.metric === "respiratory_rate") {
               return metric.value == null ? "—" : `${formatNumber(metric.value)} breaths/min`;
@@ -326,7 +325,6 @@ export default function RecoveryScreen() {
               return metric.value == null ? "—" : `${formatNumber(metric.value)}%`;
             }
             if (metric.value == null) return "—";
-            if (metric.metric === "steps") return Math.round(metric.value).toLocaleString();
             if (metric.metric === "body_fat_percentage") {
               return `${formatBodyCompositionNumber(metric.value)}%`;
             }
