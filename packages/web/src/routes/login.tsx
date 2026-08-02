@@ -44,17 +44,15 @@ function LoginPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const allProviders = providers
-    ? [
-        ...providers.identity.map((id) => ({ id, type: "identity" as const })),
-        ...providers.data.map((id) => ({ id, type: "data" as const })),
-      ]
-    : [];
+  const identityProviders = providers?.identity ?? [];
+  const dataProviders = providers?.data ?? [];
+  const showIdentityProviders = identityProviders.length > 0;
+  const showDataProviders = dataProviders.length > 0;
   const returnTo =
     requestedReturnTo ?? (providerGuide ? "/dashboard?providerGuide=true" : undefined);
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   const showPasswordAuth = providers?.password ?? false;
-  const showOAuthProviders = allProviders.length > 0;
+  const showOAuthProviders = showIdentityProviders || showDataProviders;
   const passwordAuthDisabled = submitting || !email.trim() || !password;
   const emailValidationError =
     authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
@@ -381,7 +379,7 @@ function LoginPage() {
               </div>
             ) : null}
 
-            {showPasswordAuth && showOAuthProviders ? (
+            {showPasswordAuth && showIdentityProviders ? (
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-border" />
                 <span className="text-xs text-subtle uppercase tracking-wide">or</span>
@@ -389,16 +387,12 @@ function LoginPage() {
               </div>
             ) : null}
 
-            {showOAuthProviders ? (
+            {showIdentityProviders ? (
               <div className="space-y-3">
-                {allProviders.map(({ id, type }) => (
+                {identityProviders.map((id) => (
                   <a
                     key={id}
-                    href={
-                      type === "identity"
-                        ? `/auth/login/${id}${returnToQuery}`
-                        : `/auth/login/data/${id}${returnToQuery}`
-                    }
+                    href={`/auth/login/${id}${returnToQuery}`}
                     className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-accent/10 hover:bg-surface-hover border border-border-strong hover:border-border-strong text-foreground transition-colors text-sm font-medium"
                   >
                     <ProviderLogo provider={id} size={20} />
@@ -406,6 +400,32 @@ function LoginPage() {
                   </a>
                 ))}
               </div>
+            ) : null}
+
+            {showDataProviders ? (
+              <section
+                aria-labelledby="connect-health-data-heading"
+                className="space-y-4 rounded-xl border border-border bg-surface-hover/40 p-4"
+              >
+                <h2
+                  id="connect-health-data-heading"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Connect health data after sign-in
+                </h2>
+                <div className="space-y-3">
+                  {dataProviders.map((id) => (
+                    <a
+                      key={id}
+                      href={`/auth/login/data/${id}${returnToQuery}`}
+                      className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-surface-solid hover:bg-surface-hover border border-border text-foreground transition-colors text-sm font-medium"
+                    >
+                      <ProviderLogo provider={id} size={20} />
+                      Connect {providerLabel(id)}
+                    </a>
+                  ))}
+                </div>
+              </section>
             ) : null}
           </div>
         )}

@@ -188,16 +188,14 @@ export default function LoginScreen() {
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
     (providers?.nativeApple ?? false);
-  const allProviders = providers
-    ? [
-        ...providers.identity
-          .filter((id) => !(useNativeApple && id === "apple"))
-          .map((id) => ({ id, isData: false })),
-        ...providers.data.map((id) => ({ id, isData: true })),
-      ]
+  const identityProviders = providers
+    ? providers.identity.filter((id) => !(useNativeApple && id === "apple"))
     : [];
+  const dataProviders = providers?.data ?? [];
+  const showIdentityProviders = identityProviders.length > 0 || useNativeApple;
+  const showDataProviders = dataProviders.length > 0;
   const showPasswordAuth = providers?.password ?? false;
-  const showOAuthProviders = allProviders.length > 0 || useNativeApple;
+  const showOAuthProviders = showIdentityProviders || showDataProviders;
   const passwordResetDisabled = loggingIn || !email.trim();
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
   const emailValidationError =
@@ -523,7 +521,7 @@ export default function LoginScreen() {
               </View>
             ) : null}
 
-            {showPasswordAuth && showOAuthProviders ? (
+            {showPasswordAuth && showIdentityProviders ? (
               <Text style={styles.dividerText}>or continue with</Text>
             ) : null}
 
@@ -536,11 +534,11 @@ export default function LoginScreen() {
                 onPress={() => handleLogin("apple", false)}
               />
             ) : null}
-            {allProviders.map(({ id, isData }) => (
+            {identityProviders.map((id) => (
               <TouchableOpacity
                 key={id}
                 style={styles.providerButton}
-                onPress={() => handleLogin(id, isData)}
+                onPress={() => handleLogin(id, false)}
                 disabled={loggingIn}
                 accessibilityRole="button"
                 accessibilityLabel={`Sign in with ${providerLabel(id)}`}
@@ -552,6 +550,30 @@ export default function LoginScreen() {
                 </View>
               </TouchableOpacity>
             ))}
+
+            {showDataProviders ? (
+              <View testID="data-provider-section" style={styles.dataProviderSection}>
+                <Text style={styles.dataProviderHeading}>Connect health data after sign-in</Text>
+                <View style={styles.dataProviderList}>
+                  {dataProviders.map((id) => (
+                    <TouchableOpacity
+                      key={id}
+                      style={styles.providerButton}
+                      onPress={() => handleLogin(id, true)}
+                      disabled={loggingIn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Connect ${providerLabel(id)}`}
+                      accessibilityState={{ busy: loggingIn, disabled: loggingIn }}
+                    >
+                      <View style={styles.providerButtonContent}>
+                        <ProviderLogo provider={id} serverUrl={serverUrl} size={20} />
+                        <Text style={styles.providerText}>Connect {providerLabel(id)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -605,6 +627,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   providerList: {
+    gap: 12,
+  },
+  dataProviderSection: {
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  dataProviderHeading: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  dataProviderList: {
     gap: 12,
   },
   passwordSection: {
