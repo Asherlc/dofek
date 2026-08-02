@@ -226,7 +226,7 @@ describe("runningRouter", () => {
     const caller = makeCaller([
       {
         activity_id: "run-1",
-        date: "2026-01-15",
+        date: new Date("2026-01-15T00:00:00Z"),
         name: "Morning Run",
         avg_cadence: 172,
         avg_stride_length: 1.15,
@@ -238,11 +238,41 @@ describe("runningRouter", () => {
     ]);
 
     await expect(caller.dynamicsV2({ days: 90 })).resolves.toMatchObject({
-      data: [expect.objectContaining({ activityId: "run-1" })],
+      data: [expect.objectContaining({ activityId: "run-1", date: "2026-01-15" })],
       availability: {
         status: "available",
         observedCount: 1,
         minimumCount: 1,
+        message: "running dynamics data is available from Running activity sensor summaries.",
+      },
+    });
+  });
+
+  it("returns available pace trend data through the versioned contract", async () => {
+    const caller = makeCaller([
+      {
+        activity_id: "run-pace-1",
+        date: "2026-01-15",
+        name: "Morning Run",
+        avg_speed: 3.5,
+        total_distance: 8500,
+        duration_seconds: 2400,
+      },
+    ]);
+
+    await expect(caller.paceTrendV2({ days: 90 })).resolves.toMatchObject({
+      data: [
+        {
+          date: "2026-01-15",
+          activityName: "Morning Run",
+          paceSecondsPerKm: 286,
+        },
+      ],
+      availability: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "running pace data is available from Running activity sensor summaries.",
       },
     });
   });

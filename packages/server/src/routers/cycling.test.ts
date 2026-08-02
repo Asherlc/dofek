@@ -107,4 +107,51 @@ describe("cyclingRouter", () => {
     });
     expect(getPerformance).toHaveBeenCalledWith(expect.objectContaining({ days: 90 }));
   });
+
+  it("returns activity chart availability through the public contract", async () => {
+    const getActivities = vi
+      .spyOn(CyclingAnalyticsRepository.prototype, "getActivities")
+      .mockResolvedValue({
+        activities: { items: [], totalCount: 0 },
+        variability: { rows: [], totalCount: 0, emptyReason: "no_cycling_activities" },
+        verticalAscent: [],
+        aerobicEfficiency: { maxHr: null, activities: [] },
+        availability: {
+          verticalAscent: {
+            status: "insufficient_data",
+            sourceLabel: "Cycling activity altitude sensor summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "No vertical ascent data is available.",
+          },
+          aerobicEfficiency: {
+            status: "insufficient_data",
+            sourceLabel: "Cycling Zone 2 power and heart-rate summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "No aerobic efficiency data is available.",
+          },
+        },
+      });
+    const caller = createCaller(makeContext());
+
+    await expect(caller.activities({ days: 30 })).resolves.toMatchObject({
+      activities: { totalCount: 0 },
+      availability: {
+        verticalAscent: { status: "insufficient_data", observedCount: 0 },
+        aerobicEfficiency: { status: "insufficient_data", observedCount: 0 },
+      },
+    });
+
+    expect(getActivities).toHaveBeenCalledWith(
+      expect.objectContaining({}),
+      expect.objectContaining({
+        activityLimit: 20,
+        activityOffset: 0,
+        variabilityLimit: 20,
+        variabilityOffset: 0,
+      }),
+    );
+    getActivities.mockRestore();
+  });
 });

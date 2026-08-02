@@ -897,6 +897,19 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getAllByText("Training data failed to load").length).toBeGreaterThan(0);
   });
 
+  it("does not present failed training charts as empty data", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.queryByText("No training data yet for this period")).toBeNull();
+    expect(screen.queryByText("No activities with altitude data available")).toBeNull();
+    expect(screen.getAllByText("Training data failed to load").length).toBeGreaterThanOrEqual(3);
+  });
+
   it("shows the server error message for climbing data failures", async () => {
     mockTrainingState.data = undefined;
     mockTrainingState.isError = true;

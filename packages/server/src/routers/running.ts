@@ -5,6 +5,7 @@ import {
   trainingChartAvailabilitySchema,
 } from "../contracts/training-chart-availability.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { RunningRepository } from "../repositories/running-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
@@ -44,7 +45,7 @@ export interface PaceTrendRow {
 
 const runningDynamicsRowSchema = z.object({
   activityId: z.string(),
-  date: z.string(),
+  date: dateStringSchema,
   activityName: z.string(),
   cadence: z.number(),
   strideLengthMeters: z.number().nullable(),
@@ -55,7 +56,7 @@ const runningDynamicsRowSchema = z.object({
 });
 
 const paceTrendRowSchema = z.object({
-  date: z.string(),
+  date: dateStringSchema,
   activityName: z.string(),
   paceSecondsPerKm: z.number(),
   distanceKm: z.number(),
@@ -111,7 +112,7 @@ export const runningRouter = router({
         ),
       };
     },
-    runningChartOutput(runningDynamicsRowSchema),
+    { outputSchema: runningChartOutput(runningDynamicsRowSchema) },
   ),
 
   paceTrendV2: selectedChartRangeQuery(
@@ -126,6 +127,6 @@ export const runningRouter = router({
         availability: runningAvailability("running pace data", "pace data", data.length),
       };
     },
-    runningChartOutput(paceTrendRowSchema),
+    { outputSchema: runningChartOutput(paceTrendRowSchema) },
   ),
 });

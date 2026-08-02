@@ -129,6 +129,26 @@ describe("CyclingAnalyticsRepository", () => {
       { date: "2026-07-10", eftp: 266, activityName: "Intervals" },
     ]);
     expect(result.eftpTrend.currentEftp).toBe(266);
+    expect(result.availability).toMatchObject({
+      powerCurve: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "cycling power-curve data is available from Cycling power-curve read model.",
+      },
+      pmc: {
+        status: "available",
+        observedCount: result.pmc.data.length,
+        minimumCount: 1,
+        message: "training-load data is available from Cycling training-load model.",
+      },
+      eftpTrend: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "threshold power data is available from Cycling activity power summaries.",
+      },
+    });
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toMatch(
       /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND is_deleted = 0/,
     );
@@ -341,6 +361,22 @@ describe("CyclingAnalyticsRepository", () => {
           z2Samples: 600,
         },
       ],
+    });
+    expect(result.availability).toMatchObject({
+      verticalAscent: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message:
+          "vertical ascent data is available from Cycling activity altitude sensor summaries.",
+      },
+      aerobicEfficiency: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message:
+          "aerobic efficiency data is available from Cycling Zone 2 power and heart-rate summaries.",
+      },
     });
     expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),

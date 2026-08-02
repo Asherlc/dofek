@@ -429,7 +429,11 @@ export default function StrainScreen() {
               description="This chart shows your day-to-day strain trend across the selected date range."
               textStyle={styles.cardTitle}
             />
-            {strainTrendAvailability?.status === "available" ? (
+            {shouldShowTrainingQueryError ? (
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load strain trend."}
+              </Text>
+            ) : strainTrendAvailability?.status === "available" ? (
               <SparkLine
                 data={strainTrend}
                 height={60}
@@ -451,7 +455,11 @@ export default function StrainScreen() {
               description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
               textStyle={styles.cardTitle}
             />
-            {verticalAscentAvailability?.status === "available" ? (
+            {shouldShowTrainingQueryError ? (
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load vertical ascent."}
+              </Text>
+            ) : verticalAscentAvailability?.status === "available" ? (
               <VerticalAscentChart data={verticalAscent} units={units} />
             ) : verticalAscentAvailability ? (
               <TrainingChartEmptyState availability={verticalAscentAvailability} />

@@ -138,12 +138,26 @@ describe("durationCurvesRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.paceCurve({ days: 90 });
       expect(result.points).toHaveLength(2);
+      expect(result.availability).toMatchObject({
+        status: "available",
+        observedCount: 2,
+        minimumCount: 1,
+        message:
+          "Running pace duration data is available from the running pace duration-curve read model.",
+      });
     });
 
     it("uses default days (90) when not specified", async () => {
       const caller = makeCaller([]);
       const result = await caller.paceCurve({});
       expect(result.points).toEqual([]);
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No running pace duration data is available from the running pace duration-curve read model. Record at least 1 running activity with pace data to show this chart.",
+      });
     });
   });
 

@@ -1032,7 +1032,7 @@ describe("mobileDashboard.training", () => {
   it("uses a versioned cache key for its activity-state contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-activity-states-v1",
+      keyVersion: "training-activity-states-v2",
     });
   });
 

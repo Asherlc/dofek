@@ -295,6 +295,14 @@ describe("pmcRouter", () => {
 
       expect(result.data).toEqual([]);
       expect(result.model.type).toBe("generic");
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        sourceLabel: "Training load read model",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
+      });
     });
 
     it("computes PMC data from activities", async () => {
@@ -326,6 +334,13 @@ describe("pmcRouter", () => {
 
       expect(result.data.length).toBeGreaterThan(0);
       expect(result.model).toBeDefined();
+      expect(result.availability).toMatchObject({
+        status: "available",
+        sourceLabel: "Training load read model",
+        observedCount: result.data.length,
+        minimumCount: 1,
+        message: "Training load data is available from the training load read model.",
+      });
     });
 
     it("uses power TSS when power data available", async () => {
