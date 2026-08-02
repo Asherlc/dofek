@@ -558,6 +558,52 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("Missing supported metrics: VO2 Max, Daily Steps")).toBeTruthy();
   });
 
+  it("labels the Healthspan Score trend against recorded weekly scores", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: {
+        healthspanScore: 84,
+        yearsDelta: -1.2,
+        metrics: [
+          {
+            name: "Daily Steps",
+            value: 9200,
+            unit: "steps/day",
+            score: 85,
+            status: "excellent",
+            yearsDelta: -1.75,
+          },
+        ],
+        history: [
+          { weekStart: "2026-03-02", score: 73 },
+          { weekStart: "2026-03-09", score: 75 },
+          { weekStart: "2026-03-16", score: 78 },
+          { weekStart: "2026-03-23", score: 81 },
+        ],
+        trend: "improving",
+        availability: {
+          status: "available",
+          availableMetricCount: 1,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "1 of 3 required Healthspan metrics are available.",
+          nextCondition: null,
+        },
+      },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("Weekly trend across your recorded scores: Improving")).toBeTruthy();
+  });
+
   it("labels smoothed body weight as Trend Weight and shows the latest scale reading", async () => {
     mockRecoveryData = {
       hrvVariability: [],

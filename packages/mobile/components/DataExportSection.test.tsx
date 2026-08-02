@@ -45,4 +45,36 @@ describe("DataExportSection", () => {
     expect(exportButton.getAttribute("aria-busy")).toBe("true");
     expect(exportButton).toHaveProperty("disabled", true);
   });
+
+  it("does not update state when the export list resolves after unmount", async () => {
+    type ExportListResponse = {
+      ok: true;
+      json: () => Promise<{ exports: [] }>;
+    };
+    let resolveFetch: (response: ExportListResponse) => void = () => undefined;
+    const pendingFetch = new Promise<ExportListResponse>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pendingFetch));
+
+    const rendered = render(
+      <DataExportSection serverUrl="https://dofek.test" sessionToken="session-token" />,
+    );
+    expect(fetch).toHaveBeenCalledOnce();
+
+    rendered.unmount();
+    const existingWindow = globalThis.window;
+    vi.stubGlobal("window", undefined);
+    try {
+      resolveFetch({
+        ok: true,
+        json: async () => ({ exports: [] }),
+      });
+      await pendingFetch;
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      vi.stubGlobal("window", existingWindow);
+    }
+  });
 });

@@ -7,6 +7,7 @@ import {
   formatNumber,
   formatSpO2,
 } from "@dofek/format/format";
+import { formatHealthspanTrendContext } from "@dofek/format/healthspan-context";
 import { formatMeasurementText } from "@dofek/format/units";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
@@ -60,13 +61,6 @@ const RECOVERY_SCORE_BANDS = SCORE_ZONES.map((zone) => {
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function trendArrow(trend: string | null): string {
-  if (trend === "improving") return "\u2191";
-  if (trend === "declining") return "\u2193";
-  if (trend === "stable") return "\u2192";
-  return "";
 }
 
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
@@ -604,7 +598,7 @@ export default function RecoveryScreen() {
                   </Text>
                   {healthspan.trend != null && (
                     <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
-                      {trendArrow(healthspan.trend)} {healthspan.trend}
+                      {formatHealthspanTrendContext(healthspan.trend)}
                     </Text>
                   )}
                 </View>
@@ -822,7 +816,6 @@ const styles = StyleSheet.create({
   healthspanTrend: {
     fontSize: 13,
     fontWeight: "500",
-    textTransform: "capitalize",
   },
   healthspanAvailabilitySummary: {
     color: colors.text,

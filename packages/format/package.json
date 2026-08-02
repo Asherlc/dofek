@@ -8,6 +8,7 @@
     "./activity-data-state": "./src/activity-data-state.ts",
     "./baseline-context": "./src/baseline-context.ts",
     "./format": "./src/format.ts",
+    "./healthspan-context": "./src/healthspan-context.ts",
     "./medication-dose-events": "./src/medication-dose-events.ts",
     "./medication-reminders": "./src/medication-reminders.ts",
     "./record-local-time": "./src/record-local-time.ts",
