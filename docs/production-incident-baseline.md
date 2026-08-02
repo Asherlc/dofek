@@ -46,7 +46,8 @@ deferred service work were not the bottleneck.
 Set `updates.fallbackToCacheTimeout` to `0` while retaining `ON_LOAD`, signed
 updates, and the existing update URL/code-signing metadata. Expo continues to
 check for and download updates, but an update that is not ready within the
-zero-millisecond launch wait is applied on the next launch. Added a mobile
+zero-millisecond launch wait is applied on the next launch (see Expo's [EAS
+Update lifecycle documentation](https://docs.expo.dev/eas-update/how-it-works/)). Added a mobile
 config regression test so the launch policy cannot silently return to a blocking
 wait.
 
