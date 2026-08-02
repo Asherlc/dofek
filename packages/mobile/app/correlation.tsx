@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
+import { AccessibleChart } from "../components/AccessibleChart";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { DaySelector } from "../components/DaySelector";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
@@ -403,7 +404,7 @@ function ScatterPlot({
   dataPoints,
   regression,
   xLabel,
-  yLabel: _yLabel,
+  yLabel,
   width: chartWidth,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
@@ -441,58 +442,69 @@ function ScatterPlot({
       ? null
       : regression.slope * xMax + regression.intercept;
 
+  const accessibleRows = dataPoints.map((point) => ({
+    label: point.date,
+    value: `${xLabel}: ${formatNumber(point.x)} · ${yLabel}: ${formatNumber(point.y)}`,
+  }));
+
   return (
-    <View style={styles.chartContainer}>
-      <Svg width={chartWidth} height={plotHeight + padding.top + padding.bottom}>
-        {/* Grid lines */}
-        <Line
-          x1={padding.left}
-          y1={padding.top}
-          x2={padding.left}
-          y2={padding.top + plotHeight}
-          stroke="#27272a"
-          strokeWidth={1}
-        />
-        <Line
-          x1={padding.left}
-          y1={padding.top + plotHeight}
-          x2={padding.left + plotWidth}
-          y2={padding.top + plotHeight}
-          stroke="#27272a"
-          strokeWidth={1}
-        />
-
-        {/* Regression line */}
-        {lineY1 !== null && lineY2 !== null && (
+    <AccessibleChart
+      title="Scatter plot"
+      summary={`Scatter plot comparing ${xLabel} and ${yLabel}.`}
+      rows={accessibleRows}
+    >
+      <View style={styles.chartContainer}>
+        <Svg width={chartWidth} height={plotHeight + padding.top + padding.bottom}>
+          {/* Grid lines */}
           <Line
-            testID="correlation-trend-line"
-            x1={scaleX(xMin)}
-            y1={scaleY(lineY1)}
-            x2={scaleX(xMax)}
-            y2={scaleY(lineY2)}
-            stroke={chartColors.blue}
-            strokeWidth={2}
-            strokeDasharray="6,4"
-            opacity={0.7}
+            x1={padding.left}
+            y1={padding.top}
+            x2={padding.left}
+            y2={padding.top + plotHeight}
+            stroke="#27272a"
+            strokeWidth={1}
           />
-        )}
+          <Line
+            x1={padding.left}
+            y1={padding.top + plotHeight}
+            x2={padding.left + plotWidth}
+            y2={padding.top + plotHeight}
+            stroke="#27272a"
+            strokeWidth={1}
+          />
 
-        {/* Data points */}
-        {dataPoints.map((p) => (
-          <Circle
-            key={`${p.date}-${p.x}-${p.y}`}
-            cx={scaleX(p.x)}
-            cy={scaleY(p.y)}
-            r={3}
-            fill="#a1a1aa"
-            opacity={0.5}
-          />
-        ))}
-      </Svg>
-      <View style={styles.axisLabels}>
-        <Text style={styles.axisLabel}>{xLabel}</Text>
+          {/* Regression line */}
+          {lineY1 !== null && lineY2 !== null && (
+            <Line
+              testID="correlation-trend-line"
+              x1={scaleX(xMin)}
+              y1={scaleY(lineY1)}
+              x2={scaleX(xMax)}
+              y2={scaleY(lineY2)}
+              stroke={chartColors.blue}
+              strokeWidth={2}
+              strokeDasharray="6,4"
+              opacity={0.7}
+            />
+          )}
+
+          {/* Data points */}
+          {dataPoints.map((p) => (
+            <Circle
+              key={`${p.date}-${p.x}-${p.y}`}
+              cx={scaleX(p.x)}
+              cy={scaleY(p.y)}
+              r={3}
+              fill="#a1a1aa"
+              opacity={0.5}
+            />
+          ))}
+        </Svg>
+        <View style={styles.axisLabels}>
+          <Text style={styles.axisLabel}>{xLabel}</Text>
+        </View>
       </View>
-    </View>
+    </AccessibleChart>
   );
 }
 

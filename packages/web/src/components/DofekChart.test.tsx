@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { mockUseFetchingCount } = vi.hoisted(() => ({
@@ -100,6 +100,78 @@ describe("DofekChart", () => {
   it("renders chart when not loading and not empty", () => {
     render(<DofekChart option={{ series: [{ type: "line" }] }} />);
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
+  });
+
+  it("enables an accessible chart description for every ECharts instance", () => {
+    render(
+      <DofekChart
+        option={{
+          xAxis: { type: "time", name: "Date" },
+          yAxis: { type: "value", name: "Resting heart rate" },
+          series: [{ type: "line", name: "Resting heart rate", data: [["2026-07-01", 52]] }],
+        }}
+      />,
+    );
+
+    const option = JSON.parse(
+      screen.getByTestId("echarts-mock").getAttribute("data-option") ?? "{}",
+    );
+    expect(option.aria.enabled).toBe(true);
+    expect(option.aria.label.description).toBe(
+      "Chart showing Resting heart rate. Use the chart data table for exact values.",
+    );
+    expect(
+      screen.getByText(
+        "Chart showing Resting heart rate. Use the chart data table for exact values.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("preserves a chart's explicit accessibility description", () => {
+    render(
+      <DofekChart
+        option={{
+          aria: {
+            enabled: true,
+            label: { description: "Daily recovery is shown as a numeric line." },
+          },
+          series: [{ type: "line", data: [["2026-07-01", 81]] }],
+        }}
+      />,
+    );
+
+    const option = JSON.parse(
+      screen.getByTestId("echarts-mock").getAttribute("data-option") ?? "{}",
+    );
+    expect(option.aria.label.description).toBe("Daily recovery is shown as a numeric line.");
+    expect(screen.getByText("Daily recovery is shown as a numeric line.")).toBeDefined();
+  });
+
+  it("provides exact chart values in a keyboard-operable data table", () => {
+    render(
+      <DofekChart
+        option={{
+          xAxis: { type: "category", name: "Day", data: ["Monday", "Tuesday"] },
+          series: [{ type: "bar", name: "Steps", data: [4_200, 6_100] }],
+        }}
+      />,
+    );
+
+    const disclosure = screen.getByText("View chart data").closest("details");
+    expect(disclosure).not.toBeNull();
+    if (!(disclosure instanceof HTMLDetailsElement)) {
+      throw new Error("Expected chart data disclosure");
+    }
+
+    disclosure.open = true;
+    fireEvent(disclosure, new Event("toggle"));
+
+    expect(screen.getByRole("table", { name: /chart showing steps/i })).toBeDefined();
+    expect(screen.getByRole("columnheader", { name: "Day" })).toBeDefined();
+    expect(screen.getByRole("cell", { name: "Monday" })).toBeDefined();
+    expect(screen.getByRole("cell", { name: "4200" })).toBeDefined();
+    expect(screen.getByRole("cell", { name: "Tuesday" })).toBeDefined();
+    expect(screen.getByRole("cell", { name: "6100" })).toBeDefined();
   });
 
   it("forces transparent background on chart option", () => {

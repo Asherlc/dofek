@@ -355,6 +355,16 @@ describe("CorrelationScreen", () => {
 
     expect(screen.queryByText("strong")).toBeNull();
     expect(screen.getByTestId("correlation-trend-line").dataset.stroke).toBe("#2563eb");
+    expect(
+      screen.getByRole("image", {
+        name: "Scatter plot. Scatter plot comparing Protein (g) and Heart Rate Variability (ms).",
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View Scatter plot data" }));
+    expect(screen.getByText("2025-01-01")).toBeTruthy();
+    expect(screen.getByText(/Protein \(g\): 1.0/)).toBeTruthy();
+    expect(screen.getByText(/Heart Rate Variability \(ms\): 2.0/)).toBeTruthy();
   });
 
   it("waits for metric metadata before rendering unit-dependent evidence", async () => {
