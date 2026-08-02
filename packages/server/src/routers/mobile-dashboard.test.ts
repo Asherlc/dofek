@@ -1153,6 +1153,23 @@ describe("mobileDashboard.training", () => {
       weeklyVolume: [],
       progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: {
+        strainTrend: {
+          status: "insufficient_data",
+          sourceLabel: "Daily strain model",
+          observedCount: 0,
+          minimumCount: 2,
+          message: "No daily strain trend is available from the daily strain model.",
+        },
+        verticalAscent: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling activity altitude sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries.",
+        },
+      },
       climbing: {
         gradeProgression: [],
         volumeByGrade: [],
@@ -1230,6 +1247,23 @@ describe("mobileDashboard.training", () => {
       weeklyVolume: [],
       progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: {
+        strainTrend: {
+          status: "insufficient_data",
+          sourceLabel: "Daily strain model",
+          observedCount: 0,
+          minimumCount: 2,
+          message: "No daily strain trend is available from the daily strain model.",
+        },
+        verticalAscent: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling activity altitude sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries.",
+        },
+      },
       climbing: {
         gradeProgression: [],
         volumeByGrade: [],

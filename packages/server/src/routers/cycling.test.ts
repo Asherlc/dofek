@@ -76,6 +76,29 @@ describe("cyclingRouter", () => {
           model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
         },
         eftpTrend: { trend: [], currentEftp: null, model: null },
+        availability: {
+          powerCurve: {
+            status: "insufficient_data",
+            sourceLabel: "Cycling power-curve read model",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "No cycling power-curve data is available.",
+          },
+          pmc: {
+            status: "insufficient_data",
+            sourceLabel: "Cycling training-load model",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "No training-load data is available.",
+          },
+          eftpTrend: {
+            status: "insufficient_data",
+            sourceLabel: "Cycling activity power summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "No threshold power data is available.",
+          },
+        },
       });
     const caller = createCaller(makeContext());
 

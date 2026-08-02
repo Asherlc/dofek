@@ -1,12 +1,14 @@
 import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
+import type { TrainingChartAvailability } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState.tsx";
 import {
   chartColors,
   dofekAxis,
@@ -36,8 +38,8 @@ export function RunningTab() {
     selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const paceTrend = trpc.running.paceTrend.useQuery(selectedRangeQueryInput(days));
-  const dynamics = trpc.running.dynamics.useQuery(selectedRangeQueryInput(days));
+  const paceTrend = trpc.running.paceTrendV2.useQuery(selectedRangeQueryInput(days));
+  const dynamics = trpc.running.dynamicsV2.useQuery(selectedRangeQueryInput(days));
 
   return (
     <>
@@ -48,6 +50,7 @@ export function RunningTab() {
         ) : (
           <PaceCurveChart
             data={paceCurve.data?.points ?? []}
+            availability={paceCurve.data?.availability}
             loading={paceCurve.isLoading}
             units={units}
           />
@@ -61,7 +64,8 @@ export function RunningTab() {
             <QueryStatePanel error={paceTrend.error} />
           ) : (
             <PaceTrendChart
-              data={paceTrend.data ?? []}
+              data={paceTrend.data?.data ?? []}
+              availability={paceTrend.data?.availability}
               loading={paceTrend.isLoading}
               units={units}
             />
@@ -72,7 +76,11 @@ export function RunningTab() {
           {dynamics.error && !dynamics.data ? (
             <QueryStatePanel error={dynamics.error} />
           ) : (
-            <CadenceTrendChart data={dynamics.data ?? []} loading={dynamics.isLoading} />
+            <CadenceTrendChart
+              data={dynamics.data?.data ?? []}
+              availability={dynamics.data?.availability}
+              loading={dynamics.isLoading}
+            />
           )}
         </Section>
       </div>
@@ -83,7 +91,8 @@ export function RunningTab() {
           <QueryStatePanel error={dynamics.error} />
         ) : (
           <RunningDynamicsTable
-            data={dynamics.data ?? []}
+            data={dynamics.data?.data ?? []}
+            availability={dynamics.data?.availability}
             loading={dynamics.isLoading}
             units={units}
           />
@@ -108,13 +117,19 @@ interface PaceCurvePoint {
 
 function PaceCurveChart({
   data,
+  availability,
   loading,
   units,
 }: {
   data: PaceCurvePoint[];
+  availability?: TrainingChartAvailability;
   loading: boolean;
   units: UnitConverter;
 }) {
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   const option = {
     grid: { ...dofekGrid("single"), top: 30, bottom: 40, left: 65 },
     tooltip: dofekTooltip({
@@ -198,10 +213,12 @@ interface PaceTrendPoint {
 
 function PaceTrendChart({
   data,
+  availability,
   loading,
   units,
 }: {
   data: PaceTrendPoint[];
+  availability?: TrainingChartAvailability;
   loading: boolean;
   units: UnitConverter;
 }) {
@@ -245,6 +262,10 @@ function PaceTrendChart({
     ],
   };
 
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   return (
     <DofekChart
       option={option}
@@ -270,7 +291,15 @@ interface DynamicsRow {
   distanceKm: number;
 }
 
-function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: boolean }) {
+function CadenceTrendChart({
+  data,
+  availability,
+  loading,
+}: {
+  data: DynamicsRow[];
+  availability?: TrainingChartAvailability;
+  loading: boolean;
+}) {
   const option = {
     grid: { ...dofekGrid("single"), top: 20, bottom: 40, left: 55 },
     tooltip: dofekTooltip({
@@ -298,6 +327,10 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     ],
   };
 
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   return (
     <DofekChart
       option={option}
@@ -313,14 +346,20 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
 
 function RunningDynamicsTable({
   data,
+  availability,
   loading,
   units,
 }: {
   data: DynamicsRow[];
+  availability?: TrainingChartAvailability;
   loading: boolean;
   units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
+
+  if (availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
 
   if (data.length === 0) {
     return (

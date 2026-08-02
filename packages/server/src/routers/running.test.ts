@@ -204,5 +204,46 @@ describe("runningRouter", () => {
       // Faster run should have lower pace (fewer seconds per km)
       expect(result[1]?.paceSecondsPerKm).toBeLessThan(result[0]?.paceSecondsPerKm ?? Infinity);
     });
+
+    it("returns server-owned availability facts without changing the legacy array endpoint", async () => {
+      const caller = makeCaller([]);
+
+      await expect(caller.paceTrendV2({ days: 90 })).resolves.toMatchObject({
+        data: [],
+        availability: {
+          status: "insufficient_data",
+          sourceLabel: "Running activity sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message: expect.stringContaining("Record at least 1 running activity"),
+        },
+      });
+      await expect(caller.paceTrend({ days: 90 })).resolves.toEqual([]);
+    });
+  });
+
+  it("returns available dynamics data through the versioned contract", async () => {
+    const caller = makeCaller([
+      {
+        activity_id: "run-1",
+        date: "2026-01-15",
+        name: "Morning Run",
+        avg_cadence: 172,
+        avg_stride_length: 1.15,
+        avg_stance_time: 245,
+        avg_vertical_osc: 8.2,
+        avg_speed: 3.5,
+        total_distance: 8500,
+      },
+    ]);
+
+    await expect(caller.dynamicsV2({ days: 90 })).resolves.toMatchObject({
+      data: [expect.objectContaining({ activityId: "run-1" })],
+      availability: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+      },
+    });
   });
 });

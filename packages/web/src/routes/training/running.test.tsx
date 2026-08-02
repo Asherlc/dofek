@@ -40,6 +40,13 @@ const mockPaceCurveData = {
       activityDate: "2026-03-15",
     },
   ],
+  availability: {
+    status: "available" as const,
+    sourceLabel: "Running pace duration-curve read model",
+    observedCount: 2,
+    minimumCount: 1,
+    message: "Running pace duration data is available.",
+  },
 };
 
 const mockPaceTrendData = [
@@ -66,6 +73,28 @@ const mockDynamicsData = [
   },
 ];
 
+const mockPaceTrendResponse = {
+  data: mockPaceTrendData,
+  availability: {
+    status: "available" as const,
+    sourceLabel: "Running activity sensor summaries",
+    observedCount: 1,
+    minimumCount: 1,
+    message: "Running pace data is available.",
+  },
+};
+
+const mockDynamicsResponse = {
+  data: mockDynamicsData,
+  availability: {
+    status: "available" as const,
+    sourceLabel: "Running activity sensor summaries",
+    observedCount: 1,
+    minimumCount: 1,
+    message: "Running dynamics data is available.",
+  },
+};
+
 interface QueryResult<Data> {
   data: Data;
   isLoading: boolean;
@@ -77,13 +106,13 @@ let paceCurveQuery: QueryResult<typeof mockPaceCurveData> = {
   isLoading: false,
   error: null,
 };
-let paceTrendQuery: QueryResult<typeof mockPaceTrendData> = {
-  data: mockPaceTrendData,
+let paceTrendQuery: QueryResult<typeof mockPaceTrendResponse> = {
+  data: mockPaceTrendResponse,
   isLoading: false,
   error: null,
 };
-let dynamicsQuery: QueryResult<typeof mockDynamicsData> = {
-  data: mockDynamicsData,
+let dynamicsQuery: QueryResult<typeof mockDynamicsResponse> = {
+  data: mockDynamicsResponse,
   isLoading: false,
   error: null,
 };
@@ -108,15 +137,15 @@ vi.mock("../../lib/trpc.ts", () => ({
       },
     },
     running: {
-      paceTrend: {
+      paceTrendV2: {
         useQuery: (input: unknown) => {
-          state.queryCalls.push({ name: "paceTrend", input });
+          state.queryCalls.push({ name: "paceTrendV2", input });
           return paceTrendQuery;
         },
       },
-      dynamics: {
+      dynamicsV2: {
         useQuery: (input: unknown) => {
-          state.queryCalls.push({ name: "dynamics", input });
+          state.queryCalls.push({ name: "dynamicsV2", input });
           return dynamicsQuery;
         },
       },
@@ -154,8 +183,8 @@ describe("RunningTab", () => {
     state.queryCalls.length = 0;
     state.selectedDays = 90;
     paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: null };
-    paceTrendQuery = { data: mockPaceTrendData, isLoading: false, error: null };
-    dynamicsQuery = { data: mockDynamicsData, isLoading: false, error: null };
+    paceTrendQuery = { data: mockPaceTrendResponse, isLoading: false, error: null };
+    dynamicsQuery = { data: mockDynamicsResponse, isLoading: false, error: null };
   });
 
   afterEach(() => {
@@ -171,8 +200,8 @@ describe("RunningTab", () => {
 
       expect(state.queryCalls).toEqual([
         { name: "paceCurve", input: { days: 30 } },
-        { name: "paceTrend", input: { days: 30 } },
-        { name: "dynamics", input: { days: 30 } },
+        { name: "paceTrendV2", input: { days: 30 } },
+        { name: "dynamicsV2", input: { days: 30 } },
       ]);
     });
 
@@ -184,8 +213,8 @@ describe("RunningTab", () => {
 
       expect(state.queryCalls).toEqual([
         { name: "paceCurve", input: { days: null } },
-        { name: "paceTrend", input: { days: null } },
-        { name: "dynamics", input: { days: null } },
+        { name: "paceTrendV2", input: { days: null } },
+        { name: "dynamicsV2", input: { days: null } },
       ]);
     });
   });
@@ -258,8 +287,8 @@ describe("RunningTab", () => {
     it("keeps cached running data visible when queries have data and an error", async () => {
       const backgroundError = new Error("Transient refetch failure");
       paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: backgroundError };
-      paceTrendQuery = { data: mockPaceTrendData, isLoading: false, error: backgroundError };
-      dynamicsQuery = { data: mockDynamicsData, isLoading: false, error: backgroundError };
+      paceTrendQuery = { data: mockPaceTrendResponse, isLoading: false, error: backgroundError };
+      dynamicsQuery = { data: mockDynamicsResponse, isLoading: false, error: backgroundError };
 
       const RunningTab = await importRunningTab();
       renderWithUnits(<RunningTab />);

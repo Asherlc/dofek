@@ -555,6 +555,24 @@ describe("CyclingAnalyticsRepository", () => {
       variability: { rows: [], totalCount: 0, emptyReason: "no_cycling_activities" },
       verticalAscent: [],
       aerobicEfficiency: { maxHr: null, activities: [] },
+      availability: {
+        verticalAscent: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling activity altitude sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No vertical ascent data is available from Cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart.",
+        },
+        aerobicEfficiency: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling Zone 2 power and heart-rate summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No aerobic efficiency data is available from Cycling Zone 2 power and heart-rate summaries. Record at least 1 cycling activity with Zone 2 power and heart-rate data to show this chart.",
+        },
+      },
     });
   });
 

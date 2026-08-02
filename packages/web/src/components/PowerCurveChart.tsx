@@ -1,3 +1,4 @@
+import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -9,6 +10,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface PowerCurvePoint {
   durationSeconds: number;
@@ -28,6 +30,7 @@ interface PowerCurveChartProps {
   comparisonData?: PowerCurvePoint[];
   model?: CriticalPowerModel | null;
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
 function formatDuration(seconds: number): string {
@@ -36,7 +39,17 @@ function formatDuration(seconds: number): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 
-export function PowerCurveChart({ data, comparisonData, model, loading }: PowerCurveChartProps) {
+export function PowerCurveChart({
+  data,
+  comparisonData,
+  model,
+  loading,
+  availability,
+}: PowerCurveChartProps) {
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   // Generate CP model curve points (smooth line from 120s to 7200s)
   const modelCurveData: [number, number][] = [];
   if (model && model.cp > 0) {

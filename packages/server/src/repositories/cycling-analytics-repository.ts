@@ -8,6 +8,7 @@ import {
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import type { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
@@ -70,6 +71,23 @@ type PowerCurve = {
   }>;
   model: CriticalPowerModel | null;
 };
+
+function cyclingAvailability(
+  chartLabel: string,
+  sourceLabel: string,
+  dataLabel: string,
+  observedCount: number,
+) {
+  return makeTrainingChartAvailability({
+    sourceLabel,
+    observedCount,
+    minimumCount: 1,
+    message:
+      observedCount === 0
+        ? `No ${chartLabel} is available from ${sourceLabel}. Record at least 1 cycling activity with ${dataLabel} to show this chart.`
+        : `${chartLabel} is available from ${sourceLabel}.`,
+  });
+}
 
 function buildPowerCurve(
   rows: z.infer<typeof powerComparisonRowSchema>[],
@@ -279,6 +297,26 @@ export class CyclingAnalyticsRepository {
       },
       pmc,
       eftpTrend: { trend, currentEftp, model: recent.model },
+      availability: {
+        powerCurve: cyclingAvailability(
+          "cycling power-curve data",
+          "Cycling power-curve read model",
+          "power data",
+          recent.points.length,
+        ),
+        pmc: cyclingAvailability(
+          "training-load data",
+          "Cycling training-load model",
+          "training-load data",
+          pmc.data.length,
+        ),
+        eftpTrend: cyclingAvailability(
+          "threshold power data",
+          "Cycling activity power summaries",
+          "power data",
+          trend.length,
+        ),
+      },
     };
   }
 
@@ -421,6 +459,20 @@ export class CyclingAnalyticsRepository {
       aerobicEfficiency: {
         maxHr: rows.find((row) => row.max_hr != null && row.max_hr > 0)?.max_hr ?? null,
         activities: efficiencyActivities,
+      },
+      availability: {
+        verticalAscent: cyclingAvailability(
+          "vertical ascent data",
+          "Cycling activity altitude sensor summaries",
+          "altitude data",
+          verticalAscent.length,
+        ),
+        aerobicEfficiency: cyclingAvailability(
+          "aerobic efficiency data",
+          "Cycling Zone 2 power and heart-rate summaries",
+          "Zone 2 power and heart-rate data",
+          efficiencyActivities.length,
+        ),
       },
     };
   }

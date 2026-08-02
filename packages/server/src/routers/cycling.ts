@@ -1,6 +1,7 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
@@ -69,6 +70,11 @@ const performanceOutputSchema = z.object({
     currentEftp: z.number().nullable(),
     model: powerModelSchema.nullable(),
   }),
+  availability: z.object({
+    powerCurve: trainingChartAvailabilitySchema,
+    pmc: trainingChartAvailabilitySchema,
+    eftpTrend: trainingChartAvailabilitySchema,
+  }),
 });
 
 const activityItemSchema = z.object({
@@ -126,6 +132,10 @@ const activitiesOutputSchema = z.object({
         z2Samples: z.number(),
       }),
     ),
+  }),
+  availability: z.object({
+    verticalAscent: trainingChartAvailabilitySchema,
+    aerobicEfficiency: trainingChartAvailabilitySchema,
   }),
 });
 

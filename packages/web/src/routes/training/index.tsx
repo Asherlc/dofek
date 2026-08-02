@@ -68,6 +68,7 @@ export function TrainingOverview() {
           <PmcChart
             data={pmcData.data?.data ?? []}
             model={pmcData.data?.model ?? null}
+            availability={pmcData.data?.availability}
             loading={pmcData.isLoading}
           />
         )}

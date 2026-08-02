@@ -2,10 +2,18 @@ import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training
 export type { PmcChartResult, PmcDataPoint, TssModelInfo };
 
 import { TRPCError } from "@trpc/server";
+import {
+  makeTrainingChartAvailability,
+  type TrainingChartAvailability,
+} from "../contracts/training-chart-availability.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { PmcRepository } from "../repositories/pmc-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
+
+type PmcChartResultWithAvailability = PmcChartResult & {
+  availability: TrainingChartAvailability;
+};
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -31,7 +39,7 @@ export const pmcRouter = router({
   chart: selectedChartRangeQuery(
     "pmc.chart",
     CacheTTL.LONG,
-    async ({ ctx, range }): Promise<PmcChartResult> => {
+    async ({ ctx, range }): Promise<PmcChartResultWithAvailability> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "pmc.chart");
       const repo = new PmcRepository(
         ctx.db,
@@ -40,7 +48,19 @@ export const pmcRouter = router({
         sensorStore,
         ctx.accessWindow,
       );
-      return repo.getChart(range);
+      const result = await repo.getChart(range);
+      return {
+        ...result,
+        availability: makeTrainingChartAvailability({
+          sourceLabel: "Training load read model",
+          observedCount: result.data.length,
+          minimumCount: 1,
+          message:
+            result.data.length === 0
+              ? "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart."
+              : "Training load data is available from the training load read model.",
+        }),
+      };
     },
   ),
 });
