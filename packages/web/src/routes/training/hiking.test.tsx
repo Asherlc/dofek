@@ -124,4 +124,11 @@ describe("HikingTab", () => {
 
     expect(screen.getAllByText("Error in input stream")).toHaveLength(4);
   });
+
+  it("leads with plain meaning before disclosing the slope-cost model", async () => {
+    await renderHikingTab();
+
+    expect(screen.getByRole("heading", { name: /Effort-adjusted pace for grade/i })).toBeDefined();
+    expect(screen.getByText(/Pace adjusted.*Minetti slope-cost model/)).toBeDefined();
+  });
 });

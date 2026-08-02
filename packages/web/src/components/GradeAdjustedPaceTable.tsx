@@ -5,6 +5,7 @@ import {
   formatPace,
 } from "@dofek/format/format";
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
+import { HIKING_PACE_COPY } from "../lib/hikingPaceCopy.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 
@@ -71,7 +72,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
     },
     {
       key: "gap",
-      label: "GAP",
+      label: HIKING_PACE_COPY.columnLabel,
       headerClassName: "pb-2 pr-4",
       cellClassName: "py-2 pr-4 tabular-nums",
       renderCell: (row) => {
@@ -97,16 +98,14 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-subtle mb-2">Grade-Adjusted Pace</h3>
+      <h3 className="text-xs font-medium text-subtle mb-2">{HIKING_PACE_COPY.tableTitle}</h3>
       <ActivityTable
         rows={data}
         columns={columns}
         getRowKey={(row) => `${row.activityId}-${row.date}-${row.activityName}`}
         getActivityId={(row) => row.activityId}
       />
-      <p className="text-xs text-dim mt-1">
-        GAP highlighted in amber when it differs from actual pace by more than 15%.
-      </p>
+      <p className="text-xs text-dim mt-1">{HIKING_PACE_COPY.highlightNote}</p>
     </div>
   );
 }
