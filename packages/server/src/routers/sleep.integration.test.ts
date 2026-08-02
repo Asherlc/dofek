@@ -271,8 +271,8 @@ describe("sleep router integration", () => {
             sleep_type
           ) VALUES (
             'whoop', ${TEST_USER_ID},
-            NOW() - INTERVAL '7 hours',
-            NOW() - INTERVAL '30 minutes',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '22:30:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '04:30:00',
             390, 60, 90, 200, 40,
             'sleep'
           )`,
@@ -292,9 +292,9 @@ describe("sleep router integration", () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
           VALUES
-            (${sessionId}::uuid, 'light', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '5 hours'),
-            (${sessionId}::uuid, 'deep', NOW() - INTERVAL '5 hours', NOW() - INTERVAL '4 hours'),
-            (${sessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours')`,
+            (${sessionId}::uuid, 'light', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00'),
+            (${sessionId}::uuid, 'deep', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00'),
+            (${sessionId}::uuid, 'rem', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '01:45:00')`,
     );
     await syncClickHouseTestActivitySensorStore(testCtx);
 
