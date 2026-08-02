@@ -45,7 +45,7 @@ interface TestState {
     error: Error | null;
   };
   mutationError: Error | null;
-  mutationInput: { startDate: string } | null;
+  mutationInput: { startDate: string; notes: string | null } | null;
   updateMutationError: Error | null;
   updateMutationInput: {
     id: string;
@@ -148,11 +148,13 @@ vi.mock("../lib/trpc", () => ({
       logPeriod: {
         useMutation: (options: {
           onError?: (error: Error) => void;
+          onSuccess?: () => void;
           onSettled?: () => Promise<void> | void;
         }) => ({
-          mutate: (input: { startDate: string }) => {
+          mutate: (input: NonNullable<TestState["mutationInput"]>) => {
             state.mutationInput = input;
             if (state.mutationError) options.onError?.(state.mutationError);
+            else options.onSuccess?.();
             void options.onSettled?.();
           },
           isPending: false,
@@ -285,6 +287,37 @@ describe("CycleScreen", () => {
       pathname: "/settings",
       params: { tab: "account" },
     });
+  });
+
+  it("logs a period with trimmed symptoms or context", async () => {
+    const { default: CycleScreen } = await import("./cycle");
+
+    render(<CycleScreen />);
+
+    fireEvent.change(screen.getByLabelText("Period symptoms or context"), {
+      target: { value: "  Cramps and poor sleep  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
+
+    expect(state.mutationInput).toEqual({
+      startDate: "2026-07-24",
+      notes: "Cramps and poor sleep",
+    });
+  });
+
+  it("clears symptoms or context after a successful period log", async () => {
+    const { default: CycleScreen } = await import("./cycle");
+
+    render(<CycleScreen />);
+
+    const notesInput = screen.getByLabelText("Period symptoms or context");
+    fireEvent.change(notesInput, { target: { value: "Cramps and poor sleep" } });
+    fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
+
+    if (!(notesInput instanceof HTMLInputElement)) {
+      throw new Error("Period symptoms or context input is not an HTML input");
+    }
+    expect(notesInput.value).toBe("");
   });
 
   it("renders the server-provided estimate method and observed uncertainty", async () => {
@@ -498,7 +531,7 @@ describe("CycleScreen", () => {
       "2026-07-03",
     );
     expect(screen.getByText(mutationError.message)).toBeTruthy();
-    expect(state.mutationInput).toEqual({ startDate: "2026-07-03" });
+    expect(state.mutationInput).toEqual({ startDate: "2026-07-03", notes: null });
     expect(state.captureException).toHaveBeenCalledWith(mutationError, {
       source: "cycle-log-period",
     });

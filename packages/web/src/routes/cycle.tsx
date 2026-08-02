@@ -26,6 +26,7 @@ function CyclePage() {
   });
 
   const [startDate, setStartDate] = useState(formatDateYmd());
+  const [periodNotes, setPeriodNotes] = useState("");
   const [editDraft, setEditDraft] = useState<PeriodEditDraft | null>(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const utils = trpc.useUtils();
@@ -37,6 +38,9 @@ function CyclePage() {
   };
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
     meta: locallyReportedErrorMeta,
+    onSuccess: () => {
+      setPeriodNotes("");
+    },
     onError: (error) => {
       captureException(error, { context: "cycle-log-period" });
     },
@@ -159,22 +163,34 @@ function CyclePage() {
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
             Log Period Start
           </h3>
-          <div className="flex items-center gap-3">
-            <input
-              type="date"
-              aria-label="Period start date"
-              value={startDate}
-              onChange={(event) => setStartDate(event.target.value)}
-              className="bg-surface border border-border rounded px-3 py-2 text-sm text-foreground"
-            />
-            <button
-              type="button"
-              onClick={() => logMutation.mutate({ startDate })}
-              disabled={logMutation.isPending}
-              className="px-4 py-2 bg-accent text-on-accent rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-            >
-              {logMutation.isPending ? "Saving..." : logMutation.error ? "Retry" : "Log Period"}
-            </button>
+          <div className="space-y-3">
+            <label className="block space-y-1 text-xs text-muted">
+              Symptoms or context (optional)
+              <input
+                aria-label="Period symptoms or context"
+                className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                onChange={(event) => setPeriodNotes(event.target.value)}
+                type="text"
+                value={periodNotes}
+              />
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="date"
+                aria-label="Period start date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="bg-surface border border-border rounded px-3 py-2 text-sm text-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => logMutation.mutate({ startDate, notes: periodNotes.trim() || null })}
+                disabled={logMutation.isPending}
+                className="px-4 py-2 bg-accent text-on-accent rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+              >
+                {logMutation.isPending ? "Saving..." : logMutation.error ? "Retry" : "Log Period"}
+              </button>
+            </div>
           </div>
           {logMutation.error ? (
             <div className="mt-3">

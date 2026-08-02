@@ -165,6 +165,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "menstrual-periods.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.menstrual_period WHERE user_id = ${userId} ORDER BY start_date`,
+      ),
+  },
+  {
     name: "health-events.csv",
     query: (db, userId) =>
       executeWithSchema(
