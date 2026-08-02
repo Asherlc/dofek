@@ -39,7 +39,7 @@ console.log({
 | `@dofek/scoring/colors` | Semantic, chart, surface, text, sleep-stage, and activity colors |
 | `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
 | `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
-| `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, confidence, freshness, and shared presentation helpers |
+| `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, server-authored caveats, confidence, freshness, and shared presentation helpers |
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
 | `@dofek/scoring/menstrual-cycle` | Cycle-phase estimation, display metadata, and shared safety copy |
@@ -57,6 +57,9 @@ console.log({
 - Today Plan keeps Push and Recovery recommendations actionable while presenting
   the Maintain band as the neutral “No change needs attention” state
   ([rule builder](./src/today-plan.ts), [executable tests](./src/today-plan.test.ts)).
+- Ready Today Plan results include server-authored supporting observations and
+  caveats for missing or stale inputs; clients render these values without
+  deriving their meaning.
 - Sleep performance defaults to 70% sleep sufficiency and 30% efficiency. When
   consistency or low-stress inputs are supplied, it averages all available
   components equally.

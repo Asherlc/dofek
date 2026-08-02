@@ -42,6 +42,8 @@ export type TodayPlanResult =
       date: string;
       action: TodayPlanAction;
       supportingFacts: [TodayPlanSupportingFact, TodayPlanSupportingFact];
+      /** Server-authored limitations that qualify the action's observations. */
+      caveats: string[];
       confidence: TodayPlanConfidence;
       freshness: TodayPlanFreshness;
       missingInputs: string[];
@@ -119,6 +121,34 @@ function secondSupportingFact(input: BuildTodayPlanInput): {
   };
 }
 
+function buildCaveats(input: BuildTodayPlanInput, missingSleep: boolean): string[] {
+  const caveats: string[] = [];
+
+  if (missingSleep) {
+    if (input.strainTarget?.workloadRatio == null) {
+      caveats.push(
+        "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+      );
+    } else {
+      caveats.push(
+        "Sleep performance was unavailable, so this plan uses recovery and recent workload instead.",
+      );
+    }
+  }
+
+  if (input.recoveryDate == null) {
+    caveats.push("Recovery data has no date, so confidence is low.");
+  } else if (daysBetween(input.endDate, input.recoveryDate) > 0) {
+    caveats.push(`Recovery data is from ${input.recoveryDate}, so this plan may be less current.`);
+  }
+
+  if (input.sleepDate != null && daysBetween(input.endDate, input.sleepDate) > 0) {
+    caveats.push(`Sleep data is from ${input.sleepDate}, so it may not reflect the latest night.`);
+  }
+
+  return caveats;
+}
+
 /**
  * Build a deterministic Today Plan from already-computed recovery/strain inputs.
  * Clients must render this payload and must not recompute health meaning.
@@ -162,6 +192,7 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
       },
       secondFact,
     ],
+    caveats: buildCaveats(input, missingSleep),
     confidence: resolveConfidence(input.endDate, input.recoveryDate, input.sleepDate),
     freshness,
     missingInputs,

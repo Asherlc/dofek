@@ -19,6 +19,7 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
       zone: z.enum(["Push", "Maintain", "Recovery"]),
     }),
     supportingFacts: z.tuple([supportingFactSchema, supportingFactSchema]),
+    caveats: z.array(z.string()),
     confidence: z.enum(["high", "moderate", "low"]),
     freshness: z.object({
       recoveryDate: z.string().nullable(),

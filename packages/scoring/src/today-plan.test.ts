@@ -151,6 +151,30 @@ describe("buildTodayPlan", () => {
     expect(plan.missingInputs).toEqual(["sleep"]);
     expect(plan.confidence).toBe("moderate");
   });
+
+  it("returns server-authored caveats for missing and stale inputs", () => {
+    const plan = buildTodayPlan({
+      endDate: "2026-07-26",
+      strainTarget: {
+        targetStrain: 6.5,
+        zone: "Recovery",
+        explanation: "Recovery is low (40). Keep it light and focus on restoration.",
+        readinessScore: 40,
+        workloadRatio: null,
+      },
+      sleepPerformanceScore: null,
+      sleepPerformanceTier: null,
+      recoveryDate: "2026-07-23",
+      sleepDate: null,
+    });
+
+    expect(plan).toMatchObject({
+      caveats: [
+        "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+        "Recovery data is from 2026-07-23, so this plan may be less current.",
+      ],
+    });
+  });
 });
 
 describe("Today Plan presentation helpers", () => {
