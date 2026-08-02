@@ -53,7 +53,7 @@ export function CredentialAuthModal({
     setError("");
     setLoading(true);
     try {
-      await signInMutation.mutateAsync({ providerId, username, password });
+      await signInMutation.mutateAsync({ providerId, username: username.trim(), password });
       onSuccess();
     } catch (err: unknown) {
       captureException(err, {
@@ -324,7 +324,7 @@ export function GarminAuthModal({
     setError("");
     setLoading(true);
     try {
-      await signInMutation.mutateAsync({ username, password });
+      await signInMutation.mutateAsync({ username: username.trim(), password });
       onSuccess();
     } catch (error_: unknown) {
       captureException(error_, {
@@ -448,7 +448,7 @@ export function WhoopAuthModal({
     setError("");
     setLoading(true);
     try {
-      const result = await signInMutation.mutateAsync({ username, password });
+      const result = await signInMutation.mutateAsync({ username: username.trim(), password });
       if (result.status === "verification_required") {
         setChallengeId(result.challengeId);
         setStep("verify");

@@ -48,6 +48,33 @@ beforeEach(() => {
 });
 
 describe("data source auth dialogs", () => {
+  it("trims credential usernames before submitting them", async () => {
+    render(
+      <CredentialAuthModal
+        providerId="polar"
+        providerName="Polar"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "  athlete@example.com  " },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => {
+      expect(mockCredentialSignIn).toHaveBeenCalledWith({
+        providerId: "polar",
+        username: "athlete@example.com",
+        password: "secret",
+      });
+    });
+  });
+
   it.each([
     {
       name: "credential sign-in",

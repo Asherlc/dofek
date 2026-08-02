@@ -72,6 +72,33 @@ describe("provider auth modals", () => {
     whoopVerifyCode.mockReset();
   });
 
+  it("trims credential usernames before submitting them", async () => {
+    render(
+      <CredentialAuthModal
+        providerId="wahoo"
+        providerName="Wahoo"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "  athlete@example.com  " },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Wahoo" }));
+
+    await waitFor(() => {
+      expect(credentialSignIn).toHaveBeenCalledWith({
+        providerId: "wahoo",
+        username: "athlete@example.com",
+        password: "secret",
+      });
+    });
+  });
+
   it("uses a distinct disabled treatment and guidance until credentials are entered", () => {
     render(
       <CredentialAuthModal
