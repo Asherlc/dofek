@@ -36,6 +36,7 @@ describe("sleep need contract", () => {
 
     expect(toSleepNeedV2(computation)).toEqual({
       availability: "available",
+      epistemicStatus: { kind: "estimated", label: "Estimated" },
       baselineMinutes: 480,
       strainDebtMinutes: 12,
       accumulatedDebtMinutes: 90,
@@ -121,6 +122,7 @@ describe("sleep need contract", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     });
     expect(
@@ -209,6 +211,7 @@ describe("sleep need contract", () => {
 
     expect(result).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",
@@ -236,6 +239,7 @@ describe("sleep need contract", () => {
 
     expect(result).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "missing_previous_day_load",
       message: "Sync yesterday's activity data to include training load in sleep need.",
       nextAction: "Sync activity data for the previous day.",
@@ -246,6 +250,7 @@ describe("sleep need contract", () => {
     expect(
       sleepNeedV2Schema.safeParse({
         availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         reason: "missing_previous_day_load",
         message: "Sync at least 7 qualifying nights to estimate sleep need.",
         nextAction: "Sync more sleep and recovery data.",

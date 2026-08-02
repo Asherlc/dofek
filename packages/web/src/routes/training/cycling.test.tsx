@@ -17,7 +17,10 @@ const state = vi.hoisted<{
     z2Samples: number;
   }>;
   capturedAerobicEfficiencyActivities: unknown[] | null;
+  performanceHasData: boolean;
   performanceError: Error | null;
+  activityAnalyticsHasData: boolean;
+  activityAnalyticsError: Error | null;
   bulkDeleteOnSuccess: (() => Promise<void>) | null;
   invalidatedQueries: string[];
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -27,7 +30,10 @@ const state = vi.hoisted<{
   outletComponent: null,
   efficiencyActivities: [],
   capturedAerobicEfficiencyActivities: null,
+  performanceHasData: true,
   performanceError: null,
+  activityAnalyticsHasData: true,
+  activityAnalyticsError: null,
   bulkDeleteOnSuccess: null,
   invalidatedQueries: [],
   queryCalls: [],
@@ -63,15 +69,20 @@ vi.mock("../../components/ActivityVariabilityTable.tsx", () => ({
 }));
 vi.mock("../../components/ActivityList.tsx", () => ({
   ActivityList: ({
+    error,
     page,
     onPageChange,
   }: {
+    error?: string;
     page: number;
     onPageChange: (page: number) => void;
   }) => (
-    <button type="button" onClick={() => onPageChange(page + 1)}>
-      Next activity page
-    </button>
+    <>
+      {error ? <p>{error}</p> : null}
+      <button type="button" onClick={() => onPageChange(page + 1)}>
+        Next activity page
+      </button>
+    </>
   ),
 }));
 vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
@@ -177,31 +188,96 @@ vi.mock("../../lib/trpc.ts", () => ({
           return {
             ...recordQuery("cycling.performance")(input),
             error: state.performanceError,
-            data: {
-              powerCurve: { recent: period(400, 300), season: period(500, 350) },
-              powerSummary: {
-                weightKg: 100,
-                recent: summary(400, 4, 50.2),
-                season: summary(500, 5, 61),
-              },
-              pmc: {
-                data: [],
-                model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
-              },
-              eftpTrend: { trend: [], currentEftp: null, model: null },
-            },
+            data: state.performanceHasData
+              ? {
+                  powerCurve: { recent: period(400, 300), season: period(500, 350) },
+                  powerSummary: {
+                    weightKg: 100,
+                    recent: summary(400, 4, 50.2),
+                    season: summary(500, 5, 61),
+                  },
+                  pmc: {
+                    data: [],
+                    model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+                  },
+                  eftpTrend: { trend: [], currentEftp: null, model: null },
+                  estimateEvidence: {
+                    recent: {
+                      threshold: {
+                        method: "Critical Power model fitted to 120–600 second best-power efforts",
+                        confidence: "high",
+                        confidenceLabel: "High fit quality",
+                        confidenceDetail: "High fit quality across 5 observed power durations.",
+                        sourceWorkouts: [
+                          {
+                            id: "ride-1",
+                            name: "Threshold Intervals",
+                            date: "2026-03-15",
+                          },
+                        ],
+                        pacingGuidance: "Use this as a training estimate, not a tested threshold.",
+                      },
+                      vo2Max: {
+                        method:
+                          "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
+                        confidence: "limited",
+                        confidenceLabel: "Indirect estimate",
+                        confidenceDetail: "A field estimate, not a laboratory measurement.",
+                        sourceWorkouts: [
+                          { id: "ride-1", name: "Threshold Intervals", date: "2026-03-15" },
+                        ],
+                        pacingGuidance: "Do not use this estimate to set workout pacing.",
+                      },
+                    },
+                    season: {
+                      threshold: {
+                        method: "Critical Power model fitted to 120–600 second best-power efforts",
+                        confidence: "moderate",
+                        confidenceLabel: "Moderate fit quality",
+                        confidenceDetail: "Moderate fit quality across 5 observed power durations.",
+                        sourceWorkouts: [],
+                        pacingGuidance: "Use this as a training estimate, not a tested threshold.",
+                      },
+                      vo2Max: {
+                        method:
+                          "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
+                        confidence: "limited",
+                        confidenceLabel: "Indirect estimate",
+                        confidenceDetail: "A field estimate, not a laboratory measurement.",
+                        sourceWorkouts: [],
+                        pacingGuidance: "Do not use this estimate to set workout pacing.",
+                      },
+                    },
+                    eftp: {
+                      method:
+                        "Critical Power model for the current value; trend points use normalized power × 0.95",
+                      confidence: "limited",
+                      confidenceLabel: "Training estimate",
+                      confidenceDetail: "Based on source cycling workouts.",
+                      sourceWorkouts: [
+                        { id: "ride-1", name: "Threshold Intervals", date: "2026-03-15" },
+                      ],
+                      pacingGuidance:
+                        "Do not use this estimate to set pacing when the source ride is not representative.",
+                    },
+                  },
+                }
+              : undefined,
           };
         },
       },
       activities: {
         useQuery: (input: unknown) => ({
           ...recordQuery("cycling.activities")(input),
-          data: {
-            activities: { items: [], totalCount: 0 },
-            variability: { rows: [], totalCount: 0, emptyReason: null },
-            verticalAscent: [],
-            aerobicEfficiency: { activities: state.efficiencyActivities, maxHr: null },
-          },
+          error: state.activityAnalyticsError,
+          data: state.activityAnalyticsHasData
+            ? {
+                activities: { items: [], totalCount: 0 },
+                variability: { rows: [], totalCount: 0, emptyReason: null },
+                verticalAscent: [],
+                aerobicEfficiency: { activities: state.efficiencyActivities, maxHr: null },
+              }
+            : undefined,
         }),
       },
     },
@@ -252,7 +328,10 @@ describe("CyclingTab", () => {
     state.outletComponent = null;
     state.efficiencyActivities = [];
     state.capturedAerobicEfficiencyActivities = null;
+    state.performanceHasData = true;
     state.performanceError = null;
+    state.activityAnalyticsHasData = true;
+    state.activityAnalyticsError = null;
     state.bulkDeleteOnSuccess = null;
     state.invalidatedQueries = [];
     state.queryCalls.length = 0;
@@ -270,13 +349,51 @@ describe("CyclingTab", () => {
     expect(screen.getByText("5.00")).toBeTruthy();
     expect(screen.getByText("50.2")).toBeTruthy();
     expect(screen.getByText("61")).toBeTruthy();
+    expect(screen.getByText("High fit quality")).toBeTruthy();
+    expect(screen.getAllByText("Indirect estimate")).toHaveLength(2);
+    expect(screen.getAllByText(/Threshold Intervals/)).toHaveLength(3);
+    expect(screen.getByText(/Do not use this estimate to set pacing/)).toBeTruthy();
   });
 
-  it("does not render an empty power summary beside a query error", async () => {
+  it("keeps cached performance data visible during a background query failure", async () => {
     state.performanceError = new Error("Cycling analytics unavailable");
     await renderCyclingTab();
 
-    expect(screen.queryByText("4.00")).toBeNull();
+    expect(screen.getByText("4.00")).toBeTruthy();
+    expect(screen.queryByText("Cycling analytics unavailable")).toBeNull();
+  });
+
+  it("renders a failed performance query once while keeping activity analytics visible", async () => {
+    state.performanceHasData = false;
+    state.performanceError = new Error("Cycling performance unavailable");
+
+    await renderCyclingTab();
+
+    expect(screen.getAllByText("Cycling performance unavailable")).toHaveLength(1);
+    expect(screen.getByTestId("aerobic-efficiency")).toBeTruthy();
+    expect(screen.getByTestId("vertical-ascent")).toBeTruthy();
+  });
+
+  it("renders a failed activity query once while keeping performance analytics visible", async () => {
+    state.activityAnalyticsHasData = false;
+    state.activityAnalyticsError = new Error("Cycling activities unavailable");
+
+    await renderCyclingTab();
+
+    expect(screen.getAllByText("Cycling activities unavailable")).toHaveLength(1);
+    expect(screen.getByTestId("power-curve")).toBeTruthy();
+    expect(screen.getByTestId("pmc-chart")).toBeTruthy();
+  });
+
+  it("keeps equal messages separate when they belong to distinct failed queries", async () => {
+    state.performanceHasData = false;
+    state.performanceError = new Error("Cycling data unavailable");
+    state.activityAnalyticsHasData = false;
+    state.activityAnalyticsError = new Error("Cycling data unavailable");
+
+    await renderCyclingTab();
+
+    expect(screen.getAllByText("Cycling data unavailable")).toHaveLength(2);
   });
 
   it("invalidates both cycling query groups after deleting activities", async () => {
@@ -353,7 +470,7 @@ describe("CyclingTab", () => {
     await renderCyclingTabInTrainingLayout();
 
     state.queryCalls.length = 0;
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(state.queryCalls).toEqual([
       { name: "cycling.performance", input: { days: null } },
@@ -382,7 +499,7 @@ describe("CyclingTab", () => {
       input: expect.objectContaining({ activityOffset: 20, variabilityOffset: 20 }),
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(
       state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),

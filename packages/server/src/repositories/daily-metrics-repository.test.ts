@@ -61,6 +61,11 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     latest_spo2: "98",
     latest_steps: "9200",
     latest_skin_temp: "33.2",
+    sample_count_hrv: "4",
+    sample_count_resting_hr: "3",
+    sample_count_spo2: "4",
+    sample_count_steps: "4",
+    sample_count_skin_temp: "4",
     latest_date: "2025-03-15",
     latest_steps_date: "2025-03-15",
     ...overrides,
@@ -84,6 +89,11 @@ function makeAllNullTrendsRow(): Record<string, unknown> {
     latest_spo2: null,
     latest_steps: null,
     latest_skin_temp: null,
+    sample_count_hrv: 0,
+    sample_count_resting_hr: 0,
+    sample_count_spo2: 0,
+    sample_count_steps: 0,
+    sample_count_skin_temp: 0,
     latest_date: null,
     latest_steps_date: null,
   };
@@ -257,10 +267,55 @@ describe("DailyMetricsRepository", () => {
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_resting_hr).toBe(55);
       expect(result?.stddev_steps).toBe(1200);
+      expect(result?.sample_count_hrv).toBe(4);
+      expect(result?.sample_count_resting_hr).toBe(3);
       expect(result?.latest_date).toBe("2025-03-15");
       expect(execute).toHaveBeenCalledTimes(1);
       const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).toContain("STDDEV(steps) AS stddev_steps");
+      expect(compiledQuery.sql).toContain("COUNT(hrv) AS sample_count_hrv");
+    });
+
+    it("normalizes database date objects in metric evidence", async () => {
+      const { repo } = makeRepository([
+        makeTrendsRow({
+          metric_evidence: {
+            hrv: {
+              latestDate: new Date("2025-03-15T00:00:00.000Z"),
+              sourceProviders: ["whoop"],
+              observedDays: 1,
+              recentMean: 60,
+              baselineMean: 58,
+            },
+            spo2: null,
+            steps: null,
+            skin_temperature: null,
+          },
+        }),
+      ]);
+
+      const result = await repo.getTrends(30, "2025-03-15");
+
+      expect(result?.metric_evidence?.hrv?.latestDate).toBe("2025-03-15");
+    });
+
+    it("uses the intended evidence window for null, short, and long ranges", async () => {
+      const cases = [
+        { days: null, evidenceDays: 35, evidenceParameterCount: 1 },
+        { days: 7, evidenceDays: 35, evidenceParameterCount: 1 },
+        { days: 90, evidenceDays: 90, evidenceParameterCount: 3 },
+      ] as const;
+
+      for (const { days, evidenceDays, evidenceParameterCount } of cases) {
+        const { repo, execute } = makeRepository([]);
+
+        await repo.getTrends(days, "2025-03-15");
+
+        const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+        expect(compiledQuery.params.filter((param) => param === evidenceDays)).toHaveLength(
+          evidenceParameterCount,
+        );
+      }
     });
 
     it("joins resting heart rate values into the trends query", async () => {

@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION } from "../../metric-stream/clickhouse-table.ts";
+import {
+  buildIngestMetricStreamCreateTableSql,
+  METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION,
+} from "../../metric-stream/clickhouse-table.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../clickhouse.ts";
 import { createMigration } from "./0068_provider_metric_stream_daily_counts.ts";
 
@@ -31,18 +34,14 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     client = createClickHouseClientFromEnv();
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({
-      query: `CREATE TABLE ${database}.metric_stream (
-        user_id UUID,
-        provider_id String,
-        id UUID,
-        recorded_at DateTime64(6, 'UTC'),
-        ingested_at DateTime64(9, 'UTC'),
-        version Int64,
-        is_deleted Int8
-      )
-      ENGINE = ReplacingMergeTree(version)
-      ORDER BY (user_id, provider_id, id)
-      SETTINGS deduplicate_merge_projection_mode = 'rebuild'`,
+      query: buildIngestMetricStreamCreateTableSql().replace(
+        "ingest.metric_stream",
+        `${database}.metric_stream`,
+      ),
+    });
+    await client.command({
+      query: `ALTER TABLE ${database}.metric_stream
+        DROP PROJECTION IF EXISTS ${METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION}`,
     });
 
     for (const statement of createMigration().statements) {
@@ -62,11 +61,14 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     const metricId = randomUUID();
 
     await client.command({
-      query: `INSERT INTO ${database}.metric_stream VALUES (
-        {userId:UUID},
-        'test_provider',
+      query: `INSERT INTO ${database}.metric_stream
+        (id, user_id, recorded_at, channel, provider_id, ingested_at, version, is_deleted)
+      VALUES (
         {metricId:UUID},
+        {userId:UUID},
         '2026-08-01 10:00:00',
+        'heart_rate',
+        'test_provider',
         '2026-08-01 10:01:00',
         1,
         0
@@ -92,13 +94,16 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     expect(initialRows).toHaveLength(1);
 
     await client.command({
-      query: `INSERT INTO ${database}.metric_stream VALUES (
-          {userId:UUID},
-          'test_provider',
-          {metricId:UUID},
-          '2026-08-01 10:00:00',
-          '2026-08-01 10:02:00',
-          2,
+      query: `INSERT INTO ${database}.metric_stream
+        (id, user_id, recorded_at, channel, provider_id, ingested_at, version, is_deleted)
+      VALUES (
+        {metricId:UUID},
+        {userId:UUID},
+        '2026-08-01 10:00:00',
+        'heart_rate',
+        'test_provider',
+        '2026-08-01 10:02:00',
+        2,
           1
         )`,
       query_params: { metricId, userId },
@@ -119,11 +124,14 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     expect(tombstoneRows[0]?.changed_at).toBeGreaterThan(initialRows[0]?.changed_at ?? 0n);
 
     await client.command({
-      query: `INSERT INTO ${database}.metric_stream VALUES (
-        {userId:UUID},
-        'test_provider',
+      query: `INSERT INTO ${database}.metric_stream
+        (id, user_id, recorded_at, channel, provider_id, ingested_at, version, is_deleted)
+      VALUES (
         {metricId:UUID},
+        {userId:UUID},
         '2026-07-31 23:59:59',
+        'heart_rate',
+        'test_provider',
         '2026-08-01 10:03:00',
         3,
         0
@@ -156,12 +164,14 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     const sameVersionId = randomUUID();
 
     await client.command({
-      query: `INSERT INTO ${database}.metric_stream VALUES
-        ({userId:UUID}, 'test_provider', {resurrectedId:UUID}, '2026-08-01 08:00:00', '2026-08-01 09:00:00', 1, 0),
-        ({userId:UUID}, 'test_provider', {resurrectedId:UUID}, '2026-08-02 08:00:00', '2026-08-01 10:00:00', 2, 1),
-        ({userId:UUID}, 'test_provider', {resurrectedId:UUID}, '2026-08-03 08:00:00', '2026-08-01 11:00:00', 3, 0),
-        ({userId:UUID}, 'test_provider', {sameVersionId:UUID}, '2026-08-04 08:00:00', '2026-08-01 12:00:00', 5, 0),
-        ({userId:UUID}, 'test_provider', {sameVersionId:UUID}, '2026-08-05 08:00:00', '2026-08-01 13:00:00', 5, 1)`,
+      query: `INSERT INTO ${database}.metric_stream
+        (id, user_id, recorded_at, channel, provider_id, ingested_at, version, is_deleted)
+      VALUES
+        ({resurrectedId:UUID}, {userId:UUID}, '2026-08-01 08:00:00', 'heart_rate', 'test_provider', '2026-08-01 09:00:00', 1, 0),
+        ({resurrectedId:UUID}, {userId:UUID}, '2026-08-02 08:00:00', 'heart_rate', 'test_provider', '2026-08-01 10:00:00', 2, 1),
+        ({resurrectedId:UUID}, {userId:UUID}, '2026-08-03 08:00:00', 'heart_rate', 'test_provider', '2026-08-01 11:00:00', 3, 0),
+        ({sameVersionId:UUID}, {userId:UUID}, '2026-08-04 08:00:00', 'heart_rate', 'test_provider', '2026-08-01 12:00:00', 5, 0),
+        ({sameVersionId:UUID}, {userId:UUID}, '2026-08-05 08:00:00', 'heart_rate', 'test_provider', '2026-08-01 13:00:00', 5, 1)`,
       query_params: { resurrectedId, sameVersionId, userId },
     });
 
@@ -182,12 +192,11 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
         FROM ${database}.metric_stream
         WHERE user_id = {userId:UUID}
           AND provider_id = 'test_provider'
+          AND recorded_at >= '2026-08-01 00:00:00'
+          AND recorded_at < '2026-08-06 00:00:00'
         GROUP BY user_id, provider_id, id
       )
-      ORDER BY recorded_at
-      SETTINGS
-        force_optimize_projection = 1,
-        force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION}'`,
+      ORDER BY recorded_at`,
       query_params: { userId },
       format: "JSONEachRow",
     });

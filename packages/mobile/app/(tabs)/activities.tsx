@@ -34,7 +34,9 @@ import {
   View,
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
+import { ActivityHeatmap } from "../../components/ActivityHeatmap";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
+import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
@@ -175,11 +177,19 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const calendarQuery = trpc.calendar.calendarData.useQuery(
+    { days: weeks * 7 },
+    {
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
+    },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekList.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
       setSelectedActivityIds(new Set());
       setSelectMode(false);
@@ -190,6 +200,7 @@ export default function ActivitiesScreen() {
       Promise.all([
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
         trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
@@ -333,6 +344,24 @@ export default function ActivitiesScreen() {
         </>
       )}
 
+      {calendarQuery.isLoading && !calendarQuery.data ? (
+        <QueryStatePanel variant="loading" minHeight={180} />
+      ) : calendarQuery.isError && !calendarQuery.data ? (
+        <QueryStatePanel variant="error" message={calendarQuery.error.message} />
+      ) : (
+        <>
+          {calendarQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={calendarQuery.error.message}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          <ActivityHeatmap data={calendarQuery.data ?? []} />
+        </>
+      )}
+
       {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : query.isError && !query.data ? (
@@ -412,6 +441,9 @@ export default function ActivitiesScreen() {
                       </Text>
                       <View style={styles.provenanceRow}>
                         <Text style={styles.sourcePill}>{activity.source.primarySourceLabel}</Text>
+                        {activity.source.overlapSummary ? (
+                          <Text style={styles.overlapPill}>Source overlap</Text>
+                        ) : null}
                         {activity.lastProcessedAt &&
                         formatRelativeTime(activity.lastProcessedAt) ? (
                           <Text style={styles.processedAt}>
@@ -607,78 +639,6 @@ function ActivityControls({
           </TouchableOpacity>
         ))}
       </View>
-    </View>
-  );
-}
-
-interface ActivityOverviewData {
-  activityCount: number;
-  totalMinutes: number;
-  totalDistanceMeters: number | null;
-  totalDistanceState: ActivityDataState;
-  totalElevationGainM: number | null;
-  totalElevationState: ActivityDataState;
-}
-
-function ActivityOverview({
-  overview,
-  units,
-}: {
-  overview: ActivityOverviewData | undefined;
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const items: Array<ActivityMetric | { label: string; value: string }> = overview
-    ? [
-        { label: "Activities", value: String(overview.activityCount) },
-        { label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
-        formatActivityMetric(
-          "Distance",
-          overview.totalDistanceMeters,
-          overview.totalDistanceState,
-          (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
-        ),
-        formatActivityMetric(
-          "Elevation",
-          overview.totalElevationGainM,
-          overview.totalElevationState,
-          (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
-        ),
-      ]
-    : [
-        { label: "Activities", value: "Loading…" },
-        { label: "Time", value: "Loading…" },
-        { label: "Distance", value: "Loading…" },
-        { label: "Elevation", value: "Loading…" },
-      ];
-
-  return (
-    <View style={styles.overviewGrid}>
-      {items.map((item) => {
-        const isMetric = "status" in item;
-        return (
-          <View
-            key={item.label}
-            style={styles.overviewItem}
-            accessible={isMetric}
-            accessibilityLabel={
-              isMetric
-                ? item.status === "available"
-                  ? `${item.label} ${item.value}`
-                  : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
-                : undefined
-            }
-          >
-            <Text style={styles.overviewValue}>
-              {isMetric && item.status !== "available"
-                ? `${item.label} ${activityDataStateLabel(item.status)}`
-                : item.value}
-            </Text>
-            <Text style={styles.overviewLabel}>
-              {isMetric && item.status !== "available" ? item.reason : item.label}
-            </Text>
-          </View>
-        );
-      })}
     </View>
   );
 }
@@ -918,32 +878,6 @@ const styles = StyleSheet.create({
   filterChipTextSelected: {
     color: "#fff",
   },
-  overviewGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  overviewItem: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    flexBasis: "47%",
-    flexGrow: 1,
-    padding: spacing.md,
-  },
-  overviewValue: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  overviewLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginTop: 2,
-    textTransform: "uppercase",
-  },
   daySection: {
     gap: spacing.sm,
   },
@@ -1036,6 +970,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.sm,
     color: colors.text,
+    fontSize: 11,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  overlapPill: {
+    backgroundColor: "rgba(217, 119, 6, 0.12)",
+    borderColor: "rgba(217, 119, 6, 0.4)",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: "#b45309",
     fontSize: 11,
     fontWeight: "600",
     overflow: "hidden",

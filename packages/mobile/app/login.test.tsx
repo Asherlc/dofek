@@ -288,17 +288,28 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Sign in with Apple")).toBeTruthy();
   });
 
-  it("shows data provider buttons", async () => {
+  it("separates identity sign-in from health-data provider sign-in", async () => {
     mockFetchConfiguredProviders.mockResolvedValue({
-      identity: [],
+      identity: ["google"],
       data: ["strava", "wahoo"],
     });
     render(<LoginScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText("Sign in with Strava")).toBeTruthy();
+      expect(screen.getByText("Sign in with Google")).toBeTruthy();
     });
+    expect(screen.getByText("Sign in with a health data provider")).toBeTruthy();
+    expect(screen.getByText("Sign in with Strava")).toBeTruthy();
     expect(screen.getByText("Sign in with Wahoo")).toBeTruthy();
+    expect(screen.queryByText("Connect Strava")).toBeNull();
+
+    const dataSection = screen.getByTestId("data-provider-section");
+    expect(dataSection.style.borderWidth).toBe("1px");
+    expect(dataSection.style.borderRadius).toBe("16px");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with Strava" }));
+    await waitFor(() => {
+      expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "strava", true);
+    });
   });
 
   it("shows error message on fetch failure", async () => {
@@ -506,6 +517,7 @@ describe("LoginScreen", () => {
     const disabledTextColor = signInButton.firstElementChild?.getAttribute("style");
     expect(signInButton).toHaveProperty("disabled", true);
     expect(signInButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter your email and password to continue.")).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "user@example.com" },
@@ -517,6 +529,35 @@ describe("LoginScreen", () => {
     expect(signInButton).toHaveProperty("disabled", false);
     expect(signInButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
     expect(signInButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter your email and password to continue.")).toBeNull();
+  });
+
+  it("keeps the password reset action visibly disabled until an email is entered", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+    const resetButton = screen.getByRole("button", { name: "Send reset link" });
+    const disabledBackgroundColor = resetButton.style.backgroundColor;
+    const disabledTextColor = resetButton.firstElementChild?.getAttribute("style");
+
+    expect(resetButton).toHaveProperty("disabled", true);
+    expect(resetButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter your email to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@example.com" },
+    });
+
+    expect(resetButton).toHaveProperty("disabled", false);
+    expect(resetButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(resetButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter your email to continue.")).toBeNull();
   });
 
   it("uses neutral disabled registration styling until required details are entered", async () => {

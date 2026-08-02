@@ -35,6 +35,7 @@ const metrics = [
 const availableResult = {
   analysisVersion: 2,
   availability: "available",
+  epistemicStatus: { kind: "associated", label: "Associated" },
   spearmanRho: 0.72,
   regression: { slope: 0.42, intercept: 8, rSquared: 0.46 },
   dataPoints: [
@@ -73,6 +74,7 @@ const availableResult = {
 const insufficientResult = {
   analysisVersion: 2,
   availability: "insufficient",
+  epistemicStatus: { kind: "unavailable", label: "Unavailable" },
   dataPoints: [],
   sampleCount: 0,
   additionalSamplesRequired: 5,

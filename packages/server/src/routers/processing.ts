@@ -11,9 +11,12 @@ import {
   PROCESSING_STAGES,
 } from "dofek/processing/processing-state";
 import { z } from "zod";
-import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { endDateSchema } from "../lib/date-window.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { DataQualityRepository } from "../repositories/data-quality-repository.ts";
 import { ProcessingRepository } from "../repositories/processing-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 const datasetKeySchema = z.enum(PROCESSING_DATASET_KEYS);
 const outputPathSchema = z.enum(PROCESSING_OUTPUT_PATHS);
@@ -97,6 +100,34 @@ const historyOutputSchema = z.object({
   ),
   nextCursor: z.uuid().nullable(),
 });
+const dataQualityOutputSchema = z.object({
+  generatedAt: timestampStringSchema,
+  window: z.object({
+    days: z.number().int().positive(),
+    endDate: dateStringSchema,
+  }),
+  overallStatus: z.enum(["healthy", "attention"]),
+  overallMessage: z.string().min(1),
+  checks: z.array(
+    z.object({
+      key: z.enum([
+        "coverage",
+        "source_overlap",
+        "activity_source_overlap",
+        "sync_freshness",
+        "outliers",
+        "manual_edits",
+      ]),
+      label: z.string().min(1),
+      status: z.enum(["healthy", "attention", "informational"]),
+      title: z.string().min(1),
+      message: z.string().min(1),
+      count: z.number().int().nonnegative(),
+      lastObservedDate: dateStringSchema.nullable(),
+      details: z.array(z.string().min(1)),
+    }),
+  ),
+});
 
 export const processingRouter = router({
   alerts: cachedProtectedQuery({ maxAge: processingPollInterval("failed") })
@@ -115,4 +146,17 @@ export const processingRouter = router({
     )
     .output(historyOutputSchema)
     .query(({ ctx, input }) => new ProcessingRepository(ctx.db, ctx.userId).history(input)),
+  dataQuality: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ endDate: endDateSchema }))
+    .output(dataQualityOutputSchema)
+    .query(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      return new DataQualityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+        ctx.accessWindow,
+      ).overview(input.endDate);
+    }),
 });

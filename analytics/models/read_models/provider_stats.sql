@@ -34,7 +34,7 @@ existing_provider_state AS (
 ),
 {% endif %}
 
-source_dirty_providers AS (
+source_dirty_providers AS materialized (
     SELECT
         current_provider_state.user_id AS user_id,
         current_provider_state.provider_id AS provider_id,
@@ -56,6 +56,12 @@ metric_stream_daily_source_state AS materialized (
         recorded_date,
         max(changed_at) AS source_changed_at
     FROM {{ source('analytics', 'metric_stream_day_change') }}
+    WHERE (user_id, provider_id) IN (
+        SELECT
+            user_id,
+            provider_id
+        FROM source_dirty_providers
+    )
     GROUP BY user_id, provider_id, recorded_date
 ),
 
@@ -66,6 +72,12 @@ metric_stream_daily_target_state AS materialized (
         recorded_date,
         max(source_changed_at) AS source_changed_at
     FROM {{ ref('provider_metric_stream_daily') }} FINAL
+    WHERE (user_id, provider_id) IN (
+        SELECT
+            user_id,
+            provider_id
+        FROM source_dirty_providers
+    )
     GROUP BY user_id, provider_id, recorded_date
 ),
 

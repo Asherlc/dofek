@@ -150,6 +150,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "insufficient",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       dataPoints: [],
       sampleCount: 0,
       additionalSamplesRequired: 5,
@@ -243,6 +244,7 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("n = 0")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
     expect(screen.getByText("90 selected")).toBeTruthy();
     expect(screen.getByText("90 missing pairs")).toBeTruthy();
@@ -254,6 +256,18 @@ describe("CorrelationScreen", () => {
     expect(screen.queryByText("Pearson")).toBeNull();
     expect(screen.queryByText(/R²/)).toBeNull();
     expect(screen.queryByText(/^p =/)).toBeNull();
+  });
+
+  it("renders a legacy cached result without an epistemic status", async () => {
+    const legacyCorrelationData = { ...(state.correlationData ?? {}) };
+    delete legacyCorrelationData.epistemicStatus;
+    state.correlationData = legacyCorrelationData;
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("n = 0")).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
   });
 
   it("uses singular sample wording when one additional sample is required", async () => {
@@ -274,6 +288,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: 0.75,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [],
@@ -306,6 +321,7 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("Spearman rho = +0.75")).toBeTruthy();
+    expect(screen.getByText("Associated")).toBeTruthy();
     expect(screen.getByText("95% block-bootstrap interval: +0.42 to +0.86")).toBeTruthy();
     expect(screen.getByText("Slope = 1.000 ms per g")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
@@ -319,6 +335,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: -0.75,
       regression: { slope: -1, intercept: 3, rSquared: 0.49 },
       dataPoints: [
@@ -355,6 +372,16 @@ describe("CorrelationScreen", () => {
 
     expect(screen.queryByText("strong")).toBeNull();
     expect(screen.getByTestId("correlation-trend-line").dataset.stroke).toBe("#2563eb");
+    expect(
+      screen.getByRole("image", {
+        name: "Scatter plot. Scatter plot comparing Protein (g) and Heart Rate Variability (ms).",
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View Scatter plot data" }));
+    expect(screen.getByText("2025-01-01")).toBeTruthy();
+    expect(screen.getByText(/Protein \(g\): 1.0/)).toBeTruthy();
+    expect(screen.getByText(/Heart Rate Variability \(ms\): 2.0/)).toBeTruthy();
   });
 
   it("waits for metric metadata before rendering unit-dependent evidence", async () => {
@@ -362,6 +389,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: 0.75,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [

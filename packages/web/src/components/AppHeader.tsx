@@ -6,6 +6,7 @@ import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
 const navItems = [
   { to: "/dashboard", label: "Overview" },
+  { to: "/data-quality", label: "Data quality" },
   { to: "/training", label: "Training" },
   { to: "/activities", label: "Activities" },
   { to: "/sleep", label: "Sleep" },

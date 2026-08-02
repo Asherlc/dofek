@@ -15,6 +15,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
+  HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
   type MobileRecoveryTabResult,
   mobileRecoveryTabOutputSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
@@ -36,7 +37,9 @@ import type { StressResult } from "../repositories/stress-repository.ts";
 import { buildHealthspanResult } from "../routers/healthspan.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
 import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
+import type { BaselineProcessingStatus } from "./baseline-progress.ts";
 import {
+  buildHealthMetricEvidence,
   buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
@@ -52,6 +55,7 @@ interface MobileRecoveryTabContext {
   timezone: string;
   accessWindow: AccessWindow;
   sensorStore: ActivitySensorStore;
+  processingStatus?: BaselineProcessingStatus;
 }
 
 function findRecoveryMetric(row: DailyRecoveryBaseline, metric: BaselineRelativeMetric["metric"]) {
@@ -218,7 +222,29 @@ export async function loadMobileRecoveryTab(
   const readinessScore = computeReadinessRows(recoveryRowsInWindow, effective.readinessWeights);
   const stress = computeStressFromRows(recoveryRowsInWindow, effective.stressThresholds);
   const dailyMetrics = filterDailyMetrics(dailyMetricsRows, days, endDate);
+  const metricEvidenceRows = filterDailyMetrics(
+    dailyMetricsRows,
+    Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS),
+    endDate,
+  );
+  const evidenceWindowDays = Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS);
   const baselineRelative = latestRecoveryBaselineMetrics(recoveryRowsInWindow);
+  const processingStatus = ctx.processingStatus ?? null;
+
+  const metricObservations = (metric: "hrv" | "spo2" | "steps" | "skin_temperature") =>
+    metricEvidenceRows.map((row) => ({
+      date: row.date,
+      value:
+        metric === "hrv"
+          ? row.hrv
+          : metric === "spo2"
+            ? row.spo2_avg
+            : metric === "steps"
+              ? row.steps
+              : row.skin_temp_c,
+      sourceProviders: row.source_providers,
+    }));
+  const hrvEvidence = buildHealthMetricEvidence(metricObservations("hrv"), evidenceWindowDays);
 
   const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
   const goalWeightKg =
@@ -240,29 +266,61 @@ export async function loadMobileRecoveryTab(
     ),
   ]);
 
+  const restingHeartRateBaseline = baselineRelative.find(
+    (metric) => metric.metric === "resting_heart_rate",
+  );
+  const restingHeartRateStatus = restingHeartRateBaseline
+    ? buildHealthStatusFromBaselineMetric(restingHeartRateBaseline, processingStatus)
+    : buildHealthStatusFromValues({
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        values: hrvBaseline.flatMap((row) => (row.resting_hr == null ? [] : [row.resting_hr])),
+        intent: "lower",
+        processingStatus,
+      });
+
   const healthStatus = [
-    ...baselineRelative.map(buildHealthStatusFromBaselineMetric),
+    ...baselineRelative
+      .filter((metric) => metric.metric !== "resting_heart_rate")
+      .map((metric) =>
+        buildHealthStatusFromBaselineMetric(
+          metric,
+          processingStatus,
+          metric.metric === "hrv" ? hrvEvidence.provenance : null,
+        ),
+      ),
+    restingHeartRateStatus,
     buildHealthStatusFromValues({
       metric: "spo2",
-      label: "SpO2",
+      label: "Blood Oxygen Saturation (SpO2)",
       values: dailyMetrics.flatMap((row) => (row.spo2_avg == null ? [] : [row.spo2_avg])),
       intent: "neutral",
+      observations: metricObservations("spo2"),
+      windowDays: evidenceWindowDays,
+      processingStatus,
     }),
     buildHealthStatusFromValues({
       metric: "steps",
       label: "Steps",
       values: dailyMetrics.flatMap((row) => (row.steps == null ? [] : [row.steps])),
       intent: "neutral",
+      observations: metricObservations("steps"),
+      windowDays: evidenceWindowDays,
+      processingStatus,
     }),
     buildHealthStatusFromValues({
       metric: "skin_temperature",
       label: "Skin Temperature",
       values: dailyMetrics.flatMap((row) => (row.skin_temp_c == null ? [] : [row.skin_temp_c])),
       intent: "neutral",
+      observations: metricObservations("skin_temperature"),
+      windowDays: evidenceWindowDays,
+      processingStatus,
     }),
     buildWeightHealthStatus(
       weight.map((row) => row.smoothedWeight),
       goalWeightKg,
+      processingStatus,
     ),
   ];
 

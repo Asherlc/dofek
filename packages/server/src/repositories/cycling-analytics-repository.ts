@@ -8,6 +8,7 @@ import {
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import type { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
@@ -19,8 +20,12 @@ const powerComparisonRowSchema = z.object({
   duration_seconds: z.coerce.number(),
   recent_best_power: z.coerce.number().nullable(),
   recent_activity_date: dateStringSchema.nullable(),
+  recent_source_activity_id: z.string().nullable().optional(),
+  recent_source_activity_name: z.string().nullable().optional(),
   season_best_power: z.coerce.number().nullable(),
   season_activity_date: dateStringSchema.nullable(),
+  season_source_activity_id: z.string().nullable().optional(),
+  season_source_activity_name: z.string().nullable().optional(),
 });
 
 const performanceActivityRowSchema = z.object({
@@ -67,9 +72,151 @@ type PowerCurve = {
     label: string;
     bestPower: number;
     activityDate: string;
+    sourceActivityId: string | null;
+    sourceActivityName: string | null;
   }>;
   model: CriticalPowerModel | null;
 };
+
+function cyclingAvailability(
+  chartLabel: string,
+  sourceLabel: string,
+  dataLabel: string,
+  observedCount: number,
+) {
+  return makeTrainingChartAvailability({
+    sourceLabel,
+    observedCount,
+    minimumCount: 1,
+    messages: {
+      available: `${chartLabel} is available from ${sourceLabel}.`,
+      insufficientData: `No ${chartLabel} is available from ${sourceLabel}. Record at least 1 cycling activity with ${dataLabel} to show this chart.`,
+    },
+  });
+}
+
+type EstimateConfidence = "high" | "moderate" | "limited" | "not_available";
+
+type SourceWorkout = {
+  id: string;
+  name: string | null;
+  date: string;
+};
+
+type EstimateEvidence = {
+  method: string;
+  confidence: EstimateConfidence;
+  confidenceLabel: string;
+  confidenceDetail: string;
+  sourceWorkouts: SourceWorkout[];
+  pacingGuidance: string;
+};
+
+function sourceWorkoutsForPoints(
+  points: PowerCurve["points"],
+  predicate: (point: PowerCurve["points"][number]) => boolean = () => true,
+): SourceWorkout[] {
+  const sourceWorkouts: SourceWorkout[] = [];
+  const seenActivityIds = new Set<string>();
+
+  for (const point of points) {
+    if (
+      !predicate(point) ||
+      point.sourceActivityId == null ||
+      seenActivityIds.has(point.sourceActivityId)
+    ) {
+      continue;
+    }
+    seenActivityIds.add(point.sourceActivityId);
+    sourceWorkouts.push({
+      id: point.sourceActivityId,
+      name: point.sourceActivityName,
+      date: point.activityDate,
+    });
+  }
+
+  return sourceWorkouts;
+}
+
+function buildThresholdEvidence(curve: PowerCurve): EstimateEvidence {
+  const fittingPoints = curve.points.filter(
+    (point) => point.durationSeconds >= 120 && point.durationSeconds <= 600 && point.bestPower > 0,
+  );
+  const sourceWorkouts = sourceWorkoutsForPoints(curve.points, (point) =>
+    fittingPoints.some((fittingPoint) => fittingPoint.durationSeconds === point.durationSeconds),
+  );
+  const method = "Critical Power model fitted to 120–600 second best-power efforts";
+  const pacingGuidance =
+    "Use this as a training estimate, not a tested threshold; do not set pacing from it when the fit is unavailable or limited.";
+
+  if (curve.model == null) {
+    return {
+      method,
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      confidenceDetail: "At least three usable power durations are required for this fit.",
+      sourceWorkouts,
+      pacingGuidance,
+    };
+  }
+
+  const fitPercentage = Math.round(Math.max(0, Math.min(1, curve.model.r2)) * 100);
+  const confidence: EstimateConfidence =
+    fittingPoints.length >= 4 && curve.model.r2 >= 0.9
+      ? "high"
+      : fittingPoints.length >= 3 && curve.model.r2 >= 0.75
+        ? "moderate"
+        : "limited";
+  const confidenceLabel =
+    confidence === "high"
+      ? "High fit quality"
+      : confidence === "moderate"
+        ? "Moderate fit quality"
+        : "Limited fit quality";
+
+  return {
+    method,
+    confidence,
+    confidenceLabel,
+    confidenceDetail: `${confidenceLabel} across ${fittingPoints.length} observed power durations (${fitPercentage}% fit to the observed efforts).`,
+    sourceWorkouts,
+    pacingGuidance,
+  };
+}
+
+function buildVo2MaxEvidence(curve: PowerCurve, weightKg: number | null): EstimateEvidence {
+  const maximalAerobicPowerPoint = curve.points.find((point) => point.durationSeconds === 300);
+  const sourceWorkouts = maximalAerobicPowerPoint
+    ? sourceWorkoutsForPoints(curve.points, (point) => point.durationSeconds === 300)
+    : [];
+  const hasEstimate =
+    maximalAerobicPowerPoint != null &&
+    weightKg != null &&
+    weightKg > 0 &&
+    sourceWorkouts.length > 0;
+
+  return {
+    method: "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
+    confidence: hasEstimate ? "limited" : "not_available",
+    confidenceLabel: hasEstimate ? "Indirect estimate" : "Not available",
+    confidenceDetail: hasEstimate
+      ? "A field estimate, not a laboratory measurement."
+      : "A 5-minute power effort and a positive body-weight measurement are required.",
+    sourceWorkouts,
+    pacingGuidance:
+      "Do not use this estimate to set workout pacing; use a validated test when precision matters.",
+  };
+}
+
+function sourceWorkoutsForTrend(
+  rows: z.infer<typeof performanceActivityRowSchema>[],
+): SourceWorkout[] {
+  return rows.slice(-5).map((row) => ({
+    id: row.id,
+    name: row.activity_name,
+    date: row.date,
+  }));
+}
 
 function buildPowerCurve(
   rows: z.infer<typeof powerComparisonRowSchema>[],
@@ -87,6 +234,13 @@ function buildPowerCurve(
         label: DURATION_LABELS[durationSeconds] ?? `${durationSeconds}s`,
         bestPower,
         activityDate,
+        sourceActivityId:
+          (period === "recent" ? row?.recent_source_activity_id : row?.season_source_activity_id) ??
+          null,
+        sourceActivityName:
+          (period === "recent"
+            ? row?.recent_source_activity_name
+            : row?.season_source_activity_name) ?? null,
       },
     ];
   });
@@ -165,8 +319,20 @@ export class CyclingAnalyticsRepository {
           power_curve.best_power,
           ${range.isAll() ? "true" : "power_curve.started_at > now() - INTERVAL {days:Int32} DAY"}
         ) AS recent_activity_date,
+        argMaxIf(
+          toString(power_curve.activity_id),
+          power_curve.best_power,
+          ${range.isAll() ? "true" : "power_curve.started_at > now() - INTERVAL {days:Int32} DAY"}
+        ) AS recent_source_activity_id,
+        argMaxIf(
+          activity.activity_name,
+          power_curve.best_power,
+          ${range.isAll() ? "true" : "power_curve.started_at > now() - INTERVAL {days:Int32} DAY"}
+        ) AS recent_source_activity_name,
         argMaxIf(power_curve.best_power, power_curve.best_power, power_curve.started_at > now() - INTERVAL 365 DAY) AS season_best_power,
-        argMaxIf(toDate(toTimeZone(power_curve.started_at, {timezone:String})), power_curve.best_power, power_curve.started_at > now() - INTERVAL 365 DAY) AS season_activity_date
+        argMaxIf(toDate(toTimeZone(power_curve.started_at, {timezone:String})), power_curve.best_power, power_curve.started_at > now() - INTERVAL 365 DAY) AS season_activity_date,
+        argMaxIf(toString(power_curve.activity_id), power_curve.best_power, power_curve.started_at > now() - INTERVAL 365 DAY) AS season_source_activity_id,
+        argMaxIf(activity.activity_name, power_curve.best_power, power_curve.started_at > now() - INTERVAL 365 DAY) AS season_source_activity_name
       FROM analytics.activity_power_curve AS power_curve FINAL
       INNER JOIN analytics.cycling_activity AS activity FINAL
         ON activity.user_id = power_curve.user_id
@@ -259,16 +425,18 @@ export class CyclingAnalyticsRepository {
       parameters: pmcParameters,
     });
     const trendWindowStart = range.windowStartString(new Date().toISOString().slice(0, 10));
-    const trend = activityRows
+    const trendRows = activityRows
       .filter((row) => row.normalized_power != null)
-      .filter((row) => trendWindowStart === undefined || row.date > trendWindowStart)
-      .map((row) => ({
-        date: row.date,
-        eftp: Math.round((row.normalized_power ?? 0) * 0.95),
-        activityName: row.activity_name,
-      }));
+      .filter((row) => trendWindowStart === undefined || row.date > trendWindowStart);
+    const trend = trendRows.map((row) => ({
+      date: row.date,
+      eftp: Math.round((row.normalized_power ?? 0) * 0.95),
+      activityName: row.activity_name,
+    }));
     const currentEftp =
       recent.model?.cp ?? (trend.length > 0 ? Math.max(...trend.map((row) => row.eftp)) : null);
+    const recentThresholdEvidence = buildThresholdEvidence(recent);
+    const seasonThresholdEvidence = buildThresholdEvidence(season);
 
     return {
       powerCurve: { recent, season },
@@ -279,6 +447,62 @@ export class CyclingAnalyticsRepository {
       },
       pmc,
       eftpTrend: { trend, currentEftp, model: recent.model },
+      availability: {
+        powerCurve: cyclingAvailability(
+          "cycling power-curve data",
+          "Cycling power-curve read model",
+          "power data",
+          recent.points.length,
+        ),
+        pmc: cyclingAvailability(
+          "training-load data",
+          "Cycling training-load model",
+          "training-load data",
+          pmc.data.length,
+        ),
+        eftpTrend: cyclingAvailability(
+          "threshold power data",
+          "Cycling activity power summaries",
+          "power data",
+          trend.length,
+        ),
+      },
+      estimateEvidence: {
+        recent: {
+          threshold: recentThresholdEvidence,
+          vo2Max: buildVo2MaxEvidence(recent, weightKg),
+        },
+        season: {
+          threshold: seasonThresholdEvidence,
+          vo2Max: buildVo2MaxEvidence(season, weightKg),
+        },
+        eftp: {
+          method: recent.model
+            ? "Critical Power model for the current value; trend points use normalized power × 0.95"
+            : "Normalized power × 0.95 for each cycling workout",
+          confidence:
+            currentEftp == null
+              ? "not_available"
+              : recent.model
+                ? recentThresholdEvidence.confidence
+                : "limited",
+          confidenceLabel:
+            currentEftp == null
+              ? "Not available"
+              : recent.model
+                ? recentThresholdEvidence.confidenceLabel
+                : "Training estimate",
+          confidenceDetail:
+            currentEftp == null
+              ? "A cycling workout with normalized power is required."
+              : recent.model
+                ? "The current value uses the threshold model; the trend shows per-workout estimates."
+                : `Based on ${trendRows.length} source cycling workout${trendRows.length === 1 ? "" : "s"}.`,
+          sourceWorkouts: sourceWorkoutsForTrend(trendRows),
+          pacingGuidance:
+            "Do not use this estimate to set pacing when the source ride is not representative of the effort you want to pace.",
+        },
+      },
     };
   }
 
@@ -421,6 +645,20 @@ export class CyclingAnalyticsRepository {
       aerobicEfficiency: {
         maxHr: rows.find((row) => row.max_hr != null && row.max_hr > 0)?.max_hr ?? null,
         activities: efficiencyActivities,
+      },
+      availability: {
+        verticalAscent: cyclingAvailability(
+          "vertical ascent data",
+          "Cycling activity altitude sensor summaries",
+          "altitude data",
+          verticalAscent.length,
+        ),
+        aerobicEfficiency: cyclingAvailability(
+          "aerobic efficiency data",
+          "Cycling Zone 2 power and heart-rate summaries",
+          "Zone 2 power and heart-rate data",
+          efficiencyActivities.length,
+        ),
       },
     };
   }

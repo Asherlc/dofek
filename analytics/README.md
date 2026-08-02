@@ -36,7 +36,7 @@ arrival markers; `provider_change_watermark` reads only that compact state.
 state, including replacements, tombstones, resurrection, and late arrivals.
 `provider_stats` sums those daily rows and keeps a provider dirty while any day
 marker is newer than its daily row, so provider inventory work cannot publish a
-partial count. Its selected-day raw scan prefers the covering
+partial count. The daily model's selected-day raw scan prefers the covering
 `by_provider_current_state_recorded_at` projection and retains tuple-valued
 `argMax` resolution as the correctness contract. ClickHouse projections are
 optimizer support structures maintained for new inserts:

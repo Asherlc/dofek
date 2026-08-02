@@ -20,8 +20,6 @@ describe("MacroSummary", () => {
   it("uses neutral categorical colors for macro identity", () => {
     render(
       <MacroSummary
-        calories={1_250}
-        calorieGoal={{ target: 2_000, remaining: 750, over: 0, progressPercentage: 62.5 }}
         macros={{
           protein: { grams: 110, calories: 440, energySharePercentage: 31 },
           carbs: { grams: 140, calories: 560, energySharePercentage: 40 },
@@ -38,8 +36,6 @@ describe("MacroSummary", () => {
   it("labels energy shares separately from logged grams with exact accessible context", () => {
     render(
       <MacroSummary
-        calories={1_030}
-        calorieGoal={{ target: 2_000, remaining: 970, over: 0, progressPercentage: 51.5 }}
         macros={{
           protein: { grams: 65, calories: 260, energySharePercentage: 25 },
           carbs: { grams: 107.5, calories: 430, energySharePercentage: 42 },

@@ -5,6 +5,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PasswordInput } from "../components/PasswordInput.tsx";
@@ -44,18 +45,24 @@ function LoginPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const allProviders = providers
-    ? [
-        ...providers.identity.map((id) => ({ id, type: "identity" as const })),
-        ...providers.data.map((id) => ({ id, type: "data" as const })),
-      ]
-    : [];
+  const { identityProviders, dataProviders, showIdentityProviders, showDataProviders } =
+    groupConfiguredAuthProviders(providers ?? { identity: [], data: [] });
   const returnTo =
     requestedReturnTo ?? (providerGuide ? "/dashboard?providerGuide=true" : undefined);
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   const showPasswordAuth = providers?.password ?? false;
-  const showOAuthProviders = allProviders.length > 0;
+  const showOAuthProviders = showIdentityProviders || showDataProviders;
+  const passwordResetDisabled = submitting || !email.trim();
   const passwordAuthDisabled = submitting || !email.trim() || !password;
+  const passwordResetHint = !submitting && !email.trim() ? "Enter your email to continue." : null;
+  const passwordAuthHint =
+    !submitting && passwordAuthDisabled
+      ? !email.trim() && !password
+        ? "Enter your email and password to continue."
+        : !email.trim()
+          ? "Enter your email to continue."
+          : "Enter your password to continue."
+      : null;
   const emailValidationError =
     authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
   const passwordValidationError = passwordTouched
@@ -190,10 +197,20 @@ function LoginPage() {
                           placeholder="you@example.com"
                         />
                       </div>
+                      {passwordResetHint ? (
+                        <p id="reset-email-submit-hint" className="text-xs text-muted">
+                          {passwordResetHint}
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
-                        disabled={submitting}
-                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        disabled={passwordResetDisabled}
+                        aria-describedby={passwordResetHint ? "reset-email-submit-hint" : undefined}
+                        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+                          passwordResetDisabled
+                            ? "bg-surface-hover text-muted cursor-not-allowed"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        }`}
                       >
                         {submitting ? "Sending..." : "Send reset link"}
                       </button>
@@ -339,9 +356,15 @@ function LoginPage() {
                           Forgot password?
                         </button>
                       ) : null}
+                      {passwordAuthHint ? (
+                        <p id="password-submit-hint" className="text-xs text-muted">
+                          {passwordAuthHint}
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
                         disabled={passwordAuthDisabled}
+                        aria-describedby={passwordAuthHint ? "password-submit-hint" : undefined}
                         className={`w-full py-2 text-sm font-medium rounded transition-colors ${
                           passwordAuthDisabled
                             ? "bg-surface-hover text-muted cursor-not-allowed"
@@ -381,7 +404,7 @@ function LoginPage() {
               </div>
             ) : null}
 
-            {showPasswordAuth && showOAuthProviders ? (
+            {showPasswordAuth && showIdentityProviders ? (
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-border" />
                 <span className="text-xs text-subtle uppercase tracking-wide">or</span>
@@ -389,16 +412,12 @@ function LoginPage() {
               </div>
             ) : null}
 
-            {showOAuthProviders ? (
+            {showIdentityProviders ? (
               <div className="space-y-3">
-                {allProviders.map(({ id, type }) => (
+                {identityProviders.map((id) => (
                   <a
                     key={id}
-                    href={
-                      type === "identity"
-                        ? `/auth/login/${id}${returnToQuery}`
-                        : `/auth/login/data/${id}${returnToQuery}`
-                    }
+                    href={`/auth/login/${id}${returnToQuery}`}
                     className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-accent/10 hover:bg-surface-hover border border-border-strong hover:border-border-strong text-foreground transition-colors text-sm font-medium"
                   >
                     <ProviderLogo provider={id} size={20} />
@@ -406,6 +425,32 @@ function LoginPage() {
                   </a>
                 ))}
               </div>
+            ) : null}
+
+            {showDataProviders ? (
+              <section
+                aria-labelledby="health-data-sign-in-heading"
+                className="space-y-4 rounded-xl border border-border bg-surface-hover/40 p-4"
+              >
+                <h2
+                  id="health-data-sign-in-heading"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Sign in with a health data provider
+                </h2>
+                <div className="space-y-3">
+                  {dataProviders.map((id) => (
+                    <a
+                      key={id}
+                      href={`/auth/login/data/${id}${returnToQuery}`}
+                      className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-surface-solid hover:bg-surface-hover border border-border text-foreground transition-colors text-sm font-medium"
+                    >
+                      <ProviderLogo provider={id} size={20} />
+                      Sign in with {providerLabel(id)}
+                    </a>
+                  ))}
+                </div>
+              </section>
             ) : null}
           </div>
         )}

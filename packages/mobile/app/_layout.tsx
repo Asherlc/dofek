@@ -505,6 +505,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="data-quality"
+            options={{
+              title: "Data Quality",
+            }}
+          />
+          <Stack.Screen
             name="reports"
             options={{
               title: "Health Reports",

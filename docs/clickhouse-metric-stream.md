@@ -268,8 +268,9 @@ ALTER TABLE ingest.metric_stream
 MATERIALIZE PROJECTION by_provider_current_state_recorded_at;
 ```
 
-Stop if the mutation reports a non-empty `latest_fail_reason`; otherwise wait
-for `is_done = 1` before starting the historical marker bootstrap:
+Stop if the mutation reports a non-empty `latest_fail_reason`. Do not continue
+to the active-part check or historical bootstrap until every relevant mutation
+row reports `is_done = 1` and an empty `latest_fail_reason`:
 
 ```sql
 SELECT
@@ -292,8 +293,13 @@ WHERE active
   AND table = 'metric_stream';
 ```
 
-Bootstrap historical dirty days only after the projection is ready. This is a
-bounded operator-controlled scan that writes invalidation keys, not counts:
+The active-part result must contain at least one active part and
+`missing_projection_parts = 0`. Bootstrap historical dirty days only after
+that gate passes. Use one explicit provider/date window per bounded batch, keep
+the window checkpoint with the rollout record, and resume at the next window;
+do not run an unrestricted `GROUP BY` over the raw table. The query reads the
+raw canonical table with the materialized covering projection forced and writes
+invalidation keys, not counts:
 
 ```sql
 INSERT INTO analytics.metric_stream_day_change
@@ -304,8 +310,21 @@ SELECT
   toDate(recorded_at) AS recorded_date,
   now64(9, 'UTC') AS changed_at
 FROM ingest.metric_stream
-GROUP BY user_id, provider_id, recorded_date;
+WHERE user_id = toUUID('00000000-0000-0000-0000-000000000000')
+  AND provider_id = 'REPLACE_WITH_PROVIDER_ID'
+  AND recorded_at >= toDateTime64('2020-01-01 00:00:00', 6, 'UTC')
+  AND recorded_at < toDateTime64('2020-01-02 00:00:00', 6, 'UTC')
+GROUP BY user_id, provider_id, recorded_date
+SETTINGS
+  force_optimize_projection = 1,
+  force_optimize_projection_name = 'by_provider_current_state_recorded_at';
 ```
+
+Replace the example user, provider, and date window before each batch. Record
+the last completed `(user_id, provider_id, recorded_date)` window and resume
+with the next deterministic window. `MATERIALIZE PROJECTION` rewrites existing
+raw parts; this bootstrap only appends compact marker state, so the two costs
+and completion checks remain separate.
 
 After the analytics worker has run, verify that no day marker is newer than its
 daily replacement row:

@@ -7,6 +7,20 @@ import {
 } from "./test-helpers.ts";
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+type ProcessingStatus = "ready" | "active" | "failed";
+type ProcessingStatusResult = {
+  overallStatus: ProcessingStatus;
+  datasets: readonly [{ key: "recovery"; status: ProcessingStatus }];
+};
+const processingStatusMock = vi.hoisted(() =>
+  vi.fn(
+    async (_input: ProcessingStatusQuery): Promise<ProcessingStatusResult> => ({
+      overallStatus: "ready" as const,
+      datasets: [{ key: "recovery" as const, status: "ready" as const }],
+    }),
+  ),
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -151,6 +165,14 @@ vi.mock("../repositories/training-recommendation.ts", () => ({
   computeReadinessScore: vi.fn(() => 62),
 }));
 
+vi.mock("../repositories/processing-repository.ts", () => ({
+  ProcessingRepository: class {
+    status(input: ProcessingStatusQuery) {
+      return processingStatusMock(input);
+    }
+  },
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: {
     info: vi.fn(),
@@ -175,7 +197,60 @@ const fullAccessWindow = {
   reason: "paid_grant" as const,
 };
 
+function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").MobileRecoveryTabResult {
+  return {
+    hrvVariability: [],
+    hrvBaseline: [],
+    readinessScore: [],
+    stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    trends: null,
+    dailyMetrics: [],
+    baselineRelative: [],
+    weight: [],
+    weightPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      goal: null,
+      projectionLine: [],
+    },
+    healthStatus: [],
+    healthspan: {
+      healthspanScore: null,
+      yearsDelta: null,
+      availability: {
+        status: "insufficient_data",
+        availableMetricCount: 0,
+        requiredMetricCount: 3,
+        missingMetricLabels: [],
+        summary: "0 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 3 more supported metrics sync successfully.",
+      },
+      metrics: [],
+      history: [],
+      trend: null,
+    },
+  };
+}
+
 describe("mobileDashboard.dashboardV2", () => {
+  it("versions the changed dashboard and recovery response contracts", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "mobile-dashboard-contract-v1",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "mobile-dashboard-contract-v2",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "health-status-evidence-v4",
+    });
+  });
+
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -200,10 +275,27 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
     expect(result.sleepNeed).not.toHaveProperty("recentNights");
+  });
+
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("uses full access when the context has no access window", async () => {
@@ -265,6 +357,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",
@@ -283,6 +376,22 @@ describe("mobileDashboard.dashboard", () => {
     await expect(caller.dashboard({ endDate: "2026-03-28" })).rejects.toThrow(
       "mobileDashboard.dashboard requires the ClickHouse activity analytics store",
     );
+  });
+
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("identifies only today and yesterday as recent", () => {
@@ -820,6 +929,54 @@ describe("mobileDashboard.recovery", () => {
     });
   });
 
+  it("requests processing status for the recovery dataset", async () => {
+    processingStatusMock.mockClear();
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
+  });
+
+  it.each([
+    { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
+    { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
+  ])("passes the normalized $normalizedStatus status to the recovery tab loader", async ({
+    rawStatus,
+    normalizedStatus,
+  }) => {
+    processingStatusMock.mockResolvedValueOnce({
+      overallStatus: rawStatus,
+      datasets: [{ key: "recovery", status: rawStatus }],
+    });
+    const loadSpy = vi
+      .spyOn(mobileRecoveryTab, "loadMobileRecoveryTab")
+      .mockResolvedValue(emptyRecoveryTabResult());
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ processingStatus: normalizedStatus }),
+      30,
+      "2026-03-28",
+    );
+  });
+
   it("returns consolidated recovery tab data", async () => {
     const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
       if (String(sqlText).includes("analytics.daily_recovery")) {
@@ -949,6 +1106,7 @@ describe("mobileDashboard.recovery", () => {
         timezone: "UTC",
         accessWindow: fullAccessWindow,
         sensorStore: expect.anything(),
+        processingStatus: null,
       },
       30,
       "2026-03-28",
@@ -1032,7 +1190,7 @@ describe("mobileDashboard.training", () => {
   it("uses a versioned cache key for its activity-state contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-activity-states-v1",
+      keyVersion: "training-activity-states-v2",
     });
   });
 
@@ -1153,6 +1311,23 @@ describe("mobileDashboard.training", () => {
       weeklyVolume: [],
       progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: {
+        strainTrend: {
+          status: "insufficient_data",
+          sourceLabel: "Daily strain model",
+          observedCount: 0,
+          minimumCount: 2,
+          message: "No daily strain trend is available from the daily strain model.",
+        },
+        verticalAscent: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling activity altitude sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries.",
+        },
+      },
       climbing: {
         gradeProgression: [],
         volumeByGrade: [],
@@ -1230,6 +1405,23 @@ describe("mobileDashboard.training", () => {
       weeklyVolume: [],
       progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: {
+        strainTrend: {
+          status: "insufficient_data",
+          sourceLabel: "Daily strain model",
+          observedCount: 0,
+          minimumCount: 2,
+          message: "No daily strain trend is available from the daily strain model.",
+        },
+        verticalAscent: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling activity altitude sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries.",
+        },
+      },
       climbing: {
         gradeProgression: [],
         volumeByGrade: [],

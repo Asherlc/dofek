@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   extractCteSql,
   readModelSql,
+  renderDbtModelSql,
 } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
@@ -16,13 +17,6 @@ const providerSchema = z.array(
     provider_id: z.string(),
   }),
 );
-function stripDbtModelWrapper(modelSql: string): string {
-  return modelSql
-    .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
-    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
-    .trimStart();
-}
-
 function renderProviderStatsSql(
   targetTable: string,
   watermarkTable: string,
@@ -30,7 +24,7 @@ function renderProviderStatsSql(
   isIncremental: boolean,
   batchSize = 1,
 ): string {
-  return stripDbtModelWrapper(readModelSql("provider_stats.sql"))
+  return renderDbtModelSql(readModelSql("provider_stats.sql"), { isIncremental })
     .replaceAll("{{ provider_dirty_key_batch_size }}", String(batchSize))
     .replace(/\{\{\s*ref\('provider_change_watermark'\)\s*\}\}/g, watermarkTable)
     .replace(
@@ -42,11 +36,6 @@ function renderProviderStatsSql(
       `${ingestDatabase}.provider_metric_stream_daily`,
     )
     .replace(/\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g, `${ingestDatabase}.$1`)
-    .replace(
-      /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
-      (_, incrementalSql: string, nonIncrementalSql: string | undefined) =>
-        isIncremental ? incrementalSql : (nonIncrementalSql ?? ""),
-    )
     .replace(/\{\{\s*this\s*\}\}/g, targetTable);
 }
 
@@ -56,10 +45,11 @@ function renderDirtyProviderSelectionSql(
   isIncremental: boolean,
   batchSize = 1,
 ): string {
-  const ingestDatabase = targetTable.split(".", 1)[0];
-  if (!ingestDatabase) {
+  const separatorIndex = targetTable.indexOf(".");
+  if (separatorIndex <= 0 || separatorIndex === targetTable.length - 1) {
     throw new Error(`Expected database-qualified provider stats target: ${targetTable}`);
   }
+  const ingestDatabase = targetTable.slice(0, separatorIndex);
   const modelSql = renderProviderStatsSql(
     targetTable,
     watermarkTable,
@@ -93,7 +83,7 @@ function renderDirtyProviderSelectionSql(
     ${currentProviderStateSql}
   ),
   ${existingProviderStateSql}
-  source_dirty_providers AS (
+  source_dirty_providers AS materialized (
     ${sourceDirtyProvidersSql}
   ),
   metric_stream_daily_source_state AS materialized (
@@ -283,7 +273,13 @@ describe("provider stats read model", () => {
       });
       await client.command({
         query: `INSERT INTO ${ingestDatabase}.provider_metric_stream_daily
-          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, '2026-08-02 11:00:00', 1, '2026-08-02 11:00:00')`,
+          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, '2026-08-02 13:00:00', 1, '2026-08-02 11:00:00')`,
+        query_params: { recordedDate, userId },
+      });
+
+      await client.command({
+        query: `INSERT INTO ${ingestDatabase}.provider_metric_stream_daily
+          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, '2026-08-02 11:00:00', 2, '2026-08-02 12:01:00')`,
         query_params: { recordedDate, userId },
       });
 
@@ -302,7 +298,7 @@ describe("provider stats read model", () => {
 
       await client.command({
         query: `INSERT INTO ${ingestDatabase}.provider_metric_stream_daily
-          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, {changedAt:DateTime64(9, 'UTC')}, 2, '2026-08-02 12:01:00')`,
+          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, {changedAt:DateTime64(9, 'UTC')}, 3, '2026-08-02 12:02:00')`,
         query_params: { changedAt: markerChangedAt, recordedDate, userId },
       });
 

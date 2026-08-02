@@ -29,8 +29,8 @@ describe("provider_stats model", () => {
     expect(modelSql).toContain("ref('provider_metric_stream_daily') }} FINAL");
     expect(modelSql).toContain("'enable_materialized_cte': 1");
     expect(modelSql).toContain("'optimize_aggregation_in_order': 1");
-    expect(modelSql).not.toContain("preferred_optimize_projection_name");
     expect(modelSql).toContain("current_provider_state AS materialized");
+    expect(modelSql).toContain("source_dirty_providers AS materialized");
     expect(modelSql).toContain("providers AS materialized");
     expect(modelSql).toContain("provider_dirty_key_batch_size");
     expect(normalizedSql).toContain("LIMIT {{ provider_dirty_key_batch_size }}");
@@ -39,8 +39,10 @@ describe("provider_stats model", () => {
     expect(normalizedSql).toContain(
       "(user_id, provider_id) IN ( SELECT user_id, provider_id FROM providers )",
     );
+    expect(normalizedSql).toContain(
+      "(user_id, provider_id) IN ( SELECT user_id, provider_id FROM source_dirty_providers )",
+    );
     expect(modelSql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).not.toContain("source('ingest', 'metric_stream')");
-    expect(normalizedSql).not.toContain("force_optimize_projection_name");
   });
 });

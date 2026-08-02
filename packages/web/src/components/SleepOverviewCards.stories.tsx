@@ -4,6 +4,7 @@ import { SleepOverviewCards } from "./SleepOverviewCards";
 
 const availableSleepNeed = {
   availability: "available",
+  epistemicStatus: { kind: "estimated", label: "Estimated" },
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
@@ -44,6 +45,7 @@ const sleepPerformance = {
   providerId: "whoop",
   sourceName: "WHOOP 4.0",
   sourceProviders: ["whoop"],
+  summaryDateContext: { effectiveDate: "2026-04-02", timezone: "UTC" },
 };
 
 const meta = {
@@ -89,6 +91,7 @@ export const SleepDataNeeded: Story = {
   args: {
     sleepNeed: {
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     },
     sleepPerformance: null,

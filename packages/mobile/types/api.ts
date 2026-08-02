@@ -1,6 +1,7 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import {
   nutritionSourceResolutionSchema,
+  selectedDateNutritionIntakeContextSchema,
   selectedDateNutritionSummarySchema,
 } from "@dofek/nutrition/selected-date-summary";
 import { z } from "zod";
@@ -79,4 +80,5 @@ export const FoodByDateV2Schema = z.object({
   entries: z.array(FoodEntrySchema),
   summary: selectedDateNutritionSummarySchema.nullable(),
   resolution: nutritionSourceResolutionSchema,
+  intakeContext: selectedDateNutritionIntakeContextSchema.nullable(),
 });

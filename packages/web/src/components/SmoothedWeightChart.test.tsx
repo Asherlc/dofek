@@ -41,70 +41,90 @@ const sampleData: SmoothedWeightRow[] = [
   {
     date: "2026-03-01",
     rawWeight: 84.0,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 84.0,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-02",
     rawWeight: 83.8,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.98,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-03",
     rawWeight: 84.2,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 84.0,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-04",
     rawWeight: 83.7,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.97,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-05",
     rawWeight: 84.1,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.98,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-06",
     rawWeight: 83.9,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.97,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-07",
     rawWeight: 84.0,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.98,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-08",
     rawWeight: 83.6,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.94,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: -0.06,
     interpolated: false,
   },
   {
     date: "2026-03-09",
     rawWeight: 83.5,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.9,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: -0.08,
     interpolated: false,
   },
   {
     date: "2026-03-10",
     rawWeight: 83.4,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.85,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: -0.15,
     interpolated: false,
   },
@@ -119,9 +139,9 @@ describe("SmoothedWeightChart", () => {
   it("shows the latest Trend Weight and scale reading", () => {
     render(<SmoothedWeightChart data={sampleData} />);
 
-    expect(screen.getByText("Trend Weight")).toBeDefined();
+    expect(screen.getByText("Estimated Trend Weight")).toBeDefined();
     expect(screen.getByText("83.9 kg")).toBeDefined();
-    expect(screen.getByText("Scale: 83.4 kg")).toBeDefined();
+    expect(screen.getByText("Observed: 83.4 kg")).toBeDefined();
   });
 
   it("renders loading state", () => {
@@ -200,21 +220,27 @@ describe("SmoothedWeightChart", () => {
       {
         date: "2026-03-01",
         rawWeight: 84.0,
+        rawWeightStatus: { kind: "observed", label: "Observed" },
         smoothedWeight: 84.0,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: null,
         interpolated: false,
       },
       {
         date: "2026-03-02",
         rawWeight: null,
+        rawWeightStatus: null,
         smoothedWeight: 83.9,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: null,
         interpolated: true,
       },
       {
         date: "2026-03-03",
         rawWeight: 83.8,
+        rawWeightStatus: { kind: "observed", label: "Observed" },
         smoothedWeight: 83.89,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: null,
         interpolated: false,
       },
@@ -237,7 +263,9 @@ describe("SmoothedWeightChart", () => {
           {
             date: "2026-03-01",
             rawWeight: 72.36123,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 72.36091,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: -15.51971,
             interpolated: false,
           },

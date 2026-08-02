@@ -171,37 +171,52 @@ export function RecordsBrowser({
     );
   }
 
+  const recordPanelId = `provider-records-panel-${providerId}`;
+
   return (
     <section>
       <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
 
-      <div className="flex flex-wrap gap-1 mb-3">
-        {availableTypes.map((dataType) => (
-          <button
-            key={dataType.key}
-            type="button"
-            onClick={() => setSelectedTab(dataType.key)}
-            className={`px-3 py-1.5 text-xs rounded transition-colors ${
-              activeTab === dataType.key
-                ? "bg-accent/15 text-foreground"
-                : "bg-accent/10 text-subtle hover:text-foreground"
-            }`}
-          >
-            {dataType.label}
-            {stats && getStatCount(stats, dataType.key) > 0 && (
-              <span className="ml-1 text-dim">
-                ({getStatCount(stats, dataType.key).toLocaleString()})
-              </span>
-            )}
-          </button>
-        ))}
+      <div role="tablist" aria-label="Record types" className="flex flex-wrap gap-1 mb-3">
+        {availableTypes.map((dataType) => {
+          const tabId = `provider-records-tab-${providerId}-${dataType.key}`;
+          return (
+            <button
+              key={dataType.key}
+              id={tabId}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === dataType.key}
+              aria-controls={recordPanelId}
+              onClick={() => setSelectedTab(dataType.key)}
+              className={`px-3 py-1.5 text-xs rounded transition-colors ${
+                activeTab === dataType.key
+                  ? "bg-accent/15 text-foreground"
+                  : "bg-accent/10 text-subtle hover:text-foreground"
+              }`}
+            >
+              {dataType.label}
+              {stats && getStatCount(stats, dataType.key) > 0 && (
+                <span className="ml-1 text-dim">
+                  ({getStatCount(stats, dataType.key).toLocaleString()})
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      <RecordsTable
-        key={`${providerId}:${activeTab}`}
-        providerId={providerId}
-        dataType={activeTab}
-      />
+      <div
+        id={recordPanelId}
+        role="tabpanel"
+        aria-labelledby={`provider-records-tab-${providerId}-${activeTab}`}
+      >
+        <RecordsTable
+          key={`${providerId}:${activeTab}`}
+          providerId={providerId}
+          dataType={activeTab}
+        />
+      </div>
     </section>
   );
 }

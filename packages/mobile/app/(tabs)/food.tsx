@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
+import { NutritionIntakeContext } from "../../components/NutritionIntakeContext";
 import { openExternalUrl } from "../../lib/open-external-url";
 import { safeParseData } from "../../lib/safe-parse";
 import { captureException, logger } from "../../lib/telemetry";
@@ -357,11 +358,12 @@ export default function FoodScreen() {
         )}
 
         {summary && (
-          <MacroSummary
-            calories={summary.calories}
-            calorieGoal={summary.calorieGoal}
-            macros={summary.macros}
-          />
+          <>
+            {selectedDateFood.data?.intakeContext && (
+              <NutritionIntakeContext context={selectedDateFood.data.intakeContext} />
+            )}
+            <MacroSummary macros={summary.macros} />
+          </>
         )}
 
         {resolution &&
@@ -371,6 +373,7 @@ export default function FoodScreen() {
             style={styles.sourceResolution}
             accessible
             accessibilityLabel={[
+              "Source coverage",
               resolution.contributionLabel,
               resolution.message,
               resolution.excludedSourceLabels.length > 0
@@ -380,6 +383,7 @@ export default function FoodScreen() {
               .filter(Boolean)
               .join(". ")}
           >
+            <Text style={styles.sourceResolutionHeading}>Source coverage</Text>
             {resolution.contributionLabel ? (
               <Text style={styles.sourceResolutionTitle}>{resolution.contributionLabel}</Text>
             ) : null}
@@ -457,6 +461,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
+  },
+  sourceResolutionHeading: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   sourceResolutionMessage: {
     color: colors.textSecondary,

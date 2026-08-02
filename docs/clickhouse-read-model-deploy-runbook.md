@@ -280,11 +280,17 @@ operator actions because `MATERIALIZE PROJECTION` rewrites existing parts
 
 Use this stop-gated sequence after the migration succeeds:
 
-1. Materialize `by_provider_current_state_recorded_at` and stop on any failed
-   mutation.
-2. Verify every active `ingest.metric_stream` part has that projection.
-3. Bootstrap `analytics.metric_stream_day_change` from the raw stream and
-   observe the bounded `provider_metric_stream_daily` batches.
+1. Materialize `by_provider_current_state_recorded_at`. Stop on any non-empty
+   `latest_fail_reason`, and do not continue until the relevant mutation has
+   `is_done = 1` with an empty `latest_fail_reason`.
+2. Verify that `system.parts` reports at least one active
+   `ingest.metric_stream` part and that every active part has the projection.
+3. Bootstrap `analytics.metric_stream_day_change` from
+   `ingest.metric_stream` in explicit provider/date windows, forcing
+   `by_provider_current_state_recorded_at` for each bounded batch. Record the
+   last completed window as the resume checkpoint; never use an unrestricted
+   historical `GROUP BY`. Then observe the bounded
+   `provider_metric_stream_daily` batches.
 4. Keep the provider watermark dirty until the day-marker readiness query is
    empty; do not publish a partial provider count.
 5. Confirm a successful `provider_stats` `QueryFinish`, analytics processing

@@ -284,12 +284,20 @@ export const styles = StyleSheet.create({
     marginTop: 4,
   },
   signInButtonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surfaceSecondary,
   },
   signInButtonText: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "600",
+  },
+  signInButtonTextDisabled: {
+    color: colors.textSecondary,
+  },
+  disabledHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
   },
 
   // WHOOP verify step

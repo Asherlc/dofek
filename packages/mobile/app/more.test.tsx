@@ -37,6 +37,10 @@ describe("MoreScreen", () => {
     ],
     ["Breathwork. Start a guided breathing session and review recent practice.", "/breathwork"],
     ["Cycle tracking. Review cycle phases and record period dates.", "/cycle"],
+    [
+      "Data quality. Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
+      "/data-quality",
+    ],
   ] as const)("opens %s from an accessible link", async (label, route) => {
     const { default: MoreScreen } = await import("./more");
     render(<MoreScreen />);

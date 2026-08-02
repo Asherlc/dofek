@@ -1,5 +1,6 @@
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import { HEALTH_METRIC_EVIDENCE_WINDOW_DAYS } from "../contracts/mobile-dashboard-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import {
   dateWindowEnd,
@@ -39,6 +40,23 @@ const healthTrendRowSchema = dailyMetricsViewRowSchema.extend({
 
 export type HealthTrendRow = z.infer<typeof healthTrendRowSchema>;
 
+const healthMetricEvidenceRowSchema = z.object({
+  latestDate: dateStringSchema.nullable(),
+  sourceProviders: z.array(z.string()),
+  observedDays: z.number().int().nonnegative(),
+  recentMean: z.number().nullable(),
+  baselineMean: z.number().nullable(),
+});
+
+export type HealthMetricEvidenceRow = z.infer<typeof healthMetricEvidenceRowSchema>;
+
+const healthMetricEvidenceRowsSchema = z.object({
+  hrv: healthMetricEvidenceRowSchema.nullable(),
+  spo2: healthMetricEvidenceRowSchema.nullable(),
+  steps: healthMetricEvidenceRowSchema.nullable(),
+  skin_temperature: healthMetricEvidenceRowSchema.nullable(),
+});
+
 export type DailyMetricsViewRow = z.infer<typeof dailyMetricsViewRowSchema>;
 
 const hrvBaselineRowSchema = z.object({
@@ -69,8 +87,14 @@ export const trendsRowSchema = z.object({
   latest_spo2: z.coerce.number().nullable(),
   latest_steps: z.coerce.number().nullable(),
   latest_skin_temp: z.coerce.number().nullable(),
+  sample_count_hrv: z.coerce.number().int().nonnegative(),
+  sample_count_resting_hr: z.coerce.number().int().nonnegative(),
+  sample_count_spo2: z.coerce.number().int().nonnegative(),
+  sample_count_steps: z.coerce.number().int().nonnegative(),
+  sample_count_skin_temp: z.coerce.number().int().nonnegative(),
   latest_date: dateStringSchema.nullable(),
   latest_steps_date: dateStringSchema.nullable(),
+  metric_evidence: healthMetricEvidenceRowsSchema.nullable().optional(),
 });
 
 export type TrendsRow = z.infer<typeof trendsRowSchema>;
@@ -200,6 +224,13 @@ export class DailyMetricsRepository extends BaseRepository {
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<TrendsRow | null> {
+    const evidenceWindowPredicate = dateWindowStartPredicate(
+      sql`date`,
+      endDate,
+      days === null
+        ? HEALTH_METRIC_EVIDENCE_WINDOW_DAYS
+        : Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS),
+    );
     const rows = await this.query(
       trendsRowSchema,
       sql`WITH ${restingHeartRateCte},
@@ -220,7 +251,8 @@ export class DailyMetricsRepository extends BaseRepository {
               drhr.resting_hr,
               dm.spo2_avg,
               dm.steps,
-              dm.skin_temp_c
+              dm.skin_temp_c,
+              dm.source_providers
             FROM base_dates
             LEFT JOIN fitness.v_daily_metrics dm
               ON dm.user_id = ${this.userId}
@@ -231,6 +263,20 @@ export class DailyMetricsRepository extends BaseRepository {
               ${dateWindowStartPredicate(sql`base_dates.date`, endDate, days)}
               AND base_dates.date <= ${dateWindowEnd(endDate)}
               ${this.dateAccessPredicate(sql`base_dates.date`)}
+          ),
+          evidence_current AS (
+            SELECT
+              date,
+              hrv,
+              spo2_avg,
+              steps,
+              skin_temp_c,
+              source_providers
+            FROM fitness.v_daily_metrics
+            WHERE user_id = ${this.userId}
+              ${evidenceWindowPredicate}
+              AND date <= ${dateWindowEnd(endDate)}
+              ${this.dateAccessPredicate(sql`date`)}
           ),
           stats AS (
             SELECT
@@ -243,7 +289,12 @@ export class DailyMetricsRepository extends BaseRepository {
               STDDEV(resting_hr) AS stddev_resting_hr,
               STDDEV(spo2_avg) AS stddev_spo2,
               STDDEV(steps) AS stddev_steps,
-              STDDEV(skin_temp_c) AS stddev_skin_temp
+              STDDEV(skin_temp_c) AS stddev_skin_temp,
+              COUNT(hrv) AS sample_count_hrv,
+              COUNT(*) FILTER (WHERE resting_hr > 0) AS sample_count_resting_hr,
+              COUNT(spo2_avg) AS sample_count_spo2,
+              COUNT(steps) AS sample_count_steps,
+              COUNT(skin_temp_c) AS sample_count_skin_temp
             FROM current
           ),
           representative_resting_heart_rate AS (
@@ -266,6 +317,38 @@ export class DailyMetricsRepository extends BaseRepository {
               (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps_date,
               MAX(date) AS date
             FROM current
+          ),
+          metric_evidence AS (
+            SELECT jsonb_build_object(
+              'hrv', jsonb_build_object(
+                'latestDate', (SELECT MAX(date) FROM evidence_current WHERE hrv IS NOT NULL),
+                'sourceProviders', COALESCE((SELECT source_providers FROM evidence_current WHERE hrv IS NOT NULL ORDER BY date DESC LIMIT 1), ARRAY[]::text[]),
+                'observedDays', (SELECT COUNT(*) FROM evidence_current WHERE hrv IS NOT NULL),
+                'recentMean', (SELECT AVG(hrv) FROM evidence_current WHERE hrv IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE hrv IS NOT NULL) - 6) AND (SELECT MAX(date) FROM evidence_current WHERE hrv IS NOT NULL)),
+                'baselineMean', (SELECT AVG(hrv) FROM evidence_current WHERE hrv IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE hrv IS NOT NULL) - 34) AND ((SELECT MAX(date) FROM evidence_current WHERE hrv IS NOT NULL) - 7))
+              ),
+              'spo2', jsonb_build_object(
+                'latestDate', (SELECT MAX(date) FROM evidence_current WHERE spo2_avg IS NOT NULL),
+                'sourceProviders', COALESCE((SELECT source_providers FROM evidence_current WHERE spo2_avg IS NOT NULL ORDER BY date DESC LIMIT 1), ARRAY[]::text[]),
+                'observedDays', (SELECT COUNT(*) FROM evidence_current WHERE spo2_avg IS NOT NULL),
+                'recentMean', (SELECT AVG(spo2_avg) FROM evidence_current WHERE spo2_avg IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE spo2_avg IS NOT NULL) - 6) AND (SELECT MAX(date) FROM evidence_current WHERE spo2_avg IS NOT NULL)),
+                'baselineMean', (SELECT AVG(spo2_avg) FROM evidence_current WHERE spo2_avg IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE spo2_avg IS NOT NULL) - 34) AND ((SELECT MAX(date) FROM evidence_current WHERE spo2_avg IS NOT NULL) - 7))
+              ),
+              'steps', jsonb_build_object(
+                'latestDate', (SELECT MAX(date) FROM evidence_current WHERE steps IS NOT NULL),
+                'sourceProviders', COALESCE((SELECT source_providers FROM evidence_current WHERE steps IS NOT NULL ORDER BY date DESC LIMIT 1), ARRAY[]::text[]),
+                'observedDays', (SELECT COUNT(*) FROM evidence_current WHERE steps IS NOT NULL),
+                'recentMean', (SELECT AVG(steps) FROM evidence_current WHERE steps IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE steps IS NOT NULL) - 6) AND (SELECT MAX(date) FROM evidence_current WHERE steps IS NOT NULL)),
+                'baselineMean', (SELECT AVG(steps) FROM evidence_current WHERE steps IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE steps IS NOT NULL) - 34) AND ((SELECT MAX(date) FROM evidence_current WHERE steps IS NOT NULL) - 7))
+              ),
+              'skin_temperature', jsonb_build_object(
+                'latestDate', (SELECT MAX(date) FROM evidence_current WHERE skin_temp_c IS NOT NULL),
+                'sourceProviders', COALESCE((SELECT source_providers FROM evidence_current WHERE skin_temp_c IS NOT NULL ORDER BY date DESC LIMIT 1), ARRAY[]::text[]),
+                'observedDays', (SELECT COUNT(*) FROM evidence_current WHERE skin_temp_c IS NOT NULL),
+                'recentMean', (SELECT AVG(skin_temp_c) FROM evidence_current WHERE skin_temp_c IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE skin_temp_c IS NOT NULL) - 6) AND (SELECT MAX(date) FROM evidence_current WHERE skin_temp_c IS NOT NULL)),
+                'baselineMean', (SELECT AVG(skin_temp_c) FROM evidence_current WHERE skin_temp_c IS NOT NULL AND date BETWEEN ((SELECT MAX(date) FROM evidence_current WHERE skin_temp_c IS NOT NULL) - 34) AND ((SELECT MAX(date) FROM evidence_current WHERE skin_temp_c IS NOT NULL) - 7))
+              )
+            ) AS evidence
           )
           SELECT
             stats.*,
@@ -275,8 +358,9 @@ export class DailyMetricsRepository extends BaseRepository {
             CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps ELSE NULL END AS latest_steps,
             latest.skin_temp_c AS latest_skin_temp,
             latest.date AS latest_date,
-            CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps_date ELSE NULL END AS latest_steps_date
-          FROM stats LEFT JOIN latest ON true`,
+            CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps_date ELSE NULL END AS latest_steps_date,
+            metric_evidence.evidence AS metric_evidence
+          FROM stats LEFT JOIN latest ON true CROSS JOIN metric_evidence`,
     );
     return rows[0] ?? null;
   }

@@ -20,4 +20,13 @@ describe("TimeRangeSelector", () => {
       ),
     ).toBeTruthy();
   });
+
+  it("exposes the selected range as a checked radio option", () => {
+    render(
+      <TimeRangeSelector days={90} description="Recent training changes." onChange={vi.fn()} />,
+    );
+
+    expect(screen.getByRole("radio", { name: "90d" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "30d" })).not.toBeChecked();
+  });
 });

@@ -78,8 +78,12 @@ This table is only a compact invalidation source; it does not store counts or
 replace the raw metric stream.
 
 Historical day keys will be bootstrapped as an explicit operator action after
-the projection is materialized. The bootstrap is intentionally outside the
-deploy migration because it scans existing data and rewrites projection parts.
+the projection is materialized. The bootstrap reads the raw canonical table
+with the materialized covering projection forced and writes compact invalidation
+rows in bounded provider/date windows; it does not rewrite projection parts.
+`MATERIALIZE PROJECTION` is a separate, higher-I/O operation that rewrites
+historical projection parts. Both operations remain outside the deploy
+migration and have independent completion checks.
 
 ### 3. dbt-owned daily count model
 
@@ -165,8 +169,13 @@ repository's documented incremental-model conventions:
    state/MV.
 2. Materialize the date-aware projection and monitor the ClickHouse mutation
    until it succeeds.
-3. Bootstrap historical day-change keys from the materialized current-state
-   projection as an explicit operator action.
+3. Bootstrap historical day-change keys with the runbook's canonical bounded
+   contract: read `ingest.metric_stream` with an explicit
+   `force_optimize_projection_name =
+   'by_provider_current_state_recorded_at'` setting, process one provider/date
+   window per batch, and record the last completed window as the resume
+   checkpoint. This writes marker rows; it does not materialize projection
+   parts or run an unrestricted historical `GROUP BY`.
 4. Run the analytics worker. It will process daily keys in bounded batches and
    leave provider watermarks dirty until each provider's daily source catches
    up.

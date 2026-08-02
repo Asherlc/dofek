@@ -112,7 +112,9 @@ const healthyWeightOverview = {
     {
       date: "2026-07-25",
       rawWeight: 80,
+      rawWeightStatus: { kind: "observed", label: "Observed" },
       smoothedWeight: 80,
+      smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
       weeklyChange: null,
       interpolated: false,
     },

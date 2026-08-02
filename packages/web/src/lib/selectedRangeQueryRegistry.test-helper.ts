@@ -35,7 +35,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "nutritionAnalytics.adaptiveTdee",
     "nutritionAnalytics.macroRatios",
   ],
-  running: ["durationCurves.paceCurve", "running.paceTrend", "running.dynamics"],
+  running: ["durationCurves.paceCurve", "running.paceTrendV2", "running.dynamicsV2"],
   recovery: [
     "recovery.hrvVariability",
     "dailyMetrics.hrvBaseline",

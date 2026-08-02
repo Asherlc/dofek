@@ -1,5 +1,6 @@
 # Provider Metric-Stream Counts Implementation Plan
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the production `provider_stats` raw metric-stream recount with a bounded, exact, dbt-owned daily count source that converges from compact day-change keys and preserves replacement, tombstone, resurrection, and late-arrival semantics.
 
@@ -39,7 +40,8 @@ Add assertions in `src/metric-stream/clickhouse-table.test.ts` for the new proje
 Run:
 
 ```sh
-pnpm vitest run src/db/clickhouse-migrations/registry.test.ts src/db/clickhouse-migrations/0068_provider_metric_stream_daily_counts.integration.test.ts src/metric-stream/clickhouse-table.test.ts
+pnpm vitest run src/db/clickhouse-migrations/registry.test.ts src/metric-stream/clickhouse-table.test.ts
+pnpm test:integration -- src/db/clickhouse-migrations/0068_provider_metric_stream_daily_counts.integration.test.ts
 ```
 
 If the repository uses a different existing metric-stream schema test path, locate it with `rg` and run that focused file instead; do not skip the failing test.
@@ -98,7 +100,15 @@ Add an executable ClickHouse integration test that seeds current-state raw rows 
 
 **Step 2 — Run the new tests to verify they fail.**
 
-Run the new static test and integration test directly with the repository’s supported Vitest command. The integration test must use a real ClickHouse instance and must not use module-level mocks.
+Run the new static test with Vitest and the integration test through the
+repository's integration tier so dependencies and `TEST_DATABASE_URL` are
+provided. The integration test must use a real ClickHouse instance and must not
+use module-level mocks.
+
+```sh
+pnpm vitest run analytics/models/read_models/provider_metric_stream_daily.sql.test.ts
+pnpm test:integration -- packages/server/src/repositories/provider-metric-stream-daily.integration.test.ts
+```
 
 **Step 3 — Implement the model.**
 
@@ -140,7 +150,8 @@ Update static assertions to require the daily model ref, compact day-dirty readi
 Run:
 
 ```sh
-pnpm vitest run analytics/models/read_models/provider_stats.sql.test.ts packages/server/src/repositories/provider-stats-read-model.integration.test.ts
+pnpm vitest run analytics/models/read_models/provider_stats.sql.test.ts
+pnpm test:integration -- packages/server/src/repositories/provider-stats-read-model.integration.test.ts
 ```
 
 **Step 3 — Implement the handoff.**
@@ -215,7 +226,7 @@ Before editing, search for every statement that says `provider_stats` directly c
 **Step 2 — Implement documentation.**
 
 - Document the new daily serving grain, marker semantics, and exact latest-state behavior.
-- Add copyable operator commands for applying the forward migration, materializing the projection, waiting/checking mutation completion, bootstrapping historical day keys, and verifying all active parts have the projection. Use the repository’s approved Compose/production procedures and explicit table names; do not include an automatic deploy-time historical scan.
+- Add copyable operator commands for applying the forward migration, materializing the projection, waiting/checking mutation completion, bootstrapping historical day keys in explicit provider/date windows with the materialized covering projection forced, recording a resume checkpoint, and verifying all active parts have the projection. Use the repository’s approved Compose/production procedures and explicit table names; do not include an automatic deploy-time historical scan or an unrestricted historical `GROUP BY`.
 - Add verification queries for outstanding dirty day keys, daily source freshness, provider-stats `QueryFinish`, analytics processing success, and downstream freshness. Include stop conditions for failed mutations or continued raw scans.
 - Append the August 2026 incident entry with the exact Sentry/query-log evidence, root cause, direct code fix, current rollout status, remaining risk, and follow-up ownership. State unresolved rollout items explicitly until an operator deploys and verifies them.
 

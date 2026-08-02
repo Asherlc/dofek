@@ -13,6 +13,7 @@ interface MockQuery {
 }
 
 let mockQuery: MockQuery;
+let mockCalendarQuery: MockQuery;
 let mockOverviewQuery: {
   data:
     | {
@@ -23,6 +24,21 @@ let mockOverviewQuery: {
         totalElevationGainM: number | null;
         totalElevationState: { status: "available" } | { status: "missing"; reason: string };
         activityTypes: string[];
+        comparison?: {
+          periodLabel: string;
+          activityCount: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalMinutes: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalDistanceMeters: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+          totalElevationGainM: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+        };
       }
     | undefined;
   isLoading: boolean;
@@ -31,11 +47,14 @@ let mockOverviewQuery: {
 };
 let weekListInput: unknown;
 let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let calendarDataInput: unknown;
+let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
 let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
+let invalidateCalendarData: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
 let invalidateDataHealth: ReturnType<typeof vi.fn>;
 let mockDataHealthQuery: {
@@ -73,6 +92,16 @@ vi.mock("../../lib/trpc", () => ({
           return mockOverviewQuery;
         },
       },
+      calendarData: {
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
+          calendarDataInput = input;
+          calendarDataOptions = options;
+          return mockCalendarQuery;
+        },
+      },
     },
     activity: {
       bulkDelete: {
@@ -98,6 +127,7 @@ vi.mock("../../lib/trpc", () => ({
       calendar: {
         weekList: { invalidate: invalidateWeekList },
         activityOverview: { invalidate: invalidateActivityOverview },
+        calendarData: { invalidate: invalidateCalendarData },
       },
       activity: {
         list: { invalidate: invalidateActivityList },
@@ -168,6 +198,7 @@ function activity(overrides: Record<string, unknown> = {}) {
 describe("ActivitiesScreen", () => {
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
+    mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
     mockOverviewQuery = {
       data: {
         activityCount: 0,
@@ -183,11 +214,14 @@ describe("ActivitiesScreen", () => {
       error: null,
     };
     weekListInput = undefined;
+    calendarDataInput = undefined;
+    calendarDataOptions = undefined;
     overviewInput = undefined;
     overviewOptions = undefined;
     bulkDeleteMutateAsync = vi.fn();
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
+    invalidateCalendarData = vi.fn();
     invalidateActivityList = vi.fn();
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
@@ -226,6 +260,34 @@ describe("ActivitiesScreen", () => {
 
     expect(processingStatusInput).toEqual({ datasets: ["activity"] });
     expect(screen.getByText("Recomputing activities")).toBeDefined();
+  });
+
+  it("loads a server-owned, labeled activity heatmap for the selected weeks", () => {
+    mockCalendarQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activityCount: 1,
+          totalMinutes: 72,
+          activityTypes: ["running"],
+          trainingTimeBand: "high",
+          trainingTimeMeaning: "High training volume; compare with recovery.",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(calendarDataInput).toEqual({ days: 28 });
+    expect(calendarDataOptions?.placeholderData?.([])).toBeUndefined();
+    const previousCalendarData = [{ date: "2026-03-10" }];
+    expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
+    expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
+    expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /72 minutes of training time/ })).toBeTruthy();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {
@@ -281,6 +343,7 @@ describe("ActivitiesScreen", () => {
     expect(
       screen.getByText("2 matched source records · Wahoo selected by source priority"),
     ).toBeDefined();
+    expect(screen.getByText("Source overlap")).toBeDefined();
     expect(screen.getByText("Processed 1m ago")).toBeDefined();
   });
 
@@ -320,6 +383,49 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("10h 15m")).toBeDefined();
     expect(screen.getByText("42.3 km")).toBeDefined();
     expect(screen.getByText("520 m")).toBeDefined();
+  });
+
+  it("renders server-computed changes from the previous comparable period", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 12,
+        totalMinutes: 615,
+        totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
+        totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
+        activityTypes: ["running", "cycling"],
+        comparison: {
+          periodLabel: "previous 4 weeks",
+          activityCount: { magnitude: 1, trend: "higher" },
+          totalMinutes: { magnitude: 90, trend: "lower" },
+          totalDistanceMeters: {
+            magnitude: 0,
+            trend: "unchanged",
+            state: { status: "available" },
+          },
+          totalElevationGainM: {
+            magnitude: null,
+            trend: "unavailable",
+            state: { status: "missing", reason: "Previous period: Elevation gain not recorded" },
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
+    expect(
+      screen.getByText("Comparison unavailable: Previous period: Elevation gain not recorded"),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Activities 12. 1 more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByLabelText("Time 10h 15m. 1h 30m less vs previous 4 weeks")).toBeDefined();
   });
 
   it("distinguishes unavailable overview measurements from measured zero", () => {
@@ -542,6 +648,7 @@ describe("ActivitiesScreen", () => {
       expect(bulkDeleteMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1"] });
       expect(invalidateWeekList).toHaveBeenCalled();
       expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateCalendarData).toHaveBeenCalled();
       expect(invalidateActivityList).toHaveBeenCalled();
     });
   });

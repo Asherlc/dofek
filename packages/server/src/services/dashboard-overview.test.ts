@@ -100,6 +100,21 @@ describe("loadDashboardOverview", () => {
     );
   });
 
+  it("returns the effective dashboard date and timezone from the server", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-08-02",
+      sensorStore: makeSensorStore(),
+      timezone: "America/Los_Angeles",
+      userId: "user-1",
+    });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
   it("normalizes ClickHouse daily strain dates before building load maps", async () => {
     const sensorStore = makeSensorStore({ metricDate: new Date("2026-06-29T00:00:00.000Z") });
 
@@ -124,6 +139,7 @@ describe("loadDashboardOverview", () => {
 
     expect(result.sleepNeedV2).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
   });
@@ -150,6 +166,7 @@ describe("loadDashboardOverview", () => {
     );
     expect(result.sleepNeedV2).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
   });
@@ -164,6 +181,7 @@ describe("loadDashboardOverview", () => {
 
     expect(result.sleepNeedV2).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result.sleep.lastNight).toBeNull();
@@ -179,6 +197,7 @@ describe("loadDashboardOverview", () => {
     });
     expect(noLoadRow.sleepNeedV2).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "missing_previous_day_load",
       message: "Sync yesterday's activity data to include training load in sleep need.",
       nextAction: "Sync activity data for the previous day.",
@@ -192,6 +211,7 @@ describe("loadDashboardOverview", () => {
     });
     expect(zeroLoadRow.sleepNeedV2).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",
@@ -233,6 +253,7 @@ describe("loadDashboardOverview", () => {
 
     expect(result.sleepNeedV2).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",
@@ -257,6 +278,7 @@ describe("loadDashboardOverview", () => {
 
     expect(result.sleepNeedV2).toMatchObject({
       availability: "available",
+      epistemicStatus: { kind: "estimated", label: "Estimated" },
       accumulatedDebtMinutes: 0,
       debtRecoveryMinutes: 0,
       totalNeedMinutes: 480,
@@ -286,6 +308,7 @@ describe("loadDashboardOverview", () => {
 
     expect(result.sleepNeedV2).toMatchObject({
       availability: "available",
+      epistemicStatus: { kind: "estimated", label: "Estimated" },
       accumulatedDebtMinutes: 0,
       debtRecoveryMinutes: 0,
       totalNeedMinutes: 429,

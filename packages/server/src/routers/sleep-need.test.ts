@@ -4,6 +4,7 @@ import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts"
 const stressRepositoryMock = vi.hoisted(() => ({
   getStressScores: vi.fn(),
 }));
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -17,7 +18,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -157,6 +161,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       });
     });
@@ -173,6 +178,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       });
     });
@@ -191,6 +197,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         reason: "insufficient_baseline_history",
         message: "Sync at least 7 qualifying nights to estimate sleep need.",
         nextAction: "Sync more sleep and recovery data.",
@@ -204,6 +211,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         reason: "missing_previous_day_load",
         message: "Sync yesterday's activity data to include training load in sleep need.",
         nextAction: "Sync activity data for the previous day.",
@@ -234,6 +242,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toMatchObject({
         availability: "available",
+        epistemicStatus: { kind: "estimated", label: "Estimated" },
         accumulatedDebtMinutes: 0,
         debtRecoveryMinutes: 0,
         totalNeedMinutes: 480,
@@ -710,6 +719,13 @@ describe("sleepNeedRouter", () => {
   // ── performance ──────────────────────────────────────────
 
   describe("performance", () => {
+    it("uses a versioned cache key for the response contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "sleep-performance-contract-v1",
+      });
+    });
+
     it("requires a ClickHouse sensor store", async () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
@@ -754,6 +770,20 @@ describe("sleepNeedRouter", () => {
       expect(result?.score).toBeLessThanOrEqual(100);
       expect(["Excellent", "Good", "Fair", "Poor"]).toContain(result?.tier);
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
+    });
+
+    it("returns the effective date and timezone with sleep performance", async () => {
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
+
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.summaryDateContext).toEqual({
+        effectiveDate: "2026-03-15",
+        timezone: "UTC",
+      });
     });
 
     it("reads dashboard sleep performance from the daily sleep summary once", async () => {

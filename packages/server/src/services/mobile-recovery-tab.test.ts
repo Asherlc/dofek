@@ -107,6 +107,7 @@ async function runRecoveryTab(
     goalWeight?: string | null;
     days?: number;
     endDate?: string;
+    processingStatus?: "syncing" | "sync_error" | null;
   } = {},
 ) {
   const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
@@ -121,6 +122,7 @@ async function runRecoveryTab(
     timezone: "UTC",
     accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
     sensorStore: { query },
+    processingStatus: options.processingStatus ?? null,
   };
 
   vi.spyOn(
@@ -541,24 +543,33 @@ describe("loadMobileRecoveryTab", () => {
       vi.mocked(buildHealthStatusFromValues).mockClear();
       vi.mocked(buildWeightHealthStatus).mockClear();
 
-      await runRecoveryTab([recoveryRow()], {
+      const result = await runRecoveryTab([recoveryRow()], {
         weight: [
           {
             date: "2026-03-27",
             rawWeight: 80,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 80,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: null,
             interpolated: false,
           },
           {
             date: "2026-03-28",
             rawWeight: 79,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 79,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: -1,
             interpolated: false,
           },
         ],
         metrics: [
+          metricRow("2026-02-25", 49, {
+            spo2_avg: 96,
+            steps: 7_000,
+            skin_temp_c: 32.9,
+          }),
           metricRow("2026-03-26", 50, {
             spo2_avg: 97,
             steps: null,
@@ -582,24 +593,150 @@ describe("loadMobileRecoveryTab", () => {
       expect(vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input)).toEqual([
         {
           metric: "spo2",
-          label: "SpO2",
+          label: "Blood Oxygen Saturation (SpO2)",
           values: [97, 99],
           intent: "neutral",
+          observations: [
+            { date: "2026-02-25", value: 96, sourceProviders: ["apple_health"] },
+            { date: "2026-03-26", value: 97, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 99, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
         {
           metric: "steps",
           label: "Steps",
           values: [8_000, 10_000],
           intent: "neutral",
+          observations: [
+            { date: "2026-02-25", value: 7_000, sourceProviders: ["apple_health"] },
+            { date: "2026-03-26", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: 8_000, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 10_000, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
         {
           metric: "skin_temperature",
           label: "Skin Temperature",
           values: [33.1, 33.5],
           intent: "neutral",
+          observations: [
+            { date: "2026-02-25", value: 32.9, sourceProviders: ["apple_health"] },
+            { date: "2026-03-26", value: 33.1, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 33.5, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
       ]);
-      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75);
+      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75, null);
+      expect(result.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "spo2",
+            provenance: expect.objectContaining({
+              latestDate: "2026-03-28",
+              sourceProviders: ["apple_health"],
+            }),
+            comparison: expect.objectContaining({
+              recentDays: 7,
+              baselineDays: 28,
+            }),
+          }),
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ observedDays: 3, windowDays: 35 }),
+          }),
+          expect.objectContaining({
+            metric: "skin_temperature",
+            provenance: expect.objectContaining({ observedDays: 3, windowDays: 35 }),
+          }),
+        ]),
+      );
+      const baselineCalls = vi.mocked(buildHealthStatusFromBaselineMetric).mock.calls;
+      const hrvCall = baselineCalls.find(([metric]) => metric.metric === "hrv");
+      expect(hrvCall?.[2]).toEqual(
+        expect.objectContaining({
+          latestDate: "2026-03-28",
+          observedDays: 4,
+          windowDays: 35,
+        }),
+      );
+      expect(
+        baselineCalls
+          .filter(([metric]) => metric.metric !== "hrv")
+          .map(([, , provenance]) => provenance),
+      ).toEqual([undefined, null, null]);
+      expect(
+        result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({ value: 52, baseline: 54, sampleDeviation: 2 });
+    });
+
+    it.each([
+      "syncing",
+      "sync_error",
+    ] as const)("passes %s to every health status builder", async (processingStatus) => {
+      vi.mocked(buildHealthStatusFromBaselineMetric).mockClear();
+      vi.mocked(buildHealthStatusFromValues).mockClear();
+      vi.mocked(buildWeightHealthStatus).mockClear();
+
+      await runRecoveryTab([recoveryRow()], { processingStatus });
+
+      expect(
+        vi.mocked(buildHealthStatusFromBaselineMetric).mock.calls.map(([, status]) => status),
+      ).toEqual([processingStatus, processingStatus, processingStatus, processingStatus]);
+      expect(
+        vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input.processingStatus),
+      ).toEqual([processingStatus, processingStatus, processingStatus]);
+      expect(vi.mocked(buildWeightHealthStatus)).toHaveBeenCalledWith([], null, processingStatus);
+    });
+
+    it("builds the resting heart rate status from HRV baseline rows when recovery data is absent", async () => {
+      const result = await runRecoveryTab([], {
+        hrvBaseline: [
+          {
+            date: "2026-03-26",
+            hrv: 50,
+            resting_hr: 50,
+            mean_60d: 50,
+            sd_60d: 2,
+            mean_7d: 50,
+            resting_hr_mean_7d: 50,
+          },
+          {
+            date: "2026-03-27",
+            hrv: 52,
+            resting_hr: 52,
+            mean_60d: 51,
+            sd_60d: 2,
+            mean_7d: 51,
+            resting_hr_mean_7d: 51,
+          },
+          {
+            date: "2026-03-28",
+            hrv: 54,
+            resting_hr: 54,
+            mean_60d: 52,
+            sd_60d: 2,
+            mean_7d: 52,
+            resting_hr_mean_7d: 52,
+          },
+        ],
+      });
+
+      expect(
+        result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({
+        value: 54,
+        baseline: 52,
+        sampleDeviation: 2,
+        baselineProgress: { observedObservationDays: 3 },
+      });
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {

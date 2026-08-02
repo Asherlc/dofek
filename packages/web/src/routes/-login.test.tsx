@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockUseSearch = vi.hoisted(() => vi.fn());
@@ -77,6 +77,26 @@ describe("Login route", () => {
     expect(returnTo).toBe("/dashboard?providerGuide=true");
   });
 
+  it("separates identity sign-in from health-data provider sign-in", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({ identity: ["google"], data: ["strava"] });
+
+    renderLoginPage();
+
+    expect(screen.getByRole("heading", { name: "Sign in to Dofek" })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Sign in with google" })).toBeTruthy();
+    });
+
+    const dataSection = screen.getByRole("region", {
+      name: "Sign in with a health data provider",
+    });
+    const dataSignInLink = within(dataSection).getByRole("link", { name: "Sign in with strava" });
+    expect(dataSignInLink).toHaveAttribute("href", "/auth/login/data/strava");
+    expect(screen.queryByRole("link", { name: "Connect strava" })).toBeNull();
+    expect(dataSection).toHaveClass("bg-surface-hover/40", "border");
+  });
+
   it("renders email/password form when password auth is enabled", async () => {
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
     mockFetchConfiguredProviders.mockResolvedValue({
@@ -108,6 +128,8 @@ describe("Login route", () => {
       name: "Sign in with email",
     });
     expect(signInButton).toHaveProperty("disabled", true);
+    expect(signInButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(screen.getByText("Enter your email and password to continue.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "user@example.com" },
@@ -117,6 +139,7 @@ describe("Login route", () => {
     });
 
     expect(signInButton).toHaveProperty("disabled", false);
+    expect(screen.queryByText("Enter your email and password to continue.")).toBeNull();
   });
 
   it("reveals and hides the current password with an accessible control", async () => {
@@ -319,6 +342,32 @@ describe("Login route", () => {
 
     expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
     expect(screen.getByText("Enter your email to receive a password reset link.")).toBeTruthy();
+  });
+
+  it("keeps the password reset action visibly disabled until an email is entered", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+    const resetButton = screen.getByRole("button", { name: "Send reset link" });
+
+    expect(resetButton).toBeDisabled();
+    expect(resetButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(screen.getByText("Enter your email to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "user@example.com" },
+    });
+
+    expect(resetButton).toBeEnabled();
+    expect(resetButton).toHaveClass("bg-emerald-600", "text-white");
+    expect(screen.queryByText("Enter your email to continue.")).toBeNull();
   });
 
   it("shows forgot password in email sign-in mode", async () => {

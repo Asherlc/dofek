@@ -55,7 +55,11 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-states-v1",
+      keyVersion: "activity-calendar-states-v2",
+    });
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 3_600_000,
+      keyVersion: "calendar-calendarData-v2",
     });
     expect(cachedQueryOptions).toHaveBeenCalledTimes(3);
   });
@@ -349,6 +353,21 @@ describe("calendarRouter", () => {
       totalElevationGainM: null,
       totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["cycling", "running"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 2, trend: "higher" },
+        totalMinutes: { magnitude: 150, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Elevation gain not recorded" },
+        },
+      },
     });
     const caller = createCaller({
       db: {},
@@ -365,6 +384,21 @@ describe("calendarRouter", () => {
       totalElevationGainM: null,
       totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["cycling", "running"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 2, trend: "higher" },
+        totalMinutes: { magnitude: 150, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Elevation gain not recorded" },
+        },
+      },
     });
   });
 
@@ -377,6 +411,21 @@ describe("calendarRouter", () => {
       totalElevationGainM: 120,
       totalElevationState: { status: "available" },
       activityTypes: ["cycling", "running"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 1, trend: "higher" },
+        totalMinutes: { magnitude: 60, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: 5000,
+          trend: "higher",
+          state: { status: "available" },
+        },
+        totalElevationGainM: {
+          magnitude: 120,
+          trend: "higher",
+          state: { status: "available" },
+        },
+      },
     });
     const caller = createCaller({
       db: {},

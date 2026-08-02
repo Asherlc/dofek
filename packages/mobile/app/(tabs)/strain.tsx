@@ -7,6 +7,7 @@ import {
 } from "@dofek/format/format";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -32,6 +33,7 @@ import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
@@ -262,8 +264,7 @@ export default function StrainScreen() {
   const hasCachedTrainingData = trainingData != null;
   const hasCachedClimbingData = trainingData?.climbing != null;
   const shouldShowTrainingQueryError = trainingQuery.isError && !hasCachedTrainingData;
-  const shouldShowClimbingError =
-    climbingParsed.error !== null || (trainingQuery.isError && !hasCachedClimbingData);
+  const shouldShowClimbingError = climbingParsed.error !== null;
   const shouldShowClimbingSection = !trainingQuery.isError || hasCachedClimbingData;
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
@@ -294,6 +295,8 @@ export default function StrainScreen() {
         : `Last training day: ${formatDateShort(displayedDate)}`;
 
   const strainTrend = workloadData.map((d) => d.strain);
+  const strainTrendAvailability = trainingData?.chartAvailability?.strainTrend;
+  const verticalAscentAvailability = trainingData?.chartAvailability?.verticalAscent;
 
   const isLoading = shouldShowBlockingLoading({
     data: trainingData,
@@ -337,6 +340,12 @@ export default function StrainScreen() {
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
+      ) : shouldShowTrainingQueryError ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not load training data"
+          message={trainingQuery.error?.message}
+        />
       ) : (
         <>
           {/* Current strain gauge */}
@@ -395,7 +404,15 @@ export default function StrainScreen() {
 
           {/* Workload breakdown */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Training Load</Text>
+            <ChartTitleWithTooltip
+              title="Training Load"
+              description={
+                workloadResult == null
+                  ? "Daily training load and recent-versus-baseline comparison."
+                  : `Technical name: ${TRAINING_TERMINOLOGY.workloadRatio.technicalName}. ${TRAINING_TERMINOLOGY.workloadRatio.details}`
+              }
+              textStyle={styles.cardTitle}
+            />
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
@@ -426,7 +443,7 @@ export default function StrainScreen() {
               description="This chart shows your day-to-day strain trend across the selected date range."
               textStyle={styles.cardTitle}
             />
-            {strainTrend.length >= 2 ? (
+            {strainTrendAvailability?.status === "available" ? (
               <SparkLine
                 data={strainTrend}
                 height={60}
@@ -434,37 +451,34 @@ export default function StrainScreen() {
                 showBaseline
                 showYAxis
               />
+            ) : strainTrendAvailability ? (
+              <TrainingChartEmptyState availability={strainTrendAvailability} />
             ) : (
               <Text style={styles.emptyChartText}>No training data yet for this period</Text>
             )}
           </View>
 
           {/* Vertical Ascent Rate */}
-          {verticalAscent.length > 0 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Vertical Ascent Rate"
-                description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
-                textStyle={styles.cardTitle}
-              />
-              <VerticalAscentChart data={verticalAscent} units={units} />
-            </View>
-          )}
-
-          {shouldShowTrainingQueryError ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Exercise Volume Trends</Text>
-              <Text style={styles.errorText}>
-                {trainingQuery.error?.message ?? "Failed to load exercise volume trends."}
-              </Text>
-            </View>
-          ) : (
-            <ProgressiveOverloadCards
-              exercises={trainingData?.progressiveOverload ?? []}
-              loading={trainingQuery.isLoading && trainingData == null}
-              units={units}
+          <View style={styles.card}>
+            <ChartTitleWithTooltip
+              title="Vertical Ascent Rate"
+              description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
+              textStyle={styles.cardTitle}
             />
-          )}
+            {verticalAscentAvailability?.status === "available" ? (
+              <VerticalAscentChart data={verticalAscent} units={units} />
+            ) : verticalAscentAvailability ? (
+              <TrainingChartEmptyState availability={verticalAscentAvailability} />
+            ) : (
+              <Text style={styles.emptyChartText}>No activities with altitude data available</Text>
+            )}
+          </View>
+
+          <ProgressiveOverloadCards
+            exercises={trainingData?.progressiveOverload ?? []}
+            loading={trainingQuery.isLoading && trainingData == null}
+            units={units}
+          />
 
           <View style={styles.card}>
             <View style={styles.sectionHeader}>
@@ -481,97 +495,53 @@ export default function StrainScreen() {
             </View>
             {shouldShowClimbingError ? (
               <Text style={styles.errorText}>
-                {climbingParsed.error?.message ??
-                  trainingQuery.error?.message ??
-                  "Failed to load climbing data."}
+                {climbingParsed.error?.message ?? "Failed to load climbing data."}
               </Text>
             ) : null}
             {shouldShowClimbingSection ? <ClimbingSection model={climbingModel} /> : null}
           </View>
 
           {/* Weekly volume summary */}
-          {(shouldShowTrainingQueryError || weeklyVolumeParsed.error) && (
+          {weeklyVolumeParsed.error && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
               <Text style={styles.errorText}>
-                {trainingQuery.error?.message ??
-                  weeklyVolumeParsed.error?.message ??
-                  "Failed to load weekly volume."}
+                {weeklyVolumeParsed.error.message ?? "Failed to load weekly volume."}
               </Text>
             </View>
           )}
-          {!shouldShowTrainingQueryError &&
-            !weeklyVolumeParsed.error &&
-            weeklyVolume.length > 0 && (
-              <View style={styles.card}>
-                <ChartTitleWithTooltip
-                  title="Weekly Volume"
-                  description="This chart shows your total training hours by week."
-                  textStyle={styles.cardTitle}
-                />
-                <View style={styles.volumeStack}>
-                  {aggregateWeeklyVolume(weeklyVolume).map((week) => (
-                    <View key={week.week} style={styles.volumeRow}>
-                      <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
-                      <View style={styles.volumeBarTrack}>
-                        <View
-                          style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]}
-                        />
-                      </View>
-                      <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
-                        {formatDurationMinutes(week.hours * 60)}
-                      </Text>
+          {!weeklyVolumeParsed.error && weeklyVolume.length > 0 && (
+            <View style={styles.card}>
+              <ChartTitleWithTooltip
+                title="Weekly Volume"
+                description="This chart shows your total training hours by week."
+                textStyle={styles.cardTitle}
+              />
+              <View style={styles.volumeStack}>
+                {aggregateWeeklyVolume(weeklyVolume).map((week) => (
+                  <View key={week.week} style={styles.volumeRow}>
+                    <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
+                    <View style={styles.volumeBarTrack}>
+                      <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
                     </View>
+                    <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
+                      {formatDurationMinutes(week.hours * 60)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              {activityTypeTotals.length > 0 && (
+                <View style={styles.activityTypeSummary}>
+                  {activityTypeTotals.map((entry) => (
+                    <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
+                      {formatActivityTypeLabel(entry.activityType)}:{" "}
+                      {formatDurationMinutes(entry.hours * 60)}
+                    </Text>
                   ))}
                 </View>
-                {activityTypeTotals.length > 0 && (
-                  <View style={styles.activityTypeSummary}>
-                    {activityTypeTotals.map((entry) => (
-                      <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
-                        {formatActivityTypeLabel(entry.activityType)}:{" "}
-                        {formatDurationMinutes(entry.hours * 60)}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-
-          {hrZonesQuery.isError ? (
-            <QueryStatePanel
-              variant="error"
-              title="Could not load intensity distribution"
-              message={hrZonesQuery.error.message}
-            />
-          ) : hrZonesQuery.isLoading && hrZonesQuery.data == null ? (
-            <QueryStatePanel variant="loading" minHeight={120} />
-          ) : null}
-
-          {polarizationQuery.isError ? (
-            <QueryStatePanel
-              variant="error"
-              title="Could not load cycling polarization"
-              message={polarizationQuery.error.message}
-            />
-          ) : polarizationQuery.isLoading && polarizationQuery.data == null ? (
-            <QueryStatePanel variant="loading" minHeight={120} />
-          ) : null}
-
-          {monotonyQuery.isError ? (
-            <QueryStatePanel
-              variant="error"
-              title="Could not load training monotony"
-              message={monotonyQuery.error.message}
-            />
-          ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (
-            <QueryStatePanel variant="loading" minHeight={120} />
-          ) : null}
-
-          <TrainingDistributionCards
-            intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
-            polarization={polarizationQuery.data ?? null}
-            monotony={monotonyQuery.data ?? null}
-          />
+              )}
+            </View>
+          )}
 
           {/* Recent activities */}
           <View style={styles.section}>
@@ -589,9 +559,9 @@ export default function StrainScreen() {
             </View>
             {isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : shouldShowTrainingQueryError || activitiesParsed.error ? (
+            ) : activitiesParsed.error ? (
               <Text style={styles.errorText}>
-                {trainingQuery.error?.message ?? "Failed to load activities."}
+                {activitiesParsed.error.message ?? "Failed to load activities."}
               </Text>
             ) : activities.length > 0 ? (
               <View style={styles.activitiesStack}>
@@ -626,6 +596,42 @@ export default function StrainScreen() {
           </View>
         </>
       )}
+
+      {hrZonesQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not load intensity distribution"
+          message={hrZonesQuery.error.message}
+        />
+      ) : hrZonesQuery.isLoading && hrZonesQuery.data == null ? (
+        <QueryStatePanel variant="loading" minHeight={120} />
+      ) : null}
+
+      {polarizationQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={`Could not load ${TRAINING_TERMINOLOGY.polarization.plainLabel.toLowerCase()}`}
+          message={polarizationQuery.error.message}
+        />
+      ) : polarizationQuery.isLoading && polarizationQuery.data == null ? (
+        <QueryStatePanel variant="loading" minHeight={120} />
+      ) : null}
+
+      {monotonyQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={`Could not load ${TRAINING_TERMINOLOGY.monotony.plainLabel.toLowerCase()}`}
+          message={monotonyQuery.error.message}
+        />
+      ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (
+        <QueryStatePanel variant="loading" minHeight={120} />
+      ) : null}
+
+      <TrainingDistributionCards
+        intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
+        polarization={polarizationQuery.data ?? null}
+        monotony={monotonyQuery.data ?? null}
+      />
     </ScrollView>
   );
 }

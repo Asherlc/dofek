@@ -1,6 +1,10 @@
-import { formatHRVMeasurement, formatSpO2Measurement } from "@dofek/format/format";
+import { formatSpO2Measurement } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { baselineRelativeMetricSchema } from "dofek-server/baseline-relative-metrics";
+import {
+  type HealthStatusMetric,
+  healthStatusMetricSchema,
+} from "dofek-server/mobile-dashboard-contracts";
 import { useMemo } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
@@ -15,7 +19,6 @@ import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
-import { type HealthStatusMetric, healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -36,6 +39,7 @@ const trendRowSchema = z.object({
   latest_steps: z.number().nullable(),
   latest_skin_temp: z.number().nullable(),
   latest_date: z.string().nullable(),
+  restingHeartRateTrendLabel: z.string(),
   baselineRelative: z.array(baselineRelativeMetricSchema),
   healthStatus: z.array(healthStatusMetricSchema),
 });
@@ -179,6 +183,9 @@ export function Dashboard() {
   }, [insightsQuery.data]);
 
   const healthMetrics = useMemo(() => buildHealthMetrics(trendData), [trendData]);
+  const restingHeartRateStatus = healthMetrics.find(
+    (metric) => metric.metric === "resting_heart_rate",
+  );
   const restingHeartRatePoints = useMemo(
     () =>
       restingHeartRateRows.flatMap((row) =>
@@ -197,11 +204,14 @@ export function Dashboard() {
           metrics={healthMetrics}
           loading={trends.isLoading}
           formatters={{
-            hrv: formatHRVMeasurement,
             spo2: formatSpO2Measurement,
             skin_temperature: (value) => units.formatTemperature(value),
           }}
+          comparisonFormatters={{
+            skin_temperature: (value) => units.formatTemperatureDelta(value),
+          }}
           units={{
+            hrv: "ms",
             respiratory_rate: "breaths/min",
             resting_heart_rate: "bpm",
             sleep_efficiency: "%",
@@ -239,6 +249,7 @@ export function Dashboard() {
       <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <DailyOverview
         endDate={endDate}
+        summaryDateContext={sleepPerformance.data?.summaryDateContext}
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         strainTarget={strainTarget.data}
@@ -260,6 +271,8 @@ export function Dashboard() {
         trend={{
           latestRestingHeartRate: trendData?.latest_resting_hr,
           averageRestingHeartRate: trendData?.avg_resting_hr,
+          restingHeartRateTrendLabel: trendData?.restingHeartRateTrendLabel,
+          restingHeartRateBaselineProgress: restingHeartRateStatus?.baselineProgress,
           restingHeartRatePoints,
         }}
         restingHeartRateLoading={heartRateBaseline.isLoading}

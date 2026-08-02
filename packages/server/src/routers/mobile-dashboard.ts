@@ -1,3 +1,4 @@
+import { summaryDateContextSchema } from "@dofek/format/summary-date-context";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -8,6 +9,8 @@ import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
+import { ProcessingRepository } from "../repositories/processing-repository.ts";
+import { baselineProcessingStatus } from "../services/baseline-progress.ts";
 import { loadDashboardOverview } from "../services/dashboard-overview.ts";
 import { HEALTH_STATUS_CACHE_KEY_VERSION } from "../services/health-status.ts";
 import {
@@ -19,6 +22,10 @@ import {
   mobileTrainingTabOutputSchema,
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-activity-states-v2";
+const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
+const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -62,6 +69,7 @@ const anomalyCheckOutputSchema = z.object({
 }) satisfies z.ZodType<AnomalyCheckResult>;
 
 const mobileDashboardSharedOutputSchema = z.object({
+  summaryDateContext: summaryDateContextSchema,
   readiness: z
     .object({
       score: z.number(),
@@ -119,7 +127,10 @@ export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
 export type MobileDashboardV2Result = z.infer<typeof mobileDashboardV2OutputSchema>;
 
 export const mobileDashboardRouter = router({
-  dashboard: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  dashboard: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: MOBILE_DASHBOARD_CACHE_KEY_VERSION,
+  })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
@@ -133,6 +144,7 @@ export const mobileDashboardRouter = router({
         endDate,
         readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
+        timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
       });
       logger.info(
@@ -143,7 +155,7 @@ export const mobileDashboardRouter = router({
 
   dashboardV2: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
-    keyVersion: "sleep-need-metadata-v1",
+    keyVersion: MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION,
   })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardV2OutputSchema)
@@ -158,6 +170,7 @@ export const mobileDashboardRouter = router({
         endDate,
         readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
+        timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
       });
       logger.info(
@@ -178,6 +191,9 @@ export const mobileDashboardRouter = router({
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.recovery");
       const tabStart = performance.now();
+      const processingSnapshot = await new ProcessingRepository(ctx.db, ctx.userId).status({
+        datasets: ["recovery"],
+      });
       const result = await loadMobileRecoveryTab(
         {
           db: ctx.db,
@@ -185,6 +201,7 @@ export const mobileDashboardRouter = router({
           timezone: ctx.timezone ?? "UTC",
           accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.recovery"),
           sensorStore,
+          processingStatus: baselineProcessingStatus(processingSnapshot, "recovery"),
         },
         input.days,
         input.endDate,
@@ -197,7 +214,7 @@ export const mobileDashboardRouter = router({
 
   training: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "training-activity-states-v1",
+    keyVersion: MOBILE_TRAINING_CACHE_KEY_VERSION,
   })
     .input(dateWindowInput)
     .output(mobileTrainingTabOutputSchema)

@@ -10,6 +10,7 @@ import {
 } from "@dofek/nutrition/food-entry-nutrition";
 import {
   nutritionSourceResolutionSchema,
+  selectedDateNutritionIntakeContextSchema,
   selectedDateNutritionSummarySchema,
 } from "@dofek/nutrition/selected-date-summary";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
@@ -19,6 +20,7 @@ import { AddFoodModal, type FoodFormData, type MealType } from "../components/Ad
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
+import { NutritionIntakeContext } from "../components/NutritionIntakeContext.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -57,6 +59,7 @@ export const selectedDateFoodV2Schema = z.object({
   entries: z.array(foodEntrySchema),
   summary: selectedDateNutritionSummarySchema.nullable(),
   resolution: nutritionSourceResolutionSchema,
+  intakeContext: selectedDateNutritionIntakeContextSchema.nullable(),
 });
 
 export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrientDetail[] {
@@ -359,8 +362,11 @@ export function NutritionPage() {
                   className="rounded-xl border border-border bg-surface-solid px-4 py-3"
                   aria-label="Nutrition source resolution"
                 >
+                  <p className="text-xs font-medium uppercase tracking-wide text-subtle">
+                    Source coverage
+                  </p>
                   {selectedDateFood.resolution.contributionLabel && (
-                    <p className="font-medium text-foreground">
+                    <p className="mt-1 font-medium text-foreground">
                       {selectedDateFood.resolution.contributionLabel}
                     </p>
                   )}
@@ -388,43 +394,23 @@ export function NutritionPage() {
             )}
 
             {/* Daily summary */}
-            {selectedDateFood.summary && (
-              <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-medium text-muted">Calories</span>
-                    <span className="text-sm text-muted tabular-nums">
-                      <span className="text-xl font-semibold text-foreground">
-                        {formatCalories(selectedDateFood.summary.calories)}
-                      </span>
-                      <span className="ml-1">
-                        / {formatCalories(selectedDateFood.summary.calorieGoal.target)}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${
-                        selectedDateFood.summary.calorieGoal.over > 0
-                          ? "bg-red-500"
-                          : "bg-emerald-500"
-                      } transition-all duration-300`}
-                      style={{
-                        width: `${selectedDateFood.summary.calorieGoal.progressPercentage}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="text-xs text-subtle tabular-nums">
-                    {selectedDateFood.summary.calorieGoal.remaining > 0
-                      ? `${formatCalories(selectedDateFood.summary.calorieGoal.remaining)} remaining`
-                      : selectedDateFood.summary.calorieGoal.over > 0
-                        ? `${formatCalories(selectedDateFood.summary.calorieGoal.over)} over goal`
-                        : "Calorie goal reached"}
-                  </div>
-                </div>
+            {selectedDateFood.intakeContext && (
+              <NutritionIntakeContext context={selectedDateFood.intakeContext} />
+            )}
 
+            {selectedDateFood.summary && (
+              <section
+                className="rounded-xl border border-border bg-surface-solid p-5 space-y-5"
+                aria-labelledby="nutrition-composition-heading"
+              >
                 {/* Macro bars */}
                 <div className="space-y-3">
+                  <p
+                    id="nutrition-composition-heading"
+                    className="text-xs font-medium uppercase tracking-wide text-subtle"
+                  >
+                    Observed intake composition
+                  </p>
                   <div>
                     <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
                     <p className="text-xs text-subtle">Logged grams are shown separately.</p>
@@ -454,7 +440,7 @@ export function NutritionPage() {
                     color="teal"
                   />
                 </div>
-              </div>
+              </section>
             )}
 
             {/* Meal sections */}

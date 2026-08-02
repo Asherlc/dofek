@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+import {
+  extractCteSql,
+  readModelSql,
+  renderDbtModelSql,
+} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
@@ -23,7 +27,10 @@ const dailyRowsSchema = z.array(
 );
 const countSchema = z.array(z.object({ count: z.coerce.number().int().nonnegative() }));
 const projectionPartSchema = z.array(
-  z.object({ missing_projection_parts: z.coerce.number().int().nonnegative() }),
+  z.object({
+    active_parts: z.coerce.number().int().positive(),
+    missing_projection_parts: z.coerce.number().int().nonnegative(),
+  }),
 );
 
 interface MetricRow {
@@ -34,13 +41,6 @@ interface MetricRow {
   isDeleted: number;
 }
 
-function stripDbtModelWrapper(modelSql: string): string {
-  return modelSql
-    .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
-    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
-    .trimStart();
-}
-
 function renderProviderMetricStreamDailySql(
   rawTable: string,
   markerTable: string,
@@ -48,16 +48,13 @@ function renderProviderMetricStreamDailySql(
   isIncremental: boolean,
   batchSize: number,
 ): string {
-  return stripDbtModelWrapper(readModelSql("provider_metric_stream_daily.sql"))
+  return renderDbtModelSql(readModelSql("provider_metric_stream_daily.sql"), {
+    isIncremental,
+  })
     .replaceAll("{{ provider_metric_stream_day_batch_size }}", String(batchSize))
     .replace(/\{\{\s*source\('analytics',\s*'metric_stream_day_change'\)\s*\}\}/g, markerTable)
     .replace(/\{\{\s*source\('ingest',\s*'metric_stream_current'\)\s*\}\}/g, rawTable)
-    .replace(/\{\{\s*this\s*\}\}/g, targetTable)
-    .replace(
-      /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
-      (_, incrementalSql: string, initialSql: string | undefined) =>
-        isIncremental ? incrementalSql : (initialSql ?? ""),
-    );
+    .replace(/\{\{\s*this\s*\}\}/g, targetTable);
 }
 
 async function insertMetricRow(
@@ -276,24 +273,27 @@ describe("provider_metric_stream_daily read model", () => {
     };
 
     const readDirtyDayCount = async () => {
+      const modelSql = renderProviderMetricStreamDailySql(
+        rawTable,
+        markerTable,
+        targetTable,
+        true,
+        100,
+      );
+      const sourceDayChangesSql = extractCteSql(modelSql, "source_day_changes");
+      const existingDailyStateSql = extractCteSql(modelSql, "existing_daily_state");
+      const dirtyDaysSql = extractCteSql(modelSql, "dirty_days");
       const result = await client.query({
-        query: `WITH source_days AS (
-          SELECT user_id, provider_id, recorded_date, max(changed_at) AS source_changed_at
-          FROM ${markerTable}
-          WHERE user_id = {userId:UUID}
-          GROUP BY user_id, provider_id, recorded_date
+        query: `WITH source_day_changes AS (
+          ${sourceDayChangesSql}
+        ), existing_daily_state AS (
+          ${existingDailyStateSql}
+        ), dirty_days AS (
+          ${dirtyDaysSql}
         )
         SELECT count() AS count
-        FROM source_days
-        LEFT JOIN (
-          SELECT user_id, provider_id, recorded_date, source_changed_at
-          FROM ${targetTable} FINAL
-        ) AS target
-          ON target.user_id = source_days.user_id
-          AND target.provider_id = source_days.provider_id
-          AND target.recorded_date = source_days.recorded_date
-        WHERE target.recorded_date IS NULL
-          OR source_days.source_changed_at > target.source_changed_at`,
+        FROM dirty_days
+        WHERE dirty_days.user_id = {userId:UUID}`,
         query_params: { userId },
         format: "JSONEachRow",
       });
@@ -379,7 +379,9 @@ describe("provider_metric_stream_daily read model", () => {
 
   it("keeps the recorded-at projection available for selected-day scans", async () => {
     const result = await client.query({
-      query: `SELECT countIf(NOT has(
+      query: `SELECT
+          count() AS active_parts,
+          countIf(NOT has(
           projections,
           {projectionName:String}
         )) AS missing_projection_parts
@@ -394,7 +396,7 @@ describe("provider_metric_stream_daily read model", () => {
       format: "JSONEachRow",
     });
     expect(projectionPartSchema.parse(await result.json())).toEqual([
-      { missing_projection_parts: 0 },
+      { active_parts: expect.any(Number), missing_projection_parts: 0 },
     ]);
   });
 });

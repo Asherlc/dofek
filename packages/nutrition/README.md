@@ -20,8 +20,16 @@ Provider daily aggregates remain excluded from editable meal cards.
 The `food.byDate` v1 procedure retains its installed-client contract of
 `{ entries, summary }` with a non-null summary and fails with an actionable
 precondition error when sources conflict. New web and mobile clients use
-`food.byDateV2`, whose separate response contract includes nullable `summary`
-and required `resolution` metadata.
+`food.byDateV2`, whose separate response contract includes nullable `summary`,
+required `resolution` metadata, and nullable `intakeContext`. When a summary is
+available, `intakeContext` contains the observed logged calories, the
+configured-or-default daily logged-intake target, an uncapped two-value scale,
+a neutral below/at/above-target status and explanation, and the limitation that
+the target is not an estimate of energy expenditure or calorie balance. Web and
+mobile render these server-computed values without recalculating them. Scale
+percentages remain server-provided values; clients constrain only the visual
+track geometry to its 0-to-100 percent bounds so an unusual over-target value
+does not overflow the layout or lose its numerical context.
 
 The database creates these values as query-time projections over raw entries,
 consistent with PostgreSQL views being virtual tables defined by a query:

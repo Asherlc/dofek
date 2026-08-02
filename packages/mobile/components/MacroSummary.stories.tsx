@@ -5,8 +5,6 @@ const meta = {
   title: "Nutrition/MacroSummary",
   component: MacroSummary,
   args: {
-    calories: 1250,
-    calorieGoal: { target: 2000, remaining: 750, over: 0, progressPercentage: 62.5 },
     macros: {
       protein: { grams: 110, calories: 440, energySharePercentage: 31 },
       carbs: { grams: 140, calories: 560, energySharePercentage: 40 },
@@ -23,8 +21,6 @@ export const Default: Story = {};
 
 export const LowProgress: Story = {
   args: {
-    calories: 300,
-    calorieGoal: { target: 2000, remaining: 1700, over: 0, progressPercentage: 15 },
     macros: {
       protein: { grams: 20, calories: 80, energySharePercentage: 28 },
       carbs: { grams: 40, calories: 160, energySharePercentage: 56 },
@@ -35,8 +31,6 @@ export const LowProgress: Story = {
 
 export const GoalReached: Story = {
   args: {
-    calories: 2100,
-    calorieGoal: { target: 2000, remaining: 0, over: 100, progressPercentage: 100 },
     macros: {
       protein: { grams: 160, calories: 640, energySharePercentage: 31 },
       carbs: { grams: 220, calories: 880, energySharePercentage: 43 },
@@ -47,8 +41,6 @@ export const GoalReached: Story = {
 
 export const AuditRoundingCase: Story = {
   args: {
-    calories: 1000,
-    calorieGoal: { target: 2000, remaining: 1000, over: 0, progressPercentage: 50 },
     macros: {
       protein: { grams: 65, calories: 260, energySharePercentage: 25 },
       carbs: { grams: 107.5, calories: 430, energySharePercentage: 42 },

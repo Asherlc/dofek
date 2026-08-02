@@ -1,4 +1,5 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -39,23 +40,29 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const dateLabel = formatDateMedium(dataPoint.week);
         return [
           `<strong>${escapeTooltipHtml(dateLabel)}</strong>`,
-          `Monotony: <span style="color:${chartColors.blue}">${formatNumber(dataPoint.monotony, 2)}</span>`,
-          `Strain: ${formatNumber(dataPoint.strain)}`,
-          `Daily mean cycling load: ${formatNumber(dataPoint.dailyMeanLoad, 2)}`,
-          `Population standard deviation (SD): ${formatNumber(dataPoint.dailyLoadStandardDeviation, 2)}`,
+          `${TRAINING_TERMINOLOGY.monotony.valueLabel}: <span style="color:${chartColors.blue}">${formatNumber(dataPoint.monotony, 2)}</span>`,
+          `${TRAINING_TERMINOLOGY.monotony.strainLabel}: ${formatNumber(dataPoint.strain)}`,
+          `Average daily cycling load: ${formatNumber(dataPoint.dailyMeanLoad, 2)}`,
+          `Daily load variation: ${formatNumber(dataPoint.dailyLoadStandardDeviation, 2)}`,
         ].join("<br/>");
       },
     }),
-    legend: dofekLegend(true, { data: ["Monotony", "Strain"] }),
+    legend: dofekLegend(true, {
+      data: [TRAINING_TERMINOLOGY.monotony.valueLabel, TRAINING_TERMINOLOGY.monotony.strainLabel],
+    }),
     xAxis: dofekAxis.time(),
     yAxis: [
-      dofekAxis.value({ name: "Monotony" }),
-      dofekAxis.value({ name: "Strain", position: "right", showSplitLine: false }),
+      dofekAxis.value({ name: TRAINING_TERMINOLOGY.monotony.valueLabel }),
+      dofekAxis.value({
+        name: TRAINING_TERMINOLOGY.monotony.strainLabel,
+        position: "right",
+        showSplitLine: false,
+      }),
     ],
     series: [
       {
         ...dofekSeries.bar(
-          "Monotony",
+          TRAINING_TERMINOLOGY.monotony.valueLabel,
           data.map((d) => ({
             value: [d.week, d.monotony],
             itemStyle: {
@@ -66,7 +73,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         ),
       },
       dofekSeries.line(
-        "Strain",
+        TRAINING_TERMINOLOGY.monotony.strainLabel,
         data.map((d) => [d.week, d.strain]),
         {
           color: chartColors.orange,
@@ -83,7 +90,14 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
       {method ? (
         <MethodExplanation
           className="mb-2"
-          lines={[method.formula, method.calendar, method.activityScope, method.interpretation]}
+          technicalName={TRAINING_TERMINOLOGY.monotony.technicalName}
+          lines={[
+            TRAINING_TERMINOLOGY.monotony.details,
+            method.formula,
+            method.calendar,
+            method.activityScope,
+            method.interpretation,
+          ]}
           source={method.source}
         />
       ) : null}
@@ -92,7 +106,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         loading={loading}
         empty={data.length === 0}
         height={300}
-        emptyMessage="No training monotony data available"
+        emptyMessage="No weekly training variety data available"
       />
     </div>
   );

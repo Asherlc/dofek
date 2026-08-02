@@ -1,4 +1,11 @@
-import { formatHRVMeasurement, formatPercent, formatSpO2Measurement } from "@dofek/format/format";
+import {
+  formatDateMedium,
+  formatDateShort,
+  formatHRVMeasurement,
+  formatPercent,
+  formatSpO2Measurement,
+  shiftDateYmd,
+} from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
@@ -43,18 +50,29 @@ type FeaturedProvider = (typeof FEATURED_PROVIDERS)[number];
 
 const HERO_PROOF_POINTS = ["Connect sources", "Compare trends", "Keep history"] as const;
 const GET_STARTED_SEARCH = { returnTo: "/onboarding" };
+const DEMO_PREVIEW = {
+  endDate: "2026-05-27",
+  rangeDays: 30,
+  trendDays: 7,
+} as const;
+const DEMO_DATE_FORMAT_OPTIONS = { timeZone: "UTC" } as const;
+const DEMO_PREVIEW_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.rangeDays - 1));
+const DEMO_TREND_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.trendDays - 1));
+const DEMO_END_DATE_LABEL = formatDateMedium(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS);
+const DEMO_RANGE_LABEL = `${formatDateShort(DEMO_PREVIEW_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}–${DEMO_END_DATE_LABEL}`;
+const DEMO_TREND_RANGE_LABEL = `${formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)} to ${DEMO_END_DATE_LABEL}`;
 
 const ANALYSIS_CARDS = [
   {
     title: "Late dinners show up next to less consistent sleep",
     detail: "Compare meal times with sleep without switching apps.",
     value: "r = -0.58",
-    tone: "30-day correlation",
+    tone: `${DEMO_PREVIEW.rangeDays}-day correlation`,
   },
   {
     title: "Training load vs sleep",
     detail: "See hard weeks beside sleep, recovery, and resting heart rate.",
-    value: "30 days",
+    value: `${DEMO_PREVIEW.rangeDays} days`,
     tone: "Window",
   },
   {
@@ -208,42 +226,42 @@ function LandingNav() {
 function HeroSection() {
   return (
     <section className="overflow-hidden border-b border-border bg-surface-solid">
-      <div className="mx-auto grid min-h-[615px] max-w-7xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:py-12">
-        <div className="max-w-2xl">
-          <div className="mb-7 inline-flex items-center gap-3 rounded-full border border-border-strong px-4 py-2 text-sm font-medium text-accent">
+      <div className="mx-auto grid min-h-0 max-w-7xl items-center gap-5 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10 lg:min-h-[615px] lg:grid-cols-[0.85fr_1.15fr] lg:py-12">
+        <div className="max-w-2xl lg:col-start-1 lg:row-start-1">
+          <div className="mb-4 hidden items-center gap-3 rounded-full border border-border-strong px-4 py-2 text-sm font-medium text-accent sm:inline-flex sm:mb-7">
             <span>Sources</span>
             <span className="h-1 w-1 rounded-full bg-accent-secondary" />
             <span>Trends</span>
             <span className="h-1 w-1 rounded-full bg-accent-secondary" />
             <span>History</span>
           </div>
-          <h1 className="font-serif text-5xl font-semibold leading-[1.03] tracking-normal text-foreground sm:text-6xl lg:text-[4.35rem]">
+          <h1 className="font-serif text-4xl font-semibold leading-[1.03] tracking-normal text-foreground sm:text-6xl lg:text-[4.35rem]">
             Your health data, in one place.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-muted">
+          <p className="mt-4 max-w-xl text-base leading-7 text-muted sm:mt-6 sm:text-lg sm:leading-8">
             Connect the apps and devices you use. Dofek keeps sleep, training, nutrition, body, and
             recovery records together so you can compare them over time.
           </p>
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-5 flex flex-col gap-3 sm:mt-7 sm:flex-row sm:items-center">
             <Link
               to="/login"
               search={GET_STARTED_SEARCH}
-              className="inline-flex items-center justify-center rounded-lg bg-accent px-8 py-4 text-base font-semibold text-on-accent shadow-lg shadow-accent/15 transition-colors hover:bg-accent/85"
+              className="inline-flex items-center justify-center rounded-lg bg-accent px-8 py-3 text-base font-semibold text-on-accent shadow-lg shadow-accent/15 transition-colors hover:bg-accent/85 sm:py-4"
             >
               Get started
             </Link>
           </div>
-          <div className="mt-8 flex flex-col gap-3 text-sm text-muted sm:flex-row sm:gap-6">
-            {HERO_PROOF_POINTS.map((point) => (
-              <div key={point} className="flex items-center gap-2">
-                <CheckCircleIcon />
-                <span>{point}</span>
-              </div>
-            ))}
-          </div>
         </div>
-        <div id="demo" className="scroll-mt-24">
+        <div id="demo" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <DashboardPreview />
+        </div>
+        <div className="flex flex-col gap-3 text-sm text-muted sm:flex-row sm:gap-6 lg:col-start-1 lg:row-start-2 lg:mt-8">
+          {HERO_PROOF_POINTS.map((point) => (
+            <div key={point} className="flex items-center gap-2">
+              <CheckCircleIcon />
+              <span>{point}</span>
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -290,10 +308,10 @@ function OverviewPreview() {
             Illustrative example
           </div>
           <div className="text-sm font-semibold text-foreground">Overview</div>
-          <div className="text-xs text-subtle">Apr 28–May 27, 2026</div>
+          <div className="text-xs text-subtle">{DEMO_RANGE_LABEL}</div>
         </div>
         <div className="rounded-md border border-border bg-surface-solid px-3 py-1 text-xs text-muted">
-          30 days
+          {DEMO_PREVIEW.rangeDays} days
         </div>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
@@ -330,11 +348,9 @@ function DailySummaryPreview() {
           <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
             Daily summary
           </div>
-          <div className="mt-1 text-sm font-semibold text-foreground">
-            Today&apos;s recovery picture
-          </div>
+          <div className="mt-1 text-sm font-semibold text-foreground">Example recovery picture</div>
         </div>
-        <div className="text-right text-xs text-subtle">May 27, 2026 · Example data</div>
+        <div className="text-right text-xs text-subtle">{DEMO_END_DATE_LABEL} · Example data</div>
       </div>
       <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
         {rings.map((ring) => (
@@ -371,20 +387,24 @@ function CorrelationPanel() {
   return (
     <div className="rounded-xl border border-border bg-surface-solid p-3.5">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
-        Key correlation
+        Illustrative relationship
       </div>
       <div className="mt-1 text-sm text-muted">Sleep consistency + Heart Rate Variability</div>
       <div className="mt-3 grid grid-cols-[0.55fr_1fr] items-end gap-3">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
-            Correlation
+            Illustrative sample
           </div>
-          <div className="mt-1 text-3xl font-bold text-accent">r = 0.72</div>
-          <div className="mt-1 text-xs font-medium text-accent-secondary">Strong positive</div>
-          <div className="text-xs text-subtle">24 paired days of 30</div>
+          <div className="mt-1 text-3xl font-bold text-accent">Example points</div>
+          <div className="mt-1 text-xs font-medium text-accent-secondary">
+            No measured correlation
+          </div>
+          <div className="text-xs text-subtle">
+            No sample size or confidence interval is shown for this illustration.
+          </div>
         </div>
         <LandingPreviewScatterPlot
-          accessibleName={`Example correlation scatter plot. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
+          accessibleName={`Illustrative scatter plot for demonstration only. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
           xAxisLabel={sleepConsistencyAxis}
           xTickLabels={["70", "100"]}
           yAxisLabel={heartRateVariabilityAxis}
@@ -392,9 +412,15 @@ function CorrelationPanel() {
         />
       </div>
       <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
-        <p>Example sources: Oura sleep + Apple Health heart rate variability (HRV)</p>
-        <p>Confidence: moderate; association, not causation.</p>
-        <p className="font-semibold text-muted">Next: compare late meals on the same nights.</p>
+        <p>Example source types: sleep + heart rate variability</p>
+        <p>Illustrative data only—not a measured Dofek result.</p>
+        <p>
+          Real relationships can reflect missing observations or other factors; association does not
+          establish causation.
+        </p>
+        <p className="font-semibold text-muted">
+          Next: connect sources to compare your own paired records.
+        </p>
       </div>
     </div>
   );
@@ -422,15 +448,18 @@ function TrendPanel() {
           </div>
           <div className="text-xs text-subtle">average</div>
           <div className="mt-1 text-xs font-medium text-accent-secondary">
-            +{formatMeasurementText(units.formatHeartRate(3))} vs prior 7 days
+            +{formatMeasurementText(units.formatHeartRate(3))} vs prior {DEMO_PREVIEW.trendDays}{" "}
+            days
           </div>
-          <div className="text-xs text-subtle">7 of 7 nights</div>
+          <div className="text-xs text-subtle">
+            {DEMO_PREVIEW.trendDays} of {DEMO_PREVIEW.trendDays} nights
+          </div>
         </div>
         <LandingPreviewLineChart
-          accessibleName={`Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: ${heartRateAxis}.`}
+          accessibleName={`Example resting heart rate trend. X-axis: ${DEMO_TREND_RANGE_LABEL}. Y-axis: ${heartRateAxis}.`}
           color={activityMetricColors.heartRate}
-          endLabel="May 27"
-          startLabel="May 21"
+          endLabel={formatDateShort(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS)}
+          startLabel={formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}
           yAxisLabel={heartRateAxis}
           yTickLabels={["48", "56"]}
         />
@@ -458,7 +487,7 @@ function ComparisonPanel() {
         <div>
           <div className="text-2xl font-bold text-accent">r = -0.46</div>
           <div className="mt-1 text-xs font-medium text-accent-secondary">Moderate negative</div>
-          <div className="text-xs text-subtle">22 paired days of 30</div>
+          <div className="text-xs text-subtle">22 paired days of {DEMO_PREVIEW.rangeDays}</div>
         </div>
         <LandingPreviewScatterPlot
           accessibleName={`Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: ${sleepConsistencyAxis}.`}
@@ -510,7 +539,7 @@ function HealthMonitorPreview() {
         ))}
       </div>
       <div className="mt-2 border-t border-border pt-2 text-[10px] text-subtle">
-        Example data · 27 of 30 days · Oura + Apple Health
+        Example data · 27 of {DEMO_PREVIEW.rangeDays} days · Oura + Apple Health
       </div>
     </div>
   );

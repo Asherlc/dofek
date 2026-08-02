@@ -48,7 +48,10 @@ export function TrainingOverview() {
 
   return (
     <>
-      <Section title="Training Calendar" subtitle="Daily training activity heatmap">
+      <Section
+        title="Training Calendar"
+        subtitle="Daily training time (minutes per day); compare higher-volume days with recovery"
+      >
         {calendarData.error ? (
           <QueryStatePanel error={calendarData.error} />
         ) : calendarData.isLoading ? (
@@ -68,6 +71,7 @@ export function TrainingOverview() {
           <PmcChart
             data={pmcData.data?.data ?? []}
             model={pmcData.data?.model ?? null}
+            availability={pmcData.data?.availability}
             loading={pmcData.isLoading}
           />
         )}

@@ -1,7 +1,12 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { z } from "zod";
-import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
+import {
+  baselineComparisonDirectionSchema,
+  baselineRelativeMetricSchema,
+} from "./baseline-relative-metrics.ts";
+import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
+import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
 const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
@@ -118,11 +123,55 @@ export const healthMetricKeySchema = z.enum([
 
 export const healthMetricIntentSchema = z.enum(["higher", "lower", "maintain", "neutral"]);
 
+export const HEALTH_METRIC_EVIDENCE_WINDOW_DAYS = 35;
+
+export const healthMetricProvenanceSchema = z.object({
+  latestDate: dateSchema.nullable(),
+  sourceProviders: z.array(z.string()),
+  observedDays: z.number().int().nonnegative(),
+  windowDays: z.number().int().positive(),
+});
+
+export const healthMetricComparisonSchema = z.object({
+  recentDays: z.number().int().positive(),
+  baselineDays: z.number().int().positive(),
+  recentMean: z.number().nullable(),
+  baselineMean: z.number().nullable(),
+  delta: z.number().nullable(),
+  direction: baselineComparisonDirectionSchema,
+});
+
+export type HealthMetricProvenance = z.infer<typeof healthMetricProvenanceSchema>;
+export type HealthMetricComparison = z.infer<typeof healthMetricComparisonSchema>;
+
+export const baselineProgressBlockerSchema = z.enum([
+  "missing_source_data",
+  "collecting",
+  "needs_variation",
+  "syncing",
+  "sync_error",
+]);
+
+export const baselineProgressSchema = z.object({
+  requiredObservationDays: z.number().int().positive(),
+  observedObservationDays: z.number().int().nonnegative(),
+  hasMeasurableVariation: z.boolean(),
+  blocker: baselineProgressBlockerSchema.nullable(),
+  requirement: z.string(),
+  summary: z.string(),
+  action: z.string(),
+});
+
+export type BaselineProgress = z.infer<typeof baselineProgressSchema>;
+export type BaselineProgressBlocker = z.infer<typeof baselineProgressBlockerSchema>;
+
 export const healthStatusMetricSchema = z.object({
   metric: healthMetricKeySchema,
   label: z.string(),
   value: z.number().nullable(),
+  valueText: z.string().nullable(),
   baseline: z.number().nullable(),
+  baselineText: z.string().nullable(),
   sampleDeviation: z.number().nullable(),
   deviation: z.number().nullable(),
   direction: z.enum(["above", "below", "aligned", "unknown"]),
@@ -138,7 +187,13 @@ export const healthStatusMetricSchema = z.object({
   statusLabel: z.string(),
   evaluationRule: z.string(),
   explanation: z.string(),
+  provenance: healthMetricProvenanceSchema.nullable(),
+  comparison: healthMetricComparisonSchema.nullable(),
+  baselineProgress: baselineProgressSchema,
 });
+
+export type HealthMetricKey = z.infer<typeof healthMetricKeySchema>;
+export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
 
 export const mobileRecoveryTabOutputSchema = z.object({
   hrvVariability: z.array(
@@ -173,7 +228,9 @@ export const mobileRecoveryTabOutputSchema = z.object({
     z.object({
       date: dateSchema,
       rawWeight: nonnegativeNumberSchema.nullable(),
+      rawWeightStatus: epistemicStatusSchema.nullable(),
       smoothedWeight: nonnegativeNumberSchema,
+      smoothedWeightStatus: epistemicStatusSchema,
       weeklyChange: z.number().nullable(),
       interpolated: z.boolean(),
     }),
@@ -277,6 +334,10 @@ export const mobileTrainingTabOutputSchema = z.object({
       elapsedMinutes: nonnegativeNumberSchema,
     }),
   ),
+  chartAvailability: z.object({
+    strainTrend: trainingChartAvailabilitySchema,
+    verticalAscent: trainingChartAvailabilitySchema,
+  }),
   climbing: z.object({
     gradeProgression: z.array(
       z.object({
@@ -473,7 +534,11 @@ export const mobileRecoveryFixtureSchema = z
 export const mobileTrainingFixtureSchema = z
   .object({
     input: fixtureInputSchema,
-    data: mobileTrainingTabOutputSchema,
+    data: mobileTrainingTabOutputSchema.extend({
+      // Historical fixture snapshots predate server-authored chart availability.
+      // Runtime mobile dashboard responses remain strict via mobileTrainingTabOutputSchema.
+      chartAvailability: mobileTrainingTabOutputSchema.shape.chartAvailability.optional(),
+    }),
   })
   .superRefine(({ input, data }, context) => {
     validateDatesInWindow(

@@ -29,7 +29,7 @@ export function DaySelector({
 
   return (
     <View style={styles.container}>
-      <View style={styles.row}>
+      <View accessibilityLabel="Time range" accessibilityRole="radiogroup" style={styles.row}>
         {options.map((opt) => (
           <TouchableOpacity
             key={opt.value}
@@ -39,9 +39,9 @@ export function DaySelector({
               onChange(opt.value);
             }}
             activeOpacity={0.7}
-            accessibilityRole="button"
+            accessibilityRole="radio"
             accessibilityLabel={opt.label}
-            accessibilityState={{ selected: days === opt.value }}
+            accessibilityState={{ checked: days === opt.value }}
           >
             <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
           </TouchableOpacity>

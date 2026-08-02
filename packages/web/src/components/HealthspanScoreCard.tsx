@@ -1,3 +1,7 @@
+import {
+  formatHealthspanTrendContext,
+  type HealthspanTrend,
+} from "@dofek/format/healthspan-context";
 import { statusColors } from "@dofek/scoring/colors";
 import { formatYearsDelta } from "@dofek/scoring/healthspan-years";
 import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scoring";
@@ -11,14 +15,14 @@ interface HealthspanScoreCardProps {
   loading?: boolean;
 }
 
-function TrendBadge({ trend }: { trend: "improving" | "declining" | "stable" }) {
+function TrendBadge({ trend }: { trend: HealthspanTrend }) {
   const color = trendColor(trend);
   return (
     <div
       className="inline-block px-2 py-1 rounded text-xs font-medium"
       style={{ color: color, backgroundColor: `${color}15` }}
     >
-      {trend.charAt(0).toUpperCase() + trend.slice(1)}
+      {formatHealthspanTrendContext(trend)}
     </div>
   );
 }

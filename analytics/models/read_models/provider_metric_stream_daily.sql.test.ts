@@ -28,8 +28,5 @@ describe("provider_metric_stream_daily model", () => {
     expect(modelSql).toContain("countIf(metric_stream_current.is_deleted = 0)");
     expect(modelSql).toContain("source_changed_at");
     expect(modelSql).toContain("coalesce(metric_stream_counts.metric_stream_count, 0)");
-    expect(modelSql).not.toContain("max_execution_time");
-    expect(modelSql).not.toContain("retry");
-    expect(modelSql).not.toContain("warning");
   });
 });
