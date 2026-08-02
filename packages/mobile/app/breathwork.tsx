@@ -1,8 +1,5 @@
-import {
-  type BreathworkOutcomeReport,
-  type PerceivedBreathworkEffect,
-  totalSessionSeconds,
-} from "@dofek/scoring/breathwork";
+import { formatDurationSeconds } from "@dofek/format/format";
+import type { BreathworkOutcomeReport, PerceivedBreathworkEffect } from "@dofek/scoring/breathwork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
@@ -26,6 +23,16 @@ const PHASE_LABELS: Record<SessionPhase, string> = {
   exhale: "Breathe Out",
   "hold-out": "Hold",
 };
+
+function techniqueAccessibilityLabel(technique: {
+  name: string;
+  purpose: string;
+  description: string;
+  durationSeconds: number;
+  difficulty: string;
+}): string {
+  return `${technique.name}. ${technique.purpose}. ${technique.description} Duration: ${formatDurationSeconds(technique.durationSeconds)}. Difficulty: ${technique.difficulty}.`;
+}
 
 function StressScale({
   accessibilityPrefix,
@@ -156,7 +163,7 @@ export default function BreathworkScreen() {
             const completedSession = {
               techniqueId: technique.id,
               rounds: technique.defaultRounds,
-              durationSeconds: totalSessionSeconds(technique, technique.defaultRounds),
+              durationSeconds: technique.durationSeconds,
               startedAt: startTimeRef.current ?? new Date().toISOString(),
               stressBefore,
               stressAfter: null,
@@ -229,7 +236,7 @@ export default function BreathworkScreen() {
             return (
               <Pressable
                 key={technique.id}
-                accessibilityLabel={technique.name}
+                accessibilityLabel={techniqueAccessibilityLabel(technique)}
                 accessibilityRole="button"
                 accessibilityState={{
                   selected: isSelected,
@@ -243,7 +250,12 @@ export default function BreathworkScreen() {
                 style={[styles.techniqueButton, isSelected && styles.techniqueButtonSelected]}
               >
                 <Text style={styles.techniqueName}>{technique.name}</Text>
+                <Text style={styles.techniquePurpose}>{technique.purpose}</Text>
                 <Text style={styles.techniqueDescription}>{technique.description}</Text>
+                <Text style={styles.techniqueMeta}>
+                  Duration: {formatDurationSeconds(technique.durationSeconds)} · Difficulty:{" "}
+                  {technique.difficulty}
+                </Text>
               </Pressable>
             );
           })}
@@ -562,6 +574,15 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
   },
   techniqueDescription: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+  },
+  techniquePurpose: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  techniqueMeta: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
   },

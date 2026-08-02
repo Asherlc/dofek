@@ -35,15 +35,28 @@ export function QueryStatePanel({
   retrying = false,
 }: QueryStatePanelProps) {
   if (variant === "loading") {
+    const loadingMessage =
+      typeof message === "string"
+        ? message
+        : contextLabel
+          ? `Loading ${contextLabel.toLowerCase()}.`
+          : "Loading data.";
+
     return (
-      <div
+      <output
         className="query-state-panel flex items-center justify-center"
         style={{ minHeight: height }}
         data-testid="query-state-loading"
+        aria-label={loadingMessage}
+        aria-live="polite"
         aria-busy="true"
       >
-        <div className="w-5 h-5 border-2 border-border-strong border-t-muted rounded-full animate-spin" />
-      </div>
+        <span
+          aria-hidden="true"
+          className="w-5 h-5 border-2 border-border-strong border-t-muted rounded-full animate-spin"
+        />
+        <span className="sr-only">{loadingMessage}</span>
+      </output>
     );
   }
 
