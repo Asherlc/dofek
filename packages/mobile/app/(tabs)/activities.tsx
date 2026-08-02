@@ -34,6 +34,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
+import { ActivityHeatmap } from "../../components/ActivityHeatmap";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
@@ -176,11 +177,19 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const calendarQuery = trpc.calendar.calendarData.useQuery(
+    { days: weeks * 7 },
+    {
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
+    },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekList.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
       setSelectedActivityIds(new Set());
       setSelectMode(false);
@@ -191,6 +200,7 @@ export default function ActivitiesScreen() {
       Promise.all([
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
         trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
@@ -331,6 +341,24 @@ export default function ActivitiesScreen() {
             />
           ) : null}
           <ActivityOverview overview={overviewQuery.data} units={units} />
+        </>
+      )}
+
+      {calendarQuery.isLoading && !calendarQuery.data ? (
+        <QueryStatePanel variant="loading" minHeight={180} />
+      ) : calendarQuery.isError && !calendarQuery.data ? (
+        <QueryStatePanel variant="error" message={calendarQuery.error.message} />
+      ) : (
+        <>
+          {calendarQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={calendarQuery.error.message}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          <ActivityHeatmap data={calendarQuery.data ?? []} />
         </>
       )}
 

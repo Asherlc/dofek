@@ -57,6 +57,10 @@ describe("calendarRouter", () => {
       maxAge: 600_000,
       keyVersion: "activity-calendar-states-v2",
     });
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 3_600_000,
+      keyVersion: "calendar-calendarData-v2",
+    });
     expect(cachedQueryOptions).toHaveBeenCalledTimes(3);
   });
 
