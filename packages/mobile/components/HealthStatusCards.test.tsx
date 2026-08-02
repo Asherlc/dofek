@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HealthStatusCards } from "./HealthStatusCards";
 
@@ -228,10 +228,21 @@ describe("HealthStatusCards", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Source: WHOOP (Cloud) · Latest: 2026-07-30 · Coverage: 3/30 days"),
-    ).toBeTruthy();
+    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeTruthy();
     expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeTruthy();
+
+    const detailsButton = screen.getByRole("button", {
+      name: "Show source details for Blood Oxygen Saturation (SpO2)",
+    });
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
+
+    fireEvent.click(detailsButton);
+
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Source: WHOOP (Cloud)")).toBeTruthy();
+    expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeTruthy();
+    expect(screen.getByText("Coverage: 3/30 days")).toBeTruthy();
   });
 
   it.each([
