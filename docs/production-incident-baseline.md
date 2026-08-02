@@ -21586,6 +21586,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   a fixture-environment failure rather than evidence against the new model
   behavior.
 
+## 2026-08-01 — Settings tab entries survived the mutation gate
+
+- **Status:** Root cause fixed in source and pushed in
+  [#2372](https://github.com/Asherlc/dofek/pull/2372); replacement hosted CI is
+  pending.
+- **Symptoms:** [Test / Stryker (0), job
+  91428200045](https://github.com/Asherlc/dofek/actions/runs/30722023446/job/91428200045)
+  failed with a 66.67 mutation score below the configured 75 break threshold.
+  Four `ObjectLiteral` mutants survived in
+  `packages/web/src/pages/settingsTabs.ts` on the Health, Connections,
+  Account, and Advanced entries. Stryker reports these as surviving mutants
+  when the test suite does not detect the behavior change
+  ([Stryker mutation states](https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/)).
+- **User impact:** No production impact; the required mutation gate blocked the
+  PR from merging. The separate E2E gate remains independent and unresolved.
+- **Evidence:** The exact local command
+  `pnpm exec stryker run stryker.ci.config.json --mutate packages/web/src/pages/settingsTabs.ts`
+  reproduced the four survivors and the 66.67 score. Existing route and page
+  tests exercised individual tab behavior but did not assert the complete
+  rendered tab entry contract, so replacing an entry object with `{}` went
+  undetected.
+- **Root cause:** The extracted settings-tab list was consumed by the page
+  renderer without a production-consumer assertion for every ordered ID and
+  label.
+- **Fix / mitigation:** Add a focused first consumer test in
+  `packages/web/src/pages/SettingsPage.test.tsx` that renders `SettingsPage`
+  and asserts the complete ordered tab ID/label list. No production branch,
+  mutation exclusion, threshold, timeout, or E2E behavior changed.
+- **Validation:** The focused web/route suite passed 13 tests; the exact
+  single-file mutation run passed at 100.00% (12 killed, 0 survived, 0 timed
+  out); root and web TypeScript checks passed; Biome format/check and
+  `git diff --check` passed. The fix is commit
+  [75db9c092](https://github.com/Asherlc/dofek/commit/75db9c092).
+- **Remaining risk / follow-up:** Confirm the replacement hosted mutation and
+  full CI run. Do not merge until the separately failing E2E gate is resolved;
+  investigate any new hosted failure as new evidence rather than weakening a
+  gate.
 ## 2026-08-01 — Full E2E analytics exceeded the shared review ClickHouse cap
 
 - **Status:** Fixed in source; the new E2E profile is awaiting a fresh CI run.

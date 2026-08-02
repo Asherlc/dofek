@@ -1,16 +1,10 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { normalizeSettingsCategory, type SettingsCategory } from "../pages/settingsCategories.ts";
 
 const captured: {
   validateSearch:
     | ((search: Record<string, unknown>) => {
-        tab?:
-          | "account"
-          | "data-sources"
-          | "goals-models"
-          | "privacy-export"
-          | "notifications"
-          | "billing"
-          | "advanced";
+        tab?: SettingsCategory;
         zeppPair?: string;
       })
     | null;
@@ -21,14 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
     () =>
     (options: {
       validateSearch?: (search: Record<string, unknown>) => {
-        tab?:
-          | "account"
-          | "data-sources"
-          | "goals-models"
-          | "privacy-export"
-          | "notifications"
-          | "billing"
-          | "advanced";
+        tab?: SettingsCategory;
         zeppPair?: string;
       };
     }) => {
@@ -39,22 +26,6 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../pages/SettingsPage.tsx", () => ({
   SettingsPage: () => null,
-  normalizeSettingsCategory: (value: unknown) => {
-    if (
-      value === "account" ||
-      value === "data-sources" ||
-      value === "goals-models" ||
-      value === "privacy-export" ||
-      value === "notifications" ||
-      value === "billing" ||
-      value === "advanced"
-    ) {
-      return value;
-    }
-    if (value === "connections") return "data-sources";
-    if (value === "general" || value === "health") return "goals-models";
-    return undefined;
-  },
 }));
 
 beforeAll(async () => {
@@ -75,10 +46,17 @@ describe("settings search validation", () => {
     ["health", "goals-models"],
     ["account", "account"],
   ] as const)("normalizes the legacy %s tab to %s", (legacyTab, currentCategory) => {
+    expect(normalizeSettingsCategory(legacyTab)).toBe(currentCategory);
     expect(captured.validateSearch?.({ tab: legacyTab })).toEqual({ tab: currentCategory });
+  });
+
+  it("keeps the Advanced tab deep-link value", () => {
+    expect(normalizeSettingsCategory("advanced")).toBe("advanced");
+    expect(captured.validateSearch?.({ tab: "advanced" })).toEqual({ tab: "advanced" });
   });
 
   it("drops invalid or empty settings search values", () => {
     expect(captured.validateSearch?.({ tab: "unknown", zeppPair: "" })).toEqual({});
+    expect(captured.validateSearch?.({ tab: ["connections"] })).toEqual({});
   });
 });

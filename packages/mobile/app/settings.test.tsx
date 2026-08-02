@@ -521,6 +521,9 @@ describe("SettingsScreen data sources", () => {
 
     render(<SettingsScreen />);
 
+    expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Inertial measurement unit visualization" }),

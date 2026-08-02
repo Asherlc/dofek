@@ -1,9 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  normalizeSettingsCategory,
-  type SettingsCategory,
-  SettingsPage,
-} from "../pages/SettingsPage.tsx";
+import { SettingsPage } from "../pages/SettingsPage.tsx";
+import { normalizeSettingsCategory, type SettingsCategory } from "../pages/settingsCategories.ts";
 
 export const Route = createFileRoute("/settings")({
   validateSearch: (

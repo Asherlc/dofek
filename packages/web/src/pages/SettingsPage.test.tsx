@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { normalizeSettingsCategory } from "./settingsCategories.ts";
 
 type SettingsSearch = {
   tab?:
@@ -160,6 +161,27 @@ beforeEach(() => {
 });
 
 describe("SettingsPage categories", () => {
+  it("renders the complete settings category contract in order", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(
+      screen.getAllByRole("tab").map((tab) => ({
+        id: tab.id,
+        label: tab.textContent,
+      })),
+    ).toEqual([
+      { id: "settings-tab-account", label: "Account" },
+      { id: "settings-tab-data-sources", label: "Data Sources" },
+      { id: "settings-tab-goals-models", label: "Goals & Models" },
+      { id: "settings-tab-privacy-export", label: "Privacy/Export" },
+      { id: "settings-tab-notifications", label: "Notifications" },
+      { id: "settings-tab-billing", label: "Billing" },
+      { id: "settings-tab-advanced", label: "Advanced" },
+    ]);
+  });
+
   it("shows searchable categories with Account selected by default", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
@@ -245,8 +267,6 @@ describe("SettingsPage categories", () => {
     ["health", "goals-models"],
     ["account", "account"],
   ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory) => {
-    const { normalizeSettingsCategory } = await import("./SettingsPage.tsx");
-
     expect(normalizeSettingsCategory(legacyTab)).toBe(currentCategory);
   });
 

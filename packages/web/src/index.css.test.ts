@@ -233,3 +233,15 @@ describe("web color tokens", () => {
     ).toBeGreaterThan(16);
   });
 });
+
+describe("page transitions", () => {
+  it("fades routed content without translating the page layout", () => {
+    const pageEnter = extractBlockAfter(indexCss, /\.page-enter\b/i, "page-enter");
+    const pageIn = extractBlockAfter(indexCss, /@keyframes\s+pageIn\b/i, "pageIn");
+
+    expect(pageEnter).toContain("animation: pageIn");
+    expect(pageIn).toContain("opacity: 0");
+    expect(pageIn).toContain("opacity: 1");
+    expect(pageIn).not.toContain("transform:");
+  });
+});
