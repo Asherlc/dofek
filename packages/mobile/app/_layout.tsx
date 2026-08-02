@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/react-native";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import * as Notifications from "expo-notifications";
-import { Stack, useRouter } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -35,7 +35,7 @@ import {
   startStartupPhase,
   startStartupTelemetry,
 } from "../lib/startup-telemetry";
-import { captureException, initTelemetry, logger } from "../lib/telemetry";
+import { captureException, initTelemetry, logger, setTelemetryRoute } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
@@ -61,17 +61,17 @@ import LoginScreen from "./login";
 try {
   initTelemetry();
 } catch (error: unknown) {
-  captureException(error, { source: "bootstrap-telemetry-init" });
+  captureException(error, { source: "bootstrap-telemetry-init", route: "/bootstrap" });
 }
 
 try {
   startStartupTelemetry();
 } catch (error: unknown) {
-  captureException(error, { source: "startup-telemetry-init" });
+  captureException(error, { source: "startup-telemetry-init", route: "/bootstrap" });
 }
 
 SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
-  captureException(error, { source: "splash-screen-prevent-auto-hide" });
+  captureException(error, { source: "splash-screen-prevent-auto-hide", route: "/splash" });
 });
 
 /**
@@ -157,6 +157,23 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
   );
 
   useWhoopBleSync(whoopSyncClient, whoopDeps, whoopRealtimeClient);
+
+  return null;
+}
+
+function TelemetryRouteSync({
+  isAuthenticated,
+  isLoading,
+}: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}) {
+  const pathname = usePathname();
+  const telemetryRoute = isLoading || isAuthenticated ? pathname : "/login";
+
+  useEffect(() => {
+    setTelemetryRoute(telemetryRoute);
+  }, [telemetryRoute]);
 
   return null;
 }
@@ -391,49 +408,61 @@ function AuthGate() {
 
   if (isLoading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </View>
+      <>
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} isLoading />
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      </>
     );
   }
 
   if (bootstrapError) {
     return (
-      <View style={styles.authError}>
-        <Text style={styles.authErrorTitle}>Could not verify your session</Text>
-        <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
-        <View style={styles.authErrorActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try again"
-            style={styles.authErrorButton}
-            onPress={retryBootstrap}
-          >
-            <Text style={styles.authErrorButtonText}>Try again</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Sign out"
-            style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
-            onPress={logout}
-          >
-            <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
-              Sign out
-            </Text>
-          </Pressable>
+      <>
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} isLoading={false} />
+        <View style={styles.authError}>
+          <Text style={styles.authErrorTitle}>Could not verify your session</Text>
+          <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
+          <View style={styles.authErrorActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Try again"
+              style={styles.authErrorButton}
+              onPress={retryBootstrap}
+            >
+              <Text style={styles.authErrorButtonText}>Try again</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+              style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
+              onPress={logout}
+            >
+              <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
+                Sign out
+              </Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      </>
     );
   }
 
   // No user — show login
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <>
+        <TelemetryRouteSync isAuthenticated={false} isLoading={false} />
+        <LoginScreen />
+      </>
+    );
   }
 
   // Step 3: Authenticated — show the app
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <TelemetryRouteSync isAuthenticated isLoading={false} />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
         <MedicationReminderNotificationListener />
