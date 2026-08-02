@@ -5,12 +5,11 @@ import {
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
-import { providerLabel } from "@dofek/providers/providers";
-import type {
-  HealthMetricKey,
-  HealthMetricProvenance,
-  HealthStatusMetric,
-} from "dofek-server/mobile-dashboard-contracts";
+import {
+  formatHealthProvenanceSource,
+  formatHealthProvenanceSummary,
+} from "@dofek/providers/health-provenance";
+import type { HealthMetricKey, HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
@@ -141,25 +140,13 @@ function formatComparison(
   return `${comparison.recentDays}d avg ${formatContextValue(comparison.recentMean, formatter, unit)} vs prior ${comparison.baselineDays}d avg ${formatContextValue(comparison.baselineMean, formatter, unit)} · ${signedDelta}`;
 }
 
-function provenanceSourceText(provenance: HealthMetricProvenance): string {
-  const sourceLabels = provenance.sourceProviders.map(providerLabel);
-  return sourceLabels.length > 0 ? sourceLabels.join(", ") : "Unknown source";
-}
-
-function provenanceSummaryText(provenance: HealthMetricProvenance): string {
-  const latestText = provenance.latestDate
-    ? `latest ${provenance.latestDate}`
-    : "latest unavailable";
-  return `${provenanceSourceText(provenance)} · ${provenance.observedDays}/${provenance.windowDays} days · ${latestText}`;
-}
-
 function HealthMetricProvenanceDisclosure({ metric }: { metric: HealthStatusMetric }) {
   const [expanded, setExpanded] = useState(false);
   const provenance = metric.provenance;
 
   if (!provenance) return null;
 
-  const sourceText = provenanceSourceText(provenance);
+  const sourceText = formatHealthProvenanceSource(provenance);
   return (
     <div className="mt-1 text-[10px] text-subtle">
       <button
@@ -169,7 +156,7 @@ function HealthMetricProvenanceDisclosure({ metric }: { metric: HealthStatusMetr
         aria-label={`${expanded ? "Hide" : "Show"} source details for ${metric.label}`}
         onClick={() => setExpanded((current) => !current)}
       >
-        <span>{provenanceSummaryText(provenance)}</span>
+        <span>{formatHealthProvenanceSummary(provenance)}</span>
         <span className="shrink-0 font-medium">{expanded ? "Hide details" : "Details"}</span>
       </button>
       {expanded ? (

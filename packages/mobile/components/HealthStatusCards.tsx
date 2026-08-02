@@ -1,8 +1,8 @@
-import { providerLabel } from "@dofek/providers/providers";
-import type {
-  HealthMetricProvenance,
-  HealthStatusMetric,
-} from "dofek-server/mobile-dashboard-contracts";
+import {
+  formatHealthProvenanceSource,
+  formatHealthProvenanceSummary,
+} from "@dofek/providers/health-provenance";
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -37,18 +37,6 @@ function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
   if (status === "near_baseline" || status === "moving_as_intended") return "✓";
   if (status === "notable_deviation") return "!";
   return "×";
-}
-
-function provenanceSourceText(provenance: HealthMetricProvenance): string {
-  const sourceLabels = provenance.sourceProviders.map(providerLabel);
-  return sourceLabels.length > 0 ? sourceLabels.join(", ") : "Unknown source";
-}
-
-function provenanceSummaryText(provenance: HealthMetricProvenance): string {
-  const latestText = provenance.latestDate
-    ? `latest ${provenance.latestDate}`
-    : "latest unavailable";
-  return `${provenanceSourceText(provenance)} · ${provenance.observedDays}/${provenance.windowDays} days · ${latestText}`;
 }
 
 export function HealthStatusCards({
@@ -109,7 +97,9 @@ export function HealthStatusCards({
                   onPress={() => setExpandedMetric(expanded ? null : metric.metric)}
                   style={styles.provenanceDisclosure}
                 >
-                  <Text style={styles.provenanceSummary}>{provenanceSummaryText(provenance)}</Text>
+                  <Text style={styles.provenanceSummary}>
+                    {formatHealthProvenanceSummary(provenance)}
+                  </Text>
                   <Text style={styles.provenanceAction}>
                     {expanded ? "Hide details" : "Details"}
                   </Text>
@@ -117,7 +107,7 @@ export function HealthStatusCards({
                 {expanded ? (
                   <View style={styles.provenanceDetails}>
                     <Text style={styles.provenance}>
-                      Source: {provenanceSourceText(provenance)}
+                      Source: {formatHealthProvenanceSource(provenance)}
                     </Text>
                     <Text style={styles.provenance}>
                       Latest recorded date: {provenance.latestDate ?? "Unavailable"}
@@ -236,11 +226,15 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   provenanceDisclosure: {
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.xs,
+    justifyContent: "space-between",
     paddingVertical: spacing.xs,
   },
   provenanceSummary: {
     color: colors.textTertiary,
+    flex: 1,
     fontSize: 12,
     lineHeight: 17,
   },
