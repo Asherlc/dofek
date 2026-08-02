@@ -1,7 +1,7 @@
 import { formatAssociationEstimateLabel } from "@dofek/format/format";
 import type { ProviderProvenance } from "@dofek/providers/providers";
 import type { BehaviorAssociation } from "dofek-server/types";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { EvidenceDetails } from "./EvidenceDetails.tsx";
@@ -112,49 +112,90 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
 }
 
 export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
-  const { data, isLoading, error } = trpc.behaviorImpact.impactSummary.useQuery(
-    selectedRangeQueryInput(days),
-  );
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } =
+    trpc.behaviorImpact.impactSummary.useQuery(selectedRangeQueryInput(days), {
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
+    });
+  const lastSuccessfulData = useRef<typeof data>(undefined);
 
-  if (isLoading && !data) {
+  useEffect(() => {
+    if (data !== undefined && !isPlaceholderData) {
+      lastSuccessfulData.current = data;
+    }
+  }, [data, isPlaceholderData]);
+
+  const displayData = data ?? lastSuccessfulData.current;
+  const isEmptyPlaceholder = isPlaceholderData && isFetching && data?.length === 0;
+
+  if ((isLoading && data === undefined) || isEmptyPlaceholder) {
     return (
-      <div className="card p-6 animate-pulse">
-        <div className="h-4 bg-surface-hover rounded w-48 mb-4" />
-        <div className="space-y-3">
-          <div className="h-5 bg-surface-hover rounded" />
-          <div className="h-5 bg-surface-hover rounded" />
-          <div className="h-5 bg-surface-hover rounded" />
-          <div className="h-5 bg-surface-hover rounded" />
-        </div>
+      <QueryStatePanel
+        contextLabel="Behavior associations"
+        variant="loading"
+        message="Loading behavior associations."
+        height={120}
+      />
+    );
+  }
+
+  if (error && displayData === undefined) {
+    return (
+      <QueryStatePanel
+        contextLabel="Behavior associations"
+        error={error}
+        height={120}
+        onRetry={() => void refetch()}
+        retryLabel="Retry behavior associations"
+        retrying={isFetching}
+      />
+    );
+  }
+
+  const refreshStatus = isFetching ? (
+    <output
+      className="text-xs text-dim"
+      aria-label="Refreshing behavior associations."
+      aria-live="polite"
+      aria-busy="true"
+    >
+      Refreshing behavior associations…
+    </output>
+  ) : null;
+
+  const refreshError =
+    error && displayData !== undefined ? (
+      <QueryStatePanel
+        contextLabel="Behavior associations"
+        error={error}
+        height={96}
+        onRetry={() => void refetch()}
+        retryLabel="Retry behavior associations"
+        retrying={isFetching}
+      />
+    ) : null;
+
+  if (displayData === undefined || displayData.length === 0) {
+    return (
+      <div className="space-y-3">
+        {refreshStatus}
+        {refreshError}
+        <QueryStatePanel
+          contextLabel="Behavior associations"
+          variant="empty"
+          message="Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
+          height={120}
+        />
       </div>
     );
   }
 
-  if (error && !data) {
-    return <QueryStatePanel contextLabel="Behavior associations" error={error} height={120} />;
-  }
-
-  if (!data || data.length === 0) {
-    return (
-      <div className="card p-6">
-        <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
-          Behavior Associations
-        </h3>
-        <p className="text-xs text-dim">
-          Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in
-          each group to describe their association with next-day readiness.
-        </p>
-      </div>
-    );
-  }
-
-  const associationRows = data.filter((item) => item.association);
+  const associationRows = displayData.filter((item) => item.association);
   if (associationRows.length === 0) {
     return (
       <div className="space-y-3">
-        {error && (
-          <QueryStatePanel contextLabel="Behavior associations" error={error} height={96} />
-        )}
+        {refreshStatus}
+        {refreshError}
         <div className="card p-6">
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
             Association evidence unavailable
@@ -169,7 +210,8 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
 
   return (
     <div className="space-y-3">
-      {error && <QueryStatePanel contextLabel="Behavior associations" error={error} height={96} />}
+      {refreshStatus}
+      {refreshError}
       <div className="card p-6">
         <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
           Association with Next-Day Readiness
