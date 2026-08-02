@@ -5,9 +5,13 @@ import {
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
-import { providerLabel } from "@dofek/providers/providers";
+import {
+  formatHealthProvenanceSource,
+  formatHealthProvenanceSummary,
+} from "@dofek/providers/health-provenance";
 import type { HealthMetricKey, HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import type { BaselineRelativeMetric } from "dofek-server/types";
+import { useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 
 interface HealthStatusBarProps {
@@ -136,6 +140,38 @@ function formatComparison(
   return `${comparison.recentDays}d avg ${formatContextValue(comparison.recentMean, formatter, unit)} vs prior ${comparison.baselineDays}d avg ${formatContextValue(comparison.baselineMean, formatter, unit)} · ${signedDelta}`;
 }
 
+function HealthMetricProvenanceDisclosure({ metric }: { metric: HealthStatusMetric }) {
+  const [expanded, setExpanded] = useState(false);
+  const provenance = metric.provenance;
+
+  if (!provenance) return null;
+
+  const sourceText = formatHealthProvenanceSource(provenance);
+  return (
+    <div className="mt-1 text-[10px] text-subtle">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 text-left hover:text-muted"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Hide" : "Show"} source details for ${metric.label}`}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span>{formatHealthProvenanceSummary(provenance)}</span>
+        <span className="shrink-0 font-medium">{expanded ? "Hide details" : "Details"}</span>
+      </button>
+      {expanded ? (
+        <div className="mt-1 space-y-0.5 border-l border-border pl-2">
+          <div>Source: {sourceText}</div>
+          <div>Latest recorded date: {provenance.latestDate ?? "Unavailable"}</div>
+          <div>
+            Coverage: {provenance.observedDays}/{provenance.windowDays} days
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function HealthStatusBar({
   baselineRelative = [],
   metrics,
@@ -220,14 +256,7 @@ export function HealthStatusBar({
                 })}
               </div>
             ) : null}
-            {metric.provenance ? (
-              <div className="mt-1 text-[10px] text-subtle">
-                Source:{" "}
-                {metric.provenance.sourceProviders.map(providerLabel).join(", ") || "Unknown"} ·
-                Latest: {metric.provenance.latestDate ?? "Unknown"} · Coverage:{" "}
-                {metric.provenance.observedDays}/{metric.provenance.windowDays} days
-              </div>
-            ) : null}
+            <HealthMetricProvenanceDisclosure metric={metric} />
             {!baselineContext && metric.comparison ? (
               <div className="mt-1 text-[10px] text-subtle">
                 {formatComparison(metric, comparisonFormatter, units[metric.metric])}
