@@ -71,7 +71,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
     },
     {
       key: "gap",
-      label: "GAP",
+      label: "Effort-adjusted pace",
       headerClassName: "pb-2 pr-4",
       cellClassName: "py-2 pr-4 tabular-nums",
       renderCell: (row) => {
@@ -97,7 +97,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-subtle mb-2">Grade-Adjusted Pace</h3>
+      <h3 className="text-xs font-medium text-subtle mb-2">Effort-adjusted pace for grade</h3>
       <ActivityTable
         rows={data}
         columns={columns}
@@ -105,7 +105,8 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
         getActivityId={(row) => row.activityId}
       />
       <p className="text-xs text-dim mt-1">
-        GAP highlighted in amber when it differs from actual pace by more than 15%.
+        Effort-adjusted pace is highlighted in amber when it differs from actual pace by more than
+        15%.
       </p>
     </div>
   );

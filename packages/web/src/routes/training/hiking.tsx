@@ -44,8 +44,8 @@ function HikingTab() {
   return (
     <>
       <Section
-        title="Grade-Adjusted Pace"
-        subtitle="Minetti-model normalized pace for walks and hikes"
+        title="Effort-adjusted pace for grade"
+        subtitle="Pace adjusted for the effort of walking or hiking on slopes. Uses the Minetti slope-cost model."
       >
         {shouldShowQueryError(gradeAdjustedPace) ? (
           <QueryStatePanel error={gradeAdjustedPace.error} />
