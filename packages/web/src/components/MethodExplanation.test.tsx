@@ -25,7 +25,8 @@ describe("MethodExplanation", () => {
     fireEvent.click(screen.getByText("How this is calculated"));
     expect(
       screen.getByText("Technical name: Polarization Index (Treff three-zone model)"),
-    ).toBeInTheDocument();
+    ).toBeVisible();
+    expect(screen.getByText("Formula details")).toBeVisible();
     expect([...container.querySelectorAll("details p")].map((line) => line.textContent)).toEqual([
       "Technical name: Polarization Index (Treff three-zone model)",
       "Formula details",

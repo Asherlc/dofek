@@ -1,4 +1,5 @@
 import { formatDateShort, formatIntensity, formatNumber } from "@dofek/format/format";
+import { POWER_UNIT_LABEL } from "@dofek/format/units";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { ActivityVariabilityEmptyReason, ActivityVariabilityRow } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
@@ -73,14 +74,14 @@ export function ActivityVariabilityTable({
     },
     {
       key: "normalizedPower",
-      label: `${TRAINING_TERMINOLOGY.normalizedPower.plainLabel} (W)`,
+      label: `${TRAINING_TERMINOLOGY.normalizedPower.plainLabel} (${POWER_UNIT_LABEL})`,
       headerClassName: "text-right py-2 px-3 text-muted font-medium",
       cellClassName: "py-2 px-3 text-right text-foreground",
       renderCell: (row) => formatNumber(row.normalizedPower),
     },
     {
       key: "averagePower",
-      label: "Avg Power (W)",
+      label: `Avg Power (${POWER_UNIT_LABEL})`,
       headerClassName: "text-right py-2 px-3 text-muted font-medium",
       cellClassName: "py-2 px-3 text-right text-foreground",
       renderCell: (row) => formatNumber(row.averagePower),

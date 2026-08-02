@@ -1,3 +1,4 @@
+import { POWER_UNIT_LABEL, WORK_UNIT_LABEL } from "@dofek/format/units";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { TrainingChartAvailability } from "dofek-server/types";
 import {
@@ -110,7 +111,7 @@ export function PowerCurveChart({
       trigger: "item",
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, watts] = params.data;
-        return `${escapeTooltipHtml(params.seriesName)}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
+        return `${escapeTooltipHtml(params.seriesName)}<br/>${formatDuration(seconds)}: <strong>${watts}${POWER_UNIT_LABEL}</strong>`;
       },
     }),
     xAxis: {
@@ -143,14 +144,14 @@ export function PowerCurveChart({
         height={280}
         emptyMessage="No power data"
       />
-      {model ? (
+      {modelCurveData.length > 0 && model ? (
         <MethodExplanation
           className="mt-2"
           technicalName={`${TRAINING_TERMINOLOGY.criticalPower.technicalName} + ${TRAINING_TERMINOLOGY.anaerobicWorkCapacity.technicalName}`}
           lines={[
             TRAINING_TERMINOLOGY.criticalPower.details,
             TRAINING_TERMINOLOGY.anaerobicWorkCapacity.details,
-            `Current fit: ${model.cp}W sustainable cycling power and ${Math.round(model.wPrime / 1000)}kJ short-burst power reserve.`,
+            `Current fit: ${model.cp}${POWER_UNIT_LABEL} sustainable cycling power and ${Math.round(model.wPrime / 1000)}${WORK_UNIT_LABEL} short-burst power reserve.`,
           ]}
         />
       ) : null}

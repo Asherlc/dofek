@@ -132,6 +132,5 @@ describe("HikingTab", () => {
     expect(
       screen.getByText("Pace adjusted for the effort of walking or hiking on slopes."),
     ).toBeDefined();
-    expect(screen.queryByText(/Minetti/)).toBeNull();
   });
 });

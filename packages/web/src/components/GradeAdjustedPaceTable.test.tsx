@@ -132,6 +132,6 @@ describe("GradeAdjustedPaceTable", () => {
     for (const technicalDetail of screen.getAllByText(/Minetti/)) {
       expect(technicalDetail).not.toBeVisible();
     }
-    expect(screen.getByText("How this is calculated")).toBeDefined();
+    expect(screen.getByText("How this is calculated")).toBeVisible();
   });
 });

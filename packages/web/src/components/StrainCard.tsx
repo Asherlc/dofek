@@ -172,7 +172,6 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
               <p className="text-[10px] text-subtle">{data.context.label}</p>
             </div>
           </div>
-          <p className="text-[11px] text-dim">{data.context.description}</p>
           <MethodExplanation
             className="text-[11px]"
             technicalName={TRAINING_TERMINOLOGY.workloadRatio.technicalName}

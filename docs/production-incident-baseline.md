@@ -30,7 +30,8 @@ The failure occurred before Metro bundling.
 ### Root Cause
 
 The GitHub-hosted runner could not reach `app.infisical.com` during OIDC
-authentication, so required mobile build secrets were never loaded.
+authentication, so required mobile build secrets were never loaded ([job
+91481471693](https://github.com/Asherlc/dofek/actions/runs/30742155277/job/91481471693)).
 
 ### Fix or Mitigation
 
@@ -43,6 +44,15 @@ recovers.
 
 The mobile Metro bundle and any dependent CI gates remain unverified until the
 Infisical OIDC request succeeds on a subsequent workflow run.
+
+### Follow-Up Work
+
+Rerun CI after Infisical connectivity recovers and retain the successful
+`Build Mobile / Metro Bundle` job and its dependent test-gate results as the
+validation evidence for this incident. The follow-up run is
+[CI run 30742835268](https://github.com/Asherlc/dofek/actions/runs/30742835268);
+no runtime retry or timeout change is warranted unless that run reproduces the
+connectivity failure.
 
 ## 2026-08-02: iOS cold start blocked by Expo OTA launch wait
 
