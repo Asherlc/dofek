@@ -21613,3 +21613,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If the larger E2E profile still reaches its
   cap, capture the failing model's query memory and rendered container limit
   before changing the budget again.
+
+## 2026-08-01 — Reconciled #2061 integration retries remained host-blocked
+
+- **Status:** Unresolved local validation blocker; no production impact.
+- **Symptoms:** After the activity-visibility `beforeAll` timed out, the
+  repository-managed sleep-need retry skipped all 11 tests when ClickHouse
+  reset its connection during the temporary fixture rebuild.
+- **Evidence:** The first fatal database line was `socket hang up` while
+  inserting `postgres_fitness_test_90cd0f8f1b5e.sleep_stage`; the reconciled
+  current-head retries then skipped every test with `the database system is in
+  recovery mode`. Earlier setup attempts also received `ECONNREFUSED
+  127.0.0.1:61565`. The workspace Redpanda container was restarting with
+  `Your system does not satisfy minimum AIO requirements. Set
+  /proc/sys/fs/aio-max-nr to at least 65539`, matching the [kernel AIO sysctl
+  guidance](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Root cause:** The local Compose host cannot keep the ClickHouse/Redpanda
+  integration environment stable; no application assertion was reached.
+- **Fix / mitigation:** No repository timeout, retry, skip, or assertion
+  relaxation was added. The exact suites remain delegated to CI or a host with
+  sufficient AIO and stable ClickHouse capacity.
+- **Remaining risk / follow-up:** Re-run both affected database suites at the
+  reconciled commit at stable infrastructure before treating runtime coverage
+  as locally confirmed. The focused settings Cypress attempt was separately
+  blocked before startup because Docker reported `all predefined address pools
+  have been fully subnetted` while creating `issue-2061-e2e_default`.
