@@ -26,6 +26,10 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
       overlapSummary: null,
     },
     lastProcessedAt: "2026-07-14T08:50:00.000Z",
+    distanceMeters: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
+    elevationGainM: null,
+    elevationState: { status: "missing", reason: "Elevation not recorded" },
     location: null,
     stats: [{ status: "available", label: "Training Stress Score", value: "8.5" }],
     ...overrides,
@@ -103,7 +107,7 @@ describe("ActivityCardContent", () => {
         activity={activity({
           stats: [
             {
-              status: "unavailable",
+              status: "missing",
               label: "Training Stress Score",
               reason:
                 "Record average power, or record average heart rate and set maximum heart rate.",
@@ -130,6 +134,10 @@ describe("ActivityCardContent", () => {
       <ActivityCardContent
         activity={activity({
           activityType: "running",
+          distanceMeters: 5000,
+          distanceState: { status: "available" },
+          elevationGainM: 120,
+          elevationState: { status: "available" },
           location: {
             mapPreview: {
               width: 256,
@@ -137,8 +145,6 @@ describe("ActivityCardContent", () => {
               tiles: [],
               routePath: null,
             },
-            distanceMeters: 5000,
-            elevationGainM: 120,
           },
         })}
         units={units}
@@ -156,5 +162,58 @@ describe("ActivityCardContent", () => {
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
     expect(screen.getByTestId("activity-secondary-inset").className).toContain("rounded-lg");
     expect(screen.getByText("Route")).toBeDefined();
+  });
+
+  it("does not present missing route measurements as available dashes", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          activityType: "running",
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
+          location: {
+            mapPreview: {
+              width: 256,
+              height: 256,
+              tiles: [],
+              routePath: null,
+            },
+          },
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText("Distance unavailable")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Elevation not recorded")).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
+  });
+
+  it.each([
+    "stale",
+    "failed",
+    "processing",
+    "conflicting",
+  ] as const)("renders a distinct %s server-authored state", (status) => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          stats: [{ status, label: "Training Stress Score", reason: "Sync the source and retry." }],
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
+    expect(screen.getByText("Sync the source and retry.")).toBeDefined();
+    expect(screen.queryByText("—")).toBeNull();
   });
 });

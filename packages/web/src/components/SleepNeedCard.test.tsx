@@ -32,8 +32,8 @@ const mockData = {
   debtRecoveryMinutes: 23,
   totalNeedMinutes: 515,
   estimateMetadata: {
-    basis: "generic_eight_hour_default",
-    baselineQualifyingNightCount: 1,
+    basis: "personalized_high_hrv_average",
+    baselineQualifyingNightCount: 7,
     debtObservedNightCount: 1,
     methodVersion: "sleep-need-heuristic-v1",
     uncertainty: "not_established",
@@ -45,7 +45,7 @@ const mockData = {
       debtRecovery: "Debt recovery",
     },
     basisLabel:
-      "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+      "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
     coverageLabel: "Sleep-debt input uses 1 observed night from the model's recent-night window.",
     methodLabel: "Method: sleep-need-heuristic-v1",
     uncertaintyLabel: "Uncertainty: not established",
@@ -78,7 +78,7 @@ const mockData = {
 } satisfies SleepNeedV2;
 
 const barItemSchema = z.object({
-  value: z.number(),
+  value: z.number().nullable(),
   itemStyle: z.object({ color: z.string() }),
 });
 
@@ -190,7 +190,7 @@ describe("SleepNeedCard", () => {
     expect(tooltipHtml).not.toContain("Debt:");
   });
 
-  it("renders placeholder bars for null nights (missing data)", () => {
+  it("preserves null nights instead of rendering measured zero bars", () => {
     capturedOption = null;
     const dataWithGaps = {
       ...mockData,
@@ -221,9 +221,8 @@ describe("SleepNeedCard", () => {
     render(<SleepNeedCard data={dataWithGaps} />);
     const bars = getBarSeriesData();
     expect(bars).toHaveLength(3);
-    // Null night should have value 0 and muted color
-    expect(bars[1]?.value).toBe(0);
-    expect(bars[1]?.itemStyle.color).toBe("#3a3a3e");
+    // Null night should remain absent from the measured series.
+    expect(bars[1]?.value).toBeNull();
   });
 
   it("shows only the server message when previous-night sleep is missing", () => {
@@ -241,12 +240,28 @@ describe("SleepNeedCard", () => {
     expect(screen.queryByTestId("echarts")).toBeNull();
   });
 
+  it("shows the server-authored next action for insufficient data", () => {
+    capturedOption = null;
+    const insufficientData: SleepNeedV2 = {
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    };
+
+    render(<SleepNeedCard data={insufficientData} />);
+
+    expect(screen.getByText(insufficientData.message)).toBeDefined();
+    expect(screen.getByText(insufficientData.nextAction)).toBeDefined();
+    expect(screen.queryByTestId("echarts")).toBeNull();
+  });
+
   it("shows the available estimate basis and coverage", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
     expect(
       screen.getByText(
-        "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
       ),
     ).toBeDefined();
     expect(

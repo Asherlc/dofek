@@ -34,6 +34,9 @@ const activities = [
     provider_id: "garmin",
     source_providers: ["garmin"],
     distance_meters: 9200,
+    distance_state: { status: "available" },
+    elevation_gain_m: 120,
+    elevation_state: { status: "available" },
     location: null,
   },
   {
@@ -45,6 +48,9 @@ const activities = [
     provider_id: "apple_health",
     source_providers: ["apple_health"],
     distance_meters: null,
+    distance_state: { status: "missing", reason: "Distance not recorded" },
+    elevation_gain_m: null,
+    elevation_state: { status: "missing", reason: "Elevation not recorded" },
     location: null,
   },
 ];

@@ -71,7 +71,7 @@ describe("mobile query persistence", () => {
       "dofek-query-cache:user-1",
       JSON.stringify({
         timestamp: Date.now(),
-        buster: "user-1:v3",
+        buster: "user-1:v5",
         clientState: dehydrate(seedClient),
       }),
     );

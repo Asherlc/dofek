@@ -390,7 +390,12 @@ export default function TodayScreen() {
                   </Text>
                 </View>
               </>
-            ) : null}
+            ) : (
+              <>
+                <Text style={styles.noDataText}>{sleepNeed.message}</Text>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
+              </>
+            )}
           </Card>
         </Animated.View>
       )}

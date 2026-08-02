@@ -400,7 +400,10 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".activity_sensor_summary_rows") &&
-          command.includes("elevation_per_activity.elevation_gain_m AS elevation_gain_m"),
+          command.includes("elevation_per_activity.elevation_gain_m AS elevation_gain_m") &&
+          command.includes("elevation_per_activity.elevation_loss_m AS elevation_loss_m") &&
+          command.includes("isNotNull(previous_altitude) AND altitude - previous_altitude < 0") &&
+          !command.includes("FROM altitude_deltas\n  WHERE previous_altitude IS NOT NULL"),
       ),
     ).toBe(true);
     expect(

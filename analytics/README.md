@@ -167,11 +167,110 @@ pnpm tsx scripts/with-env.ts -- env \
   --select "sensor_scalar_sample deduped_sensor activity_sensor_sample activity_location_sample"
 ```
 
-Choose the smallest interval that contains the data being repaired and advance
-long backfills in separately observed windows. dbt's microbatch documentation
-defines these flags as the supported historical backfill controls and
-recommends providing both bounds:
+For a microbatch replay, choose the smallest interval that contains the data
+being repaired and advance long backfills in separately observed windows. This
+bounded replay guidance does not define the retention boundary for the full
+`activity_summary_rows` rebuild below. dbt's microbatch documentation defines
+these flags as the supported historical backfill controls and recommends
+providing both bounds:
 <https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
+
+When the semantics of an `activity_sensor_summary_rows` or
+`activity_summary_rows` field change, existing append-incremental rows are not
+rewritten by the model change alone. Run an explicit, monitored rebuild of the
+upstream sensor summary, location summary, and downstream activity summary, in
+dependency order, with an `initial_lookback_days` that covers every retained
+activity that should remain in all three tables. dbt recommends rebuilding an
+incremental model when its logic changes because historical transformations
+remain in the target table, using `--full-refresh` for the rebuild:
+<https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
+
+Before starting, query the oldest active activity in ClickHouse and use the
+larger of the returned age and the configured retention window as the minimum
+lookback. The query includes a one-day safety margin; do not silently accept
+the model default of 120 days:
+
+```sql
+SELECT
+    count() AS active_activity_count,
+    min(started_at) AS oldest_active_activity,
+    dateDiff('day', toDate(min(started_at)), toDate(now('UTC'))) + 1
+        AS required_lookback_days
+FROM postgres_fitness.activity FINAL
+WHERE _peerdb_is_deleted = 0
+    AND provider_absent_at IS NULL
+    AND deleted_at IS NULL;
+```
+
+Record the chosen lookback and the preflight row count/oldest date with the
+maintenance change. The `3650` value below is an example only; replace it with
+the verified retention-covering value when it is smaller or larger. Do not put
+this full refresh in a deploy, scheduled worker, request path, or test:
+
+The command below uses the local `dev` dbt target. For a production repair,
+run the same arguments from the production analytics environment with its
+`DBT_TARGET=prod` credentials; never point a local target at production by
+accident.
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=dev \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt build \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --full-refresh \
+  --vars '{"initial_lookback_days": 3650}' \
+  --select activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows
+```
+
+The lookback is a full-refresh retention boundary, not just the scope of the
+semantic change. A full refresh drops rows older than
+`initial_lookback_days`, and later incremental runs will not re-add those
+unchanged activities. The three selected models must all report `PASS` with no
+warnings or errors before the operator treats the rebuild as complete.
+
+While the build is active, watch the analytics-worker/dbt output and the
+currently running ClickHouse queries. `system.processes` exposes the active
+query's elapsed time, rows/bytes read, and memory usage:
+<https://clickhouse.com/docs/operations/system-tables/processes>.
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    read_rows,
+    read_bytes,
+    memory_usage,
+    query
+FROM system.processes
+WHERE query ILIKE '%activity_sensor_summary_rows%'
+    OR query ILIKE '%activity_location_summary_rows%'
+    OR query ILIKE '%activity_summary_rows%'
+ORDER BY elapsed DESC;
+```
+
+After the build, inspect completed and failed statements in
+`system.query_log`, then compare the post-build counts and oldest date with the
+preflight evidence. `system.query_log` records finished and failed query
+metadata:
+<https://clickhouse.com/docs/operations/system-tables/query_log>.
+
+```sql
+SELECT
+    count() AS active_summary_rows,
+    min(started_at) AS oldest_summary_activity,
+    countIf(elevation_loss_m IS NULL) AS unavailable_elevation_loss_rows,
+    countIf(elevation_loss_m = 0) AS measured_zero_elevation_loss_rows
+FROM analytics.activity_summary_rows FINAL
+WHERE is_deleted = 0;
+```
+
+If ClickHouse memory/CPU pressure, a failed model, or a stale worker health
+signal appears, stop and capture the first fatal dbt/ClickHouse query before
+rerunning the bounded procedure. Do not compensate with a larger timeout,
+unbounded lookback, or silent retry. Once the three-model build and semantic
+checks pass, continue with the normal cache-warm step below.
 
 After both safe dbt build groups succeed, `scripts/warm-query-cache.ts` replays
 every live query key registered in Redis with its original user, timezone,

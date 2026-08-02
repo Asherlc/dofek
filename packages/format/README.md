@@ -35,3 +35,7 @@ Use the shared domain helpers from `@dofek/format/format` anywhere these values 
 - Time spans: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` provide human-readable durations.
 
 These helpers use `Intl.NumberFormat` with fixed fraction options and `style: "unit"` where the JavaScript runtime supports the unit. `kcal` is appended manually because current runtimes do not expose a standard kilocalorie unit identifier.
+
+### Activity Data States (`activity-data-state.ts`)
+
+Server-authored activity values use a discriminated state: `available`, `missing`, `stale`, `failed`, `processing`, or `conflicting`. Every non-available state carries a reason so clients can explain why a value is not displayed instead of substituting zero, a dash, or an empty value.

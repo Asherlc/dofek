@@ -1,3 +1,4 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import {
   nutritionSourceResolutionSchema,
   selectedDateNutritionSummarySchema,
@@ -10,6 +11,7 @@ export type {
   HrvVariabilityRow as HeartRateVariabilityRow,
   ReadinessComponents,
   ReadinessRow,
+  SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,
@@ -20,7 +22,7 @@ export type {
 
 // ── Zod schemas for untyped tRPC endpoints (raw SQL results) ──
 
-export const ActivityRowSchema = z.object({
+const ActivityRowBaseSchema = z.object({
   id: z.union([z.string(), z.number()]),
   name: z.string().nullable().optional(),
   activity_type: z.string().nullable().optional(),
@@ -30,7 +32,17 @@ export const ActivityRowSchema = z.object({
   max_hr: z.number().nullable().optional(),
   avg_power: z.number().nullable().optional(),
   distance_meters: z.number().nullable().optional(),
+  distance_state: activityDataStateSchema.optional(),
 });
+
+export const ActivityRowSchema = ActivityRowBaseSchema.transform((row) => ({
+  ...row,
+  distance_state:
+    row.distance_state ??
+    (row.distance_meters == null
+      ? { status: "missing" as const, reason: "Distance not recorded" }
+      : { status: "available" as const }),
+}));
 
 export type ActivityRow = z.infer<typeof ActivityRowSchema>;
 

@@ -3,6 +3,14 @@ import { describe, expect, it } from "vitest";
 import { SparkLine } from "./SparkLine";
 
 describe("SparkLine", () => {
+  it("renders separate line segments around unavailable values", () => {
+    const { container } = render(
+      <SparkLine data={[10, 20, null, 30, 40]} width={140} height={40} />,
+    );
+
+    expect(container.querySelectorAll("polyline")).toHaveLength(2);
+  });
+
   it("renders background threshold bands when provided", () => {
     const { container } = render(
       <SparkLine

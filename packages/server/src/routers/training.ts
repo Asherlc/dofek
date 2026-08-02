@@ -136,5 +136,6 @@ export const trainingRouter = router({
       );
       return repo.getActivityStats(range.days);
     },
+    { keyVersion: "training-activity-states-v1" },
   ),
 });

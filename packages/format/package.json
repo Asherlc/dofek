@@ -5,12 +5,14 @@
   "type": "module",
   "exports": {
     "./activity-overview": "./src/activity-overview.ts",
+    "./activity-data-state": "./src/activity-data-state.ts",
     "./baseline-context": "./src/baseline-context.ts",
     "./format": "./src/format.ts",
     "./medication-dose-events": "./src/medication-dose-events.ts",
     "./medication-reminders": "./src/medication-reminders.ts",
     "./record-local-time": "./src/record-local-time.ts",
     "./report-decision-synthesis": "./src/report-decision-synthesis.ts",
+    "./sleep-data-state": "./src/sleep-data-state.ts",
     "./supplement-dose-events": "./src/supplement-dose-events.ts",
     "./units": "./src/units.ts"
   },

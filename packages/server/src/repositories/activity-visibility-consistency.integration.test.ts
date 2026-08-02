@@ -94,7 +94,45 @@ describe("activity visibility consistency", () => {
     );
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
     await syncClickHouseTestActivitySensorStore(testContext);
+    // The final running overview includes both run fixtures; keep both canonical
+    // summaries measured so the assertion isolates the backfilled walking row.
     await seedClickHouseMetricStreamRows(testContext, [
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:00:00Z",
+        channel: "location",
+        providerId: "issue_2060",
+        sourceType: "api",
+        point: "(-122.0,37.0)",
+      },
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:01:00Z",
+        channel: "location",
+        providerId: "issue_2060",
+        sourceType: "api",
+        point: "(-122.0,37.0)",
+      },
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:00:00Z",
+        channel: "altitude",
+        providerId: "issue_2060",
+        sourceType: "api",
+        scalar: 100,
+      },
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:01:00Z",
+        channel: "altitude",
+        providerId: "issue_2060",
+        sourceType: "api",
+        scalar: 100,
+      },
       {
         activityId: MEASURED_ZERO_RUN_ID,
         userId: TEST_USER_ID,
@@ -214,15 +252,31 @@ describe("activity visibility consistency", () => {
     expect(overview).toEqual({
       activityCount: 3,
       totalMinutes: 90,
-      totalDistanceMeters: 0,
-      totalElevationGainM: 0,
+      totalDistanceMeters: null,
+      totalDistanceState: {
+        status: "missing",
+        reason: "Distance was not recorded for every activity.",
+      },
+      totalElevationGainM: null,
+      totalElevationState: {
+        status: "missing",
+        reason: "Elevation gain was not recorded for every activity.",
+      },
       activityTypes: ["running", "walking"],
     });
     expect(unavailableOverview).toEqual({
       activityCount: 1,
       totalMinutes: 30,
       totalDistanceMeters: null,
+      totalDistanceState: {
+        status: "missing",
+        reason: "Distance was not recorded for every activity.",
+      },
       totalElevationGainM: null,
+      totalElevationState: {
+        status: "missing",
+        reason: "Elevation gain was not recorded for every activity.",
+      },
       activityTypes: ["running", "walking"],
     });
     await expect(activityRepository.findById(AUTHORIZED_RUN_ID)).resolves.toMatchObject({
@@ -261,7 +315,9 @@ describe("activity visibility consistency", () => {
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["running", "walking"],
     });
     await expect(
@@ -315,6 +371,93 @@ SELECT * REPLACE(
 )
 FROM analytics.activity_sensor_summary_rows FINAL
 WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
+    );
+    await executeClickHouseTestCommand(testContext, "TRUNCATE TABLE analytics.activity_summary");
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.activity_summary (
+        activity_id,
+        user_id,
+        activity_type,
+        name,
+        started_at,
+        ended_at,
+        avg_hr,
+        max_hr,
+        min_hr,
+        avg_power,
+        max_power,
+        avg_speed,
+        max_speed,
+        avg_cadence,
+        elevation_gain_legacy,
+        total_distance,
+        centroid_lat,
+        centroid_lng,
+        avg_left_balance,
+        avg_left_torque_eff,
+        avg_right_torque_eff,
+        avg_left_pedal_smooth,
+        avg_right_pedal_smooth,
+        elevation_gain_m,
+        elevation_loss_m,
+        avg_stance_time,
+        avg_vertical_osc,
+        avg_ground_contact_time,
+        avg_stride_length,
+        sample_count,
+        hr_sample_count,
+        power_sample_count,
+        first_sample_at,
+        last_sample_at,
+        best_twenty_minute_power,
+        normalized_power,
+        smoothed_avg_power,
+        climbing_elevation_gain_m,
+        climbing_seconds,
+        refreshed_at
+      ) VALUES (
+        toUUID('${AUTHORIZED_WALK_ID}'),
+        toUUID('${TEST_USER_ID}'),
+        'walking',
+        'Authorized Walk',
+        toDateTime64('2026-03-16 10:00:00', 6, 'UTC'),
+        toDateTime64('2026-03-16 10:30:00', 6, 'UTC'),
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        CAST(0, 'Nullable(Float64)'),
+        CAST(0, 'Nullable(Float64)'),
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        CAST(0, 'Nullable(Float64)'),
+        CAST(0, 'Nullable(Float64)'),
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        0,
+        0,
+        toDateTime64('2026-03-16 10:00:00', 6, 'UTC'),
+        toDateTime64('2026-03-16 10:30:00', 6, 'UTC'),
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        now64(9, 'UTC')
+      )`,
     );
 
     const repository = new ActivitiesCalendarRepository(
@@ -371,6 +514,10 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       distanceRows: 1,
       elevationRows: 1,
     });
+    await executeClickHouseTestCommand(
+      testContext,
+      "REBUILD TEST ANALYTICS TABLE analytics.activity_summary",
+    );
     await expect(backfillActivityOverviewAvailability(client, range)).resolves.toEqual({
       distanceRows: 0,
       elevationRows: 0,

@@ -231,8 +231,8 @@ describe("TodayScreen independent loading states", () => {
         debtRecoveryMinutes: 17,
         totalNeedMinutes: 517,
         estimateMetadata: {
-          basis: "generic_eight_hour_default",
-          baselineQualifyingNightCount: 1,
+          basis: "personalized_high_hrv_average",
+          baselineQualifyingNightCount: 7,
           debtObservedNightCount: 1,
           methodVersion: "sleep-need-heuristic-v1",
           uncertainty: "not_established",
@@ -244,7 +244,7 @@ describe("TodayScreen independent loading states", () => {
             debtRecovery: "Debt recovery",
           },
           basisLabel:
-            "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+            "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
           coverageLabel:
             "Sleep-debt input uses 1 observed night from the model's recent-night window.",
           methodLabel: "Method: sleep-need-heuristic-v1",
@@ -439,6 +439,41 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByText("8h 37m")).toBeNull();
   });
 
+  it("renders the server-authored next action for insufficient sleep need data", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: {
+        lastNight: {
+          date: "2026-03-20",
+          durationMinutes: 480,
+          deepPct: 20,
+          remPct: 25,
+          lightPct: 45,
+          awakePct: 10,
+          stagingAvailable: true,
+        },
+        sleepDebt: 0,
+      },
+      sleepNeed: {
+        availability: "insufficient_data",
+        reason: "insufficient_baseline_history",
+        message: "Sync at least 7 qualifying nights to estimate sleep need.",
+        nextAction: "Sync more sleep and recovery data.",
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getByText("Sync at least 7 qualifying nights to estimate sleep need."),
+    ).toBeTruthy();
+    expect(screen.getByText("Sync more sleep and recovery data.")).toBeTruthy();
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
+    expect(screen.queryByText("SLEEP DATA NEEDED")).toBeNull();
+  });
+
   it("renders the V2 sleep value as an uncalibrated heuristic estimate", async () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
@@ -452,7 +487,7 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
     expect(
       screen.getByText(
-        "Baseline uses a generic 8-hour default because 1 qualifying night is below the 7-night minimum.",
+        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
       ),
     ).toBeTruthy();
     expect(

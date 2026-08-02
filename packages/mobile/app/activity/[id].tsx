@@ -1,4 +1,9 @@
 import {
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
@@ -137,20 +142,35 @@ function ActivitySourceLinkLabel({ link, prefix }: { link: ActivitySourceLink; p
 
 // ── Stats Grid ──
 
-interface StatItem {
-  label: string;
-  value: string;
-}
+type StatItem = ActivityMetric | { label: string; value: string };
 
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats.map((stat) => (
-        <View key={stat.label} style={statsStyles.card}>
-          <Text style={statsStyles.label}>{stat.label}</Text>
-          <Text style={statsStyles.value}>{stat.value}</Text>
-        </View>
-      ))}
+      {stats.map((stat) => {
+        const metric = "status" in stat ? stat : null;
+        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+        const isUnavailable = unavailableMetric !== null;
+        const accessibleLabel = unavailableMetric
+          ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+          : undefined;
+        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+        return (
+          <View
+            key={stat.label}
+            style={statsStyles.card}
+            accessible={isUnavailable}
+            accessibilityLabel={accessibleLabel}
+          >
+            <Text style={statsStyles.label}>
+              {unavailableMetric
+                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                : stat.label}
+            </Text>
+            <Text style={statsStyles.value}>{displayedValue}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -621,7 +641,7 @@ export default function ActivityDetailScreen() {
   if (detail.error || !detail.data) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Activity not found</Text>
+        <Text style={styles.errorText}>{detail.error?.message ?? "Activity not found"}</Text>
       </View>
     );
   }
@@ -707,54 +727,58 @@ export default function ActivityDetailScreen() {
       value: formatDurationRange(activity.startedAt, activity.endedAt),
     });
   }
-  if (hasGps && activity.totalDistance != null) {
-    stats.push({
-      label: "Distance",
-      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
-    });
-  }
-  if (hasGps && activity.elevationGain != null) {
-    stats.push({
-      label: "Elevation Gain",
-      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
-    });
-  }
-  if (activity.avgHr != null) {
-    stats.push({
-      label: "Avg Heart Rate",
-      value: `${Math.round(activity.avgHr)} bpm`,
-    });
-  }
-  if (activity.maxHr != null) {
-    stats.push({
-      label: "Max Heart Rate",
-      value: `${Math.round(activity.maxHr)} bpm`,
-    });
-  }
-  if (activity.avgPower != null) {
-    stats.push({
-      label: "Avg Power",
-      value: `${Math.round(activity.avgPower)} W`,
-    });
-  }
-  if (activity.maxPower != null) {
-    stats.push({
-      label: "Max Power",
-      value: `${Math.round(activity.maxPower)} W`,
-    });
-  }
-  if (hasGps && activity.avgSpeed != null) {
-    stats.push({
-      label: "Avg Speed",
-      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
-    });
-  }
-  if (activity.avgCadence != null) {
-    stats.push({
-      label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
-    });
-  }
+  stats.push(
+    formatActivityMetric(
+      "Distance",
+      activity.totalDistance,
+      activity.totalDistanceState,
+      (distanceMeters) =>
+        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+    ),
+    formatActivityMetric(
+      "Elevation Gain",
+      activity.elevationGain,
+      activity.elevationGainState,
+      (elevationMeters) =>
+        `${Math.round(units.convertElevation(elevationMeters))} ${units.elevationLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Heart Rate",
+      activity.avgHr,
+      activity.avgHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Max Heart Rate",
+      activity.maxHr,
+      activity.maxHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Avg Power",
+      activity.avgPower,
+      activity.avgPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Max Power",
+      activity.maxPower,
+      activity.maxPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Avg Speed",
+      activity.avgSpeed,
+      activity.avgSpeedState,
+      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Cadence",
+      activity.avgCadence,
+      activity.avgCadenceState,
+      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+    ),
+  );
 
   return (
     <ScrollView

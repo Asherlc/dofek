@@ -1,47 +1,46 @@
+import type { ActivityDataState } from "@dofek/format/activity-data-state";
+import {
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
-type ActivityStat =
-  | { status: "available"; label: string; value: string }
-  | { status: "unavailable"; label: string; reason: string };
+type ActivityStat = ActivityMetric;
 
 export function ActivityMetricStrip({
   activity,
   units,
 }: {
   activity: {
-    location: {
-      distanceMeters: number | null;
-      elevationGainM: number | null;
-    } | null;
+    location: { mapPreview: unknown } | null;
+    distanceMeters: number | null;
+    distanceState: ActivityDataState;
+    elevationGainM: number | null;
+    elevationState: ActivityDataState;
     stats: ActivityStat[];
   };
   units: UnitConverter;
 }) {
-  const stats: ActivityStat[] =
-    activity.location != null
-      ? [
-          {
-            status: "available",
-            label: "Distance",
-            value:
-              activity.location.distanceMeters != null
-                ? formatMeasurementText(
-                    units.formatDistance(activity.location.distanceMeters / 1000),
-                  )
-                : "—",
-          },
-          {
-            status: "available",
-            label: "Elevation",
-            value:
-              activity.location.elevationGainM != null
-                ? formatMeasurementText(units.formatElevation(activity.location.elevationGainM))
-                : "—",
-          },
-        ]
-      : activity.stats;
+  const hasRouteMetrics =
+    activity.location != null ||
+    activity.distanceState.status !== "missing" ||
+    activity.elevationState.status !== "missing";
+  const stats: ActivityStat[] = hasRouteMetrics
+    ? [
+        formatActivityMetric("Distance", activity.distanceMeters, activity.distanceState, (value) =>
+          formatMeasurementText(units.formatDistance(value / 1000)),
+        ),
+        formatActivityMetric(
+          "Elevation",
+          activity.elevationGainM,
+          activity.elevationState,
+          (value) => formatMeasurementText(units.formatElevation(value)),
+        ),
+      ]
+    : activity.stats;
 
   return (
     <View style={styles.statsRow}>
@@ -52,8 +51,15 @@ export function ActivityMetricStrip({
             <Text style={styles.statLabel}>{stat.label}</Text>
           </View>
         ) : (
-          <View key={stat.label} style={styles.statBadge}>
-            <Text style={styles.statUnavailableTitle}>{stat.label} unavailable</Text>
+          <View
+            key={stat.label}
+            style={styles.statBadge}
+            accessible={true}
+            accessibilityLabel={`${stat.label} ${activityDataStateLabel(stat.status)}: ${stat.reason}`}
+          >
+            <Text style={styles.statUnavailableTitle}>
+              {stat.label} {activityDataStateLabel(stat.status)}
+            </Text>
             <Text style={styles.statUnavailableReason}>{stat.reason}</Text>
           </View>
         ),

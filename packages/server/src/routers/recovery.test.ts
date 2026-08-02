@@ -160,8 +160,8 @@ function sleepDebtRow(date: string, sleepMinutes: number, durationMinutes = slee
   return sleepNightRow({
     date,
     duration_minutes: durationMinutes,
-    deep_minutes: null,
-    rem_minutes: null,
+    deep_minutes: 0,
+    rem_minutes: 0,
     light_minutes: sleepMinutes,
     awake_minutes: Math.max(0, durationMinutes - sleepMinutes),
     efficiency_pct: durationMinutes > 0 ? (sleepMinutes / durationMinutes) * 100 : null,
@@ -683,6 +683,353 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(result.sleepDebt).toBeNull();
     expect(result.averageSleepMinutes).toBeNull();
     expect(result.averageEfficiencyPercent).toBeNull();
+  });
+
+  it("preserves missing sleep values while keeping measured zeroes available", async () => {
+    const rows = [
+      sleepNightRow({
+        date: "2026-03-01",
+        duration_minutes: null,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+        deep_minutes: 0,
+        rem_minutes: 0,
+        light_minutes: 0,
+        awake_minutes: 0,
+        efficiency_pct: 0,
+        staging_available: true,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: true,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+    expect(result.nightly[1]).toMatchObject({
+      durationMinutes: 0,
+      sleepMinutes: 0,
+      rollingAvgDuration: 0,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.nightly[2]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.averageSleepMinutes).toBe(0);
+    expect(result.averageEfficiencyPercent).toBe(0);
+    expect(result.sleepDebt).toBe(480);
+  });
+
+  it.each([
+    "deep_minutes",
+    "rem_minutes",
+    "light_minutes",
+    "awake_minutes",
+  ] as const)("withholds every stage percentage when %s is missing", async (missingStage) => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          [missingStage]: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+  });
+
+  it("withholds stage percentages when staging is unavailable despite complete stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          staging_available: false,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("derives Apple Health sleep minutes from complete stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: 90,
+          rem_minutes: 105,
+          light_minutes: 255,
+          awake_minutes: 30,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: 450,
+      deepPct: 18.8,
+      remPct: 21.9,
+      lightPct: 53.1,
+      awakePct: 6.3,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+    });
+  });
+
+  it("preserves recorded duration for a non-Apple provider when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "whoop",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.durationMinutes).toBe(480);
+    expect(result.nightly[0]?.sleepMinutes).toBe(480);
+  });
+
+  it("keeps Apple Health sleep unavailable when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "apple_health",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      durationState: { status: "available" },
+      sleepMinutes: null,
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("keeps Apple Health sleep unavailable when staging reports no stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: null,
+          awake_minutes: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+  });
+
+  it.each([
+    ["deep_minutes", 90],
+    ["rem_minutes", 105],
+    ["light_minutes", 255],
+    ["awake_minutes", 30],
+  ] as const)("keeps Apple Health sleep unavailable when only %s is reported", async (presentStage, stageMinutes) => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: null,
+          awake_minutes: null,
+          [presentStage]: stageMinutes,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("keeps missing duration null when Apple Health stages provide sleep minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          duration_minutes: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: 450,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: { status: "available" },
+    });
+  });
+
+  it("filters unavailable nights out of average sleep and debt calculations", async () => {
+    const rows = [
+      sleepNightRow({
+        date: "2026-03-01",
+        provider_id: "whoop",
+        duration_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
+        provider_id: "whoop",
+        duration_minutes: 300,
+      }),
+      sleepNightRow({
+        date: "2026-03-04",
+        provider_id: "whoop",
+        duration_minutes: 480,
+      }),
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    // The null night is excluded; the measured values are 0, 300, and 480.
+    expect(result.averageSleepMinutes).toBe(260);
+    expect(result.sleepDebt).toBe(660);
   });
 
   it("maps ClickHouse rows to SleepNightlyRow format with rounding", async () => {

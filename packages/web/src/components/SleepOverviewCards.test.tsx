@@ -2,6 +2,7 @@
 
 import { render, screen } from "@testing-library/react";
 import { MISSING_PREVIOUS_NIGHT_MESSAGE } from "dofek-server/sleep-need-contract";
+import type { SleepPerformanceInfo } from "dofek-server/types";
 import { describe, expect, it, vi } from "vitest";
 import { SleepOverviewCards } from "./SleepOverviewCards.tsx";
 
@@ -13,8 +14,21 @@ vi.mock("./SleepPerformanceCard.tsx", () => ({
   SleepPerformanceCard: () => <div data-testid="sleep-performance-card" />,
 }));
 
+const sleepPerformance: SleepPerformanceInfo = {
+  score: 88,
+  tier: "Good",
+  actualMinutes: 462,
+  neededMinutes: 480,
+  efficiency: 92,
+  recommendedBedtime: "10:30 PM",
+  sleepDate: "2026-04-02",
+  providerId: "whoop",
+  sourceName: "WHOOP 4.0",
+  sourceProviders: ["whoop"],
+};
+
 describe("SleepOverviewCards", () => {
-  it("shows one full-width prerequisite card when prior-night sleep is missing", () => {
+  it("keeps both card positions stable when prior-night sleep is missing", () => {
     render(
       <SleepOverviewCards
         sleepNeed={{
@@ -25,9 +39,9 @@ describe("SleepOverviewCards", () => {
       />,
     );
 
-    expect(screen.getByTestId("sleep-overview-cards").className).not.toContain("lg:grid-cols-2");
+    expect(screen.getByTestId("sleep-overview-cards").className).toContain("lg:grid-cols-2");
     expect(screen.getByTestId("sleep-need-card")).toBeDefined();
-    expect(screen.queryByTestId("sleep-performance-card")).toBeNull();
+    expect(screen.getByTestId("sleep-performance-card")).toBeDefined();
   });
 
   it("shows both sleep cards when the recommendation is available", () => {
@@ -64,12 +78,29 @@ describe("SleepOverviewCards", () => {
           },
           recentNights: [],
         }}
-        sleepPerformance={null}
+        sleepPerformance={sleepPerformance}
       />,
     );
 
     expect(screen.getByTestId("sleep-overview-cards").className).toContain("lg:grid-cols-2");
     expect(screen.getByTestId("sleep-need-card")).toBeDefined();
+    expect(screen.getByTestId("sleep-performance-card")).toBeDefined();
+  });
+
+  it("keeps valid sleep performance visible with insufficient sleep need data", () => {
+    render(
+      <SleepOverviewCards
+        sleepNeed={{
+          availability: "insufficient_data",
+          reason: "missing_previous_day_load",
+          message: "Sync yesterday's activity data to include training load in sleep need.",
+          nextAction: "Sync activity data for the previous day.",
+        }}
+        sleepPerformance={sleepPerformance}
+      />,
+    );
+
+    expect(screen.getByTestId("sleep-overview-cards").className).toContain("lg:grid-cols-2");
     expect(screen.getByTestId("sleep-performance-card")).toBeDefined();
   });
 });
