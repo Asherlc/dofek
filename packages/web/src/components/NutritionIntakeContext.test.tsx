@@ -80,4 +80,21 @@ describe("NutritionIntakeContext", () => {
       }),
     ).toBeTruthy();
   });
+
+  it.each(["!", "?", "…"])("keeps terminal %s before scale context", (ending) => {
+    const context = {
+      ...messageWithoutPeriodContext,
+      comparison: {
+        ...messageWithoutPeriodContext.comparison,
+        message: `${messageWithoutPeriodContext.comparison.message}${ending}`,
+      },
+    } satisfies SelectedDateNutritionIntakeContext;
+    render(<NutritionIntakeContext context={context} />);
+
+    expect(
+      screen.getByRole("meter", {
+        name: `Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. ${context.comparison.message} Scale: 0 to 4,259 kcal. ${context.limitation}`,
+      }),
+    ).toBeTruthy();
+  });
 });

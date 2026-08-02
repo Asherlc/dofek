@@ -13,10 +13,11 @@ interface NutritionIntakeContextProps {
 const TARGET_MARKER_WIDTH = 2;
 
 function accessibilityLabel(context: SelectedDateNutritionIntakeContext): string {
-  const comparisonMessage = context.comparison.message.endsWith(".")
-    ? context.comparison.message
-    : `${context.comparison.message}.`;
-  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${comparisonMessage} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}. ${context.limitation}`;
+  const comparisonMessage = context.comparison.message.trimEnd();
+  const comparisonWithSeparator = /[.!?…]$/.test(comparisonMessage)
+    ? comparisonMessage
+    : `${comparisonMessage}.`;
+  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${comparisonWithSeparator} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}. ${context.limitation}`;
 }
 
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
