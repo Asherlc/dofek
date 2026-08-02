@@ -50,8 +50,8 @@ describe("sleep router integration", () => {
             efficiency_pct, staging_available, sleep_type
           ) VALUES (
             ${selectedSessionId}::uuid, 'test_provider', ${TEST_USER_ID},
-            NOW() - INTERVAL '6 hours',
-            NOW(),
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '05:00:00',
             360, 54, 79, 200, 27,
             92.5, true, 'sleep'
           )`,
@@ -64,8 +64,8 @@ describe("sleep router integration", () => {
             efficiency_pct, staging_available, sleep_type, source_name
           ) VALUES (
             ${overlappingSessionId}::uuid, 'overlap_provider', ${TEST_USER_ID},
-            NOW() - INTERVAL '5 hours',
-            NOW() - INTERVAL '1 hour',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:30:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '03:30:00',
             240, 40, 50, 130, 20,
             91, true, 'sleep', 'Overlap Device'
           )`,
