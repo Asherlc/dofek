@@ -371,20 +371,24 @@ function CorrelationPanel() {
   return (
     <div className="rounded-xl border border-border bg-surface-solid p-3.5">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
-        Key correlation
+        Illustrative relationship
       </div>
       <div className="mt-1 text-sm text-muted">Sleep consistency + Heart Rate Variability</div>
       <div className="mt-3 grid grid-cols-[0.55fr_1fr] items-end gap-3">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
-            Correlation
+            Illustrative sample
           </div>
-          <div className="mt-1 text-3xl font-bold text-accent">r = 0.72</div>
-          <div className="mt-1 text-xs font-medium text-accent-secondary">Strong positive</div>
-          <div className="text-xs text-subtle">24 paired days of 30</div>
+          <div className="mt-1 text-3xl font-bold text-accent">Example points</div>
+          <div className="mt-1 text-xs font-medium text-accent-secondary">
+            No measured correlation
+          </div>
+          <div className="text-xs text-subtle">
+            No sample size or confidence interval is shown for this illustration.
+          </div>
         </div>
         <LandingPreviewScatterPlot
-          accessibleName={`Example correlation scatter plot. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
+          accessibleName={`Illustrative scatter plot for demonstration only. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
           xAxisLabel={sleepConsistencyAxis}
           xTickLabels={["70", "100"]}
           yAxisLabel={heartRateVariabilityAxis}
@@ -392,9 +396,15 @@ function CorrelationPanel() {
         />
       </div>
       <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
-        <p>Example sources: Oura sleep + Apple Health heart rate variability (HRV)</p>
-        <p>Confidence: moderate; association, not causation.</p>
-        <p className="font-semibold text-muted">Next: compare late meals on the same nights.</p>
+        <p>Example source types: sleep + heart rate variability</p>
+        <p>Illustrative data only—not a measured Dofek result.</p>
+        <p>
+          Real relationships can reflect missing observations or other factors; association does not
+          establish causation.
+        </p>
+        <p className="font-semibold text-muted">
+          Next: connect sources to compare your own paired records.
+        </p>
       </div>
     </div>
   );

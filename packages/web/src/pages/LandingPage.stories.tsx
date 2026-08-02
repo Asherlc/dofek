@@ -122,9 +122,24 @@ export const IllustrativeDecisionPreview: Story = {
     docs: {
       description: {
         story:
-          "Shows the landing-page example with comparison, coverage, source, limitation, action, and labeled chart context.",
+          "Shows the landing-page relationship as an illustrative sample without an unsupported statistical result, sample size, or confidence interval.",
       },
     },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Illustrative relationship")).toBeVisible();
+    await expect(canvas.getByText("Illustrative sample")).toBeVisible();
+    await expect(canvas.getByText("No measured correlation")).toBeVisible();
+    await expect(
+      canvas.getByText("No sample size or confidence interval is shown for this illustration."),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("img", {
+        name: "Illustrative scatter plot for demonstration only. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
+      }),
+    ).toBeVisible();
   },
 };
 
