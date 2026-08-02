@@ -1,4 +1,5 @@
 import { formatDateMedium, formatDateYmd, formatNumber } from "@dofek/format/format";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { DEFAULT_POLARIZATION_THRESHOLD } from "@dofek/training/training-distribution";
 import type { PolarizationTrendResult, PolarizationWeek } from "dofek-server/types";
 import {
@@ -77,7 +78,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
         }>,
       ) => {
         if (!params.length) return "";
-        const piParam = params.find((param) => param.seriesName === "Polarization Index");
+        const piParam = params.find(
+          (param) => param.seriesName === TRAINING_TERMINOLOGY.polarization.valueLabel,
+        );
         const param = piParam ?? params[0];
         if (!param || typeof param.axisValue !== "string") return "";
 
@@ -94,7 +97,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
         const status = `<span style="color:${chartColors.blue}">${escapeTooltipHtml(weekData.statusLabel)}</span>`;
         return [
           `<strong>Week of ${escapeTooltipHtml(dateLabel)}</strong>`,
-          `Polarization Index: ${piStr} ${status}`,
+          `${TRAINING_TERMINOLOGY.polarization.valueLabel}: ${piStr} ${status}`,
           `Zone 1 (easy, <80% max HR): ${formatMinutes(weekData.z1Seconds)}`,
           `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(weekData.z2Seconds)}`,
           `Zone 3 (high, ≥90% max HR): ${formatMinutes(weekData.z3Seconds)}`,
@@ -105,10 +108,14 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
       },
     }),
     xAxis: dofekAxis.time(),
-    yAxis: dofekAxis.value({ name: "Polarization Index", min: yMin, max: yMax }),
+    yAxis: dofekAxis.value({
+      name: TRAINING_TERMINOLOGY.polarization.valueLabel,
+      min: yMin,
+      max: yMax,
+    }),
     series: [
       {
-        name: "Treff heuristic",
+        name: "Reference balance level",
         type: "line",
         data: [
           [firstDate, effectiveThreshold],
@@ -121,7 +128,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
         z: 1,
       },
       {
-        name: "Polarization Index",
+        name: TRAINING_TERMINOLOGY.polarization.valueLabel,
         type: "line",
         data: weeks.map((w) => ({
           value: [w.week, w.polarizationIndex],
@@ -169,7 +176,7 @@ export function PolarizationTrendChart({
   return (
     <div>
       <h3 className="text-xs font-medium text-subtle mb-2">
-        Polarization Index (3-Zone Model)
+        {TRAINING_TERMINOLOGY.polarization.plainLabel}
         {maxHr && <span className="text-dim ml-2">(max heart rate: {maxHr} bpm)</span>}
       </h3>
       <DofekChart
@@ -177,12 +184,14 @@ export function PolarizationTrendChart({
         loading={loading}
         empty={weeks.length === 0}
         height={280}
-        emptyMessage="Not enough HR data to compute polarization index"
+        emptyMessage="Not enough heart-rate data to show the training balance"
       />
       {method ? (
         <MethodExplanation
           className="mt-2"
+          technicalName={TRAINING_TERMINOLOGY.polarization.technicalName}
           lines={[
+            TRAINING_TERMINOLOGY.polarization.details,
             method.formula,
             method.zoneBasis,
             method.calculationChoice,

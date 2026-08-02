@@ -5,6 +5,7 @@ import {
   formatIntensity,
 } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -261,11 +262,17 @@ function IntensityDonut({ distribution }: { distribution: IntensityDistribution 
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-subtle">Karvonen Intensity Distribution</h3>
-        <ChartDescriptionTooltip description={distribution.explanation} />
+        <h3 className="text-xs font-medium text-subtle">
+          {TRAINING_TERMINOLOGY.intensityDistribution.plainLabel}
+        </h3>
+        <ChartDescriptionTooltip
+          description={`Technical name: ${TRAINING_TERMINOLOGY.intensityDistribution.technicalName}. ${TRAINING_TERMINOLOGY.intensityDistribution.details} ${distribution.explanation}`}
+        />
       </div>
       <DofekChart option={option} height={200} />
-      <p className="text-xs text-dim mt-1">{distribution.explanation}</p>
+      <p className="text-xs text-dim mt-1">
+        {TRAINING_TERMINOLOGY.intensityDistribution.plainDescription}
+      </p>
     </div>
   );
 }

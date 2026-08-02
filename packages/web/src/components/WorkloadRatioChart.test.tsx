@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let chartOption: {
@@ -55,5 +55,7 @@ describe("WorkloadRatioChart", () => {
       "20-day Baseline Load",
     ]);
     expect(chartOption?.yAxis?.[0]?.name).toBe("Recent / baseline");
+    expect(screen.getByText("How this is calculated")).toBeVisible();
+    expect(screen.getByText(/Acute-to-chronic workload ratio/)).not.toBeVisible();
   });
 });

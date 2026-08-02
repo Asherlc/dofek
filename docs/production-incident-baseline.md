@@ -7,6 +7,53 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-02: Mobile Metro CI validation blocked by Infisical network timeout
+
+### Symptoms
+
+The `Build Mobile / Metro Bundle` check for PR #2400 failed before the Metro
+bundle command ran.
+
+### User Impact
+
+There was no production or end-user impact. The pull request's mobile bundle
+validation was blocked, while local focused tests and typechecks remained
+available.
+
+### Evidence
+
+The first fatal line in [job 91481471693](https://github.com/Asherlc/dofek/actions/runs/30742155277/job/91481471693)
+was `dial tcp 44.207.179.12:443: i/o timeout` while the shared
+`load-infisical-secrets` action authenticated with Infisical's OIDC endpoint.
+The failure occurred before Metro bundling.
+
+### Root Cause
+
+The GitHub-hosted runner could not reach `app.infisical.com` during OIDC
+authentication, so required mobile build secrets were never loaded ([job
+91481471693](https://github.com/Asherlc/dofek/actions/runs/30742155277/job/91481471693)).
+
+### Fix or Mitigation
+
+No repository workaround, retry, timeout, or degraded-secret behavior was
+added. The code change was validated locally with focused web/mobile tests,
+typechecks, and static checks; CI should be rerun after Infisical connectivity
+recovers.
+
+### Remaining Risk
+
+The mobile Metro bundle and any dependent CI gates remain unverified until the
+Infisical OIDC request succeeds on a subsequent workflow run.
+
+### Follow-Up Work
+
+Rerun CI after Infisical connectivity recovers and retain the successful
+`Build Mobile / Metro Bundle` job and its dependent test-gate results as the
+validation evidence for this incident. The follow-up run is
+[CI run 30742835268](https://github.com/Asherlc/dofek/actions/runs/30742835268);
+no runtime retry or timeout change is warranted unless that run reproduces the
+connectivity failure.
+
 ## 2026-08-02: iOS cold start blocked by Expo OTA launch wait
 
 ### Symptoms

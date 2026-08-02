@@ -1,4 +1,5 @@
 import { formatDateShort, formatNumber, formatTrainingLoad } from "@dofek/format/format";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { WorkloadRatioResult, WorkloadRatioRow } from "dofek-server/types";
 import {
   chartColors,
@@ -9,6 +10,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface WorkloadRatioChartProps {
   data: WorkloadRatioRow[];
@@ -138,5 +140,14 @@ export function WorkloadRatioChart({ data, context, loading }: WorkloadRatioChar
     ],
   };
 
-  return <DofekChart option={option} height={400} />;
+  return (
+    <div>
+      <DofekChart option={option} height={400} />
+      <MethodExplanation
+        className="mt-2"
+        technicalName={TRAINING_TERMINOLOGY.workloadRatio.technicalName}
+        lines={[context.description]}
+      />
+    </div>
+  );
 }

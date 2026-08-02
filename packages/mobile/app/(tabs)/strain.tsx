@@ -7,6 +7,7 @@ import {
 } from "@dofek/format/format";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -403,7 +404,15 @@ export default function StrainScreen() {
 
           {/* Workload breakdown */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Training Load</Text>
+            <ChartTitleWithTooltip
+              title="Training Load"
+              description={
+                workloadResult == null
+                  ? "Daily training load and recent-versus-baseline comparison."
+                  : `Technical name: ${TRAINING_TERMINOLOGY.workloadRatio.technicalName}. ${TRAINING_TERMINOLOGY.workloadRatio.details}`
+              }
+              textStyle={styles.cardTitle}
+            />
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
@@ -601,7 +610,7 @@ export default function StrainScreen() {
       {polarizationQuery.isError ? (
         <QueryStatePanel
           variant="error"
-          title="Could not load cycling polarization"
+          title={`Could not load ${TRAINING_TERMINOLOGY.polarization.plainLabel.toLowerCase()}`}
           message={polarizationQuery.error.message}
         />
       ) : polarizationQuery.isLoading && polarizationQuery.data == null ? (
@@ -611,7 +620,7 @@ export default function StrainScreen() {
       {monotonyQuery.isError ? (
         <QueryStatePanel
           variant="error"
-          title="Could not load training monotony"
+          title={`Could not load ${TRAINING_TERMINOLOGY.monotony.plainLabel.toLowerCase()}`}
           message={monotonyQuery.error.message}
         />
       ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (

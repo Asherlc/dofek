@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -303,7 +304,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
-  it("renders server-owned intensity and polarization models", async () => {
+  it("leads with plain labels while keeping server-owned model details accessible", async () => {
     mockHrZonesState.data = {
       maxHr: 190,
       weeks: [],
@@ -368,14 +369,33 @@ describe("StrainScreen recent activity navigation", () => {
     ];
 
     const { default: StrainScreen } = await import("./strain");
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
     render(<StrainScreen />);
 
-    expect(screen.getByText("Karvonen Intensity Distribution")).toBeTruthy();
-    expect(screen.getByText("Mobile descriptive intensity explanation.")).toBeTruthy();
+    expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
+    expect(
+      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Mobile descriptive intensity explanation.")).toBeNull();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(screen.getByText("Server says exactly 2.00 is not polarized.")).toBeTruthy();
-    expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
-    expect(screen.getByText("Mobile Foster formula.")).toBeTruthy();
+    expect(
+      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Server says exactly 2.00 is not polarized.")).toBeNull();
+    expect(screen.getByText("Training variety and total load")).toBeTruthy();
+    expect(screen.queryByText("Mobile Foster formula.")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "About How this is calculated for Easy-to-hard training balance",
+      }),
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      "How this is calculated for Easy-to-hard training balance",
+      expect.stringContaining("Server says exactly 2.00 is not polarized."),
+      [{ text: "Close" }],
+    );
+    alertSpy.mockRestore();
   });
 
   it("renders intensity, polarization, and monotony query failures separately", async () => {
@@ -392,6 +412,8 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
     expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
     expect(screen.getByText("Training monotony failed")).toBeTruthy();
+    expect(screen.getByText("Could not load easy-to-hard training balance")).toBeTruthy();
+    expect(screen.getByText("Could not load training variety and total load")).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
     expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
     expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
@@ -437,8 +459,10 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Intensity refresh failed")).toBeTruthy();
     expect(screen.getByText("Polarization refresh failed")).toBeTruthy();
-    expect(screen.getByText("Cached mobile intensity distribution.")).toBeTruthy();
-    expect(screen.getByText("No cycling polarization data in this period")).toBeTruthy();
+    expect(
+      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
+    ).toBeTruthy();
+    expect(screen.getByText("No easy-to-hard training balance data in this period")).toBeTruthy();
   });
 
   it("keeps day selector visible while training data is loading", async () => {
@@ -922,7 +946,13 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
-    expect(screen.getByText("Independent intensity data remains available.")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", {
+          name: "About How this is calculated for Heart-rate zone distribution",
+        })
+        .getAttribute("aria-description"),
+    ).toContain("Independent intensity data remains available.");
   });
 
   it("keeps equal messages separate when training and companion queries both fail", async () => {

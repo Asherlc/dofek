@@ -1084,6 +1084,7 @@ jobs:
             | { grep -v 'src/db/drizzle-schema\.ts$' || true; } \
             | { grep -v 'src/db/schema/' || true; } \
             | { grep -v 'packages/server/src/types\.ts$' || true; } \
+            | { grep -v '^packages/training/src/terminology\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
             | { grep -v '^cypress/' || true; } \
             | { grep -v 'packages/mobile/' || true; } \

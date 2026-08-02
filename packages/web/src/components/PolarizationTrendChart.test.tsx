@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { DEFAULT_POLARIZATION_THRESHOLD } from "@dofek/training/training-distribution";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./DofekChart.tsx", () => ({
@@ -31,10 +31,12 @@ describe("PolarizationTrendChart", () => {
 
     render(<PolarizationTrendChart weeks={[]} maxHr={190} method={method} />);
 
-    expect(screen.getByText(method.formula)).toBeTruthy();
-    expect(screen.getByText(method.zoneBasis)).toBeTruthy();
-    expect(screen.getByText(method.calculationChoice)).toBeTruthy();
-    expect(screen.getByText(method.interpretation)).toBeTruthy();
+    expect(screen.getByText("How this is calculated")).toBeTruthy();
+    fireEvent.click(screen.getByText("How this is calculated"));
+    expect(screen.getByText(method.formula)).toBeVisible();
+    expect(screen.getByText(method.zoneBasis)).toBeVisible();
+    expect(screen.getByText(method.calculationChoice)).toBeVisible();
+    expect(screen.getByText(method.interpretation)).toBeVisible();
     expect(screen.getByRole("link", { name: method.source.title })).toHaveAttribute(
       "href",
       method.source.url,

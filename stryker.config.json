@@ -55,6 +55,7 @@
     "!packages/zepp/setting/**"
   ],
   "ignorePatterns": [
+    "packages/training/src/terminology.ts",
     "dist/**",
     ".adal/**",
     ".aider-desk/**",

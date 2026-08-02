@@ -8,6 +8,7 @@ import type { GradeAdjustedPaceRow } from "dofek-server/types";
 import { HIKING_PACE_COPY } from "../lib/hikingPaceCopy.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface GradeAdjustedPaceTableProps {
   data: GradeAdjustedPaceRow[];
@@ -106,6 +107,12 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
         getActivityId={(row) => row.activityId}
       />
       <p className="text-xs text-dim mt-1">{HIKING_PACE_COPY.highlightNote}</p>
+      <MethodExplanation
+        className="mt-2"
+        technicalName={HIKING_PACE_COPY.technicalName}
+        lines={[HIKING_PACE_COPY.methodDetails]}
+        source={HIKING_PACE_COPY.source}
+      />
     </div>
   );
 }

@@ -2,6 +2,9 @@ import type { FormattedMeasurement, FormattedMeasurementPart, NullableNumber } f
 
 export type UnitSystem = "metric" | "imperial";
 
+export const POWER_UNIT_LABEL = "W";
+export const WORK_UNIT_LABEL = "kJ";
+
 // --- Conversion constants ---
 const KG_TO_LBS = 2.20462;
 const KM_TO_MILES = 0.621371;
