@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatAssociationEstimateLabel,
   formatBodyCompositionNumber,
@@ -44,6 +44,7 @@ import {
   isToday,
   isYesterday,
   parseValidDate,
+  shiftDateYmd,
 } from "./format.ts";
 
 describe("formatDateYmd", () => {
@@ -63,6 +64,79 @@ describe("formatDateYmd", () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatDateYmd()).toBe(expected);
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("shiftDateYmd", () => {
+  it("shifts a date-only value by calendar days", () => {
+    expect(shiftDateYmd("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftDateYmd("2026-12-31", 1)).toBe("2027-01-01");
+  });
+
+  it("preserves the four-digit date contract across the year 100 boundary", () => {
+    expect(shiftDateYmd("0100-01-01", -1)).toBe("0099-12-31");
+  });
+
+  it("rejects malformed dates, invalid calendar dates, and non-integer offsets", () => {
+    expect(() => shiftDateYmd("not-a-date", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("prefix-2026-03-01", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-03-01-suffix", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-02-30", 1)).toThrow("Expected a valid YYYY-MM-DD date");
+    expect(() => shiftDateYmd("2026-03-01", 0.5)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("normalizes the parsed date clock to local midnight before shifting", () => {
+    const setHours = vi.spyOn(Date.prototype, "setHours");
+
+    expect(shiftDateYmd("2026-03-01", 0)).toBe("2026-03-01");
+    expect(setHours).toHaveBeenCalledWith(0, 0, 0, 0);
+  });
+
+  it("rejects a parsed date with a mismatched year", () => {
+    vi.spyOn(Date.prototype, "getFullYear").mockReturnValueOnce(2025);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects a parsed date with a mismatched month", () => {
+    vi.spyOn(Date.prototype, "getMonth").mockReturnValueOnce(1);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects a parsed date with a mismatched day", () => {
+    vi.spyOn(Date.prototype, "getDate").mockReturnValueOnce(2);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects offsets that produce an invalid date", () => {
+    expect(() => shiftDateYmd("2026-01-01", Number.MAX_SAFE_INTEGER)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("accepts years 0000 and 9999 but rejects shifts outside the YYYY range", () => {
+    expect(shiftDateYmd("0000-01-01", 0)).toBe("0000-01-01");
+    expect(shiftDateYmd("9999-12-31", 0)).toBe("9999-12-31");
+    expect(() => shiftDateYmd("0000-01-01", -1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("9999-12-31", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
   });
 });
 

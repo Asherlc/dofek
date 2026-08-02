@@ -174,4 +174,42 @@ describe("HeartRateRepository (integration)", () => {
       }),
     );
   });
+
+  it("uses the requested timezone when selecting a local calendar day", async () => {
+    const beforeLocalMidnightId = randomUUID();
+    const atLocalMidnightId = randomUUID();
+    await seed([
+      {
+        id: beforeLocalMidnightId,
+        recorded_at: "2026-04-12 06:59:59.000",
+        provider_id: "timezone_boundary",
+        channel: "heart_rate",
+        scalar: 61,
+        is_deleted: 0,
+        version: 0,
+      },
+      {
+        id: atLocalMidnightId,
+        recorded_at: "2026-04-12 07:00:00.000",
+        provider_id: "timezone_boundary",
+        channel: "heart_rate",
+        scalar: 62,
+        is_deleted: 0,
+        version: 0,
+      },
+    ]);
+
+    const repo = new HeartRateRepository(reader, testUserId, "America/Los_Angeles");
+    const timezoneBoundarySeries = (await repo.dailyBySource("2026-04-12")).find(
+      (series) => series.providerId === "timezone_boundary",
+    );
+
+    if (!timezoneBoundarySeries) {
+      throw new Error("Expected timezone_boundary heart-rate series");
+    }
+
+    expect(timezoneBoundarySeries.samples).toEqual([
+      { time: "2026-04-12T07:00:00.000Z", heartRate: 62 },
+    ]);
+  });
 });

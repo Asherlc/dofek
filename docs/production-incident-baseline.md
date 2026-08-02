@@ -7,6 +7,51 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-01: Local heart-rate validation was blocked by shared Docker resources
+
+### Symptoms
+
+The issue #2144 integration test could not start its isolated Compose services,
+analytics SQL lint could not reach its local ClickHouse endpoint, and the full
+unit tier ended with a Vitest worker-update timeout after the tests had run.
+
+### User Impact
+
+There was no production or end-user impact. Local database-backed validation and
+the complete lint/unit commands were blocked; focused application tests and
+typechecks remained available.
+
+### Evidence
+
+The exact integration command was
+`pnpm test:integration -- packages/server/src/repositories/heart-rate-repository.integration.test.ts`.
+Its first fatal line was `failed to create network issue-2144_default: Error
+response from daemon: all predefined address pools have been fully subnetted`.
+The analytics lint phase reported `HTTPConnectionPool(host='127.0.0.1',
+port=64077): Max retries exceeded` while the full unit tier reported
+`Timeout calling "onTaskUpdate"` after 853 files and 14,095 tests passed.
+
+### Root Cause
+
+The confirmed infrastructure failures were that the shared local Docker host
+had exhausted its available network address pools and was not serving the
+configured ClickHouse endpoint. The Vitest worker-update timeout happened during
+the same full-suite run, but the captured evidence does not establish its cause;
+that timeout remains unresolved.
+
+### Fix or Mitigation
+
+No repository workaround or cross-workspace cleanup was performed. The changed
+behavior was validated with focused web/mobile/server tests, typechecks, and
+static checks; database-backed validation remains for a runner with available
+Compose resources.
+
+### Remaining Risk
+
+Run `pnpm test:unit`, the heart-rate integration test, and full `pnpm lint` on
+the exact PR head in CI or after an explicitly scoped Docker cleanup, following
+the resource guidance in [`docs/testing.md`](testing.md#docker-disk-recovery).
+
 ## 2026-08-01: Review-stack detail smoke test encoded tRPC input incorrectly
 
 ### Symptoms
