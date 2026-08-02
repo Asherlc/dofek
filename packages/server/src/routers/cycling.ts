@@ -182,6 +182,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
+    { keyVersion: "cycling-performance-v2" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",

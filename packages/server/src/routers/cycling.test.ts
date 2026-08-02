@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -13,7 +15,10 @@ vi.mock("../trpc.ts", async () => {
     .create();
   return {
     router: trpc.router,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { LONG: 3_600_000 },
   };
 });
@@ -36,6 +41,13 @@ function makeContext() {
 }
 
 describe("cyclingRouter", () => {
+  it("versions the performance cache contract", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 3_600_000,
+      keyVersion: "cycling-performance-v2",
+    });
+  });
+
   it("requires the ClickHouse activity analytics store", async () => {
     const context = makeContext();
     Reflect.deleteProperty(context, "sensorStore");
