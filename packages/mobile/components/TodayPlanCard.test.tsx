@@ -5,6 +5,7 @@ import { TodayPlanCard } from "./TodayPlanCard";
 
 const readyPlan: TodayPlanResult = {
   status: "ready",
+  epistemicStatus: { kind: "suggested", label: "Suggested" },
   date: "2026-07-26",
   action: {
     id: "strain_target",
@@ -27,6 +28,7 @@ const readyPlan: TodayPlanResult = {
 
 const insufficientPlan: TodayPlanResult = {
   status: "insufficient_data",
+  epistemicStatus: { kind: "unavailable", label: "Unavailable" },
   date: "2026-07-26",
   action: null,
   supportingFacts: [],
@@ -60,6 +62,7 @@ describe("TodayPlanCard", () => {
     expect(screen.getByText("Sleep performance")).toBeTruthy();
     expect(screen.getByText("88 (Good)")).toBeTruthy();
     expect(screen.getByText("High confidence")).toBeTruthy();
+    expect(screen.getByText("Suggested")).toBeTruthy();
     expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
     expect(screen.getByText(/Sleep data from 2026-07-26/)).toBeTruthy();
   });
@@ -86,6 +89,7 @@ describe("TodayPlanCard", () => {
         "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
       ),
     ).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
   });
 
   it("renders a loading state", () => {

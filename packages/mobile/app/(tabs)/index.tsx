@@ -282,6 +282,7 @@ export default function TodayScreen() {
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Data Needed">
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
             <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
           </Card>
         </Animated.View>
@@ -340,6 +341,7 @@ export default function TodayScreen() {
               <Text style={styles.noDataText}>No sleep data</Text>
             ) : sleepNeed.availability === "available" ? (
               <>
+                <Text style={styles.sleepNeedSubtitle}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
@@ -392,6 +394,7 @@ export default function TodayScreen() {
               </>
             ) : (
               <>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.noDataText}>{sleepNeed.message}</Text>
                 <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
               </>

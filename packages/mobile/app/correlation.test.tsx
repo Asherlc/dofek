@@ -150,6 +150,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "insufficient",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       dataPoints: [],
       sampleCount: 0,
       additionalSamplesRequired: 5,
@@ -243,6 +244,7 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("n = 0")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
     expect(screen.getByText("90 selected")).toBeTruthy();
     expect(screen.getByText("90 missing pairs")).toBeTruthy();
@@ -274,6 +276,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: 0.75,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [],
@@ -306,6 +309,7 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("Spearman rho = +0.75")).toBeTruthy();
+    expect(screen.getByText("Associated")).toBeTruthy();
     expect(screen.getByText("95% block-bootstrap interval: +0.42 to +0.86")).toBeTruthy();
     expect(screen.getByText("Slope = 1.000 ms per g")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
@@ -319,6 +323,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: -0.75,
       regression: { slope: -1, intercept: 3, rSquared: 0.49 },
       dataPoints: [
@@ -372,6 +377,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: 0.75,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [

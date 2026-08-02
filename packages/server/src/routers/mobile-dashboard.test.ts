@@ -260,6 +260,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
@@ -325,6 +326,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",

@@ -702,6 +702,7 @@ describe("correlationRouter", () => {
     it("validates and strips unknown repository output fields", async () => {
       const repositoryResult = {
         availability: "insufficient",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         dataPoints: [],
         sampleCount: 0,
         additionalSamplesRequired: 5,
@@ -827,6 +828,7 @@ describe("correlationRouter", () => {
       const repositoryResult = {
         analysisVersion: 2,
         availability: "insufficient",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         dataPoints: [],
         sampleCount: 0,
         additionalSamplesRequired: 5,

@@ -2,6 +2,7 @@ import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { MIN_CORRELATION_PAIRS } from "@dofek/stats/correlation";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { epistemicStatusSchema } from "../contracts/epistemic-status-contract.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import {
@@ -81,6 +82,7 @@ const correlationStatsSchema = z.object({
 });
 
 const correlationResultBaseShape = {
+  epistemicStatus: epistemicStatusSchema,
   dataPoints: z.array(correlationDataPointSchema),
   sampleCount: z.number().int().nonnegative(),
   insight: z.string(),
@@ -156,6 +158,7 @@ const correlationUncertaintySchema = z.discriminatedUnion("availability", [
 ]);
 
 const correlationV2BaseShape = {
+  epistemicStatus: epistemicStatusSchema,
   analysisVersion: z.literal(2),
   dataPoints: z.array(correlationDataPointSchema),
   sampleCount: z.number().int().nonnegative(),

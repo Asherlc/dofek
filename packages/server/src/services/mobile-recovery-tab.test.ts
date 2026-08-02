@@ -548,14 +548,18 @@ describe("loadMobileRecoveryTab", () => {
           {
             date: "2026-03-27",
             rawWeight: 80,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 80,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: null,
             interpolated: false,
           },
           {
             date: "2026-03-28",
             rawWeight: 79,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 79,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: -1,
             interpolated: false,
           },

@@ -620,9 +620,11 @@ export default function RecoveryScreen() {
                   <Text style={styles.weightValue}>
                     {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  {latestWeight.rawWeight != null && (
+                  <Text style={styles.weightScale}>{latestWeight.smoothedWeightStatus.label}</Text>
+                  {latestWeight.rawWeight != null && latestWeight.rawWeightStatus != null && (
                     <Text style={styles.weightScale}>
-                      Scale: {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                      {latestWeight.rawWeightStatus.label}:{" "}
+                      {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
                     </Text>
                   )}
                   <Text style={styles.weightExplanation}>

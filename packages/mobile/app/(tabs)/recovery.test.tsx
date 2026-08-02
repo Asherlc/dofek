@@ -570,14 +570,18 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         {
           date: "2026-04-05",
           rawWeight: 80.2,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },
         {
           date: "2026-04-06",
           rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },
@@ -590,7 +594,8 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
     expect(screen.getByText("79.8 kg")).toBeTruthy();
-    expect(screen.getByText("Scale: 80.0 kg")).toBeTruthy();
+    expect(screen.getByText("Estimated")).toBeTruthy();
+    expect(screen.getByText("Observed: 80.0 kg")).toBeTruthy();
     expect(
       screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
     ).toBeTruthy();
@@ -608,7 +613,9 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         {
           date: "2026-04-06",
           rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },

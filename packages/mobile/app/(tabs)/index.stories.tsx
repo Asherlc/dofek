@@ -72,10 +72,12 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
       sleepNeed: sleepDataUnavailable
         ? {
             availability: "missing_previous_night",
+            epistemicStatus: { kind: "unavailable", label: "Unavailable" },
             message: MISSING_PREVIOUS_NIGHT_MESSAGE,
           }
         : {
             availability: "available",
+            epistemicStatus: { kind: "estimated", label: "Estimated" },
             baselineMinutes: 480,
             strainDebtMinutes: 16,
             accumulatedDebtMinutes: 28,
@@ -114,6 +116,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
     [["todayPlan", "get"], { input: { endDate: todayDate }, type: "query" }],
     {
       status: "ready",
+      epistemicStatus: { kind: "suggested", label: "Suggested" },
       date: todayDate,
       action: {
         id: "strain_target",

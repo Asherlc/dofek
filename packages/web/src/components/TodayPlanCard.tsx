@@ -52,6 +52,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         </h2>
         {refreshWarning}
         <p className="text-sm text-foreground leading-snug">{plan.message}</p>
+        <p className="text-[11px] text-dim">{plan.epistemicStatus.label}</p>
         <p className="text-[11px] text-dim">{formatTodayPlanConfidence(plan.confidence)}</p>
       </section>
     );
@@ -107,6 +108,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         </div>
       ) : null}
       <div className="space-y-1">
+        <p className="text-[11px] text-dim">{plan.epistemicStatus.label}</p>
         <p className="text-[11px] text-dim">{formatTodayPlanConfidence(plan.confidence)}</p>
         {freshness != null ? <p className="text-[11px] text-dim">{freshness}</p> : null}
       </div>

@@ -4,6 +4,7 @@ import { SleepOverviewCards } from "./SleepOverviewCards";
 
 const availableSleepNeed = {
   availability: "available",
+  epistemicStatus: { kind: "estimated", label: "Estimated" },
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
@@ -89,6 +90,7 @@ export const SleepDataNeeded: Story = {
   args: {
     sleepNeed: {
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     },
     sleepPerformance: null,
