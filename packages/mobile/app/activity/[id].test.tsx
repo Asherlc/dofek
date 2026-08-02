@@ -297,6 +297,7 @@ const baseCyclingActivity = {
   },
   name: "Morning Ride",
   notes: null,
+  perceivedExertion: null,
   providerId: "wahoo",
   subsource: null,
   sourceProviders: ["wahoo"],

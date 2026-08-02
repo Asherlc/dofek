@@ -425,6 +425,7 @@ describe("createMcpRouter", () => {
 
     expect(response.status).toBe(200);
     expect(response.text).toContain("get_daily_health_summary");
+    expect(response.text).toContain("get_subjective_timeline");
     expect(response.text).toContain("start_provider_sync");
   });
 
@@ -464,6 +465,15 @@ describe("createMcpRouter", () => {
         end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
         granularity: { enum: ["daily", "weekly"], type: "string" },
         metrics: { type: "array" },
+        start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        timezone: { type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_subjective_timeline").inputSchema).toMatchObject({
+      properties: {
+        end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
         start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
         timezone: { type: "string" },
       },

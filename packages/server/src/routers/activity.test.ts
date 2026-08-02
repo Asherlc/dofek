@@ -10,7 +10,12 @@ import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -150,6 +155,7 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
     ended_at: "2026-04-01T11:00:00Z",
     name: "Ride",
     notes: null,
+    perceived_exertion: null,
     provider_id: "wahoo",
     source_providers: ["wahoo"],
     source_external_ids: null,
@@ -855,6 +861,36 @@ describe("activityRouter", () => {
         message:
           "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
       });
+    });
+  });
+
+  describe("setPerceivedExertion", () => {
+    it("writes session RPE through the repository and invalidates activity caches", async () => {
+      const setPerceivedExertion = vi
+        .spyOn(ActivityRepository.prototype, "setPerceivedExertion")
+        .mockResolvedValue({ found: true, perceivedExertion: 7 });
+      const caller = makeCaller();
+
+      await expect(
+        caller.setPerceivedExertion({
+          id: "00000000-0000-0000-0000-000000000001",
+          value: 7,
+        }),
+      ).resolves.toEqual({ perceivedExertion: 7 });
+
+      expect(setPerceivedExertion).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 7);
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["activity"]);
+      setPerceivedExertion.mockRestore();
+    });
+
+    it("rejects an RPE outside the 0-10 range", async () => {
+      const caller = makeCaller();
+      await expect(
+        caller.setPerceivedExertion({
+          id: "00000000-0000-0000-0000-000000000001",
+          value: 11,
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
   });
 

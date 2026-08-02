@@ -126,6 +126,21 @@ stored separately. Database constraints keep each outcome/failure-reason pair
 consistent using PostgreSQL check constraints
 ([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
 
+### Subjective Inputs
+
+| Table | Purpose |
+|-------|---------|
+| `fitness.body_region` | Seeded hierarchical reference regions, including bilateral fingers and A1–A5 pulley locations |
+| `fitness.subjective_check_in` | One user-owned daily check-in; row presence distinguishes logged all-clear from missing data |
+| `fitness.subjective_symptom` | Sparse soreness, stiffness, or tenderness scores for reported regions |
+| `fitness.injury_event` | User-owned injury and niggle events with onset, optional resolution, severity, and description |
+
+These tables store raw user-entered observations only. The server may assemble
+date-window timelines for reading, but it does not store derived session load,
+symptom correlations, or readiness scores. PostgreSQL foreign keys and check
+constraints enforce ownership references and score/date boundaries
+([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
+
 ### Daily Metrics
 
 | Table | Purpose |

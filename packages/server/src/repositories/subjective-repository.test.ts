@@ -1,0 +1,116 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SubjectiveRepository } from "./subjective-repository.ts";
+
+const USER_ID = "10000000-0000-4000-8000-000000002247";
+
+function makeRepository(responses: unknown[][] = []) {
+  const execute = vi.fn();
+  for (const response of responses) execute.mockResolvedValueOnce(response);
+  execute.mockResolvedValue([]);
+  const database = { execute, transaction: vi.fn() };
+  database.transaction.mockImplementation(async (callback) => callback(database));
+  const repository = new SubjectiveRepository(database, USER_ID, "UTC");
+  return { repository, execute, database };
+}
+
+const checkInRow = {
+  id: "30000000-0000-4000-8000-000000002247",
+  date: "2026-08-02",
+  created_at: "2026-08-02T08:00:00Z",
+  updated_at: "2026-08-02T08:00:00Z",
+};
+
+describe("SubjectiveRepository", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("distinguishes an unlogged date from an explicit all-clear check-in", async () => {
+    const { repository } = makeRepository([[]]);
+    await expect(repository.checkIn("2026-08-02")).resolves.toEqual({
+      date: "2026-08-02",
+      logged: false,
+      symptoms: [],
+    });
+  });
+
+  it("replaces symptoms atomically while preserving an all-clear header", async () => {
+    const symptom = {
+      id: "40000000-0000-4000-8000-000000002247",
+      body_region_id: "left_hand_index_a2_pulley",
+      kind: "tenderness",
+      score: 4,
+    };
+    const { repository, database } = makeRepository([
+      [checkInRow],
+      [],
+      [],
+      [checkInRow],
+      [symptom],
+    ]);
+
+    await expect(
+      repository.saveCheckIn("2026-08-02", [
+        { bodyRegionId: "left_hand_index_a2_pulley", kind: "tenderness", score: 4 },
+      ]),
+    ).resolves.toEqual({ date: "2026-08-02", logged: true, symptoms: [symptom] });
+    expect(database.transaction).toHaveBeenCalledOnce();
+  });
+
+  it("assembles date-window check-ins and overlapping injury events", async () => {
+    const symptom = {
+      id: "40000000-0000-4000-8000-000000002247",
+      check_in_id: checkInRow.id,
+      body_region_id: "left_hand_index_a2_pulley",
+      kind: "tenderness",
+      score: 4,
+    };
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand_index_a2_pulley",
+      onset_date: "2026-08-01",
+      resolved_date: null,
+      severity: 4,
+      description: "Morning tenderness",
+      created_at: "2026-08-01T08:00:00Z",
+      updated_at: "2026-08-01T08:00:00Z",
+    };
+    const { repository } = makeRepository([[checkInRow], [injury], [symptom]]);
+
+    await expect(repository.timeline("2026-08-02", "2026-08-03")).resolves.toEqual({
+      checkIns: [{ date: "2026-08-02", logged: true, symptoms: [symptom] }],
+      injuries: [injury],
+    });
+  });
+
+  it("scopes injury writes to the authenticated user", async () => {
+    const { repository, execute } = makeRepository([
+      [
+        {
+          id: "50000000-0000-4000-8000-000000002247",
+          kind: "niggle",
+          body_region_id: "left_hand",
+          onset_date: "2026-08-02",
+          resolved_date: null,
+          severity: 2,
+          description: "Hand soreness",
+          created_at: "2026-08-02T08:00:00Z",
+          updated_at: "2026-08-02T08:00:00Z",
+        },
+      ],
+    ]);
+
+    await repository.createInjury({
+      kind: "niggle",
+      bodyRegionId: "left_hand",
+      onsetDate: "2026-08-02",
+      resolvedDate: null,
+      severity: 2,
+      description: "Hand soreness",
+    });
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("user_id");
+    expect(query.params).toContain(USER_ID);
+  });
+});
