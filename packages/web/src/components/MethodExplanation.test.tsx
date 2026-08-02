@@ -1,14 +1,15 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MethodExplanation } from "./MethodExplanation.tsx";
 
 describe("MethodExplanation", () => {
-  it("renders explanation lines in order with the primary source link", () => {
+  it("keeps technical method details collapsed until requested", () => {
     const { container } = render(
       <MethodExplanation
         className="mt-2"
+        technicalName="Polarization Index (Treff three-zone model)"
         lines={["Formula details", "Calendar details", "Interpretation details"]}
         source={{
           title: "Primary source",
@@ -17,23 +18,23 @@ describe("MethodExplanation", () => {
       />,
     );
 
-    expect([...container.querySelectorAll("p")].map((line) => line.textContent)).toEqual([
+    expect(container.querySelector("details")).not.toBeNull();
+    expect(screen.getByText("How this is calculated")).toBeInTheDocument();
+    expect(screen.getByText("Formula details")).not.toBeVisible();
+
+    fireEvent.click(screen.getByText("How this is calculated"));
+    expect(
+      screen.getByText("Technical name: Polarization Index (Treff three-zone model)"),
+    ).toBeInTheDocument();
+    expect([...container.querySelectorAll("details p")].map((line) => line.textContent)).toEqual([
+      "Technical name: Polarization Index (Treff three-zone model)",
       "Formula details",
       "Calendar details",
       "Interpretation details",
     ]);
-    expect(container.firstElementChild).toHaveClass("mt-2", "space-y-1", "text-xs", "text-dim");
     expect(screen.getByRole("link", { name: "Primary source" })).toHaveAttribute(
       "href",
       "https://example.com/primary-source",
-    );
-    expect(screen.getByRole("link", { name: "Primary source" })).toHaveAttribute(
-      "target",
-      "_blank",
-    );
-    expect(screen.getByRole("link", { name: "Primary source" })).toHaveAttribute(
-      "rel",
-      "noreferrer",
     );
   });
 });

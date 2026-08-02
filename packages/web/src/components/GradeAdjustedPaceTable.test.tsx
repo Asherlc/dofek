@@ -129,5 +129,9 @@ describe("GradeAdjustedPaceTable", () => {
     ).toBeDefined();
     expect(screen.getByRole("columnheader", { name: /Effort-adjusted pace/i })).toBeDefined();
     expect(screen.getByText(/Effort-adjusted pace.*15%/)).toBeDefined();
+    for (const technicalDetail of screen.getAllByText(/Minetti/)) {
+      expect(technicalDetail).not.toBeVisible();
+    }
+    expect(screen.getByText("How this is calculated")).toBeDefined();
   });
 });

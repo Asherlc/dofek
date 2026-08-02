@@ -69,4 +69,19 @@ describe("ActivityVariabilityTable", () => {
       screen.getByText("No cycling activities with enough power samples for variability yet."),
     ).toBeInTheDocument();
   });
+
+  it("uses a plain-language power label in the activity table", () => {
+    render(
+      <ActivityVariabilityTable
+        data={rowsWithIds}
+        totalCount={1}
+        offset={0}
+        limit={20}
+        onPageChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Effort-adjusted power (W)" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Normalized Power (W)" })).toBeNull();
+  });
 });

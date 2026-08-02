@@ -1,3 +1,4 @@
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
@@ -10,6 +11,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface PowerCurvePoint {
@@ -80,14 +82,10 @@ export function PowerCurveChart({
 
   if (modelCurveData.length > 0 && model) {
     series.push(
-      dofekSeries.line(
-        `Critical Power model (${model.cp}W, anaerobic work capacity=${Math.round(model.wPrime / 1000)}kJ)`,
-        modelCurveData,
-        {
-          color: chartColors.orange,
-          lineStyle: { type: "dashed" },
-        },
-      ),
+      dofekSeries.line("Sustainable power model", modelCurveData, {
+        color: chartColors.orange,
+        lineStyle: { type: "dashed" },
+      }),
     );
   }
 
@@ -137,12 +135,25 @@ export function PowerCurveChart({
   };
 
   return (
-    <DofekChart
-      option={option}
-      loading={loading}
-      empty={data.length === 0}
-      height={280}
-      emptyMessage="No power data"
-    />
+    <div>
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={280}
+        emptyMessage="No power data"
+      />
+      {model ? (
+        <MethodExplanation
+          className="mt-2"
+          technicalName={`${TRAINING_TERMINOLOGY.criticalPower.technicalName} + ${TRAINING_TERMINOLOGY.anaerobicWorkCapacity.technicalName}`}
+          lines={[
+            TRAINING_TERMINOLOGY.criticalPower.details,
+            TRAINING_TERMINOLOGY.anaerobicWorkCapacity.details,
+            `Current fit: ${model.cp}W sustainable cycling power and ${Math.round(model.wPrime / 1000)}kJ short-burst power reserve.`,
+          ]}
+        />
+      ) : null}
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ActivityList } from "../../components/ActivityList.tsx";
@@ -179,7 +180,11 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
       {/* eFTP Trend */}
       <Section
         title="Estimated Threshold Power Trend"
-        subtitle={estimateEvidence?.eftp.method ?? "Server-authored cycling threshold estimate"}
+        subtitle={
+          estimateEvidence
+            ? "Estimate evidence from observed cycling workouts"
+            : "Server-authored cycling threshold estimate"
+        }
       >
         {performance.error ? (
           <QueryStatePanel error={performance.error} />
@@ -229,7 +234,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
 
       <Section
         title="Activity Variability Index"
-        subtitle="Normalized power vs average power ratio per activity"
+        subtitle="Effort-adjusted power versus average power for each activity"
       >
         {activityAnalytics.error ? (
           <QueryStatePanel error={activityAnalytics.error} />
@@ -356,13 +361,13 @@ function PowerSummaryTable({
           unit=""
         />
         <DerivedRow
-          label="Critical Power"
+          label={TRAINING_TERMINOLOGY.criticalPower.plainLabel}
           recent={recentModel?.cp ?? null}
           season={seasonModel?.cp ?? null}
           unit="W"
         />
         <DerivedRow
-          label="Anaerobic work capacity (W′)"
+          label={TRAINING_TERMINOLOGY.anaerobicWorkCapacity.plainLabel}
           recentStr={recentModel ? `${Math.round(recentModel.wPrime / 1000)}kJ` : "--"}
           seasonStr={seasonModel ? `${Math.round(seasonModel.wPrime / 1000)}kJ` : "--"}
         />
@@ -415,7 +420,7 @@ function PeriodLabel({
       <span style={{ color }}>{label}</span>
       {model && (
         <span className="text-dim">
-          Estimated Threshold Power {model.cp}W · Anaerobic work capacity (W′){" "}
+          Estimated sustainable power {model.cp}W · Short-burst power reserve{" "}
           {Math.round(model.wPrime / 1000)}kJ
         </span>
       )}
@@ -451,11 +456,11 @@ function EstimateEvidencePanel({
       </p>
       <div className="card p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
         <EstimateEvidenceBlock
-          title={`Critical Power and anaerobic work capacity · ${formatTimeRangeShortLabel(recentDays)}`}
+          title={`Cycling power estimate · ${formatTimeRangeShortLabel(recentDays)}`}
           evidence={recent.threshold}
         />
         <EstimateEvidenceBlock
-          title="Critical Power and anaerobic work capacity · Season"
+          title="Cycling power estimate · Season"
           evidence={season.threshold}
         />
         <EstimateEvidenceBlock
@@ -477,21 +482,28 @@ function EstimateEvidenceBlock({ title, evidence }: { title: string; evidence: E
     <div className="rounded-lg border border-border/70 bg-surface/30 p-3 text-xs">
       <h3 className="font-medium text-foreground">{title}</h3>
       <p className="mt-1 text-muted">{evidence.confidenceLabel}</p>
-      <p className="mt-2 text-dim">Method: {evidence.method}</p>
-      <p className="mt-1 text-dim">{evidence.confidenceDetail}</p>
-      <p className="mt-2 text-dim">Source workouts:</p>
-      {evidence.sourceWorkouts.length > 0 ? (
-        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted">
-          {evidence.sourceWorkouts.map((workout) => (
-            <li key={workout.id}>
-              {workout.name ?? "Cycling workout"} · {formatDateMedium(workout.date)}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-1 text-muted">No source workouts in this period.</p>
-      )}
-      <p className="mt-2 text-dim">Pacing guidance: {evidence.pacingGuidance}</p>
+      <details className="mt-2 text-dim">
+        <summary className="cursor-pointer font-medium text-muted underline-offset-2 hover:underline">
+          How this estimate is calculated
+        </summary>
+        <div className="mt-2 space-y-1">
+          <p>Method: {evidence.method}</p>
+          <p>{evidence.confidenceDetail}</p>
+          <p>Source workouts:</p>
+          {evidence.sourceWorkouts.length > 0 ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-muted">
+              {evidence.sourceWorkouts.map((workout) => (
+                <li key={workout.id}>
+                  {workout.name ?? "Cycling workout"} · {formatDateMedium(workout.date)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted">No source workouts in this period.</p>
+          )}
+          <p>Pacing guidance: {evidence.pacingGuidance}</p>
+        </div>
+      </details>
     </div>
   );
 }

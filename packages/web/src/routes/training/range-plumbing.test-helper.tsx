@@ -68,7 +68,11 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../components/ChartDescriptionTooltip.tsx", () => ({
-  ChartDescriptionTooltip: () => null,
+  ChartDescriptionTooltip: ({ description }: { description: string }) => (
+    <button type="button" aria-label="About this chart" data-description={description}>
+      About
+    </button>
+  ),
 }));
 vi.mock("../../components/EstimatedMaxChart.tsx", () => ({ EstimatedMaxChart: () => <div /> }));
 vi.mock("../../components/HrvBaselineChart.tsx", () => ({ HrvBaselineChart: () => <div /> }));

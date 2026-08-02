@@ -1,11 +1,13 @@
 import { formatDateShort, formatIntensity, formatTrainingLoad } from "@dofek/format/format";
 import { StrainScore } from "@dofek/scoring/scoring";
 import { duration, easing } from "@dofek/scoring/tokens";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface StrainCardProps {
   data: WorkloadRatioResult | undefined;
@@ -171,6 +173,11 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
             </div>
           </div>
           <p className="text-[11px] text-dim">{data.context.description}</p>
+          <MethodExplanation
+            className="text-[11px]"
+            technicalName={TRAINING_TERMINOLOGY.workloadRatio.technicalName}
+            lines={[data.context.description]}
+          />
 
           {strainTarget && (
             <div className="mt-1 pt-2 border-t border-border">
