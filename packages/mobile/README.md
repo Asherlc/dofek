@@ -250,9 +250,28 @@ fallback policy. Three force-stop launches reached the interactive login screen
 in 713, 968, and 660 ms; a clean reinstall took 864 ms. OTA launch was the
 largest phase at 632–942 ms, while JavaScript, authentication, and splash
 dismissal were each at most 11 ms. Because no controlled launch approached the
-configured fallback, the audit made no launch-policy change. See the
+configured fallback, that audit made no launch-policy change. See the
 [incident baseline](../../docs/production-incident-baseline.md#2026-07-29-ios-cold-start-delay-could-not-be-reproduced-with-phase-telemetry)
-for the evidence and remaining production-observability gap.
+for that historical evidence.
+
+A follow-up signed Release audit on 2026-08-02 reproduced the delayed path on a
+dedicated iOS 26.5 Simulator: three force-stop launches took 7.13, 7.12, and
+6.98 seconds to reach JavaScript. The instrumented third launch attributed
+5,015.36 ms to Expo OTA launch, versus 9 ms for JavaScript bootstrap, 6 ms for
+authentication restore, 4 ms for splash dismissal, and 0 ms for deferred
+services. Native/Sentry breadcrumbs showed a successful `/manifest` response
+followed by 43 assets, including a 9,429,201-byte Hermes bundle, while the
+generated `Expo.plist` still set `EXUpdatesLaunchWaitMs` to 5,000 ms.
+
+The production policy now keeps signed OTA checks and `ON_LOAD`, but sets
+`updates.fallbackToCacheTimeout` to `0`. Expo defines this value as the launch
+wait before falling back to the cached update and documents that an update
+downloaded after the wait is applied on the next launch:
+[Expo Updates configuration](https://docs.expo.dev/versions/latest/sdk/updates/).
+This keeps network update delivery off the current launch's critical path while
+preserving code-signature verification. See the
+[follow-up incident baseline](../../docs/production-incident-baseline.md#2026-08-02-ios-cold-start-blocked-by-expo-ota-launch-wait)
+for the evidence and validation.
 
 To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 
