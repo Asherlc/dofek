@@ -27,7 +27,7 @@ describe("formatSummaryDateContext", () => {
 
     formatSummaryDateContext({
       effectiveDate: "2026-08-02",
-      timezone: "Pacific/Kiritimati",
+      timezone: "America/Los_Angeles",
     });
 
     expect(formatDateLongMock).toHaveBeenCalledWith("2026-08-02", { timeZone: "UTC" });
