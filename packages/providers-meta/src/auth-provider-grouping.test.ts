@@ -15,4 +15,35 @@ describe("groupConfiguredAuthProviders", () => {
       showOAuthProviders: true,
     });
   });
+
+  it("does not show an identity section when every identity provider is excluded", () => {
+    expect(
+      groupConfiguredAuthProviders({ identity: ["apple"], data: ["strava"] }, ["apple"]),
+    ).toMatchObject({
+      identityProviders: [],
+      showIdentityProviders: false,
+      showDataProviders: true,
+      showOAuthProviders: true,
+    });
+  });
+
+  it("does not show a data section when no data providers are configured", () => {
+    expect(groupConfiguredAuthProviders({ identity: ["google"], data: [] })).toMatchObject({
+      identityProviders: ["google"],
+      dataProviders: [],
+      showIdentityProviders: true,
+      showDataProviders: false,
+      showOAuthProviders: true,
+    });
+  });
+
+  it("hides OAuth sections when no providers remain", () => {
+    expect(groupConfiguredAuthProviders({ identity: [], data: [] })).toEqual({
+      identityProviders: [],
+      dataProviders: [],
+      showIdentityProviders: false,
+      showDataProviders: false,
+      showOAuthProviders: false,
+    });
+  });
 });

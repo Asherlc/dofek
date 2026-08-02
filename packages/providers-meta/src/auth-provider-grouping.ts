@@ -8,7 +8,7 @@ export interface AuthProviderGroups {
 
 export function groupConfiguredAuthProviders(
   providers: { identity: readonly string[]; data: readonly string[] },
-  excludedIdentityProviders: readonly string[] = [],
+  excludedIdentityProviders?: readonly string[],
 ): AuthProviderGroups {
   const excluded = new Set(excludedIdentityProviders);
   const identityProviders = providers.identity.filter((id) => !excluded.has(id));
