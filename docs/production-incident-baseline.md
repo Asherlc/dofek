@@ -159,6 +159,54 @@ Compose resources.
 Run `pnpm test:unit`, the heart-rate integration test, and full `pnpm lint` on
 the exact PR head in CI or after an explicitly scoped Docker cleanup, following
 the resource guidance in [`docs/testing.md`](testing.md#docker-disk-recovery).
+## 2026-08-02: Mobile Preview OTA workflow exposed an unmasked Infisical credential
+
+### Symptoms
+
+PR #2303's successful `Mobile Preview OTA` workflow loaded an Infisical-provided
+OTA credential in its `Publish Mobile Preview OTA` job without registering a
+GitHub Actions mask first.
+
+### User Impact
+
+The affected Expo credential must be considered exposed and replaced. The
+incident affected CI credential confidentiality; no application availability
+or user health-data integrity impact has been identified.
+
+### Evidence
+
+The affected key is `EXPO_TOKEN`. The PR #2303 Actions evidence includes
+successful `Publish Mobile Preview OTA` jobs `90889411701` and `90710536078`.
+Both invoked `.github/actions/load-infisical-secrets` and contained no
+`::add-mask::` registration before the action made fetched values available to
+later workflow steps. No secret value is recorded in this incident document.
+
+### Root Cause
+
+The shared Infisical composite action wrote fetched values to `GITHUB_ENV`
+without first registering them as masked workflow-command values. GitHub
+requires sensitive values to be registered with `add-mask` before use in
+workflow commands or logs: <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log>.
+
+### Fix or Mitigation
+
+The composite action now masks each fetched value (line by line for the
+existing multiline path) before writing it to `GITHUB_ENV`, while preserving
+the existing explicit failures for fetch and empty-value errors. A focused
+Vitest contract check prevents a future write from preceding the mask.
+
+### Validation
+
+`pnpm vitest run --project unit scripts/load-infisical-secrets-policy.test.ts`
+passes. The focused check verifies the masking loop and a successful-value mask
+call occur before the `GITHUB_ENV` write.
+
+### Remaining Risk
+
+`EXPO_TOKEN` is present in the `dev`, `prod`, and `staging` Infisical
+environments. Replacement and Expo-side revocation remain required; Expo's
+current procedure is to delete the exposed access token from its Access Tokens
+dashboard: <https://docs.expo.dev/accounts/programmatic-access/#revoke-access-tokens>.
 
 ## 2026-08-01: Review-stack detail smoke test encoded tRPC input incorrectly
 

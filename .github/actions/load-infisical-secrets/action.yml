@@ -104,8 +104,16 @@ runs:
           exit 1
         fi
 
+        mask_value() {
+          local mask_line
+          while IFS= read -r mask_line || [ -n "$mask_line" ]; do
+            echo "::add-mask::$mask_line"
+          done <<< "$1"
+        }
+
         while IFS= read -r key; do
           if ! value="$(infisical secrets get "$key" --env="$INFISICAL_ENV" --projectId="$project_id" --token="$infisical_access_token" --plain --silent 2>&1)"; then
+            mask_value "$value"
             echo "::error::Failed to fetch Infisical secret: $key (env=$INFISICAL_ENV, project=$project_id)"
             echo "$value"
             exit 1
@@ -115,6 +123,8 @@ runs:
             echo "::error::Missing required Infisical secret: $key (env=$INFISICAL_ENV)"
             exit 1
           fi
+
+          mask_value "$value"
 
           if printf '%s' "$value" | grep -q $'\n'; then
             marker="INFISICAL_${key}_$(uuidgen)"
