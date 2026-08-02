@@ -19,6 +19,7 @@ import { TrainingRepository } from "./training-repository.ts";
 const AUTHORIZED_RUN_ID = "11111111-1111-4111-8111-111111111111";
 const AUTHORIZED_WALK_ID = "22222222-2222-4222-8222-222222222222";
 const MEASURED_ZERO_RUN_ID = "77777777-7777-4777-8777-777777777777";
+const PREVIOUS_WINDOW_START_ID = "99999999-9999-4999-8999-999999999999";
 const CURRENT_WINDOW_START_ID = "88888888-8888-4888-8888-888888888888";
 const UNAUTHORIZED_RIDE_ID = "33333333-3333-4333-8333-333333333333";
 const BEFORE_LOCAL_ACCESS_ID = "44444444-4444-4444-8444-444444444444";
@@ -30,6 +31,11 @@ const ACCESS_WINDOW: AccessWindow = {
   reason: "free_signup_week",
   startDate: "2026-03-10",
   endDateExclusive: "2026-03-17",
+};
+const FULL_ACCESS_WINDOW: AccessWindow = {
+  kind: "full",
+  paid: true,
+  reason: "paid_grant",
 };
 const preservedBackfillFieldsSchema = z.array(
   z.object({
@@ -79,8 +85,12 @@ describe("activity visibility consistency", () => {
             '2026-03-14T10:00:00Z', '2026-03-14T10:15:00Z', 'Measured Zero Run'
           ),
           (
+            ${PREVIOUS_WINDOW_START_ID}, 'issue_2060', ${TEST_USER_ID}, 'previous-window-start', 'running',
+            '2026-03-02T10:00:00Z', '2026-03-02T10:15:00Z', 'Previous Window Start'
+          ),
+          (
             ${CURRENT_WINDOW_START_ID}, 'issue_2060', ${TEST_USER_ID}, 'current-window-start', 'running',
-            '2026-03-08T10:00:00Z', '2026-03-08T10:15:00Z', 'Current Window Start'
+            '2026-03-09T10:00:00Z', '2026-03-09T10:15:00Z', 'Current Window Start'
           ),
           (
             ${UNAUTHORIZED_RIDE_ID}, 'issue_2060', ${TEST_USER_ID}, 'unauthorized-ride', 'cycling',
@@ -397,19 +407,19 @@ describe("activity visibility consistency", () => {
       TEST_USER_ID,
       "UTC",
       sensorStore,
-      ACCESS_WINDOW,
+      FULL_ACCESS_WINDOW,
     );
 
     await expect(
       repository.getActivityOverview({ weeks: 1, endDate: "2026-03-15" }),
     ).resolves.toMatchObject({
-      activityCount: 2,
-      totalMinutes: 60,
+      activityCount: 3,
+      totalMinutes: 75,
       activityTypes: ["running"],
       comparison: {
         periodLabel: "previous 1 week",
-        activityCount: { magnitude: 1, trend: "higher" },
-        totalMinutes: { magnitude: 45, trend: "higher" },
+        activityCount: { magnitude: 2, trend: "higher" },
+        totalMinutes: { magnitude: 60, trend: "higher" },
       },
     });
   });
