@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,7 +25,13 @@ vi.mock("react-native", () => ({
   Pressable: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement(
       "button",
-      { ...stripStyle(props), type: "button" },
+      {
+        ...stripStyle(props),
+        "aria-label": props.accessibilityLabel,
+        disabled: props.disabled,
+        onClick: props.onPress,
+        type: "button",
+      },
       ...(children != null ? [children] : []),
     ),
   StyleSheet: {
@@ -52,7 +58,16 @@ vi.mock("expo-router", () => ({
 }));
 
 vi.mock("@dofek/format/format", () => ({
-  formatDateYmd: () => "2026-04-12",
+  formatDateYmd: (date?: Date) => {
+    const resolvedDate = date ?? new Date(2026, 3, 12);
+    return `${resolvedDate.getFullYear()}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
+  },
+  shiftDateYmd: (value: string, dayOffset: number) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    date.setDate(date.getDate() + dayOffset);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  },
 }));
 
 vi.mock("../lib/trpc", () => ({
@@ -88,6 +103,7 @@ vi.mock("./_layout-options", () => ({
 describe("DailyHeartRateScreen", () => {
   beforeEach(() => {
     mockStackScreen.mockClear();
+    mockDailyBySourceQuery.mockClear();
     mockDailyBySourceQuery.mockReturnValue({
       data: [],
       isLoading: false,
@@ -116,6 +132,35 @@ describe("DailyHeartRateScreen", () => {
 
     expect(screen.getByText("04/12/2026")).toBeTruthy();
     expect(screen.getByText("No heart rate data for this day")).toBeTruthy();
+  });
+
+  it("provides accessible day navigation and identifies the local timezone", async () => {
+    const { default: DailyHeartRateScreen } = await import("./daily-heart-rate");
+
+    render(<DailyHeartRateScreen />);
+
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next day" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Today" })).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(`Local day in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`),
+    ).toBeTruthy();
+  });
+
+  it("queries the previous day and returns to today through the controls", async () => {
+    const { default: DailyHeartRateScreen } = await import("./daily-heart-rate");
+
+    render(<DailyHeartRateScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: "2026-04-11" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: "2026-04-12" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: "2026-04-12" });
   });
 
   it("renders the canonical server-provided source summary", async () => {

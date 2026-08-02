@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { formatDateYmd } from "@dofek/format/format";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
@@ -12,7 +13,7 @@ interface DailyBySourceQueryResult {
 }
 
 const { mockDailyBySourceQuery, mockDofekChart } = vi.hoisted(() => ({
-  mockDailyBySourceQuery: vi.fn<() => DailyBySourceQueryResult>(() => ({
+  mockDailyBySourceQuery: vi.fn<(input: { date: string }) => DailyBySourceQueryResult>(() => ({
     data: [
       {
         providerId: "apple_health",
@@ -65,6 +66,8 @@ describe("DailyHeartRatePage", () => {
   });
 
   beforeEach(() => {
+    mockDailyBySourceQuery.mockClear();
+    mockDofekChart.mockClear();
     mockDailyBySourceQuery.mockReturnValue({
       data: [
         {
@@ -92,6 +95,35 @@ describe("DailyHeartRatePage", () => {
     expect(mockDofekChart.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ timeRangeMode: "data" }),
     );
+  });
+
+  it("provides accessible day navigation and identifies the local timezone", () => {
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+    expect(
+      screen.getByText(`Local day in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`),
+    ).toBeTruthy();
+  });
+
+  it("queries the previous day and returns to today through the controls", () => {
+    render(createElement(DailyHeartRatePage));
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    const previousDay = new Date();
+    previousDay.setDate(previousDay.getDate() - 1);
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({
+      date: formatDateYmd(previousDay),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: formatDateYmd() });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: formatDateYmd() });
   });
 
   it("renders the canonical server-provided source summary", () => {

@@ -44,6 +44,7 @@ import {
   isToday,
   isYesterday,
   parseValidDate,
+  shiftDateYmd,
 } from "./format.ts";
 
 describe("formatDateYmd", () => {
@@ -63,6 +64,11 @@ describe("formatDateYmd", () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatDateYmd()).toBe(expected);
+  });
+
+  it("shifts a date-only value by calendar days", () => {
+    expect(shiftDateYmd("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftDateYmd("2026-12-31", 1)).toBe("2027-01-01");
   });
 });
 
