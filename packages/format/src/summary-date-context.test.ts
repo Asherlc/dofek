@@ -10,7 +10,7 @@ vi.mock("./format.ts", async (importOriginal) => {
   return { ...actual, formatDateLong: formatDateLongMock };
 });
 
-import { formatSummaryDateContext } from "./summary-date-context.ts";
+import { formatSummaryDateContext, summaryDateContextSchema } from "./summary-date-context.ts";
 
 describe("formatSummaryDateContext", () => {
   it("formats the server-authored effective date with its timezone", () => {
@@ -31,5 +31,14 @@ describe("formatSummaryDateContext", () => {
     });
 
     expect(formatDateLongMock).toHaveBeenCalledWith("2026-08-02", { timeZone: "UTC" });
+  });
+
+  it("rejects impossible calendar dates", () => {
+    expect(() =>
+      summaryDateContextSchema.parse({
+        effectiveDate: "2026-02-29",
+        timezone: "America/Los_Angeles",
+      }),
+    ).toThrow();
   });
 });

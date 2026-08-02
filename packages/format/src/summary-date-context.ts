@@ -2,7 +2,7 @@ import { z } from "zod";
 import { formatDateLong } from "./format.ts";
 
 export const summaryDateContextSchema = z.object({
-  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  effectiveDate: z.iso.date(),
   timezone: z.string().min(1),
 });
 
