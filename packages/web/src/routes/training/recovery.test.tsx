@@ -22,6 +22,12 @@ describe("recovery route range plumbing", () => {
         "Composite score from heart rate variability, resting heart rate, sleep, and load balance",
       ),
     ).toBeTruthy();
+    const decisionSummary = screen.getByRole("region", { name: "What matters today" });
+    const readinessSection = screen.getByText("Readiness Score");
+    expect(
+      decisionSummary.compareDocumentPosition(readinessSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText("Server-authored recovery action")).toBeTruthy();
     expect(screen.getByText("Heart Rate Variability Coefficient of Variation")).toBeTruthy();
     expect(screen.getByText("7-day rolling heart rate variability")).toBeTruthy();
 

@@ -7,6 +7,7 @@ import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
+import { TodayPlanCard } from "../../components/TodayPlanCard.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -41,9 +42,11 @@ function RecoveryTab() {
     { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
+  const todayPlan = trpc.todayPlan.get.useQuery({ days: 30, endDate }, TRAINING_SLOW_QUERY_OPTIONS);
 
   return (
     <>
+      <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section
           title="Readiness Score"
