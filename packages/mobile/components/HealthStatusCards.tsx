@@ -1,3 +1,4 @@
+import { providerLabel } from "@dofek/providers/providers";
 import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -5,6 +6,7 @@ import { colors, radius, spacing } from "../theme";
 interface HealthStatusCardsProps {
   metrics: HealthStatusMetric[];
   formatValue?: (metric: HealthStatusMetric) => string;
+  formatComparisonValue?: (metric: HealthStatusMetric, value: number) => string;
 }
 
 function statusColor(status: HealthStatusMetric["statusColor"]): string {
@@ -33,7 +35,11 @@ function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
   return "×";
 }
 
-export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsProps) {
+export function HealthStatusCards({
+  metrics,
+  formatValue,
+  formatComparisonValue,
+}: HealthStatusCardsProps) {
   if (metrics.length === 0) return null;
 
   return (
@@ -74,6 +80,35 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
             </Text>
             <Text style={styles.rule}>{metric.evaluationRule}</Text>
             <Text style={styles.explanation}>{metric.explanation}</Text>
+            {metric.provenance ? (
+              <Text style={styles.provenance}>
+                Source:{" "}
+                {metric.provenance.sourceProviders.map(providerLabel).join(", ") || "Unknown"} ·
+                Latest: {metric.provenance.latestDate ?? "Unknown"} · Coverage:{" "}
+                {metric.provenance.observedDays}/{metric.provenance.windowDays} days
+              </Text>
+            ) : null}
+            {metric.comparison ? (
+              <Text style={styles.provenance}>
+                {metric.comparison.recentDays}d avg{" "}
+                {metric.comparison.recentMean == null
+                  ? "—"
+                  : (formatComparisonValue?.(metric, metric.comparison.recentMean) ??
+                    String(metric.comparison.recentMean))}{" "}
+                vs prior {metric.comparison.baselineDays}d avg{" "}
+                {metric.comparison.baselineMean == null
+                  ? "—"
+                  : (formatComparisonValue?.(metric, metric.comparison.baselineMean) ??
+                    String(metric.comparison.baselineMean))}{" "}
+                ·{" "}
+                {metric.comparison.delta == null
+                  ? "—"
+                  : metric.comparison.delta > 0
+                    ? `+${formatComparisonValue?.(metric, metric.comparison.delta) ?? metric.comparison.delta}`
+                    : (formatComparisonValue?.(metric, metric.comparison.delta) ??
+                      metric.comparison.delta)}
+              </Text>
+            ) : null}
             {metric.baselineProgress.blocker !== null ? (
               <View
                 accessibilityLabel={`${metric.label} baseline progress`}
@@ -151,6 +186,11 @@ const styles = StyleSheet.create({
   },
   explanation: {
     color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  provenance: {
+    color: colors.textTertiary,
     fontSize: 12,
     lineHeight: 17,
   },

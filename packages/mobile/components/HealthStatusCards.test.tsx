@@ -189,6 +189,51 @@ describe("HealthStatusCards", () => {
     expect(screen.queryByText(/abnormal/i)).toBeNull();
   });
 
+  it("renders server-authored provenance and comparison context", () => {
+    render(
+      <HealthStatusCards
+        metrics={[
+          {
+            metric: "spo2",
+            label: "Blood Oxygen Saturation (SpO2)",
+            value: 97.2,
+            baseline: 96.4,
+            sampleDeviation: 0.4,
+            deviation: 2,
+            direction: "above",
+            intent: "neutral",
+            statusToken: "near_baseline",
+            statusColor: "positive",
+            statusLabel: "Near baseline",
+            evaluationRule: "Server-selected rule.",
+            explanation: "Server-selected explanation.",
+            provenance: {
+              latestDate: "2026-07-30",
+              sourceProviders: ["whoop"],
+              observedDays: 3,
+              windowDays: 30,
+            },
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 97.2,
+              baselineMean: 96.4,
+              delta: 0.8,
+              direction: "increasing",
+            },
+            baselineProgress: readyBaselineProgress,
+          },
+        ]}
+        formatComparisonValue={(_, value) => value.toFixed(1)}
+      />,
+    );
+
+    expect(
+      screen.getByText("Source: WHOOP (Cloud) · Latest: 2026-07-30 · Coverage: 3/30 days"),
+    ).toBeTruthy();
+    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeTruthy();
+  });
+
   it.each([
     { statusToken: "insufficient_data" as const, statusLabel: "Not enough data", symbol: "?" },
     { statusToken: "near_baseline" as const, statusLabel: "Near baseline", symbol: "✓" },
