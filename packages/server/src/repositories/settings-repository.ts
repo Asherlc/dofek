@@ -144,10 +144,7 @@ export class SettingsRepository {
    */
   async deleteAllUserData(providerChildTables: string[]): Promise<void> {
     await this.#db.transaction(async (transaction) => {
-      for (const table of providerChildTables) {
-        if (GLOBAL_PROVIDER_TABLES.has(table)) {
-          continue;
-        }
+      const deleteTable = async (table: string): Promise<void> => {
         try {
           await transaction.execute(
             sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
@@ -157,12 +154,17 @@ export class SettingsRepository {
             throw error;
           }
         }
+      };
+
+      for (const table of providerChildTables) {
+        if (GLOBAL_PROVIDER_TABLES.has(table)) {
+          continue;
+        }
+        await deleteTable(table);
       }
 
       for (const table of USER_SCOPED_DELETE_TABLES) {
-        await transaction.execute(
-          sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
-        );
+        await deleteTable(table);
       }
     });
   }

@@ -254,7 +254,8 @@ describe("Settings router", () => {
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.menstrual_period (user_id, start_date, notes)
-              VALUES (${SETTINGS_TEST_USER_ID}, '2024-01-15', 'Delete cycle note')`,
+              VALUES (${SETTINGS_TEST_USER_ID}, '2024-01-15', 'Delete cycle note')
+              ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)

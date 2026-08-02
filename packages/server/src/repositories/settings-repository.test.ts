@@ -254,6 +254,46 @@ describe("SettingsRepository", () => {
       expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
     });
 
+    it("continues deleting user-scoped data when a table is absent", async () => {
+      const transactionExecute = vi.fn(async (query: unknown) => {
+        const queryText = JSON.stringify(
+          typeof query === "object" && query !== null
+            ? (Reflect.get(query, "queryChunks") ?? [])
+            : [],
+        );
+        if (queryText.includes("fitness.menstrual_period")) {
+          throw Object.assign(new Error('relation "fitness.menstrual_period" does not exist'), {
+            code: "42P01",
+          });
+        }
+        return [];
+      });
+      const transaction = vi
+        .fn()
+        .mockImplementation(
+          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
+            await callback({ execute: transactionExecute });
+          },
+        );
+      const execute = vi.fn().mockResolvedValue([]);
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute,
+        transaction,
+      };
+      const repo = new SettingsRepository(db, "user-1");
+
+      await expect(repo.deleteAllUserData([])).resolves.toBeUndefined();
+      expect(transactionExecute).toHaveBeenCalledTimes(6);
+      const queries = transactionExecute.mock.calls.map(([query]) =>
+        JSON.stringify(
+          typeof query === "object" && query !== null
+            ? (Reflect.get(query, "queryChunks") ?? [])
+            : [],
+        ),
+      );
+      expect(queries.some((query) => query.includes("fitness.supplement"))).toBe(true);
+    });
+
     it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {
       const transactionExecute = vi.fn().mockResolvedValue([]);
       const transaction = vi
