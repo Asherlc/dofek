@@ -13,9 +13,9 @@ export function TimeRangeSelector({
   const groupName = `time-range-${useId()}`;
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex min-w-0 max-w-full flex-col items-end gap-1">
       <fieldset
-        className="flex shrink-0 gap-0.5 sm:gap-1 bg-surface-solid rounded-lg p-1 border border-border"
+        className="flex max-w-full flex-wrap gap-0.5 rounded-lg border border-border bg-surface-solid p-1 sm:gap-1"
         aria-label="Time range"
       >
         {TIME_RANGE_OPTIONS.map((range) => {
