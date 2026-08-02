@@ -131,6 +131,16 @@ describe("CyclingAnalyticsRepository", () => {
       { date: "2026-07-10", eftp: 266, activityName: "Intervals" },
     ]);
     expect(result.eftpTrend.currentEftp).toBe(266);
+    expect(result.estimateEvidence.recent.vo2Max).toMatchObject({
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      sourceWorkouts: [],
+    });
+    expect(result.estimateEvidence.eftp).toMatchObject({
+      confidence: "limited",
+      confidenceLabel: "Training estimate",
+      confidenceDetail: "Based on 1 source cycling workout.",
+    });
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toMatch(
       /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND is_deleted = 0/,
     );
@@ -320,14 +330,272 @@ describe("CyclingAnalyticsRepository", () => {
       method: "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
       confidence: "limited",
       confidenceLabel: "Indirect estimate",
-      sourceWorkouts: [{ id: "33333333-3333-4333-8333-333333333333", name: "Five-Minute Test" }],
+      sourceWorkouts: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          name: "Five-Minute Test",
+          date: "2026-07-10",
+        },
+      ],
+    });
+    expect(result.estimateEvidence.season.threshold).toMatchObject({
+      sourceWorkouts: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Season Opener",
+          date: "2026-03-15",
+        },
+      ],
     });
     expect(result.estimateEvidence.eftp).toMatchObject({
       method:
         "Critical Power model for the current value; trend points use normalized power × 0.95",
+      confidence: "high",
+      confidenceLabel: "High fit quality",
+      confidenceDetail:
+        "The current value uses the threshold model; the trend shows per-workout estimates.",
       sourceWorkouts: [
         { id: "11111111-1111-4111-8111-111111111111", name: "Threshold Intervals" },
         { id: "33333333-3333-4333-8333-333333333333", name: "Five-Minute Test" },
+      ],
+    });
+  });
+
+  it("applies threshold boundaries and preserves recent and season source workouts", async () => {
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([
+        powerComparisonRow(60, 900, 900, {
+          recent_source_activity_id: "recent-outside",
+          recent_source_activity_name: "Recent Sprint",
+          season_source_activity_id: "season-outside",
+          season_source_activity_name: "Season Sprint",
+        }),
+        powerComparisonRow(120, 500, 510, {
+          recent_source_activity_id: "recent-a",
+          recent_source_activity_name: "Recent Threshold",
+          season_source_activity_id: "season-a",
+          season_source_activity_name: "Season Threshold",
+        }),
+        powerComparisonRow(180, 400, 410, {
+          recent_source_activity_id: "recent-a",
+          recent_source_activity_name: "Recent Threshold",
+          season_source_activity_id: "season-a",
+          season_source_activity_name: "Season Threshold",
+        }),
+        powerComparisonRow(300, 250, 260, {
+          recent_source_activity_id: "recent-b",
+          recent_source_activity_name: "Recent Five-Minute",
+          season_source_activity_id: "season-b",
+          season_source_activity_name: "Season Five-Minute",
+        }),
+        powerComparisonRow(420, 300, 310, {
+          season_source_activity_id: "season-c",
+          season_source_activity_name: "Season Seven-Minute",
+        }),
+        powerComparisonRow(600, 200, 0, {
+          recent_source_activity_id: "recent-d",
+          recent_source_activity_name: "Recent Ten-Minute",
+          season_source_activity_id: "season-zero",
+          season_source_activity_name: "Season Zero Power",
+        }),
+        powerComparisonRow(1200, 1000, 1000, {
+          recent_source_activity_id: "recent-outside-long",
+          recent_source_activity_name: "Recent Long Ride",
+          season_source_activity_id: "season-outside-long",
+          season_source_activity_name: "Season Long Ride",
+        }),
+      ])
+      .mockResolvedValueOnce([performanceActivityRow({ normalized_power: null })]);
+
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(result.estimateEvidence.recent.threshold).toMatchObject({
+      confidenceDetail: expect.stringContaining("5 observed power durations"),
+      sourceWorkouts: [
+        { id: "recent-a", name: "Recent Threshold" },
+        { id: "recent-b", name: "Recent Five-Minute" },
+        { id: "recent-d", name: "Recent Ten-Minute" },
+      ],
+    });
+    expect(result.estimateEvidence.season.threshold).toMatchObject({
+      confidenceDetail: expect.stringContaining("4 observed power durations"),
+      sourceWorkouts: [
+        { id: "season-a", name: "Season Threshold" },
+        { id: "season-b", name: "Season Five-Minute" },
+        { id: "season-c", name: "Season Seven-Minute" },
+      ],
+    });
+    expect(result.estimateEvidence.recent.vo2Max.sourceWorkouts).toEqual([
+      { id: "recent-b", name: "Recent Five-Minute", date: "2026-07-10" },
+    ]);
+    expect(result.estimateEvidence.season.vo2Max.sourceWorkouts).toEqual([
+      { id: "season-b", name: "Season Five-Minute", date: "2026-03-15" },
+    ]);
+  });
+
+  it.each([
+    {
+      label: "high at four fitting points and an exact 90 percent fit",
+      powers: [510, 512, 508, 380],
+      expectedConfidence: "high",
+      expectedLabel: "High fit quality",
+    },
+    {
+      label: "moderate at three fitting points and an exact 75 percent fit",
+      powers: [500, 400, 250],
+      expectedConfidence: "moderate",
+      expectedLabel: "Moderate fit quality",
+    },
+    {
+      label: "limited when the fit quality is below the moderate boundary",
+      powers: [500, 250, 300],
+      expectedConfidence: "limited",
+      expectedLabel: "Limited fit quality",
+    },
+  ])("classifies threshold confidence as $label", async ({
+    powers,
+    expectedConfidence,
+    expectedLabel,
+  }) => {
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce(
+        powers.map((bestPower, index) =>
+          powerComparisonRow([120, 180, 300, 420][index] ?? 120, bestPower, null),
+        ),
+      )
+      .mockResolvedValueOnce([performanceActivityRow({ normalized_power: null })]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(result.estimateEvidence.recent.threshold).toMatchObject({
+      confidence: expectedConfidence,
+      confidenceLabel: expectedLabel,
+    });
+  });
+
+  it("reports unavailable evidence when a fit or its required inputs are missing", async () => {
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([
+        powerComparisonRow(120, 500, null),
+        powerComparisonRow(180, 400, null),
+      ])
+      .mockResolvedValueOnce([performanceActivityRow({ normalized_power: null })]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(result.estimateEvidence.recent.threshold).toMatchObject({
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      confidenceDetail: "At least three usable power durations are required for this fit.",
+      sourceWorkouts: [],
+    });
+    expect(result.estimateEvidence.recent.vo2Max).toMatchObject({
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      sourceWorkouts: [],
+    });
+    expect(result.estimateEvidence.eftp).toMatchObject({
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      confidenceDetail: "A cycling workout with normalized power is required.",
+      sourceWorkouts: [],
+    });
+  });
+
+  it("requires both a sourced five-minute effort and positive weight for the VO2 max estimate", async () => {
+    const run = async (weightKg: number, sourceActivityId: string | null) => {
+      const sensorStore = makeMockSensorStore();
+      vi.mocked(sensorStore.query)
+        .mockResolvedValueOnce([
+          powerComparisonRow(120, null, null),
+          powerComparisonRow(300, 350, null, {
+            recent_source_activity_id: sourceActivityId,
+            recent_source_activity_name: sourceActivityId == null ? null : "Five-Minute Test",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          performanceActivityRow({ normalized_power: null, latest_weight_kg: weightKg }),
+        ]);
+      const repository = new CyclingAnalyticsRepository(
+        { execute: vi.fn().mockResolvedValue([]) },
+        "11111111-1111-4111-8111-111111111111",
+        "UTC",
+        sensorStore,
+      );
+
+      return repository.getPerformance(ChartRange.fromDays(90));
+    };
+
+    const missingSource = await run(80, null);
+    expect(missingSource.estimateEvidence.recent.vo2Max).toMatchObject({
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      sourceWorkouts: [],
+    });
+
+    const nonPositiveWeight = await run(0, "33333333-3333-4333-8333-333333333333");
+    expect(nonPositiveWeight.estimateEvidence.recent.vo2Max).toMatchObject({
+      confidence: "not_available",
+      confidenceLabel: "Not available",
+      sourceWorkouts: [{ id: "33333333-3333-4333-8333-333333333333", name: "Five-Minute Test" }],
+    });
+  });
+
+  it("uses the all-time trend and only cites its five most recent source workouts", async () => {
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(
+        Array.from({ length: 6 }, (_, index) =>
+          performanceActivityRow({
+            id: `${index + 1}1111111-1111-4111-8111-111111111111`,
+            date: `2026-07-${String(1 + index).padStart(2, "0")}`,
+            normalized_power: 200 + index * 10,
+          }),
+        ),
+      );
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(null));
+
+    expect(result.eftpTrend.trend).toHaveLength(6);
+    expect(result.estimateEvidence.eftp).toMatchObject({
+      confidence: "limited",
+      confidenceLabel: "Training estimate",
+      confidenceDetail: "Based on 6 source cycling workouts.",
+      sourceWorkouts: [
+        { id: "21111111-1111-4111-8111-111111111111" },
+        { id: "31111111-1111-4111-8111-111111111111" },
+        { id: "41111111-1111-4111-8111-111111111111" },
+        { id: "51111111-1111-4111-8111-111111111111" },
+        { id: "61111111-1111-4111-8111-111111111111" },
       ],
     });
   });
