@@ -74,10 +74,17 @@ export function hasChartTableData(option: Record<string, unknown>): boolean {
 export function buildChartTable(option: Record<string, unknown>): AccessibleChartTable {
   const categoryAxis = getAxes(option).find((axis) => Array.isArray(axis.data));
   const categoryValues = Array.isArray(categoryAxis?.data) ? categoryAxis.data : [];
+  const namedXAxis = toRecords(option.xAxis).find(
+    (axis) => typeof axis.name === "string" && axis.name.trim().length > 0,
+  );
   const categoryHeader =
-    typeof categoryAxis?.name === "string" && categoryAxis.name.trim().length > 0
-      ? categoryAxis.name.trim()
-      : "Category";
+    categoryAxis !== undefined
+      ? typeof categoryAxis.name === "string" && categoryAxis.name.trim().length > 0
+        ? categoryAxis.name.trim()
+        : "Category"
+      : typeof namedXAxis?.name === "string"
+        ? namedXAxis.name.trim()
+        : "Category";
 
   const rows = getSeries(option).flatMap((seriesItem, seriesIndex) => {
     if (!Array.isArray(seriesItem.data)) return [];

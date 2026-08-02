@@ -62,4 +62,16 @@ describe("chart accessibility helpers", () => {
       ],
     });
   });
+
+  it("uses a named time axis for tuple data without category values", () => {
+    expect(
+      buildChartTable({
+        xAxis: { type: "time", name: "Date" },
+        series: [{ type: "line", name: "Recovery", data: [["2026-07-01", 52]] }],
+      }),
+    ).toEqual({
+      categoryHeader: "Date",
+      rows: [{ series: "Recovery", category: "2026-07-01", value: "52" }],
+    });
+  });
 });

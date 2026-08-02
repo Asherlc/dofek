@@ -14,6 +14,10 @@ interface AccessibleChartProps {
   children: ReactNode;
 }
 
+/**
+ * Cross-platform chart alternative for exact values and assistive technology.
+ * Design trade-offs are documented in docs/accessible-chart-justification.md.
+ */
 export function AccessibleChart({ title, summary, rows, children }: AccessibleChartProps) {
   const [expanded, setExpanded] = useState(false);
   const action = expanded ? "Hide" : "View";
