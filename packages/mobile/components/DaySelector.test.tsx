@@ -16,7 +16,7 @@ vi.mock("react-native", () => ({
   }: {
     accessibilityLabel?: string;
     accessibilityRole?: string;
-    accessibilityState?: { selected?: boolean };
+    accessibilityState?: { checked?: boolean };
     children?: React.ReactNode;
     onPress?: () => void;
   }) =>
@@ -25,7 +25,7 @@ vi.mock("react-native", () => ({
       {
         type: "button",
         "aria-label": accessibilityLabel,
-        "aria-selected": accessibilityState?.selected,
+        "aria-checked": accessibilityState?.checked,
         onClick: onPress,
         role: accessibilityRole,
       },
@@ -62,11 +62,11 @@ describe("DaySelector", () => {
     expect(onChange).toHaveBeenCalledWith(7);
   });
 
-  it("exposes the selected range as a native selected radio", () => {
+  it("exposes the selected range as a checked radio", () => {
     render(<DaySelector days={30} description="Recent changes." onChange={vi.fn()} />);
 
-    expect(screen.getByRole("radio", { name: "30d" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("radio", { name: "7d" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("radio", { name: "30d" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "7d" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("renders custom options when provided", () => {

@@ -41,7 +41,7 @@ export function DaySelector({
             activeOpacity={0.7}
             accessibilityRole="radio"
             accessibilityLabel={opt.label}
-            accessibilityState={{ selected: days === opt.value }}
+            accessibilityState={{ checked: days === opt.value }}
           >
             <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
           </TouchableOpacity>
