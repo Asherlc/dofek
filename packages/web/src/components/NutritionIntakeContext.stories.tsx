@@ -37,6 +37,27 @@ export const Default: Story = {
 
 export const UnderTarget: Story = Default;
 
+export const NoLoggedIntake: Story = {
+  args: {
+    context: {
+      observedCalories: 0,
+      target: {
+        calories: 2000,
+        type: "default",
+        label: "Default daily logged-intake target",
+      },
+      scale: { maximumCalories: 2000, observedPercentage: 0, targetPercentage: 100 },
+      comparison: {
+        status: "below_target",
+        differenceCalories: 2000,
+        message:
+          "Observed logged intake is 2,000 kcal below the default daily logged-intake target.",
+      },
+      limitation,
+    },
+  },
+};
+
 export const AtTarget: Story = {
   args: {
     context: {
@@ -69,7 +90,7 @@ export const AboveTarget: Story = {
       scale: {
         maximumCalories: 4259,
         observedPercentage: 100,
-        targetPercentage: (2450 / 4259) * 100,
+        targetPercentage: 57.525240666823194,
       },
       comparison: {
         status: "above_target",

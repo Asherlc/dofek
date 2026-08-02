@@ -49,8 +49,9 @@ export const DEFAULT_CALORIE_GOAL = 2000;
 function parseCalorieGoal(value: unknown): CalorieGoalContext {
   const numericValue =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
-  if (Number.isFinite(numericValue) && numericValue > 0) {
-    return { target: Math.round(numericValue), type: "configured" };
+  const roundedValue = Math.round(numericValue);
+  if (Number.isFinite(roundedValue) && roundedValue > 0) {
+    return { target: roundedValue, type: "configured" };
   }
   return { target: DEFAULT_CALORIE_GOAL, type: "default" };
 }

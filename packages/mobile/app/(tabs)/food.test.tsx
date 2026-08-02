@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,18 +40,18 @@ const defaultIntakeContext = {
   observedCalories: 0,
   target: {
     calories: 2000,
-    type: "default" as const,
+    type: "default",
     label: "Default daily logged-intake target",
   },
   scale: { maximumCalories: 2000, observedPercentage: 0, targetPercentage: 100 },
   comparison: {
-    status: "below_target" as const,
+    status: "below_target",
     differenceCalories: 2000,
     message: "Observed logged intake is 2,000 kcal below the default daily logged-intake target.",
   },
   limitation:
     "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
-};
+} satisfies SelectedDateNutritionIntakeContext;
 
 vi.mock("../../lib/open-external-url", () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),

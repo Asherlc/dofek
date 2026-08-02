@@ -81,6 +81,7 @@ describe("SettingsRepository", () => {
     it.each([
       { rows: [] },
       { rows: [{ key: "calorieGoal", value: 0 }] },
+      { rows: [{ key: "calorieGoal", value: 0.4 }] },
       { rows: [{ key: "calorieGoal", value: "invalid" }] },
     ])("falls back to 2000 when the setting is absent or invalid", async ({ rows }) => {
       const { repo } = makeRepository(rows);
@@ -102,6 +103,7 @@ describe("SettingsRepository", () => {
     it.each([
       { rows: [] },
       { rows: [{ key: "calorieGoal", value: 0 }] },
+      { rows: [{ key: "calorieGoal", value: 0.4 }] },
       { rows: [{ key: "calorieGoal", value: "invalid" }] },
     ])("identifies the canonical default when the target is absent or invalid", async ({
       rows,

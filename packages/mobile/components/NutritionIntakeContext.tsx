@@ -32,7 +32,7 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
         />
       </View>
       <View style={styles.scaleLabels} accessible={false}>
-        <Text style={styles.scaleLabel}>0 kcal</Text>
+        <Text style={styles.scaleLabel}>{formatCalories(0)}</Text>
         <Text style={styles.scaleLabel}>{formatCalories(context.scale.maximumCalories)} scale</Text>
       </View>
       <Text style={styles.comparison}>{context.comparison.message}</Text>

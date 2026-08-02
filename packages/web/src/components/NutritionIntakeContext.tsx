@@ -1,24 +1,26 @@
 import { formatCalories } from "@dofek/format/format";
 import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
+import { useId } from "react";
 
 interface NutritionIntakeContextProps {
   context: SelectedDateNutritionIntakeContext;
 }
 
 function meterLabel(context: SelectedDateNutritionIntakeContext): string {
-  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${context.comparison.message}`;
+  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${context.comparison.message} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}. ${context.limitation}`;
 }
 
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
+  const titleId = useId();
   const label = meterLabel(context);
 
   return (
     <section
       className="rounded-xl border border-border bg-surface-solid p-5 space-y-3"
-      aria-labelledby="nutrition-intake-context-title"
+      aria-labelledby={titleId}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h3 id="nutrition-intake-context-title" className="text-sm font-medium text-foreground">
+        <h3 id={titleId} className="text-sm font-medium text-foreground">
           Logged intake
         </h3>
         <span className="text-xl font-semibold text-foreground tabular-nums">
@@ -52,7 +54,7 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
         />
       </div>
       <div className="flex justify-between text-xs text-subtle tabular-nums">
-        <span>0 kcal</span>
+        <span>{formatCalories(0)}</span>
         <span>{formatCalories(context.scale.maximumCalories)} scale</span>
       </div>
       <p className="text-sm text-muted" data-testid="calorie-comparison">

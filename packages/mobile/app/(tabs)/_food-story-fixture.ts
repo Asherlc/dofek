@@ -76,7 +76,7 @@ export function seedFoodStoryQuery(queryClient: QueryClient, date: string): void
       scale: {
         maximumCalories: 2220,
         observedPercentage: 100,
-        targetPercentage: (2200 / 2220) * 100,
+        targetPercentage: 99.09909909909909,
       },
       comparison: {
         status: "above_target",

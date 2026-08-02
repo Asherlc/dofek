@@ -1,7 +1,10 @@
 import { formatCalories, formatWeekdayTime } from "@dofek/format/format";
-import type {
-  NutritionCalorieTargetType,
-  SelectedDateNutritionIntakeContext,
+import {
+  type NutritionCalorieTargetType,
+  nutritionSourceResolutionSchema,
+  type SelectedDateNutritionIntakeContext,
+  selectedDateNutritionIntakeContextSchema,
+  selectedDateNutritionSummarySchema,
 } from "@dofek/nutrition/selected-date-summary";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
@@ -11,7 +14,7 @@ import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { invalidateNutritionCaches } from "../lib/nutrition-cache.ts";
 import { logger } from "../logger.ts";
-import { FoodRepository } from "../repositories/food-repository.ts";
+import { FoodRepository, foodEntryRowSchema } from "../repositories/food-repository.ts";
 import {
   type CalorieGoalContext,
   SettingsRepository,
@@ -105,6 +108,13 @@ const updateFoodEntrySchema = z
 
 const foodByDateInputSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+const foodByDateV2OutputSchema = z.object({
+  entries: z.array(foodEntryRowSchema),
+  summary: selectedDateNutritionSummarySchema.nullable(),
+  resolution: nutritionSourceResolutionSchema,
+  intakeContext: selectedDateNutritionIntakeContextSchema.nullable(),
 });
 
 async function loadFoodByDate(db: Database, userId: string, timezone: string, date: string) {
@@ -212,8 +222,12 @@ export const foodRouter = router({
     }),
 
   /** Get food entries and conflict-aware nutrition resolution metadata for a date. */
-  byDateV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  byDateV2: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "food.byDateV2:intake-context-v1",
+  })
     .input(foodByDateInputSchema)
+    .output(foodByDateV2OutputSchema)
     .query(async ({ ctx, input }) => {
       const result = await loadFoodByDate(ctx.db, ctx.userId, ctx.timezone, input.date);
       return {
