@@ -121,10 +121,12 @@ describe("GradeAdjustedPaceTable", () => {
     expect(amberCell).not.toBeNull();
   });
 
-  it("uses a plain-language heading and pace explanation", () => {
+  it("uses a distinct table heading and plain-language pace explanation", () => {
     renderWithUnits(<GradeAdjustedPaceTable data={mockData} />);
 
-    expect(screen.getByRole("heading", { name: /Effort-adjusted pace for grade/i })).toBeDefined();
+    expect(
+      screen.getByRole("heading", { name: /Effort-adjusted pace by activity/i }),
+    ).toBeDefined();
     expect(screen.getByRole("columnheader", { name: /Effort-adjusted pace/i })).toBeDefined();
     expect(screen.getByText(/Effort-adjusted pace.*15%/)).toBeDefined();
   });

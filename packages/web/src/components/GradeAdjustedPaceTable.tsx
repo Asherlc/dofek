@@ -98,7 +98,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-subtle mb-2">{HIKING_PACE_COPY.title}</h3>
+      <h3 className="text-xs font-medium text-subtle mb-2">{HIKING_PACE_COPY.tableTitle}</h3>
       <ActivityTable
         rows={data}
         columns={columns}

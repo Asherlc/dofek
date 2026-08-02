@@ -1,5 +1,6 @@
 export const HIKING_PACE_COPY = {
   title: "Effort-adjusted pace for grade",
+  tableTitle: "Effort-adjusted pace by activity",
   description:
     "Pace adjusted for the effort of walking or hiking on slopes. Uses the Minetti slope-cost model.",
   columnLabel: "Effort-adjusted pace",
