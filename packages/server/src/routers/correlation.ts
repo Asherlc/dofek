@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { MIN_CORRELATION_PAIRS } from "@dofek/stats/correlation";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
@@ -90,14 +91,18 @@ const correlationComputeOutputSchema = z.discriminatedUnion("availability", [
   z.object({
     ...correlationResultBaseShape,
     availability: z.literal("insufficient"),
-    sampleCount: z.number().int().min(0).max(4),
-    additionalSamplesRequired: z.number().int().min(1).max(5),
+    sampleCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(MIN_CORRELATION_PAIRS - 1),
+    additionalSamplesRequired: z.number().int().min(1).max(MIN_CORRELATION_PAIRS),
     confidenceLevel: z.literal("insufficient"),
   }),
   z.object({
     ...correlationResultBaseShape,
     availability: z.literal("available"),
-    sampleCount: z.number().int().min(5),
+    sampleCount: z.number().int().min(MIN_CORRELATION_PAIRS),
     spearmanRho: z.number(),
     spearmanPValue: z.number(),
     pearsonR: z.number(),
@@ -164,13 +169,17 @@ const correlationComputeV2OutputSchema = z.discriminatedUnion("availability", [
   z.object({
     ...correlationV2BaseShape,
     availability: z.literal("insufficient"),
-    sampleCount: z.number().int().min(0).max(4),
-    additionalSamplesRequired: z.number().int().min(1).max(5),
+    sampleCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(MIN_CORRELATION_PAIRS - 1),
+    additionalSamplesRequired: z.number().int().min(1).max(MIN_CORRELATION_PAIRS),
   }),
   z.object({
     ...correlationV2BaseShape,
     availability: z.literal("available"),
-    sampleCount: z.number().int().min(5),
+    sampleCount: z.number().int().min(MIN_CORRELATION_PAIRS),
     spearmanRho: z.number().min(-1).max(1).nullable(),
     regression: z.object({
       slope: z.number().nullable(),
@@ -216,7 +225,7 @@ function currentCorrelationEndDate(timezone: string): string {
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
 export const correlationRouter = router({
-  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG, keyVersion: "correlation.metrics:v2" })
     .input(z.object({}).optional())
     .query(({ ctx }) => {
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);

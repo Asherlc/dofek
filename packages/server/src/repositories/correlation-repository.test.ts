@@ -1142,6 +1142,7 @@ describe("CorrelationRepository", () => {
         expect(metric).toHaveProperty("unit");
         expect(metric).toHaveProperty("domain");
         expect(metric).toHaveProperty("description");
+        expect(metric).toHaveProperty("availabilityDescription");
       }
     });
   });

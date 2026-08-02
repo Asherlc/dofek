@@ -313,7 +313,7 @@ describe("joinByDate()", () => {
     const metrics = [makeDailyRow("2025-01-01")];
     const activities = [makeActivityRow("2025-01-01T10:00:00Z", null, "running")];
     const result = joinByDate(metrics, [], activities, [], [], DEFAULT_CONFIG);
-    expect(result[0]?.exercise_minutes).toBe(0);
+    expect(result[0]?.exercise_minutes).toBeNull();
   });
 
   it("sums multiple activities on the same day", () => {
