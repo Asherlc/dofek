@@ -15,7 +15,7 @@ const overTargetContext = {
   scale: {
     maximumCalories: 4259,
     observedPercentage: 100,
-    targetPercentage: 57.525240666823194,
+    targetPercentage: (2450 / 4259) * 100,
   },
   comparison: {
     status: "above_target",
@@ -25,6 +25,14 @@ const overTargetContext = {
   },
   limitation:
     "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+} satisfies SelectedDateNutritionIntakeContext;
+
+const punctuationlessContext = {
+  ...overTargetContext,
+  comparison: {
+    ...overTargetContext.comparison,
+    message: "Observed logged intake is 1,809 kcal above the configured daily logged-intake target",
+  },
 } satisfies SelectedDateNutritionIntakeContext;
 
 describe("NutritionIntakeContext", () => {
@@ -61,5 +69,15 @@ describe("NutritionIntakeContext", () => {
     expect(headings).toHaveLength(2);
     expect(headings[0]?.id).toBeTruthy();
     expect(headings[0]?.id).not.toBe(headings[1]?.id);
+  });
+
+  it("separates comparison and scale context in the accessible label", () => {
+    render(<NutritionIntakeContext context={punctuationlessContext} />);
+
+    expect(
+      screen.getByRole("meter", {
+        name: /configured daily logged-intake target\. Scale: 0 to/i,
+      }),
+    ).toBeTruthy();
   });
 });

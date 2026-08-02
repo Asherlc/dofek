@@ -36,6 +36,14 @@ const targetAtScaleMaximumContext = {
   },
 } satisfies SelectedDateNutritionIntakeContext;
 
+const punctuationlessContext = {
+  ...overTargetContext,
+  comparison: {
+    ...overTargetContext.comparison,
+    message: "Observed logged intake is 1,809 kcal above the configured daily logged-intake target",
+  },
+} satisfies SelectedDateNutritionIntakeContext;
+
 describe("NutritionIntakeContext", () => {
   it("keeps over-target intake accessible and neutral", () => {
     render(<NutritionIntakeContext context={overTargetContext} />);
@@ -58,5 +66,13 @@ describe("NutritionIntakeContext", () => {
     expect(screen.getByTestId("calorie-scale-observed").style.width).toBe("100%");
     expect(screen.getByTestId("calorie-scale-target").style.left).toBe("100%");
     expect(screen.getByTestId("calorie-scale-target").style.marginLeft).toBe("-2px");
+  });
+
+  it("separates comparison and scale context in the accessibility label", () => {
+    render(<NutritionIntakeContext context={punctuationlessContext} />);
+
+    expect(
+      screen.getByLabelText(/configured daily logged-intake target\. Scale: 0 to/i),
+    ).toBeTruthy();
   });
 });

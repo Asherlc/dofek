@@ -320,7 +320,7 @@ describe("FoodScreen AI meal confirmation", () => {
           },
           scale: {
             maximumCalories: 2200,
-            observedPercentage: 45.409090909090914,
+            observedPercentage: (999 / 2200) * 100,
             targetPercentage: 100,
           },
           comparison: {
