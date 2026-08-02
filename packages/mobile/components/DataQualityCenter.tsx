@@ -45,11 +45,6 @@ function DataQualityCheckCard({
           {getDataQualityStatusLabel(qualityCheck.status)}
         </Text>
       </View>
-      {qualityCheck.count > 0 ? (
-        <Text style={styles.count}>
-          {qualityCheck.count} {qualityCheck.label.toLowerCase()}
-        </Text>
-      ) : null}
       {qualityCheck.details.length > 0 ? (
         <View style={styles.details}>
           {getDataQualityDetailItems(qualityCheck.key, qualityCheck.details).map((detail) => (
@@ -59,14 +54,16 @@ function DataQualityCheckCard({
           ))}
         </View>
       ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={review.label}
-        onPress={() => onReview?.(qualityCheck.key)}
-        style={({ pressed }) => [styles.reviewButton, pressed && styles.reviewButtonPressed]}
-      >
-        <Text style={styles.reviewText}>{review.label}</Text>
-      </Pressable>
+      {onReview ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={review.label}
+          onPress={() => onReview(qualityCheck.key)}
+          style={({ pressed }) => [styles.reviewButton, pressed && styles.reviewButtonPressed]}
+        >
+          <Text style={styles.reviewText}>{review.label}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -162,21 +159,20 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   healthy: {
-    backgroundColor: "rgba(22, 163, 74, 0.12)",
-    borderColor: "rgba(22, 163, 74, 0.4)",
-    color: "#15803d",
+    backgroundColor: colors.positiveSubtle,
+    borderColor: colors.positive,
+    color: colors.positive,
   },
   attention: {
-    backgroundColor: "rgba(217, 119, 6, 0.12)",
-    borderColor: "rgba(217, 119, 6, 0.4)",
-    color: "#b45309",
+    backgroundColor: colors.warningSubtle,
+    borderColor: colors.warning,
+    color: colors.warning,
   },
   informational: {
     backgroundColor: colors.surfaceSecondary,
     borderColor: colors.border,
     color: colors.textSecondary,
   },
-  count: { color: colors.textTertiary, fontSize: 12, fontWeight: "600" },
   details: { gap: 2 },
   detail: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
   reviewButton: { alignSelf: "flex-start", marginTop: spacing.xs, paddingVertical: spacing.xs },

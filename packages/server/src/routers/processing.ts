@@ -12,7 +12,7 @@ import {
 } from "dofek/processing/processing-state";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { DataQualityRepository } from "../repositories/data-quality-repository.ts";
 import { ProcessingRepository } from "../repositories/processing-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -101,10 +101,10 @@ const historyOutputSchema = z.object({
   nextCursor: z.uuid().nullable(),
 });
 const dataQualityOutputSchema = z.object({
-  generatedAt: z.string().datetime(),
+  generatedAt: timestampStringSchema,
   window: z.object({
     days: z.number().int().positive(),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: dateStringSchema,
   }),
   overallStatus: z.enum(["healthy", "attention"]),
   overallMessage: z.string().min(1),
@@ -116,10 +116,7 @@ const dataQualityOutputSchema = z.object({
       title: z.string().min(1),
       message: z.string().min(1),
       count: z.number().int().nonnegative(),
-      lastObservedDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .nullable(),
+      lastObservedDate: dateStringSchema.nullable(),
       details: z.array(z.string().min(1)),
     }),
   ),

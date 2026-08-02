@@ -74,6 +74,8 @@ packageExtensions:
 patchedDependencies:
   "@expo/plist@0.0.18": patches/@expo__plist@0.0.18.patch
   "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
+  "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
+  "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
 
 allowBuilds:
   "@sentry/cli": true

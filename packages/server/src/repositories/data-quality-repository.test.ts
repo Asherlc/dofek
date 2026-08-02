@@ -382,7 +382,15 @@ describe("DataQualityRepository", () => {
     });
     mockActivityWeekList.mockResolvedValue([
       {
-        date: "2026-07-05",
+        date: "2026-06-22",
+        activities: [{ source: { overlapSummary: "matched source" } }],
+      },
+      {
+        date: "2026-06-23",
+        activities: [{ source: { overlapSummary: "matched source" } }],
+      },
+      {
+        date: "2026-07-23",
         activities: [{ source: { overlapSummary: "matched source" } }],
       },
     ]);
@@ -393,7 +401,7 @@ describe("DataQualityRepository", () => {
 
     expect(overview.checks.find((check) => check.key === "source_overlap")).toMatchObject({
       count: 1,
-      lastObservedDate: "2026-07-05",
+      lastObservedDate: "2026-06-23",
       details: ["Activities: 1 record has matched source records."],
     });
     expect(mockActivityWeekList).toHaveBeenCalledWith({
@@ -404,14 +412,14 @@ describe("DataQualityRepository", () => {
   });
 
   it.each([
-    ["blocked", "Activities could not be updated."],
-    ["delayed", "Activities are not current."],
-    ["cancelled", "Activities are not current."],
-    ["active", "Activities are still updating."],
-  ] as const)("explains %s processing state", async (overallStatus, message) => {
+    ["blocked", "failed", "Activities could not be updated."],
+    ["delayed", "delayed", "Activities are not current."],
+    ["cancelled", "cancelled", "Activities are not current."],
+    ["active", "active", "Activities are still updating."],
+  ] as const)("explains %s processing state", async (overallStatus, datasetStatus, message) => {
     mockProcessingStatus.mockResolvedValue({
       overallStatus,
-      datasets: [{ label: "Activities", status: "failed" }],
+      datasets: [{ label: "Activities", status: datasetStatus }],
     });
 
     const overview = await makeRepository().overview("2026-07-22");
@@ -422,7 +430,7 @@ describe("DataQualityRepository", () => {
       title: "Some data is not current",
       message: `${message} Review the processing status on the dashboard.`,
       count: 1,
-      details: ["Activities: failed."],
+      details: [`Activities: ${datasetStatus}.`],
     });
   });
 
@@ -452,10 +460,136 @@ describe("DataQualityRepository", () => {
     expect(syncCheck).toMatchObject({
       status: "attention",
       title: "Some data is not current",
-      message: "Activities are still updating. Review the processing status on the dashboard.",
+      message: "Activities could not be updated. Review the processing status on the dashboard.",
       count: 1,
       details: ["Activities: failed."],
     });
+  });
+
+  it("describes a single nutrition overlap without activity matches", async () => {
+    mockProcessingStatus.mockResolvedValue({
+      overallStatus: "ready",
+      datasets: [{ label: "Activities", status: "ready" }],
+    });
+    mockNutritionQuality.mockResolvedValue({
+      selectedWindowDays: 30,
+      daysWithData: 30,
+      usableDays: 30,
+      overlapDays: 1,
+      conflictDays: 0,
+      completenessPercent: 100,
+      sourceLabels: [],
+      contributingSourceLabels: [],
+      excludedSourceLabels: [],
+    });
+    mockActivityWeekList.mockResolvedValue([
+      { date: "2026-07-22", activities: [{ source: { overlapSummary: null } }] },
+    ]);
+    mockAnomalyHistory.mockResolvedValue([]);
+    mockJournalEntries.mockResolvedValue([]);
+
+    const overview = await makeRepository().overview("2026-07-22");
+
+    expect(overview.checks.find((check) => check.key === "source_overlap")).toMatchObject({
+      count: 1,
+      details: ["Nutrition: 1 overlapping day (0 unresolved)."],
+    });
+  });
+
+  it("does not report a negative coverage gap when the source count exceeds the window", async () => {
+    mockProcessingStatus.mockResolvedValue({
+      overallStatus: "ready",
+      datasets: [{ label: "Activities", status: "ready" }],
+    });
+    mockNutritionQuality.mockResolvedValue({
+      selectedWindowDays: 30,
+      daysWithData: 31,
+      usableDays: 31,
+      overlapDays: 0,
+      conflictDays: 0,
+      completenessPercent: 100,
+      sourceLabels: [],
+      contributingSourceLabels: [],
+      excludedSourceLabels: [],
+    });
+    mockActivityWeekList.mockResolvedValue([]);
+    mockAnomalyHistory.mockResolvedValue([]);
+    mockJournalEntries.mockResolvedValue([]);
+
+    const overview = await makeRepository().overview("2026-07-22");
+
+    expect(overview.checks.find((check) => check.key === "coverage")).toMatchObject({
+      status: "healthy",
+      count: 0,
+    });
+  });
+
+  it("keeps the selected quality window when access extends beyond it", async () => {
+    mockProcessingStatus.mockResolvedValue({
+      overallStatus: "ready",
+      datasets: [{ label: "Activities", status: "ready" }],
+    });
+    mockNutritionQuality.mockResolvedValue({
+      selectedWindowDays: 30,
+      daysWithData: 30,
+      usableDays: 30,
+      overlapDays: 0,
+      conflictDays: 0,
+      completenessPercent: 100,
+      sourceLabels: [],
+      contributingSourceLabels: [],
+      excludedSourceLabels: [],
+    });
+    mockActivityWeekList.mockResolvedValue([]);
+    mockAnomalyHistory.mockResolvedValue([]);
+    mockJournalEntries.mockResolvedValue([]);
+
+    const overview = await makeRepository({
+      kind: "limited",
+      paid: false,
+      reason: "free_signup_week",
+      startDate: "2026-06-20",
+      endDateExclusive: "2026-07-30",
+    }).overview("2026-07-22");
+
+    expect(overview.window).toEqual({ days: 30, endDate: "2026-07-22" });
+    expect(mockNutritionQuality).toHaveBeenCalledWith(30);
+    expect(mockAnomalyHistory).toHaveBeenCalledWith(30, "2026-07-22");
+    expect(mockJournalEntries).toHaveBeenCalledWith(30);
+  });
+
+  it("uses an earlier access end when it precedes the selected quality window", async () => {
+    mockProcessingStatus.mockResolvedValue({
+      overallStatus: "ready",
+      datasets: [{ label: "Activities", status: "ready" }],
+    });
+    mockNutritionQuality.mockResolvedValue({
+      selectedWindowDays: 27,
+      daysWithData: 27,
+      usableDays: 27,
+      overlapDays: 0,
+      conflictDays: 0,
+      completenessPercent: 100,
+      sourceLabels: [],
+      contributingSourceLabels: [],
+      excludedSourceLabels: [],
+    });
+    mockActivityWeekList.mockResolvedValue([]);
+    mockAnomalyHistory.mockResolvedValue([]);
+    mockJournalEntries.mockResolvedValue([]);
+
+    const overview = await makeRepository({
+      kind: "limited",
+      paid: false,
+      reason: "free_signup_week",
+      startDate: "2026-06-20",
+      endDateExclusive: "2026-07-20",
+    }).overview("2026-07-22");
+
+    expect(overview.window).toEqual({ days: 27, endDate: "2026-07-22" });
+    expect(mockNutritionQuality).toHaveBeenCalledWith(27);
+    expect(mockAnomalyHistory).toHaveBeenCalledWith(27, "2026-07-22");
+    expect(mockJournalEntries).toHaveBeenCalledWith(27);
   });
 
   it("reports plural outliers and manual entries with bounded details", async () => {
@@ -515,6 +649,38 @@ describe("DataQualityRepository", () => {
       lastObservedDate: "2026-07-22",
       details: [],
     });
+  });
+
+  it("uses the complete quality window for full access", async () => {
+    mockProcessingStatus.mockResolvedValue({
+      overallStatus: "ready",
+      datasets: [{ label: "Activities", status: "ready" }],
+    });
+    mockNutritionQuality.mockResolvedValue({
+      selectedWindowDays: 30,
+      daysWithData: 30,
+      usableDays: 30,
+      overlapDays: 0,
+      conflictDays: 0,
+      completenessPercent: 100,
+      sourceLabels: [],
+      contributingSourceLabels: [],
+      excludedSourceLabels: [],
+    });
+    mockActivityWeekList.mockResolvedValue([]);
+    mockAnomalyHistory.mockResolvedValue([]);
+    mockJournalEntries.mockResolvedValue([]);
+
+    const overview = await makeRepository({
+      kind: "full",
+      paid: true,
+      reason: "paid_grant",
+    }).overview("2026-07-22");
+
+    expect(overview.window).toEqual({ days: 30, endDate: "2026-07-22" });
+    expect(mockNutritionQuality).toHaveBeenCalledWith(30);
+    expect(mockAnomalyHistory).toHaveBeenCalledWith(30, "2026-07-22");
+    expect(mockJournalEntries).toHaveBeenCalledWith(30);
   });
 
   it("uses the accessible intersection for a restricted data-quality window", async () => {

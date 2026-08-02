@@ -1,5 +1,5 @@
 import type { DataQualityOverview } from "@dofek/format/data-quality";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DataQualityCenter } from "./DataQualityCenter";
 
@@ -34,12 +34,28 @@ const overview: DataQualityOverview = {
 
 describe("DataQualityCenter", () => {
   it("renders server-authored checks and review actions", () => {
-    render(<DataQualityCenter data={overview} />);
+    const onReview = vi.fn();
+    render(<DataQualityCenter data={overview} onReview={onReview} />);
 
     expect(screen.getByText("Data quality")).toBeTruthy();
     expect(screen.getByText("1 data quality check needs review.")).toBeTruthy();
     expect(screen.getByText("Nutrition: 2 overlapping days.")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Review nutrition" })).not.toHaveLength(0);
+    const reviewButtons = screen.getAllByRole("button", { name: "Review nutrition" });
+    expect(reviewButtons).not.toHaveLength(0);
+    fireEvent.click(reviewButtons[0]);
+    expect(onReview).toHaveBeenCalledWith("coverage");
+  });
+
+  it("renders an empty state when the overview is not available", () => {
+    render(<DataQualityCenter />);
+
+    expect(screen.getByText("No data quality checks are available yet.")).toBeTruthy();
+  });
+
+  it("does not render review actions without a review callback", () => {
+    render(<DataQualityCenter data={overview} />);
+
+    expect(screen.queryByRole("button", { name: "Review nutrition" })).toBeNull();
   });
 
   it("shows its loading state", () => {

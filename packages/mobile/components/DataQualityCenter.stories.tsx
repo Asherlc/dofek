@@ -1,4 +1,4 @@
-import type { DataQualityOverview } from "@dofek/format/data-quality";
+import type { DataQualityCheck, DataQualityOverview } from "@dofek/format/data-quality";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import { colors } from "../theme";
@@ -51,5 +51,49 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Attention: Story = {};
+export const Healthy: Story = {
+  args: {
+    data: {
+      ...overview,
+      overallStatus: "healthy",
+      overallMessage: "Your recent data is ready to interpret.",
+      checks: overview.checks.map((qualityCheck) => healthyCheck(qualityCheck)),
+    },
+  },
+};
+export const Informational: Story = {
+  args: {
+    data: {
+      ...overview,
+      overallStatus: "healthy",
+      overallMessage: "Your recent data is ready to interpret.",
+      checks: overview.checks.map((qualityCheck) => informationalCheck(qualityCheck)),
+    },
+  },
+};
 export const Loading: Story = { args: { data: undefined, loading: true } };
 export const Empty: Story = { args: { data: undefined, loading: false } };
+
+function healthyCheck(qualityCheck: DataQualityCheck): DataQualityCheck {
+  return {
+    ...qualityCheck,
+    status: "healthy",
+    title: "This check is clear",
+    message: "No action is needed for this data-quality signal.",
+    count: 0,
+    lastObservedDate: null,
+    details: [],
+  };
+}
+
+function informationalCheck(qualityCheck: DataQualityCheck): DataQualityCheck {
+  return {
+    ...qualityCheck,
+    status: "informational",
+    title: "This is informational context",
+    message: "Keep this context in mind when interpreting your health data.",
+    count: 0,
+    lastObservedDate: null,
+    details: [],
+  };
+}

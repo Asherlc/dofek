@@ -131,21 +131,25 @@ function sourceOverlapCheck(
 }
 
 function processingMessage(
-  overallStatus: string,
+  overallStatus: ProcessingStatusDataset["status"],
   problemDatasets: readonly ProcessingStatusDataset[],
 ): string {
   const affectedAreas = problemDatasets.map((dataset) => dataset.label).join(", ") || "Some data";
-  if (overallStatus === "failed" || overallStatus === "blocked") {
+  const statuses: ReadonlySet<ProcessingStatusDataset["status"]> = new Set([
+    overallStatus,
+    ...problemDatasets.map((dataset) => dataset.status),
+  ]);
+  if (statuses.has("failed") || statuses.has("blocked")) {
     return `${affectedAreas} could not be updated. Review the processing status on the dashboard.`;
   }
-  if (overallStatus === "delayed" || overallStatus === "cancelled") {
+  if (statuses.has("delayed") || statuses.has("cancelled")) {
     return `${affectedAreas} are not current. Review the processing status on the dashboard.`;
   }
   return `${affectedAreas} are still updating. Review the processing status on the dashboard.`;
 }
 
 function syncFreshnessCheck(
-  overallStatus: string,
+  overallStatus: ProcessingStatusDataset["status"],
   datasets: readonly ProcessingStatusDataset[],
 ): DataQualityCheck {
   const problemDatasets = datasets.filter((dataset) => dataset.status !== "ready");

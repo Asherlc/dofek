@@ -148,5 +148,51 @@ describe("processingRouter", () => {
         },
       ],
     });
+    expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
+    expect(mockDataQuality).toHaveBeenCalledWith("2026-07-22");
+  });
+
+  it("normalizes data-quality dates and timestamps from database values", async () => {
+    mockDataQuality.mockResolvedValue({
+      generatedAt: new Date("2026-07-22T12:00:00.000Z"),
+      window: { days: 30, endDate: new Date("2026-07-23T00:00:00.000Z") },
+      overallStatus: "healthy",
+      overallMessage: "Your recent data is ready to interpret.",
+      checks: [
+        {
+          key: "coverage",
+          label: "Missing days",
+          status: "healthy",
+          title: "Coverage is complete",
+          message: "Nutrition data is present for all 30 days in the selected window.",
+          count: 0,
+          lastObservedDate: new Date("2026-07-23T00:00:00.000Z"),
+          details: [],
+        },
+      ],
+    });
+    const caller = createCaller({ db: {}, userId, timezone: "UTC" });
+
+    await expect(caller.dataQuality({ endDate: "2026-07-23" })).resolves.toMatchObject({
+      generatedAt: "2026-07-22T12:00:00.000Z",
+      window: { endDate: "2026-07-23" },
+      checks: [{ lastObservedDate: "2026-07-23" }],
+    });
+  });
+
+  it("forwards the server default date when the client omits endDate", async () => {
+    mockDataQuality.mockResolvedValue({
+      generatedAt: "2026-07-22T12:00:00.000Z",
+      window: { days: 30, endDate: "2026-07-22" },
+      overallStatus: "healthy",
+      overallMessage: "Your recent data is ready to interpret.",
+      checks: [],
+    });
+    const caller = createCaller({ db: {}, userId, timezone: "UTC" });
+
+    await caller.dataQuality({});
+
+    expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
+    expect(mockDataQuality).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
   });
 });

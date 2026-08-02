@@ -6,7 +6,9 @@ import {
   getDataQualityReview,
   getDataQualityStatusLabel,
 } from "@dofek/format/data-quality";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
+import type { CSSProperties } from "react";
 
 interface DataQualityCenterProps {
   data?: DataQualityOverview;
@@ -19,15 +21,23 @@ const reviewRoutes = {
   journal: "/tracking",
 } as const satisfies Record<DataQualityReviewDestination, string>;
 
-function statusClass(status: DataQualityCheck["status"]): string {
-  switch (status) {
-    case "attention":
-      return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
-    case "informational":
-      return "border-border bg-surface-secondary text-muted";
-    case "healthy":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-  }
+function statusStyle(status: DataQualityCheck["status"]): CSSProperties {
+  const tone = (() => {
+    switch (status) {
+      case "attention":
+        return operationalStatusColors.warning;
+      case "informational":
+        return operationalStatusColors.neutral;
+      case "healthy":
+        return operationalStatusColors.success;
+    }
+  })();
+
+  return {
+    backgroundColor: tone.surface,
+    borderColor: tone.border,
+    color: tone.foreground,
+  };
 }
 
 function DataQualityCheckCard({ qualityCheck }: { qualityCheck: DataQualityCheck }) {
@@ -40,16 +50,12 @@ function DataQualityCheckCard({ qualityCheck }: { qualityCheck: DataQualityCheck
           <p className="mt-1 text-sm leading-6 text-muted">{qualityCheck.message}</p>
         </div>
         <span
-          className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(qualityCheck.status)}`}
+          className="rounded-full border px-2 py-0.5 text-xs font-medium"
+          style={statusStyle(qualityCheck.status)}
         >
           {getDataQualityStatusLabel(qualityCheck.status)}
         </span>
       </div>
-      {qualityCheck.count > 0 ? (
-        <p className="mt-3 text-xs font-medium text-subtle">
-          {qualityCheck.count} {qualityCheck.label.toLowerCase()}
-        </p>
-      ) : null}
       {qualityCheck.details.length > 0 ? (
         <ul className="mt-3 space-y-1 text-xs leading-5 text-subtle">
           {getDataQualityDetailItems(qualityCheck.key, qualityCheck.details).map((detail) => (
@@ -78,8 +84,10 @@ export function DataQualityCenter({ data, loading = false }: DataQualityCenterPr
 
   if (!data) {
     return (
-      <section className="card p-6" aria-label="Data quality empty state">
-        <h2 className="text-base font-semibold text-foreground">Data quality</h2>
+      <section className="card p-6" aria-labelledby="data-quality-empty-title">
+        <h2 id="data-quality-empty-title" className="text-base font-semibold text-foreground">
+          Data quality
+        </h2>
         <p className="mt-2 text-sm leading-6 text-muted">
           No data quality checks are available yet.
         </p>
@@ -98,7 +106,8 @@ export function DataQualityCenter({ data, loading = false }: DataQualityCenterPr
             <p className="mt-1 text-sm leading-6 text-muted">{data.overallMessage}</p>
           </div>
           <span
-            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(data.overallStatus)}`}
+            className="rounded-full border px-2 py-0.5 text-xs font-medium"
+            style={statusStyle(data.overallStatus)}
           >
             {getDataQualityStatusLabel(data.overallStatus)}
           </span>

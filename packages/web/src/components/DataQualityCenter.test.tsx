@@ -77,13 +77,34 @@ describe("DataQualityCenter", () => {
     expect(screen.getByText("1 data quality check needs review.")).toBeTruthy();
     expect(screen.getByText("Nutrition data is missing for 5 of the last 30 days.")).toBeTruthy();
     expect(screen.getByText("Nutrition: 2 overlapping days.")).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "Review nutrition" })).not.toHaveLength(0);
+    const nutritionLinks = screen.getAllByRole("link", { name: "Review nutrition" });
+    expect(nutritionLinks).toHaveLength(2);
+    expect(nutritionLinks.map((link) => link.getAttribute("href"))).toEqual([
+      "/nutrition",
+      "/nutrition",
+    ]);
+    const dashboardLinks = screen.getAllByRole("link", { name: "Review dashboard" });
+    expect(dashboardLinks).toHaveLength(2);
+    expect(dashboardLinks.map((link) => link.getAttribute("href"))).toEqual([
+      "/dashboard",
+      "/dashboard",
+    ]);
+    expect(screen.getByRole("link", { name: "Review journal" })).toHaveAttribute(
+      "href",
+      "/tracking",
+    );
   });
 
   it("shows its loading state", () => {
     render(<DataQualityCenter loading />);
 
     expect(screen.getByText("Loading data quality…")).toBeTruthy();
+  });
+
+  it("labels the empty region with its visible heading", () => {
+    render(<DataQualityCenter />);
+
+    expect(screen.getByRole("region", { name: "Data quality" })).toBeTruthy();
   });
 
   it("renders repeated detail text without duplicate React keys", () => {

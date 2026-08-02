@@ -44,6 +44,8 @@ packageExtensionsChecksum: sha256-HhXpwdyEcI8/is2W0Bc7hOoEZs48mxCz5T520E5poHc=
 patchedDependencies:
   '@expo/plist@0.0.18': 36c34cedabd346f4ff3d0f855e931a3e36710b099d24c10f29b46a00e5ff1288
   '@expo/plist@0.8.1': 2e81ea41c32856973b677ca39a3f7f4a53b550dc5093fddfaa1abd120b800e2e
+  '@tanstack/router-generator@1.167.17': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
+  '@tanstack/router-generator@1.167.18': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
 
 importers:
 
@@ -24796,7 +24798,7 @@ snapshots:
 
   '@tanstack/router-cli@1.167.17(supports-color@10.2.2)':
     dependencies:
-      '@tanstack/router-generator': 1.167.17(supports-color@10.2.2)
+      '@tanstack/router-generator': 1.167.17(patch_hash=f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715)(supports-color@10.2.2)
       chokidar: 5.0.0
       yargs: 17.7.3
     transitivePeerDependencies:
@@ -24816,7 +24818,7 @@ snapshots:
       seroval: 1.5.5
       seroval-plugins: 1.5.5(seroval@1.5.5)
 
-  '@tanstack/router-generator@1.167.17(supports-color@10.2.2)':
+  '@tanstack/router-generator@1.167.17(patch_hash=f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715)(supports-color@10.2.2)':
     dependencies:
       '@babel/types': 7.29.7
       '@tanstack/router-core': 1.171.13
@@ -24829,7 +24831,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@tanstack/router-generator@1.167.18(supports-color@10.2.2)':
+  '@tanstack/router-generator@1.167.18(patch_hash=f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715)(supports-color@10.2.2)':
     dependencies:
       '@babel/types': 7.29.7
       '@tanstack/router-core': 1.171.14
@@ -24848,7 +24850,7 @@ snapshots:
       '@babel/template': 7.29.7
       '@babel/types': 7.29.7
       '@tanstack/router-core': 1.171.14
-      '@tanstack/router-generator': 1.167.18(supports-color@10.2.2)
+      '@tanstack/router-generator': 1.167.18(patch_hash=f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715)(supports-color@10.2.2)
       '@tanstack/router-utils': 1.162.2(supports-color@10.2.2)
       chokidar: 5.0.0
       unplugin: 3.3.0(esbuild@0.28.1)(rolldown@1.0.3)(rollup@4.62.2)(vite@8.0.16)
