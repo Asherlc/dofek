@@ -63,4 +63,31 @@ export const nutritionSourceResolutionSchema = z.object({
 
 export type MacroNutritionSummary = z.infer<typeof macroNutritionSummarySchema>;
 export type SelectedDateNutritionSummary = z.infer<typeof selectedDateNutritionSummarySchema>;
+
+export const nutritionCalorieTargetTypeSchema = z.enum(["configured", "default"]);
+
+export const selectedDateNutritionIntakeContextSchema = z.object({
+  observedCalories: z.number().nonnegative(),
+  target: z.object({
+    calories: z.number().positive(),
+    type: nutritionCalorieTargetTypeSchema,
+    label: z.string().min(1),
+  }),
+  scale: z.object({
+    maximumCalories: z.number().positive(),
+    observedPercentage: z.number().min(0).max(100),
+    targetPercentage: z.number().min(0).max(100),
+  }),
+  comparison: z.object({
+    status: z.enum(["below_target", "at_target", "above_target"]),
+    differenceCalories: z.number().nonnegative(),
+    message: z.string().min(1),
+  }),
+  limitation: z.string().min(1),
+});
+
+export type NutritionCalorieTargetType = z.infer<typeof nutritionCalorieTargetTypeSchema>;
+export type SelectedDateNutritionIntakeContext = z.infer<
+  typeof selectedDateNutritionIntakeContextSchema
+>;
 export type NutritionSourceResolution = z.infer<typeof nutritionSourceResolutionSchema>;

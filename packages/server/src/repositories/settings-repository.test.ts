@@ -89,6 +89,32 @@ describe("SettingsRepository", () => {
     });
   });
 
+  describe("getCalorieGoalContext", () => {
+    it("identifies a valid configured target", async () => {
+      const { repo } = makeRepository([{ key: "calorieGoal", value: 2450 }]);
+
+      await expect(repo.getCalorieGoalContext()).resolves.toEqual({
+        target: 2450,
+        type: "configured",
+      });
+    });
+
+    it.each([
+      { rows: [] },
+      { rows: [{ key: "calorieGoal", value: 0 }] },
+      { rows: [{ key: "calorieGoal", value: "invalid" }] },
+    ])("identifies the canonical default when the target is absent or invalid", async ({
+      rows,
+    }) => {
+      const { repo } = makeRepository(rows);
+
+      await expect(repo.getCalorieGoalContext()).resolves.toEqual({
+        target: 2000,
+        type: "default",
+      });
+    });
+  });
+
   describe("set", () => {
     it("returns the upserted setting", async () => {
       const { repo } = makeRepository([{ key: "theme", value: "dark" }]);

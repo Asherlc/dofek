@@ -66,6 +66,26 @@ export function seedFoodStoryQuery(queryClient: QueryClient, date: string): void
       contributionGrain: "itemized",
       contributionLabel: "Dofek itemized entries",
     },
+    intakeContext: {
+      observedCalories: 2220,
+      target: {
+        calories: 2200,
+        type: "default",
+        label: "Default daily logged-intake target",
+      },
+      scale: {
+        maximumCalories: 2220,
+        observedPercentage: 100,
+        targetPercentage: (2200 / 2220) * 100,
+      },
+      comparison: {
+        status: "above_target",
+        differenceCalories: 20,
+        message: "Observed logged intake is 20 kcal above the default daily logged-intake target.",
+      },
+      limitation:
+        "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+    },
     summary: {
       calories: 2220,
       mealCalories: {

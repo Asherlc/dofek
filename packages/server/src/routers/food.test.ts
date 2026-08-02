@@ -247,6 +247,65 @@ describe("foodRouter", () => {
       );
     });
 
+    it("returns a neutral uncapped intake context from v2", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2450 }])
+        .mockResolvedValueOnce([{ id: "f1", food_name: "Large logged meal" }])
+        .mockResolvedValueOnce([
+          {
+            calories: 4259,
+            protein_g: 100,
+            carbs_g: 300,
+            fat_g: 150,
+            breakfast_calories: 1000,
+            lunch_calories: 1200,
+            dinner_calories: 1800,
+            snack_calories: 259,
+            other_calories: 0,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: ["dofek"],
+            contributing_providers: ["dofek"],
+            excluded_providers: [],
+            source_labels: ["Dofek"],
+            contributing_source_labels: ["Dofek"],
+            excluded_source_labels: [],
+            contribution_grain: "itemized",
+            contribution_source_label: "Dofek",
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.byDateV2({ date: "2024-01-15" });
+
+      expect(result.intakeContext).toEqual({
+        observedCalories: 4259,
+        target: {
+          calories: 2450,
+          type: "configured",
+          label: "Configured daily logged-intake target",
+        },
+        scale: {
+          maximumCalories: 4259,
+          observedPercentage: 100,
+          targetPercentage: (2450 / 4259) * 100,
+        },
+        comparison: {
+          status: "above_target",
+          differenceCalories: 1809,
+          message:
+            "Observed logged intake is 1,809 kcal above the configured daily logged-intake target.",
+        },
+        limitation:
+          "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+      });
+    });
+
     it("logs when no rows are returned", async () => {
       const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
       const execute = vi
