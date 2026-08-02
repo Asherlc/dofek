@@ -659,6 +659,7 @@ function ActivityOverview({
           <View
             key={item.label}
             style={styles.overviewItem}
+            accessible={isMetric}
             accessibilityLabel={
               isMetric
                 ? item.status === "available"

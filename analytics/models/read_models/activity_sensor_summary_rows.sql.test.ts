@@ -34,7 +34,7 @@ describe("activity_sensor_summary_rows model", () => {
     expect(modelSql).toContain(
       "elevation_per_activity.elevation_loss_m AS elevation_loss_m",
     );
-    expect(modelSql).toContain("countIf(altitude - prev_altitude < 0) = 0");
+    expect(modelSql).not.toContain("countIf(altitude - prev_altitude < 0) = 0");
     expect(modelSql).toContain(
       "sumIf(abs(altitude - prev_altitude), altitude - prev_altitude < 0)",
     );

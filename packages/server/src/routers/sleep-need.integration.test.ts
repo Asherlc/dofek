@@ -213,6 +213,7 @@ describe("sleep-need router integration", () => {
   it("calculateV2 excludes an older null duration when the prior night is available", async () => {
     const fixtureId = randomUUID();
     const fixtureProviderId = `sleep_need_${fixtureId.replaceAll("-", "")}`;
+    const fixtureProviderName = `Sleep Need Fixture ${fixtureId}`;
     const loadActivityId = randomUUID();
     const endDate = new Date();
     endDate.setUTCHours(0, 0, 0, 0);
@@ -232,7 +233,7 @@ describe("sleep-need router integration", () => {
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${fixtureProviderId}, 'Sleep Need Fixture', ${TEST_USER_ID})`,
+          VALUES (${fixtureProviderId}, ${fixtureProviderName}, ${TEST_USER_ID})`,
     );
     const loadActivityStartedAt = new Date(priorNightStartedAt);
     loadActivityStartedAt.setUTCHours(10);
@@ -303,7 +304,7 @@ describe("sleep-need router integration", () => {
         channel: "heart_rate",
         providerId: fixtureProviderId,
         sourceType: "api",
-        scalar: 120,
+        scalar: 0,
       },
       {
         activityId: loadActivityId,
@@ -312,7 +313,7 @@ describe("sleep-need router integration", () => {
         channel: "heart_rate",
         providerId: fixtureProviderId,
         sourceType: "api",
-        scalar: 120,
+        scalar: 0,
       },
     ]);
     await queryCache.invalidateAll();

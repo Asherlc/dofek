@@ -63,4 +63,20 @@ describe("activityDataStateSchema", () => {
       reason: "Distance was marked available but no value was returned.",
     });
   });
+
+  it.each([null, undefined])("guards a missing state when the value is absent", (state) => {
+    expect(formatActivityMetric("Distance", null, state, String)).toEqual({
+      status: "missing",
+      label: "Distance",
+      reason: "Distance is unavailable.",
+    });
+  });
+
+  it("preserves a value when a legacy payload has no state", () => {
+    expect(formatActivityMetric("Distance", 12, undefined, (value) => `${value} m`)).toEqual({
+      status: "available",
+      label: "Distance",
+      value: "12 m",
+    });
+  });
 });

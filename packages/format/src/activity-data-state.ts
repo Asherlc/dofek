@@ -33,9 +33,15 @@ export function activityDataStateLabel(status: ActivityDataState["status"]): str
 export function formatActivityMetric(
   label: string,
   value: number | null,
-  state: ActivityDataState,
+  state: ActivityDataState | null | undefined,
   formatValue: (value: number) => string,
 ): ActivityMetric {
+  if (state == null) {
+    return value == null
+      ? { status: "missing", label, reason: `${label} is unavailable.` }
+      : { status: "available", label, value: formatValue(value) };
+  }
+
   if (state.status !== "available") {
     return { status: state.status, label, reason: state.reason };
   }

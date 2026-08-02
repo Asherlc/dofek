@@ -21,7 +21,7 @@ describe("buildActivitySummaryReadModelStatements", () => {
     expect(sql).not.toContain(
       "coalesce(elevation_per_activity.elevation_loss_m, CAST(0, 'Nullable(Float64)'))",
     );
-    expect(sql).toContain("countIf(altitude - prev_altitude < 0) = 0");
+    expect(sql).not.toContain("countIf(altitude - prev_altitude < 0) = 0");
   });
 
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {

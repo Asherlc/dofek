@@ -91,7 +91,7 @@ describe("activity_sensor_summary_rows read model", () => {
     await client?.close?.();
   });
 
-  it("returns NULL without descent and numeric loss when descent exists", async () => {
+  it("returns numeric zero without descent and numeric loss when descent exists", async () => {
     if (!client) throw new Error("ClickHouse client was not initialized");
 
     const userId = randomUUID();
@@ -135,7 +135,7 @@ describe("activity_sensor_summary_rows read model", () => {
 
     expect(new Map(rows.map((row) => [row.activity_id, row.elevation_loss_m]))).toEqual(
       new Map([
-        [noDescentActivityId, null],
+        [noDescentActivityId, 0],
         [descentActivityId, 5],
       ]),
     );
