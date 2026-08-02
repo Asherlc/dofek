@@ -144,11 +144,17 @@ describe("dailyMetrics data correctness", () => {
       );
     }
 
-    // Start server
-    const app = createApp(
-      testCtx.db,
-      makeMockSensorStore([[{ date: endDate, resting_hr: 50 }], [recoveryBaselineRow(endDate)]]),
-    );
+    // Start server. The trends route reads both ClickHouse datasets on every
+    // request, so select the fixture by query rather than exhausting a
+    // one-shot response queue as the test suite makes multiple requests.
+    const sensorStore = makeMockSensorStore();
+    sensorStore.query.mockImplementation(async (schema, query) => {
+      const rows = query.includes("FROM analytics.daily_recovery")
+        ? [recoveryBaselineRow(endDate)]
+        : [{ date: endDate, resting_hr: 50 }];
+      return rows.map((row) => schema.parse(row));
+    });
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
