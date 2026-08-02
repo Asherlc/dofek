@@ -122,6 +122,133 @@ describe("buildDailyMetricHealthStatuses", () => {
       statusToken,
     });
   });
+
+  it("attaches metric evidence only to the matching HRV baseline status", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: 60,
+        avg_resting_hr: null,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: 5,
+        stddev_resting_hr: null,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: 70,
+        latest_resting_hr: null,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+        metric_evidence: {
+          hrv: {
+            latestDate: "2026-07-25",
+            sourceProviders: ["whoop"],
+            observedDays: 12,
+            recentMean: 70,
+            baselineMean: 60,
+          },
+          spo2: null,
+          steps: null,
+          skin_temperature: null,
+        },
+      },
+      [
+        buildBaselineRelativeMetric({
+          metric: "hrv",
+          label: "Heart Rate Variability (HRV)",
+          value: 70,
+          baselineMean: 60,
+          baselineStandardDeviation: 5,
+          zScore: 2,
+          baselineSampleCount: 12,
+          baselineCoverage: 1,
+          recentMean: 70,
+          comparisonMean: 60,
+        }),
+        buildBaselineRelativeMetric({
+          metric: "resting_heart_rate",
+          label: "Resting Heart Rate",
+          value: 55,
+          baselineMean: 60,
+          baselineStandardDeviation: 5,
+          zScore: -1,
+          baselineSampleCount: 12,
+          baselineCoverage: 1,
+          recentMean: 55,
+          comparisonMean: 60,
+        }),
+      ],
+      35,
+    );
+
+    expect(statuses.find((status) => status.metric === "hrv")).toMatchObject({
+      provenance: {
+        latestDate: "2026-07-25",
+        sourceProviders: ["whoop"],
+        observedDays: 12,
+        windowDays: 35,
+      },
+    });
+    expect(statuses.find((status) => status.metric === "resting_heart_rate")).toMatchObject({
+      provenance: null,
+    });
+  });
+
+  it("keeps evidence deltas null when either comparison mean is missing", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: null,
+        avg_spo2: 98,
+        avg_steps: 8_000,
+        avg_skin_temp: null,
+        stddev_hrv: null,
+        stddev_resting_hr: null,
+        stddev_spo2: 1,
+        stddev_steps: 1_000,
+        stddev_skin_temp: null,
+        latest_hrv: null,
+        latest_resting_hr: null,
+        latest_spo2: 98,
+        latest_steps: 8_000,
+        latest_skin_temp: null,
+        latest_date: "2026-07-25",
+        latest_steps_date: "2026-07-25",
+        metric_evidence: {
+          hrv: null,
+          spo2: {
+            latestDate: "2026-07-25",
+            sourceProviders: ["garmin"],
+            observedDays: 3,
+            recentMean: 98,
+            baselineMean: null,
+          },
+          steps: {
+            latestDate: "2026-07-25",
+            sourceProviders: ["apple_health"],
+            observedDays: 3,
+            recentMean: null,
+            baselineMean: 8_000,
+          },
+          skin_temperature: null,
+        },
+      },
+      [],
+    );
+
+    expect(statuses.find((status) => status.metric === "spo2")?.comparison).toMatchObject({
+      delta: null,
+      direction: "unknown",
+    });
+    expect(statuses.find((status) => status.metric === "steps")?.comparison).toMatchObject({
+      delta: null,
+      direction: "unknown",
+    });
+  });
 });
 
 describe("buildHealthMetricEvidence", () => {
@@ -134,16 +261,17 @@ describe("buildHealthMetricEvidence", () => {
     expect(
       buildHealthMetricEvidence(
         [
-          { date: "2026-07-01", value: 60, sourceProviders: ["garmin"] },
           { date: "2026-07-25", value: 66, sourceProviders: ["whoop"] },
-          { date: "2026-07-30", value: 72, sourceProviders: ["whoop"] },
+          { date: "2026-07-30", value: 72, sourceProviders: ["whoop", "garmin", "whoop"] },
+          { date: "2026-07-01", value: 60, sourceProviders: ["garmin"] },
+          { date: "2026-07-31", value: Number.NaN, sourceProviders: ["invalid"] },
         ],
         30,
       ),
     ).toEqual({
       provenance: {
         latestDate: "2026-07-30",
-        sourceProviders: ["whoop"],
+        sourceProviders: ["garmin", "whoop"],
         observedDays: 3,
         windowDays: 30,
       },
@@ -154,6 +282,65 @@ describe("buildHealthMetricEvidence", () => {
         baselineMean: 60,
         delta: 9,
         direction: "increasing",
+      },
+    });
+  });
+
+  it("keeps recent and baseline comparison boundaries exclusive", () => {
+    expect(
+      buildHealthMetricEvidence(
+        [
+          { date: "2026-06-25", value: 50, sourceProviders: ["garmin"] },
+          { date: "2026-07-01", value: 60, sourceProviders: ["garmin"] },
+          { date: "2026-07-23", value: 100, sourceProviders: ["garmin"] },
+          { date: "2026-07-25", value: 66, sourceProviders: ["whoop"] },
+          { date: "2026-07-30", value: 72, sourceProviders: ["whoop"] },
+        ],
+        35,
+      ).comparison,
+    ).toEqual({
+      recentDays: 7,
+      baselineDays: 28,
+      recentMean: 69,
+      baselineMean: 80,
+      delta: -11,
+      direction: "decreasing",
+    });
+  });
+
+  it("returns stable and unknown comparisons for zero or incomplete baselines", () => {
+    expect(
+      buildHealthMetricEvidence(
+        [
+          { date: "2026-07-01", value: 60, sourceProviders: ["whoop"] },
+          { date: "2026-07-25", value: 60, sourceProviders: ["whoop"] },
+          { date: "2026-07-30", value: 60, sourceProviders: ["whoop"] },
+        ],
+        35,
+      ).comparison,
+    ).toMatchObject({ delta: 0, direction: "stable" });
+
+    expect(
+      buildHealthMetricEvidence([{ date: "2026-07-30", value: 60, sourceProviders: ["whoop"] }], 35)
+        .comparison,
+    ).toMatchObject({ recentMean: 60, baselineMean: null, delta: null, direction: "unknown" });
+  });
+
+  it("returns empty provenance when no finite observations exist", () => {
+    expect(buildHealthMetricEvidence([], 35)).toEqual({
+      provenance: {
+        latestDate: null,
+        sourceProviders: [],
+        observedDays: 0,
+        windowDays: 35,
+      },
+      comparison: {
+        recentDays: 7,
+        baselineDays: 28,
+        recentMean: null,
+        baselineMean: null,
+        delta: null,
+        direction: "unknown",
       },
     });
   });
@@ -346,6 +533,22 @@ describe("buildHealthStatusFromValues", () => {
       direction: "above",
       statusToken: "notable_deviation",
     });
+  });
+
+  it("uses the number of values for the default evidence window", () => {
+    const result = buildHealthStatusFromValues({
+      metric: "steps",
+      label: "Steps",
+      values: [70, 72, 74],
+      intent: "neutral",
+      observations: [
+        { date: "2026-07-23", value: 70, sourceProviders: ["apple_health"] },
+        { date: "2026-07-24", value: 72, sourceProviders: ["apple_health"] },
+        { date: "2026-07-25", value: 74, sourceProviders: ["apple_health"] },
+      ],
+    });
+
+    expect(result.provenance?.windowDays).toBe(3);
   });
 });
 

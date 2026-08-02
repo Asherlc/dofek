@@ -333,6 +333,53 @@ describe("dailyMetricsRouter", () => {
       });
     });
 
+    it("preserves selected ranges longer than the evidence window", async () => {
+      const caller = makeCaller([
+        {
+          avg_hrv: null,
+          avg_resting_hr: null,
+          avg_spo2: null,
+          avg_steps: 8_000,
+          avg_skin_temp: null,
+          stddev_hrv: null,
+          stddev_resting_hr: null,
+          stddev_spo2: null,
+          stddev_steps: 1_200,
+          stddev_skin_temp: null,
+          latest_hrv: null,
+          latest_resting_hr: null,
+          latest_spo2: null,
+          latest_steps: 9_000,
+          latest_skin_temp: null,
+          latest_date: "2024-01-16",
+          latest_steps_date: "2024-01-16",
+          metric_evidence: {
+            hrv: null,
+            spo2: null,
+            steps: {
+              latestDate: "2024-01-16",
+              sourceProviders: ["apple_health"],
+              observedDays: 20,
+              recentMean: 9_000,
+              baselineMean: 8_000,
+            },
+            skin_temperature: null,
+          },
+        },
+      ]);
+
+      const result = await caller.trends({ days: 90, endDate: "2024-01-16" });
+
+      expect(result?.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ windowDays: 90 }),
+          }),
+        ]),
+      );
+    });
+
     it("returns canonical recovery baseline context with aggregate trends", async () => {
       const execute = vi.fn().mockResolvedValue([
         {

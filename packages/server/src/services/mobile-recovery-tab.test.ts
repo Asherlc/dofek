@@ -559,6 +559,11 @@ describe("loadMobileRecoveryTab", () => {
           },
         ],
         metrics: [
+          metricRow("2026-02-25", 49, {
+            spo2_avg: 96,
+            steps: 7_000,
+            skin_temp_c: 32.9,
+          }),
           metricRow("2026-03-26", 50, {
             spo2_avg: 97,
             steps: null,
@@ -586,6 +591,7 @@ describe("loadMobileRecoveryTab", () => {
           values: [97, 99],
           intent: "neutral",
           observations: [
+            { date: "2026-02-25", value: 96, sourceProviders: ["apple_health"] },
             { date: "2026-03-26", value: 97, sourceProviders: ["apple_health"] },
             { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
             { date: "2026-03-28", value: 99, sourceProviders: ["apple_health"] },
@@ -598,6 +604,7 @@ describe("loadMobileRecoveryTab", () => {
           values: [8_000, 10_000],
           intent: "neutral",
           observations: [
+            { date: "2026-02-25", value: 7_000, sourceProviders: ["apple_health"] },
             { date: "2026-03-26", value: null, sourceProviders: ["apple_health"] },
             { date: "2026-03-27", value: 8_000, sourceProviders: ["apple_health"] },
             { date: "2026-03-28", value: 10_000, sourceProviders: ["apple_health"] },
@@ -610,6 +617,7 @@ describe("loadMobileRecoveryTab", () => {
           values: [33.1, 33.5],
           intent: "neutral",
           observations: [
+            { date: "2026-02-25", value: 32.9, sourceProviders: ["apple_health"] },
             { date: "2026-03-26", value: 33.1, sourceProviders: ["apple_health"] },
             { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
             { date: "2026-03-28", value: 33.5, sourceProviders: ["apple_health"] },
@@ -633,14 +641,28 @@ describe("loadMobileRecoveryTab", () => {
           }),
           expect.objectContaining({
             metric: "steps",
-            provenance: expect.objectContaining({ observedDays: 2, windowDays: 35 }),
+            provenance: expect.objectContaining({ observedDays: 3, windowDays: 35 }),
           }),
           expect.objectContaining({
             metric: "skin_temperature",
-            provenance: expect.objectContaining({ observedDays: 2, windowDays: 35 }),
+            provenance: expect.objectContaining({ observedDays: 3, windowDays: 35 }),
           }),
         ]),
       );
+      const baselineCalls = vi.mocked(buildHealthStatusFromBaselineMetric).mock.calls;
+      const hrvCall = baselineCalls.find(([metric]) => metric.metric === "hrv");
+      expect(hrvCall?.[1]).toEqual(
+        expect.objectContaining({
+          latestDate: "2026-03-28",
+          observedDays: 4,
+          windowDays: 35,
+        }),
+      );
+      expect(
+        baselineCalls
+          .filter(([metric]) => metric.metric !== "hrv")
+          .map(([, provenance]) => provenance),
+      ).toEqual([null, null, null]);
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {
