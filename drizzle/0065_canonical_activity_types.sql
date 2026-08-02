@@ -1,4 +1,6 @@
--- Materialize canonical activity fields without replacing the replicated table.
+-- Replace the replicated activity relation atomically so PeerDB never observes a
+-- partially transformed column contract. The replacement changes the relation
+-- OID; deployers must resync the activity raw mirror after this migration.
 LOCK TABLE fitness.activity IN ACCESS EXCLUSIVE MODE;
 
 CREATE TEMP TABLE activity_migration_view_definitions ON COMMIT DROP AS
@@ -24,6 +26,118 @@ DROP VIEW clickhouse.v_activity;
 DROP VIEW clickhouse.activity;
 DROP VIEW fitness.provider_stats;
 DROP VIEW fitness.v_activity;
+
+CREATE TEMP TABLE activity_inbound_foreign_keys ON COMMIT DROP AS
+SELECT
+  child_namespace.nspname AS child_schema,
+  child_class.relname AS child_table,
+  constraint_record.conname,
+  pg_get_constraintdef(constraint_record.oid, true) AS definition,
+  constraint_record.convalidated
+FROM pg_constraint AS constraint_record
+INNER JOIN pg_class AS child_class ON child_class.oid = constraint_record.conrelid
+INNER JOIN pg_namespace AS child_namespace ON child_namespace.oid = child_class.relnamespace
+WHERE
+  constraint_record.contype = 'f'
+  AND constraint_record.confrelid = 'fitness.activity'::regclass;
+
+CREATE TEMP TABLE activity_constraints ON COMMIT DROP AS
+SELECT
+  constraint_record.conname,
+  constraint_record.contype,
+  pg_get_constraintdef(constraint_record.oid, true) AS definition,
+  constraint_record.convalidated
+FROM pg_constraint AS constraint_record
+WHERE
+  constraint_record.conrelid = 'fitness.activity'::regclass
+  AND constraint_record.contype IN ('c', 'f', 'p', 'u');
+
+CREATE TEMP TABLE activity_index_definitions ON COMMIT DROP AS
+SELECT
+  index_class.relname AS index_name,
+  pg_get_indexdef(index_record.indexrelid) AS definition
+FROM pg_index AS index_record
+INNER JOIN pg_class AS index_class ON index_class.oid = index_record.indexrelid
+WHERE
+  index_record.indrelid = 'fitness.activity'::regclass
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint AS constraint_record
+    WHERE constraint_record.conindid = index_record.indexrelid
+  );
+
+CREATE TEMP TABLE activity_not_null_columns ON COMMIT DROP AS
+SELECT attribute.attname AS column_name
+FROM pg_attribute AS attribute
+WHERE
+  attribute.attrelid = 'fitness.activity'::regclass
+  AND attribute.attnum > 0
+  AND NOT attribute.attisdropped
+  AND attribute.attnotnull;
+
+CREATE TEMP TABLE activity_column_defaults ON COMMIT DROP AS
+SELECT column_name, column_default
+FROM information_schema.columns
+WHERE
+  table_schema = 'fitness'
+  AND table_name = 'activity'
+  AND column_default IS NOT NULL;
+
+CREATE TEMP TABLE activity_trigger_definitions ON COMMIT DROP AS
+SELECT
+  trigger_record.tgname AS trigger_name,
+  pg_get_triggerdef(trigger_record.oid, true) AS definition,
+  trigger_record.tgenabled
+FROM pg_trigger AS trigger_record
+WHERE
+  trigger_record.tgrelid = 'fitness.activity'::regclass
+  AND NOT trigger_record.tgisinternal;
+
+CREATE TEMP TABLE activity_comments ON COMMIT DROP AS
+SELECT
+  attribute.attname AS column_name,
+  description.description
+FROM pg_description AS description
+LEFT JOIN pg_attribute AS attribute
+  ON
+    attribute.attrelid = description.objoid
+    AND attribute.attnum = description.objsubid
+WHERE
+  description.objoid = 'fitness.activity'::regclass;
+
+CREATE TEMP TABLE activity_grants ON COMMIT DROP AS
+SELECT grantee, privilege_type, is_grantable
+FROM information_schema.role_table_grants
+WHERE table_schema = 'fitness' AND table_name = 'activity';
+
+CREATE TEMP TABLE activity_publications ON COMMIT DROP AS
+SELECT publication.pubname
+FROM pg_publication AS publication
+WHERE
+  NOT publication.puballtables
+  AND EXISTS (
+    SELECT 1
+    FROM pg_publication_tables AS publication_table
+    WHERE
+      publication_table.pubname = publication.pubname
+      AND publication_table.schemaname = 'fitness'
+      AND publication_table.tablename = 'activity'
+  );
+
+DO $$
+DECLARE
+  foreign_key_record record;
+BEGIN
+  FOR foreign_key_record IN SELECT * FROM activity_inbound_foreign_keys LOOP
+    EXECUTE format(
+      'ALTER TABLE %I.%I DROP CONSTRAINT %I',
+      foreign_key_record.child_schema,
+      foreign_key_record.child_table,
+      foreign_key_record.conname
+    );
+  END LOOP;
+END
+$$;
 
 CREATE TYPE fitness.canonical_activity_type AS ENUM (
   'cycling',
@@ -143,128 +257,104 @@ CREATE TYPE fitness.activity_modality AS ENUM (
   'cooldown'
 );
 
-ALTER TABLE fitness.activity
-RENAME COLUMN activity_type TO provider_type;
-
-ALTER TABLE fitness.activity
-ALTER COLUMN provider_type TYPE text
-USING provider_type::text;
-
-ALTER TABLE fitness.activity
-ADD COLUMN canonical_type fitness.canonical_activity_type
-GENERATED ALWAYS AS (
+CREATE TABLE fitness.activity_next AS
+SELECT
+  id,
+  provider_id,
+  user_id,
+  external_id,
+  activity_type::text AS provider_type,
   CASE
-    WHEN provider_type::text IN (
-      'cycling',
-      'road_cycling',
-      'mountain_biking',
-      'gravel_cycling',
-      'indoor_cycling',
-      'virtual_cycling',
-      'e_bike_cycling',
-      'cyclocross',
-      'track_cycling',
-      'bmx',
-      'hand_cycling'
-    ) THEN 'cycling'
-    WHEN provider_type::text IN ('running', 'trail_running', 'wheelchair_run') THEN 'running'
-    WHEN provider_type::text IN ('swimming', 'open_water_swimming') THEN 'swimming'
-    WHEN provider_type::text IN ('walking', 'wheelchair_walk') THEN 'walking'
-    WHEN provider_type::text = 'hiking' THEN 'hiking'
-    WHEN provider_type::text IN (
-      'strength',
-      'strength_training',
-      'functional_strength',
-      'functional_fitness',
-      'gym'
-    ) THEN 'strength'
-    WHEN provider_type::text = 'yoga' THEN 'yoga'
-    WHEN provider_type::text = 'pilates' THEN 'pilates'
-    WHEN provider_type::text = 'tai_chi' THEN 'tai_chi'
-    WHEN provider_type::text = 'mind_and_body' THEN 'mind_and_body'
-    WHEN provider_type::text = 'meditation' THEN 'meditation'
-    WHEN provider_type::text = 'breathwork' THEN 'breathwork'
-    WHEN provider_type::text IN ('stretching', 'flexibility') THEN 'stretching'
-    WHEN provider_type::text = 'barre' THEN 'barre'
-    WHEN provider_type::text = 'elliptical' THEN 'elliptical'
-    WHEN provider_type::text = 'rowing' THEN 'rowing'
-    WHEN provider_type::text IN ('cardio', 'mixed_cardio', 'mixed_metabolic_cardio') THEN 'cardio'
-    WHEN provider_type::text = 'hiit' THEN 'hiit'
-    WHEN provider_type::text IN ('stair_climbing', 'stairmaster', 'stairs') THEN 'stair_climbing'
-    WHEN provider_type::text = 'step_training' THEN 'step_training'
-    WHEN provider_type::text = 'jump_rope' THEN 'jump_rope'
-    WHEN provider_type::text = 'fitness_gaming' THEN 'fitness_gaming'
-    WHEN provider_type::text = 'cross_training' THEN 'cross_training'
-    WHEN provider_type::text = 'bootcamp' THEN 'bootcamp'
-    WHEN provider_type::text = 'circuit_training' THEN 'circuit_training'
-    WHEN provider_type::text IN ('core', 'core_training') THEN 'core'
-    WHEN provider_type::text = 'boxing' THEN 'boxing'
-    WHEN provider_type::text = 'kickboxing' THEN 'kickboxing'
-    WHEN provider_type::text = 'martial_arts' THEN 'martial_arts'
-    WHEN provider_type::text = 'group_exercise' THEN 'group_exercise'
-    WHEN provider_type::text IN ('skiing', 'cross_country_skiing', 'downhill_skiing') THEN 'skiing'
-    WHEN provider_type::text = 'snowboarding' THEN 'snowboarding'
-    WHEN provider_type::text = 'snow_sports' THEN 'snow_sports'
-    WHEN provider_type::text = 'snowshoeing' THEN 'snowshoeing'
-    WHEN provider_type::text = 'skating' THEN 'skating'
-    WHEN provider_type::text = 'surfing' THEN 'surfing'
-    WHEN provider_type::text = 'kayaking' THEN 'kayaking'
-    WHEN provider_type::text = 'sailing' THEN 'sailing'
-    WHEN provider_type::text IN ('paddle_sports', 'paddleboarding', 'paddling') THEN 'paddling'
-    WHEN provider_type::text IN ('water_fitness', 'aqua_fitness') THEN 'water_fitness'
-    WHEN provider_type::text = 'water_polo' THEN 'water_polo'
-    WHEN provider_type::text = 'water_sports' THEN 'water_sports'
-    WHEN provider_type::text IN ('underwater_diving', 'diving') THEN 'diving'
-    WHEN provider_type::text = 'snorkeling' THEN 'snorkeling'
-    WHEN provider_type::text = 'tennis' THEN 'tennis'
-    WHEN provider_type::text = 'table_tennis' THEN 'table_tennis'
-    WHEN provider_type::text = 'squash' THEN 'squash'
-    WHEN provider_type::text = 'racquetball' THEN 'racquetball'
-    WHEN provider_type::text = 'badminton' THEN 'badminton'
-    WHEN provider_type::text IN ('pickleball', 'paddle_racquet') THEN 'pickleball'
-    WHEN provider_type::text = 'padel' THEN 'padel'
-    WHEN provider_type::text = 'basketball' THEN 'basketball'
-    WHEN provider_type::text = 'soccer' THEN 'soccer'
-    WHEN provider_type::text IN ('football', 'american_football') THEN 'american_football'
-    WHEN provider_type::text = 'australian_football' THEN 'australian_football'
-    WHEN provider_type::text = 'rugby' THEN 'rugby'
-    WHEN provider_type::text IN ('hockey', 'ice_hockey') THEN 'hockey'
-    WHEN provider_type::text = 'lacrosse' THEN 'lacrosse'
-    WHEN provider_type::text = 'baseball' THEN 'baseball'
-    WHEN provider_type::text = 'softball' THEN 'softball'
-    WHEN provider_type::text = 'volleyball' THEN 'volleyball'
-    WHEN provider_type::text = 'cricket' THEN 'cricket'
-    WHEN provider_type::text = 'handball' THEN 'handball'
-    WHEN provider_type::text = 'golf' THEN 'golf'
-    WHEN provider_type::text = 'disc_golf' THEN 'disc_golf'
-    WHEN provider_type::text IN ('climbing', 'rock_climbing') THEN 'climbing'
-    WHEN provider_type::text IN ('dance', 'dancing', 'cardio_dance', 'social_dance') THEN 'dance'
-    WHEN provider_type::text = 'triathlon' THEN 'triathlon'
-    WHEN provider_type::text = 'multisport' THEN 'multisport'
-    WHEN provider_type::text = 'disc_sports' THEN 'disc_sports'
-    WHEN provider_type::text = 'equestrian' THEN 'equestrian'
-    WHEN provider_type::text = 'fencing' THEN 'fencing'
-    WHEN provider_type::text = 'fishing' THEN 'fishing'
-    WHEN provider_type::text = 'hunting' THEN 'hunting'
-    WHEN provider_type::text = 'gymnastics' THEN 'gymnastics'
-    WHEN provider_type::text = 'archery' THEN 'archery'
-    WHEN provider_type::text = 'bowling' THEN 'bowling'
-    WHEN provider_type::text = 'curling' THEN 'curling'
-    WHEN provider_type::text = 'wrestling' THEN 'wrestling'
-    WHEN provider_type::text = 'track_and_field' THEN 'track_and_field'
-    WHEN provider_type::text = 'play' THEN 'play'
-    WHEN provider_type::text = 'navigation' THEN 'navigation'
-    WHEN provider_type::text = 'geocaching' THEN 'geocaching'
-    WHEN provider_type::text = 'skydiving' THEN 'skydiving'
-    WHEN provider_type::text = 'paragliding' THEN 'paragliding'
-    WHEN provider_type::text IN ('preparation_and_recovery', 'cooldown') THEN 'preparation_and_recovery'
-    WHEN provider_type::text = 'transition' THEN 'transition'
-    WHEN provider_type::text = 'other' THEN 'other'
-  END::fitness.canonical_activity_type
-) STORED,
-ADD COLUMN modality fitness.activity_modality
-GENERATED ALWAYS AS (
-  CASE provider_type::text
+    WHEN activity_type::text IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling') THEN 'cycling'
+    WHEN activity_type::text IN ('running', 'trail_running', 'wheelchair_run') THEN 'running'
+    WHEN activity_type::text IN ('swimming', 'open_water_swimming') THEN 'swimming'
+    WHEN activity_type::text IN ('walking', 'wheelchair_walk') THEN 'walking'
+    WHEN activity_type::text = 'hiking' THEN 'hiking'
+    WHEN activity_type::text IN ('strength', 'strength_training', 'functional_strength', 'functional_fitness', 'gym') THEN 'strength'
+    WHEN activity_type::text = 'yoga' THEN 'yoga'
+    WHEN activity_type::text = 'pilates' THEN 'pilates'
+    WHEN activity_type::text = 'tai_chi' THEN 'tai_chi'
+    WHEN activity_type::text = 'mind_and_body' THEN 'mind_and_body'
+    WHEN activity_type::text = 'meditation' THEN 'meditation'
+    WHEN activity_type::text = 'breathwork' THEN 'breathwork'
+    WHEN activity_type::text IN ('stretching', 'flexibility') THEN 'stretching'
+    WHEN activity_type::text = 'barre' THEN 'barre'
+    WHEN activity_type::text = 'elliptical' THEN 'elliptical'
+    WHEN activity_type::text = 'rowing' THEN 'rowing'
+    WHEN activity_type::text IN ('cardio', 'mixed_cardio', 'mixed_metabolic_cardio') THEN 'cardio'
+    WHEN activity_type::text = 'hiit' THEN 'hiit'
+    WHEN activity_type::text IN ('stair_climbing', 'stairmaster', 'stairs') THEN 'stair_climbing'
+    WHEN activity_type::text = 'step_training' THEN 'step_training'
+    WHEN activity_type::text = 'jump_rope' THEN 'jump_rope'
+    WHEN activity_type::text = 'fitness_gaming' THEN 'fitness_gaming'
+    WHEN activity_type::text = 'cross_training' THEN 'cross_training'
+    WHEN activity_type::text = 'bootcamp' THEN 'bootcamp'
+    WHEN activity_type::text = 'circuit_training' THEN 'circuit_training'
+    WHEN activity_type::text IN ('core', 'core_training') THEN 'core'
+    WHEN activity_type::text = 'boxing' THEN 'boxing'
+    WHEN activity_type::text = 'kickboxing' THEN 'kickboxing'
+    WHEN activity_type::text = 'martial_arts' THEN 'martial_arts'
+    WHEN activity_type::text = 'group_exercise' THEN 'group_exercise'
+    WHEN activity_type::text IN ('skiing', 'cross_country_skiing', 'downhill_skiing') THEN 'skiing'
+    WHEN activity_type::text = 'snowboarding' THEN 'snowboarding'
+    WHEN activity_type::text = 'snow_sports' THEN 'snow_sports'
+    WHEN activity_type::text = 'snowshoeing' THEN 'snowshoeing'
+    WHEN activity_type::text = 'skating' THEN 'skating'
+    WHEN activity_type::text = 'surfing' THEN 'surfing'
+    WHEN activity_type::text = 'kayaking' THEN 'kayaking'
+    WHEN activity_type::text = 'sailing' THEN 'sailing'
+    WHEN activity_type::text IN ('paddle_sports', 'paddleboarding', 'paddling') THEN 'paddling'
+    WHEN activity_type::text IN ('water_fitness', 'aqua_fitness') THEN 'water_fitness'
+    WHEN activity_type::text = 'water_polo' THEN 'water_polo'
+    WHEN activity_type::text = 'water_sports' THEN 'water_sports'
+    WHEN activity_type::text IN ('underwater_diving', 'diving') THEN 'diving'
+    WHEN activity_type::text = 'snorkeling' THEN 'snorkeling'
+    WHEN activity_type::text = 'tennis' THEN 'tennis'
+    WHEN activity_type::text = 'table_tennis' THEN 'table_tennis'
+    WHEN activity_type::text = 'squash' THEN 'squash'
+    WHEN activity_type::text = 'racquetball' THEN 'racquetball'
+    WHEN activity_type::text = 'badminton' THEN 'badminton'
+    WHEN activity_type::text IN ('pickleball', 'paddle_racquet') THEN 'pickleball'
+    WHEN activity_type::text = 'padel' THEN 'padel'
+    WHEN activity_type::text = 'basketball' THEN 'basketball'
+    WHEN activity_type::text = 'soccer' THEN 'soccer'
+    WHEN activity_type::text IN ('football', 'american_football') THEN 'american_football'
+    WHEN activity_type::text = 'australian_football' THEN 'australian_football'
+    WHEN activity_type::text = 'rugby' THEN 'rugby'
+    WHEN activity_type::text IN ('hockey', 'ice_hockey') THEN 'hockey'
+    WHEN activity_type::text = 'lacrosse' THEN 'lacrosse'
+    WHEN activity_type::text = 'baseball' THEN 'baseball'
+    WHEN activity_type::text = 'softball' THEN 'softball'
+    WHEN activity_type::text = 'volleyball' THEN 'volleyball'
+    WHEN activity_type::text = 'cricket' THEN 'cricket'
+    WHEN activity_type::text = 'handball' THEN 'handball'
+    WHEN activity_type::text = 'golf' THEN 'golf'
+    WHEN activity_type::text = 'disc_golf' THEN 'disc_golf'
+    WHEN activity_type::text IN ('climbing', 'rock_climbing') THEN 'climbing'
+    WHEN activity_type::text IN ('dance', 'dancing', 'cardio_dance', 'social_dance') THEN 'dance'
+    WHEN activity_type::text = 'triathlon' THEN 'triathlon'
+    WHEN activity_type::text = 'multisport' THEN 'multisport'
+    WHEN activity_type::text = 'disc_sports' THEN 'disc_sports'
+    WHEN activity_type::text = 'equestrian' THEN 'equestrian'
+    WHEN activity_type::text = 'fencing' THEN 'fencing'
+    WHEN activity_type::text = 'fishing' THEN 'fishing'
+    WHEN activity_type::text = 'hunting' THEN 'hunting'
+    WHEN activity_type::text = 'gymnastics' THEN 'gymnastics'
+    WHEN activity_type::text = 'archery' THEN 'archery'
+    WHEN activity_type::text = 'bowling' THEN 'bowling'
+    WHEN activity_type::text = 'curling' THEN 'curling'
+    WHEN activity_type::text = 'wrestling' THEN 'wrestling'
+    WHEN activity_type::text = 'track_and_field' THEN 'track_and_field'
+    WHEN activity_type::text = 'play' THEN 'play'
+    WHEN activity_type::text = 'navigation' THEN 'navigation'
+    WHEN activity_type::text = 'geocaching' THEN 'geocaching'
+    WHEN activity_type::text = 'skydiving' THEN 'skydiving'
+    WHEN activity_type::text = 'paragliding' THEN 'paragliding'
+    WHEN activity_type::text IN ('preparation_and_recovery', 'cooldown') THEN 'preparation_and_recovery'
+    WHEN activity_type::text = 'transition' THEN 'transition'
+    WHEN activity_type::text = 'other' THEN 'other'
+  END::fitness.canonical_activity_type AS canonical_type,
+  CASE activity_type::text
     WHEN 'road_cycling' THEN 'road'
     WHEN 'mountain_biking' THEN 'mountain'
     WHEN 'gravel_cycling' THEN 'gravel'
@@ -290,28 +380,112 @@ GENERATED ALWAYS AS (
     WHEN 'wheelchair_walk' THEN 'wheelchair'
     WHEN 'wheelchair_run' THEN 'wheelchair'
     WHEN 'cooldown' THEN 'cooldown'
-  END::fitness.activity_modality
-) STORED;
+  END::fitness.activity_modality AS modality,
+  started_at,
+  ended_at,
+  name,
+  notes,
+  perceived_exertion,
+  source_name,
+  timezone,
+  strava_id,
+  raw,
+  provider_absent_at,
+  deleted_at,
+  created_at
+FROM fitness.activity;
 
-ALTER TABLE fitness.activity
-ADD CONSTRAINT activity_canonical_type_not_null_chk
-CHECK (canonical_type IS NOT NULL) NOT VALID;
+ALTER TABLE fitness.activity RENAME TO activity_legacy;
+ALTER TABLE fitness.activity_next RENAME TO activity;
+DROP TABLE fitness.activity_legacy;
 
-ALTER TABLE fitness.activity
-VALIDATE CONSTRAINT activity_canonical_type_not_null_chk;
+DO $$
+DECLARE
+  constraint_record record;
+  constraint_definition text;
+BEGIN
+  FOR constraint_record IN SELECT * FROM activity_constraints LOOP
+    constraint_definition := constraint_record.definition;
+    IF NOT constraint_record.convalidated THEN
+      constraint_definition := constraint_definition || ' NOT VALID';
+    END IF;
+    EXECUTE format(
+      'ALTER TABLE fitness.activity ADD CONSTRAINT %I %s',
+      constraint_record.conname,
+      constraint_definition
+    );
+  END LOOP;
 
-ALTER TABLE fitness.activity
-ALTER COLUMN canonical_type SET NOT NULL;
+  FOR constraint_record IN SELECT * FROM activity_not_null_columns LOOP
+    EXECUTE format(
+      'ALTER TABLE fitness.activity ALTER COLUMN %I SET NOT NULL',
+      CASE WHEN constraint_record.column_name = 'activity_type' THEN 'provider_type' ELSE constraint_record.column_name END
+    );
+  END LOOP;
 
-ALTER TABLE fitness.activity
-DROP CONSTRAINT activity_canonical_type_not_null_chk;
+  ALTER TABLE fitness.activity ALTER COLUMN canonical_type SET NOT NULL;
 
-ALTER TABLE fitness.activity
-ALTER COLUMN canonical_type DROP EXPRESSION,
-ALTER COLUMN modality DROP EXPRESSION;
+  FOR constraint_record IN SELECT * FROM activity_column_defaults LOOP
+    EXECUTE format(
+      'ALTER TABLE fitness.activity ALTER COLUMN %I SET DEFAULT %s',
+      CASE WHEN constraint_record.column_name = 'activity_type' THEN 'provider_type' ELSE constraint_record.column_name END,
+      constraint_record.column_default
+    );
+  END LOOP;
+
+  FOR constraint_record IN SELECT * FROM activity_index_definitions LOOP
+    EXECUTE constraint_record.definition;
+  END LOOP;
+
+  FOR constraint_record IN SELECT * FROM activity_trigger_definitions LOOP
+    EXECUTE constraint_record.definition;
+    IF constraint_record.tgenabled = 'D' THEN
+      EXECUTE format('ALTER TABLE fitness.activity DISABLE TRIGGER %I', constraint_record.trigger_name);
+    ELSIF constraint_record.tgenabled = 'R' THEN
+      EXECUTE format('ALTER TABLE fitness.activity ENABLE REPLICA TRIGGER %I', constraint_record.trigger_name);
+    ELSIF constraint_record.tgenabled = 'A' THEN
+      EXECUTE format('ALTER TABLE fitness.activity ENABLE ALWAYS TRIGGER %I', constraint_record.trigger_name);
+    END IF;
+  END LOOP;
+
+  FOR constraint_record IN SELECT * FROM activity_comments LOOP
+    IF constraint_record.column_name IS NULL THEN
+      EXECUTE format('COMMENT ON TABLE fitness.activity IS %L', constraint_record.description);
+    ELSE
+      EXECUTE format('COMMENT ON COLUMN fitness.activity.%I IS %L', constraint_record.column_name, constraint_record.description);
+    END IF;
+  END LOOP;
+
+  FOR constraint_record IN SELECT * FROM activity_grants LOOP
+    EXECUTE format(
+      'GRANT %s ON TABLE fitness.activity TO %s%s',
+      constraint_record.privilege_type,
+      CASE WHEN constraint_record.grantee = 'PUBLIC' THEN 'PUBLIC' ELSE quote_ident(constraint_record.grantee) END,
+      CASE WHEN constraint_record.is_grantable = 'YES' THEN ' WITH GRANT OPTION' ELSE '' END
+    );
+  END LOOP;
+
+  FOR constraint_record IN SELECT * FROM activity_publications LOOP
+    EXECUTE format('ALTER PUBLICATION %I ADD TABLE fitness.activity', constraint_record.pubname);
+  END LOOP;
+
+  FOR constraint_record IN SELECT * FROM activity_inbound_foreign_keys LOOP
+    constraint_definition := constraint_record.definition;
+    IF NOT constraint_record.convalidated THEN
+      constraint_definition := constraint_definition || ' NOT VALID';
+    END IF;
+    EXECUTE format(
+      'ALTER TABLE %I.%I ADD CONSTRAINT %I %s',
+      constraint_record.child_schema,
+      constraint_record.child_table,
+      constraint_record.conname,
+      constraint_definition
+    );
+  END LOOP;
+END
+$$;
 
 DROP TYPE fitness.activity_type;
--- Git merge conflicts here force developers to reconcile concurrent changes.
 
 CREATE OR REPLACE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (

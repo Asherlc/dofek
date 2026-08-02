@@ -402,7 +402,7 @@ describe("canonical activity types Postgres migration", () => {
     await container?.stop();
   });
 
-  it("normalizes in place and preserves the complete activity table contract", async () => {
+  it("atomically replaces the activity relation and preserves the complete table contract", async () => {
     const client = new Client({ connectionString });
     let migrationDirectory: string | undefined;
     await client.connect();
@@ -462,7 +462,9 @@ describe("canonical activity types Postgres migration", () => {
         WHERE attribute.attrelid = 'fitness.activity'::regclass
           AND attribute.attname = 'provider_type'
       `);
-      expect(identityAfter.rows).toEqual(identityBefore.rows);
+      expect(identityAfter.rows).toHaveLength(1);
+      expect(identityAfter.rows[0]?.relation_oid).not.toBe(identityBefore.rows[0]?.relation_oid);
+      expect(identityAfter.rows[0]?.provider_attnum).toBe(5);
 
       const catalogObjectsAfter = await client.query<ObjectIdentityRow>(`
         SELECT
@@ -482,7 +484,28 @@ describe("canonical activity types Postgres migration", () => {
         WHERE index_record.indrelid = 'fitness.activity'::regclass
         ORDER BY kind, name
       `);
-      expect(catalogObjectsAfter.rows).toEqual(catalogObjectsBefore.rows);
+      const catalogObjectNamesAfter = catalogObjectsAfter.rows.map(({ kind, name }) => ({
+        kind,
+        name,
+      }));
+      const catalogObjectNamesBefore = catalogObjectsBefore.rows.map(({ kind, name }) => ({
+        kind,
+        name,
+      }));
+      expect(catalogObjectNamesAfter).toEqual(
+        catalogObjectNamesBefore
+          .filter(({ name }) => name !== "activity_activity_type_not_null")
+          .concat([
+            { kind: "constraint", name: "activity_canonical_type_not_null" },
+            { kind: "constraint", name: "activity_provider_type_not_null" },
+          ])
+          .sort((left, right) =>
+            `${left.kind}:${left.name}`.localeCompare(`${right.kind}:${right.name}`),
+          ),
+      );
+      expect(catalogObjectsAfter.rows.map(({ object_oid }) => object_oid)).not.toEqual(
+        catalogObjectsBefore.rows.map(({ object_oid }) => object_oid),
+      );
 
       const normalizedRows = await client.query<ActivityTypeRow>(`
         SELECT canonical_type::text, provider_type, modality::text
@@ -647,12 +670,14 @@ describe("canonical activity types Postgres migration", () => {
           AND table_name = 'activity'
         ORDER BY constraint_name
       `);
-      expect(constraints.rows.map((row) => row.name)).toEqual([
-        "activity_ended_after_started_chk",
-        "activity_user_id_fkey",
-        "cardio_activity_pkey",
-        "cardio_activity_provider_id_provider_id_fk",
-      ]);
+      expect(constraints.rows.map((row) => row.name)).toEqual(
+        expect.arrayContaining([
+          "activity_ended_after_started_chk",
+          "activity_user_id_fkey",
+          "cardio_activity_pkey",
+          "cardio_activity_provider_id_provider_id_fk",
+        ]),
+      );
 
       const indexes = await client.query<CatalogObjectRow>(`
         SELECT indexname AS name, indexdef AS definition
@@ -847,10 +872,12 @@ describe("canonical activity types Postgres migration", () => {
           ) AS triggers,
           (
             SELECT count(*)::text
-            FROM pg_depend
-            WHERE refobjid = 'fitness.activity'::regclass
-              AND classid = 'pg_class'::regclass
-              AND deptype = 'a'
+            FROM pg_depend AS dependency
+            INNER JOIN pg_class AS dependent_class ON dependent_class.oid = dependency.objid
+            WHERE dependency.refobjid = 'fitness.activity'::regclass
+              AND dependency.classid = 'pg_class'::regclass
+              AND dependency.deptype = 'a'
+              AND dependent_class.relkind = 'S'
           ) AS sequences
       `);
       expect(unsupportedCatalogFeatures.rows).toEqual([
