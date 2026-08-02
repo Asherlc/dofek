@@ -26,6 +26,13 @@ describe("QueryStatePanel", () => {
     expect(screen.getByTestId("query-state-loading").className).not.toContain("query-error-panel");
   });
 
+  it("announces a named busy loading status", () => {
+    render(<QueryStatePanel variant="loading" message="Loading behavior associations." />);
+
+    const status = screen.getByRole("status", { name: "Loading behavior associations." });
+    expect(status).toHaveAttribute("aria-busy", "true");
+  });
+
   it("renders the error message", () => {
     render(<QueryStatePanel error={new Error("Provider query failed")} />);
     expect(screen.getByText("Provider query failed")).toBeDefined();
