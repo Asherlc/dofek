@@ -182,6 +182,7 @@ describe("TodayScreen independent loading states", () => {
     mockTodayPlanError = null;
     mockTodayPlanData = {
       status: "ready",
+      epistemicStatus: { kind: "suggested", label: "Suggested" },
       date: "2026-03-21",
       action: {
         id: "strain_target",
@@ -226,6 +227,7 @@ describe("TodayScreen independent loading states", () => {
       },
       sleepNeed: {
         availability: "available",
+        epistemicStatus: { kind: "estimated", label: "Estimated" },
         baselineMinutes: 480,
         strainDebtMinutes: 20,
         accumulatedDebtMinutes: 10,
@@ -420,6 +422,7 @@ describe("TodayScreen independent loading states", () => {
       },
       sleepNeed: {
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       },
     };
@@ -440,6 +443,25 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByText("8h 37m")).toBeNull();
   });
 
+  it("keeps a legacy cached sleep prerequisite visible without a status", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: { lastNight: null, sleepDebt: 0 },
+      sleepNeed: {
+        availability: "missing_previous_night",
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
   it("renders the server-authored next action for insufficient sleep need data", async () => {
     mockDashboardData = {
       ...mockDashboardData,
@@ -457,6 +479,7 @@ describe("TodayScreen independent loading states", () => {
       },
       sleepNeed: {
         availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         reason: "insufficient_baseline_history",
         message: "Sync at least 7 qualifying nights to estimate sleep need.",
         nextAction: "Sync more sleep and recovery data.",

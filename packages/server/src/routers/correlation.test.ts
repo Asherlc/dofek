@@ -657,6 +657,17 @@ describe("correlationRouter", () => {
       });
     });
 
+    it("versions both correlation result cache contracts", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "correlation.compute:v2",
+      });
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "correlation.computeV2:v2",
+      });
+    });
+
     it("returns available correlation metrics", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -702,6 +713,7 @@ describe("correlationRouter", () => {
     it("validates and strips unknown repository output fields", async () => {
       const repositoryResult = {
         availability: "insufficient",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         dataPoints: [],
         sampleCount: 0,
         additionalSamplesRequired: 5,
@@ -827,6 +839,7 @@ describe("correlationRouter", () => {
       const repositoryResult = {
         analysisVersion: 2,
         availability: "insufficient",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         dataPoints: [],
         sampleCount: 0,
         additionalSamplesRequired: 5,

@@ -236,6 +236,17 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
 }
 
 describe("mobileDashboard.dashboardV2", () => {
+  it("versions the changed dashboard and recovery response contracts", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "sleep-need-metadata-v2",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "health-status-evidence-v4",
+    });
+  });
+
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -260,6 +271,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
@@ -325,6 +337,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",

@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
+import { epistemicStatusSchema } from "../contracts/epistemic-status-contract.ts";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { selectedDateRangeInput } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
@@ -46,7 +47,9 @@ const dateWindowInput = selectedDateRangeInput(90);
 const smoothedWeightOutputSchema = z.object({
   date: z.string(),
   rawWeight: z.number().nullable(),
+  rawWeightStatus: epistemicStatusSchema.nullable(),
   smoothedWeight: z.number(),
+  smoothedWeightStatus: epistemicStatusSchema,
   weeklyChange: z.number().nullable(),
   interpolated: z.boolean(),
 });
@@ -94,8 +97,12 @@ function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
 // ── Router ───────────────────────────────────────────────────────────
 
 export const bodyAnalyticsRouter = router({
-  smoothedWeight: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  smoothedWeight: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
+  })
     .input(dateWindowInput)
+    .output(z.array(smoothedWeightOutputSchema))
     .query(({ ctx, input }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getSmoothedWeight(input.days, input.endDate);

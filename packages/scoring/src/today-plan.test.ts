@@ -17,6 +17,7 @@ describe("buildTodayPlan", () => {
 
     expect(plan).toEqual({
       status: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       date: "2026-07-26",
       action: null,
       supportingFacts: [],
@@ -50,6 +51,7 @@ describe("buildTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
 
+    expect(plan.epistemicStatus).toEqual({ kind: "suggested", label: "Suggested" });
     expect(plan.action).toEqual({
       id: "strain_target",
       title: "Train hard today — aim for 16.2 strain",

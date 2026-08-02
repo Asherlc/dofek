@@ -44,10 +44,14 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
   const ratePerWeekKg = prediction?.ratePerWeek ?? null;
   const latest = data.at(-1);
   let latestScaleWeight: number | null = null;
+  let latestScaleWeightStatus: string | null = null;
   for (let index = data.length - 1; index >= 0; index--) {
-    const rawWeight = data[index]?.rawWeight;
+    const row = data[index];
+    if (!row) continue;
+    const rawWeight = row?.rawWeight;
     if (rawWeight != null) {
       latestScaleWeight = rawWeight;
+      latestScaleWeightStatus = row.rawWeightStatus?.label ?? null;
       break;
     }
   }
@@ -201,13 +205,16 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     <div className="space-y-2">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-subtle">Trend Weight</div>
+          <div className="text-[10px] uppercase tracking-wider text-subtle">
+            {latest?.smoothedWeightStatus.label} Trend Weight
+          </div>
           <div className="text-lg font-semibold font-mono tabular-nums">
             {latest ? formatMeasurementText(units.formatWeight(latest.smoothedWeight)) : "—"}
           </div>
-          {latestScaleWeight != null && (
+          {latestScaleWeight != null && latestScaleWeightStatus != null && (
             <div className="text-xs text-subtle">
-              Scale: {formatMeasurementText(units.formatWeight(latestScaleWeight))}
+              {latestScaleWeightStatus}:{" "}
+              {formatMeasurementText(units.formatWeight(latestScaleWeight))}
             </div>
           )}
         </div>
