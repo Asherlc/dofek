@@ -195,8 +195,8 @@ describe("sleep router integration", () => {
         (
           'test_provider',
           ${TEST_USER_ID},
-          NOW() - INTERVAL '54 hours',
-          NOW() - INTERVAL '46 hours',
+          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '06:00:00',
+          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '14:00:00',
           480,
           90,
           100,
@@ -209,8 +209,8 @@ describe("sleep router integration", () => {
         (
           'partial_provider',
           ${TEST_USER_ID},
-          NOW() - INTERVAL '78 hours',
-          NOW() - INTERVAL '70 hours',
+          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '06:00:00',
+          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '14:00:00',
           480,
           NULL,
           NULL,
