@@ -200,12 +200,12 @@ describe("FoodScreen AI meal confirmation", () => {
     const resolutionMessage = screen.getByText(availableResolution.message);
     const aiInputHeading = screen.getByText("AI meal input");
 
-    expect(intakeMessage.compareDocumentPosition(aiInputHeading)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(resolutionMessage.compareDocumentPosition(aiInputHeading)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(
+      intakeMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      resolutionMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("opens every food input mode from the nutrition screen", async () => {

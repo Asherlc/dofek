@@ -176,12 +176,12 @@ describe("NutritionPage", () => {
     const resolutionMessage = screen.getByText(availableResolution.message);
     const aiInputHeading = screen.getByRole("heading", { name: "AI meal input" });
 
-    expect(intakeMessage.compareDocumentPosition(aiInputHeading)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(resolutionMessage.compareDocumentPosition(aiInputHeading)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(
+      intakeMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      resolutionMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("shows fatsecret attribution on the nutrition screen", async () => {
