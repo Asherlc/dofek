@@ -1,4 +1,4 @@
-import type { AerobicEfficiencyActivity } from "dofek-server/types";
+import type { AerobicEfficiencyActivity, TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -9,17 +9,20 @@ import {
   dofekTooltip,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface AerobicEfficiencyChartProps {
   activities: AerobicEfficiencyActivity[];
   maxHr: number | null;
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
 export function AerobicEfficiencyChart({
   activities,
   maxHr,
   loading,
+  availability,
 }: AerobicEfficiencyChartProps) {
   if (loading) {
     return (
@@ -30,6 +33,10 @@ export function AerobicEfficiencyChart({
         emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
       />
     );
+  }
+
+  if (availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
   }
 
   if (activities.length === 0) {

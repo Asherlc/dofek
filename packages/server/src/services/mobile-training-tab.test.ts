@@ -258,6 +258,83 @@ describe("loadMobileTrainingTab", () => {
     expect(result.strainTarget.progressPercent).toBe(0);
   });
 
+  it("reports insufficient chart availability from server-owned observations", async () => {
+    await mockTrainingRepos();
+
+    const result = await loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
+
+    expect(result.chartAvailability).toEqual({
+      strainTrend: {
+        status: "insufficient_data",
+        sourceLabel: "Daily strain model",
+        observedCount: 0,
+        minimumCount: 2,
+        message:
+          "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
+      },
+      verticalAscent: {
+        status: "insufficient_data",
+        sourceLabel: "Cycling activity altitude sensor summaries",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No vertical ascent data is available from cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart.",
+      },
+    });
+  });
+
+  it("reports available chart availability after each server threshold is met", async () => {
+    const query = makeQuery([
+      {
+        date: "2026-03-27",
+        daily_load: 40,
+        acute_load: 200,
+        chronic_load: 250,
+        workload_ratio: 0.8,
+      },
+      {
+        date: "2026-03-28",
+        daily_load: 50,
+        acute_load: 250,
+        chronic_load: 300,
+        workload_ratio: 0.83,
+      },
+    ]);
+    await mockTrainingRepos(
+      [],
+      [],
+      [
+        new VerticalAscentModel({
+          date: "2026-03-28",
+          activityName: "Hill Climb",
+          activityType: "road_cycling",
+          elevationGainMeters: 500,
+          elapsedSeconds: 1800,
+        }),
+      ],
+    );
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.chartAvailability).toEqual({
+      strainTrend: {
+        status: "available",
+        sourceLabel: "Daily strain model",
+        observedCount: 2,
+        minimumCount: 2,
+        message: "Daily strain trend is available from the daily strain model.",
+      },
+      verticalAscent: {
+        status: "available",
+        sourceLabel: "Cycling activity altitude sensor summaries",
+        observedCount: 1,
+        minimumCount: 1,
+        message:
+          "Vertical ascent data is available from cycling activity altitude sensor summaries.",
+      },
+    });
+  });
+
   it("rounds workload ratio fields to expected precision", async () => {
     await mockTrainingRepos();
     const query = makeQuery([

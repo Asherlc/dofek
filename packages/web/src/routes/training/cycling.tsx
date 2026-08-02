@@ -120,6 +120,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
               data={performance.data?.powerCurve.recent.points ?? []}
               comparisonData={performance.data?.powerCurve.season.points ?? []}
               model={recentModel}
+              availability={performance.data?.availability?.powerCurve}
               loading={loading}
             />
             <PowerSummaryTable
@@ -169,6 +170,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
           <PmcChart
             data={performance.data?.pmc.data ?? []}
             model={performance.data?.pmc.model}
+            availability={performance.data?.availability?.pmc}
             loading={performance.isLoading}
           />
         )}
@@ -185,6 +187,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
           <EftpTrendChart
             data={performance.data?.eftpTrend.trend ?? []}
             currentEftp={performance.data?.eftpTrend.currentEftp ?? null}
+            availability={performance.data?.availability?.eftpTrend}
             loading={performance.isLoading}
           />
         )}
@@ -202,6 +205,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
             <AerobicEfficiencyChart
               activities={activityAnalytics.data?.aerobicEfficiency.activities ?? []}
               maxHr={activityAnalytics.data?.aerobicEfficiency.maxHr ?? null}
+              availability={activityAnalytics.data?.availability?.aerobicEfficiency}
               loading={activityAnalytics.isLoading}
             />
           )}
@@ -216,6 +220,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
           ) : (
             <VerticalAscentChart
               data={activityAnalytics.data?.verticalAscent ?? []}
+              availability={activityAnalytics.data?.availability?.verticalAscent}
               loading={activityAnalytics.isLoading}
             />
           )}

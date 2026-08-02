@@ -27,11 +27,15 @@ describe("Cycling Page", () => {
   it("shows empty states for charts when no data exists", () => {
     cy.visit("/training/cycling");
     // Charts should show empty state messages, not crash
-    cy.contains("No activities with sufficient Zone 2 power + heart rate data").should(
-      "be.visible",
-    );
-    cy.contains("No activities with altitude data available").should("be.visible");
-    cy.contains("No power data").should("be.visible");
+    cy.contains(
+      "No aerobic efficiency data is available from Cycling Zone 2 power and heart-rate summaries",
+    ).should("be.visible");
+    cy.contains(
+      "No vertical ascent data is available from Cycling activity altitude sensor summaries",
+    ).should("be.visible");
+    cy.contains(
+      "No cycling power-curve data is available from Cycling power-curve read model",
+    ).should("be.visible");
   });
 
   it("aerobicEfficiency API returns valid response for empty data", () => {

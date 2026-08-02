@@ -2,6 +2,7 @@ import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
+import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
 const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
@@ -277,6 +278,10 @@ export const mobileTrainingTabOutputSchema = z.object({
       elapsedMinutes: nonnegativeNumberSchema,
     }),
   ),
+  chartAvailability: z.object({
+    strainTrend: trainingChartAvailabilitySchema,
+    verticalAscent: trainingChartAvailabilitySchema,
+  }),
   climbing: z.object({
     gradeProgression: z.array(
       z.object({
@@ -473,7 +478,11 @@ export const mobileRecoveryFixtureSchema = z
 export const mobileTrainingFixtureSchema = z
   .object({
     input: fixtureInputSchema,
-    data: mobileTrainingTabOutputSchema,
+    data: mobileTrainingTabOutputSchema.extend({
+      // Historical fixture snapshots predate server-authored chart availability.
+      // Runtime mobile dashboard responses remain strict via mobileTrainingTabOutputSchema.
+      chartAvailability: mobileTrainingTabOutputSchema.shape.chartAvailability.optional(),
+    }),
   })
   .superRefine(({ input, data }, context) => {
     validateDatesInWindow(
