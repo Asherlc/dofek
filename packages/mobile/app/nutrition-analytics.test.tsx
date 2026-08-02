@@ -299,6 +299,42 @@ describe("NutritionAnalyticsScreen", () => {
               },
               safetyStatus: "upper_limit_not_evaluable",
             },
+            {
+              nutrientId: "vitamin_k",
+              nutrient: "Vitamin K",
+              unit: "mg",
+              intake: {
+                totalDailyAverage: 0.1,
+                foodDailyAverage: 0.1,
+                providerDailyTotalAverage: 0,
+                supplementDailyAverage: 0,
+                daysTracked: 5,
+              },
+              sourceBreakdown: [],
+              adequacy: {
+                status: "not_evaluable",
+                limitation: "Tracked unit mg does not match the FDA Daily Value unit mcg.",
+                message: "Tracked unit mg does not match the FDA Daily Value unit mcg.",
+                reference: {
+                  type: "daily_value",
+                  amount: 120,
+                  unit: "mcg",
+                  population: "Adults and children age 4+",
+                  source: {
+                    agency: "FDA",
+                    title: "Daily Value",
+                    url: "https://www.fda.gov/",
+                    reviewedOn: "2026-07-27",
+                  },
+                },
+              },
+              upperLimit: {
+                status: "not_in_ruleset",
+                limitation: "No upper-limit rule is included in this bounded ruleset.",
+                message: "No upper-limit rule is included in this bounded ruleset.",
+              },
+              safetyStatus: "no_upper_limit_in_ruleset",
+            },
           ],
           dataQuality: {
             selectedWindowDays: 30,
@@ -340,9 +376,22 @@ describe("NutritionAnalyticsScreen", () => {
     ).toBeTruthy();
     expect(screen.getByText("Vitamin A")).toBeTruthy();
     expect(
-      screen.getByText("Target: No FDA Daily Value target is available for this nutrient."),
+      screen.getByText(
+        "Target: No U.S. Food and Drug Administration (FDA) Daily Value target is available for this nutrient.",
+      ),
     ).toBeTruthy();
     expect(screen.getByText("Tolerable Upper Intake Level (UL) not evaluable")).toBeTruthy();
+    expect(screen.getByText("Vitamin K")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Target: U.S. Food and Drug Administration (FDA) Daily Value target not evaluable",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Target guidance: Tracked unit mg does not match the FDA Daily Value unit mcg\./,
+      ),
+    ).toBeTruthy();
   });
 
   it("consolidates query failures into one exact root error and one recovery action", async () => {

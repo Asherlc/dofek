@@ -27,10 +27,10 @@ function targetStatusLabel(status: "below_daily_value" | "at_or_above_daily_valu
 
 function targetSummary(row: MicronutrientSafetyReviewRow): string {
   if (row.adequacy == null) {
-    return "No FDA Daily Value target is available for this nutrient.";
+    return `No ${DAILY_VALUE_TARGET_LABEL} target is available for this nutrient.`;
   }
   if (row.adequacy.status === "not_evaluable") {
-    return "FDA Daily Value target not evaluable";
+    return `${DAILY_VALUE_TARGET_LABEL} target not evaluable`;
   }
   return `${formatNutritionNumber(row.adequacy.percentDailyValue)}% of ${DAILY_VALUE_TARGET_LABEL} (${formatNutritionNumber(row.adequacy.reference.amount)} ${row.unit}/day)`;
 }
@@ -54,10 +54,10 @@ function upperLimitSummary(row: MicronutrientSafetyReviewRow): string {
 
 function tooltipTargetContext(row: MicronutrientSafetyReviewRow): string {
   if (row.adequacy == null) {
-    return "Target: No FDA Daily Value target is available for this nutrient.";
+    return `Target: No ${DAILY_VALUE_TARGET_LABEL} target is available for this nutrient.`;
   }
   if (row.adequacy.status === "not_evaluable") {
-    return `Target: FDA Daily Value target not evaluable<br/>
+    return `Target: ${DAILY_VALUE_TARGET_LABEL} target not evaluable<br/>
           Target status: Not evaluable<br/>
           Target source: ${escapeTooltipHtml(row.adequacy.reference.source.title)}<br/>
           Target guidance: ${escapeTooltipHtml(row.adequacy.message)}`;
@@ -188,9 +188,7 @@ function renderMicronutrientContextDetails({
 
 export function MicronutrientChart({ data, loading, selectedWindowDays }: MicronutrientChartProps) {
   const visibleRows = data.filter(
-    (row) =>
-      (row.adequacy != null && row.adequacy.status !== "not_evaluable") ||
-      row.upperLimit.status !== "not_in_ruleset",
+    (row) => row.adequacy != null || row.upperLimit.status !== "not_in_ruleset",
   );
   const comparable = visibleRows.filter(
     (row) => row.adequacy?.status !== "not_evaluable" && row.adequacy != null,
@@ -232,7 +230,7 @@ export function MicronutrientChart({ data, loading, selectedWindowDays }: Micron
           Provider daily totals: ${row.intake.providerDailyTotalAverage} ${unit}/day<br/>
           Supplements: ${row.intake.supplementDailyAverage} ${unit}/day<br/>
           ${sourceBreakdown ? `<br/><b>Sources</b><br/>${sourceBreakdown}<br/>` : ""}
-          <b>${adequacy.percentDailyValue}% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)</b><br/>
+          <b>${adequacy.percentDailyValue}% of ${DAILY_VALUE_TARGET_LABEL} (adequacy reference, not a safety rating)</b><br/>
           ${tooltipTargetContext(row)}<br/>
           ${tooltipUpperLimitContext(row)}
           <span style="color:${chartThemeColors.axisLabel}">(average over ${row.intake.daysTracked} recorded days in ${selectedWindowLabel(selectedWindowDays)})</span>`;
@@ -279,7 +277,7 @@ export function MicronutrientChart({ data, loading, selectedWindowDays }: Micron
           label: {
             show: true,
             position: "end" as const,
-            formatter: "100% U.S. Food and Drug Administration (FDA) Daily Value",
+            formatter: `100% ${DAILY_VALUE_TARGET_LABEL}`,
             color: chartThemeColors.axisLabel,
           },
           tooltip: { show: false },

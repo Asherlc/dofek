@@ -69,10 +69,10 @@ function targetStatusLabel(status: "below_daily_value" | "at_or_above_daily_valu
 
 function targetSummary(nutrient: MicronutrientSafetyReviewResult["nutrients"][number]): string {
   if (nutrient.adequacy == null) {
-    return "No FDA Daily Value target is available for this nutrient.";
+    return `No ${DAILY_VALUE_TARGET_LABEL} target is available for this nutrient.`;
   }
   if (nutrient.adequacy.status === "not_evaluable") {
-    return "FDA Daily Value target not evaluable";
+    return `${DAILY_VALUE_TARGET_LABEL} target not evaluable`;
   }
   return `${formatNutritionNumber(nutrient.adequacy.percentDailyValue)}% of ${DAILY_VALUE_TARGET_LABEL} (${formatNutritionNumber(nutrient.adequacy.reference.amount)} ${nutrient.unit}/day)`;
 }
@@ -426,9 +426,7 @@ function MicronutrientAdequacySection({
   if (loading) return <LoadingText />;
 
   const visibleNutrients = (data?.nutrients ?? []).filter(
-    (nutrient) =>
-      (nutrient.adequacy != null && nutrient.adequacy.status !== "not_evaluable") ||
-      nutrient.upperLimit.status !== "not_in_ruleset",
+    (nutrient) => nutrient.adequacy != null || nutrient.upperLimit.status !== "not_in_ruleset",
   );
   const evaluableNutrients = visibleNutrients.filter(
     (nutrient) => nutrient.adequacy != null && nutrient.adequacy.status !== "not_evaluable",
@@ -449,8 +447,8 @@ function MicronutrientAdequacySection({
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>
-        Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value; not a
-        personalized deficiency or safety assessment
+        Average over recorded days vs. {DAILY_VALUE_TARGET_LABEL}; not a personalized deficiency or
+        safety assessment
       </Text>
       <Text style={styles.sectionSubtext}>
         The Daily Value target marker and any Tolerable Upper Intake Level (UL) are separate; see

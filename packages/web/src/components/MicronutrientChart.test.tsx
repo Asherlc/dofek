@@ -9,6 +9,9 @@ interface ChartElementProps {
     tooltip?: {
       formatter?: (params: Array<{ name: string; value: number; dataIndex: number }>) => unknown;
     };
+    yAxis?: {
+      data?: string[];
+    };
     series?: Array<{
       markLine?: {
         label?: {
@@ -19,29 +22,31 @@ interface ChartElementProps {
   };
 }
 
+function elementChildren(value: ReactElement): unknown {
+  const props: unknown = value.props;
+  if (typeof props !== "object" || props === null || !("children" in props)) return undefined;
+  return props.children;
+}
+
 function findChartElement(element: ReactElement): ReactElement<ChartElementProps> {
   if (isChartElement(element)) return element;
-  const children = Array.isArray(element.props.children)
-    ? element.props.children
-    : [element.props.children];
+  const childValue = elementChildren(element);
+  const children = Array.isArray(childValue) ? childValue : [childValue];
   const chart = children.find(isChartElement);
   if (!chart) throw new Error("Expected MicronutrientChart to contain a chart element");
   return chart;
 }
 
 function isChartElement(value: unknown): value is ReactElement<ChartElementProps> {
-  return (
-    isValidElement(value) &&
-    typeof value.props === "object" &&
-    value.props !== null &&
-    "option" in value.props
-  );
+  if (!isValidElement(value)) return false;
+  const props: unknown = value.props;
+  return typeof props === "object" && props !== null && "option" in props;
 }
 
 function elementText(value: unknown): string {
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.map(elementText).join("");
-  if (isValidElement(value)) return elementText(value.props.children);
+  if (isValidElement(value)) return elementText(elementChildren(value));
   return "";
 }
 
@@ -278,8 +283,65 @@ describe("MicronutrientChart", () => {
     const text = elementText(element);
     expect(text).toContain("Vitamin D");
     expect(text).toContain("Vitamin A");
-    expect(text).toContain("Target: No FDA Daily Value target is available for this nutrient.");
+    expect(text).toContain(
+      "Target: No U.S. Food and Drug Administration (FDA) Daily Value target is available for this nutrient.",
+    );
     expect(text).toContain("Tolerable Upper Intake Level (UL) not evaluable");
     expect(text).toContain("preformed vitamin A");
+  });
+
+  it("keeps an unavailable Daily Value-only row in details without adding a chart bar", () => {
+    const limitation = "Tracked unit mg does not match the FDA Daily Value unit mcg.";
+    const element = MicronutrientChart({
+      data: [
+        {
+          nutrientId: "vitamin_k",
+          nutrient: "Vitamin K",
+          unit: "mg",
+          intake: {
+            totalDailyAverage: 0.1,
+            foodDailyAverage: 0.1,
+            providerDailyTotalAverage: 0,
+            supplementDailyAverage: 0,
+            daysTracked: 5,
+          },
+          sourceBreakdown: [],
+          adequacy: {
+            status: "not_evaluable",
+            limitation,
+            message: limitation,
+            reference: {
+              type: "daily_value",
+              amount: 120,
+              unit: "mcg",
+              population: "Adults and children age 4+",
+              source: {
+                agency: "FDA",
+                title: "Daily Value",
+                url: "https://www.fda.gov/",
+                reviewedOn: "2026-07-27",
+              },
+            },
+          },
+          upperLimit: {
+            status: "not_in_ruleset",
+            limitation: "No upper-limit rule is included in this bounded ruleset.",
+            message: "No upper-limit rule is included in this bounded ruleset.",
+          },
+          safetyStatus: "no_upper_limit_in_ruleset",
+        },
+      ],
+      selectedWindowDays: 30,
+    });
+
+    const chartElement = findChartElement(element);
+    expect(chartElement.props.option.yAxis?.data).toEqual([]);
+
+    const text = elementText(element);
+    expect(text).toContain("Vitamin K");
+    expect(text).toContain(
+      "Target: U.S. Food and Drug Administration (FDA) Daily Value target not evaluable",
+    );
+    expect(text).toContain(limitation);
   });
 });
