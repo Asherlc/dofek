@@ -5,7 +5,7 @@ on:
     inputs:
       commit_sha:
         description: "Commit SHA to deploy"
-        required: false
+        required: true
         type: string
       ci_run_id:
         description: "CI run ID to include in deploy summary (optional)"
@@ -21,6 +21,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Commit SHA to deploy (defaults to the selected ref HEAD)."
+        required: false
+        type: string
       ci_run_id:
         description: "CI run ID to include in deploy summary (optional)."
         required: false
@@ -176,12 +180,16 @@ jobs:
           elif [ -n "$INPUT_SHA" ]; then
             echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
+            echo "::error::No commit SHA resolved for iOS deployment"
+            exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ steps.sha.outputs.ref }}
+      - name: Resolve checked-out commit SHA
+        id: checked-out-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
@@ -238,6 +246,11 @@ jobs:
           mkdir -p ~/private_keys
           echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
       - name: Archive (Release, signed)
+        env:
+          SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
+          SENTRY_DIST: ${{ steps.build-number.outputs.value }}
+          EXPO_PUBLIC_SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
+          EXPO_PUBLIC_SENTRY_DIST: ${{ steps.build-number.outputs.value }}
         run: |
           set -o pipefail
           TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)
@@ -269,7 +282,7 @@ jobs:
         if: success()
         env:
           BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
-          COMMIT_SHA: ${{ steps.sha.outputs.ref }}
+          COMMIT_SHA: ${{ steps.checked-out-sha.outputs.sha }}
           CI_RUN_ID: ${{ needs.check.outputs.ci_run_id }}
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['version'])")

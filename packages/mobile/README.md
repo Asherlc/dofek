@@ -227,6 +227,12 @@ and hardware described there.
 ## Mobile Telemetry
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
+Exceptions also include the current Expo Router pathname in Sentry, PostHog, and
+OTLP context. UUID and numeric path segments are normalized to `:id`, so route
+context identifies the screen without copying record identifiers into telemetry.
+Production PostHog error autocapture is limited to uncaught exceptions and
+unhandled rejections; handled application failures go through the shared
+`captureException` path so they retain the same route and source context.
 
 Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
 native `App Start` span. The lifecycle attributes time to the Expo
@@ -257,6 +263,8 @@ If the collector requires headers, set `EXPO_PUBLIC_OTEL_HEADERS` (for example, 
 Mobile workflows load secrets from Infisical via GitHub OIDC ([`load-infisical-secrets`](../../.github/actions/load-infisical-secrets/action.yml)). Runtime env vars loaded into the app bundle:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
+- `EXPO_PUBLIC_SENTRY_RELEASE` (native release metadata, set by the iOS archive workflow)
+- `EXPO_PUBLIC_SENTRY_DIST` (native distribution metadata, set by the iOS archive workflow)
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS` (optional)
 
@@ -275,3 +283,19 @@ Workflow key requirements:
 - `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+
+Source-map and release correlation:
+
+- The signed iOS archive sets both the Sentry upload variables and the
+  `EXPO_PUBLIC_*` runtime variables from the same deployed commit and generated
+  build number. The Sentry Expo integration uploads the map from that exact
+  native archive during the Xcode build; EAS Build likewise uploads source maps
+  automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
+- The production OTA workflow pins EOAS 2.3.22 and passes its `--dump-sourcemap`
+  option, passes the same commit release into the published JavaScript runtime,
+  and makes the export emit the Hermes source maps; that final `dist` directory
+  is uploaded with
+  `sentry-expo-upload-sourcemaps`. See [EOAS's publishing implementation](https://github.com/axelmarciano/expo-open-ota/tree/main/eoas), [Expo OTA Sentry guidance](https://docs.expo.dev/guides/using-sentry/), and [Expo Hermes source maps](https://docs.expo.dev/guides/using-hermes/).
+- Keep native archive uploads and OTA uploads separate: an OTA map must be
+  uploaded from the export that produced the published update, while native
+  symbols belong to the archive build.

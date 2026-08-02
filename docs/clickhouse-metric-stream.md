@@ -90,7 +90,12 @@ rows during every provider refresh. ClickHouse documents aggregate projections
 as precomputed query data maintained on insert:
 <https://clickhouse.com/docs/data-modeling/projections>. The provider detail UI
 still treats these as raw provider-owned record counts, not deduped analytical
-sample counts.
+sample counts. The projection is keyed at provider-record grain, not a stored
+per-provider count, so an exact count can still scan a large provider's current
+IDs as the raw table grows. A projection hit alone is not proof that the query
+is bounded; use the
+[read-model deploy runbook](clickhouse-read-model-deploy-runbook.md#known-failure-provider_stats-current-state-scan-timeout)
+when `provider_stats` reaches the execution limit.
 
 ## Scalar And Location Projections
 

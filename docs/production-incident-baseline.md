@@ -21476,6 +21476,98 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   be added with an explicit `AFTER` clause; the new order-equality test guards
   the three current tables.
 
+## 2026-08-01 — PostHog audit finds analytics timeout and CI telemetry contamination
+
+- **Status:** The audit is complete and the observability fixes are implemented
+  on this branch but have not been deployed. The production analytics failure
+  remains observed pending a compact provider-count source.
+- **Symptoms:** The active-issue query for the last seven days returned 12
+  fingerprints and 1,046 occurrences with PostHog's test-account filter
+  enabled. Eight fingerprints accounted for 938 occurrences (~90%) but came
+  from `*.test.ts`, `.stryker-tmp`, or equivalent test-run paths. The remaining
+  production-looking signals included 100 analytics-build failures, six mobile
+  `TRPCClientError` events across five sessions, one invalid React element
+  event, and one PostHog transport event.
+- **User impact:** Analytics builds failed against ClickHouse, so freshness of
+  the affected read models is at risk and needs verification. Direct end-user
+  impact from the analytics failure is not quantified. The mobile network issue
+  affected one user in the sampled aggregate; the invalid-element issue affected
+  one session.
+- **Evidence:** PostHog reported the analytics issue at
+  [019fb953-9140-7980-9487-076c0b7dfbf4](https://us.posthog.com/project/347753/error_tracking/019fb953-9140-7980-9487-076c0b7dfbf4),
+  with 100 occurrences from `/app/scripts/run-analytics-build.ts`. Sampled
+  events show ClickHouse `Code: 159 TIMEOUT_EXCEEDED` after 240 seconds in
+  `provider_stats`; the issue list description also contains an
+  `activity_source_records` `Code: 407 Convert overflow`, so this fingerprint
+  is grouping at least two different dbt failure messages. The highest-volume
+  [BullMQ issue](https://us.posthog.com/project/347753/error_tracking/019fb334-b630-7d71-9180-da1992c86fb3)
+  sampled `worker.test.ts` and synthetic job IDs, confirming that the apparent
+  server volume is test telemetry. The mobile network issue is recorded at
+  [019fba1b-fca9-7252-b720-5db7a44a29b4](https://us.posthog.com/project/347753/error_tracking/019fba1b-fca9-7252-b720-5db7a44a29b4)
+  on app version `1.0.0` without symbolicated application frames.
+- **Production-log evidence:** The live `dofek_analytics-worker` and
+  `dofek_clickhouse` services were healthy, but the worker repeatedly failed
+  `provider_stats` at the 240-second boundary. ClickHouse
+  `system.query_log` recorded the 17:29:43 UTC attempt as
+  `ExceptionWhileProcessing`, Code 159, reading `52,064,019` rows and about
+  `8.87 GiB`, with roughly `750 MiB` peak memory. The
+  `by_provider_current_state` projection was present on active raw-table
+  parts, so this was not a missing-materialization failure. ClickHouse defines
+  the query evidence fields in [`system.query_log`](https://clickhouse.com/docs/operations/system-tables/query_log)
+  and projection maintenance in its [projection documentation](https://clickhouse.com/docs/data-modeling/projections).
+- **Root cause:** The current-state projection precomputes latest
+  `(user_id, provider_id, id)` tombstone state, but the exact provider count
+  still aggregates every current ID for a dirty high-cardinality provider.
+  The projection therefore reduces replacement work without making the count
+  compact or bounded as `ingest.metric_stream` grows. Observability was also
+  polluted by CI/mutation PostHog events, and the dbt wrapper grouped timeout
+  and overflow failures under one fingerprint.
+- **Fix / mitigation:** `AnalyticsBuildError` now preserves failed model,
+  error code, message, and stable category; the analytics worker sends model
+  and category tags plus a deterministic fingerprint. Mobile exceptions now
+  carry a sanitized current route, while OTA exports explicitly generate and
+  upload source maps and native releases correlate the commit/build. The
+  existing test PostHog mock and crash-only mobile autocapture changes remain
+  in place. No timeout, retry, warning-and-continue, forced projection, or
+  memory-budget workaround was added.
+- **Validation:** Focused dbt/error-context tests pass (`7` tests), mobile
+  telemetry and root-layout tests pass (`25` tests), and read-only production
+  service/query-log/projection checks reproduced the failure without changing
+  state. A last-day PostHog requery after the existing telemetry fixes showed
+  no new test-path or console-autocapture issues; the dbt timeout remained
+  visible, as expected. The operational decision tree is recorded in the
+  [ClickHouse read-model deploy runbook](clickhouse-read-model-deploy-runbook.md#known-failure-provider_stats-current-state-scan-timeout).
+- **Remaining risk / follow-up:** Production analytics freshness remains at
+  risk until a dbt-owned compact provider-count source is implemented and
+  validated against replacements and tombstones. Do not close this incident
+  after a successful retry alone; verify a `QueryFinish` row, processing marker,
+  and downstream freshness after deployment.
+
+## 2026-08-01 — Workspace Docker address pools blocked analytics lint
+
+- **Status:** Unresolved local validation environment issue; no production
+  impact.
+- **Symptoms:** The full lint pipeline passed all repository, workflow, and
+  mobile-policy gates, then analytics SQL lint could not connect because the
+  workspace ClickHouse was not running. Starting it through the required
+  Compose wrapper failed before container creation with
+  `all predefined address pools have been fully subnetted` for
+  `philadelphia-v2_default`.
+- **User impact:** Only this workspace's ClickHouse-backed SQL lint was blocked;
+  application code and production services were unaffected.
+- **Evidence:** `pnpm compose -- ps clickhouse` showed no workspace ClickHouse
+  container. `pnpm compose -- up -d clickhouse` returned the exact Docker
+  daemon network-pool error. Docker documents the configurable default address
+  pool behavior in its [bridge-network guidance](https://docs.docker.com/engine/network/drivers/default/#customize-the-default-address-pools).
+- **Root cause:** The shared Docker daemon had no remaining predefined subnet
+  available for this workspace's isolated Compose network.
+- **Fix / mitigation:** No global network deletion, prune, or other destructive
+  Docker cleanup was performed. The environment failure is reported explicitly
+  rather than treating a skipped SQL lint as success.
+- **Remaining risk / follow-up:** Rerun `pnpm lint:analytics-sql` after the
+  shared Docker network pool is repaired or an approved workspace-local network
+  is available; preserve other workspace resources while doing so.
+
 ## 2026-08-01 — Concurrent workspace Docker resources block #2199 validation
 
 - **Status:** Unresolved local infrastructure issue; no production impact.

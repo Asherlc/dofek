@@ -2,10 +2,12 @@ import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
+import type { AnalyticsRefreshStep } from "../src/analytics-worker.ts";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import { initProductionSentry } from "../src/lib/sentry.ts";
 import { logger } from "../src/logger.ts";
+import { buildAnalyticsFailureCaptureContext } from "./analytics-error-context.ts";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -58,10 +60,7 @@ async function closeServer(server: Server): Promise<void> {
 
 interface AnalyticsWorkerDependencies {
   now(): Date;
-  reportFailure(
-    error: unknown,
-    tags: { analyticsRefreshStep: "analytics-build" | "query-cache-warm" },
-  ): void;
+  reportFailure(error: unknown, tags: { analyticsRefreshStep: AnalyticsRefreshStep }): void;
   runAnalyticsBuildFromEnvironment(): Promise<void>;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
   warmQueryCacheFromEnvironment(): Promise<void>;
@@ -102,7 +101,7 @@ export async function runAnalyticsWorker(): Promise<void> {
   const worker = createAnalyticsWorkerFromEnvironment(process.env, {
     now: () => new Date(),
     reportFailure: (error, tags) => {
-      captureException(error, { tags });
+      captureException(error, buildAnalyticsFailureCaptureContext(error, tags));
       logger.error(
         `[analytics-worker] ${tags.analyticsRefreshStep} failed: ${errorMessage(error)}`,
       );
