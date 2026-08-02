@@ -199,6 +199,15 @@ export default function LoginScreen() {
   const showOAuthProviders = showIdentityProviders || showDataProviders;
   const passwordResetDisabled = loggingIn || !email.trim();
   const passwordAuthDisabled = loggingIn || !email.trim() || !password;
+  const passwordResetHint = !loggingIn && !email.trim() ? "Enter your email to continue." : null;
+  const passwordAuthHint =
+    !loggingIn && passwordAuthDisabled
+      ? !email.trim() && !password
+        ? "Enter your email and password to continue."
+        : !email.trim()
+          ? "Enter your email to continue."
+          : "Enter your password to continue."
+      : null;
   const emailValidationError =
     authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
   const passwordValidationError = passwordTouched
@@ -268,6 +277,9 @@ export default function LoginScreen() {
                         editable={!loggingIn}
                       />
                     </View>
+                    {passwordResetHint ? (
+                      <Text style={styles.disabledHint}>{passwordResetHint}</Text>
+                    ) : null}
                     <TouchableOpacity
                       style={[
                         styles.passwordButton,
@@ -277,6 +289,7 @@ export default function LoginScreen() {
                       disabled={passwordResetDisabled}
                       accessibilityRole="button"
                       accessibilityLabel="Send reset link"
+                      accessibilityHint={passwordResetHint ?? undefined}
                       accessibilityState={{
                         busy: loggingIn,
                         disabled: passwordResetDisabled,
@@ -460,6 +473,9 @@ export default function LoginScreen() {
                         <Text style={styles.forgotPasswordText}>Forgot password?</Text>
                       </TouchableOpacity>
                     ) : null}
+                    {passwordAuthHint ? (
+                      <Text style={styles.disabledHint}>{passwordAuthHint}</Text>
+                    ) : null}
                     <TouchableOpacity
                       style={[
                         styles.passwordButton,
@@ -473,6 +489,7 @@ export default function LoginScreen() {
                           ? "Create account and continue"
                           : "Sign in with email"
                       }
+                      accessibilityHint={passwordAuthHint ?? undefined}
                       accessibilityState={{
                         busy: loggingIn,
                         disabled: passwordAuthDisabled,
@@ -690,6 +707,10 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   fieldHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  disabledHint: {
     color: colors.textSecondary,
     fontSize: 12,
   },

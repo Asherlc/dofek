@@ -100,7 +100,11 @@ function PasswordResetForm({ token }: { token: string }) {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+          submitting
+            ? "bg-surface-hover text-muted cursor-not-allowed"
+            : "bg-emerald-600 text-white hover:bg-emerald-500"
+        }`}
       >
         {submitting ? "Resetting..." : "Reset password"}
       </button>

@@ -39,6 +39,7 @@ const trendRowSchema = z.object({
   latest_steps: z.number().nullable(),
   latest_skin_temp: z.number().nullable(),
   latest_date: z.string().nullable(),
+  restingHeartRateTrendLabel: z.string(),
   baselineRelative: z.array(baselineRelativeMetricSchema),
   healthStatus: z.array(healthStatusMetricSchema),
 });
@@ -182,6 +183,9 @@ export function Dashboard() {
   }, [insightsQuery.data]);
 
   const healthMetrics = useMemo(() => buildHealthMetrics(trendData), [trendData]);
+  const restingHeartRateStatus = healthMetrics.find(
+    (metric) => metric.metric === "resting_heart_rate",
+  );
   const restingHeartRatePoints = useMemo(
     () =>
       restingHeartRateRows.flatMap((row) =>
@@ -263,6 +267,8 @@ export function Dashboard() {
         trend={{
           latestRestingHeartRate: trendData?.latest_resting_hr,
           averageRestingHeartRate: trendData?.avg_resting_hr,
+          restingHeartRateTrendLabel: trendData?.restingHeartRateTrendLabel,
+          restingHeartRateBaselineProgress: restingHeartRateStatus?.baselineProgress,
           restingHeartRatePoints,
         }}
         restingHeartRateLoading={heartRateBaseline.isLoading}

@@ -69,6 +69,11 @@ export const trendsRowSchema = z.object({
   latest_spo2: z.coerce.number().nullable(),
   latest_steps: z.coerce.number().nullable(),
   latest_skin_temp: z.coerce.number().nullable(),
+  sample_count_hrv: z.coerce.number().int().nonnegative(),
+  sample_count_resting_hr: z.coerce.number().int().nonnegative(),
+  sample_count_spo2: z.coerce.number().int().nonnegative(),
+  sample_count_steps: z.coerce.number().int().nonnegative(),
+  sample_count_skin_temp: z.coerce.number().int().nonnegative(),
   latest_date: dateStringSchema.nullable(),
   latest_steps_date: dateStringSchema.nullable(),
 });
@@ -243,7 +248,12 @@ export class DailyMetricsRepository extends BaseRepository {
               STDDEV(resting_hr) AS stddev_resting_hr,
               STDDEV(spo2_avg) AS stddev_spo2,
               STDDEV(steps) AS stddev_steps,
-              STDDEV(skin_temp_c) AS stddev_skin_temp
+              STDDEV(skin_temp_c) AS stddev_skin_temp,
+              COUNT(hrv) AS sample_count_hrv,
+              COUNT(*) FILTER (WHERE resting_hr > 0) AS sample_count_resting_hr,
+              COUNT(spo2_avg) AS sample_count_spo2,
+              COUNT(steps) AS sample_count_steps,
+              COUNT(skin_temp_c) AS sample_count_skin_temp
             FROM current
           ),
           representative_resting_heart_rate AS (
