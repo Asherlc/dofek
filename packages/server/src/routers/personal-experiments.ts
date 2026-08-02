@@ -2,6 +2,7 @@ import { CORRELATION_METRICS } from "@dofek/stats/correlation";
 import { TRPCError } from "@trpc/server";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import { isKnownOutcomeMetricId } from "../personal-experiments/experiment-schedule.ts";
 import { PersonalExperimentsRepository } from "../repositories/personal-experiments-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -53,6 +54,122 @@ const metricOptionSchema = z.object({
   domain: z.string(),
 });
 
+const adherenceSchema = z.enum(["adherent", "partial", "not_adherent", "unknown"]);
+
+const checkInInputSchema = z.object({
+  id: z.guid(),
+  date: dateStringSchema,
+  adherence: adherenceSchema,
+  confounder: z.string().trim().min(1).nullable().default(null),
+  note: z.string().trim().min(1).nullable().default(null),
+});
+
+const checkInViewSchema = z.object({
+  id: z.string(),
+  date: dateStringSchema,
+  adherence: adherenceSchema,
+  confounder: z.string().nullable(),
+  note: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+const outcomeObservationSchema = z.object({
+  phase: z.enum(["baseline", "intervention"]),
+  phaseDate: dateStringSchema,
+  outcomeDate: dateStringSchema,
+  value: z.number().nullable(),
+  adherence: adherenceSchema.nullable(),
+  confounder: z.string().nullable(),
+  note: z.string().nullable(),
+  sourceProviderIds: z.array(z.string()),
+});
+
+const phaseCoverageSchema = z.object({
+  expectedDayCount: z.number().int().nonnegative(),
+  observedOutcomeDayCount: z.number().int().nonnegative(),
+  missingOutcomeDayCount: z.number().int().nonnegative(),
+  checkInCount: z.number().int().nonnegative(),
+  adherenceCounts: z.object({
+    adherent: z.number().int().nonnegative(),
+    partial: z.number().int().nonnegative(),
+    not_adherent: z.number().int().nonnegative(),
+    unknown: z.number().int().nonnegative(),
+  }),
+});
+
+const uncertaintySchema = z.union([
+  z.object({
+    availability: z.literal("available"),
+    method: z.literal("circular_moving_block_bootstrap"),
+    level: z.literal(0.95),
+    blockLength: z.number().int().positive(),
+    requestedReplicateCount: z.literal(2_000),
+    attemptedReplicateCount: z.number().int().nonnegative(),
+    validReplicateCount: z.number().int().nonnegative(),
+    lower: z.number(),
+    upper: z.number(),
+  }),
+  z.object({
+    availability: z.literal("unavailable"),
+    method: z.literal("circular_moving_block_bootstrap"),
+    level: z.literal(0.95),
+    blockLength: z.number().int().nonnegative(),
+    requestedReplicateCount: z.literal(2_000),
+    attemptedReplicateCount: z.number().int().nonnegative(),
+    validReplicateCount: z.number().int().nonnegative(),
+    reason: z.enum([
+      "empty_input",
+      "degenerate_input",
+      "insufficient_valid_replicates",
+      "insufficient_outcomes",
+    ]),
+  }),
+]);
+
+const experimentAnalysisSchema = z.discriminatedUnion("availability", [
+  z.object({
+    availability: z.literal("available"),
+    observations: z.array(outcomeObservationSchema),
+    coverage: z.object({ baseline: phaseCoverageSchema, intervention: phaseCoverageSchema }),
+    effect: z.object({
+      baselineMean: z.number(),
+      interventionMean: z.number(),
+      differenceInMeans: z.number(),
+      baselineSampleCount: z.number().int().min(5),
+      interventionSampleCount: z.number().int().min(5),
+    }),
+    uncertainty: uncertaintySchema,
+    limitations: z.array(z.string()),
+  }),
+  z.object({
+    availability: z.literal("insufficient"),
+    observations: z.array(outcomeObservationSchema),
+    coverage: z.object({ baseline: phaseCoverageSchema, intervention: phaseCoverageSchema }),
+    effect: z.null(),
+    uncertainty: uncertaintySchema,
+    limitations: z.array(z.string()),
+  }),
+]);
+
+const personalExperimentAnalysisViewSchema = z.object({
+  outcomeMetricId: z.string(),
+  outcomeMetricLabel: z.string(),
+  checkIns: z.array(checkInViewSchema),
+  annotations: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      startedAt: dateStringSchema,
+      endedAt: dateStringSchema.nullable(),
+      category: z.string().nullable(),
+      ongoing: z.boolean(),
+      notes: z.string().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
+  analysis: experimentAnalysisSchema,
+});
+
 export const personalExperimentsRouter = router({
   metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.void())
@@ -89,6 +206,21 @@ export const personalExperimentsRouter = router({
       return experiment;
     }),
 
+  analysis: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.object({ id: z.guid() }))
+    .output(personalExperimentAnalysisViewSchema)
+    .query(async ({ ctx, input }) => {
+      const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const analysis = await repository.analyze(input.id, ctx.sensorStore);
+      if (!analysis) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "That experiment was not found. It may have been deleted.",
+        });
+      }
+      return analysis;
+    }),
+
   create: protectedProcedure
     .input(createInputSchema)
     .output(personalExperimentViewSchema)
@@ -122,5 +254,21 @@ export const personalExperimentsRouter = router({
       }
       await invalidateUserQueryDomains(ctx.userId, ["personalExperiments"]);
       return experiment;
+    }),
+
+  checkIn: protectedProcedure
+    .input(checkInInputSchema)
+    .output(checkInViewSchema)
+    .mutation(async ({ ctx, input }) => {
+      const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const checkIn = await repository.upsertCheckIn(input.id, input);
+      if (!checkIn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "That experiment was not found. It may have been deleted.",
+        });
+      }
+      await invalidateUserQueryDomains(ctx.userId, ["personalExperiments"]);
+      return checkIn;
     }),
 });

@@ -60,6 +60,7 @@ describe("LifeEventsRepository", () => {
           category: "supplement",
           ongoing: true,
           notes: "5g daily",
+          personal_experiment_id: "11111111-1111-4111-8111-111111111111",
           created_at: "2025-01-15T10:00:00Z",
         },
       ]);
@@ -73,6 +74,7 @@ describe("LifeEventsRepository", () => {
         category: "supplement",
         ongoing: true,
         notes: "5g daily",
+        personal_experiment_id: "11111111-1111-4111-8111-111111111111",
         created_at: "2025-01-15T10:00:00.000Z",
       });
     });
@@ -96,6 +98,7 @@ describe("LifeEventsRepository", () => {
           category: "injury",
           ongoing: false,
           notes: "ACL repair",
+          personal_experiment_id: null,
           created_at: "2025-03-01T08:00:00Z",
         },
       ]);
@@ -123,6 +126,7 @@ describe("LifeEventsRepository", () => {
           category: null,
           ongoing: false,
           notes: null,
+          personal_experiment_id: null,
           created_at: "2025-06-01T00:00:00Z",
         },
       ]);
@@ -172,6 +176,7 @@ describe("LifeEventsRepository", () => {
           category: "supplement",
           ongoing: true,
           notes: null,
+          personal_experiment_id: null,
           created_at: "2025-01-15T10:00:00Z",
         },
       ]);
@@ -197,6 +202,7 @@ describe("LifeEventsRepository", () => {
           category: null,
           ongoing: false,
           notes: null,
+          personal_experiment_id: null,
           created_at: "2025-01-01T00:00:00Z",
         },
       ]);

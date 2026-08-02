@@ -547,6 +547,13 @@
       "when": 1785360700000,
       "tag": "0066_sleep_staging_available",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1785360800000,
+      "tag": "0067_personal_experiment_learning_loop",
+      "breakpoints": true
     }
   ]
 }

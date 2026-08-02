@@ -297,7 +297,7 @@ table fitness.oauth_token {
 
   indexes {
     (user_id, provider_id) [pk]
-
+    
     provider_id [name: 'oauth_token_provider_idx']
     user_id [name: 'oauth_token_user_idx']
   }
@@ -403,7 +403,7 @@ table fitness.webhook_subscription {
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     provider_name [name: 'webhook_subscription_app_provider_name_idx', unique]
     (user_id, provider_id) [name: 'webhook_subscription_user_provider_idx', unique]
     provider_name [name: 'webhook_subscription_provider_name_idx']
@@ -423,8 +423,8 @@ table fitness.activity {
   perceived_exertion real
   source_name text
   timezone text
-  start_utc_offset_minutes smallint
-  end_utc_offset_minutes smallint
+  start_utc_offset_minutes bigint
+  end_utc_offset_minutes bigint
   local_time_source text [not null, default: 'unknown']
   strava_id text
   raw jsonb
@@ -435,7 +435,7 @@ table fitness.activity {
   indexes {
     (user_id, provider_id, external_id) [name: 'activity_provider_external_idx', unique]
     (user_id, provider_id) [name: 'activity_user_provider_idx']
-
+    
   }
 }
 
@@ -466,9 +466,9 @@ table fitness.climbing_attempt {
   indexes {
     climbing_entry_id [name: 'climbing_attempt_entry_idx']
     (climbing_entry_id, attempt_index) [name: 'climbing_attempt_entry_index_idx', unique]
-
-
-
+    
+    
+    
   }
 }
 
@@ -493,14 +493,14 @@ table fitness.climbing_entry {
     activity_id [name: 'climbing_entry_activity_idx']
     (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
     (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
-
-
-
-
-
-
-
-
+    
+    
+    
+    
+    
+    
+    
+    
   }
 }
 
@@ -579,13 +579,13 @@ table fitness.finger_loading_entry {
 
   indexes {
     activity_id [name: 'finger_loading_entry_activity_idx']
-
-
-
-
-
-
-
+    
+    
+    
+    
+    
+    
+    
   }
 }
 
@@ -611,15 +611,15 @@ table fitness.sleep_session {
   sleep_need_from_nap_minutes integer
   source_name text
   timezone text
-  start_utc_offset_minutes smallint
-  end_utc_offset_minutes smallint
+  start_utc_offset_minutes bigint
+  end_utc_offset_minutes bigint
   local_time_source text [not null, default: 'unknown']
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     (user_id, provider_id, external_id) [name: 'sleep_session_provider_external_idx', unique]
     (user_id, provider_id) [name: 'sleep_session_user_provider_idx']
-
+    
   }
 }
 
@@ -763,13 +763,13 @@ table fitness.supplement_definition {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     (id, supplement_id) [name: 'supplement_definition_identity_key', unique]
     supersedes_definition_id [name: 'supplement_definition_supersedes_key', unique]
     supplement_id [name: 'supplement_definition_active_idx', unique]
     (supplement_id, effective_from, effective_to) [name: 'supplement_definition_effective_idx']
-
-
+    
+    
   }
 }
 
@@ -800,16 +800,16 @@ table fitness.supplement_dose_event {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
-
-
+    
+    
+    
     (id, user_id, supplement_id, definition_id, scheduled_date) [name: 'supplement_dose_event_slot_identity_key', unique]
     supersedes_event_id [name: 'supplement_dose_event_successor_key', unique]
     (user_id, supplement_id, scheduled_date) [name: 'supplement_dose_event_root_key', unique]
     (user_id, provider_id, external_id) [name: 'supplement_dose_event_provider_external_idx', unique]
     (user_id, scheduled_date) [name: 'supplement_dose_event_user_date_idx']
     supplement_id [name: 'supplement_dose_event_supplement_idx']
-
+    
   }
 }
 
@@ -1003,7 +1003,7 @@ table fitness.companion_token {
   revoked_at "timestamp with time zone"
 
   indexes {
-
+    
     (user_id, connection_type) [name: 'companion_token_user_connection_type_idx', unique]
   }
 }
@@ -1089,7 +1089,7 @@ table fitness.mcp_oauth_refresh_token {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     (client_id, revoked_at, expires_at) [name: 'mcp_oauth_refresh_token_active_idx']
     parent_refresh_token_id [name: 'mcp_oauth_refresh_token_parent_idx']
   }
@@ -1185,9 +1185,9 @@ table fitness.breathwork_session {
   indexes {
     user_id [name: 'breathwork_session_user_idx']
     started_at [name: 'breathwork_session_started_at_idx']
-
-
-
+    
+    
+    
   }
 }
 
@@ -1277,14 +1277,14 @@ table fitness.file_upload {
     import_job_id [name: 'file_upload_import_job_id_key', unique]
     (user_id, updated_at) [name: 'file_upload_owner_updated_idx']
     (state, expires_at, updated_at) [name: 'file_upload_reconcile_idx']
-
-
-
-
-
-
-
-
+    
+    
+    
+    
+    
+    
+    
+    
   }
 }
 
@@ -1303,7 +1303,7 @@ table fitness.file_upload_outbox {
     upload_id [name: 'file_upload_outbox_upload_id_key', unique]
     import_job_id [name: 'file_upload_outbox_import_job_id_key', unique]
     (status, created_at) [name: 'file_upload_outbox_dispatch_idx']
-
+    
   }
 }
 
@@ -1366,6 +1366,7 @@ table fitness.life_events {
   category text
   ongoing boolean [not null, default: false]
   notes text
+  personal_experiment_id uuid
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
@@ -1404,14 +1405,31 @@ table fitness.personal_experiment {
   indexes {
     (user_id, created_at) [name: 'personal_experiment_user_created_idx']
     (user_id, status) [name: 'personal_experiment_user_status_idx']
+    
+    
+    
+    
+    
+    
+    
+    
+  }
+}
 
+table fitness.personal_experiment_check_in {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  personal_experiment_id uuid [not null]
+  date date [not null]
+  adherence text [not null]
+  confounder text
+  note text
+  created_at "timestamp with time zone" [not null, default: `now()`]
 
-
-
-
-
-
-
+  indexes {
+    (personal_experiment_id, date) [name: 'personal_experiment_check_in_experiment_date_unique', unique]
+    
+    
+    
   }
 }
 
@@ -1429,8 +1447,8 @@ table fitness.provider_data_deletion_outbox {
 
   indexes {
     (status, created_at) [name: 'provider_data_deletion_outbox_dispatch_idx']
-
-
+    
+    
   }
 }
 
@@ -1442,7 +1460,7 @@ table fitness.provider_data_generation {
 
   indexes {
     (user_id, provider_id) [pk]
-
+    
   }
 }
 
@@ -1490,7 +1508,7 @@ table fitness.processing_flow_marker {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     (operation_id, dataset_key, flow_name, batch_key) [name: 'processing_flow_marker_operation_dataset_flow', unique]
     source_watermark [name: 'processing_flow_marker_watermark_idx']
   }
@@ -1505,10 +1523,10 @@ table fitness.processing_metric_stream_batch {
   published_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     (operation_id, batch_id) [name: 'processing_metric_stream_batch_key', unique]
-
-
+    
+    
   }
 }
 
@@ -1522,11 +1540,11 @@ table fitness.processing_operation {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     (user_id, kind, external_correlation_key) [name: 'processing_operation_correlation_key', unique]
     (user_id, created_at, id) [name: 'processing_operation_user_created_idx']
-
-
+    
+    
   }
 }
 
@@ -1538,9 +1556,9 @@ table fitness.processing_operation_output {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-
+    
     (operation_id, dataset_key, output_path) [name: 'processing_operation_output_key', unique]
-
+    
   }
 }
 
@@ -1554,10 +1572,10 @@ table fitness.processing_queue_outbox {
   dispatched_at "timestamp with time zone"
 
   indexes {
-
+    
     (queue_name, job_id) [name: 'processing_queue_outbox_job_key', unique]
     (status, created_at) [name: 'processing_queue_outbox_dispatch_idx']
-
+    
   }
 }
 
@@ -1582,15 +1600,15 @@ table fitness.processing_stage_event {
   idempotency_key text [not null]
 
   indexes {
-
+    
     (operation_id, stage, dataset_key, output_path, model_name, status, idempotency_key) [name: 'processing_stage_event_idempotency_key', unique]
     (operation_id, sequence) [name: 'processing_stage_event_operation_sequence_idx']
     (dataset_key, sequence) [name: 'processing_stage_event_dataset_sequence_idx']
-
-
-
-
-
+    
+    
+    
+    
+    
   }
 }
 
@@ -1750,9 +1768,13 @@ ref journal_entry_question_slug_journal_question_slug_fk: fitness.journal_entry.
 
 ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
+ref life_events_personal_experiment_id_personal_experiment_id_fk: fitness.life_events.personal_experiment_id > fitness.personal_experiment.id [delete: set null, update: no action]
+
 ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref personal_experiment_user_id_user_profile_id_fk: fitness.personal_experiment.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref personal_experiment_check_in_personal_experiment_id_personal_experiment_id_fk: fitness.personal_experiment_check_in.personal_experiment_id > fitness.personal_experiment.id [delete: cascade, update: no action]
 
 ref provider_data_deletion_outbox_user_id_user_profile_id_fk: fitness.provider_data_deletion_outbox.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

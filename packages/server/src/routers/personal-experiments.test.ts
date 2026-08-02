@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockCachedProtectedQuery, mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
-  mockCachedProtectedQuery: vi.fn(),
-  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockCachedProtectedQuery, mockInvalidateUserQueryDomains, mockListMetricOutcomes } =
+  vi.hoisted(() => ({
+    mockCachedProtectedQuery: vi.fn(),
+    mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+    mockListMetricOutcomes: vi.fn(),
+  }));
 
 vi.mock("dofek/lib/cache", () => ({
   invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
+
+vi.mock("../repositories/correlation-repository.ts", () => ({
+  CorrelationRepository: class {
+    listMetricOutcomes = mockListMetricOutcomes;
+  },
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -15,6 +23,9 @@ vi.mock("../trpc.ts", async () => {
   const trpc = initTRPC
     .context<{
       db: unknown;
+      sensorStore: {
+        query: (schema: unknown, query: string, params: unknown) => Promise<unknown[]>;
+      };
       userId: string | null;
       timezone: string;
     }>()
@@ -67,9 +78,16 @@ const sampleRow = {
   created_at: "2026-07-01T10:00:00Z",
 };
 
-function makeCaller(rows: Record<string, unknown>[] = []) {
+function makeCaller(rows: Record<string, unknown>[] | Record<string, unknown>[][] = []) {
+  const execute = vi.fn();
+  if (Array.isArray(rows[0])) {
+    for (const response of rows) execute.mockResolvedValueOnce(response);
+  } else {
+    execute.mockResolvedValue(rows);
+  }
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+    db: { execute },
+    sensorStore: { query: vi.fn() },
     userId: "user-1",
     timezone: "UTC",
   });
@@ -78,11 +96,17 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 describe("personalExperimentsRouter", () => {
   beforeEach(() => {
     mockInvalidateUserQueryDomains.mockClear();
+    mockListMetricOutcomes.mockReset();
   });
 
   it("uses long cache for metrics and short caches for experiment reads", () => {
     const policies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
-    expect(policies).toEqual([{ maxAge: 3_600_000 }, { maxAge: 120_000 }, { maxAge: 120_000 }]);
+    expect(policies).toEqual([
+      { maxAge: 3_600_000 },
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+    ]);
   });
 
   it("lists catalog metrics for experiment setup forms", async () => {
@@ -144,6 +168,31 @@ describe("personalExperimentsRouter", () => {
     expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalExperiments"]);
   });
 
+  it("records a daily check-in and invalidates the experiment cache domain", async () => {
+    const caller = makeCaller([
+      {
+        id: "check-in-1",
+        personal_experiment_id: experimentId,
+        date: "2026-07-08",
+        adherence: "adherent",
+        confounder: null,
+        note: "Lights out at 10pm",
+        created_at: "2026-07-08T10:00:00Z",
+      },
+    ]);
+
+    const result = await caller.checkIn({
+      id: experimentId,
+      date: "2026-07-08",
+      adherence: "adherent",
+      confounder: null,
+      note: "Lights out at 10pm",
+    });
+
+    expect(result).toMatchObject({ date: "2026-07-08", adherence: "adherent" });
+    expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalExperiments"]);
+  });
+
   it("lists enriched experiments", async () => {
     const caller = makeCaller([sampleRow]);
     const result = await caller.list();
@@ -160,5 +209,94 @@ describe("personalExperimentsRouter", () => {
     await expect(missingCaller.get({ id: experimentId })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+
+  it("returns server-derived canonical outcome evidence for an experiment", async () => {
+    mockListMetricOutcomes.mockResolvedValue([
+      { date: "2026-07-02", value: 10, sourceProviderIds: ["oura"] },
+      { date: "2026-07-03", value: 12, sourceProviderIds: ["oura"] },
+      { date: "2026-07-04", value: 14, sourceProviderIds: ["oura"] },
+      { date: "2026-07-05", value: 16, sourceProviderIds: ["oura"] },
+      { date: "2026-07-06", value: 18, sourceProviderIds: ["oura"] },
+      { date: "2026-07-09", value: 20, sourceProviderIds: ["oura"] },
+      { date: "2026-07-10", value: 21, sourceProviderIds: ["oura"] },
+      { date: "2026-07-11", value: 22, sourceProviderIds: ["oura"] },
+      { date: "2026-07-12", value: 23, sourceProviderIds: ["oura"] },
+      { date: "2026-07-13", value: 24, sourceProviderIds: ["oura"] },
+    ]);
+    const caller = makeCaller([
+      [{ ...sampleRow, baseline_days: 5, intervention_days: 7 }],
+      [
+        {
+          id: "check-in-1",
+          personal_experiment_id: experimentId,
+          date: "2026-07-08",
+          adherence: "adherent",
+          confounder: null,
+          note: null,
+          created_at: "2026-07-08T10:00:00Z",
+        },
+        {
+          id: "check-in-2",
+          personal_experiment_id: experimentId,
+          date: "2026-07-09",
+          adherence: "partial",
+          confounder: "Late flight",
+          note: null,
+          created_at: "2026-07-09T10:00:00Z",
+        },
+        {
+          id: "check-in-3",
+          personal_experiment_id: experimentId,
+          date: "2026-07-10",
+          adherence: "adherent",
+          confounder: null,
+          note: null,
+          created_at: "2026-07-10T10:00:00Z",
+        },
+        {
+          id: "check-in-4",
+          personal_experiment_id: experimentId,
+          date: "2026-07-11",
+          adherence: "partial",
+          confounder: null,
+          note: null,
+          created_at: "2026-07-11T10:00:00Z",
+        },
+        {
+          id: "check-in-5",
+          personal_experiment_id: experimentId,
+          date: "2026-07-12",
+          adherence: "adherent",
+          confounder: null,
+          note: null,
+          created_at: "2026-07-12T10:00:00Z",
+        },
+      ],
+      [
+        {
+          id: "event-1",
+          label: "Late flight",
+          started_at: "2026-07-09",
+          ended_at: null,
+          category: "lifestyle",
+          ongoing: false,
+          notes: "Arrived after midnight",
+          created_at: "2026-07-09T10:00:00Z",
+        },
+      ],
+    ]);
+
+    const result = await caller.analysis({ id: experimentId });
+
+    expect(result).toMatchObject({
+      outcomeMetricId: "hrv",
+      analysis: {
+        availability: "available",
+        effect: { differenceInMeans: 8, baselineSampleCount: 5, interventionSampleCount: 5 },
+      },
+      annotations: [{ id: "event-1", label: "Late flight" }],
+    });
+    expect(result.analysis.observations).toHaveLength(12);
   });
 });

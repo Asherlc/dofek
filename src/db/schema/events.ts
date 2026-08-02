@@ -253,6 +253,9 @@ export const lifeEvents = fitness.table(
     category: text("category"),
     ongoing: boolean("ongoing").notNull().default(false),
     notes: text("notes"),
+    personalExperimentId: uuid("personal_experiment_id").references(() => personalExperiment.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("life_events_started_at_idx").on(table.startedAt)],
@@ -296,6 +299,39 @@ export const personalExperiment = fitness.table(
     check(
       "personal_experiment_stopped_at_consistent",
       sql`(${table.status} = 'active' AND ${table.stoppedAt} IS NULL) OR (${table.status} = 'stopped' AND ${table.stoppedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const personalExperimentCheckIn = fitness.table(
+  "personal_experiment_check_in",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personalExperimentId: uuid("personal_experiment_id")
+      .notNull()
+      .references(() => personalExperiment.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    adherence: text("adherence").notNull(),
+    confounder: text("confounder"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("personal_experiment_check_in_experiment_date_unique").on(
+      table.personalExperimentId,
+      table.date,
+    ),
+    check(
+      "personal_experiment_check_in_adherence_valid",
+      sql`${table.adherence} IN ('adherent', 'partial', 'not_adherent', 'unknown')`,
+    ),
+    check(
+      "personal_experiment_check_in_confounder_nonempty",
+      sql`${table.confounder} IS NULL OR btrim(${table.confounder}) <> ''`,
+    ),
+    check(
+      "personal_experiment_check_in_note_nonempty",
+      sql`${table.note} IS NULL OR btrim(${table.note}) <> ''`,
     ),
   ],
 );

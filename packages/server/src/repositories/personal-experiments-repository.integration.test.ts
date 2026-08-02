@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { LifeEventsRepository } from "./life-events-repository.ts";
 import { PersonalExperimentsRepository } from "./personal-experiments-repository.ts";
 
 describe("PersonalExperimentsRepository integration", () => {
@@ -67,5 +68,83 @@ describe("PersonalExperimentsRepository integration", () => {
 
     const alreadyStopped = await repository.stop(created.id);
     expect(alreadyStopped).toBeNull();
+  });
+
+  it("upserts one raw check-in per experiment day and keeps linked annotations after deletion", async () => {
+    const experiments = new PersonalExperimentsRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "America/Los_Angeles",
+    );
+    const lifeEvents = new LifeEventsRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "America/Los_Angeles",
+    );
+    const experiment = await experiments.create({
+      hypothesis: "Does a bedtime change improve HRV?",
+      intervention: "Lights out by 10pm",
+      outcomeMetricId: "hrv",
+      lagDays: 0,
+      baselineDays: 7,
+      interventionDays: 14,
+      startDate: "2099-02-01",
+    });
+    let annotationId: string | null = null;
+
+    try {
+      await experiments.upsertCheckIn(experiment.id, {
+        date: "2099-02-08",
+        adherence: "adherent",
+        confounder: "Late meal",
+        note: "First entry",
+      });
+      const current = await experiments.upsertCheckIn(experiment.id, {
+        date: "2099-02-08",
+        adherence: "partial",
+        confounder: null,
+        note: "Updated entry",
+      });
+
+      expect(current).toMatchObject({
+        personalExperimentId: experiment.id,
+        date: "2099-02-08",
+        adherence: "partial",
+        confounder: null,
+        note: "Updated entry",
+      });
+      const checkIns = await testContext.db.execute(
+        sql`SELECT adherence, confounder, note
+            FROM fitness.personal_experiment_check_in
+            WHERE personal_experiment_id = ${experiment.id} AND date = '2099-02-08'::date`,
+      );
+      expect(checkIns).toEqual([{ adherence: "partial", confounder: null, note: "Updated entry" }]);
+
+      const annotation = await lifeEvents.create({
+        label: "Travel",
+        startedAt: "2099-02-08",
+        endedAt: null,
+        category: null,
+        ongoing: false,
+        notes: "Different time zone",
+        personalExperimentId: experiment.id,
+      });
+      annotationId = annotation.id;
+      expect(annotation.personal_experiment_id).toBe(experiment.id);
+
+      await testContext.db.execute(
+        sql`DELETE FROM fitness.personal_experiment WHERE id = ${experiment.id}`,
+      );
+      const annotations = await lifeEvents.list();
+      expect(annotations.find((event) => event.id === annotation.id)).toMatchObject({
+        personal_experiment_id: null,
+      });
+    } finally {
+      if (annotationId) {
+        await testContext.db.execute(
+          sql`DELETE FROM fitness.life_events WHERE id = ${annotationId}`,
+        );
+      }
+    }
   });
 });

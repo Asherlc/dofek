@@ -1623,4 +1623,19 @@ describe("CorrelationRepository", () => {
       });
     });
   });
+
+  describe("listMetricOutcomes", () => {
+    it("returns only observed canonical metric values with their resolved provider provenance", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce([
+        makeJoinedDay({ date: "2026-01-02", hrv: 45 }),
+        makeJoinedDay({ date: "2026-01-03", hrv: null }),
+      ]);
+      const { db, sensorStore } = makeCorrelationEvidenceSources();
+      const repository = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
+
+      await expect(repository.listMetricOutcomes("hrv", 30, "2026-01-03")).resolves.toEqual([
+        { date: "2026-01-02", value: 45, sourceProviderIds: ["garmin", "oura"] },
+      ]);
+    });
+  });
 });
