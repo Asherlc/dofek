@@ -5,6 +5,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
@@ -34,7 +35,6 @@ import {
 import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
-import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 
 type AuthMode = "login" | "register" | "reset";
 

@@ -5,6 +5,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PasswordInput } from "../components/PasswordInput.tsx";
@@ -17,7 +18,6 @@ import {
   requestPasswordReset,
 } from "../lib/auth.ts";
 import { captureException } from "../lib/telemetry.ts";
-import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 
 type AuthMode = "login" | "register" | "reset";
 
