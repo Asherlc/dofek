@@ -2,6 +2,7 @@ import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Polyline } from "react-native-svg";
 import { colors } from "../../theme";
+import { AccessibleChart } from "../AccessibleChart";
 
 const HEART_RATE_RED = "#ff453a";
 const DOMAIN_MIN = 30;
@@ -67,7 +68,7 @@ export function HeartRateChart({
     })
     .join(" ");
 
-  return (
+  const chart = (
     <View
       style={[
         styles.container,
@@ -116,6 +117,19 @@ export function HeartRateChart({
         })}
       </View>
     </View>
+  );
+
+  return (
+    <AccessibleChart
+      title="Heart rate"
+      summary="Heart rate over the recorded sample sequence."
+      rows={data.map((heartRate, sampleIndex) => ({
+        label: `Sample ${sampleIndex + 1}`,
+        value: `${heartRate} beats per minute`,
+      }))}
+    >
+      {chart}
+    </AccessibleChart>
   );
 }
 

@@ -1,5 +1,5 @@
 import { UnitConverter } from "@dofek/format/units";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { VerticalAscentChart, type VerticalAscentDataPoint } from "./VerticalAscentChart";
 
@@ -37,6 +37,21 @@ describe("VerticalAscentChart", () => {
     );
     const circles = container.querySelectorAll("circle");
     expect(circles).toHaveLength(SAMPLE_DATA.length);
+  });
+
+  it("provides a VoiceOver summary and exact activity values", () => {
+    render(<VerticalAscentChart data={SAMPLE_DATA} units={METRIC} width={360} />);
+
+    expect(
+      screen.getByRole("image", {
+        name: "Vertical ascent rate. Vertical ascent rate by activity; bubble size represents elevation gain.",
+      }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "View Vertical ascent rate data" }));
+    expect(screen.getByText("Mountain Ride")).toBeDefined();
+    expect(screen.getByText(/800 meters per hour/)).toBeDefined();
+    expect(screen.getByText("Hill Repeats")).toBeDefined();
+    expect(screen.getByText(/1200 meters per hour/)).toBeDefined();
   });
 
   it("uses stable colors for each cycling type", () => {

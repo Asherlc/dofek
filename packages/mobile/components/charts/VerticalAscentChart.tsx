@@ -9,6 +9,7 @@ import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 import { colors } from "../../theme";
+import { AccessibleChart } from "../AccessibleChart";
 
 export interface VerticalAscentDataPoint {
   date: string;
@@ -111,7 +112,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
 
   const svgHeight = CHART_HEIGHT + PADDING.top + PADDING.bottom;
 
-  return (
+  const chart = (
     <View onLayout={onLayout}>
       <Svg width={containerWidth} height={svgHeight}>
         {/* Y-axis */}
@@ -220,6 +221,21 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
         Bubble size indicates elevation gain. Higher = stronger climbing.
       </Text>
     </View>
+  );
+
+  const elevationUnit = elevationLabel === "ft" ? "feet" : "meters";
+
+  return (
+    <AccessibleChart
+      title="Vertical ascent rate"
+      summary="Vertical ascent rate by activity; bubble size represents elevation gain."
+      rows={points.map((point) => ({
+        label: point.activityName,
+        value: `${formatDateShort(point.date)} · ${formatNumber(point.displayVam, 0)} ${elevationUnit} per hour · ${formatNumber(point.displayGain, 0)} ${elevationUnit} elevation gain · ${formatNumber(point.elapsedMinutes, 0)} minutes`,
+      }))}
+    >
+      {chart}
+    </AccessibleChart>
   );
 }
 
