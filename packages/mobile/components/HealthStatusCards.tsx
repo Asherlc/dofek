@@ -1,6 +1,10 @@
 import { providerLabel } from "@dofek/providers/providers";
-import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
-import { StyleSheet, Text, View } from "react-native";
+import type {
+  HealthMetricProvenance,
+  HealthStatusMetric,
+} from "dofek-server/mobile-dashboard-contracts";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 interface HealthStatusCardsProps {
@@ -35,11 +39,25 @@ function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
   return "×";
 }
 
+function provenanceSourceText(provenance: HealthMetricProvenance): string {
+  const sourceLabels = provenance.sourceProviders.map(providerLabel);
+  return sourceLabels.length > 0 ? sourceLabels.join(", ") : "Unknown source";
+}
+
+function provenanceSummaryText(provenance: HealthMetricProvenance): string {
+  const latestText = provenance.latestDate
+    ? `latest ${provenance.latestDate}`
+    : "latest unavailable";
+  return `${provenanceSourceText(provenance)} · ${provenance.observedDays}/${provenance.windowDays} days · ${latestText}`;
+}
+
 export function HealthStatusCards({
   metrics,
   formatValue,
   formatComparisonValue,
 }: HealthStatusCardsProps) {
+  const [expandedMetric, setExpandedMetric] = useState<HealthStatusMetric["metric"] | null>(null);
+
   if (metrics.length === 0) return null;
 
   return (
@@ -47,6 +65,8 @@ export function HealthStatusCards({
       <Text style={styles.heading}>HEALTH STATUS</Text>
       {metrics.map((metric) => {
         const baseline = metric.baselineText;
+        const provenance = metric.provenance;
+        const expanded = expandedMetric === metric.metric;
         return (
           <View key={metric.metric} style={styles.card}>
             <View style={styles.titleRow}>
@@ -80,13 +100,34 @@ export function HealthStatusCards({
             </Text>
             <Text style={styles.rule}>{metric.evaluationRule}</Text>
             <Text style={styles.explanation}>{metric.explanation}</Text>
-            {metric.provenance ? (
-              <Text style={styles.provenance}>
-                Source:{" "}
-                {metric.provenance.sourceProviders.map(providerLabel).join(", ") || "Unknown"} ·
-                Latest: {metric.provenance.latestDate ?? "Unknown"} · Coverage:{" "}
-                {metric.provenance.observedDays}/{metric.provenance.windowDays} days
-              </Text>
+            {provenance ? (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${expanded ? "Hide" : "Show"} source details for ${metric.label}`}
+                  accessibilityState={{ expanded }}
+                  onPress={() => setExpandedMetric(expanded ? null : metric.metric)}
+                  style={styles.provenanceDisclosure}
+                >
+                  <Text style={styles.provenanceSummary}>{provenanceSummaryText(provenance)}</Text>
+                  <Text style={styles.provenanceAction}>
+                    {expanded ? "Hide details" : "Details"}
+                  </Text>
+                </Pressable>
+                {expanded ? (
+                  <View style={styles.provenanceDetails}>
+                    <Text style={styles.provenance}>
+                      Source: {provenanceSourceText(provenance)}
+                    </Text>
+                    <Text style={styles.provenance}>
+                      Latest recorded date: {provenance.latestDate ?? "Unavailable"}
+                    </Text>
+                    <Text style={styles.provenance}>
+                      Coverage: {provenance.observedDays}/{provenance.windowDays} days
+                    </Text>
+                  </View>
+                ) : null}
+              </>
             ) : null}
             {metric.comparison ? (
               <Text style={styles.provenance}>
@@ -193,6 +234,27 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
     lineHeight: 17,
+  },
+  provenanceDisclosure: {
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  provenanceSummary: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  provenanceAction: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+  },
+  provenanceDetails: {
+    borderLeftColor: colors.surfaceSecondary,
+    borderLeftWidth: 2,
+    gap: spacing.xs,
+    paddingLeft: spacing.sm,
   },
   progress: {
     gap: spacing.xs,
