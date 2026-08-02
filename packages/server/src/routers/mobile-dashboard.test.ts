@@ -98,7 +98,7 @@ function makeSensorStore(
 ): SensorStore {
   const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
     const querySql = String(queryText);
-    if (querySql.includes("analytics.daily_strain") && querySql.includes("coalesce")) {
+    if (querySql.includes("analytics.daily_strain") && querySql.includes(" AS load")) {
       return [{ load: yesterdayLoad }];
     }
     if (querySql.includes("analytics.daily_strain")) return dailyLoads;
@@ -248,7 +248,7 @@ describe("mobileDashboard.dashboardV2", () => {
     }
   });
 
-  it("returns the available projection with server-computed debt recovery", async () => {
+  it("returns the insufficient-data projection when baseline history is short", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
       userId: "user-1",
@@ -263,11 +263,11 @@ describe("mobileDashboard.dashboardV2", () => {
 
     const result = await caller.dashboardV2({ endDate: "2026-03-28" });
 
-    expect(result.sleepNeed).toMatchObject({
-      availability: "available",
-      accumulatedDebtMinutes: 60,
-      debtRecoveryMinutes: 15,
-      totalNeedMinutes: 495,
+    expect(result.sleepNeed).toEqual({
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
     });
   });
 });
@@ -762,7 +762,7 @@ describe("mobileDashboard.dashboard", () => {
     );
   });
 
-  it("does not return default sleep coach numbers when no sleep rows exist", async () => {
+  it("returns a non-recommending legacy sleep shape when no sleep rows exist", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([]);
     execute.mockResolvedValueOnce([]);
@@ -779,7 +779,15 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.readiness).toBeNull();
     expect(result.sleep?.lastNight).toBeNull();
-    expect(result.sleepNeed).toBeNull();
+    expect(result.sleepNeed).toEqual(
+      expect.objectContaining({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        totalNeedMinutes: 480,
+        canRecommend: false,
+      }),
+    );
     expect(result.strain).toEqual({
       dailyStrain: 0,
       acuteLoad: 0,
@@ -1021,10 +1029,10 @@ describe("mobileDashboard.recovery", () => {
 });
 
 describe("mobileDashboard.training", () => {
-  it("uses a versioned cache key for its progressive-overload contract", () => {
+  it("uses a versioned cache key for its activity-state contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-progressive-overload-v1",
+      keyVersion: "training-activity-states-v1",
     });
   });
 

@@ -125,8 +125,6 @@ const meta = {
   args: {
     location: {
       mapPreview,
-      distanceMeters: 8530,
-      elevationGainM: 493,
     },
   },
   decorators: [
@@ -151,8 +149,6 @@ export const NoRoute: Story = {
         ...mapPreview,
         routePath: null,
       },
-      distanceMeters: 5000,
-      elevationGainM: 120,
     },
   },
 };

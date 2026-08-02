@@ -1,3 +1,7 @@
+import type {
+  ActivityDataState,
+  ActivityDataStateUnavailableStatus,
+} from "@dofek/format/activity-data-state";
 import {
   localTimeContextUnknown,
   localTimeSourceSchema,
@@ -17,6 +21,7 @@ import {
   type ActivityListSourceDetail,
   buildActivityListSource,
 } from "../models/activity-source-decision.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -28,8 +33,6 @@ export interface ActivityLocation {
   centroidLat: number;
   centroidLng: number;
   mapPreview: OsmTilePreview;
-  distanceMeters: number | null;
-  elevationGainM: number | null;
 }
 
 export type ActivityStat =
@@ -39,7 +42,7 @@ export type ActivityStat =
       value: string;
     }
   | {
-      status: "unavailable";
+      status: ActivityDataStateUnavailableStatus;
       label: string;
       reason: string;
     };
@@ -54,6 +57,10 @@ export interface CalendarActivityEntry {
   durationMin: number;
   source: ActivityListSourceDetail;
   lastProcessedAt: string | null;
+  distanceMeters: number | null;
+  distanceState: ActivityDataState;
+  elevationGainM: number | null;
+  elevationState: ActivityDataState;
   location: ActivityLocation | null;
   tss: number | null;
   stats: ActivityStat[];
@@ -72,7 +79,9 @@ export interface ActivityOverview {
   activityCount: number;
   totalMinutes: number;
   totalDistanceMeters: number | null;
+  totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
+  totalElevationState: ActivityDataState;
   activityTypes: string[];
 }
 
@@ -120,6 +129,8 @@ const overviewRowSchema = z.object({
   total_minutes: z.coerce.number(),
   total_distance_meters: z.coerce.number().nullable(),
   total_elevation_gain_m: z.coerce.number().nullable(),
+  distance_measurement_count: z.coerce.number(),
+  elevation_measurement_count: z.coerce.number(),
 });
 
 const activityTypeRowSchema = z.object({
@@ -313,6 +324,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         partialAbsentSources: sourceAttribution.hasPartialAbsence
           ? sourceAttribution.partialAbsentSources()
           : undefined,
+        distanceMeters: row.total_distance,
+        distanceState: activityMeasurementState("Distance", row.total_distance),
+        elevationGainM: row.elevation_gain_m,
+        elevationState: activityMeasurementState("Elevation gain", row.elevation_gain_m),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -321,8 +336,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 mapPreview:
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
-                distanceMeters: row.total_distance,
-                elevationGainM: row.elevation_gain_m,
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -448,6 +461,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         durationMin: Math.round(row.duration_min * 10) / 10,
         source: buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
         lastProcessedAt: row.last_processed_at,
+        distanceMeters: row.total_distance,
+        distanceState: activityMeasurementState("Distance", row.total_distance),
+        elevationGainM: row.elevation_gain_m,
+        elevationState: activityMeasurementState("Elevation gain", row.elevation_gain_m),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -456,8 +473,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 mapPreview:
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
-                distanceMeters: row.total_distance,
-                elevationGainM: row.elevation_gain_m,
               }
             : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -504,7 +519,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityCount: 0,
         totalMinutes: 0,
         totalDistanceMeters: null,
+        totalDistanceState: activityMeasurementState("Distance", null),
         totalElevationGainM: null,
+        totalElevationState: activityMeasurementState("Elevation gain", null),
         activityTypes: [],
       };
     }
@@ -524,17 +541,14 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT
             count() AS activity_count,
             coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
-            sumOrNull(location.total_distance) AS total_distance_meters,
-            sumOrNull(sensor.elevation_gain_m) AS total_elevation_gain_m
+            sumOrNull(summary.total_distance) AS total_distance_meters,
+            sumOrNull(summary.elevation_gain_m) AS total_elevation_gain_m,
+            countIf(summary.total_distance IS NOT NULL) AS distance_measurement_count,
+            countIf(summary.elevation_gain_m IS NOT NULL) AS elevation_measurement_count
           FROM analytics.deduped_activities AS activity FINAL
-          LEFT JOIN analytics.activity_location_summary_rows AS location FINAL
-            ON location.user_id = activity.user_id
-           AND location.activity_id = activity.activity_id
-           AND location.is_deleted = 0
-          LEFT JOIN analytics.activity_sensor_summary_rows AS sensor FINAL
-            ON sensor.user_id = activity.user_id
-           AND sensor.activity_id = activity.activity_id
-           AND sensor.is_deleted = 0
+          LEFT JOIN analytics.activity_summary AS summary
+            ON summary.user_id = activity.user_id
+           AND summary.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
@@ -563,19 +577,35 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       total_minutes: 0,
       total_distance_meters: null,
       total_elevation_gain_m: null,
+      distance_measurement_count: 0,
+      elevation_measurement_count: 0,
     };
 
+    const activityCount = Math.round(overview.activity_count);
+    const distanceComplete = overview.distance_measurement_count === activityCount;
+    const elevationComplete = overview.elevation_measurement_count === activityCount;
+    const totalDistanceMeters = distanceComplete ? overview.total_distance_meters : null;
+    const totalElevationGainM = elevationComplete ? overview.total_elevation_gain_m : null;
+
     return {
-      activityCount: Math.round(overview.activity_count),
+      activityCount,
       totalMinutes: Math.round(overview.total_minutes * 10) / 10,
       totalDistanceMeters:
-        overview.total_distance_meters == null
-          ? null
-          : Math.round(overview.total_distance_meters * 10) / 10,
+        totalDistanceMeters == null ? null : Math.round(totalDistanceMeters * 10) / 10,
+      totalDistanceState: distanceComplete
+        ? activityMeasurementState("Distance", totalDistanceMeters)
+        : {
+            status: "missing",
+            reason: "Distance was not recorded for every activity.",
+          },
       totalElevationGainM:
-        overview.total_elevation_gain_m == null
-          ? null
-          : Math.round(overview.total_elevation_gain_m * 10) / 10,
+        totalElevationGainM == null ? null : Math.round(totalElevationGainM * 10) / 10,
+      totalElevationState: elevationComplete
+        ? activityMeasurementState("Elevation gain", totalElevationGainM)
+        : {
+            status: "missing",
+            reason: "Elevation gain was not recorded for every activity.",
+          },
       activityTypes: activityTypeRows.map((row) => row.activity_type),
     };
   }
@@ -678,14 +708,14 @@ type ActivityTrainingStress =
       score: number;
     }
   | {
-      status: "unavailable";
+      status: "missing";
       reason: string;
     };
 
 function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
   if (input.durationMin <= 0) {
     return {
-      status: "unavailable",
+      status: "missing",
       reason: "Record an activity duration greater than zero.",
     };
   }
@@ -714,7 +744,7 @@ function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress 
     };
   }
   return {
-    status: "unavailable",
+    status: "missing",
     reason: formatTrainingStressUnavailableReason(input, effectiveMaxHr, effectiveRestingHr),
   };
 }
@@ -756,10 +786,10 @@ function capitalize(value: string): string {
 }
 
 function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
-  if (trainingStress.status === "unavailable") {
+  if (trainingStress.status === "missing") {
     return [
       {
-        status: "unavailable",
+        status: "missing",
         label: "Training Stress Score",
         reason: trainingStress.reason,
       },

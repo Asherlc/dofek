@@ -157,6 +157,16 @@ function makeCalendarEntry(
       overlapSummary: null,
     },
     lastProcessedAt: overrides.lastProcessedAt ?? "2026-03-18T08:05:00.000Z",
+    distanceMeters: overrides.distanceMeters ?? null,
+    distanceState: overrides.distanceState ?? {
+      status: "missing",
+      reason: "Distance not recorded",
+    },
+    elevationGainM: overrides.elevationGainM ?? null,
+    elevationState: overrides.elevationState ?? {
+      status: "missing",
+      reason: "Elevation gain not recorded",
+    },
     location: overrides.location ?? null,
     tss: overrides.tss ?? null,
     stats: overrides.stats ?? [],
@@ -312,12 +322,18 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        distanceMeters: 5000,
+        distanceState: { status: "available" },
+        elevationGainM: 125,
+        elevationState: { status: "available" },
+      }),
+    );
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 90,
       centroidLng: 180,
       mapPreview: osmTilePreview([{ lat: 90, lng: 180 }]),
-      distanceMeters: 5000,
-      elevationGainM: 125,
     });
   });
 
@@ -564,6 +580,8 @@ describe("ActivitiesCalendarRepository", () => {
           total_minutes: "60.2",
           total_distance_meters: "10000.1",
           total_elevation_gain_m: "120.1",
+          distance_measurement_count: "1",
+          elevation_measurement_count: "1",
         },
       ],
       [{ activity_type: "cycling" }, { activity_type: "running" }],
@@ -580,7 +598,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 1,
       totalMinutes: 60.2,
       totalDistanceMeters: 10000.1,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 120.1,
+      totalElevationState: { status: "available" },
       activityTypes: ["cycling", "running"],
     });
     expect(sensorStore.query).toHaveBeenNthCalledWith(
@@ -605,6 +625,8 @@ describe("ActivitiesCalendarRepository", () => {
           total_minutes: "60",
           total_distance_meters: null,
           total_elevation_gain_m: null,
+          distance_measurement_count: "0",
+          elevation_measurement_count: "0",
         },
       ],
       [{ activity_type: "walking" }],
@@ -617,9 +639,78 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 1,
       totalMinutes: 60,
       totalDistanceMeters: null,
+      totalDistanceState: {
+        status: "missing",
+        reason: "Distance was not recorded for every activity.",
+      },
       totalElevationGainM: null,
+      totalElevationState: {
+        status: "missing",
+        reason: "Elevation gain was not recorded for every activity.",
+      },
       activityTypes: ["walking"],
     });
+  });
+
+  it("does not report partial overview totals as available", async () => {
+    const database = makeDatabase([[{ id: "run" }, { id: "ride" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: 2,
+          total_minutes: 120,
+          total_distance_meters: 5000,
+          total_elevation_gain_m: 100,
+          distance_measurement_count: 1,
+          elevation_measurement_count: 2,
+        },
+      ],
+      [{ activity_type: "running" }, { activity_type: "cycling" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      activityCount: 2,
+      totalDistanceMeters: null,
+      totalDistanceState: {
+        status: "missing",
+        reason: "Distance was not recorded for every activity.",
+      },
+      totalElevationGainM: 100,
+      totalElevationState: { status: "available" },
+    });
+  });
+
+  it("counts indoor and virtual zero distance as measured with outdoor totals", async () => {
+    const database = makeDatabase([[{ id: "indoor" }, { id: "run" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: 2,
+          total_minutes: 120,
+          total_distance_meters: 5000,
+          total_elevation_gain_m: 100,
+          distance_measurement_count: 2,
+          elevation_measurement_count: 2,
+        },
+      ],
+      [{ activity_type: "indoor_cycling" }, { activity_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      activityCount: 2,
+      totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
+    });
+
+    const overviewQuery = normalizeSql(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    expect(overviewQuery).toContain("sumOrNull(summary.total_distance)");
+    expect(overviewQuery).toContain("countIf(summary.total_distance IS NOT NULL)");
   });
 
   it("returns an empty overview without querying ClickHouse when no activities are visible", async () => {
@@ -633,7 +724,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: [],
     });
     expect(sensorStore.query).not.toHaveBeenCalled();
@@ -649,6 +742,8 @@ describe("ActivitiesCalendarRepository", () => {
           total_minutes: 45,
           total_distance_meters: 5000,
           total_elevation_gain_m: 100,
+          distance_measurement_count: 1,
+          elevation_measurement_count: 1,
         },
       ],
       [{ activity_type: "running" }],
@@ -658,6 +753,8 @@ describe("ActivitiesCalendarRepository", () => {
           total_minutes: 0,
           total_distance_meters: null,
           total_elevation_gain_m: null,
+          distance_measurement_count: 0,
+          elevation_measurement_count: 0,
         },
       ],
       [{ activity_type: "running" }],
@@ -675,7 +772,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 1,
       totalMinutes: 45,
       totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 100,
+      totalElevationState: { status: "available" },
       activityTypes: ["running"],
     });
     await expect(
@@ -688,7 +787,9 @@ describe("ActivitiesCalendarRepository", () => {
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
       totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["running"],
     });
     for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {
@@ -708,6 +809,8 @@ describe("ActivitiesCalendarRepository", () => {
           total_minutes: "60",
           total_distance_meters: "0",
           total_elevation_gain_m: "0",
+          distance_measurement_count: "1",
+          elevation_measurement_count: "1",
         },
       ],
       [{ activity_type: "cycling" }],
@@ -722,20 +825,14 @@ describe("ActivitiesCalendarRepository", () => {
       "FROM analytics.deduped_activities AS activity FINAL",
     );
     expect(normalizedOverviewQuery).not.toContain("analytics.v_activity");
-    expect(normalizedOverviewQuery).not.toContain("analytics.activity_summary");
+    expect(normalizedOverviewQuery).toContain("LEFT JOIN analytics.activity_summary AS summary");
     expect(normalizedOverviewQuery).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
-    expect(normalizedOverviewQuery).toContain("sumOrNull(location.total_distance)");
-    expect(normalizedOverviewQuery).toContain("sumOrNull(sensor.elevation_gain_m)");
-    expect(normalizedOverviewQuery).toContain(
-      "LEFT JOIN analytics.activity_location_summary_rows AS location FINAL",
-    );
-    expect(normalizedOverviewQuery).toContain(
-      "LEFT JOIN analytics.activity_sensor_summary_rows AS sensor FINAL",
-    );
-    expect(normalizedOverviewQuery).toContain("location.is_deleted = 0");
-    expect(normalizedOverviewQuery).toContain("sensor.is_deleted = 0");
+    expect(normalizedOverviewQuery).toContain("sumOrNull(summary.total_distance)");
+    expect(normalizedOverviewQuery).toContain("sumOrNull(summary.elevation_gain_m)");
+    expect(normalizedOverviewQuery).toContain("countIf(summary.total_distance IS NOT NULL)");
+    expect(normalizedOverviewQuery).toContain("countIf(summary.elevation_gain_m IS NOT NULL)");
     expect(normalizedOverviewQuery).toContain("activity.activity_id IN {activityIds:Array(UUID)}");
   });
 
@@ -748,6 +845,8 @@ describe("ActivitiesCalendarRepository", () => {
           total_minutes: "60",
           total_distance_meters: "0",
           total_elevation_gain_m: "0",
+          distance_measurement_count: "1",
+          elevation_measurement_count: "1",
         },
       ],
       [{ activity_type: "cycling" }],
@@ -802,20 +901,122 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
+    expect(result[0]?.activities.find((activity) => activity.id === "outdoor-with-route")).toEqual(
+      expect.objectContaining({
+        distanceMeters: 5000,
+        distanceState: { status: "available" },
+        elevationGainM: 125,
+        elevationState: { status: "available" },
+      }),
+    );
     expect(
       result[0]?.activities.find((activity) => activity.id === "outdoor-with-route")?.location,
     ).toEqual({
       centroidLat: 37.8,
       centroidLng: -122.4,
       mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
-      distanceMeters: 5000,
-      elevationGainM: 125,
     });
     expect(sensorStore.query).toHaveBeenCalledTimes(3);
     expect(sensorStore.query).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("FROM analytics.deduped_location"),
       expect.anything(),
+    );
+  });
+
+  it("preserves metric values and states when no centroid can produce a map", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "indoor-zero",
+          activity_type: "indoor_cycling",
+          total_distance: 0,
+          elevation_gain_m: 0,
+          centroid_lat: null,
+          centroid_lng: null,
+        }),
+        makeActivityRow({
+          id: "route-less-missing",
+          activity_type: "running",
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+    const activities = result[0]?.activities ?? [];
+
+    expect(activities.find((activity) => activity.id === "indoor-zero")).toEqual(
+      expect.objectContaining({
+        location: null,
+        distanceMeters: 0,
+        distanceState: { status: "available" },
+        elevationGainM: 0,
+        elevationState: { status: "available" },
+      }),
+    );
+    expect(activities.find((activity) => activity.id === "route-less-missing")).toEqual(
+      expect.objectContaining({
+        location: null,
+        distanceMeters: null,
+        distanceState: { status: "missing", reason: "Distance not recorded" },
+        elevationGainM: null,
+        elevationState: { status: "missing", reason: "Elevation gain not recorded" },
+      }),
+    );
+  });
+
+  it("authors missing and available states without treating zero as missing", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "missing-route-measurements",
+          activity_type: "running",
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        }),
+        makeActivityRow({
+          id: "zero-route-measurements",
+          activity_type: "running",
+          total_distance: 0,
+          elevation_gain_m: 0,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+    const activities = result[0]?.activities ?? [];
+
+    expect(activities.find((activity) => activity.id === "missing-route-measurements")).toEqual(
+      expect.objectContaining({
+        distanceMeters: null,
+        distanceState: { status: "missing", reason: "Distance not recorded" },
+        elevationGainM: null,
+        elevationState: { status: "missing", reason: "Elevation gain not recorded" },
+      }),
+    );
+    expect(activities.find((activity) => activity.id === "zero-route-measurements")).toEqual(
+      expect.objectContaining({
+        distanceMeters: 0,
+        distanceState: { status: "available" },
+        elevationGainM: 0,
+        elevationState: { status: "available" },
+      }),
     );
   });
 
@@ -864,7 +1065,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Record average power, or record average heart rate and set maximum heart rate.",
@@ -890,7 +1091,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason: "Record an activity duration greater than zero.",
           },
@@ -929,7 +1130,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Set functional threshold power, or record average heart rate and set maximum heart rate.",
@@ -1028,7 +1229,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Record average power and set functional threshold power, or set maximum heart rate.",
@@ -1060,7 +1261,7 @@ describe("ActivitiesCalendarRepository", () => {
         tss: null,
         stats: [
           {
-            status: "unavailable",
+            status: "missing",
             label: "Training Stress Score",
             reason:
               "Record average power and set functional threshold power, or set maximum heart rate above resting heart rate.",
@@ -1335,12 +1536,18 @@ describe("ActivitiesCalendarRepository", () => {
       includeProviderAbsent: true,
     });
 
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        distanceMeters: 5000,
+        distanceState: { status: "available" },
+        elevationGainM: 125,
+        elevationState: { status: "available" },
+      }),
+    );
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 37.8,
       centroidLng: -122.4,
       mapPreview: routePreview,
-      distanceMeters: 5000,
-      elevationGainM: 125,
     });
   });
 
@@ -1448,6 +1655,10 @@ describe("ActivitiesCalendarRepository", () => {
         overlapSummary: null,
       },
       lastProcessedAt: null,
+      distanceMeters: null,
+      distanceState: { status: "missing", reason: "Distance not recorded" },
+      elevationGainM: null,
+      elevationState: { status: "missing", reason: "Elevation gain not recorded" },
       location: null,
       tss: 100,
       stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
@@ -1566,12 +1777,18 @@ describe("ActivitiesCalendarRepository", () => {
       includeProviderAbsent: true,
     });
 
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        distanceMeters: 5000,
+        distanceState: { status: "available" },
+        elevationGainM: 125,
+        elevationState: { status: "available" },
+      }),
+    );
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 37.7749,
       centroidLng: -122.4194,
       mapPreview: routePreview,
-      distanceMeters: 5000,
-      elevationGainM: 125,
     });
   });
 
@@ -1623,12 +1840,18 @@ describe("ActivitiesCalendarRepository", () => {
       includeProviderAbsent: true,
     });
 
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        distanceMeters: 5000,
+        distanceState: { status: "available" },
+        elevationGainM: 125,
+        elevationState: { status: "available" },
+      }),
+    );
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 37.8,
       centroidLng: -122.4,
       mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
-      distanceMeters: 5000,
-      elevationGainM: 125,
     });
   });
 
@@ -1691,7 +1914,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.tss).toBeNull();
     expect(result[0]?.activities[0]?.stats).toEqual([
       {
-        status: "unavailable",
+        status: "missing",
         label: "Training Stress Score",
         reason:
           "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",

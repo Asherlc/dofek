@@ -56,12 +56,13 @@ describe("ActivityList", () => {
       provider_id: "strava",
       source_providers: ["strava"],
       distance_meters: 5000,
+      distance_state: { status: "available" },
+      elevation_gain_m: 120,
+      elevation_state: { status: "available" },
       location: {
         centroidLat: 37.7749,
         centroidLng: -122.4194,
         mapPreview,
-        distanceMeters: 5000,
-        elevationGainM: 120,
       },
     },
   ];
@@ -127,8 +128,6 @@ describe("ActivityList", () => {
                   { x: 305.85, y: 359.36 },
                 ],
               },
-              distanceMeters: 5000,
-              elevationGainM: 120,
             },
           },
         ]}
@@ -151,6 +150,9 @@ describe("ActivityList", () => {
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 
@@ -259,12 +261,36 @@ describe("ActivityList", () => {
         provider_id: "apple",
         source_providers: ["apple"],
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
     renderWithUnits(<ActivityList activities={activityWithoutStats} />);
-    // Should show the dash/placeholder
-    const cells = screen.getAllByText("—");
-    expect(cells.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Distance unavailable: Distance not recorded")).toBeDefined();
+  });
+
+  it("keeps a recorded zero distance distinct from a missing distance", () => {
+    const zeroDistanceActivity: Activity[] = [
+      {
+        id: "zero-distance",
+        started_at: "2026-03-18T08:00:00Z",
+        ended_at: "2026-03-18T08:30:00Z",
+        activity_type: "walking",
+        name: "Stationary Walk",
+        provider_id: "apple",
+        source_providers: ["apple"],
+        distance_meters: 0,
+        distance_state: { status: "available" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
+      },
+    ];
+
+    renderWithUnits(<ActivityList activities={zeroDistanceActivity} />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
   });
 
   it("uses placeholders when timestamps are invalid", () => {
@@ -278,6 +304,9 @@ describe("ActivityList", () => {
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 

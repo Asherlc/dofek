@@ -152,8 +152,8 @@ export async function loadDashboardOverview({
       { priority: "dashboard" },
     ),
     sensorStore.query(
-      z.object({ load: z.coerce.number() }),
-      `SELECT coalesce(strain.daily_load, 0) AS load
+      z.object({ load: z.coerce.number().nullable() }),
+      `SELECT sumOrNull(strain.daily_load) AS load
           FROM analytics.daily_strain AS strain FINAL
           WHERE strain.user_id = {userId:UUID}
             AND strain.is_deleted = 0
@@ -165,7 +165,7 @@ export async function loadDashboardOverview({
   ]);
 
   const dailyLoadByDate = new Map(dailyLoadRows.map((row) => [row.metric_date, row.daily_load]));
-  const yesterdayLoadFromClickHouse = yesterdayLoadRows[0]?.load ?? 0;
+  const yesterdayLoadFromClickHouse = yesterdayLoadRows[0]?.load ?? null;
 
   const readinessRows = await sensorStore.query(
     recoveryServingRowSchema,
@@ -298,7 +298,7 @@ export async function loadDashboardOverview({
         )
       : 480;
 
-  const yesterdayLoad = Number(sleepBaselineRows[0]?.yesterday_load ?? 0);
+  const yesterdayLoad = yesterdayLoadFromClickHouse ?? 0;
   const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
   const recentDebtRows = sleepBaselineRows.slice(-14);
   const debtObservedNightCount = recentDebtRows.filter(
@@ -348,8 +348,9 @@ export async function loadDashboardOverview({
     hasPreviousNight: dashboardSleepRows.some(
       (sleepRow) => sleepRow.date === yesterdayDateString && sleepRow.duration_minutes != null,
     ),
+    hasYesterdayLoad: yesterdayLoadFromClickHouse != null,
   });
-  const sleepNeedResult = sleepBaselineRows.length > 0 ? toSleepNeedV1(sleepNeedComputation) : null;
+  const sleepNeedResult = toSleepNeedV1(sleepNeedComputation);
 
   const acuteLoad = dailyLoadRows.reduce((totalLoad, row) => {
     const daysAgo = Math.floor(

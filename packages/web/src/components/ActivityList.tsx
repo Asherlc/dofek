@@ -1,4 +1,9 @@
 import {
+  type ActivityDataState,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateMedium,
   formatDurationMinutes,
   formatNumber,
@@ -21,13 +26,14 @@ export interface Activity {
   name: string | null;
   provider_id: string;
   source_providers: string[] | null;
-  distance_meters?: number | null;
+  distance_meters: number | null;
+  distance_state: ActivityDataState;
+  elevation_gain_m: number | null;
+  elevation_state: ActivityDataState;
   location?: {
     centroidLat: number;
     centroidLng: number;
     mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
   } | null;
 }
 
@@ -221,10 +227,22 @@ export function ActivityList({
       label: "Distance",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
-      renderCell: (activity) =>
-        activity.distance_meters
-          ? `${formatNumber(units.convertDistance(activity.distance_meters / 1000))} ${units.distanceLabel}`
-          : "—",
+      renderCell: (activity) => {
+        const metric = formatActivityMetric(
+          "Distance",
+          activity.distance_meters,
+          activity.distance_state,
+          (value) => `${formatNumber(units.convertDistance(value / 1000))} ${units.distanceLabel}`,
+        );
+        if (metric.status !== "available") {
+          return (
+            <span data-state={metric.status}>
+              {metric.label} {activityDataStateLabel(metric.status)}: {metric.reason}
+            </span>
+          );
+        }
+        return <span data-state="available">{metric.value}</span>;
+      },
     },
     {
       key: "provider",

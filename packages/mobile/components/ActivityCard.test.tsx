@@ -12,6 +12,8 @@ describe("ActivityCard", () => {
     avgHr: null,
     maxHr: null,
     avgPower: null,
+    distanceKm: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
     units: new UnitConverter("metric"),
   };
 
@@ -44,23 +46,46 @@ describe("ActivityCard", () => {
   });
 
   it("shows distance when provided", () => {
-    render(<ActivityCard {...baseProps} distanceKm={5.25} />);
+    render(
+      <ActivityCard {...baseProps} distanceKm={5.25} distanceState={{ status: "available" }} />,
+    );
     expect(screen.getByText("5.25")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("km")).toBeTruthy();
   });
 
   it("shows distance in miles when unit system is imperial", () => {
-    render(<ActivityCard {...baseProps} units={new UnitConverter("imperial")} distanceKm={5.25} />);
+    render(
+      <ActivityCard
+        {...baseProps}
+        units={new UnitConverter("imperial")}
+        distanceKm={5.25}
+        distanceState={{ status: "available" }}
+      />,
+    );
     expect(screen.getByText("3.26")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("mi")).toBeTruthy();
   });
 
-  it("hides stats when values are null or zero", () => {
-    render(<ActivityCard {...baseProps} distanceKm={0} />);
-    expect(screen.queryByText("Distance")).toBeNull();
+  it("preserves a measured zero distance", () => {
+    render(<ActivityCard {...baseProps} distanceKm={0} distanceState={{ status: "available" }} />);
+    expect(screen.getByText("0.00")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("km")).toBeTruthy();
     expect(screen.queryByText("Avg HR")).toBeNull();
+  });
+
+  it("renders the server-authored distance reason when unavailable", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        distanceState={{ status: "processing", reason: "Distance is still processing" }}
+      />,
+    );
+    expect(screen.getByText("Distance processing")).toBeTruthy();
+    expect(screen.getByText("Distance is still processing")).toBeTruthy();
+    expect(screen.getByLabelText("Distance processing: Distance is still processing")).toBeTruthy();
   });
 
   it("shows specific icons for common activity types", () => {

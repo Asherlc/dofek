@@ -19,7 +19,9 @@ let mockOverviewQuery: {
         activityCount: number;
         totalMinutes: number;
         totalDistanceMeters: number | null;
+        totalDistanceState: { status: "available" } | { status: "missing"; reason: string };
         totalElevationGainM: number | null;
+        totalElevationState: { status: "available" } | { status: "missing"; reason: string };
         activityTypes: string[];
       }
     | undefined;
@@ -152,6 +154,10 @@ function activity(overrides: Record<string, unknown> = {}) {
       overlapSummary: null,
     },
     lastProcessedAt: "2026-03-18T08:05:00.000Z",
+    distanceMeters: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
+    elevationGainM: null,
+    elevationState: { status: "missing", reason: "Elevation not recorded" },
     location: null,
     tss: 100,
     stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
@@ -167,7 +173,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 0,
         totalMinutes: 0,
         totalDistanceMeters: 0,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 0,
+        totalElevationState: { status: "available" },
         activityTypes: [],
       },
       isLoading: false,
@@ -296,7 +304,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 12,
         totalMinutes: 615,
         totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
         activityTypes: ["running", "cycling"],
       },
       isLoading: false,
@@ -318,7 +328,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 2,
         totalMinutes: 90,
         totalDistanceMeters: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
         totalElevationGainM: null,
+        totalElevationState: { status: "missing", reason: "Elevation not recorded" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -337,7 +349,9 @@ describe("ActivitiesScreen", () => {
       activityCount: 2,
       totalMinutes: 90,
       totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
       activityTypes: ["running"],
     };
     rerender(<ActivitiesScreen />);
@@ -352,7 +366,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -407,6 +423,34 @@ describe("ActivitiesScreen", () => {
     expect(activityButton?.getAttribute("aria-label")).toContain("Open Trainer Ride");
     expect(activityButton?.getAttribute("aria-label")).toContain("1h");
     expect(activityButton?.getAttribute("aria-label")).toContain("Indoor Cycling");
+  });
+
+  it("includes available route measurements in each accessible action name", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              distanceMeters: 5000,
+              distanceState: { status: "available" },
+              elevationGainM: 120,
+              elevationState: { status: "available" },
+              location: null,
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Distance 5.0 km");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Elevation 120 m");
   });
 
   it("does not repeat the activity type when an activity has no custom name", () => {
@@ -514,7 +558,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -601,9 +647,11 @@ describe("ActivitiesScreen", () => {
                   ],
                   routePath: null,
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -655,9 +703,11 @@ describe("ActivitiesScreen", () => {
                     { x: 305.85, y: 359.36 },
                   ],
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -699,9 +749,11 @@ describe("ActivitiesScreen", () => {
                   ],
                   routePath: null,
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -744,9 +796,11 @@ describe("ActivitiesScreen", () => {
                     { x: 350, y: 400 },
                   ],
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },

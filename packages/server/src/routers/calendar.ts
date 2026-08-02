@@ -1,3 +1,7 @@
+import {
+  activityDataStateSchema,
+  activityDataStateUnavailableStatusSchema,
+} from "@dofek/format/activity-data-state";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -40,8 +44,6 @@ const activityLocationSchema = z.object({
   centroidLat: z.number(),
   centroidLng: z.number(),
   mapPreview: mapPreviewSchema,
-  distanceMeters: z.number().nullable(),
-  elevationGainM: z.number().nullable(),
 });
 
 const activityStatSchema = z.discriminatedUnion("status", [
@@ -51,9 +53,9 @@ const activityStatSchema = z.discriminatedUnion("status", [
     value: z.string(),
   }),
   z.object({
-    status: z.literal("unavailable"),
+    status: activityDataStateUnavailableStatusSchema,
     label: z.string(),
-    reason: z.string(),
+    reason: z.string().trim().min(1),
   }),
 ]);
 
@@ -73,6 +75,10 @@ const calendarActivityEntrySchema = z.object({
   durationMin: z.number(),
   source: activityListSourceSchema,
   lastProcessedAt: timestampStringSchema.nullable(),
+  distanceMeters: z.number().nullable(),
+  distanceState: activityDataStateSchema,
+  elevationGainM: z.number().nullable(),
+  elevationState: activityDataStateSchema,
   location: activityLocationSchema.nullable(),
   tss: z.number().nullable(),
   stats: z.array(activityStatSchema),
@@ -106,7 +112,9 @@ const activityOverviewSchema = z.object({
   activityCount: z.number().int().nonnegative(),
   totalMinutes: z.number().nonnegative(),
   totalDistanceMeters: z.number().nonnegative().nullable(),
+  totalDistanceState: activityDataStateSchema,
   totalElevationGainM: z.number().nonnegative().nullable(),
+  totalElevationState: activityDataStateSchema,
   activityTypes: z.array(z.string()),
 });
 
@@ -121,7 +129,10 @@ export const calendarRouter = router({
     },
   ),
 
-  weekList: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  weekList: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-calendar-states-v1",
+  })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
     .query(async ({ ctx, input }) => {
@@ -143,7 +154,10 @@ export const calendarRouter = router({
       return repo.getWeekList(input);
     }),
 
-  activityOverview: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  activityOverview: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-calendar-states-v1",
+  })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)
     .query(async ({ ctx, input }) => {

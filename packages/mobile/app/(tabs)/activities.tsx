@@ -1,7 +1,9 @@
 import {
-  formatActivityOverviewDistance,
-  formatActivityOverviewElevation,
-} from "@dofek/format/activity-overview";
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
 import {
   formatDateForDisplay,
   formatDateYmd,
@@ -15,7 +17,7 @@ import {
   formatRecordLocalTime,
   type RecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
-import { formatMeasurementText } from "@dofek/format/units";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -90,7 +92,14 @@ function formatActivityAccessibilityLabel(
     localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
+    distanceMeters: number | null;
+    distanceState: ActivityDataState;
+    elevationGainM: number | null;
+    elevationState: ActivityDataState;
+    location: { mapPreview: unknown } | null;
+    stats: ActivityMetric[];
   },
+  units: UnitConverter,
 ): string {
   const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
   const labelParts = [
@@ -101,6 +110,44 @@ function formatActivityAccessibilityLabel(
 
   if (activity.name !== null) {
     labelParts.push(activityTypeLabel);
+  }
+
+  const hasRouteMetrics =
+    activity.location != null ||
+    activity.distanceState.status !== "missing" ||
+    activity.elevationState.status !== "missing";
+  if (hasRouteMetrics) {
+    const routeMetrics = [
+      formatActivityMetric(
+        "Distance",
+        activity.distanceMeters,
+        activity.distanceState,
+        (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+      ),
+      formatActivityMetric(
+        "Elevation",
+        activity.elevationGainM,
+        activity.elevationState,
+        (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+      ),
+    ];
+    for (const metric of routeMetrics) {
+      if (metric.status === "available") {
+        labelParts.push(`${metric.label} ${metric.value}`);
+      } else {
+        labelParts.push(
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
+        );
+      }
+    }
+  } else {
+    for (const metric of activity.stats) {
+      if (metric.status !== "available") {
+        labelParts.push(
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
+        );
+      }
+    }
   }
 
   return `${action} ${labelParts.join(", ")}`;
@@ -331,6 +378,7 @@ export default function ActivitiesScreen() {
                         : "Select"
                       : "Open",
                     activity,
+                    units,
                   )}
                   accessibilityState={{
                     selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
@@ -567,7 +615,9 @@ interface ActivityOverviewData {
   activityCount: number;
   totalMinutes: number;
   totalDistanceMeters: number | null;
+  totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
+  totalElevationState: ActivityDataState;
 }
 
 function ActivityOverview({
@@ -577,38 +627,58 @@ function ActivityOverview({
   overview: ActivityOverviewData | undefined;
   units: ReturnType<typeof useUnitConverter>;
 }) {
-  const items = [
-    { label: "Activities", value: overview ? String(overview.activityCount) : "—" },
-    {
-      label: "Time",
-      value: overview ? formatDurationMinutes(overview.totalMinutes) : "—",
-    },
-    {
-      label: "Distance",
-      value: overview
-        ? formatActivityOverviewDistance(overview.totalDistanceMeters, (distanceMeters) =>
-            formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
-          )
-        : "—",
-    },
-    {
-      label: "Elevation",
-      value: overview
-        ? formatActivityOverviewElevation(overview.totalElevationGainM, (elevationMeters) =>
-            formatMeasurementText(units.formatElevation(elevationMeters)),
-          )
-        : "—",
-    },
-  ];
+  const items: Array<ActivityMetric | { label: string; value: string }> = overview
+    ? [
+        { label: "Activities", value: String(overview.activityCount) },
+        { label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
+        formatActivityMetric(
+          "Distance",
+          overview.totalDistanceMeters,
+          overview.totalDistanceState,
+          (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+        ),
+        formatActivityMetric(
+          "Elevation",
+          overview.totalElevationGainM,
+          overview.totalElevationState,
+          (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+        ),
+      ]
+    : [
+        { label: "Activities", value: "Loading…" },
+        { label: "Time", value: "Loading…" },
+        { label: "Distance", value: "Loading…" },
+        { label: "Elevation", value: "Loading…" },
+      ];
 
   return (
     <View style={styles.overviewGrid}>
-      {items.map((item) => (
-        <View key={item.label} style={styles.overviewItem}>
-          <Text style={styles.overviewValue}>{item.value}</Text>
-          <Text style={styles.overviewLabel}>{item.label}</Text>
-        </View>
-      ))}
+      {items.map((item) => {
+        const isMetric = "status" in item;
+        return (
+          <View
+            key={item.label}
+            style={styles.overviewItem}
+            accessible={isMetric}
+            accessibilityLabel={
+              isMetric
+                ? item.status === "available"
+                  ? `${item.label} ${item.value}`
+                  : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
+                : undefined
+            }
+          >
+            <Text style={styles.overviewValue}>
+              {isMetric && item.status !== "available"
+                ? `${item.label} ${activityDataStateLabel(item.status)}`
+                : item.value}
+            </Text>
+            <Text style={styles.overviewLabel}>
+              {isMetric && item.status !== "available" ? item.reason : item.label}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -616,8 +686,6 @@ function ActivityOverview({
 interface ActivityMapTileProps {
   location: {
     mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
   };
 }
 

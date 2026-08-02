@@ -8,6 +8,8 @@ import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.
 
 const canonicalActivityId = "00000000-0000-0000-0000-000000000111";
 const memberActivityId = "00000000-0000-0000-0000-000000000222";
+const missingMetricActivityId = "00000000-0000-0000-0000-000000000333";
+const zeroMetricActivityId = "00000000-0000-0000-0000-000000000444";
 const testUserId = "00000000-0000-0000-0000-000000000001";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -18,6 +20,13 @@ interface ActivitySummaryRow {
   avg_hr: number | null;
   is_deleted: number;
   name: string | null;
+  total_distance: number | null;
+}
+
+interface ActivityMetricPresenceRow {
+  activity_id: string;
+  elevation_gain_m: number | null;
+  elevation_loss_m: number | null;
   total_distance: number | null;
 }
 
@@ -129,6 +138,43 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
         is_deleted: 0,
         name: "Lunch Mountain Bike Ride",
         total_distance: 25000,
+      },
+    ]);
+  }, 180_000);
+
+  it("preserves missing measurements as NULL and recorded zeros as zero", async () => {
+    const activeClient = requireClient(client);
+    await seedMetricPresenceFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows
+${renderActivitySummaryRowsSelectSql(targetSchema)}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT
+          toString(activity_id) AS activity_id,
+          total_distance,
+          elevation_gain_m,
+          elevation_loss_m
+        FROM ${targetSchema}.activity_summary_rows FINAL
+        WHERE is_deleted = 0
+        ORDER BY activity_id`,
+      format: "JSONEachRow",
+    });
+
+    expect(await result.json<ActivityMetricPresenceRow>()).toEqual([
+      {
+        activity_id: missingMetricActivityId,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+      },
+      {
+        activity_id: zeroMetricActivityId,
+        total_distance: 0,
+        elevation_gain_m: 0,
+        elevation_loss_m: 0,
       },
     ]);
   }, 180_000);
@@ -244,6 +290,25 @@ async function seedDedupeMappingRefreshFixture(
     insertCanonicalSensorSummarySql(targetSchema),
     insertCanonicalLocationSummarySql(targetSchema),
     insertStaleRawActivitySummarySql(targetSchema),
+  ]);
+}
+
+async function seedMetricPresenceFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createActivityTableSql(targetSchema),
+    createDedupedActivitiesTableSql(targetSchema),
+    createDedupedActivityMembersTableSql(targetSchema),
+    createActivitySensorSummaryRowsTableSql(targetSchema),
+    createActivityLocationSummaryRowsTableSql(targetSchema),
+    buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
+    insertMetricPresenceActivitiesSql(targetSchema),
+    insertMetricPresenceSensorSummarySql(targetSchema),
+    insertMetricPresenceLocationSummarySql(targetSchema),
   ]);
 }
 
@@ -363,4 +428,26 @@ function insertCanonicalLocationSummarySql(targetSchema: string): string {
 function insertStaleRawActivitySummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_summary_rows VALUES
   ('${memberActivityId}', '${testUserId}', 'cycling', NULL, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
+}
+
+function insertMetricPresenceActivitiesSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.deduped_activities VALUES
+  ('${missingMetricActivityId}', 'garmin', '${testUserId}', '${missingMetricActivityId}', 'running', 'Missing route data', toDateTime64('2026-07-30 08:00:00', 6, 'UTC'), toDateTime64('2026-07-30 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-30 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', 'garmin', '${testUserId}', '${zeroMetricActivityId}', 'running', 'Recorded zero data', toDateTime64('2026-07-31 08:00:00', 6, 'UTC'), toDateTime64('2026-07-31 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
+}
+
+function insertMetricPresenceSensorSummarySql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+  (activity_id, user_id, elevation_gain_m, elevation_loss_m, refresh_version, is_deleted, refreshed_at)
+VALUES
+  ('${missingMetricActivityId}', '${testUserId}', NULL, NULL, 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', '${testUserId}', 0, 0, 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
+}
+
+function insertMetricPresenceLocationSummarySql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_location_summary_rows
+  (activity_id, user_id, total_distance, centroid_lat, centroid_lng, refresh_version, is_deleted, refreshed_at)
+VALUES
+  ('${missingMetricActivityId}', '${testUserId}', NULL, 37.1, -122.1, 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', '${testUserId}', 0, 37.1, -122.1, 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
 }

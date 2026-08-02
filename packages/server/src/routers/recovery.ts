@@ -1,4 +1,8 @@
-import { type RecordLocalTimeContext, recordLocalHour } from "@dofek/format/record-local-time";
+import {
+  type RecordLocalTimeContext,
+  recordLocalHour,
+  recordLocalTimeContextSchema,
+} from "@dofek/format/record-local-time";
 import {
   type ReadinessComponents,
   ReadinessScore,
@@ -73,12 +77,16 @@ export interface HrvVariabilityRow {
   rollingMean: number | null;
 }
 
+export type SleepAnalyticsDataState =
+  | { status: "available" }
+  | { status: "missing"; reason: string; nextAction: string };
+
 export interface SleepNightlyRow {
   date: string;
   /** Time in bed (includes awake time). Use for stage-percentage math. */
-  durationMinutes: number;
+  durationMinutes: number | null;
   /** Actual time asleep (deep + REM + light). Use for display and sleep debt. */
-  sleepMinutes: number;
+  sleepMinutes: number | null;
   deepPct: number | null;
   remPct: number | null;
   lightPct: number | null;
@@ -86,6 +94,9 @@ export interface SleepNightlyRow {
   efficiency: number | null;
   stagingAvailable: boolean;
   rollingAvgDuration: number | null;
+  durationState: SleepAnalyticsDataState;
+  sleepState: SleepAnalyticsDataState;
+  stageState: SleepAnalyticsDataState;
   startedAt: string;
   endedAt: string | null;
   localTimeContext: RecordLocalTimeContext;
@@ -113,6 +124,57 @@ export interface SleepAnalyticsResult {
   averageSleepMinutes: number | null;
   averageEfficiencyPercent: number | null;
 }
+
+const sleepAnalyticsDataStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available") }),
+  z.object({
+    status: z.literal("missing"),
+    reason: z.string().trim().min(1),
+    nextAction: z.string().trim().min(1),
+  }),
+]);
+
+const sleepOverlappingSessionSchema = z.object({
+  sessionId: z.string(),
+  providerId: z.string(),
+  sourceName: z.string().nullable(),
+  sourceProviders: z.array(z.string()),
+  localTimeContext: recordLocalTimeContextSchema,
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  durationMinutes: z.number().nullable(),
+});
+
+const sleepNightlyRowSchema = z.object({
+  date: z.string(),
+  durationMinutes: z.number().nullable(),
+  sleepMinutes: z.number().nullable(),
+  deepPct: z.number().nullable(),
+  remPct: z.number().nullable(),
+  lightPct: z.number().nullable(),
+  awakePct: z.number().nullable(),
+  efficiency: z.number().nullable(),
+  stagingAvailable: z.boolean(),
+  rollingAvgDuration: z.number().nullable(),
+  durationState: sleepAnalyticsDataStateSchema,
+  sleepState: sleepAnalyticsDataStateSchema,
+  stageState: sleepAnalyticsDataStateSchema,
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  localTimeContext: recordLocalTimeContextSchema,
+  providerId: z.string().nullable(),
+  sourceName: z.string().nullable(),
+  sourceProviders: z.array(z.string()),
+  selectedSessionId: z.string().nullable(),
+  overlappingSessions: z.array(sleepOverlappingSessionSchema),
+});
+
+const sleepAnalyticsOutputSchema = z.object({
+  nightly: z.array(sleepNightlyRowSchema),
+  sleepDebt: z.number().nullable(),
+  averageSleepMinutes: z.number().nullable(),
+  averageEfficiencyPercent: z.number().nullable(),
+}) satisfies z.ZodType<SleepAnalyticsResult>;
 
 export interface SleepConsistencyRow {
   date: string;
@@ -348,23 +410,64 @@ export const recoveryRouter = router({
       // Apple Health reports duration as in-bed time, so derive actual sleep
       // from stage minutes. Other providers already exclude awake time from
       // duration_minutes, so use duration directly to preserve their accounting.
-      const computeSleepMinutes = (row: (typeof rows)[number]) => {
-        const durationMinutes = row.duration_minutes ?? 0;
-        if (row.provider_id !== "apple_health") return durationMinutes;
-        if (!row.staging_available) return durationMinutes;
-        return (row.deep_minutes ?? 0) + (row.rem_minutes ?? 0) + (row.light_minutes ?? 0);
+      const availableState: SleepAnalyticsDataState = { status: "available" };
+      const missingDurationState: SleepAnalyticsDataState = {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      };
+      const missingStagesState: SleepAnalyticsDataState = {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      };
+      const hasStageMinutes = (
+        row: (typeof rows)[number],
+      ): row is (typeof rows)[number] & {
+        deep_minutes: number;
+        rem_minutes: number;
+        light_minutes: number;
+        awake_minutes: number;
+      } =>
+        row.staging_available &&
+        row.deep_minutes != null &&
+        row.rem_minutes != null &&
+        row.light_minutes != null &&
+        row.awake_minutes != null;
+      const computeSleepMinutes = (row: (typeof rows)[number]): number | null => {
+        if (row.provider_id !== "apple_health") {
+          return row.duration_minutes;
+        }
+        if (!hasStageMinutes(row)) {
+          return null;
+        }
+        return row.deep_minutes + row.rem_minutes + row.light_minutes;
       };
 
       const nightly = rows.map((row, rowIndex) => {
-        const durationMinutes = row.duration_minutes ?? 0;
+        const durationMinutes = row.duration_minutes;
         const sleepMinutes = computeSleepMinutes(row);
+        const durationState = durationMinutes == null ? missingDurationState : availableState;
+        const stageState = hasStageMinutes(row) ? availableState : missingStagesState;
+        const sleepState =
+          sleepMinutes != null
+            ? availableState
+            : durationMinutes == null
+              ? missingDurationState
+              : missingStagesState;
         const windowRows = rows.slice(Math.max(0, rowIndex - 6), rowIndex + 1);
-        const rollingDurations = windowRows.map(computeSleepMinutes);
+        const rollingDurations = windowRows
+          .map(computeSleepMinutes)
+          .filter((duration): duration is number => duration != null);
         const rollingAvgDuration =
           rollingDurations.length > 0
             ? rollingDurations.reduce((sum, duration) => sum + duration, 0) /
               rollingDurations.length
-            : 0;
+            : null;
+        const stagePercent = (minutes: number | null): number | null =>
+          hasStageMinutes(row) && durationMinutes != null && durationMinutes > 0 && minutes != null
+            ? Math.round((minutes / durationMinutes) * 1000) / 10
+            : null;
         return {
           date: row.date,
           startedAt: row.started_at,
@@ -396,25 +499,17 @@ export const recoveryRouter = router({
           })),
           durationMinutes,
           sleepMinutes,
-          deepPct:
-            row.staging_available && durationMinutes > 0
-              ? Math.round(((row.deep_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : null,
-          remPct:
-            row.staging_available && durationMinutes > 0
-              ? Math.round(((row.rem_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : null,
-          lightPct:
-            row.staging_available && durationMinutes > 0
-              ? Math.round(((row.light_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : null,
-          awakePct:
-            row.staging_available && durationMinutes > 0
-              ? Math.round(((row.awake_minutes ?? 0) / durationMinutes) * 1000) / 10
-              : null,
+          deepPct: stagePercent(row.deep_minutes),
+          remPct: stagePercent(row.rem_minutes),
+          lightPct: stagePercent(row.light_minutes),
+          awakePct: stagePercent(row.awake_minutes),
           efficiency: row.efficiency_pct == null ? null : Math.round(row.efficiency_pct * 10) / 10,
           stagingAvailable: row.staging_available,
-          rollingAvgDuration: Math.round(rollingAvgDuration * 10) / 10,
+          rollingAvgDuration:
+            rollingAvgDuration == null ? null : Math.round(rollingAvgDuration * 10) / 10,
+          durationState,
+          sleepState,
+          stageState,
         };
       });
 
@@ -423,18 +518,26 @@ export const recoveryRouter = router({
       const effective = getEffectiveParams(storedParams);
       const last14 = nightly.slice(-14);
       const targetMinutes = effective.sleepTarget.minutes;
+      const measuredLast14 = last14.filter(
+        (night): night is typeof night & { sleepMinutes: number } => night.sleepMinutes != null,
+      );
+      const measuredSleepMinutes = nightly
+        .map((night) => night.sleepMinutes)
+        .filter((minutes): minutes is number => minutes != null);
       const sleepDebt =
-        nightly.length > 0
+        measuredLast14.length > 0
           ? Math.round(
-              last14.reduce((debt, night) => {
+              measuredLast14.reduce((debt, night) => {
                 return debt + (targetMinutes - night.sleepMinutes);
               }, 0),
             )
           : null;
       const averageSleepMinutes =
-        nightly.length > 0
+        measuredSleepMinutes.length > 0
           ? Math.round(
-              (nightly.reduce((sum, night) => sum + night.sleepMinutes, 0) / nightly.length) * 10,
+              (measuredSleepMinutes.reduce((sum, minutes) => sum + minutes, 0) /
+                measuredSleepMinutes.length) *
+                10,
             ) / 10
           : null;
       const measuredEfficiencies = nightly
@@ -456,6 +559,7 @@ export const recoveryRouter = router({
         averageEfficiencyPercent,
       };
     },
+    { outputSchema: sleepAnalyticsOutputSchema },
   ),
 
   /**

@@ -85,6 +85,7 @@ export type {
   ReadinessComponents,
   ReadinessRow,
   ReadinessWeights,
+  SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,

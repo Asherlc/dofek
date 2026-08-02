@@ -1,3 +1,4 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
@@ -79,6 +80,9 @@ const activityItemSchema = z.object({
   provider_id: z.string(),
   source_providers: z.array(z.string()),
   distance_meters: z.number().nullable(),
+  distance_state: activityDataStateSchema,
+  elevation_gain_m: z.number().nullable(),
+  elevation_state: activityDataStateSchema,
 });
 const activitiesOutputSchema = z.object({
   activities: z.object({ items: z.array(activityItemSchema), totalCount: z.number() }),
@@ -167,5 +171,7 @@ export const cyclingRouter = router({
     }),
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
+    activitiesOutputSchema,
+    { keyVersion: "cycling-activity-states-v1" },
   ),
 });

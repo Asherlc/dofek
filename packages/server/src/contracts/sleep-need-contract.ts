@@ -2,6 +2,12 @@ import { z } from "zod";
 
 export const MISSING_PREVIOUS_NIGHT_MESSAGE =
   "Sync last night's sleep data to see tonight's sleep need.";
+export const INSUFFICIENT_BASELINE_HISTORY_MESSAGE =
+  "Sync at least 7 qualifying nights to estimate sleep need.";
+export const MISSING_PREVIOUS_DAY_LOAD_MESSAGE =
+  "Sync yesterday's activity data to include training load in sleep need.";
+export const INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION = "Sync more sleep and recovery data.";
+export const MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION = "Sync activity data for the previous day.";
 
 export const sleepNightSchema = z
   .object({
@@ -43,6 +49,13 @@ const sleepNeedEstimateMetadataSchema = z
   })
   .strict();
 
+const availableSleepNeedEstimateMetadataSchema = sleepNeedEstimateMetadataSchema
+  .extend({
+    basis: z.literal("personalized_high_hrv_average"),
+    baselineQualifyingNightCount: z.number().int().min(7),
+  })
+  .strict();
+
 const sleepNeedRecommendationSchema = z
   .object({
     baselineMinutes: z.number(),
@@ -65,7 +78,7 @@ const availableSleepNeedV2Schema = sleepNeedRecommendationSchema
   .extend({
     availability: z.literal("available"),
     debtRecoveryMinutes: z.number(),
-    estimateMetadata: sleepNeedEstimateMetadataSchema,
+    estimateMetadata: availableSleepNeedEstimateMetadataSchema,
   })
   .strict();
 
@@ -76,9 +89,29 @@ const missingPreviousNightSleepNeedV2Schema = z
   })
   .strict();
 
-export const sleepNeedV2Schema = z.discriminatedUnion("availability", [
+const insufficientBaselineSleepNeedV2Schema = z
+  .object({
+    availability: z.literal("insufficient_data"),
+    reason: z.literal("insufficient_baseline_history"),
+    message: z.literal(INSUFFICIENT_BASELINE_HISTORY_MESSAGE),
+    nextAction: z.literal(INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION),
+  })
+  .strict();
+
+const missingPreviousDayLoadSleepNeedV2Schema = z
+  .object({
+    availability: z.literal("insufficient_data"),
+    reason: z.literal("missing_previous_day_load"),
+    message: z.literal(MISSING_PREVIOUS_DAY_LOAD_MESSAGE),
+    nextAction: z.literal(MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION),
+  })
+  .strict();
+
+export const sleepNeedV2Schema = z.union([
   availableSleepNeedV2Schema,
   missingPreviousNightSleepNeedV2Schema,
+  insufficientBaselineSleepNeedV2Schema,
+  missingPreviousDayLoadSleepNeedV2Schema,
 ]);
 
 export type SleepNeedV2 = z.infer<typeof sleepNeedV2Schema>;
@@ -93,6 +126,7 @@ export interface SleepNeedComputation {
   debtObservedNightCount: number;
   recentNights: SleepNight[];
   hasPreviousNight: boolean;
+  hasYesterdayLoad: boolean;
 }
 
 interface BuildSleepNeedComputationInput {
@@ -103,6 +137,7 @@ interface BuildSleepNeedComputationInput {
   debtObservedNightCount: number;
   recentNights: SleepNight[];
   hasPreviousNight: boolean;
+  hasYesterdayLoad: boolean;
 }
 
 export function buildSleepNeedComputation({
@@ -113,6 +148,7 @@ export function buildSleepNeedComputation({
   debtObservedNightCount,
   recentNights,
   hasPreviousNight,
+  hasYesterdayLoad,
 }: BuildSleepNeedComputationInput): SleepNeedComputation {
   const debtRecoveryMinutes = Math.round(accumulatedDebtMinutes * 0.25);
   return {
@@ -125,6 +161,7 @@ export function buildSleepNeedComputation({
     debtObservedNightCount,
     recentNights,
     hasPreviousNight,
+    hasYesterdayLoad,
   };
 }
 
@@ -135,7 +172,10 @@ export function toSleepNeedV1(computation: SleepNeedComputation): SleepNeedResul
     accumulatedDebtMinutes: computation.accumulatedDebtMinutes,
     totalNeedMinutes: computation.totalNeedMinutes,
     recentNights: computation.recentNights,
-    canRecommend: computation.hasPreviousNight,
+    canRecommend:
+      computation.hasPreviousNight &&
+      computation.hasYesterdayLoad &&
+      computation.baselineQualifyingNightCount >= 7,
   });
 }
 
@@ -147,17 +187,28 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
     };
   }
 
-  const basis =
-    computation.baselineQualifyingNightCount >= 7
-      ? "personalized_high_hrv_average"
-      : "generic_eight_hour_default";
+  if (!computation.hasYesterdayLoad) {
+    return {
+      availability: "insufficient_data",
+      reason: "missing_previous_day_load",
+      message: MISSING_PREVIOUS_DAY_LOAD_MESSAGE,
+      nextAction: MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION,
+    };
+  }
+
+  if (computation.baselineQualifyingNightCount < 7) {
+    return {
+      availability: "insufficient_data",
+      reason: "insufficient_baseline_history",
+      message: INSUFFICIENT_BASELINE_HISTORY_MESSAGE,
+      nextAction: INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION,
+    };
+  }
+
+  const basis = "personalized_high_hrv_average";
   const qualifyingNightNoun = computation.baselineQualifyingNightCount === 1 ? "night" : "nights";
-  const qualifyingNightVerb = computation.baselineQualifyingNightCount === 1 ? "is" : "are";
   const observedNightNoun = computation.debtObservedNightCount === 1 ? "night" : "nights";
-  const basisLabel =
-    basis === "personalized_high_hrv_average"
-      ? `Baseline uses the average of ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} followed by at-or-above-median heart rate variability.`
-      : `Baseline uses a generic 8-hour default because ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} ${qualifyingNightVerb} below the 7-night minimum.`;
+  const basisLabel = `Baseline uses the average of ${computation.baselineQualifyingNightCount} qualifying ${qualifyingNightNoun} followed by at-or-above-median heart rate variability.`;
 
   return sleepNeedV2Schema.parse({
     availability: "available",

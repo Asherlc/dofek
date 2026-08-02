@@ -242,6 +242,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
           hr_samples: 5400,
           power_samples: 5400,
           distance_meters: 42000,
+          distance_state: { status: "available" },
         },
         {
           id: "a2",
@@ -257,6 +258,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
           hr_samples: 2700,
           power_samples: null,
           distance_meters: 7500,
+          distance_state: { status: "available" },
         },
       ],
       weeklyVolume: [
@@ -683,6 +685,7 @@ describe("mobileTrainingFixtureSchema", () => {
           hr_samples: null,
           power_samples: null,
           distance_meters: null,
+          distance_state: { status: "missing", reason: "Distance not recorded" },
         });
       },
     ],
@@ -915,6 +918,7 @@ describe("mobileTrainingFixtureSchema", () => {
         hr_samples: null,
         power_samples: null,
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
       },
     ];
     fixture.data.weeklyVolume = [
@@ -951,6 +955,7 @@ describe("mobileTrainingFixtureSchema", () => {
       hr_samples: null,
       power_samples: null,
       distance_meters: null,
+      distance_state: { status: "missing", reason: "Distance not recorded" },
     });
     expectIssue(
       mobileTrainingFixtureSchema.safeParse(activityOnly),
