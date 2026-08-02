@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
-import { formatDateYmd } from "@dofek/format/format";
+import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 
 interface DailyBySourceQueryResult {
@@ -89,6 +89,10 @@ describe("DailyHeartRatePage", () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("fits the time axis to the selected day's samples", () => {
     render(createElement(DailyHeartRatePage));
 
@@ -109,21 +113,37 @@ describe("DailyHeartRatePage", () => {
   });
 
   it("queries the previous day and returns to today through the controls", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 12, 12));
+
+    const today = formatDateYmd();
+    const previousDate = shiftDateYmd(today, -1);
     render(createElement(DailyHeartRatePage));
 
     fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
-    const previousDay = new Date();
-    previousDay.setDate(previousDay.getDate() - 1);
     expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({
-      date: formatDateYmd(previousDay),
+      date: previousDate,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
-    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: formatDateYmd() });
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
 
     fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
     fireEvent.click(screen.getByRole("button", { name: "Today" }));
-    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: formatDateYmd() });
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+  });
+
+  it("rejects future dates from the date input", () => {
+    render(createElement(DailyHeartRatePage));
+
+    const today = formatDateYmd();
+    const futureDate = `${Number(today.slice(0, 4)) + 1}-01-01`;
+    const dateInput = screen.getByLabelText("Date");
+
+    fireEvent.change(dateInput, { target: { value: futureDate } });
+
+    expect(dateInput).toHaveValue(today);
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
   });
 
   it("renders the canonical server-provided source summary", () => {

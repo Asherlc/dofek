@@ -33,9 +33,11 @@ port=64077): Max retries exceeded` while the full unit tier reported
 
 ### Root Cause
 
-The shared local Docker host had exhausted its available network address pools
-and was not serving the configured ClickHouse endpoint; the resulting host
-resource pressure also caused a Vitest worker update to time out.
+The confirmed infrastructure failures were that the shared local Docker host
+had exhausted its available network address pools and was not serving the
+configured ClickHouse endpoint. The Vitest worker-update timeout happened during
+the same full-suite run, but the captured evidence does not establish its cause;
+that timeout remains unresolved.
 
 ### Fix or Mitigation
 
@@ -46,9 +48,9 @@ Compose resources.
 
 ### Remaining Risk
 
-Run the integration test and analytics SQL lint on the exact PR head in CI or
-after an explicitly scoped Docker cleanup, following the resource guidance in
-[`docs/testing.md`](testing.md#docker-disk-recovery).
+Run `pnpm test:unit`, the heart-rate integration test, and full `pnpm lint` on
+the exact PR head in CI or after an explicitly scoped Docker cleanup, following
+the resource guidance in [`docs/testing.md`](testing.md#docker-disk-recovery).
 
 ## 2026-08-01: Review-stack detail smoke test encoded tRPC input incorrectly
 

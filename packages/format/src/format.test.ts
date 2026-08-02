@@ -70,6 +70,16 @@ describe("formatDateYmd", () => {
     expect(shiftDateYmd("2026-03-01", -1)).toBe("2026-02-28");
     expect(shiftDateYmd("2026-12-31", 1)).toBe("2027-01-01");
   });
+
+  it("rejects malformed dates, invalid calendar dates, and non-integer offsets", () => {
+    expect(() => shiftDateYmd("not-a-date", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-02-30", 1)).toThrow("Expected a valid YYYY-MM-DD date");
+    expect(() => shiftDateYmd("2026-03-01", 0.5)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
 });
 
 describe("date and time formatters", () => {

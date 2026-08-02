@@ -19,6 +19,7 @@ export function DailyHeartRatePage() {
   const today = formatDateYmd();
   const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const isToday = date === today;
+  const canGoForward = date < today;
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });
   const sources = query.data;
@@ -52,15 +53,18 @@ export function DailyHeartRatePage() {
               value={date}
               max={today}
               onChange={(event) => {
-                if (event.target.value) setDate(event.target.value);
+                if (event.target.value && event.target.value <= today) setDate(event.target.value);
               }}
               className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground"
             />
           </label>
           <button
             type="button"
-            onClick={() => setDate(shiftDateYmd(date, 1))}
-            disabled={isToday}
+            onClick={() => {
+              const nextDate = shiftDateYmd(date, 1);
+              if (nextDate <= today) setDate(nextDate);
+            }}
+            disabled={!canGoForward}
             aria-label="Next day"
             className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
           >
