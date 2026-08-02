@@ -72,7 +72,7 @@ const data: MicronutrientSafetyReviewRow[] = [
 const meta = {
   title: "Nutrition/MicronutrientChart",
   component: MicronutrientChart,
-  args: { data },
+  args: { data, selectedWindowDays: 30 },
   decorators: [
     (Story) => (
       <div className="w-[760px] p-4">
