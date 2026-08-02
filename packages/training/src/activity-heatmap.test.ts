@@ -5,6 +5,7 @@ import {
   ACTIVITY_HEATMAP_DESCRIPTION,
   ACTIVITY_HEATMAP_MEASURE_LABEL,
   ACTIVITY_HEATMAP_UNIT_LABEL,
+  ActivityHeatmapDataError,
   activityHeatmapBandById,
   activityHeatmapBandForMinutes,
 } from "./activity-heatmap.ts";
@@ -39,9 +40,22 @@ describe("activity heatmap semantics", () => {
     expect(activityHeatmapBandForMinutes(minutes)).toBe(expectedBand);
   });
 
-  it("rejects negative training time instead of assigning a heatmap band", () => {
-    expect(() => activityHeatmapBandForMinutes(-1)).toThrow(
-      "Training time is outside the supported heatmap range: -1",
+  it.each([
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ])("rejects malformed training time: %s", (minutes) => {
+    expect(() => activityHeatmapBandForMinutes(minutes)).toThrow(ActivityHeatmapDataError);
+    expect(() => activityHeatmapBandForMinutes(minutes)).toThrow(
+      "Training time must be a finite non-negative number",
+    );
+  });
+
+  it("rejects a finite value outside the supported band ranges", () => {
+    expect(() => activityHeatmapBandForMinutes(30.5)).toThrow(ActivityHeatmapDataError);
+    expect(() => activityHeatmapBandForMinutes(30.5)).toThrow(
+      "Training time is outside the supported heatmap range: 30.5",
     );
   });
 
@@ -54,6 +68,7 @@ describe("activity heatmap semantics", () => {
   it("rejects an unknown band id received at runtime", () => {
     const unknownBandId = "unknown";
 
+    expect(() => activityHeatmapBandById(unknownBandId)).toThrow(ActivityHeatmapDataError);
     expect(() => activityHeatmapBandById(unknownBandId)).toThrow(
       "Unknown activity heatmap band: unknown",
     );

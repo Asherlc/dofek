@@ -179,7 +179,10 @@ export default function ActivitiesScreen() {
   });
   const calendarQuery = trpc.calendar.calendarData.useQuery(
     { days: weeks * 7 },
-    { placeholderData: (previousData) => previousData },
+    {
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
+    },
   );
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({

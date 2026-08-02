@@ -38,8 +38,9 @@ function TrainingCalendarContent({ data, height }: TrainingCalendarProps) {
     .sort((left, right) => left.date.localeCompare(right.date));
 
   const dayMap = useMemo(() => new Map(data.map((day) => [day.date, day])), [data]);
-  const [selectedDate, setSelectedDate] = useState(displayDays.at(-1)?.date ?? "");
-  const selectedDay = dayMap.get(selectedDate) ?? displayDays.at(-1);
+  const [selectedDate, setSelectedDate] = useState<string | undefined>(displayDays.at(-1)?.date);
+  const selectedDay =
+    (selectedDate === undefined ? undefined : dayMap.get(selectedDate)) ?? displayDays.at(-1);
   const detailsSelectId = useId();
 
   // Series data: [date, totalMinutes] — only include dates within the display range

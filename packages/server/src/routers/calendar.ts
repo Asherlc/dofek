@@ -7,8 +7,10 @@ import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import {
   ACTIVITY_HEATMAP_BAND_IDS,
   type ActivityHeatmapBandId,
+  ActivityHeatmapDataError,
 } from "@dofek/training/activity-heatmap";
 import { TRPCError } from "@trpc/server";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
@@ -141,10 +143,22 @@ export const calendarRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }): Promise<CalendarDay[]> => {
       const repo = new CalendarRepository(ctx.db, ctx.userId, ctx.timezone);
-      const days = await repo.getCalendarData(range.days);
-      return days.map((day) => day.toDetail());
+      try {
+        const days = await repo.getCalendarData(range.days);
+        return days.map((day) => day.toDetail());
+      } catch (error) {
+        if (!(error instanceof ActivityHeatmapDataError)) {
+          throw error;
+        }
+        captureException(error, { tags: { trpcPath: "calendar.calendarData" } });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Activity calendar data is invalid. Please re-sync activities and try again.",
+          cause: error,
+        });
+      }
     },
-    { outputSchema: z.array(calendarDaySchema) },
+    { keyVersion: "calendar-calendarData-v2", outputSchema: z.array(calendarDaySchema) },
   ),
 
   weekList: cachedProtectedQuery({

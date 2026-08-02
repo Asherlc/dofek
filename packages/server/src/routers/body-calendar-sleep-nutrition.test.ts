@@ -117,6 +117,22 @@ describe("calendarRouter", () => {
       const result = await caller.calendarData({ days: 365 });
       expect(result).toEqual([]);
     });
+
+    it("returns an actionable server error for malformed training durations", async () => {
+      const caller = makeCaller(calendarRouter, [
+        {
+          date: "2024-01-15",
+          activity_count: 1,
+          total_minutes: -1,
+          activity_types: ["cycling"],
+        },
+      ]);
+
+      await expect(caller.calendarData({ days: 365 })).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Activity calendar data is invalid. Please re-sync activities and try again.",
+      });
+    });
   });
 });
 

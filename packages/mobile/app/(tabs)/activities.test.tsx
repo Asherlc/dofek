@@ -282,7 +282,9 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(calendarDataInput).toEqual({ days: 28 });
-    expect(calendarDataOptions?.placeholderData?.([])).toEqual([]);
+    expect(calendarDataOptions?.placeholderData?.([])).toBeUndefined();
+    const previousCalendarData = [{ date: "2026-03-10" }];
+    expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
     expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
     expect(screen.getByRole("button", { name: /72 minutes of training time/ })).toBeTruthy();

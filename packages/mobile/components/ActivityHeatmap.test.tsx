@@ -41,4 +41,13 @@ describe("ActivityHeatmap", () => {
     expect(screen.getByText("72 minutes of training time")).toBeTruthy();
     expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
   });
+
+  it("selects the newest day when data arrives after an empty range", () => {
+    const { rerender } = render(<ActivityHeatmap data={[]} />);
+    expect(screen.getByLabelText("No training data")).toBeTruthy();
+
+    rerender(<ActivityHeatmap data={data} />);
+
+    expect(screen.getByText("72 minutes of training time")).toBeTruthy();
+  });
 });

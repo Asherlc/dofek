@@ -21,6 +21,13 @@ export interface ActivityHeatmapBand {
   readonly meaning: string;
 }
 
+export class ActivityHeatmapDataError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ActivityHeatmapDataError";
+  }
+}
+
 export const ACTIVITY_HEATMAP_BANDS: readonly ActivityHeatmapBand[] = [
   {
     id: "none",
@@ -61,12 +68,18 @@ export const ACTIVITY_HEATMAP_BANDS: readonly ActivityHeatmapBand[] = [
 ] as const;
 
 export function activityHeatmapBandForMinutes(totalMinutes: number): ActivityHeatmapBandId {
+  const hasValidMinutes = Number.isFinite(totalMinutes) && totalMinutes >= 0;
   const band = ACTIVITY_HEATMAP_BANDS.find(
     (candidate) =>
-      totalMinutes >= candidate.min && (candidate.max === null || totalMinutes <= candidate.max),
+      hasValidMinutes &&
+      totalMinutes >= candidate.min &&
+      (candidate.max === null || totalMinutes <= candidate.max),
   );
   if (!band) {
-    throw new Error(`Training time is outside the supported heatmap range: ${totalMinutes}`);
+    const message = hasValidMinutes
+      ? `Training time is outside the supported heatmap range: ${totalMinutes}`
+      : `Training time must be a finite non-negative number; received ${String(totalMinutes)}.`;
+    throw new ActivityHeatmapDataError(message);
   }
   return band.id;
 }
@@ -74,7 +87,7 @@ export function activityHeatmapBandForMinutes(totalMinutes: number): ActivityHea
 export function activityHeatmapBandById(bandId: string): ActivityHeatmapBand {
   const band = ACTIVITY_HEATMAP_BANDS.find((candidate) => candidate.id === bandId);
   if (!band) {
-    throw new Error(`Unknown activity heatmap band: ${bandId}`);
+    throw new ActivityHeatmapDataError(`Unknown activity heatmap band: ${bandId}`);
   }
   return band;
 }

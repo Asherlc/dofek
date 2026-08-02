@@ -24,7 +24,7 @@ const colorsByBand: Record<ActivityHeatmapBandId, string> = {
 };
 
 export function ActivityHeatmap({ data }: ActivityHeatmapProps) {
-  const [selectedDate, setSelectedDate] = useState(data.at(-1)?.date ?? "");
+  const [selectedDate, setSelectedDate] = useState<string | undefined>(data.at(-1)?.date);
   const selectedDay = data.find((day) => day.date === selectedDate) ?? data.at(-1);
 
   if (data.length === 0) {
