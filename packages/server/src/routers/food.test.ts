@@ -411,6 +411,10 @@ describe("foodRouter", () => {
       const result = await caller.byDateV2({ date: "2024-01-15" });
 
       expect(result.intakeContext).toMatchObject({
+        observedCalories: 2450,
+        target: {
+          calories: 2450,
+        },
         scale: {
           maximumCalories: 2450,
           observedPercentage: 100,
