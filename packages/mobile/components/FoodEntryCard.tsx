@@ -31,12 +31,15 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
   const displayName = entry.food_name ?? "Unnamed nutrition entry";
   const nutrientDetails = foodEntryNutrientDetailsFromLegacyColumns(entry);
   const nutrientGroups = groupFoodEntryNutrientDetails(nutrientDetails);
+  const macroAccessibilityLabels = [
+    entry.protein_g == null ? null : `Protein: ${formatGrams(entry.protein_g)}`,
+    entry.carbs_g == null ? null : `Carbs: ${formatGrams(entry.carbs_g)}`,
+    entry.fat_g == null ? null : `Fat: ${formatGrams(entry.fat_g)}`,
+  ];
   const accessibilityLabel = [
     `${expanded ? "Hide" : "Show"} details for ${displayName}`,
     entry.food_description?.trim() ? entry.food_description : null,
-    `Protein: ${formatGrams(entry.protein_g ?? 0)}`,
-    `Carbs: ${formatGrams(entry.carbs_g ?? 0)}`,
-    `Fat: ${formatGrams(entry.fat_g ?? 0)}`,
+    ...macroAccessibilityLabels,
     `Calories: ${formatCalories(entry.calories ?? 0)}`,
   ]
     .filter((part): part is string => part !== null)

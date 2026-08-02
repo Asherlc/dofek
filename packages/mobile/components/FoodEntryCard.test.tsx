@@ -38,6 +38,31 @@ describe("FoodEntryCard", () => {
     ).toBeTruthy();
   });
 
+  it("does not announce missing macros as zero values", () => {
+    render(
+      <FoodEntryCard
+        entry={{
+          id: "2",
+          food_name: "Oatmeal",
+          food_description: "1 cup",
+          meal: "breakfast",
+          calories: 350,
+          protein_g: 0,
+          carbs_g: null,
+          fat_g: null,
+        }}
+        onDelete={vi.fn()}
+        deleting={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Show details for Oatmeal. 1 cup. Protein: 0 g. Calories: 350 kcal",
+      }),
+    ).toBeTruthy();
+  });
+
   it("expands to show detailed nutrients when tapped", () => {
     render(
       <FoodEntryCard
