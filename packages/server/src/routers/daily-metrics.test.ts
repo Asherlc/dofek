@@ -252,6 +252,36 @@ describe("dailyMetricsRouter", () => {
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
+          metric_evidence: {
+            hrv: {
+              latestDate: "2024-01-16",
+              sourceProviders: ["whoop"],
+              observedDays: 12,
+              recentMean: 62,
+              baselineMean: 58,
+            },
+            spo2: {
+              latestDate: "2024-01-15",
+              sourceProviders: ["garmin"],
+              observedDays: 8,
+              recentMean: 97.5,
+              baselineMean: 96.5,
+            },
+            steps: {
+              latestDate: "2024-01-16",
+              sourceProviders: ["apple_health"],
+              observedDays: 20,
+              recentMean: 9000,
+              baselineMean: 8000,
+            },
+            skin_temperature: {
+              latestDate: "2024-01-14",
+              sourceProviders: ["oura"],
+              observedDays: 6,
+              recentMean: 36.7,
+              baselineMean: 36.5,
+            },
+          },
         },
       ];
       const caller = makeCaller(rows);
@@ -280,6 +310,24 @@ describe("dailyMetricsRouter", () => {
             metric: "steps",
             sampleDeviation: 1200,
             statusToken: "near_baseline",
+          }),
+          expect.objectContaining({
+            metric: "spo2",
+            provenance: expect.objectContaining({
+              latestDate: "2024-01-15",
+              sourceProviders: ["garmin"],
+            }),
+            comparison: expect.objectContaining({ delta: 1, direction: "increasing" }),
+          }),
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ sourceProviders: ["apple_health"] }),
+            comparison: expect.objectContaining({ delta: 1000 }),
+          }),
+          expect.objectContaining({
+            metric: "skin_temperature",
+            provenance: expect.objectContaining({ sourceProviders: ["oura"] }),
+            comparison: expect.objectContaining({ delta: 0.2 }),
           }),
         ]),
       });

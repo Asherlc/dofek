@@ -3,17 +3,38 @@ import { mean, sampleStandardDeviation } from "simple-statistics";
 import type { z } from "zod";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
+  type HealthMetricComparison,
+  type HealthMetricEvidenceRow,
+  type HealthMetricProvenance,
   type HealthStatusMetric,
   healthMetricIntentSchema,
   healthMetricKeySchema,
   healthStatusMetricSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import type { TrendsRow } from "../repositories/daily-metrics-repository.ts";
 
 export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSchema };
 
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
 export type { HealthStatusMetric };
+
+export type HealthMetricObservation = {
+  date: string;
+  value: number | null;
+  sourceProviders: readonly string[];
+};
+
+export type HealthMetricEvidence = {
+  provenance: HealthMetricProvenance;
+  comparison: HealthMetricComparison;
+};
+
+function hasFiniteValue(
+  observation: HealthMetricObservation,
+): observation is HealthMetricObservation & { value: number } {
+  return observation.value != null && Number.isFinite(observation.value);
+}
 
 export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v3";
 
@@ -24,6 +45,8 @@ interface HealthStatusSummaryInput {
   baseline: number | null;
   sampleDeviation: number | null;
   intent: HealthMetricIntent;
+  provenance?: HealthMetricProvenance | null;
+  comparison?: HealthMetricComparison | null;
 }
 
 interface HealthStatusValuesInput {
@@ -31,6 +54,8 @@ interface HealthStatusValuesInput {
   label: string;
   values: readonly number[];
   intent: HealthMetricIntent;
+  observations?: readonly HealthMetricObservation[];
+  windowDays?: number;
 }
 
 interface WeightGoalIntentInput {
@@ -54,7 +79,105 @@ function healthStatusSummary(input: HealthStatusSummaryInput) {
     ...input,
     valueText: formatHealthStatusValue(input.metric, input.value),
     baselineText: formatHealthStatusValue(input.metric, input.baseline),
+    provenance: input.provenance ?? null,
+    comparison: input.comparison ?? null,
   };
+}
+
+function comparisonDirection(delta: number | null): HealthMetricComparison["direction"] {
+  if (delta == null) return "unknown";
+  if (delta > 0) return "increasing";
+  if (delta < 0) return "decreasing";
+  return "stable";
+}
+
+function meanOrNull(values: readonly number[]): number | null {
+  return values.length > 0 ? mean(values) : null;
+}
+
+function roundComparisonValue(value: number | null): number | null {
+  return value == null ? null : Number(value.toFixed(10));
+}
+
+export function buildHealthMetricEvidence(
+  observations: readonly HealthMetricObservation[],
+  windowDays: number,
+): HealthMetricEvidence {
+  const validObservations = [...observations]
+    .filter(hasFiniteValue)
+    .sort((first, second) => first.date.localeCompare(second.date));
+  const latest = validObservations.at(-1);
+  const latestDate = latest?.date ?? null;
+  const recentValues = latestDate
+    ? validObservations
+        .filter((observation) => observation.date > dateWindowStartString(latestDate, 7))
+        .map((observation) => observation.value)
+    : [];
+  const baselineValues = latestDate
+    ? validObservations
+        .filter(
+          (observation) =>
+            observation.date > dateWindowStartString(latestDate, 35) &&
+            observation.date <= dateWindowStartString(latestDate, 7),
+        )
+        .map((observation) => observation.value)
+    : [];
+  const recentMean = meanOrNull(recentValues);
+  const baselineMean = meanOrNull(baselineValues);
+  const delta =
+    recentMean != null && baselineMean != null
+      ? roundComparisonValue(recentMean - baselineMean)
+      : null;
+
+  return {
+    provenance: {
+      latestDate,
+      sourceProviders: latest
+        ? [...new Set(latest.sourceProviders)].sort((first, second) => first.localeCompare(second))
+        : [],
+      observedDays: validObservations.length,
+      windowDays,
+    },
+    comparison: {
+      recentDays: 7,
+      baselineDays: 28,
+      recentMean,
+      baselineMean,
+      delta,
+      direction: comparisonDirection(delta),
+    },
+  };
+}
+
+function evidenceFromRow(row: HealthMetricEvidenceRow, windowDays: number): HealthMetricEvidence {
+  const delta = roundComparisonValue(
+    row.recentMean != null && row.baselineMean != null ? row.recentMean - row.baselineMean : null,
+  );
+  return {
+    provenance: {
+      latestDate: row.latestDate,
+      sourceProviders: row.sourceProviders,
+      observedDays: row.observedDays,
+      windowDays,
+    },
+    comparison: {
+      recentDays: 7,
+      baselineDays: 28,
+      recentMean: row.recentMean,
+      baselineMean: row.baselineMean,
+      delta,
+      direction: comparisonDirection(delta),
+    },
+  };
+}
+
+function evidenceForMetric(
+  trends: TrendsRow,
+  metric: keyof NonNullable<TrendsRow["metric_evidence"]>,
+  windowDays: number,
+): HealthMetricEvidence | null {
+  const row = trends.metric_evidence?.[metric];
+  return row ? evidenceFromRow(row, windowDays) : null;
 }
 
 function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
@@ -187,6 +310,9 @@ export function buildHealthStatusFromValues(input: HealthStatusValuesInput): Hea
   const value = values.at(-1) ?? null;
   const baseline = values.length > 0 ? mean(values) : null;
   const sampleDeviation = values.length > 1 ? sampleStandardDeviation(values) : null;
+  const evidence = input.observations
+    ? buildHealthMetricEvidence(input.observations, input.windowDays ?? Math.max(values.length, 1))
+    : null;
 
   return buildHealthStatusFromSummary({
     metric: input.metric,
@@ -195,6 +321,8 @@ export function buildHealthStatusFromValues(input: HealthStatusValuesInput): Hea
     baseline,
     sampleDeviation,
     intent: input.intent,
+    provenance: evidence?.provenance ?? null,
+    comparison: evidence?.comparison ?? null,
   });
 }
 
@@ -242,6 +370,7 @@ const recoveryMetricIntents: Record<BaselineRelativeMetric["metric"], HealthMetr
 
 export function buildHealthStatusFromBaselineMetric(
   metric: BaselineRelativeMetric,
+  provenance: HealthMetricProvenance | null = null,
 ): HealthStatusMetric {
   return buildHealthStatusFromSummary({
     metric: metric.metric,
@@ -250,15 +379,28 @@ export function buildHealthStatusFromBaselineMetric(
     baseline: metric.baseline.mean,
     sampleDeviation: metric.baseline.standardDeviation,
     intent: recoveryMetricIntents[metric.metric],
+    provenance,
+    comparison: metric.comparison,
   });
 }
 
 export function buildDailyMetricHealthStatuses(
   trends: TrendsRow,
   baselineRelative: BaselineRelativeMetric[],
+  windowDays = 30,
 ): HealthStatusMetric[] {
+  const hrvEvidence = evidenceForMetric(trends, "hrv", windowDays);
+  const spo2Evidence = evidenceForMetric(trends, "spo2", windowDays);
+  const stepsEvidence = evidenceForMetric(trends, "steps", windowDays);
+  const skinTemperatureEvidence = evidenceForMetric(trends, "skin_temperature", windowDays);
+
   return [
-    ...baselineRelative.map(buildHealthStatusFromBaselineMetric),
+    ...baselineRelative.map((metric) =>
+      buildHealthStatusFromBaselineMetric(
+        metric,
+        metric.metric === "hrv" ? (hrvEvidence?.provenance ?? null) : null,
+      ),
+    ),
     buildHealthStatusFromSummary({
       metric: "spo2",
       label: "Blood Oxygen Saturation (SpO2)",
@@ -266,6 +408,8 @@ export function buildDailyMetricHealthStatuses(
       baseline: trends.avg_spo2,
       sampleDeviation: trends.stddev_spo2,
       intent: "neutral",
+      provenance: spo2Evidence?.provenance ?? null,
+      comparison: spo2Evidence?.comparison ?? null,
     }),
     buildHealthStatusFromSummary({
       metric: "steps",
@@ -274,6 +418,8 @@ export function buildDailyMetricHealthStatuses(
       baseline: trends.avg_steps,
       sampleDeviation: trends.stddev_steps,
       intent: "neutral",
+      provenance: stepsEvidence?.provenance ?? null,
+      comparison: stepsEvidence?.comparison ?? null,
     }),
     buildHealthStatusFromSummary({
       metric: "skin_temperature",
@@ -282,6 +428,8 @@ export function buildDailyMetricHealthStatuses(
       baseline: trends.avg_skin_temp,
       sampleDeviation: trends.stddev_skin_temp,
       intent: "neutral",
+      provenance: skinTemperatureEvidence?.provenance ?? null,
+      comparison: skinTemperatureEvidence?.comparison ?? null,
     }),
   ];
 }

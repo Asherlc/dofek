@@ -96,6 +96,38 @@ describe("HealthStatusBar", () => {
     ).toBeDefined();
   });
 
+  it("renders server-authored provenance and comparison context", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "spo2",
+            provenance: {
+              latestDate: "2026-07-30",
+              sourceProviders: ["whoop"],
+              observedDays: 3,
+              windowDays: 30,
+            },
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 97.2,
+              baselineMean: 96.4,
+              delta: 0.8,
+              direction: "increasing",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText("Source: WHOOP (Cloud) · Latest: 2026-07-30 · Coverage: 3/30 days"),
+    ).toBeDefined();
+    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeDefined();
+  });
+
   it("renders structured units while preserving the exact server status", () => {
     const { container } = render(
       <HealthStatusBar

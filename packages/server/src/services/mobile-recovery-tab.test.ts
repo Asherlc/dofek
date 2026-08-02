@@ -541,7 +541,7 @@ describe("loadMobileRecoveryTab", () => {
       vi.mocked(buildHealthStatusFromValues).mockClear();
       vi.mocked(buildWeightHealthStatus).mockClear();
 
-      await runRecoveryTab([recoveryRow()], {
+      const result = await runRecoveryTab([recoveryRow()], {
         weight: [
           {
             date: "2026-03-27",
@@ -585,21 +585,62 @@ describe("loadMobileRecoveryTab", () => {
           label: "SpO2",
           values: [97, 99],
           intent: "neutral",
+          observations: [
+            { date: "2026-03-26", value: 97, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 99, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
         },
         {
           metric: "steps",
           label: "Steps",
           values: [8_000, 10_000],
           intent: "neutral",
+          observations: [
+            { date: "2026-03-26", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: 8_000, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 10_000, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
         },
         {
           metric: "skin_temperature",
           label: "Skin Temperature",
           values: [33.1, 33.5],
           intent: "neutral",
+          observations: [
+            { date: "2026-03-26", value: 33.1, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 33.5, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
         },
       ]);
       expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75);
+      expect(result.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "spo2",
+            provenance: expect.objectContaining({
+              latestDate: "2026-03-28",
+              sourceProviders: ["apple_health"],
+            }),
+            comparison: expect.objectContaining({
+              recentDays: 7,
+              baselineDays: 28,
+            }),
+          }),
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ observedDays: 2, windowDays: 35 }),
+          }),
+          expect.objectContaining({
+            metric: "skin_temperature",
+            provenance: expect.objectContaining({ observedDays: 2, windowDays: 35 }),
+          }),
+        ]),
+      );
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {

@@ -61,10 +61,10 @@ describe("dailyMetrics data correctness", () => {
       const spo2 = 96 + Math.round(Math.sin(i * 0.5) * 2);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps, spo2_avg
+              date, provider_id, user_id, hrv, steps, spo2_avg, skin_temp_c
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'apple_health', ${TEST_USER_ID}, ${hrv}, ${steps}, ${spo2}
+              'apple_health', ${TEST_USER_ID}, ${hrv}, ${steps}, ${spo2}, ${33 + i / 100}
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -189,6 +189,48 @@ describe("dailyMetrics data correctness", () => {
       expect(result.avg_steps).toBeGreaterThan(5000);
       expect(result.avg_steps).toBeLessThan(15000);
       expect(result.stddev_steps).toBeGreaterThan(0);
+    });
+
+    it("returns server-authored provenance and comparison context for dashboard metrics", async () => {
+      const result = await query<{
+        healthStatus: Array<{
+          metric: string;
+          provenance: {
+            latestDate: string | null;
+            sourceProviders: string[];
+            observedDays: number;
+            windowDays: number;
+          } | null;
+          comparison: {
+            recentDays: number;
+            baselineDays: number;
+            recentMean: number | null;
+            baselineMean: number | null;
+            delta: number | null;
+          } | null;
+        }>;
+      }>("dailyMetrics.trends", { days: 30, endDate });
+
+      const expectedMetrics = ["hrv", "spo2", "steps", "skin_temperature"];
+      for (const metric of expectedMetrics) {
+        const status = result.healthStatus.find((candidate) => candidate.metric === metric);
+        expect(status).toBeDefined();
+        expect(status?.provenance).toEqual({
+          latestDate: subtractDays(endDate, 4),
+          sourceProviders: ["apple_health"],
+          observedDays: 27,
+          windowDays: 35,
+        });
+        expect(status?.comparison).toEqual(
+          expect.objectContaining({
+            recentDays: 7,
+            baselineDays: 28,
+            recentMean: expect.any(Number),
+            baselineMean: expect.any(Number),
+            delta: expect.any(Number),
+          }),
+        );
+      }
     });
 
     it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {

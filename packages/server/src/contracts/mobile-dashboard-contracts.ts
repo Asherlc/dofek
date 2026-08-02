@@ -1,6 +1,9 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { z } from "zod";
-import { baselineRelativeMetricSchema } from "./baseline-relative-metrics.ts";
+import {
+  baselineComparisonDirectionSchema,
+  baselineRelativeMetricSchema,
+} from "./baseline-relative-metrics.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
@@ -119,6 +122,44 @@ export const healthMetricKeySchema = z.enum([
 
 export const healthMetricIntentSchema = z.enum(["higher", "lower", "maintain", "neutral"]);
 
+export const HEALTH_METRIC_EVIDENCE_WINDOW_DAYS = 35;
+
+export const healthMetricProvenanceSchema = z.object({
+  latestDate: dateSchema.nullable(),
+  sourceProviders: z.array(z.string()),
+  observedDays: z.number().int().nonnegative(),
+  windowDays: z.number().int().positive(),
+});
+
+export const healthMetricComparisonSchema = z.object({
+  recentDays: z.number().int().positive(),
+  baselineDays: z.number().int().positive(),
+  recentMean: z.number().nullable(),
+  baselineMean: z.number().nullable(),
+  delta: z.number().nullable(),
+  direction: baselineComparisonDirectionSchema,
+});
+
+export const healthMetricEvidenceRowSchema = z.object({
+  latestDate: dateSchema.nullable(),
+  sourceProviders: z.array(z.string()),
+  observedDays: z.number().int().nonnegative(),
+  recentMean: z.number().nullable(),
+  baselineMean: z.number().nullable(),
+});
+
+export type HealthMetricEvidenceRow = z.infer<typeof healthMetricEvidenceRowSchema>;
+
+export const healthMetricEvidenceRowsSchema = z.object({
+  hrv: healthMetricEvidenceRowSchema.nullable(),
+  spo2: healthMetricEvidenceRowSchema.nullable(),
+  steps: healthMetricEvidenceRowSchema.nullable(),
+  skin_temperature: healthMetricEvidenceRowSchema.nullable(),
+});
+
+export type HealthMetricProvenance = z.infer<typeof healthMetricProvenanceSchema>;
+export type HealthMetricComparison = z.infer<typeof healthMetricComparisonSchema>;
+
 export const healthStatusMetricSchema = z.object({
   metric: healthMetricKeySchema,
   label: z.string(),
@@ -141,6 +182,8 @@ export const healthStatusMetricSchema = z.object({
   statusLabel: z.string(),
   evaluationRule: z.string(),
   explanation: z.string(),
+  provenance: healthMetricProvenanceSchema.nullable(),
+  comparison: healthMetricComparisonSchema.nullable(),
 });
 
 export type HealthMetricKey = z.infer<typeof healthMetricKeySchema>;

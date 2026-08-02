@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
+import { HEALTH_METRIC_EVIDENCE_WINDOW_DAYS } from "../contracts/mobile-dashboard-contracts.ts";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -97,17 +98,25 @@ export const dailyMetricsRouter = router({
               .then(latestRecoveryBaselineMetrics),
       ]);
       const trends = await repo.getTrends(range.days, input.endDate, restingHeartRateCte);
-      return trends
-        ? {
-            ...trends,
-            baselineRelative,
-            healthStatus: buildDailyMetricHealthStatuses(trends, baselineRelative),
-          }
-        : null;
+      if (!trends) return null;
+      const { metric_evidence: _metricEvidence, ...publicTrends } = trends;
+      return {
+        ...publicTrends,
+        baselineRelative,
+        healthStatus: buildDailyMetricHealthStatuses(
+          trends,
+          baselineRelative,
+          Math.max(
+            range.days ?? HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
+            HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
+          ),
+        ),
+      };
     },
     {
       keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
       outputSchema: trendsRowSchema
+        .omit({ metric_evidence: true })
         .extend({
           baselineRelative: z.array(baselineRelativeMetricSchema),
           healthStatus: z.array(healthStatusMetricSchema),

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildBaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   buildDailyMetricHealthStatuses,
+  buildHealthMetricEvidence,
   buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromSummary,
   buildHealthStatusFromValues,
@@ -119,6 +120,41 @@ describe("buildDailyMetricHealthStatuses", () => {
       intent,
       direction: "above",
       statusToken,
+    });
+  });
+});
+
+describe("buildHealthMetricEvidence", () => {
+  it.each([
+    "hrv",
+    "spo2",
+    "steps",
+    "skin_temperature",
+  ] as const)("authors provenance and personal comparison context for %s", (_metric) => {
+    expect(
+      buildHealthMetricEvidence(
+        [
+          { date: "2026-07-01", value: 60, sourceProviders: ["garmin"] },
+          { date: "2026-07-25", value: 66, sourceProviders: ["whoop"] },
+          { date: "2026-07-30", value: 72, sourceProviders: ["whoop"] },
+        ],
+        30,
+      ),
+    ).toEqual({
+      provenance: {
+        latestDate: "2026-07-30",
+        sourceProviders: ["whoop"],
+        observedDays: 3,
+        windowDays: 30,
+      },
+      comparison: {
+        recentDays: 7,
+        baselineDays: 28,
+        recentMean: 69,
+        baselineMean: 60,
+        delta: 9,
+        direction: "increasing",
+      },
     });
   });
 });

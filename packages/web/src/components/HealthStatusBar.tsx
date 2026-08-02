@@ -5,6 +5,7 @@ import {
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import type { HealthMetricKey, HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useCountUp } from "../hooks/useCountUp.ts";
@@ -14,6 +15,7 @@ interface HealthStatusBarProps {
   metrics: HealthStatusMetric[];
   loading?: boolean;
   formatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
+  comparisonFormatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
   units?: Partial<Record<HealthMetricKey, string>>;
 }
 
@@ -109,11 +111,37 @@ function formatBaseline(
   return formatter ? formatter(metric.baseline).text : formatNumber(metric.baseline);
 }
 
+function formatContextValue(
+  value: number,
+  formatter: FormattedMeasurementFormatter | undefined,
+  unit: string | undefined,
+): string {
+  if (formatter) return formatter(value).text;
+  return `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatComparison(
+  metric: HealthStatusMetric,
+  formatter: FormattedMeasurementFormatter | undefined,
+  unit: string | undefined,
+): string {
+  const comparison = metric.comparison;
+  if (!comparison) return "";
+  if (comparison.recentMean == null || comparison.baselineMean == null) {
+    return `${comparison.recentDays}d vs prior ${comparison.baselineDays}d · Not enough comparison data`;
+  }
+  const delta =
+    comparison.delta == null ? "—" : formatContextValue(comparison.delta, formatter, unit);
+  const signedDelta = comparison.delta != null && comparison.delta > 0 ? `+${delta}` : delta;
+  return `${comparison.recentDays}d avg ${formatContextValue(comparison.recentMean, formatter, unit)} vs prior ${comparison.baselineDays}d avg ${formatContextValue(comparison.baselineMean, formatter, unit)} · ${signedDelta}`;
+}
+
 export function HealthStatusBar({
   baselineRelative = [],
   metrics,
   loading,
   formatters = {},
+  comparisonFormatters = {},
   units = {},
 }: HealthStatusBarProps) {
   if (loading) {
@@ -138,6 +166,7 @@ export function HealthStatusBar({
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {
         const formatter = formatters[metric.metric];
+        const comparisonFormatter = comparisonFormatters[metric.metric] ?? formatter;
         const baselineContext = baselineRelative.find(
           (candidate) => candidate.metric === metric.metric,
         );
@@ -175,6 +204,19 @@ export function HealthStatusBar({
                   formatter,
                   unit: units[metric.metric],
                 })}
+              </div>
+            ) : null}
+            {metric.provenance ? (
+              <div className="mt-1 text-[10px] text-subtle">
+                Source:{" "}
+                {metric.provenance.sourceProviders.map(providerLabel).join(", ") || "Unknown"} ·
+                Latest: {metric.provenance.latestDate ?? "Unknown"} · Coverage:{" "}
+                {metric.provenance.observedDays}/{metric.provenance.windowDays} days
+              </div>
+            ) : null}
+            {!baselineContext && metric.comparison ? (
+              <div className="mt-1 text-[10px] text-subtle">
+                {formatComparison(metric, comparisonFormatter, units[metric.metric])}
               </div>
             ) : null}
           </div>

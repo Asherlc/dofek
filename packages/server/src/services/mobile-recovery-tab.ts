@@ -15,6 +15,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
+  HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
   type MobileRecoveryTabResult,
   mobileRecoveryTabOutputSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
@@ -37,6 +38,7 @@ import { buildHealthspanResult } from "../routers/healthspan.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
 import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
 import {
+  buildHealthMetricEvidence,
   buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
@@ -218,7 +220,28 @@ export async function loadMobileRecoveryTab(
   const readinessScore = computeReadinessRows(recoveryRowsInWindow, effective.readinessWeights);
   const stress = computeStressFromRows(recoveryRowsInWindow, effective.stressThresholds);
   const dailyMetrics = filterDailyMetrics(dailyMetricsRows, days, endDate);
+  const metricEvidenceRows = filterDailyMetrics(
+    dailyMetricsRows,
+    Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS),
+    endDate,
+  );
+  const evidenceWindowDays = Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS);
   const baselineRelative = latestRecoveryBaselineMetrics(recoveryRowsInWindow);
+
+  const metricObservations = (metric: "hrv" | "spo2" | "steps" | "skin_temperature") =>
+    metricEvidenceRows.map((row) => ({
+      date: row.date,
+      value:
+        metric === "hrv"
+          ? row.hrv
+          : metric === "spo2"
+            ? row.spo2_avg
+            : metric === "steps"
+              ? row.steps
+              : row.skin_temp_c,
+      sourceProviders: row.source_providers,
+    }));
+  const hrvEvidence = buildHealthMetricEvidence(metricObservations("hrv"), evidenceWindowDays);
 
   const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
   const goalWeightKg =
@@ -241,24 +264,35 @@ export async function loadMobileRecoveryTab(
   ]);
 
   const healthStatus = [
-    ...baselineRelative.map(buildHealthStatusFromBaselineMetric),
+    ...baselineRelative.map((metric) =>
+      buildHealthStatusFromBaselineMetric(
+        metric,
+        metric.metric === "hrv" ? hrvEvidence.provenance : null,
+      ),
+    ),
     buildHealthStatusFromValues({
       metric: "spo2",
       label: "SpO2",
       values: dailyMetrics.flatMap((row) => (row.spo2_avg == null ? [] : [row.spo2_avg])),
       intent: "neutral",
+      observations: metricObservations("spo2"),
+      windowDays: evidenceWindowDays,
     }),
     buildHealthStatusFromValues({
       metric: "steps",
       label: "Steps",
       values: dailyMetrics.flatMap((row) => (row.steps == null ? [] : [row.steps])),
       intent: "neutral",
+      observations: metricObservations("steps"),
+      windowDays: evidenceWindowDays,
     }),
     buildHealthStatusFromValues({
       metric: "skin_temperature",
       label: "Skin Temperature",
       values: dailyMetrics.flatMap((row) => (row.skin_temp_c == null ? [] : [row.skin_temp_c])),
       intent: "neutral",
+      observations: metricObservations("skin_temperature"),
+      windowDays: evidenceWindowDays,
     }),
     buildWeightHealthStatus(
       weight.map((row) => row.smoothedWeight),
