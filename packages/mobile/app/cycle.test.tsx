@@ -314,7 +314,7 @@ describe("CycleScreen", () => {
     fireEvent.change(notesInput, { target: { value: "Cramps and poor sleep" } });
     fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
 
-    expect(notesInput.getAttribute("value")).toBe("");
+    expect((notesInput as HTMLInputElement).value).toBe("");
   });
 
   it("renders the server-provided estimate method and observed uncertainty", async () => {

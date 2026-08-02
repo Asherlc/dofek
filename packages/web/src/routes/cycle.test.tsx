@@ -293,7 +293,7 @@ describe("CyclePage", () => {
     fireEvent.change(notesInput, { target: { value: "Cramps and poor sleep" } });
     fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
 
-    expect(notesInput.getAttribute("value")).toBe("");
+    expect(notesInput).toHaveValue("");
   });
 
   it("renders the server-provided estimate method and observed uncertainty", () => {
