@@ -147,10 +147,10 @@ export const calendarRouter = router({
         const days = await repo.getCalendarData(range.days);
         return days.map((day) => day.toDetail());
       } catch (error) {
+        captureException(error, { tags: { trpcPath: "calendar.calendarData" } });
         if (!(error instanceof ActivityHeatmapDataError)) {
           throw error;
         }
-        captureException(error, { tags: { trpcPath: "calendar.calendarData" } });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Activity calendar data is invalid. Please re-sync activities and try again.",

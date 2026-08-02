@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -87,6 +91,10 @@ describe("bodyRouter", () => {
 
 describe("calendarRouter", () => {
   describe("calendarData", () => {
+    beforeEach(() => {
+      captureException.mockReset();
+    });
+
     it("returns mapped calendar days", async () => {
       const rows = [
         {
@@ -131,6 +139,28 @@ describe("calendarRouter", () => {
       await expect(caller.calendarData({ days: 365 })).rejects.toMatchObject({
         code: "INTERNAL_SERVER_ERROR",
         message: "Activity calendar data is invalid. Please re-sync activities and try again.",
+      });
+      expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { trpcPath: "calendar.calendarData" },
+      });
+    });
+
+    it("reports and rethrows unexpected calendar data failures", async () => {
+      const failure = new Error("database unavailable");
+      const caller = createTestCallerFactory(calendarRouter)({
+        db: { execute: vi.fn().mockRejectedValue(failure) },
+        sensorStore: makeMockSensorStore(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.calendarData({ days: 365 })).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: failure.message,
+        cause: failure,
+      });
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        tags: { trpcPath: "calendar.calendarData" },
       });
     });
   });
