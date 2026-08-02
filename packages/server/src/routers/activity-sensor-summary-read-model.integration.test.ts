@@ -91,10 +91,12 @@ describe("activity_sensor_summary_rows read model", () => {
     await client?.close?.();
   });
 
-  it("returns numeric zero without descent and numeric loss when descent exists", async () => {
+  it("returns NULL without altitude samples, numeric zero without descent, and numeric loss when descent exists", async () => {
     if (!client) throw new Error("ClickHouse client was not initialized");
 
     const userId = randomUUID();
+    const noAltitudeActivityId = randomUUID();
+    const singleAltitudeActivityId = randomUUID();
     const noDescentActivityId = randomUUID();
     const descentActivityId = randomUUID();
 
@@ -104,19 +106,28 @@ describe("activity_sensor_summary_rows read model", () => {
         id, user_id, started_at, provider_absent_at, deleted_at,
         _peerdb_is_deleted, _peerdb_synced_at
       ) VALUES
+        ({noAltitudeActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY, NULL, NULL, 0, now64(9, 'UTC')),
+        ({singleAltitudeActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY, NULL, NULL, 0, now64(9, 'UTC')),
         ({noDescentActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY, NULL, NULL, 0, now64(9, 'UTC')),
         ({descentActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY, NULL, NULL, 0, now64(9, 'UTC'))`,
-      query_params: { noDescentActivityId, descentActivityId, userId },
+      query_params: {
+        noAltitudeActivityId,
+        singleAltitudeActivityId,
+        noDescentActivityId,
+        descentActivityId,
+        userId,
+      },
     });
     await client.command({
       query: `INSERT INTO ${analyticsDatabase}.activity_sensor_sample (
         activity_id, user_id, recorded_at, channel, scalar, refresh_version, is_deleted
       ) VALUES
+        ({singleAltitudeActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY + INTERVAL 1 HOUR, 'altitude', 100, 1, 0),
         ({noDescentActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY + INTERVAL 1 HOUR, 'altitude', 100, 1, 0),
         ({noDescentActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY + INTERVAL 2 HOUR, 'altitude', 110, 1, 0),
         ({descentActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY + INTERVAL 1 HOUR, 'altitude', 100, 1, 0),
         ({descentActivityId:UUID}, {userId:UUID}, now64(6, 'UTC') - INTERVAL 1 DAY + INTERVAL 2 HOUR, 'altitude', 95, 1, 0)`,
-      query_params: { noDescentActivityId, descentActivityId, userId },
+      query_params: { singleAltitudeActivityId, noDescentActivityId, descentActivityId, userId },
     });
 
     await client.command({
@@ -135,6 +146,8 @@ describe("activity_sensor_summary_rows read model", () => {
 
     expect(new Map(rows.map((row) => [row.activity_id, row.elevation_loss_m]))).toEqual(
       new Map([
+        [noAltitudeActivityId, null],
+        [singleAltitudeActivityId, 0],
         [noDescentActivityId, 0],
         [descentActivityId, 5],
       ]),

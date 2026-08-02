@@ -22,6 +22,9 @@ describe("buildActivitySummaryReadModelStatements", () => {
       "coalesce(elevation_per_activity.elevation_loss_m, CAST(0, 'Nullable(Float64)'))",
     );
     expect(sql).not.toContain("countIf(altitude - prev_altitude < 0) = 0");
+    expect(sql).toContain("isNotNull(prev_altitude) AND altitude - prev_altitude < 0");
+    expect(sql).toContain("FROM altitude_deltas\n  GROUP BY activity_id");
+    expect(sql).not.toContain("FROM altitude_deltas\n  WHERE prev_altitude IS NOT NULL");
   });
 
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {

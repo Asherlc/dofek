@@ -36,8 +36,10 @@ describe("activity_sensor_summary_rows model", () => {
     );
     expect(modelSql).not.toContain("countIf(altitude - prev_altitude < 0) = 0");
     expect(modelSql).toContain(
-      "sumIf(abs(altitude - prev_altitude), altitude - prev_altitude < 0)",
+      "isNotNull(prev_altitude) AND altitude - prev_altitude < 0",
     );
+    expect(modelSql).toContain("FROM altitude_deltas\n    GROUP BY activity_id");
+    expect(modelSql).not.toContain("FROM altitude_deltas\n    WHERE prev_altitude IS NOT null");
     expect(modelSql).not.toContain(
       "coalesce(elevation_per_activity.elevation_loss_m, CAST(0, 'Nullable(Float64)'))",
     );

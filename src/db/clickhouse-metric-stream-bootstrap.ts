@@ -164,13 +164,23 @@ altitude_deltas AS (
 elevation_per_activity AS (
   SELECT
     activity_id,
-    CAST(sum(if(altitude - prev_altitude > 0, altitude - prev_altitude, 0)), 'Nullable(Float64)') AS elevation_gain_m,
     CAST(
-      sumIf(abs(altitude - prev_altitude), altitude - prev_altitude < 0),
+      sum(if(
+        isNotNull(prev_altitude) AND altitude - prev_altitude > 0,
+        altitude - prev_altitude,
+        0
+      )),
+      'Nullable(Float64)'
+    ) AS elevation_gain_m,
+    CAST(
+      sum(if(
+        isNotNull(prev_altitude) AND altitude - prev_altitude < 0,
+        abs(altitude - prev_altitude),
+        0
+      )),
       'Nullable(Float64)'
     ) AS elevation_loss_m
   FROM altitude_deltas
-  WHERE prev_altitude IS NOT NULL
   GROUP BY activity_id
 ),
 gps_points AS (
