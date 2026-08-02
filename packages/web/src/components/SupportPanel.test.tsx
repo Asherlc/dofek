@@ -8,7 +8,7 @@ let createTicketState: {
   isPending: boolean;
   isSuccess: boolean;
   error: { message: string } | null;
-  data: { ticketNumber: string } | undefined;
+  data: { ticketId: string } | undefined;
 };
 const resetMutation = vi.fn();
 
@@ -82,13 +82,13 @@ describe("SupportPanel", () => {
     expect(screen.getByText("We couldn't submit your request right now.")).toBeTruthy();
   });
 
-  it("shows the reference number on success and can reset", async () => {
+  it("shows the ticket ID on success and can reset", async () => {
     createTicketState.isSuccess = true;
-    createTicketState.data = { ticketNumber: "1042" };
+    createTicketState.data = { ticketId: "ticket-1042" };
 
     render(<SupportPanel />);
 
-    expect(screen.getByText("Reference number: #1042")).toBeTruthy();
+    expect(screen.getByText("Ticket ID: ticket-1042")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Submit another request" }));
 

@@ -9,7 +9,7 @@ const meta = {
     onReset: () => {},
     isPending: false,
     errorMessage: null,
-    ticketNumber: null,
+    ticketId: null,
   },
 } satisfies Meta<typeof SupportPanel>;
 
@@ -33,6 +33,6 @@ export const Failed: Story = {
 
 export const Submitted: Story = {
   args: {
-    ticketNumber: "1042",
+    ticketId: "ticket-1042",
   },
 };

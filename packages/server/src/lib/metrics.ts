@@ -77,3 +77,18 @@ export const companionConnectionOperationsTotal = new Counter({
   labelNames: ["operation", "outcome"] as const,
   registers: [registry],
 });
+
+export const supportTicketOperationsTotal = new Counter({
+  name: "support_ticket_operations_total",
+  help: "Total number of PostHog support ticket submission outcomes",
+  labelNames: ["outcome", "status_class"] as const,
+  registers: [registry],
+});
+
+export const supportTicketDuration = new Histogram({
+  name: "support_ticket_duration_seconds",
+  help: "Duration of PostHog support ticket submissions in seconds",
+  labelNames: ["outcome"] as const,
+  buckets: [0.1, 0.5, 1, 2.5, 5, 10, 15, 30],
+  registers: [registry],
+});
