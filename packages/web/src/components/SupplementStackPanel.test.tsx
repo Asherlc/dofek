@@ -23,6 +23,7 @@ const mocks = vi.hoisted<{
   stackInvalidate: ReturnType<typeof vi.fn>;
   mutate: ReturnType<typeof vi.fn>;
   query: QueryState;
+  savePending: boolean;
   saveOptions: SaveOptions | undefined;
 }>(() => ({
   captureException: vi.fn(),
@@ -34,6 +35,7 @@ const mocks = vi.hoisted<{
     error: null,
     isLoading: false,
   },
+  savePending: false,
   saveOptions: undefined,
 }));
 
@@ -57,7 +59,7 @@ vi.mock("../lib/trpc.ts", () => ({
           return {
             error: null,
             isError: false,
-            isPending: false,
+            isPending: mocks.savePending,
             mutate: mocks.mutate,
           };
         },
@@ -73,6 +75,7 @@ describe("SupplementStackPanel", () => {
     mocks.query.data = [{ name: "Creatine", amount: 5, unit: "g" }];
     mocks.query.error = null;
     mocks.query.isLoading = false;
+    mocks.savePending = false;
     mocks.saveOptions = undefined;
     vi.clearAllMocks();
   });
@@ -147,6 +150,55 @@ describe("SupplementStackPanel", () => {
     });
 
     expect(screen.getByRole("status").textContent).toBe("Moved Creatine to position 2 of 2.");
+  });
+
+  it("disables replacement entry points while a save is pending", () => {
+    mocks.query.data = [
+      { name: "Creatine", amount: 5, unit: "g" },
+      { name: "Vitamin D", amount: 25, unit: "mcg" },
+    ];
+    mocks.savePending = true;
+
+    render(<SupplementStackPanel />);
+
+    expect(screen.getAllByRole("button", { name: "Edit" })[0]).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "+ Add supplement" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.getByRole("button", { name: "Move Creatine down" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("disables removal while an edited supplement save is pending", () => {
+    const { rerender } = render(<SupplementStackPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    mocks.savePending = true;
+    rerender(<SupplementStackPanel />);
+
+    expect(screen.getByRole("button", { name: "Remove" })).toHaveProperty("disabled", true);
+  });
+
+  it("clears a stale reorder announcement when the save fails", async () => {
+    mocks.query.data = [
+      { name: "Creatine", amount: 5, unit: "g" },
+      { name: "Vitamin D", amount: 25, unit: "mcg" },
+    ];
+
+    render(<SupplementStackPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Move Creatine down" }));
+
+    await act(async () => {
+      await mocks.saveOptions?.onSuccess?.();
+    });
+    expect(screen.getByRole("status")).toBeDefined();
+
+    act(() => mocks.saveOptions?.onError?.(new Error("Supplement save failed.")));
+
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("reports failed replacement mutations and exposes the server error", () => {

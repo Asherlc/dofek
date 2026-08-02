@@ -78,6 +78,7 @@ function ChipPicker<T extends string>({
 export default function SupplementsScreen() {
   const [showForm, setShowForm] = useState(false);
   const [reorderAnnouncement, setReorderAnnouncement] = useState<string | null>(null);
+  const saveInFlightRef = useRef(false);
   const reorderAnnouncementRef = useRef<string | null>(null);
 
   const utils = trpc.useUtils();
@@ -85,6 +86,7 @@ export default function SupplementsScreen() {
   const safetyReview = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days: 30 });
   const saveMutation = trpc.supplements.save.useMutation({
     onSuccess: async () => {
+      saveInFlightRef.current = false;
       const announcement = reorderAnnouncementRef.current;
       reorderAnnouncementRef.current = null;
       if (announcement) {
@@ -99,7 +101,9 @@ export default function SupplementsScreen() {
       ]);
     },
     onError: (error) => {
+      saveInFlightRef.current = false;
       reorderAnnouncementRef.current = null;
+      setReorderAnnouncement(null);
       captureException(error, { operation: "supplements.save" });
       Alert.alert("Error", error.message);
     },
@@ -109,19 +113,27 @@ export default function SupplementsScreen() {
   const supplements = z.array(supplementSchema).parse(stack.data ?? []);
   const hasCanonicalStack = stack.data !== undefined;
 
-  function handleSave(updated: Supplement[]) {
-    if (!hasCanonicalStack) {
-      return;
+  function handleSave(updated: Supplement[], announcement?: string): boolean {
+    if (!hasCanonicalStack || saveMutation.isPending || saveInFlightRef.current) {
+      return false;
     }
+    saveInFlightRef.current = true;
+    reorderAnnouncementRef.current = announcement ?? null;
+    setReorderAnnouncement(null);
     saveMutation.mutate({ supplements: updated });
+    return true;
   }
 
   function handleAdd(supp: Supplement) {
-    handleSave([...supplements, supp]);
-    setShowForm(false);
+    if (handleSave([...supplements, supp])) {
+      setShowForm(false);
+    }
   }
 
   function handleDelete(index: number) {
+    if (saveMutation.isPending || saveInFlightRef.current) {
+      return;
+    }
     Alert.alert("Remove Supplement", "Are you sure you want to remove this supplement?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -142,8 +154,7 @@ export default function SupplementsScreen() {
       return;
     }
     updated.splice(to, 0, moved);
-    reorderAnnouncementRef.current = `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`;
-    handleSave(updated);
+    handleSave(updated, `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`);
   }
 
   const { refreshing, onRefresh } = useRefresh();
@@ -163,13 +174,19 @@ export default function SupplementsScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Supplements</Text>
         <TouchableOpacity
-          style={[styles.addButton, !hasCanonicalStack && styles.buttonDisabled]}
+          style={[
+            styles.addButton,
+            (!hasCanonicalStack || saveMutation.isPending) && styles.buttonDisabled,
+          ]}
           onPress={() => setShowForm(!showForm)}
-          disabled={!hasCanonicalStack}
+          disabled={!hasCanonicalStack || saveMutation.isPending}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={showForm ? "Cancel adding supplement" : "Add Supplement"}
-          accessibilityState={{ disabled: !hasCanonicalStack, expanded: showForm }}
+          accessibilityState={{
+            disabled: !hasCanonicalStack || saveMutation.isPending,
+            expanded: showForm,
+          }}
         >
           <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Supplement"}</Text>
         </TouchableOpacity>
@@ -235,11 +252,13 @@ export default function SupplementsScreen() {
                 {mealLabel ? <Text style={styles.cardMeal}>{mealLabel}</Text> : null}
               </View>
               <TouchableOpacity
-                style={styles.deleteButton}
+                style={[styles.deleteButton, saveMutation.isPending && styles.buttonDisabled]}
                 onPress={() => handleDelete(index)}
+                disabled={saveMutation.isPending}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel={`Delete ${supp.name}`}
+                accessibilityState={{ disabled: saveMutation.isPending }}
               >
                 <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>

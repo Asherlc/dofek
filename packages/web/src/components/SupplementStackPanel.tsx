@@ -117,12 +117,14 @@ export function SupplementStackPanel() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [reorderAnnouncement, setReorderAnnouncement] = useState<string | null>(null);
+  const saveInFlightRef = useRef(false);
   const reorderAnnouncementRef = useRef<string | null>(null);
 
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
     onSuccess: async () => {
+      saveInFlightRef.current = false;
       const announcement = reorderAnnouncementRef.current;
       reorderAnnouncementRef.current = null;
       if (announcement) {
@@ -134,7 +136,9 @@ export function SupplementStackPanel() {
       ]);
     },
     onError: (error) => {
+      saveInFlightRef.current = false;
       reorderAnnouncementRef.current = null;
+      setReorderAnnouncement(null);
       captureException(error, { operation: "supplements.save" });
     },
     meta: locallyReportedErrorMeta,
@@ -143,28 +147,35 @@ export function SupplementStackPanel() {
   const supplements: Supplement[] = stack.data ?? [];
   const hasCanonicalStack = stack.data !== undefined;
 
-  const handleSave = (updated: Supplement[]) => {
-    if (!hasCanonicalStack) {
-      return;
+  const handleSave = (updated: Supplement[], announcement?: string): boolean => {
+    if (!hasCanonicalStack || saveMutation.isPending || saveInFlightRef.current) {
+      return false;
     }
+    saveInFlightRef.current = true;
+    reorderAnnouncementRef.current = announcement ?? null;
+    setReorderAnnouncement(null);
     saveMutation.mutate({ supplements: updated });
+    return true;
   };
 
   const handleAdd = (supp: Supplement) => {
-    handleSave([...supplements, supp]);
-    setShowAdd(false);
+    if (handleSave([...supplements, supp])) {
+      setShowAdd(false);
+    }
   };
 
   const handleUpdate = (index: number, supp: Supplement) => {
     const updated = [...supplements];
     updated[index] = supp;
-    handleSave(updated);
-    setEditingIndex(null);
+    if (handleSave(updated)) {
+      setEditingIndex(null);
+    }
   };
 
   const handleRemove = (index: number) => {
-    handleSave(supplements.filter((_, i) => i !== index));
-    setEditingIndex(null);
+    if (handleSave(supplements.filter((_, i) => i !== index))) {
+      setEditingIndex(null);
+    }
   };
 
   const handleReorder = (from: number, to: number) => {
@@ -177,8 +188,7 @@ export function SupplementStackPanel() {
       return;
     }
     updated.splice(to, 0, moved);
-    reorderAnnouncementRef.current = `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`;
-    handleSave(updated);
+    handleSave(updated, `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`);
   };
 
   if (stack.isLoading && !hasCanonicalStack) {
@@ -241,7 +251,8 @@ export function SupplementStackPanel() {
         <button
           type="button"
           onClick={() => setShowAdd(true)}
-          className="text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors"
+          disabled={saveMutation.isPending}
+          className="text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           + Add supplement
         </button>
@@ -317,7 +328,8 @@ function SupplementRow({
       <button
         type="button"
         onClick={onEdit}
-        className="text-xs text-dim hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+        disabled={saving}
+        className="text-xs text-dim hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 transition-colors opacity-0 group-hover:opacity-100"
       >
         Edit
       </button>
@@ -518,7 +530,8 @@ function SupplementForm({
             <button
               type="button"
               onClick={onDelete}
-              className="text-xs text-red-800 hover:text-red-500 transition-colors"
+              disabled={saving}
+              className="text-xs text-red-800 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
             >
               Remove
             </button>

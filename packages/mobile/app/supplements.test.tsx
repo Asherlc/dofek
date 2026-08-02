@@ -23,6 +23,7 @@ const mocks = vi.hoisted<{
   stackInvalidate: ReturnType<typeof vi.fn>;
   mutate: ReturnType<typeof vi.fn>;
   query: QueryState;
+  savePending: boolean;
   saveOptions: SaveOptions | undefined;
 }>(() => ({
   captureException: vi.fn(),
@@ -35,6 +36,7 @@ const mocks = vi.hoisted<{
     error: null,
     isLoading: false,
   },
+  savePending: false,
   saveOptions: undefined,
 }));
 
@@ -81,7 +83,7 @@ vi.mock("../lib/trpc", () => ({
           return {
             error: null,
             isError: false,
-            isPending: false,
+            isPending: mocks.savePending,
             mutate: mocks.mutate,
           };
         },
@@ -141,6 +143,7 @@ describe("SupplementsScreen", () => {
     mocks.query.data = [{ name: "Creatine", amount: 5, unit: "g" }];
     mocks.query.error = null;
     mocks.query.isLoading = false;
+    mocks.savePending = false;
     mocks.saveOptions = undefined;
     vi.clearAllMocks();
   });
@@ -199,6 +202,39 @@ describe("SupplementsScreen", () => {
       "Moved Creatine to position 2 of 2.",
     );
     expect(screen.getByText("Moved Creatine to position 2 of 2.")).toBeTruthy();
+  });
+
+  it("disables replacement entry points while a save is pending", async () => {
+    mocks.savePending = true;
+    const { default: SupplementsScreen } = await import("./supplements");
+
+    render(<SupplementsScreen />);
+
+    expect(screen.getByRole("button", { name: "Add Supplement" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Delete Creatine" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("clears a stale reorder announcement when the save fails", async () => {
+    mocks.query.data = [
+      { name: "Creatine", amount: 5, unit: "g" },
+      { name: "Vitamin D", amount: 25, unit: "mcg" },
+    ];
+    const { default: SupplementsScreen } = await import("./supplements");
+
+    render(<SupplementsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Move Creatine down" }));
+
+    await act(async () => {
+      await mocks.saveOptions?.onSuccess?.();
+    });
+    expect(screen.getByText("Moved Creatine to position 2 of 2.")).toBeTruthy();
+
+    act(() => mocks.saveOptions?.onError?.(new Error("Supplement save failed.")));
+
+    expect(screen.queryByText("Moved Creatine to position 2 of 2.")).toBeNull();
   });
 
   it("reports failed replacement mutations", async () => {
