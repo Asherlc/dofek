@@ -254,7 +254,7 @@ describe("NutritionPage", () => {
           },
           scale: {
             maximumCalories: 2200,
-            observedPercentage: (999 / 2200) * 100,
+            observedPercentage: 45.409090909090914,
             targetPercentage: 100,
           },
           comparison: {

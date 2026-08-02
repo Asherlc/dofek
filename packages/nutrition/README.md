@@ -26,7 +26,10 @@ available, `intakeContext` contains the observed logged calories, the
 configured-or-default daily logged-intake target, an uncapped two-value scale,
 a neutral below/at/above-target status and explanation, and the limitation that
 the target is not an estimate of energy expenditure or calorie balance. Web and
-mobile render these server-computed values without recalculating them.
+mobile render these server-computed values without recalculating them. Scale
+percentages remain server-provided values; clients constrain only the visual
+track geometry to its 0-to-100 percent bounds so an unusual over-target value
+does not overflow the layout or lose its numerical context.
 
 The database creates these values as query-time projections over raw entries,
 consistent with PostgreSQL views being virtual tables defined by a query:

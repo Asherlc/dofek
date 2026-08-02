@@ -1,5 +1,8 @@
 import { formatCalories } from "@dofek/format/format";
-import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
+import {
+  clampNutritionScalePercentage,
+  type SelectedDateNutritionIntakeContext,
+} from "@dofek/nutrition/selected-date-summary";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -7,11 +10,22 @@ interface NutritionIntakeContextProps {
   context: SelectedDateNutritionIntakeContext;
 }
 
+const TARGET_MARKER_WIDTH = 2;
+
 function accessibilityLabel(context: SelectedDateNutritionIntakeContext): string {
   return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${context.comparison.message} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}. ${context.limitation}`;
 }
 
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
+  const observedPercentage = clampNutritionScalePercentage(context.scale.observedPercentage);
+  const targetPercentage = clampNutritionScalePercentage(context.scale.targetPercentage);
+  const targetMarkerMarginLeft =
+    targetPercentage === 0
+      ? 0
+      : targetPercentage === 100
+        ? -TARGET_MARKER_WIDTH
+        : -(TARGET_MARKER_WIDTH / 2);
+
   return (
     <View style={styles.container} accessible accessibilityLabel={accessibilityLabel(context)}>
       <View style={styles.header}>
@@ -23,11 +37,14 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
       </Text>
       <View style={styles.scale} accessible={false} testID="calorie-scale">
         <View
-          style={[styles.observedScale, { width: `${context.scale.observedPercentage}%` }]}
+          style={[styles.observedScale, { width: `${observedPercentage}%` }]}
           testID="calorie-scale-observed"
         />
         <View
-          style={[styles.targetMarker, { left: `${context.scale.targetPercentage}%` }]}
+          style={[
+            styles.targetMarker,
+            { left: `${targetPercentage}%`, marginLeft: targetMarkerMarginLeft },
+          ]}
           testID="calorie-scale-target"
         />
       </View>

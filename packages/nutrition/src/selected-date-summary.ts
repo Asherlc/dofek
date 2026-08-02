@@ -66,6 +66,11 @@ export type SelectedDateNutritionSummary = z.infer<typeof selectedDateNutritionS
 
 export const nutritionCalorieTargetTypeSchema = z.enum(["configured", "default"]);
 
+/** Keep server-provided scale values intact while constraining visual geometry. */
+export function clampNutritionScalePercentage(value: number): number {
+  return Math.min(Math.max(value, 0), 100);
+}
+
 export const selectedDateNutritionIntakeContextSchema = z.object({
   observedCalories: z.number().nonnegative(),
   target: z.object({
@@ -75,8 +80,8 @@ export const selectedDateNutritionIntakeContextSchema = z.object({
   }),
   scale: z.object({
     maximumCalories: z.number().positive(),
-    observedPercentage: z.number().min(0).max(100),
-    targetPercentage: z.number().min(0).max(100),
+    observedPercentage: z.number().nonnegative(),
+    targetPercentage: z.number().nonnegative(),
   }),
   comparison: z.object({
     status: z.enum(["below_target", "at_target", "above_target"]),

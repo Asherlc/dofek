@@ -1,5 +1,8 @@
 import { formatCalories } from "@dofek/format/format";
-import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
+import {
+  clampNutritionScalePercentage,
+  type SelectedDateNutritionIntakeContext,
+} from "@dofek/nutrition/selected-date-summary";
 import { useId } from "react";
 
 interface NutritionIntakeContextProps {
@@ -13,6 +16,14 @@ function meterLabel(context: SelectedDateNutritionIntakeContext): string {
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
   const titleId = useId();
   const label = meterLabel(context);
+  const observedPercentage = clampNutritionScalePercentage(context.scale.observedPercentage);
+  const targetPercentage = clampNutritionScalePercentage(context.scale.targetPercentage);
+  const targetMarkerTransform =
+    targetPercentage === 0
+      ? "translateX(0)"
+      : targetPercentage === 100
+        ? "translateX(-100%)"
+        : "translateX(-50%)";
 
   return (
     <section
@@ -45,12 +56,12 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
         <div
           className="h-full rounded-full bg-accent transition-all duration-300"
           data-testid="calorie-scale-observed"
-          style={{ width: `${context.scale.observedPercentage}%` }}
+          style={{ width: `${observedPercentage}%` }}
         />
         <div
           className="absolute -top-1 h-5 w-0.5 bg-foreground"
           data-testid="calorie-scale-target"
-          style={{ left: `${context.scale.targetPercentage}%` }}
+          style={{ left: `${targetPercentage}%`, transform: targetMarkerTransform }}
         />
       </div>
       <div className="flex justify-between text-xs text-subtle tabular-nums">

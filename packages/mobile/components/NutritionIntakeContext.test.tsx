@@ -27,6 +27,15 @@ const overTargetContext = {
     "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
 } satisfies SelectedDateNutritionIntakeContext;
 
+const targetAtScaleMaximumContext = {
+  ...overTargetContext,
+  scale: {
+    maximumCalories: 2450,
+    observedPercentage: 173.83673469387756,
+    targetPercentage: 100,
+  },
+} satisfies SelectedDateNutritionIntakeContext;
+
 describe("NutritionIntakeContext", () => {
   it("keeps over-target intake accessible and neutral", () => {
     render(<NutritionIntakeContext context={overTargetContext} />);
@@ -41,5 +50,13 @@ describe("NutritionIntakeContext", () => {
         "Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. Observed logged intake is 1,809 kcal above the configured daily logged-intake target. Scale: 0 to 4,259 kcal. This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
       ),
     ).toBeTruthy();
+  });
+
+  it("clamps over-target geometry when the target is at the scale maximum", () => {
+    render(<NutritionIntakeContext context={targetAtScaleMaximumContext} />);
+
+    expect(screen.getByTestId("calorie-scale-observed").style.width).toBe("100%");
+    expect(screen.getByTestId("calorie-scale-target").style.left).toBe("100%");
+    expect(screen.getByTestId("calorie-scale-target").style.marginLeft).toBe("-2px");
   });
 });

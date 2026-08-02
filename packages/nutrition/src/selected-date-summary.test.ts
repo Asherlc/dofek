@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampNutritionScalePercentage,
   nutritionSourceResolutionSchema,
   selectedDateNutritionIntakeContextSchema,
   selectedDateNutritionSummarySchema,
 } from "./selected-date-summary.ts";
+
+describe("clampNutritionScalePercentage", () => {
+  it.each([
+    { input: -1, expected: 0 },
+    { input: 42.5, expected: 42.5 },
+    { input: 101, expected: 100 },
+  ])("clamps $input to $expected for visual scale layout", ({ input, expected }) => {
+    expect(clampNutritionScalePercentage(input)).toBe(expected);
+  });
+});
 
 const summary = {
   calories: 1000,
@@ -168,7 +179,33 @@ describe("selectedDateNutritionIntakeContextSchema", () => {
       scale: {
         maximumCalories: 4259,
         observedPercentage: 100,
-        targetPercentage: (2450 / 4259) * 100,
+        targetPercentage: 57.525240666823194,
+      },
+      comparison: {
+        status: "above_target",
+        differenceCalories: 1809,
+        message:
+          "Observed logged intake is 1,809 kcal above the configured daily logged-intake target.",
+      },
+      limitation:
+        "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+    };
+
+    expect(selectedDateNutritionIntakeContextSchema.parse(context)).toEqual(context);
+  });
+
+  it("accepts an over-target percentage without clipping the server context", () => {
+    const context = {
+      observedCalories: 4259,
+      target: {
+        calories: 2450,
+        type: "configured",
+        label: "Configured daily logged-intake target",
+      },
+      scale: {
+        maximumCalories: 2450,
+        observedPercentage: 173.83673469387756,
+        targetPercentage: 100,
       },
       comparison: {
         status: "above_target",
