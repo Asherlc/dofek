@@ -1,6 +1,7 @@
 import { formatNumber } from "@dofek/format/format";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
+import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
@@ -29,14 +30,18 @@ const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
   value,
 }));
 
-type MetricsByDomain = Record<
-  string,
-  Array<{ id: string; label: string; unit: string; description: string }>
->;
+type CorrelationMetricMetadata = {
+  id: string;
+  label: string;
+  unit: string;
+  domain: string;
+  description: string;
+  availabilityDescription: string;
+};
 
-function groupByDomain(
-  metrics: Array<{ id: string; label: string; unit: string; domain: string; description: string }>,
-): MetricsByDomain {
+type MetricsByDomain = Record<string, CorrelationMetricMetadata[]>;
+
+function groupByDomain(metrics: CorrelationMetricMetadata[]): MetricsByDomain {
   const groups: MetricsByDomain = {};
   for (const m of metrics) {
     const domain = m.domain.charAt(0).toUpperCase() + m.domain.slice(1);
@@ -52,22 +57,59 @@ function MetricSelect({
   grouped,
   label,
   unavailableValue,
+  searchQuery,
+  onSearchChange,
+  selectedMetric,
 }: {
   value: string;
   onChange: (v: string) => void;
   grouped: MetricsByDomain;
   label: string;
   unavailableValue: string;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  selectedMetric: CorrelationMetricMetadata | undefined;
 }) {
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const filteredGroups = Object.entries(grouped)
+    .map(
+      ([domain, metrics]) =>
+        [
+          domain,
+          metrics.filter((metric) => {
+            if (normalizedSearchQuery.length === 0) return true;
+            return [
+              metric.label,
+              metric.unit,
+              metric.domain,
+              metric.description,
+              metric.availabilityDescription,
+            ]
+              .join(" ")
+              .toLocaleLowerCase()
+              .includes(normalizedSearchQuery);
+          }),
+        ] as const,
+    )
+    .filter(([, metrics]) => metrics.length > 0);
   return (
     <label className="min-w-0 block">
       <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">{label}</span>
+      <input
+        type="search"
+        value={searchQuery}
+        onChange={(event) => onSearchChange(event.target.value)}
+        aria-label={`Search ${label} metrics`}
+        placeholder="Search metrics"
+        className="mb-2 w-full rounded-md border border-border bg-accent/5 px-3 py-2 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong"
+      />
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
         className="w-full bg-accent/10 border border-border-strong rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:border-border-strong"
       >
-        {Object.entries(grouped).map(([domain, metrics]) => (
+        {filteredGroups.map(([domain, metrics]) => (
           <optgroup key={domain} label={domain}>
             {metrics.map((m) => (
               <option key={m.id} value={m.id} disabled={m.id === unavailableValue}>
@@ -76,7 +118,14 @@ function MetricSelect({
             ))}
           </optgroup>
         ))}
+        {filteredGroups.length === 0 && <option disabled>No matching metrics</option>}
       </select>
+      {selectedMetric && (
+        <div className="mt-2 space-y-1 text-[11px] text-dim">
+          <p>{selectedMetric.description}</p>
+          <p>{selectedMetric.availabilityDescription}</p>
+        </div>
+      )}
     </label>
   );
 }
@@ -266,6 +315,8 @@ export function CorrelationExplorerPage() {
   const { days, description, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
+  const [metricXSearch, setMetricXSearch] = useState("");
+  const [metricYSearch, setMetricYSearch] = useState("");
   const [lag, setLag] = useState(0);
   const [observationCursors, setObservationCursors] = useState<Array<string | undefined>>([
     undefined,
@@ -317,6 +368,7 @@ export function CorrelationExplorerPage() {
         {/* Controls */}
         {metricsQuery.data && (
           <div className="space-y-3">
+            <p className="text-[11px] text-dim">{CORRELATION_AVAILABILITY_DESCRIPTION}</p>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end sm:gap-3">
               <MetricSelect
                 value={metricX}
@@ -327,6 +379,9 @@ export function CorrelationExplorerPage() {
                 grouped={grouped}
                 label="X axis"
                 unavailableValue={metricY}
+                searchQuery={metricXSearch}
+                onSearchChange={setMetricXSearch}
+                selectedMetric={xMetric}
               />
               <span className="hidden text-dim text-sm pb-2 sm:block">vs</span>
               <MetricSelect
@@ -338,6 +393,9 @@ export function CorrelationExplorerPage() {
                 grouped={grouped}
                 label="Y axis"
                 unavailableValue={metricX}
+                searchQuery={metricYSearch}
+                onSearchChange={setMetricYSearch}
+                selectedMetric={yMetric}
               />
             </div>
 

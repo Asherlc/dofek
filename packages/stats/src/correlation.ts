@@ -5,12 +5,17 @@ import { formatCalendarDayCount } from "./correlation-lag.ts";
 
 export type MetricDomain = "recovery" | "sleep" | "nutrition" | "activity" | "body";
 
+export const MIN_CORRELATION_PAIRS = 5;
+export const CORRELATION_AVAILABILITY_DESCRIPTION =
+  "Availability depends on data recorded in the selected date range. A correlation needs at least five paired calendar days, so sparse metrics may produce an insufficient-data result.";
+
 export interface CorrelationMetric {
   id: string;
   label: string;
   unit: string;
   domain: MetricDomain;
   description: string;
+  availabilityDescription: string;
   /** The key in JoinedDay to extract this metric's value */
   joinedDayKey: string;
 }
@@ -24,6 +29,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     domain: "recovery",
     description:
       "Your resting heart rate — lower generally indicates better cardiovascular fitness",
+    availabilityDescription: "Needs a daily recovery measurement.",
     joinedDayKey: "resting_hr",
   },
   {
@@ -32,6 +38,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "ms",
     domain: "recovery",
     description: "Variation between heartbeats — higher generally indicates better recovery",
+    availabilityDescription: "Needs a daily recovery measurement.",
     joinedDayKey: "hrv",
   },
   {
@@ -40,6 +47,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "%",
     domain: "recovery",
     description: "Blood oxygen saturation level",
+    availabilityDescription: "Needs a blood-oxygen measurement.",
     joinedDayKey: "spo2_avg",
   },
   {
@@ -48,6 +56,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "\u00B0C",
     domain: "recovery",
     description: "Skin temperature deviation from baseline",
+    availabilityDescription: "Needs a skin-temperature measurement.",
     joinedDayKey: "skin_temp_c",
   },
 
@@ -58,6 +67,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "min",
     domain: "sleep",
     description: "Total time asleep (excluding awake periods)",
+    availabilityDescription: "Needs a recorded sleep session.",
     joinedDayKey: "sleep_duration_min",
   },
   {
@@ -66,6 +76,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "min",
     domain: "sleep",
     description: "Time in deep (slow-wave) sleep — important for physical recovery",
+    availabilityDescription: "Needs sleep-stage data from a recorded sleep session.",
     joinedDayKey: "deep_min",
   },
   {
@@ -74,6 +85,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "min",
     domain: "sleep",
     description: "Time in REM sleep — important for cognitive recovery and memory",
+    availabilityDescription: "Needs sleep-stage data from a recorded sleep session.",
     joinedDayKey: "rem_min",
   },
   {
@@ -82,6 +94,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "%",
     domain: "sleep",
     description: "Percentage of time in bed actually spent sleeping",
+    availabilityDescription: "Needs a recorded sleep session with time-in-bed and sleep duration.",
     joinedDayKey: "sleep_efficiency",
   },
 
@@ -92,6 +105,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "kcal",
     domain: "nutrition",
     description: "Total daily calorie intake",
+    availabilityDescription: "Needs a resolved daily nutrition record.",
     joinedDayKey: "calories",
   },
   {
@@ -100,6 +114,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "g",
     domain: "nutrition",
     description: "Daily protein intake",
+    availabilityDescription: "Needs logged daily nutrition data.",
     joinedDayKey: "protein_g",
   },
   {
@@ -108,6 +123,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "g",
     domain: "nutrition",
     description: "Daily carbohydrate intake",
+    availabilityDescription: "Needs a resolved daily nutrition record.",
     joinedDayKey: "carbs_g",
   },
   {
@@ -116,6 +132,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "g",
     domain: "nutrition",
     description: "Daily fat intake",
+    availabilityDescription: "Needs a resolved daily nutrition record.",
     joinedDayKey: "fat_g",
   },
   {
@@ -124,6 +141,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "g",
     domain: "nutrition",
     description: "Daily fiber intake",
+    availabilityDescription: "Needs a resolved daily nutrition record.",
     joinedDayKey: "fiber_g",
   },
 
@@ -134,6 +152,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "steps",
     domain: "activity",
     description: "Total daily step count",
+    availabilityDescription: "Needs daily step data.",
     joinedDayKey: "steps",
   },
   {
@@ -142,6 +161,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "min",
     domain: "activity",
     description: "Total exercise time across all activities",
+    availabilityDescription: "Needs a completed activity with start and end times.",
     joinedDayKey: "exercise_minutes",
   },
   {
@@ -150,6 +170,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "min",
     domain: "activity",
     description: "Time spent on cardio activities (cycling, running, etc.)",
+    availabilityDescription: "Needs a completed cardio activity with start and end times.",
     joinedDayKey: "cardio_minutes",
   },
   {
@@ -158,6 +179,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "min",
     domain: "activity",
     description: "Time spent on strength training",
+    availabilityDescription: "Needs a completed strength activity with start and end times.",
     joinedDayKey: "strength_minutes",
   },
 
@@ -168,6 +190,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "kg",
     domain: "body",
     description: "Body weight measurement",
+    availabilityDescription: "Needs a body-weight measurement.",
     joinedDayKey: "weight_kg",
   },
   {
@@ -176,6 +199,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "%",
     domain: "body",
     description: "Body fat percentage",
+    availabilityDescription: "Needs a body-composition measurement.",
     joinedDayKey: "body_fat_pct",
   },
   {
@@ -184,6 +208,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "kg",
     domain: "body",
     description: "Rolling 30-day average weight — smooths out daily fluctuations",
+    availabilityDescription: "Needs enough body-weight measurements to calculate a 30-day average.",
     joinedDayKey: "weight_30d_avg",
   },
 ];

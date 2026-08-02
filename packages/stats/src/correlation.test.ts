@@ -33,6 +33,7 @@ describe("CORRELATION_METRICS", () => {
       expect(m.label.length).toBeGreaterThan(0);
       expect(m.unit.length).toBeGreaterThan(0);
       expect(m.description.length).toBeGreaterThan(0);
+      expect(m.availabilityDescription.length).toBeGreaterThan(0);
     }
   });
 });

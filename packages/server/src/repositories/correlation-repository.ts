@@ -3,6 +3,7 @@ import {
   CORRELATION_METRICS,
   CorrelationResult,
   linearRegression,
+  MIN_CORRELATION_PAIRS,
   pearsonCorrelation,
 } from "@dofek/stats/correlation";
 import { formatCorrelationComparison } from "@dofek/stats/correlation-lag";
@@ -421,8 +422,8 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   const analysis = buildCorrelationAnalysis(joined, input);
   const pairCount = analysis.pairs.length;
 
-  if (pairCount < 5) {
-    const additionalSamplesRequired = 5 - pairCount;
+  if (pairCount < MIN_CORRELATION_PAIRS) {
+    const additionalSamplesRequired = MIN_CORRELATION_PAIRS - pairCount;
     return {
       availability: "insufficient" as const,
       dataPoints: analysis.pairs,
@@ -480,8 +481,8 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
   const analysis = buildCorrelationAnalysis(joined, input);
   const pairCount = analysis.pairs.length;
 
-  if (pairCount < 5) {
-    const additionalSamplesRequired = 5 - pairCount;
+  if (pairCount < MIN_CORRELATION_PAIRS) {
+    const additionalSamplesRequired = MIN_CORRELATION_PAIRS - pairCount;
     return {
       analysisVersion: 2 as const,
       availability: "insufficient" as const,
@@ -546,7 +547,7 @@ function computeUncertainty(observations: CorrelationCalendarObservation[]) {
         y: number;
       } => observation.x !== null && observation.y !== null,
     );
-    if (pairs.length < 5) return null;
+    if (pairs.length < MIN_CORRELATION_PAIRS) return null;
     const result = spearmanCorrelation(
       pairs.map((pair) => pair.x),
       pairs.map((pair) => pair.y),
@@ -613,13 +614,16 @@ export class CorrelationRepository {
   }
 
   getMetrics() {
-    return CORRELATION_METRICS.map(({ id, label, unit, domain, description }) => ({
-      id,
-      label,
-      unit,
-      domain,
-      description,
-    }));
+    return CORRELATION_METRICS.map(
+      ({ id, label, unit, domain, description, availabilityDescription }) => ({
+        id,
+        label,
+        unit,
+        domain,
+        description,
+        availabilityDescription,
+      }),
+    );
   }
 
   async compute(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {

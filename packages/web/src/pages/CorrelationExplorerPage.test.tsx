@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { chartColors } from "@dofek/scoring/colors";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,7 @@ const state = vi.hoisted<{
         unit: string;
         domain: string;
         description: string;
+        availabilityDescription: string;
       }>
     | undefined;
 }>(() => ({
@@ -110,6 +111,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "g",
         domain: "nutrition",
         description: "Protein intake",
+        availabilityDescription: "Needs logged daily nutrition data.",
       },
       {
         id: "hrv",
@@ -117,6 +119,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "ms",
         domain: "recovery",
         description: "Heart rate variability",
+        availabilityDescription: "Needs a daily recovery measurement.",
       },
     ];
     state.correlationData = {
@@ -166,6 +169,31 @@ describe("CorrelationExplorerPage", () => {
     expect(proteinOptions[1]).toBeDisabled();
     expect(heartRateVariabilityOptions[0]).toBeDisabled();
     expect(heartRateVariabilityOptions[1]).not.toBeDisabled();
+  });
+
+  it("supports searching metrics and explains availability before selection", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByRole("searchbox", { name: "Search X axis metrics" })).toBeTruthy();
+    expect(screen.getByRole("searchbox", { name: "Search Y axis metrics" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Availability depends on data recorded in the selected date range. A correlation needs at least five paired calendar days, so sparse metrics may produce an insufficient-data result.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Needs logged daily nutrition data.")).toHaveLength(1);
+    expect(screen.getAllByRole("option", { name: "Protein (g)" })).toHaveLength(2);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search Y axis metrics" }), {
+      target: { value: "protein" },
+    });
+
+    const yAxisSelect = screen.getByLabelText("Y axis");
+    expect(within(yAxisSelect).getByRole("option", { name: "Protein (g)" })).toBeTruthy();
+    expect(
+      within(yAxisSelect).queryByRole("option", { name: "Heart Rate Variability (ms)" }),
+    ).toBeNull();
   });
 
   it("renders the server-authored interpretation warning", async () => {

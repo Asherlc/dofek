@@ -12,7 +12,16 @@ const state = vi.hoisted<{
   observationInputs: Array<Record<string, unknown>>;
   observationError: Error | null;
   routerPush: ReturnType<typeof vi.fn>;
-  metricsData: Array<{ id: string; label: string; unit: string; domain: string }> | undefined;
+  metricsData:
+    | Array<{
+        id: string;
+        label: string;
+        unit: string;
+        domain: string;
+        description: string;
+        availabilityDescription: string;
+      }>
+    | undefined;
 }>(() => ({
   correlationData: {},
   correlationError: null,
@@ -33,6 +42,9 @@ vi.mock("@dofek/format/format", () => ({
 vi.mock("@dofek/scoring/colors", () => ({
   chartColors: {
     blue: "#2563eb",
+  },
+  textColors: {
+    neutral: "#71717a",
   },
   operationalStatusColors: {
     info: {
@@ -117,8 +129,22 @@ describe("CorrelationScreen", () => {
   beforeEach(() => {
     state.correlationError = null;
     state.metricsData = [
-      { id: "protein", label: "Protein", unit: "g", domain: "nutrition" },
-      { id: "hrv", label: "Heart Rate Variability", unit: "ms", domain: "recovery" },
+      {
+        id: "protein",
+        label: "Protein",
+        unit: "g",
+        domain: "nutrition",
+        description: "Daily protein intake",
+        availabilityDescription: "Needs logged daily nutrition data.",
+      },
+      {
+        id: "hrv",
+        label: "Heart Rate Variability",
+        unit: "ms",
+        domain: "recovery",
+        description: "Variation between heartbeats",
+        availabilityDescription: "Needs a daily recovery measurement.",
+      },
     ];
     state.correlationData = {
       analysisVersion: 2,
@@ -160,8 +186,8 @@ describe("CorrelationScreen", () => {
     const { default: CorrelationScreen } = await import("./correlation");
     render(<CorrelationScreen />);
 
-    const proteinChips = screen.getAllByLabelText("Protein");
-    const heartRateVariabilityChips = screen.getAllByLabelText("Heart Rate Variability");
+    const proteinChips = screen.getAllByLabelText("Protein (g)");
+    const heartRateVariabilityChips = screen.getAllByLabelText("Heart Rate Variability (ms)");
 
     expect(proteinChips[0].getAttribute("aria-disabled")).not.toBe("true");
     expect(proteinChips[1].getAttribute("aria-disabled")).toBe("true");
@@ -170,6 +196,28 @@ describe("CorrelationScreen", () => {
 
     fireEvent.click(proteinChips[1]);
     expect(screen.queryByText("Select two different metrics to compare.")).toBeNull();
+  });
+
+  it("supports searching metrics, shows units, and explains availability before selection", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByRole("textbox", { name: "Search X Axis metrics" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Search Y Axis metrics" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Availability depends on data recorded in the selected date range. A correlation needs at least five paired calendar days, so sparse metrics may produce an insufficient-data result.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(2);
+    expect(screen.getByText("Needs logged daily nutrition data.")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search X Axis metrics" }), {
+      target: { value: "heart" },
+    });
+
+    expect(screen.getAllByLabelText("Heart Rate Variability (ms)")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(1);
   });
 
   it("renders the server-authored interpretation warning", async () => {
@@ -359,8 +407,22 @@ describe("CorrelationScreen", () => {
     expect(view.container.textContent).not.toContain("()");
 
     state.metricsData = [
-      { id: "protein", label: "Protein", unit: "g", domain: "nutrition" },
-      { id: "hrv", label: "Heart Rate Variability", unit: "ms", domain: "recovery" },
+      {
+        id: "protein",
+        label: "Protein",
+        unit: "g",
+        domain: "nutrition",
+        description: "Protein intake",
+        availabilityDescription: "Needs logged daily nutrition data.",
+      },
+      {
+        id: "hrv",
+        label: "Heart Rate Variability",
+        unit: "ms",
+        domain: "recovery",
+        description: "Heart rate variability",
+        availabilityDescription: "Needs a daily recovery measurement.",
+      },
     ];
     view.rerender(<CorrelationScreen />);
 
