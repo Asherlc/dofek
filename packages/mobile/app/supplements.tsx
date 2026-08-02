@@ -220,6 +220,7 @@ export default function SupplementsScreen() {
                 {index > 0 && (
                   <TouchableOpacity
                     onPress={() => handleReorder(index, index - 1)}
+                    style={saveMutation.isPending && styles.buttonDisabled}
                     disabled={saveMutation.isPending}
                     activeOpacity={0.6}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -234,6 +235,7 @@ export default function SupplementsScreen() {
                 {index < supplements.length - 1 && (
                   <TouchableOpacity
                     onPress={() => handleReorder(index, index + 1)}
+                    style={saveMutation.isPending && styles.buttonDisabled}
                     disabled={saveMutation.isPending}
                     activeOpacity={0.6}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

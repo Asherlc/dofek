@@ -206,6 +206,10 @@ describe("SupplementsScreen", () => {
 
   it("disables replacement entry points while a save is pending", async () => {
     mocks.savePending = true;
+    mocks.query.data = [
+      { name: "Creatine", amount: 5, unit: "g" },
+      { name: "Vitamin D", amount: 25, unit: "mcg" },
+    ];
     const { default: SupplementsScreen } = await import("./supplements");
 
     render(<SupplementsScreen />);
@@ -215,6 +219,12 @@ describe("SupplementsScreen", () => {
       "disabled",
       true,
     );
+    const moveDown = screen.getByRole("button", { name: "Move Creatine down" });
+    const moveUp = screen.getByRole("button", { name: "Move Vitamin D up" });
+    expect(moveDown).toHaveProperty("disabled", true);
+    expect(moveUp).toHaveProperty("disabled", true);
+    expect(moveDown.style.opacity).toBe("0.5");
+    expect(moveUp.style.opacity).toBe("0.5");
   });
 
   it("clears a stale reorder announcement when the save fails", async () => {

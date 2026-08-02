@@ -3,12 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
+import { expect, within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
 import { SupplementStackPanel } from "./SupplementStackPanel.tsx";
 
 interface SupplementScenario {
   supplements: unknown[];
   loading?: boolean;
+  saving?: boolean;
 }
 
 const supplements = [
@@ -41,6 +43,7 @@ function createMockLink(scenario: SupplementScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       if (op.path === "supplements.list" && scenario.loading) return createLoadingObservable();
+      if (op.path === "supplements.save" && scenario.saving) return createLoadingObservable();
       return createMockObservable(
         op.path === "supplements.list" ? scenario.supplements : { ok: true },
       );
@@ -111,4 +114,16 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <SupplementStory scenario={{ supplements: [] }} />,
+};
+
+export const Saving: Story = {
+  render: () => <SupplementStory scenario={{ supplements, saving: true }} />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Move Creatine monohydrate down" }));
+    await expect(
+      canvas.getByRole("button", { name: "Move Creatine monohydrate down" }),
+    ).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Edit" })).toBeDisabled();
+  },
 };
