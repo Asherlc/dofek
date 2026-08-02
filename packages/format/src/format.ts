@@ -1,7 +1,7 @@
 /** Format a Date as YYYY-MM-DD for API queries. */
 export function formatDateYmd(date?: Date): string {
   const resolvedDate = date ?? new Date();
-  return `${resolvedDate.getFullYear()}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
+  return `${String(resolvedDate.getFullYear()).padStart(4, "0")}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
 }
 
 /** Shift a YYYY-MM-DD value by calendar days in the device's local timezone. */
@@ -14,12 +14,18 @@ export function shiftDateYmd(value: string, dayOffset: number): string {
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
   if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
     throw new Error("Expected a valid YYYY-MM-DD date");
   }
 
-  date.setDate(date.getDate() + dayOffset);
+  const shiftedTimestamp = date.setDate(date.getDate() + dayOffset);
+  if (!Number.isFinite(shiftedTimestamp) || date.getFullYear() < 0 || date.getFullYear() > 9999) {
+    throw new Error("Expected a valid YYYY-MM-DD date and an integer day offset");
+  }
+
   return formatDateYmd(date);
 }
 

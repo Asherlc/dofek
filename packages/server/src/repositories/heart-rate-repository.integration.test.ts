@@ -204,7 +204,11 @@ describe("HeartRateRepository (integration)", () => {
       (series) => series.providerId === "timezone_boundary",
     );
 
-    expect(timezoneBoundarySeries?.samples).toEqual([
+    if (!timezoneBoundarySeries) {
+      throw new Error("Expected timezone_boundary heart-rate series");
+    }
+
+    expect(timezoneBoundarySeries.samples).toEqual([
       { time: "2026-04-12T07:00:00.000Z", heartRate: 62 },
     ]);
   });

@@ -8,6 +8,7 @@ import {
 } from "../components/charts/MultiSourceHeartRateChart";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
+import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout-options";
 
@@ -21,7 +22,7 @@ function formatDisplayDate(dateString: string): string {
 
 export default function DailyHeartRateScreen() {
   const [date, setDate] = useState(() => formatDateYmd());
-  const today = formatDateYmd();
+  const today = useTodayQueryDate();
   const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });

@@ -65,10 +65,16 @@ describe("formatDateYmd", () => {
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatDateYmd()).toBe(expected);
   });
+});
 
+describe("shiftDateYmd", () => {
   it("shifts a date-only value by calendar days", () => {
     expect(shiftDateYmd("2026-03-01", -1)).toBe("2026-02-28");
     expect(shiftDateYmd("2026-12-31", 1)).toBe("2027-01-01");
+  });
+
+  it("preserves the four-digit date contract across the year 100 boundary", () => {
+    expect(shiftDateYmd("0100-01-01", -1)).toBe("0099-12-31");
   });
 
   it("rejects malformed dates, invalid calendar dates, and non-integer offsets", () => {
@@ -77,6 +83,12 @@ describe("formatDateYmd", () => {
     );
     expect(() => shiftDateYmd("2026-02-30", 1)).toThrow("Expected a valid YYYY-MM-DD date");
     expect(() => shiftDateYmd("2026-03-01", 0.5)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("rejects offsets that produce an invalid date", () => {
+    expect(() => shiftDateYmd("2026-01-01", Number.MAX_SAFE_INTEGER)).toThrow(
       "Expected a valid YYYY-MM-DD date and an integer day offset",
     );
   });

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
@@ -131,6 +131,20 @@ describe("DailyHeartRatePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
     fireEvent.click(screen.getByRole("button", { name: "Today" }));
     expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+  });
+
+  it("refreshes today navigation after local midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 12, 23, 59, 58));
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(screen.getByRole("button", { name: "Next day" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).not.toBeDisabled();
   });
 
   it("rejects future dates from the date input", () => {

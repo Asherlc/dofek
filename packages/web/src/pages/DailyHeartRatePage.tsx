@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import {
   dofekAxis,
   dofekGrid,
@@ -16,7 +17,7 @@ import { trpc } from "../lib/trpc.ts";
 
 export function DailyHeartRatePage() {
   const [date, setDate] = useState(() => formatDateYmd());
-  const today = formatDateYmd();
+  const today = useTodayQueryDate();
   const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const isToday = date === today;
   const canGoForward = date < today;

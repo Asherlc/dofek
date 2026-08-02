@@ -80,6 +80,10 @@ vi.mock("../lib/trpc", () => ({
   },
 }));
 
+vi.mock("../lib/useTodayQueryDate", () => ({
+  useTodayQueryDate: () => "2026-04-12",
+}));
+
 vi.mock("../theme", () => ({
   colors: {
     background: "#000",
