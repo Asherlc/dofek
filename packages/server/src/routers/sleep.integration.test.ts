@@ -50,8 +50,8 @@ describe("sleep router integration", () => {
             efficiency_pct, staging_available, sleep_type
           ) VALUES (
             ${selectedSessionId}::uuid, 'test_provider', ${TEST_USER_ID},
-            NOW() - INTERVAL '6 hours',
-            NOW(),
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '05:00:00',
             360, 54, 79, 200, 27,
             92.5, true, 'sleep'
           )`,
@@ -64,8 +64,8 @@ describe("sleep router integration", () => {
             efficiency_pct, staging_available, sleep_type, source_name
           ) VALUES (
             ${overlappingSessionId}::uuid, 'overlap_provider', ${TEST_USER_ID},
-            NOW() - INTERVAL '5 hours',
-            NOW() - INTERVAL '1 hour',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:30:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '03:30:00',
             240, 40, 50, 130, 20,
             91, true, 'sleep', 'Overlap Device'
           )`,
@@ -195,8 +195,8 @@ describe("sleep router integration", () => {
         (
           'test_provider',
           ${TEST_USER_ID},
-          NOW() - INTERVAL '54 hours',
-          NOW() - INTERVAL '46 hours',
+          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '06:00:00',
+          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '14:00:00',
           480,
           90,
           100,
@@ -209,8 +209,8 @@ describe("sleep router integration", () => {
         (
           'partial_provider',
           ${TEST_USER_ID},
-          NOW() - INTERVAL '78 hours',
-          NOW() - INTERVAL '70 hours',
+          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '06:00:00',
+          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '14:00:00',
           480,
           NULL,
           NULL,
@@ -271,8 +271,8 @@ describe("sleep router integration", () => {
             sleep_type
           ) VALUES (
             'whoop', ${TEST_USER_ID},
-            NOW() - INTERVAL '7 hours',
-            NOW() - INTERVAL '30 minutes',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '22:30:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '04:30:00',
             390, 60, 90, 200, 40,
             'sleep'
           )`,
@@ -292,9 +292,9 @@ describe("sleep router integration", () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
           VALUES
-            (${sessionId}::uuid, 'light', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '5 hours'),
-            (${sessionId}::uuid, 'deep', NOW() - INTERVAL '5 hours', NOW() - INTERVAL '4 hours'),
-            (${sessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours')`,
+            (${sessionId}::uuid, 'light', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00'),
+            (${sessionId}::uuid, 'deep', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00'),
+            (${sessionId}::uuid, 'rem', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '01:45:00')`,
     );
     await syncClickHouseTestActivitySensorStore(testCtx);
 
