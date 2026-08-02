@@ -110,4 +110,22 @@ describe("TodayPlanCard", () => {
     expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
     expect(screen.getByText("Today plan refresh failed")).toBeTruthy();
   });
+
+  it("keeps a legacy cached ready plan visible without a status", () => {
+    const legacyPlan = { ...readyPlan };
+    Reflect.deleteProperty(legacyPlan, "epistemicStatus");
+    render(<TodayPlanCard plan={legacyPlan} />);
+
+    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.queryByText("Suggested")).toBeNull();
+  });
+
+  it("keeps a legacy cached insufficient plan visible without a status", () => {
+    const legacyPlan = { ...insufficientPlan };
+    Reflect.deleteProperty(legacyPlan, "epistemicStatus");
+    render(<TodayPlanCard plan={legacyPlan} />);
+
+    expect(screen.getByText("WHAT MATTERS TODAY")).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
 });

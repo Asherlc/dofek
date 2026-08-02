@@ -601,6 +601,33 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     ).toBeTruthy();
   });
 
+  it("keeps a legacy cached weight row visible without epistemic statuses", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [
+        {
+          date: "2026-04-06",
+          rawWeight: 80,
+          smoothedWeight: 79.8,
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+    expect(screen.queryByText("Estimated")).toBeNull();
+  });
+
   it("uses neutral text for weight-rate direction", async () => {
     mockRecoveryData = {
       hrvVariability: [],

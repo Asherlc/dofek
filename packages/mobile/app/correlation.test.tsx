@@ -258,6 +258,18 @@ describe("CorrelationScreen", () => {
     expect(screen.queryByText(/^p =/)).toBeNull();
   });
 
+  it("renders a legacy cached result without an epistemic status", async () => {
+    const legacyCorrelationData = { ...(state.correlationData ?? {}) };
+    delete legacyCorrelationData.epistemicStatus;
+    state.correlationData = legacyCorrelationData;
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("n = 0")).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
   it("uses singular sample wording when one additional sample is required", async () => {
     state.correlationData = {
       ...state.correlationData,

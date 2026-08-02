@@ -282,7 +282,7 @@ export default function TodayScreen() {
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Data Needed">
-            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus?.label}</Text>
             <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
           </Card>
         </Animated.View>

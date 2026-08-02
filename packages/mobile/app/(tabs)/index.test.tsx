@@ -443,6 +443,25 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByText("8h 37m")).toBeNull();
   });
 
+  it("keeps a legacy cached sleep prerequisite visible without a status", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: { lastNight: null, sleepDebt: 0 },
+      sleepNeed: {
+        availability: "missing_previous_night",
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
   it("renders the server-authored next action for insufficient sleep need data", async () => {
     mockDashboardData = {
       ...mockDashboardData,

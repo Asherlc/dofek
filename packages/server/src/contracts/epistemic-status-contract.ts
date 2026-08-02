@@ -33,5 +33,3 @@ export const epistemicStatusSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
-
-export type EpistemicStatus = z.infer<typeof epistemicStatusSchema>;
