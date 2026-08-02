@@ -146,7 +146,7 @@ describe("NutritionAnalyticsPage", () => {
     expect(screen.getByText("Body measurements are unavailable.")).toBeTruthy();
     expect(screen.queryByText("Macro analytics are unavailable.")).toBeNull();
     expect(screen.getByRole("link", { name: "Review data sources" }).getAttribute("href")).toBe(
-      "/settings?tab=connections",
+      "/settings?tab=data-sources",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Retry nutrition analytics" }));

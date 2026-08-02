@@ -1,4 +1,5 @@
 import type { App as AppType, SayFn } from "@slack/bolt";
+import { withAiGenerationContext } from "dofek/lib/ai-observability";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
@@ -297,7 +298,9 @@ async function handleParsedMessage(
             });
 
             const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-            const result = await refineNutritionItems(previousItems, msgText, localTime);
+            const result = await withAiGenerationContext({ userId }, () =>
+              refineNutritionItems(previousItems, msgText, localTime),
+            );
 
             await repository.deleteUnconfirmed(previousEntryIds);
             const confirmationMessageTs =
@@ -371,7 +374,9 @@ async function handleParsedMessage(
 
     try {
       const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-      const result = await analyzeNutritionItems(msgText, localTime);
+      const result = await withAiGenerationContext({ userId }, () =>
+        analyzeNutritionItems(msgText, localTime),
+      );
       const confirmationMessageTs = thinkingMsg.ts ?? `fallback-parse-${msgTs}-${Date.now()}`;
       const entryIds = await repository.saveUnconfirmed(userId, date, result.items, {
         channelId: msgChannel,

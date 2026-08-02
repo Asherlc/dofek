@@ -50,6 +50,13 @@ User enters meal text (web/iOS)
 - Server validation/API errors are returned to clients as normal error messages.
 - Web and mobile capture unexpected errors to telemetry before showing the message.
 
+## AI observability and privacy
+
+- The server enables the AI SDK's OpenTelemetry-compatible telemetry for each nutrition operation, using stable function IDs for analysis and refinement. See the [AI SDK telemetry documentation](https://ai-sdk.dev/docs/ai-sdk-core/telemetry).
+- When trace observability is enabled, server startup registers the AI SDK's provider-neutral OpenTelemetry integration so those telemetry options emit spans.
+- Input and output recording are disabled, so this AI telemetry path does not export the user's meal description or the model's nutrition response.
+- Production instrumentation forwards AI spans to PostHog's generic OpenTelemetry AI adapter. Nutrition/domain code supplies only standard `user.id` context; the provider-specific export stays in the instrumentation adapter. PostHog documents this [Vercel AI/OpenTelemetry integration](https://posthog.com/docs/ai-observability/installation/vercel-ai) and its [privacy mode](https://posthog.com/docs/ai-observability/privacy-mode).
+
 ## Troubleshooting
 
 - `No items logged after submit`:

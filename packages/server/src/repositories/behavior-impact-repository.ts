@@ -1,3 +1,4 @@
+import { formatReadinessDifference } from "@dofek/format/format";
 import { type ProviderProvenance, resolveProviderProvenance } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -25,6 +26,46 @@ export interface BehaviorImpactRow {
   noCount: number;
   providerIds: string[];
 }
+
+export type BehaviorAssociationDirection = "higher" | "lower" | "no_difference" | "unavailable";
+
+export interface BehaviorAssociation {
+  relationship: "descriptive_association";
+  direction: BehaviorAssociationDirection;
+  estimateLabel: string;
+  method: string;
+  interpretation: string;
+  uncertainty: string;
+  observationWindow: string;
+}
+
+export interface BehaviorImpactDetail {
+  questionSlug: string;
+  displayName: string;
+  category: string;
+  impactPercent: number | null;
+  yesCount: number;
+  noCount: number;
+  sources: ProviderProvenance[];
+  association: Omit<BehaviorAssociation, "observationWindow">;
+}
+
+export const behaviorAssociationSchema = z.object({
+  relationship: z.literal("descriptive_association"),
+  direction: z.enum(["higher", "lower", "no_difference", "unavailable"]),
+  estimateLabel: z.string(),
+  method: z.string(),
+  interpretation: z.string(),
+  uncertainty: z.string(),
+  observationWindow: z.string(),
+});
+
+const BEHAVIOR_ASSOCIATION_METHOD =
+  "Relative difference in mean next-day readiness after Yes versus No.";
+const BEHAVIOR_ASSOCIATION_INTERPRETATION =
+  "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.";
+const BEHAVIOR_ASSOCIATION_UNCERTAINTY =
+  "Uncertainty interval is unavailable for this descriptive comparison.";
 
 /** A descriptive association between a boolean journal behavior and next-day readiness. */
 export class BehaviorImpact {
@@ -61,8 +102,8 @@ export class BehaviorImpact {
   }
 
   /** Relative difference in mean next-day readiness when behavior=yes versus no. */
-  get impactPercent(): number {
-    if (this.#row.avgReadinessNo === 0) return 0;
+  get impactPercent(): number | null {
+    if (this.#row.avgReadinessNo === 0) return null;
     return (
       Math.round(
         ((this.#row.avgReadinessYes - this.#row.avgReadinessNo) / this.#row.avgReadinessNo) * 1000,
@@ -70,7 +111,37 @@ export class BehaviorImpact {
     );
   }
 
-  toDetail() {
+  get association(): Omit<BehaviorAssociation, "observationWindow"> {
+    const impactPercent = this.impactPercent;
+    if (impactPercent === null) {
+      return {
+        relationship: "descriptive_association",
+        direction: "unavailable",
+        estimateLabel: "Estimate unavailable",
+        method: BEHAVIOR_ASSOCIATION_METHOD,
+        interpretation: BEHAVIOR_ASSOCIATION_INTERPRETATION,
+        uncertainty: BEHAVIOR_ASSOCIATION_UNCERTAINTY,
+      };
+    }
+
+    const direction: BehaviorAssociationDirection =
+      this.#row.avgReadinessYes > this.#row.avgReadinessNo
+        ? "higher"
+        : this.#row.avgReadinessYes < this.#row.avgReadinessNo
+          ? "lower"
+          : "no_difference";
+
+    return {
+      relationship: "descriptive_association",
+      direction,
+      estimateLabel: formatReadinessDifference(impactPercent),
+      method: BEHAVIOR_ASSOCIATION_METHOD,
+      interpretation: BEHAVIOR_ASSOCIATION_INTERPRETATION,
+      uncertainty: BEHAVIOR_ASSOCIATION_UNCERTAINTY,
+    };
+  }
+
+  toDetail(): BehaviorImpactDetail {
     return {
       questionSlug: this.questionSlug,
       displayName: this.displayName,
@@ -79,6 +150,7 @@ export class BehaviorImpact {
       yesCount: this.yesCount,
       noCount: this.noCount,
       sources: this.sources,
+      association: this.association,
     };
   }
 }

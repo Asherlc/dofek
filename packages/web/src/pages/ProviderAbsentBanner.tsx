@@ -1,9 +1,17 @@
 import { formatDateTime } from "@dofek/format/format";
-import { providerAbsentExplanation, providerSourceLabel } from "@dofek/providers/providers";
+import {
+  providerAbsentExplanation,
+  providerLabel as providerName,
+  providerSourceLabel,
+} from "@dofek/providers/providers";
+import { Link } from "@tanstack/react-router";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 
-export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail }) {
+type ProviderAbsentActivity = Pick<ActivityDetail, "providerId" | "subsource" | "providerAbsentAt">;
+
+export function ProviderAbsentBanner({ activity }: { activity: ProviderAbsentActivity }) {
   const providerLabel = providerSourceLabel(activity.providerId, activity.subsource);
+  const remediationProviderLabel = providerName(activity.providerId);
 
   return (
     <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
@@ -36,6 +44,13 @@ export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail })
         {providerAbsentExplanation(activity.providerId, activity.subsource)} You can restore it from
         the activities page while showing hidden activities.
       </p>
+      <Link
+        to="/providers/$id"
+        params={{ id: activity.providerId }}
+        className="mt-3 inline-flex text-xs font-semibold text-amber-900 underline decoration-amber-700/60 underline-offset-2 hover:text-amber-950 dark:text-amber-100 dark:hover:text-white"
+      >
+        Review {remediationProviderLabel} connection
+      </Link>
     </div>
   );
 }

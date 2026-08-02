@@ -8,7 +8,14 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { POSTHOG_API_KEY, POSTHOG_LOGS_URL, POSTHOG_TRACES_URL } from "./lib/posthog-config.ts";
+import { AiContextSpanProcessor, registerAiTelemetry } from "./lib/ai-observability.ts";
+import { PostHogAiSpanProcessor } from "./lib/posthog-ai-observability.ts";
+import {
+  POSTHOG_API_KEY,
+  POSTHOG_HOST,
+  POSTHOG_LOGS_URL,
+  POSTHOG_TRACES_URL,
+} from "./lib/posthog-config.ts";
 
 function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
@@ -22,7 +29,11 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
     isProductionDeployment(env.DEPLOY_ENVIRONMENT) ||
     (env.NODE_ENV === "production" && hasAxiomTraceExport);
 
-  const processors: SpanProcessor[] = [];
+  if (!hasAxiomTraceExport && !hasPostHogTraceExport) {
+    return [];
+  }
+
+  const processors: SpanProcessor[] = [new AiContextSpanProcessor()];
 
   if (hasAxiomTraceExport) {
     processors.push(new BatchSpanProcessor(new OTLPTraceExporter()));
@@ -38,6 +49,12 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
           },
         }),
       ),
+    );
+    processors.push(
+      new PostHogAiSpanProcessor({
+        projectToken: POSTHOG_API_KEY,
+        host: POSTHOG_HOST,
+      }),
     );
   }
 
@@ -94,6 +111,10 @@ export function startInstrumentation(
   const hasMetricExport = Boolean(endpoint || metricsEndpoint);
   if (!hasTraceExport && !hasLogExport && !hasMetricExport) {
     return undefined;
+  }
+
+  if (hasTraceExport) {
+    registerAiTelemetry();
   }
 
   const serviceName = env.OTEL_SERVICE_NAME ?? "dofek";

@@ -964,7 +964,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate analytics server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate seed review-seed-clickhouse analytics server
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:

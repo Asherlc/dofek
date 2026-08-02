@@ -8,7 +8,11 @@
 export interface BreathworkTechnique {
   id: string;
   name: string;
+  /** Concise user-facing reason to choose this practice */
+  purpose: string;
   description: string;
+  /** User-facing difficulty label */
+  difficulty: BreathworkDifficulty;
   /** Possible benefit supported by technique-specific evidence, never a guarantee */
   possibleBenefit?: string;
   /** Material guidance that clients must show before a session starts */
@@ -23,6 +27,14 @@ export interface BreathworkTechnique {
   holdOutSeconds?: number;
   /** Default number of rounds */
   defaultRounds: number;
+}
+
+export const BREATHWORK_DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
+export type BreathworkDifficulty = (typeof BREATHWORK_DIFFICULTIES)[number];
+
+export interface BreathworkTechniqueDetails extends BreathworkTechnique {
+  /** Server-computed duration for the default session */
+  durationSeconds: number;
 }
 
 export interface BreathworkSafetyGuidance {
@@ -73,7 +85,10 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "box-breathing",
     name: "Box Breathing",
-    description: "Equal-length inhale, hold, exhale, and hold phases.",
+    purpose: "Calm focus",
+    description:
+      "Breathe in for 4 seconds, hold for 4 seconds, breathe out for 4 seconds, then hold for 4 seconds.",
+    difficulty: "Beginner",
     // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
     possibleBenefit: "Regular practice may support a more positive mood.",
     safety: STANDARD_SAFETY,
@@ -86,7 +101,10 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "4-7-8",
     name: "4-7-8 Breathing",
-    description: "Inhale for 4 seconds, hold for 7 seconds, and exhale for 8 seconds.",
+    purpose: "Wind down",
+    description:
+      "Breathe in for 4 seconds, hold for 7 seconds, then breathe out slowly for 8 seconds.",
+    difficulty: "Intermediate",
     safety: STANDARD_SAFETY,
     inhaleSeconds: 4,
     holdInSeconds: 7,
@@ -96,7 +114,10 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "coherent",
     name: "Coherent Breathing",
-    description: "Slow, rhythmic breathing at 5 breaths per minute.",
+    purpose: "Steady calm",
+    description:
+      "Breathe in for 6 seconds and out for 6 seconds, creating an even rhythm of about 5 breaths per minute.",
+    difficulty: "Beginner",
     safety: STANDARD_SAFETY,
     inhaleSeconds: 6,
     exhaleSeconds: 6,
@@ -105,7 +126,9 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "physiological-sigh",
     name: "Physiological Sigh",
-    description: "Double inhale through the nose followed by a longer exhale.",
+    purpose: "Quick reset",
+    description: "Take two small inhales through the nose, followed by one longer exhale.",
+    difficulty: "Beginner",
     // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
     possibleBenefit:
       "Regular practice may support a more positive mood and slower resting breathing.",
@@ -118,7 +141,9 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "wim-hof",
     name: "Power Breathing",
-    description: "30 rounds of 2-second inhales followed by 2-second exhales.",
+    purpose: "Energizing practice",
+    description: "Take 30 rounds of active 2-second inhales followed by 2-second exhales.",
+    difficulty: "Advanced",
     safety: POWER_BREATHING_SAFETY,
     inhaleSeconds: 2,
     exhaleSeconds: 2,
@@ -131,6 +156,19 @@ export function getTechniqueById(id: string): BreathworkTechnique | undefined {
   return TECHNIQUES.find((t) => t.id === id);
 }
 
+const LEGACY_TECHNIQUE_LABELS: Record<string, string> = {
+  resonance: "Resonant Breathing",
+};
+
+/** Return a human-readable label without exposing a stored technique identifier. */
+export function getBreathworkTechniqueLabel(techniqueId: string): string {
+  return (
+    getTechniqueById(techniqueId)?.name ??
+    LEGACY_TECHNIQUE_LABELS[techniqueId] ??
+    "Breathwork session"
+  );
+}
+
 /** Compute total session duration in seconds for a given number of rounds */
 export function totalSessionSeconds(technique: BreathworkTechnique, rounds: number): number {
   const roundSeconds =
@@ -139,4 +177,14 @@ export function totalSessionSeconds(technique: BreathworkTechnique, rounds: numb
     technique.exhaleSeconds +
     (technique.holdOutSeconds ?? 0);
   return roundSeconds * rounds;
+}
+
+/** Add the server-owned default-session duration to a technique definition. */
+export function toBreathworkTechniqueDetails(
+  technique: BreathworkTechnique,
+): BreathworkTechniqueDetails {
+  return {
+    ...technique,
+    durationSeconds: totalSessionSeconds(technique, technique.defaultRounds),
+  };
 }

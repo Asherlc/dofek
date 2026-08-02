@@ -64,6 +64,16 @@ function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown
   return (...args: unknown[]) => String(formatter(...args));
 }
 
+function getYAxisMax(option: Record<string, unknown>): number {
+  const yAxis = option.yAxis;
+  if (typeof yAxis !== "object" || yAxis === null || !("max" in yAxis)) {
+    throw new Error("Expected yAxis.max to be present");
+  }
+  const max = yAxis.max;
+  if (typeof max !== "number") throw new Error("Expected yAxis.max to be a number");
+  return max;
+}
+
 describe("PolarizationTrendChart option builder", () => {
   const sampleWeeks = [
     makePolarizationWeek({
@@ -172,6 +182,29 @@ describe("PolarizationTrendChart option builder", () => {
     if (!thresholdSeries) throw new Error("Expected threshold series");
     expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
     expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
+  });
+
+  it("renders the threshold supplied by the server instead of a client heuristic", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks, 2.5);
+    const allSeries = getSeriesArray(option);
+    const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
+    expect(thresholdSeries).toBeDefined();
+    if (!thresholdSeries) throw new Error("Expected threshold series");
+    expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.5]);
+    expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.5]);
+  });
+
+  it("normalizes missing and non-finite thresholds before chart configuration", () => {
+    for (const threshold of [undefined, null, Number.NaN]) {
+      const option = buildPolarizationTrendOption(sampleWeeks, threshold);
+      const allSeries = getSeriesArray(option);
+      const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
+      expect(thresholdSeries).toBeDefined();
+      if (!thresholdSeries) throw new Error("Expected threshold series");
+      expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2]);
+      expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2]);
+      expect(Number.isFinite(getYAxisMax(option))).toBe(true);
+    }
   });
 
   it("uses a neutral categorical color on both sides of the descriptive heuristic", () => {
