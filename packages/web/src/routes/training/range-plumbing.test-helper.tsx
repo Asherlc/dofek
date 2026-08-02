@@ -162,14 +162,17 @@ vi.mock("../../lib/trpc.ts", () => ({
     },
     todayPlan: {
       get: {
-        useQuery: () => ({
-          data: {
-            status: "ready" as const,
-            action: { title: "Server-authored recovery action" },
-          },
-          isLoading: false,
-          error: null,
-        }),
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "todayPlan.get", input, options });
+          return {
+            data: {
+              status: "ready" as const,
+              action: { title: "Server-authored recovery action" },
+            },
+            isLoading: false,
+            error: null,
+          };
+        },
       },
     },
     strength: {

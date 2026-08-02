@@ -1,13 +1,17 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   expectRegistryInputs,
   renderRoute,
   resetRangePlumbingState,
   state,
 } from "./range-plumbing.test-helper.tsx";
+
+vi.mock("../../hooks/useTodayQueryDate.ts", () => ({
+  useTodayQueryDate: () => "2026-08-01",
+}));
 
 describe("recovery route range plumbing", () => {
   beforeEach(resetRangePlumbingState);
@@ -30,6 +34,12 @@ describe("recovery route range plumbing", () => {
     expect(screen.getByText("Server-authored recovery action")).toBeTruthy();
     expect(screen.getByText("Heart Rate Variability Coefficient of Variation")).toBeTruthy();
     expect(screen.getByText("7-day rolling heart rate variability")).toBeTruthy();
+    expect(state.queryCalls).toContainEqual(
+      expect.objectContaining({
+        name: "todayPlan.get",
+        input: { days: 30, endDate: "2026-08-01" },
+      }),
+    );
 
     cleanup();
     state.queryCalls.length = 0;
