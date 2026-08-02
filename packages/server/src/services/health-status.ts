@@ -1,7 +1,9 @@
+import { formatHRV, formatSteps } from "@dofek/format/format";
 import { mean, sampleStandardDeviation } from "simple-statistics";
 import type { z } from "zod";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
+  type HealthStatusMetric,
   healthMetricIntentSchema,
   healthMetricKeySchema,
   healthStatusMetricSchema,
@@ -11,9 +13,9 @@ import type { TrendsRow } from "../repositories/daily-metrics-repository.ts";
 export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSchema };
 
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
-export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
+export type { HealthStatusMetric };
 
-export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v2";
+export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v3";
 
 interface HealthStatusSummaryInput {
   metric: HealthStatusMetric["metric"];
@@ -37,9 +39,27 @@ interface WeightGoalIntentInput {
   baselineKg: number | null;
 }
 
-function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
+function formatHealthStatusValue(
+  metric: HealthStatusMetric["metric"],
+  value: number | null,
+): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  if (metric === "hrv") return formatHRV(value);
+  if (metric === "steps") return formatSteps(value);
+  return null;
+}
+
+function healthStatusSummary(input: HealthStatusSummaryInput) {
   return {
     ...input,
+    valueText: formatHealthStatusValue(input.metric, input.value),
+    baselineText: formatHealthStatusValue(input.metric, input.baseline),
+  };
+}
+
+function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
+  return {
+    ...healthStatusSummary(input),
     deviation: null,
     direction: "unknown",
     statusToken: "insufficient_data",
@@ -109,7 +129,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
 
   if (isMovingAsIntended(input.intent, direction)) {
     return {
-      ...input,
+      ...healthStatusSummary(input),
       deviation,
       direction,
       statusToken: "moving_as_intended",
@@ -123,7 +143,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
   const absoluteDeviation = Math.abs(deviation);
   if (absoluteDeviation < 1) {
     return {
-      ...input,
+      ...healthStatusSummary(input),
       deviation,
       direction,
       statusToken: "near_baseline",
@@ -136,7 +156,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
 
   if (direction === "aligned") {
     return {
-      ...input,
+      ...healthStatusSummary(input),
       deviation,
       direction,
       statusToken: "near_baseline",
@@ -149,7 +169,7 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
 
   const farFromBaseline = absoluteDeviation >= 2;
   return {
-    ...input,
+    ...healthStatusSummary(input),
     deviation,
     direction,
     statusToken: farFromBaseline ? "far_from_baseline" : "notable_deviation",
