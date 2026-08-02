@@ -148,6 +148,9 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
     expect(screen.queryByText("Export confidence")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "View resting heart rate data" }).getAttribute("href"),
+    ).toBe("/body/heart-rate");
   });
 
   it("derives the dashboard relationship heading and value from conditional evidence", () => {

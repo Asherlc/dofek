@@ -141,6 +141,9 @@ describe("SleepNeedCard", () => {
       ),
     ).toBeDefined();
     expect(screen.queryByText(/recommended/)).toBeNull();
+    expect(screen.getByRole("link", { name: "View sleep source data" }).getAttribute("href")).toBe(
+      "#sleep-data-sources",
+    );
   });
 
   it("passes plain numeric values to bar series (not date tuples)", () => {
