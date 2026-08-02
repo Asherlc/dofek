@@ -946,7 +946,13 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
-    expect(screen.getByText("Independent intensity data remains available.")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", {
+          name: "About How this is calculated for Heart-rate zone distribution",
+        })
+        .getAttribute("aria-description"),
+    ).toContain("Independent intensity data remains available.");
   });
 
   it("keeps equal messages separate when training and companion queries both fail", async () => {
