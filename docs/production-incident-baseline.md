@@ -21921,6 +21921,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   blocked before startup because Docker reported `all predefined address pools
   have been fully subnetted` while creating `issue-2061-e2e_default`.
 
+## 2026-08-02 — Provider metric-stream inventory recount timeout (DOFEK-SERVER-5Q)
+
+- **Status:** Root cause fixed in source; production rollout and historical
+  bootstrap remain outstanding.
+- **Symptoms:** Sentry issue
+  [DOFEK-SERVER-5Q](https://east-bay-software.sentry.io/issues/7647343550/)
+  reported `AnalyticsBuildError` from `provider_stats`. ClickHouse returned
+  Code 159 at the configured 240-second execution boundary.
+- **User impact:** The analytics build failed to publish refreshed provider
+  inventory counts for the affected cycle. No production data was mutated by
+  this investigation.
+- **Evidence:** The production `system.query_log` entry at
+  `2026-08-02 04:24:17 UTC` read `49,057,569` rows and `8.35 GiB`. The
+  existing `by_provider_current_state` projection was present on every active
+  raw-table part and selected by the failing query, proving that the remaining
+  cost was aggregating every current ID for the dirty provider rather than
+  resolving replacements. ClickHouse documents `system.query_log` as the
+  query-history source and projections as optimizer support structures
+  ([system.query_log](https://clickhouse.com/docs/operations/system-tables/query_log),
+  [projections](https://clickhouse.com/docs/data-modeling/projections)).
+- **Root cause:** `provider_stats` performed an exact raw current-ID recount
+  whose work scaled with dirty-provider cardinality even after the existing
+  latest-state projection was used.
+- **Fix / mitigation:** Add migration `0068_provider_metric_stream_daily_counts`
+  with insert-time `(user_id, provider_id, recorded_date)` invalidation keys;
+  add the date-ordered covering projection
+  `by_provider_current_state_recorded_at`; add the bounded incremental dbt model
+  `provider_metric_stream_daily`; and make `provider_stats` sum daily rows while
+  withholding publication when a day marker is newer than its daily replacement
+  row. The exact tuple-valued `argMax` query remains the correctness contract;
+  no timeout, retry, memory, or warn-and-continue workaround was added.
+- **Validation:** The focused ClickHouse migration, daily-model, and
+  provider-stats integration suites passed against local ClickHouse 26.6;
+  focused schema, model, registry, dataset-contract, and microbatch unit tests
+  passed; dbt parse and compile passed. The pre-change baseline `pnpm test`
+  also passed 1,015 files and 15,559 tests. Local Compose required a
+  workspace-scoped bridge network because Docker's automatic address pools were
+  exhausted; only this workspace's resources were created and later removed.
+- **Remaining risk / follow-up:** Production still requires the forward
+  migration, projection materialization, historical day-key bootstrap, and
+  stop-gated verification that day markers are clean and `provider_stats` has a
+  successful `QueryFinish`. Do not close the incident until those checks pass;
+  the rollout commands and stop conditions are in
+ [`clickhouse-metric-stream.md`](clickhouse-metric-stream.md#daily-provider-metric-count-rollout).
+
 ## 2026-08-02 — LAND-04 local E2E stack could not allocate a Docker network
 
 - **Status:** Unresolved local validation blocker; no production impact.
