@@ -7,6 +7,66 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-02: iOS cold start blocked by Expo OTA launch wait
+
+### Symptoms
+
+A fresh signed Release build on the dedicated iOS 26.5 Simulator held the
+native splash for roughly seven seconds on force-stop launches.
+
+### User Impact
+
+The first interactive screen was delayed while Expo Updates checked the network
+and downloaded an OTA bundle. The delay occurred before JavaScript, auth
+restore, and deferred native-service work began.
+
+### Evidence
+
+Three force-stop launches took 7.13, 7.12, and 6.98 seconds from native process
+start to JavaScript evaluation. On the instrumented third launch, Expo OTA
+launch consumed 5,015.36 ms, while JavaScript bootstrap took 9 ms,
+authentication restore 6 ms, splash dismissal 4 ms, and deferred service
+bootstrap 0 ms; interactive duration from the Expo launch reference was
+5,041.36 ms. Native/Sentry breadcrumbs recorded `GET /manifest` with HTTP 200,
+then 43 downloaded assets including a 9,429,201-byte Hermes bundle. The
+generated `Expo.plist` confirmed `EXUpdatesCheckOnLaunch = ALWAYS` and
+`EXUpdatesLaunchWaitMs = 5000`. Expo documents
+[`fallbackToCacheTimeout`](https://docs.expo.dev/versions/latest/sdk/updates/)
+as the launch wait before falling back to the cached update.
+
+### Root Cause
+
+`updates.fallbackToCacheTimeout: 5000` allowed the network OTA startup procedure
+to hold native launch for five seconds while the Hermes bundle and other assets
+were downloaded. JavaScript bootstrap, auth restore, splash dismissal, and
+deferred service work were not the bottleneck.
+
+### Fix or Mitigation
+
+Set `updates.fallbackToCacheTimeout` to `0` while retaining `ON_LOAD`, signed
+updates, and the existing update URL/code-signing metadata. Expo continues to
+check for and download updates, but an update that is not ready within the
+zero-millisecond launch wait is applied on the next launch. Added a mobile
+config regression test so the launch policy cannot silently return to a blocking
+wait.
+
+### Validation
+
+The regression test fails on the pre-fix configuration with `expected 5000 to be
+0` and passes after the configuration change. The resolved Expo config and
+generated `Expo.plist` report the zero-millisecond fallback while retaining the
+OTA URL and signing metadata. A signed Release compile was attempted but the
+local XcodeBuildMCP call timed out after 300 seconds while compiling Pods; no
+post-fix runtime timing is claimed here.
+
+### Remaining Risk
+
+The current launch no longer waits for remote OTA delivery, so a just-published
+update may not be used until the next cold launch. Code-signature verification
+remains enabled. A signed Release rebuild and force-stop relaunch audit should
+confirm the native launch wait is zero and that the first interactive screen is
+available without network-dependent delay.
+
 ## 2026-08-01: Local heart-rate validation was blocked by shared Docker resources
 
 ### Symptoms
