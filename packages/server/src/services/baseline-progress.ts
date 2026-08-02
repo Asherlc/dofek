@@ -61,10 +61,14 @@ export function buildBaselineProgress(input: BaselineProgressInput): BaselinePro
     blocker = "sync_error";
     summary = `${input.label} baseline data could not sync.`;
     action = "Reconnect the data source and start the sync again.";
-  } else if (observedDays === 0 || input.value == null) {
+  } else if (observedDays === 0) {
     blocker = "missing_source_data";
     summary = missingSourceSummary(input.label);
     action = missingSourceAction(input.label);
+  } else if (input.value == null) {
+    blocker = "missing_source_data";
+    summary = `No current ${input.label} value is available yet.`;
+    action = `Sync ${input.label.toLowerCase()} data again to record a current value.`;
   } else if (observedDays < BASELINE_REQUIRED_OBSERVATION_DAYS) {
     blocker = "collecting";
     summary = progressSummary(input.label, observedDays);

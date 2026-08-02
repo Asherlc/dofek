@@ -17,7 +17,7 @@ import { makeMockSensorStore } from "./test-helpers.ts";
  * cannot.
  */
 describe("dailyMetrics data correctness", () => {
-  const staleViewUserId = "00000000-0000-0000-0000-000000000002";
+  const staleViewUserId = "00000000-0000-4000-8000-000000000002";
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
@@ -213,10 +213,13 @@ describe("dailyMetrics data correctness", () => {
           { date: subtractDays(endDate, 23), resting_hr: 57 },
           { date: subtractDays(endDate, 22), resting_hr: 55 },
           { date: subtractDays(endDate, 21), resting_hr: 85 },
+          { date: subtractDays(endDate, 20), resting_hr: 0 },
+          { date: subtractDays(endDate, 19), resting_hr: -1 },
         ]),
       );
 
       expect(result?.latest_resting_hr).toBe(56);
+      expect(result?.sample_count_resting_hr).toBe(4);
     });
 
     it("returns all-null values when no data exists in the window", async () => {

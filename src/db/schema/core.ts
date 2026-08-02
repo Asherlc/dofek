@@ -5,7 +5,7 @@ import { getTokenUserId } from "../token-user-context.ts";
 export const fitness = pgSchema("fitness");
 
 // Stable user ID used in integration tests and fixtures.
-export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+export const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
 
 export function resolveImplicitUserId(): string {
   const userId = getTokenUserId();

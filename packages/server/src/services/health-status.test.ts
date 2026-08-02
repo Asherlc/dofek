@@ -297,6 +297,40 @@ describe("buildHealthStatusFromSummary", () => {
 
   it.each([
     {
+      processingStatus: "syncing" as const,
+      blocker: "syncing" as const,
+      summary: "Resting Heart Rate baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+    },
+    {
+      processingStatus: "sync_error" as const,
+      blocker: "sync_error" as const,
+      summary: "Resting Heart Rate baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+    },
+  ])("surfaces the $processingStatus baseline processing state", (fixture) => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        value: null,
+        baseline: null,
+        sampleDeviation: null,
+        intent: "lower",
+        observedDays: 0,
+        processingStatus: fixture.processingStatus,
+      }),
+    ).toMatchObject({
+      baselineProgress: {
+        blocker: fixture.blocker,
+        summary: fixture.summary,
+        action: fixture.action,
+      },
+    });
+  });
+
+  it.each([
+    {
       metric: "hrv" as const,
       value: 51.5,
       baseline: 50.5,

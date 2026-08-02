@@ -133,3 +133,26 @@ export const Empty: Story = {
     healthMonitor: <p className="text-sm text-muted">No recent health metrics yet.</p>,
   },
 };
+
+export const BlockedBaseline: Story = {
+  args: {
+    trend: {
+      latestRestingHeartRate: null,
+      averageRestingHeartRate: null,
+      restingHeartRateTrendLabel: "Waiting for baseline",
+      restingHeartRateBaselineProgress: {
+        requiredObservationDays: 3,
+        observedObservationDays: 1,
+        hasMeasurableVariation: false,
+        blocker: "collecting",
+        requirement:
+          "A current value plus at least 2 more recorded days with measurable variation.",
+        summary:
+          "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+        action: "Keep syncing resting heart rate data for at least 2 more days.",
+      },
+      restingHeartRatePoints: null,
+    },
+    healthMonitor: <p className="text-sm text-muted">Baseline evidence is collecting.</p>,
+  },
+};

@@ -47,6 +47,22 @@ describe("buildBaselineProgress", () => {
     });
   });
 
+  it("distinguishes a missing current value from an empty baseline window", () => {
+    expect(
+      buildBaselineProgress({
+        ...input,
+        value: null,
+        observedDays: 1,
+        sampleDeviation: null,
+      }),
+    ).toMatchObject({
+      observedObservationDays: 1,
+      blocker: "missing_source_data",
+      summary: "No current Resting Heart Rate value is available yet.",
+      action: "Sync resting heart rate data again to record a current value.",
+    });
+  });
+
   it("distinguishes enough identical observations from missing observations", () => {
     expect(
       buildBaselineProgress({

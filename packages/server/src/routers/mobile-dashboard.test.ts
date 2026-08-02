@@ -8,11 +8,18 @@ import {
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+type ProcessingStatus = "ready" | "active" | "failed";
+type ProcessingStatusResult = {
+  overallStatus: ProcessingStatus;
+  datasets: readonly [{ key: "recovery"; status: ProcessingStatus }];
+};
 const processingStatusMock = vi.hoisted(() =>
-  vi.fn(async (_input: ProcessingStatusQuery) => ({
-    overallStatus: "ready" as const,
-    datasets: [{ key: "recovery" as const, status: "ready" as const }],
-  })),
+  vi.fn(
+    async (_input: ProcessingStatusQuery): Promise<ProcessingStatusResult> => ({
+      overallStatus: "ready" as const,
+      datasets: [{ key: "recovery" as const, status: "ready" as const }],
+    }),
+  ),
 );
 
 vi.mock("../trpc.ts", async () => {
@@ -189,6 +196,44 @@ const fullAccessWindow = {
   paid: true as const,
   reason: "paid_grant" as const,
 };
+
+function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").MobileRecoveryTabResult {
+  return {
+    hrvVariability: [],
+    hrvBaseline: [],
+    readinessScore: [],
+    stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    trends: null,
+    dailyMetrics: [],
+    baselineRelative: [],
+    weight: [],
+    weightPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      goal: null,
+      projectionLine: [],
+    },
+    healthStatus: [],
+    healthspan: {
+      healthspanScore: null,
+      yearsDelta: null,
+      availability: {
+        status: "insufficient_data",
+        availableMetricCount: 0,
+        requiredMetricCount: 3,
+        missingMetricLabels: [],
+        summary: "0 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 3 more supported metrics sync successfully.",
+      },
+      metrics: [],
+      history: [],
+      trend: null,
+    },
+  };
+}
 
 describe("mobileDashboard.dashboardV2", () => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
@@ -849,6 +894,38 @@ describe("mobileDashboard.recovery", () => {
     await caller.recovery({ days: 30, endDate: "2026-03-28" });
 
     expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
+  });
+
+  it.each([
+    { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
+    { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
+  ])("passes the normalized $normalizedStatus status to the recovery tab loader", async ({
+    rawStatus,
+    normalizedStatus,
+  }) => {
+    processingStatusMock.mockResolvedValueOnce({
+      overallStatus: rawStatus,
+      datasets: [{ key: "recovery", status: rawStatus }],
+    });
+    const loadSpy = vi
+      .spyOn(mobileRecoveryTab, "loadMobileRecoveryTab")
+      .mockResolvedValue(emptyRecoveryTabResult());
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ processingStatus: normalizedStatus }),
+      30,
+      "2026-03-28",
+    );
   });
 
   it("returns consolidated recovery tab data", async () => {

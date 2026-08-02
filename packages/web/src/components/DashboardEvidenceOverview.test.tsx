@@ -29,6 +29,16 @@ describe("DashboardEvidenceOverview helpers", () => {
     ).toBe("Waiting for baseline");
   });
 
+  it.each([null, undefined])("falls back when the server trend label is %s", (label) => {
+    expect(
+      trendPositionLabel({
+        latestRestingHeartRate: 52,
+        averageRestingHeartRate: 56,
+        restingHeartRateTrendLabel: label,
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
   it("renders the server-authored baseline requirement, progress, and action", () => {
     render(
       <DashboardEvidenceOverview

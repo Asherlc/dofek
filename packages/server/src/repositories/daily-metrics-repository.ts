@@ -250,7 +250,7 @@ export class DailyMetricsRepository extends BaseRepository {
               STDDEV(steps) AS stddev_steps,
               STDDEV(skin_temp_c) AS stddev_skin_temp,
               COUNT(hrv) AS sample_count_hrv,
-              COUNT(resting_hr) AS sample_count_resting_hr,
+              COUNT(*) FILTER (WHERE resting_hr > 0) AS sample_count_resting_hr,
               COUNT(spo2_avg) AS sample_count_spo2,
               COUNT(steps) AS sample_count_steps,
               COUNT(skin_temp_c) AS sample_count_skin_temp

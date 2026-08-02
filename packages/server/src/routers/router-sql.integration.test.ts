@@ -21,7 +21,7 @@ describe("Router SQL validity", () => {
     testCtx = await setupTestDatabase();
 
     // Create a session for the fixture user so protected procedures work
-    const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 

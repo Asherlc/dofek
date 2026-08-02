@@ -114,7 +114,11 @@ export const dailyMetricsRouter = router({
         (metric) => metric.metric === "resting_heart_rate",
       );
       if (!restingHeartRateStatus) {
-        throw new Error("Daily metric health status omitted resting heart rate");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Daily metric health status omitted resting heart rate. Refresh the dashboard and try again.",
+        });
       }
 
       return {

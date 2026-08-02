@@ -263,7 +263,7 @@ export async function loadMobileRecoveryTab(
     restingHeartRateStatus,
     buildHealthStatusFromValues({
       metric: "spo2",
-      label: "SpO2",
+      label: "Blood Oxygen Saturation (SpO2)",
       values: dailyMetrics.flatMap((row) => (row.spo2_avg == null ? [] : [row.spo2_avg])),
       intent: "neutral",
       processingStatus,

@@ -107,6 +107,7 @@ async function runRecoveryTab(
     goalWeight?: string | null;
     days?: number;
     endDate?: string;
+    processingStatus?: "syncing" | "sync_error" | null;
   } = {},
 ) {
   const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
@@ -121,6 +122,7 @@ async function runRecoveryTab(
     timezone: "UTC",
     accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
     sensorStore: { query },
+    processingStatus: options.processingStatus ?? null,
   };
 
   vi.spyOn(
@@ -582,7 +584,7 @@ describe("loadMobileRecoveryTab", () => {
       expect(vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input)).toEqual([
         {
           metric: "spo2",
-          label: "SpO2",
+          label: "Blood Oxygen Saturation (SpO2)",
           values: [97, 99],
           intent: "neutral",
           processingStatus: null,
@@ -606,6 +608,25 @@ describe("loadMobileRecoveryTab", () => {
       expect(
         result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
       ).toMatchObject({ value: 52, baseline: 54, sampleDeviation: 2 });
+    });
+
+    it.each([
+      "syncing",
+      "sync_error",
+    ] as const)("passes %s to every health status builder", async (processingStatus) => {
+      vi.mocked(buildHealthStatusFromBaselineMetric).mockClear();
+      vi.mocked(buildHealthStatusFromValues).mockClear();
+      vi.mocked(buildWeightHealthStatus).mockClear();
+
+      await runRecoveryTab([recoveryRow()], { processingStatus });
+
+      expect(
+        vi.mocked(buildHealthStatusFromBaselineMetric).mock.calls.map(([, status]) => status),
+      ).toEqual([processingStatus, processingStatus, processingStatus, processingStatus]);
+      expect(
+        vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input.processingStatus),
+      ).toEqual([processingStatus, processingStatus, processingStatus]);
+      expect(vi.mocked(buildWeightHealthStatus)).toHaveBeenCalledWith([], null, processingStatus);
     });
 
     it("builds the resting heart rate status from HRV baseline rows when recovery data is absent", async () => {
