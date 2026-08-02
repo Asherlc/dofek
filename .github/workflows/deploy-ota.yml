@@ -134,7 +134,7 @@ jobs:
         # EOAS 2.3.22 is the compatible Expo Open OTA publisher; eoas@3.1.0
         # is a different npm project. Keep the invocation on the pinned pnpm
         # toolchain and pass the sourcemap alias to the published export.
-        run: pnpm dlx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dump-sourcemap
+        run: pnpm dlx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dumpSourcemap
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         env:

@@ -21929,3 +21929,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The Docker host had exhausted its predefined address pools; Docker documents those pools as the source for automatically allocated bridge-network subnets ([address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
 - **Fix / mitigation:** No shared or other-workspace Docker resources were pruned or changed. The browser regression was run against isolated Vite output; the repository-managed E2E stack remains unverified.
 - **Remaining risk / follow-up:** Run the focused landing spec through the repository-managed E2E stack on a host with an available isolated network pool.
+
+## 2026-08-02 — Production OTA publish rejected the EOAS sourcemap flag
+
+- **Status:** Fixed in source; a fresh Deploy OTA run is required after the change is committed and pushed. The exposed deployment tokens also require rotation.
+- **Symptoms:** Deploy OTA run [30753976159](https://github.com/Asherlc/dofek/actions/runs/30753976159), job [91512883120](https://github.com/Asherlc/dofek/actions/runs/30753976159/job/91512883120), completed the iOS export but failed during Publish OTA with exit code 2.
+- **User impact:** No new production OTA update was published for the attempted release.
+- **Evidence:** The first fatal line was `Error: Nonexistent flag: --dump-sourcemap`; EOAS 2.3.22 help lists `--dumpSourcemap`. The local pinned command's help accepts the corrected spelling.
+- **Root cause:** `.github/workflows/deploy-ota.yml` used the hyphenated flag spelling, which EOAS 2.3.22 does not recognize.
+- **Fix / mitigation:** Changed the workflow and matching mobile README reference to `--dumpSourcemap`. No retry, timeout, or warn-and-continue behavior was added.
+- **Remaining risk / follow-up:** Commit and push the source fix, run Deploy OTA, and rotate the unmasked `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN` values visible in the job log before rerunning.
