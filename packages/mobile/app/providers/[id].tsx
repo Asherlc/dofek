@@ -403,6 +403,8 @@ function RecordsBrowser({
         showsHorizontalScrollIndicator={false}
         style={tabStyles.scrollView}
         contentContainerStyle={tabStyles.container}
+        accessibilityRole="tablist"
+        accessibilityLabel="Record types"
       >
         {availableTypes.map((dt) => (
           <TouchableOpacity
@@ -410,7 +412,7 @@ function RecordsBrowser({
             onPress={() => setActiveTab(dt.key)}
             style={[tabStyles.tab, activeTab === dt.key && tabStyles.activeTab]}
             activeOpacity={0.7}
-            accessibilityRole="button"
+            accessibilityRole="tab"
             accessibilityLabel={dt.label}
             accessibilityState={{ selected: activeTab === dt.key }}
           >
