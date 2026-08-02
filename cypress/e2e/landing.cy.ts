@@ -36,7 +36,7 @@ describe("Landing page mobile hero", () => {
     cy.visit("/");
     cy.wait("@usableProviders");
 
-    expectWithinFirstViewport("Today's recovery picture");
+    expectWithinFirstViewport("Example recovery picture");
     expectWithinFirstViewport("74%");
     expectWithinFirstViewport("Near baseline");
   });
