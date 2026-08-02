@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { collectSqlText, createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
+type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+
+const processingStatusMock = vi.hoisted(() =>
+  vi.fn(async (_input: ProcessingStatusQuery) => ({
+    overallStatus: "ready" as const,
+    datasets: [{ key: "recovery" as const, status: "ready" as const }],
+  })),
+);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -36,11 +45,8 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 
 vi.mock("../repositories/processing-repository.ts", () => ({
   ProcessingRepository: class {
-    async status() {
-      return {
-        overallStatus: "ready",
-        datasets: [{ key: "recovery", status: "ready" }],
-      };
+    status(input: ProcessingStatusQuery) {
+      return processingStatusMock(input);
     }
   },
 }));
@@ -240,6 +246,14 @@ describe("dailyMetricsRouter", () => {
   });
 
   describe("trends", () => {
+    it("requests processing status for the recovery dataset", async () => {
+      processingStatusMock.mockClear();
+
+      await makeCaller([]).trends({ days: 30, endDate: "2024-01-16" });
+
+      expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
+    });
+
     it("returns first row or null", async () => {
       const rows = [
         {
@@ -343,7 +357,7 @@ describe("dailyMetricsRouter", () => {
         hrv_mean_30d: 60,
         hrv_sd_30d: 6,
         hrv_z_score: 2,
-        hrv_baseline_sample_count: 24,
+        hrv_baseline_sample_count: 1,
         hrv_baseline_coverage: 0.8,
         hrv_mean_7d: 66,
         hrv_mean_previous_28d: 61,
@@ -386,9 +400,10 @@ describe("dailyMetricsRouter", () => {
       expect(result?.baselineRelative[0]).toMatchObject({
         metric: "hrv",
         value: 72,
-        baseline: { mean: 60, zScore: 2, sampleCount: 24, coverage: 0.8 },
+        baseline: { mean: 60, zScore: 2, sampleCount: 1, coverage: 0.8 },
         comparison: { delta: 5, direction: "increasing" },
       });
+      expect(result?.restingHeartRateTrendLabel).toBe("below average");
     });
 
     it("coerces PostgreSQL string aggregates to numbers via Zod schema", async () => {

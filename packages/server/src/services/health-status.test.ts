@@ -5,6 +5,7 @@ import {
   buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromSummary,
   buildHealthStatusFromValues,
+  buildRestingHeartRateTrendLabel,
   buildWeightHealthStatus,
   resolveWeightGoalIntent,
 } from "./health-status.ts";
@@ -91,6 +92,97 @@ describe("buildDailyMetricHealthStatuses", () => {
       sampleDeviation: 6,
       deviation: 2,
     });
+    expect(statuses.filter((status) => status.metric === "resting_heart_rate")).toHaveLength(1);
+  });
+
+  it("uses the canonical resting heart rate baseline without adding a duplicate trend status", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: 54,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: null,
+        stddev_resting_hr: 2,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: null,
+        latest_resting_hr: 52,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        sample_count_hrv: 0,
+        sample_count_resting_hr: 3,
+        sample_count_spo2: 0,
+        sample_count_steps: 0,
+        sample_count_skin_temp: 0,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+      },
+      [
+        buildBaselineRelativeMetric({
+          metric: "resting_heart_rate",
+          label: "Resting Heart Rate",
+          value: 52,
+          baselineMean: 54,
+          baselineStandardDeviation: 2,
+          zScore: -1,
+          baselineSampleCount: 30,
+          baselineCoverage: 1,
+          recentMean: 52,
+          comparisonMean: 54,
+        }),
+      ],
+    );
+
+    expect(statuses.filter((status) => status.metric === "resting_heart_rate")).toHaveLength(1);
+    expect(statuses.find((status) => status.metric === "resting_heart_rate")).toMatchObject({
+      value: 52,
+      baseline: 54,
+      sampleDeviation: 2,
+    });
+  });
+
+  it("uses each aggregate metric's server-provided observation count", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: null,
+        avg_spo2: 97,
+        avg_steps: 100,
+        avg_skin_temp: 36,
+        stddev_hrv: null,
+        stddev_resting_hr: null,
+        stddev_spo2: 1,
+        stddev_steps: 10,
+        stddev_skin_temp: 0.1,
+        latest_hrv: null,
+        latest_resting_hr: null,
+        latest_spo2: 98,
+        latest_steps: 120,
+        latest_skin_temp: 36.2,
+        sample_count_hrv: 0,
+        sample_count_resting_hr: 0,
+        sample_count_spo2: 3,
+        sample_count_steps: 4,
+        sample_count_skin_temp: 5,
+        latest_date: "2026-07-25",
+        latest_steps_date: "2026-07-25",
+      },
+      [],
+    );
+
+    expect(statuses.find((status) => status.metric === "spo2")?.baselineProgress).toMatchObject({
+      observedObservationDays: 3,
+    });
+    expect(statuses.find((status) => status.metric === "steps")?.baselineProgress).toMatchObject({
+      observedObservationDays: 4,
+    });
+    expect(
+      statuses.find((status) => status.metric === "skin_temperature")?.baselineProgress,
+    ).toMatchObject({ observedObservationDays: 5 });
   });
 
   it.each([
@@ -130,6 +222,49 @@ describe("buildDailyMetricHealthStatuses", () => {
       direction: "above",
       statusToken,
     });
+  });
+});
+
+describe("buildRestingHeartRateTrendLabel", () => {
+  it("waits for the baseline before comparing a current value", () => {
+    expect(
+      buildRestingHeartRateTrendLabel({
+        latest: 48,
+        average: 54,
+        baselineProgress: { blocker: "collecting" },
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
+  it.each([
+    { latest: null, average: 54 },
+    { latest: 48, average: null },
+  ])("waits when the $latest/$average comparison value is missing", ({ latest, average }) => {
+    expect(
+      buildRestingHeartRateTrendLabel({
+        latest,
+        average,
+        baselineProgress: { blocker: null },
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
+  it.each([
+    { latest: 48, average: 54, label: "below average" },
+    { latest: 60, average: 54, label: "above average" },
+    { latest: 54, average: 54, label: "at average" },
+  ])("returns the server-owned comparison label for $latest/$average", ({
+    latest,
+    average,
+    label,
+  }) => {
+    expect(
+      buildRestingHeartRateTrendLabel({
+        latest,
+        average,
+        baselineProgress: { blocker: null },
+      }),
+    ).toBe(label);
   });
 });
 

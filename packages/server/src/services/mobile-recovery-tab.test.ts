@@ -541,7 +541,7 @@ describe("loadMobileRecoveryTab", () => {
       vi.mocked(buildHealthStatusFromValues).mockClear();
       vi.mocked(buildWeightHealthStatus).mockClear();
 
-      await runRecoveryTab([recoveryRow()], {
+      const result = await runRecoveryTab([recoveryRow()], {
         weight: [
           {
             date: "2026-03-27",
@@ -603,6 +603,52 @@ describe("loadMobileRecoveryTab", () => {
         },
       ]);
       expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75, null);
+      expect(
+        result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({ value: 52, baseline: 54, sampleDeviation: 2 });
+    });
+
+    it("builds the resting heart rate status from HRV baseline rows when recovery data is absent", async () => {
+      const result = await runRecoveryTab([], {
+        hrvBaseline: [
+          {
+            date: "2026-03-26",
+            hrv: 50,
+            resting_hr: 50,
+            mean_60d: 50,
+            sd_60d: 2,
+            mean_7d: 50,
+            resting_hr_mean_7d: 50,
+          },
+          {
+            date: "2026-03-27",
+            hrv: 52,
+            resting_hr: 52,
+            mean_60d: 51,
+            sd_60d: 2,
+            mean_7d: 51,
+            resting_hr_mean_7d: 51,
+          },
+          {
+            date: "2026-03-28",
+            hrv: 54,
+            resting_hr: 54,
+            mean_60d: 52,
+            sd_60d: 2,
+            mean_7d: 52,
+            resting_hr_mean_7d: 52,
+          },
+        ],
+      });
+
+      expect(
+        result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({
+        value: 54,
+        baseline: 52,
+        sampleDeviation: 2,
+        baselineProgress: { observedObservationDays: 3 },
+      });
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {

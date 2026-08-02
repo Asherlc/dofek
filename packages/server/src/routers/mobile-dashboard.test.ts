@@ -7,6 +7,13 @@ import {
 } from "./test-helpers.ts";
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+const processingStatusMock = vi.hoisted(() =>
+  vi.fn(async (_input: ProcessingStatusQuery) => ({
+    overallStatus: "ready" as const,
+    datasets: [{ key: "recovery" as const, status: "ready" as const }],
+  })),
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -153,11 +160,8 @@ vi.mock("../repositories/training-recommendation.ts", () => ({
 
 vi.mock("../repositories/processing-repository.ts", () => ({
   ProcessingRepository: class {
-    async status() {
-      return {
-        overallStatus: "ready",
-        datasets: [{ key: "recovery", status: "ready" }],
-      };
+    status(input: ProcessingStatusQuery) {
+      return processingStatusMock(input);
     }
   },
 }));
@@ -829,6 +833,22 @@ describe("mobileDashboard.recovery", () => {
         "mobileDashboard.recovery requires the ClickHouse activity analytics store",
       ),
     });
+  });
+
+  it("requests processing status for the recovery dataset", async () => {
+    processingStatusMock.mockClear();
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
   });
 
   it("returns consolidated recovery tab data", async () => {
