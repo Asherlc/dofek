@@ -236,6 +236,101 @@ export const journalEntry = fitness.table(
 );
 
 // ============================================================
+// Subjective body state — explicit user check-ins and injuries
+// ============================================================
+
+export const bodyRegion = fitness.table(
+  "body_region",
+  {
+    id: text("id").primaryKey(),
+    parentId: text("parent_id"),
+    label: text("label").notNull(),
+    kind: text("kind").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (table) => [
+    index("body_region_parent_sort_idx").on(table.parentId, table.sortOrder, table.id),
+    check("body_region_id_nonempty", sql`btrim(${table.id}) <> ''`),
+    check("body_region_label_nonempty", sql`btrim(${table.label}) <> ''`),
+    check(
+      "body_region_kind_valid",
+      sql`${table.kind} IN ('body', 'limb', 'hand', 'digit', 'pulley')`,
+    ),
+  ],
+);
+
+export const subjectiveCheckIn = fitness.table(
+  "subjective_check_in",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("subjective_check_in_user_date_key").on(table.userId, table.date),
+    index("subjective_check_in_user_date_idx").on(table.userId, table.date.desc()),
+  ],
+);
+
+export const subjectiveSymptom = fitness.table(
+  "subjective_symptom",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    checkInId: uuid("check_in_id")
+      .notNull()
+      .references(() => subjectiveCheckIn.id, { onDelete: "cascade" }),
+    bodyRegionId: text("body_region_id")
+      .notNull()
+      .references(() => bodyRegion.id, { onDelete: "restrict" }),
+    kind: text("kind").notNull(),
+    score: integer("score").notNull(),
+  },
+  (table) => [
+    unique("subjective_symptom_unique_kind").on(table.checkInId, table.bodyRegionId, table.kind),
+    index("subjective_symptom_region_idx").on(table.bodyRegionId),
+    check(
+      "subjective_symptom_kind_valid",
+      sql`${table.kind} IN ('soreness', 'stiffness', 'tenderness')`,
+    ),
+    check("subjective_symptom_score_range", sql`${table.score} BETWEEN 1 AND 10`),
+  ],
+);
+
+export const injuryEvent = fitness.table(
+  "injury_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    bodyRegionId: text("body_region_id")
+      .notNull()
+      .references(() => bodyRegion.id, { onDelete: "restrict" }),
+    onsetDate: date("onset_date").notNull(),
+    resolvedDate: date("resolved_date"),
+    severity: integer("severity").notNull(),
+    description: text("description").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("injury_event_user_onset_idx").on(table.userId, table.onsetDate.desc()),
+    check("injury_event_kind_valid", sql`${table.kind} IN ('injury', 'niggle')`),
+    check("injury_event_severity_range", sql`${table.severity} BETWEEN 0 AND 10`),
+    check("injury_event_description_nonempty", sql`btrim(${table.description}) <> ''`),
+    check(
+      "injury_event_resolution_order",
+      sql`${table.resolvedDate} IS NULL OR ${table.resolvedDate} >= ${table.onsetDate}`,
+    ),
+  ],
+);
+
+// ============================================================
 // Life Events / Markers
 // ============================================================
 

@@ -30,6 +30,7 @@ vi.mock("@tanstack/react-router", () => ({
 const mockActivity: ActivityDetail = {
   id: "test-123",
   notes: null,
+  perceivedExertion: null,
   maxSpeed: null,
   maxSpeedState: { status: "missing", reason: "Max Speed not recorded" },
   elevationLoss: null,
@@ -223,6 +224,13 @@ vi.mock("../lib/trpc.ts", () => ({
       stream: { useQuery: mockStreamUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
+      setPerceivedExertion: {
+        useMutation: () => ({
+          mutate: vi.fn(),
+          isPending: false,
+          error: null,
+        }),
+      },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       recompute: {
         useMutation: (options?: {

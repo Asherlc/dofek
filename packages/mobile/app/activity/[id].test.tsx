@@ -233,6 +233,7 @@ const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefi
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockPerceivedExertionMutate = vi.fn();
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -259,6 +260,9 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      setPerceivedExertion: {
+        useMutation: () => ({ mutate: mockPerceivedExertionMutate, isPending: false, error: null }),
+      },
     },
     climbing: {
       activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
@@ -369,6 +373,7 @@ beforeEach(() => {
   mockActivityListInvalidate.mockClear();
   mockCalendarWeekListInvalidate.mockClear();
   mockCalendarActivityOverviewInvalidate.mockClear();
+  mockPerceivedExertionMutate.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });

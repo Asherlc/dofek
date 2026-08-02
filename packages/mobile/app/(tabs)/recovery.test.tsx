@@ -30,6 +30,11 @@ const mockRecoveryRefetch = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
+const mockSubjectiveCheckInInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockSubjectiveTimelineInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockSubjectiveCheckInData = { logged: false, symptoms: [] };
+const mockSubjectiveRegionsData: never[] = [];
+const mockSubjectiveInjuriesData: never[] = [];
 
 function baselineMetric(
   metric: "hrv" | "resting_heart_rate" | "respiratory_rate" | "sleep_efficiency",
@@ -134,6 +139,18 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
       },
     },
+    subjective: {
+      checkIn: {
+        useQuery: () => ({ data: mockSubjectiveCheckInData, isLoading: false, error: null }),
+      },
+      regions: {
+        useQuery: () => ({ data: mockSubjectiveRegionsData, isLoading: false, error: null }),
+      },
+      injuries: {
+        useQuery: () => ({ data: mockSubjectiveInjuriesData, isLoading: false, error: null }),
+      },
+      saveCheckIn: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
+    },
     useUtils: () => ({
       mobileDashboard: {
         recovery: { invalidate: mockRecoveryInvalidate },
@@ -143,6 +160,10 @@ vi.mock("../../lib/trpc", () => ({
       },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
+      },
+      subjective: {
+        checkIn: { invalidate: mockSubjectiveCheckInInvalidate },
+        timeline: { invalidate: mockSubjectiveTimelineInvalidate },
       },
     }),
   },
@@ -240,10 +261,14 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockTodayPlanInvalidate.mockReset();
     mockRecoveryRefetch.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockSubjectiveCheckInInvalidate.mockReset();
+    mockSubjectiveTimelineInvalidate.mockReset();
     mockRouterPush.mockReset();
     mockRecoveryInvalidate.mockResolvedValue(undefined);
     mockRecoveryRefetch.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
+    mockSubjectiveCheckInInvalidate.mockResolvedValue(undefined);
+    mockSubjectiveTimelineInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
   });
 

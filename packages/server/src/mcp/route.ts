@@ -10,7 +10,7 @@ import { validateMcpToken } from "./token-repository.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
 export interface CreateMcpRouterOptions {
-  db: Pick<Database, "execute" | "select">;
+  db: Pick<Database, "execute" | "select" | "transaction">;
   sensorStore?: ActivitySensorStore;
 }
 

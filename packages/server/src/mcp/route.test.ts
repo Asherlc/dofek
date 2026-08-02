@@ -169,7 +169,13 @@ async function request(
 
 function createTestApp(sensorStore = undefined) {
   const app = express();
-  app.use("/api/mcp", createMcpRouter({ db: { execute: vi.fn(), select: vi.fn() }, sensorStore }));
+  app.use(
+    "/api/mcp",
+    createMcpRouter({
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      sensorStore,
+    }),
+  );
   return app;
 }
 

@@ -24,6 +24,7 @@ import {
   localDateString,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
+import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
@@ -33,7 +34,7 @@ import {
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 
 export interface DofekMcpContext {
-  db: Pick<Database, "execute" | "select">;
+  db: Pick<Database, "execute" | "select" | "transaction">;
   userId: string;
   scopes: McpScope[];
   timezone: string;
@@ -602,6 +603,25 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           source_provider: row.providerId,
         })),
       );
+    },
+  );
+
+  server.registerTool(
+    "get_subjective_timeline",
+    {
+      title: "Get Subjective Timeline",
+      description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
+      inputSchema: {
+        start_date: dateSchema,
+        end_date: dateSchema,
+        timezone: z.string().optional(),
+      },
+    },
+    async ({ start_date, end_date }) => {
+      requireMcpScope(context.scopes, "health:read");
+      assertDateRange(start_date, end_date);
+      const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
+      return jsonContent(await repository.timeline(start_date, end_date));
     },
   );
 
