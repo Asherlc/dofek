@@ -1,6 +1,6 @@
+import type { DataQualityOverview } from "@dofek/format/data-quality";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import type { DataQualityOverview } from "../../server/src/repositories/data-quality-repository";
+import { describe, expect, it, vi } from "vitest";
 import { DataQualityCenter } from "./DataQualityCenter";
 
 const overview: DataQualityOverview = {
@@ -46,5 +46,23 @@ describe("DataQualityCenter", () => {
     render(<DataQualityCenter loading />);
 
     expect(screen.getByText("Loading data quality…")).toBeTruthy();
+  });
+
+  it("renders repeated detail text without duplicate React keys", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const data: DataQualityOverview = {
+      ...overview,
+      checks: overview.checks.map((qualityCheck) =>
+        qualityCheck.key === "coverage"
+          ? { ...qualityCheck, details: ["Repeated detail", "Repeated detail"] }
+          : qualityCheck,
+      ),
+    };
+
+    render(<DataQualityCenter data={data} />);
+
+    expect(screen.getAllByText("Repeated detail")).toHaveLength(2);
+    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("same key"));
+    consoleError.mockRestore();
   });
 });

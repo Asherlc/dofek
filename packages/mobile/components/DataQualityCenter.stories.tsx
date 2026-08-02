@@ -1,6 +1,6 @@
+import type { DataQualityOverview } from "@dofek/format/data-quality";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import type { DataQualityOverview } from "../../server/src/repositories/data-quality-repository";
 import { colors } from "../theme";
 import { DataQualityCenter } from "./DataQualityCenter";
 

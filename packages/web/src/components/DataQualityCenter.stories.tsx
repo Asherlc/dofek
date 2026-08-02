@@ -1,5 +1,5 @@
+import type { DataQualityOverview } from "@dofek/format/data-quality";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { DataQualityOverview } from "../../../server/src/repositories/data-quality-repository.ts";
 import { DataQualityCenter } from "./DataQualityCenter.tsx";
 
 const overview: DataQualityOverview = {

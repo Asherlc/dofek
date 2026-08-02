@@ -1,5 +1,19 @@
+import type {
+  DataQualityCheck,
+  DataQualityCheckStatus,
+  DataQualityOverview,
+} from "@dofek/format/data-quality";
+
+export type {
+  DataQualityCheck,
+  DataQualityCheckKey,
+  DataQualityCheckStatus,
+  DataQualityOverview,
+} from "@dofek/format/data-quality";
+
 import type { Database } from "dofek/db";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { dateWindowEndExclusiveString, dateWindowStartString } from "../lib/date-window.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { AnomalyDetectionRepository, type AnomalyRow } from "./anomaly-detection-repository.ts";
@@ -9,39 +23,45 @@ import { ProcessingRepository, type ProcessingStatusDataset } from "./processing
 
 export const DATA_QUALITY_WINDOW_DAYS = 30;
 
-export type DataQualityCheckKey =
-  | "coverage"
-  | "source_overlap"
-  | "sync_freshness"
-  | "outliers"
-  | "manual_edits";
-
-export type DataQualityCheckStatus = "healthy" | "attention" | "informational";
-
-export interface DataQualityCheck {
-  key: DataQualityCheckKey;
-  label: string;
-  status: DataQualityCheckStatus;
-  title: string;
-  message: string;
-  count: number;
-  lastObservedDate: string | null;
-  details: string[];
-}
-
-export interface DataQualityOverview {
-  generatedAt: string;
-  window: {
-    days: number;
-    endDate: string;
-  };
-  overallStatus: "healthy" | "attention";
-  overallMessage: string;
-  checks: DataQualityCheck[];
-}
-
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return count === 1 ? singular : plural;
+}
+
+interface DataQualityWindow {
+  days: number;
+  startDate: string;
+  endDateExclusive: string;
+}
+
+function effectiveDataQualityWindow(
+  endDate: string,
+  accessWindow: AccessWindow | undefined,
+): DataQualityWindow {
+  const selectedStartDate = dateWindowStartString(endDate, DATA_QUALITY_WINDOW_DAYS - 1);
+  const selectedEndDateExclusive = dateWindowEndExclusiveString(endDate);
+  if (!accessWindow || accessWindow.kind === "full") {
+    return {
+      days: DATA_QUALITY_WINDOW_DAYS,
+      startDate: selectedStartDate,
+      endDateExclusive: selectedEndDateExclusive,
+    };
+  }
+
+  const startDate =
+    selectedStartDate > accessWindow.startDate ? selectedStartDate : accessWindow.startDate;
+  const endDateExclusive =
+    selectedEndDateExclusive < accessWindow.endDateExclusive
+      ? selectedEndDateExclusive
+      : accessWindow.endDateExclusive;
+  const millisecondsPerDay = 24 * 60 * 60 * 1_000;
+  const days = Math.max(
+    0,
+    Math.round(
+      (Date.parse(`${endDateExclusive}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) /
+        millisecondsPerDay,
+    ),
+  );
+  return { days, startDate, endDateExclusive };
 }
 
 function latestDate(dates: readonly string[]): string | null {
@@ -55,8 +75,8 @@ function check(input: DataQualityCheck): DataQualityCheck {
   };
 }
 
-function coverageCheck(daysWithNutritionData: number): DataQualityCheck {
-  const missingDays = Math.max(DATA_QUALITY_WINDOW_DAYS - daysWithNutritionData, 0);
+function coverageCheck(daysWithNutritionData: number, windowDays: number): DataQualityCheck {
+  const missingDays = Math.max(windowDays - daysWithNutritionData, 0);
   const status: DataQualityCheckStatus = missingDays > 0 ? "attention" : "healthy";
 
   return check({
@@ -66,13 +86,11 @@ function coverageCheck(daysWithNutritionData: number): DataQualityCheck {
     title: missingDays > 0 ? "Coverage gaps" : "Coverage is complete",
     message:
       missingDays > 0
-        ? `Nutrition data is missing for ${missingDays} of the last ${DATA_QUALITY_WINDOW_DAYS} days.`
-        : `Nutrition data is present for all ${DATA_QUALITY_WINDOW_DAYS} days in the selected window.`,
+        ? `Nutrition data is missing for ${missingDays} of the last ${windowDays} days.`
+        : `Nutrition data is present for all ${windowDays} days in the selected window.`,
     count: missingDays,
     lastObservedDate: null,
-    details: [
-      `${daysWithNutritionData} of ${DATA_QUALITY_WINDOW_DAYS} days contain nutrition data.`,
-    ],
+    details: [`${daysWithNutritionData} of ${windowDays} days contain nutrition data.`],
   });
 }
 
@@ -146,7 +164,7 @@ function syncFreshnessCheck(
   });
 }
 
-function outlierCheck(anomalies: readonly AnomalyRow[]): DataQualityCheck {
+function outlierCheck(anomalies: readonly AnomalyRow[], windowDays: number): DataQualityCheck {
   const lastObservedDate = latestDate(anomalies.map((anomaly) => anomaly.date));
   const attention = anomalies.length > 0;
   return check({
@@ -155,15 +173,18 @@ function outlierCheck(anomalies: readonly AnomalyRow[]): DataQualityCheck {
     status: attention ? "attention" : "healthy",
     title: attention ? "Unusual observations were flagged" : "No unusual observations were flagged",
     message: attention
-      ? `${anomalies.length} unusual ${pluralize(anomalies.length, "observation")} were flagged in the last ${DATA_QUALITY_WINDOW_DAYS} days.`
-      : `No unusual observations were flagged in the last ${DATA_QUALITY_WINDOW_DAYS} days.`,
+      ? `${anomalies.length} unusual ${pluralize(anomalies.length, "observation")} ${anomalies.length === 1 ? "was" : "were"} flagged in the last ${windowDays} days.`
+      : `No unusual observations were flagged in the last ${windowDays} days.`,
     count: anomalies.length,
     lastObservedDate,
     details: anomalies.slice(0, 3).map((anomaly) => `${anomaly.metric} on ${anomaly.date}.`),
   });
 }
 
-function manualEntriesCheck(entries: readonly { date: string; source: { providerId: string } }[]) {
+function manualEntriesCheck(
+  entries: readonly { date: string; source: { providerId: string } }[],
+  windowDays: number,
+) {
   const manualDates = entries
     .filter((entry) => entry.source.providerId === "dofek")
     .map((entry) => entry.date);
@@ -175,8 +196,8 @@ function manualEntriesCheck(entries: readonly { date: string; source: { provider
     title: count > 0 ? "Manual entries are included" : "No manual entries recorded",
     message:
       count > 0
-        ? `${count} manually entered ${pluralize(count, "journal record")} ${count === 1 ? "was" : "were"} recorded in the last ${DATA_QUALITY_WINDOW_DAYS} days.`
-        : `No manually entered journal records were recorded in the last ${DATA_QUALITY_WINDOW_DAYS} days.`,
+        ? `${count} manually entered ${pluralize(count, "journal record")} ${count === 1 ? "was" : "were"} recorded in the last ${windowDays} days.`
+        : `No manually entered journal records were recorded in the last ${windowDays} days.`,
     count,
     lastObservedDate: latestDate(manualDates),
     details: [],
@@ -206,13 +227,18 @@ export class DataQualityRepository {
   }
 
   async overview(endDate: string): Promise<DataQualityOverview> {
+    const window = effectiveDataQualityWindow(endDate, this.#accessWindow);
     const activityPromise = new ActivitiesCalendarRepository(
       this.#database,
       this.#userId,
       this.#timezone,
       this.#sensorStore,
       this.#accessWindow,
-    ).getWeekList({ weeks: 1, endDate, includeProviderAbsent: true });
+    ).getWeekList({
+      weeks: Math.max(1, Math.ceil(window.days / 7)),
+      endDate,
+      includeProviderAbsent: true,
+    });
     const [processing, nutrition, activityDays, anomalies, journalEntries] = await Promise.all([
       new ProcessingRepository(this.#database, this.#userId).status({}),
       new NutritionAnalyticsRepository(
@@ -220,28 +246,30 @@ export class DataQualityRepository {
         this.#userId,
         this.#timezone,
         this.#accessWindow,
-      ).getMicronutrientDataQuality(DATA_QUALITY_WINDOW_DAYS),
+      ).getMicronutrientDataQuality(window.days),
       activityPromise,
       new AnomalyDetectionRepository(
         this.#database,
         this.#userId,
         this.#timezone,
         this.#sensorStore,
-      ).getHistory(DATA_QUALITY_WINDOW_DAYS, endDate),
-      new JournalRepository(this.#database, this.#userId).listEntries(DATA_QUALITY_WINDOW_DAYS),
+      ).getHistory(window.days, endDate),
+      new JournalRepository(this.#database, this.#userId).listEntries(window.days),
     ]);
 
-    const activityOverlapDates = activityDays.flatMap((day) =>
-      day.activities
-        .filter((activity) => activity.source.overlapSummary !== null)
-        .map(() => day.date),
-    );
+    const activityOverlapDates = activityDays
+      .filter((day) => day.date >= window.startDate && day.date < window.endDateExclusive)
+      .flatMap((day) =>
+        day.activities
+          .filter((activity) => activity.source.overlapSummary !== null)
+          .map(() => day.date),
+      );
     const checks = [
-      coverageCheck(nutrition.daysWithData),
+      coverageCheck(nutrition.daysWithData, window.days),
       sourceOverlapCheck(nutrition.overlapDays, nutrition.conflictDays, activityOverlapDates),
       syncFreshnessCheck(processing.overallStatus, processing.datasets),
-      outlierCheck(anomalies),
-      manualEntriesCheck(journalEntries),
+      outlierCheck(anomalies, window.days),
+      manualEntriesCheck(journalEntries, window.days),
     ];
     const hasAttention = checks.some((qualityCheck) => qualityCheck.status === "attention");
     const attentionCount = checks.filter(
@@ -250,10 +278,10 @@ export class DataQualityRepository {
 
     return {
       generatedAt: new Date().toISOString(),
-      window: { days: DATA_QUALITY_WINDOW_DAYS, endDate },
+      window: { days: window.days, endDate },
       overallStatus: hasAttention ? "attention" : "healthy",
       overallMessage: hasAttention
-        ? `${attentionCount} data quality ${pluralize(attentionCount, "check")} need review.`
+        ? `${attentionCount} data quality ${pluralize(attentionCount, "check")} ${attentionCount === 1 ? "needs" : "need"} review.`
         : "Your recent data is ready to interpret.",
       checks,
     };

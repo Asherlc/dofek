@@ -1,33 +1,23 @@
+import {
+  type DataQualityCheck,
+  type DataQualityOverview,
+  type DataQualityReviewDestination,
+  getDataQualityDetailItems,
+  getDataQualityReview,
+  getDataQualityStatusLabel,
+} from "@dofek/format/data-quality";
 import { Link } from "@tanstack/react-router";
-import type {
-  DataQualityCheck,
-  DataQualityCheckKey,
-  DataQualityOverview,
-} from "../../../server/src/repositories/data-quality-repository.ts";
 
 interface DataQualityCenterProps {
   data?: DataQualityOverview;
   loading?: boolean;
 }
 
-const reviewDestinations = {
-  coverage: { to: "/nutrition", label: "Review nutrition" },
-  source_overlap: { to: "/nutrition", label: "Review nutrition" },
-  sync_freshness: { to: "/dashboard", label: "Review dashboard" },
-  outliers: { to: "/dashboard", label: "Review dashboard" },
-  manual_edits: { to: "/tracking", label: "Review journal" },
-} as const satisfies Record<DataQualityCheckKey, { to: string; label: string }>;
-
-function statusLabel(status: DataQualityCheck["status"]): string {
-  switch (status) {
-    case "attention":
-      return "Needs review";
-    case "informational":
-      return "Info";
-    case "healthy":
-      return "Ready";
-  }
-}
+const reviewRoutes = {
+  nutrition: "/nutrition",
+  dashboard: "/dashboard",
+  journal: "/tracking",
+} as const satisfies Record<DataQualityReviewDestination, string>;
 
 function statusClass(status: DataQualityCheck["status"]): string {
   switch (status) {
@@ -41,7 +31,7 @@ function statusClass(status: DataQualityCheck["status"]): string {
 }
 
 function DataQualityCheckCard({ qualityCheck }: { qualityCheck: DataQualityCheck }) {
-  const review = reviewDestinations[qualityCheck.key];
+  const review = getDataQualityReview(qualityCheck.key);
   return (
     <article className="rounded-lg border border-border bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -52,7 +42,7 @@ function DataQualityCheckCard({ qualityCheck }: { qualityCheck: DataQualityCheck
         <span
           className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(qualityCheck.status)}`}
         >
-          {statusLabel(qualityCheck.status)}
+          {getDataQualityStatusLabel(qualityCheck.status)}
         </span>
       </div>
       {qualityCheck.count > 0 ? (
@@ -62,13 +52,13 @@ function DataQualityCheckCard({ qualityCheck }: { qualityCheck: DataQualityCheck
       ) : null}
       {qualityCheck.details.length > 0 ? (
         <ul className="mt-3 space-y-1 text-xs leading-5 text-subtle">
-          {qualityCheck.details.map((detail) => (
-            <li key={detail}>{detail}</li>
+          {getDataQualityDetailItems(qualityCheck.key, qualityCheck.details).map((detail) => (
+            <li key={detail.key}>{detail.text}</li>
           ))}
         </ul>
       ) : null}
       <Link
-        to={review.to}
+        to={reviewRoutes[review.destination]}
         className="mt-3 inline-flex text-xs font-semibold text-accent hover:underline"
       >
         {review.label}
@@ -110,7 +100,7 @@ export function DataQualityCenter({ data, loading = false }: DataQualityCenterPr
           <span
             className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(data.overallStatus)}`}
           >
-            {data.overallStatus === "attention" ? "Needs review" : "Ready"}
+            {getDataQualityStatusLabel(data.overallStatus)}
           </span>
         </div>
         <p className="mt-3 text-xs text-subtle">

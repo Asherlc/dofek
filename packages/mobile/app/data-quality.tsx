@@ -1,6 +1,10 @@
+import {
+  type DataQualityCheckKey,
+  type DataQualityReviewDestination,
+  getDataQualityReview,
+} from "@dofek/format/data-quality";
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text } from "react-native";
-import type { DataQualityCheckKey } from "../../server/src/repositories/data-quality-repository";
 import { DataQualityCenter } from "../components/DataQualityCenter";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -8,12 +12,10 @@ import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors, spacing } from "../theme";
 
 const reviewRoutes = {
-  coverage: "/nutrition-analytics",
-  source_overlap: "/nutrition-analytics",
-  sync_freshness: "/(tabs)",
-  outliers: "/(tabs)",
-  manual_edits: "/tracking",
-} as const satisfies Record<DataQualityCheckKey, string>;
+  nutrition: "/nutrition-analytics",
+  dashboard: "/(tabs)",
+  journal: "/tracking",
+} as const satisfies Record<DataQualityReviewDestination, string>;
 
 export default function DataQualityScreen() {
   const endDate = useTodayQueryDate();
@@ -21,7 +23,7 @@ export default function DataQualityScreen() {
   const router = useRouter();
 
   function review(key: DataQualityCheckKey) {
-    router.push(reviewRoutes[key]);
+    router.push(reviewRoutes[getDataQualityReview(key).destination]);
   }
 
   return (

@@ -157,7 +157,7 @@ const DataQualityRoute = DataQualityRouteImport.update({
   id: '/data-quality',
   path: '/data-quality',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof DataQualityRouteImport.update>[0])
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',

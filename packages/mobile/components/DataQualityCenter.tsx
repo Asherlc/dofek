@@ -1,26 +1,18 @@
+import {
+  type DataQualityCheck,
+  type DataQualityCheckKey,
+  type DataQualityOverview,
+  getDataQualityDetailItems,
+  getDataQualityReview,
+  getDataQualityStatusLabel,
+} from "@dofek/format/data-quality";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type {
-  DataQualityCheck,
-  DataQualityCheckKey,
-  DataQualityOverview,
-} from "../../server/src/repositories/data-quality-repository";
 import { colors, radius, spacing } from "../theme";
 
 interface DataQualityCenterProps {
   data?: DataQualityOverview;
   loading?: boolean;
   onReview?: (key: DataQualityCheckKey) => void;
-}
-
-function statusLabel(status: DataQualityCheck["status"]): string {
-  switch (status) {
-    case "attention":
-      return "Needs review";
-    case "informational":
-      return "Info";
-    case "healthy":
-      return "Ready";
-  }
 }
 
 function statusStyle(status: DataQualityCheck["status"]) {
@@ -34,19 +26,6 @@ function statusStyle(status: DataQualityCheck["status"]) {
   }
 }
 
-function reviewLabel(key: DataQualityCheckKey): string {
-  switch (key) {
-    case "coverage":
-    case "source_overlap":
-      return "Review nutrition";
-    case "sync_freshness":
-    case "outliers":
-      return "Review dashboard";
-    case "manual_edits":
-      return "Review journal";
-  }
-}
-
 function DataQualityCheckCard({
   qualityCheck,
   onReview,
@@ -54,6 +33,7 @@ function DataQualityCheckCard({
   qualityCheck: DataQualityCheck;
   onReview?: (key: DataQualityCheckKey) => void;
 }) {
+  const review = getDataQualityReview(qualityCheck.key);
   return (
     <View style={styles.checkCard}>
       <View style={styles.checkHeader}>
@@ -62,7 +42,7 @@ function DataQualityCheckCard({
           <Text style={styles.message}>{qualityCheck.message}</Text>
         </View>
         <Text style={[styles.status, statusStyle(qualityCheck.status)]}>
-          {statusLabel(qualityCheck.status)}
+          {getDataQualityStatusLabel(qualityCheck.status)}
         </Text>
       </View>
       {qualityCheck.count > 0 ? (
@@ -72,20 +52,20 @@ function DataQualityCheckCard({
       ) : null}
       {qualityCheck.details.length > 0 ? (
         <View style={styles.details}>
-          {qualityCheck.details.map((detail) => (
-            <Text key={detail} style={styles.detail}>
-              {detail}
+          {getDataQualityDetailItems(qualityCheck.key, qualityCheck.details).map((detail) => (
+            <Text key={detail.key} style={styles.detail}>
+              {detail.text}
             </Text>
           ))}
         </View>
       ) : null}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={reviewLabel(qualityCheck.key)}
+        accessibilityLabel={review.label}
         onPress={() => onReview?.(qualityCheck.key)}
         style={({ pressed }) => [styles.reviewButton, pressed && styles.reviewButtonPressed]}
       >
-        <Text style={styles.reviewText}>{reviewLabel(qualityCheck.key)}</Text>
+        <Text style={styles.reviewText}>{review.label}</Text>
       </Pressable>
     </View>
   );
@@ -127,7 +107,7 @@ export function DataQualityCenter({ data, loading = false, onReview }: DataQuali
               data.overallStatus === "attention" ? styles.attention : styles.healthy,
             ]}
           >
-            {data.overallStatus === "attention" ? "Needs review" : "Ready"}
+            {getDataQualityStatusLabel(data.overallStatus)}
           </Text>
         </View>
         <Text style={styles.window}>
