@@ -278,6 +278,22 @@ describe("mobileDashboard.dashboardV2", () => {
     expect(result.sleepNeed).not.toHaveProperty("recentNights");
   });
 
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
   it("uses full access when the context has no access window", async () => {
     vi.mocked(loadDashboardOverview).mockClear();
     const caller = createCaller({

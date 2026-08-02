@@ -1,3 +1,4 @@
+import type { SummaryDateContext } from "@dofek/format/summary-date-context";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import {
   computeRecommendedBedtime,
@@ -130,6 +131,7 @@ export interface SleepPerformanceInfo extends SleepPerformanceResult {
   providerId: string | null;
   sourceName: string | null;
   sourceProviders: string[];
+  summaryDateContext: SummaryDateContext;
 }
 
 export type { SleepNeedResult, SleepNeedV2, SleepNight };
@@ -381,6 +383,10 @@ export const sleepNeedRouter = router({
         providerId: lastSleep.provider_id,
         sourceName: lastSleep.source_name,
         sourceProviders: lastSleep.source_providers,
+        summaryDateContext: {
+          effectiveDate: input.endDate,
+          timezone: tz,
+        },
       };
     }),
 });

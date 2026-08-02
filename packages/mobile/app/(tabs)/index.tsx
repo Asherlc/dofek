@@ -1,9 +1,5 @@
-import {
-  formatDateLong,
-  formatDateYmd,
-  formatDurationMinutes,
-  formatSleepDebtInline,
-} from "@dofek/format/format";
+import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
@@ -34,10 +30,6 @@ import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
-
-function todayString(): string {
-  return formatDateLong(new Date());
-}
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -175,7 +167,11 @@ export default function TodayScreen() {
         </View>
       )}
 
-      <Text style={styles.date}>{todayString()}</Text>
+      {dashboardData?.summaryDateContext ? (
+        <Text style={styles.date}>
+          {formatSummaryDateContext(dashboardData.summaryDateContext)}
+        </Text>
+      ) : null}
 
       {/* Log food */}
       <TouchableOpacity
@@ -302,6 +298,15 @@ export default function TodayScreen() {
               accessibilityLabel="Open last night sleep details"
             >
               <Card title="Last Night">
+                {dashboardData?.summaryDateContext ? (
+                  <Text style={styles.sleepDate}>
+                    Night of{" "}
+                    {formatSummaryDateContext({
+                      ...dashboardData.summaryDateContext,
+                      effectiveDate: lastNight.date,
+                    })}
+                  </Text>
+                ) : null}
                 {lastNight.stagingAvailable ? (
                   <SleepBar
                     durationMinutes={lastNight.durationMinutes}
@@ -490,6 +495,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     fontWeight: "500",
+  },
+  sleepDate: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   quickAddButton: {
     flexDirection: "row",

@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import type { SummaryDateContext } from "@dofek/format/summary-date-context";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { z } from "zod";
 import {
@@ -23,10 +24,12 @@ interface LoadDashboardOverviewInput {
   endDate: string;
   readinessWeights?: ReturnType<typeof getEffectiveParams>["readinessWeights"];
   sensorStore: ActivitySensorStore;
+  timezone?: string;
   userId: string;
 }
 
 export interface DashboardOverviewResult {
+  summaryDateContext: SummaryDateContext;
   readiness: {
     score: number;
     date: string;
@@ -127,6 +130,7 @@ export async function loadDashboardOverview({
   endDate,
   readinessWeights,
   sensorStore,
+  timezone = "UTC",
   userId,
 }: LoadDashboardOverviewInput): Promise<DashboardOverviewResult> {
   const dashboardDays = 90;
@@ -378,6 +382,10 @@ export async function loadDashboardOverview({
   };
 
   return {
+    summaryDateContext: {
+      effectiveDate: endDate,
+      timezone,
+    },
     readiness: readinessResult,
     sleep: {
       lastNight: lastNightRow

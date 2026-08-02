@@ -109,6 +109,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
           },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: todayDate,
+      summaryDateContext: { effectiveDate: todayDate, timezone: "UTC" },
     },
   );
 

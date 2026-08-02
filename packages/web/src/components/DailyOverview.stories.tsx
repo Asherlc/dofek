@@ -47,6 +47,7 @@ const mockSleepPerformance = {
   providerId: "whoop",
   sourceName: null,
   sourceProviders: ["whoop"],
+  summaryDateContext: { effectiveDate: today, timezone: "UTC" },
 };
 
 const mockStrainTargetData = {
@@ -195,6 +196,7 @@ export const LowRecovery: Story = {
       providerId: "apple_health",
       sourceName: "Apple Watch",
       sourceProviders: ["apple_health"],
+      summaryDateContext: { effectiveDate: today, timezone: "UTC" },
     },
   },
 };

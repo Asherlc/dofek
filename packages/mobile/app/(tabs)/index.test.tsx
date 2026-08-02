@@ -259,6 +259,10 @@ describe("TodayScreen independent loading states", () => {
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: "2026-03-21",
+      summaryDateContext: {
+        effectiveDate: "2026-03-21",
+        timezone: "America/Los_Angeles",
+      },
     };
     mockAnomalyData = undefined;
     mockDataHealthData = undefined;
@@ -394,6 +398,31 @@ describe("TodayScreen independent loading states", () => {
     render(<TodayScreen />);
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+  });
+
+  it("renders server-authored dashboard and sleep dates with the effective timezone", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-01T12:00:00Z"));
+    mockDashboardData = {
+      ...mockDashboardData,
+      summaryDateContext: {
+        effectiveDate: "2026-08-02",
+        timezone: "America/Los_Angeles",
+      },
+      sleep: {
+        ...mockDashboardData.sleep,
+        lastNight: {
+          ...mockDashboardData.sleep.lastNight,
+          date: "2026-08-01",
+        },
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Sun, Aug 2, 2026 · America/Los_Angeles")).toBeTruthy();
+    expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
   });
 
   it("keeps reported duration visible when last night's stages are unavailable", async () => {

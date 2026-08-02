@@ -1,3 +1,4 @@
+import { summaryDateContextSchema } from "@dofek/format/summary-date-context";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -66,6 +67,7 @@ const anomalyCheckOutputSchema = z.object({
 }) satisfies z.ZodType<AnomalyCheckResult>;
 
 const mobileDashboardSharedOutputSchema = z.object({
+  summaryDateContext: summaryDateContextSchema,
   readiness: z
     .object({
       score: z.number(),
@@ -137,6 +139,7 @@ export const mobileDashboardRouter = router({
         endDate,
         readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
+        timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
       });
       logger.info(
@@ -162,6 +165,7 @@ export const mobileDashboardRouter = router({
         endDate,
         readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
+        timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
       });
       logger.info(

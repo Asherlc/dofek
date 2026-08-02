@@ -761,6 +761,20 @@ describe("sleepNeedRouter", () => {
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
     });
 
+    it("returns the effective date and timezone with sleep performance", async () => {
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
+
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.summaryDateContext).toEqual({
+        effectiveDate: "2026-03-15",
+        timezone: "UTC",
+      });
+    });
+
     it("reads dashboard sleep performance from the daily sleep summary once", async () => {
       const rows = [
         { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
