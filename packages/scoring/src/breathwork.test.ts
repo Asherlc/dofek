@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   type BreathworkTechnique,
+  getBreathworkTechniqueLabel,
   getTechniqueById,
   TECHNIQUES,
+  toBreathworkTechniqueDetails,
   totalSessionSeconds,
 } from "./breathwork.ts";
 
@@ -22,11 +24,59 @@ describe("TECHNIQUES", () => {
     for (const technique of TECHNIQUES) {
       expect(technique.id).toBeTruthy();
       expect(technique.name).toBeTruthy();
+      expect(technique.purpose).toBeTruthy();
       expect(technique.description).toBeTruthy();
+      expect(["Beginner", "Intermediate", "Advanced"]).toContain(technique.difficulty);
       expect(technique.inhaleSeconds).toBeGreaterThan(0);
       expect(technique.exhaleSeconds).toBeGreaterThan(0);
       expect(technique.defaultRounds).toBeGreaterThan(0);
     }
+  });
+
+  it("provides decision-ready metadata for every built-in technique", () => {
+    const expectedMetadata = [
+      {
+        id: "box-breathing",
+        purpose: "Calm focus",
+        description:
+          "Breathe in for 4 seconds, hold for 4 seconds, breathe out for 4 seconds, then hold for 4 seconds.",
+        difficulty: "Beginner",
+      },
+      {
+        id: "4-7-8",
+        purpose: "Wind down",
+        description:
+          "Breathe in for 4 seconds, hold for 7 seconds, then breathe out slowly for 8 seconds.",
+        difficulty: "Intermediate",
+      },
+      {
+        id: "coherent",
+        purpose: "Steady calm",
+        description:
+          "Breathe in for 6 seconds and out for 6 seconds, creating an even rhythm of about 5 breaths per minute.",
+        difficulty: "Beginner",
+      },
+      {
+        id: "physiological-sigh",
+        purpose: "Quick reset",
+        description: "Take two small inhales through the nose, followed by one longer exhale.",
+        difficulty: "Beginner",
+      },
+      {
+        id: "wim-hof",
+        purpose: "Energizing practice",
+        description: "Take 30 rounds of active 2-second inhales followed by 2-second exhales.",
+        difficulty: "Advanced",
+      },
+    ] as const;
+
+    for (const metadata of expectedMetadata) {
+      expect(getTechniqueById(metadata.id)).toMatchObject(metadata);
+    }
+
+    expect(TECHNIQUES.map((technique) => technique.id)).toEqual(
+      expectedMetadata.map((metadata) => metadata.id),
+    );
   });
 
   it("has unique IDs", () => {
@@ -51,7 +101,7 @@ describe("TECHNIQUES", () => {
 
     expect(technique?.name).toBe("Power Breathing");
     expect(technique?.description).toBe(
-      "30 rounds of 2-second inhales followed by 2-second exhales.",
+      "Take 30 rounds of active 2-second inhales followed by 2-second exhales.",
     );
     expect(technique?.inhaleSeconds).toBe(2);
     expect(technique?.exhaleSeconds).toBe(2);
@@ -97,12 +147,38 @@ describe("getTechniqueById", () => {
   });
 });
 
+describe("getBreathworkTechniqueLabel", () => {
+  it("uses built-in and legacy labels without exposing IDs", () => {
+    expect(getBreathworkTechniqueLabel("box-breathing")).toBe("Box Breathing");
+    expect(getBreathworkTechniqueLabel("resonance")).toBe("Resonant Breathing");
+    expect(getBreathworkTechniqueLabel("unknown-technique")).toBe("Breathwork session");
+  });
+});
+
+describe("toBreathworkTechniqueDetails", () => {
+  it("adds the server-owned default duration for every technique", () => {
+    const details = TECHNIQUES.map(toBreathworkTechniqueDetails);
+
+    expect(details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "box-breathing", durationSeconds: 64 }),
+        expect.objectContaining({ id: "4-7-8", durationSeconds: 76 }),
+        expect.objectContaining({ id: "coherent", durationSeconds: 120 }),
+        expect.objectContaining({ id: "physiological-sigh", durationSeconds: 50 }),
+        expect.objectContaining({ id: "wim-hof", durationSeconds: 120 }),
+      ]),
+    );
+  });
+});
+
 describe("totalSessionSeconds", () => {
   it("computes correct total for box breathing (4-4-4-4 x 4 rounds)", () => {
     const boxBreathing: BreathworkTechnique = {
       id: "box-breathing",
       name: "Box Breathing",
+      purpose: "Calm focus",
       description: "Equal inhale, hold, exhale, hold",
+      difficulty: "Beginner",
       safety: testSafety,
       inhaleSeconds: 4,
       holdInSeconds: 4,
@@ -118,7 +194,9 @@ describe("totalSessionSeconds", () => {
     const simpleBreath: BreathworkTechnique = {
       id: "simple",
       name: "Simple",
+      purpose: "Test pattern",
       description: "test",
+      difficulty: "Beginner",
       safety: testSafety,
       inhaleSeconds: 3,
       exhaleSeconds: 5,

@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 interface Technique {
   id: string;
   name: string;
+  purpose?: string;
   description: string;
+  difficulty?: string;
+  durationSeconds?: number;
   possibleBenefit?: string;
   safety: {
     position: string;
@@ -23,6 +26,7 @@ interface Technique {
 interface Session {
   id: string;
   techniqueId: string;
+  techniqueLabel?: string;
   rounds: number;
   durationSeconds: number;
   startedAt: string;
@@ -236,6 +240,7 @@ describe("BreathworkPage", () => {
           inhaleSeconds: 1,
           exhaleSeconds: 1,
           defaultRounds: 1,
+          durationSeconds: 2,
         },
       ],
       isLoading: false,
@@ -258,6 +263,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     state.history = {
@@ -299,13 +305,14 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 2,
         exhaleSeconds: 2,
         defaultRounds: 30,
+        durationSeconds: 120,
       },
     ];
 
     renderBreathworkPage();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Power Breathing 30 rounds of 2-second inhales followed by 2-second exhales. 30 rounds",
+        name: /Power Breathing/,
       }),
     );
 
@@ -349,12 +356,57 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 4,
         exhaleSeconds: 4,
         defaultRounds: 4,
+        durationSeconds: 32,
       },
     ];
 
     renderBreathworkPage();
 
     expect(screen.getByText("Regular practice may support a more positive mood.")).toBeTruthy();
+  });
+
+  it("shows decision-ready technique details and never exposes raw history IDs", () => {
+    const fullDescription =
+      "Breathe in for 4 seconds, hold for 4 seconds, breathe out for 4 seconds, then hold for 4 seconds.";
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        purpose: "Calm focus",
+        description: fullDescription,
+        difficulty: "Beginner",
+        durationSeconds: 64,
+        safety: standardSafety,
+        inhaleSeconds: 4,
+        exhaleSeconds: 4,
+        defaultRounds: 4,
+      },
+    ];
+    state.history.data = [
+      {
+        id: "session-legacy",
+        techniqueId: "resonance",
+        techniqueLabel: "Resonant Breathing",
+        rounds: 4,
+        durationSeconds: 240,
+        startedAt: "2026-07-24T12:00:00.000Z",
+      },
+    ];
+
+    renderBreathworkPage();
+
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(
+          `Box Breathing.*Calm focus.*${fullDescription}.*Duration: 1m.*Difficulty: Beginner`,
+        ),
+      }),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Calm focus")).toHaveLength(2);
+    expect(screen.getByText(/Duration: 1m/)).toBeTruthy();
+    expect(screen.getByText(/Difficulty: Beginner/)).toBeTruthy();
+    expect(screen.getByText("Resonant Breathing")).toBeTruthy();
+    expect(screen.queryByText("resonance")).toBeNull();
   });
 
   it("paginates recent sessions", () => {
@@ -367,6 +419,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     state.history.data = Array.from({ length: 21 }, (_, index) => ({
@@ -399,6 +452,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -413,7 +467,7 @@ describe("BreathworkPage", () => {
     expect(screen.getByRole("heading", { name: "How do you feel now?" })).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "Box Breathing Calming pattern 1 rounds / 0m",
+        name: /Box Breathing/,
       }),
     ).toHaveProperty("disabled", true);
 
@@ -444,6 +498,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -473,6 +528,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -502,6 +558,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     state.outcomes.data = {
@@ -561,6 +618,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -600,6 +658,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -629,6 +688,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 4,
         exhaleSeconds: 4,
         defaultRounds: 1,
+        durationSeconds: 8,
       },
     ];
 
@@ -658,6 +718,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 

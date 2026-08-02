@@ -16,19 +16,11 @@ import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
-
-export type SettingsTab = "general" | "health" | "connections" | "account";
-
-const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "health", label: "Health" },
-  { id: "connections", label: "Connections" },
-  { id: "account", label: "Account" },
-];
-
-export function isSettingsTab(value: unknown): value is SettingsTab {
-  return SETTINGS_TABS.some((tab) => tab.id === value);
-}
+import {
+  normalizeSettingsCategory,
+  SETTINGS_CATEGORIES,
+  type SettingsCategory,
+} from "./settingsCategories.ts";
 
 function getSignupWeekLabel(startDate: string, endDateExclusive: string): string {
   const endInclusive = parseValidDate(`${endDateExclusive}T12:00:00.000Z`);
@@ -43,7 +35,20 @@ const billingRegionClassName = "min-h-44 sm:min-h-32 lg:min-h-28";
 export function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const navigate = useNavigate({ from: "/settings" });
-  const activeTab = search.zeppPair ? "connections" : (search.tab ?? "general");
+  const requestedCategory: SettingsCategory = search.zeppPair
+    ? "data-sources"
+    : (normalizeSettingsCategory(search.tab) ?? "account");
+  const [categorySearch, setCategorySearch] = useState("");
+  const normalizedCategorySearch = categorySearch.trim().toLowerCase();
+  const visibleCategories = SETTINGS_CATEGORIES.filter(
+    (category) =>
+      normalizedCategorySearch.length === 0 ||
+      `${category.label} ${category.searchText}`.toLowerCase().includes(normalizedCategorySearch),
+  );
+  const activeCategory =
+    visibleCategories.find((category) => category.id === requestedCategory)?.id ??
+    visibleCategories[0]?.id ??
+    null;
   const { layout, toggleHidden, resetLayout } = useDashboardLayout();
   const trpcUtils = trpc.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -85,7 +90,7 @@ export function SettingsPage() {
       void navigate({
         search: (previous) => ({
           ...previous,
-          tab: "connections",
+          tab: "data-sources",
           zeppPair: undefined,
         }),
         replace: true,
@@ -101,45 +106,62 @@ export function SettingsPage() {
 
   return (
     <PageLayout title="Settings">
-      <div
-        role="tablist"
-        aria-label="Settings sections"
-        className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface/60 p-1 scrollbar-hide"
-      >
-        {SETTINGS_TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              id={`settings-tab-${tab.id}`}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-controls="settings-panel"
-              onClick={() =>
-                void navigate({
-                  search: (previous) => ({ ...previous, tab: tab.id }),
-                })
-              }
-              className={`min-w-fit flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-accent/15 text-foreground"
-                  : "text-subtle hover:bg-surface-hover hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className="space-y-3">
+        <label className="block">
+          <span className="sr-only">Search settings</span>
+          <input
+            type="search"
+            aria-label="Search settings"
+            value={categorySearch}
+            onChange={(event) => setCategorySearch(event.target.value)}
+            placeholder="Search settings"
+            className="w-full rounded-lg border border-border bg-surface-solid px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-subtle focus:border-accent"
+          />
+        </label>
+        <div
+          role="tablist"
+          aria-label="Settings categories"
+          className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface/60 p-1 scrollbar-hide"
+        >
+          {visibleCategories.map((category) => {
+            const isActive = activeCategory === category.id;
+            return (
+              <button
+                key={category.id}
+                id={`settings-tab-${category.id}`}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls="settings-panel"
+                onClick={() => {
+                  setCategorySearch("");
+                  void navigate({
+                    search: (previous) => ({ ...previous, tab: category.id }),
+                  });
+                }}
+                className={`min-w-fit flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-accent/15 text-foreground"
+                    : "text-subtle hover:bg-surface-hover hover:text-foreground"
+                }`}
+              >
+                {category.label}
+              </button>
+            );
+          })}
+        </div>
+        {visibleCategories.length === 0 ? (
+          <p className="text-sm text-subtle">No settings categories match “{categorySearch}”.</p>
+        ) : null}
       </div>
 
       <div
         id="settings-panel"
         role="tabpanel"
-        aria-labelledby={`settings-tab-${activeTab}`}
+        aria-labelledby={activeCategory ? `settings-tab-${activeCategory}` : undefined}
         className="space-y-6 sm:space-y-7"
       >
-        {activeTab === "account" ? (
+        {activeCategory === "billing" ? (
           <PageSection title="Billing" subtitle="Manage subscription and access window">
             {billingStatus.isLoading ? (
               <p className={`${billingRegionClassName} text-sm text-subtle`}>
@@ -216,13 +238,13 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "connections" ? (
+        {activeCategory === "data-sources" ? (
           <PageSection title="Data Sources" subtitle="Connect and manage health data providers">
             <DataSourcesPanel />
           </PageSection>
         ) : null}
 
-        {activeTab === "account" ? (
+        {activeCategory === "account" ? (
           <PageSection
             title="Linked Accounts"
             subtitle="Manage login methods linked to your account"
@@ -231,13 +253,13 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "account" ? (
+        {activeCategory === "account" ? (
           <PageSection title="Password" subtitle="Set or change your email login password">
             <PasswordSettingsPanel />
           </PageSection>
         ) : null}
 
-        {activeTab === "connections" ? (
+        {activeCategory === "data-sources" ? (
           <PageSection
             title="Zepp App Pairing"
             subtitle="Connect the Zepp watch app to this account"
@@ -315,13 +337,13 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "connections" ? (
+        {activeCategory === "advanced" ? (
           <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
             <McpTokensPanel />
           </PageSection>
         ) : null}
 
-        {activeTab === "general" ? (
+        {activeCategory === "goals-models" ? (
           <PageSection
             title="Primary goal"
             subtitle="Choose the outcome Dofek should optimize toward"
@@ -330,13 +352,13 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "general" ? (
+        {activeCategory === "goals-models" ? (
           <PageSection title="Units" subtitle="Choose how measurements are displayed">
             <UnitSystemToggle />
           </PageSection>
         ) : null}
 
-        {activeTab === "health" ? (
+        {activeCategory === "notifications" ? (
           <PageSection
             title="Medication Reminders"
             subtitle="Optional daily reminders with imported logging state"
@@ -345,13 +367,13 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "health" ? (
+        {activeCategory === "notifications" ? (
           <PageSection title="Medication Doses" subtitle="Review imported medication dose events">
             <MedicationDoseEventsPanel />
           </PageSection>
         ) : null}
 
-        {activeTab === "general" ? (
+        {activeCategory === "advanced" ? (
           <PageSection
             title="Dashboard Layout"
             subtitle="Manage hidden sections and reset layout to defaults"
@@ -393,7 +415,7 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "general" ? (
+        {activeCategory === "goals-models" ? (
           <PageSection
             title="Algorithm Personalization"
             subtitle="Parameters are automatically learned from your data to improve accuracy"
@@ -402,19 +424,19 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "connections" ? (
+        {activeCategory === "data-sources" ? (
           <PageSection title="Integrations" subtitle="Connect external services">
             <SlackIntegrationPanel />
           </PageSection>
         ) : null}
 
-        {activeTab === "account" ? (
+        {activeCategory === "privacy-export" ? (
           <PageSection title="Data Export" subtitle="Download all your data">
             <ExportPanel />
           </PageSection>
         ) : null}
 
-        {activeTab === "account" ? (
+        {activeCategory === "account" ? (
           <PageSection title="Help & Support" subtitle="Get help from our team">
             <Link
               to="/support"
@@ -425,7 +447,7 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeTab === "account" ? (
+        {activeCategory === "privacy-export" ? (
           <PageSection
             title="Danger Zone"
             subtitle="Permanently delete all synced and manually-entered data for your account"

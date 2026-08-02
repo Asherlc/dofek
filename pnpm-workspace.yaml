@@ -89,6 +89,10 @@ allowBuilds:
   ssh2: false
 
 minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@4.0.36'
+  - '@ai-sdk/otel@1.0.47'
+  - '@ai-sdk/provider-utils@5.0.18'
+  - ai@7.0.47
   - '@expo/cli@57.0.11'
   - '@expo/inline-modules@0.1.4'
   - '@expo/local-build-cache-provider@57.0.5'
@@ -111,3 +115,6 @@ minimumReleaseAgeExclude:
   - expo-sharing@57.0.8
   - expo-task-manager@57.0.7
   - expo-updates@57.0.11
+  - '@posthog/core@1.46.1'
+  - posthog-node@5.47.3
+  - posthog-react-native@4.61.2

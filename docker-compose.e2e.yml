@@ -23,6 +23,7 @@ services:
 
   clickhouse:
     image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
+    mem_limit: 2048m
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./deploy/clickhouse/config.d/memory-limits-e2e.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
       test:
         [
@@ -88,6 +90,40 @@ services:
     command: ["migrate"]
     restart: "no"
 
+  seed:
+    image: e2e-server
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      NODE_ENV: test
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    command: ["seed"]
+    restart: "no"
+
+  review-seed-clickhouse:
+    image: e2e-server
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      CLICKHOUSE_URL: http://default:health@clickhouse:8123
+      CLICKHOUSE_PASSWORD: health
+      NODE_ENV: test
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+    command: ["review-seed-clickhouse"]
+    restart: "no"
+
   analytics:
     image: e2e-server
     build:
@@ -99,7 +135,7 @@ services:
       CLICKHOUSE_PASSWORD: health
       NODE_ENV: test
     depends_on:
-      migrate:
+      review-seed-clickhouse:
         condition: service_completed_successfully
       db:
         condition: service_healthy

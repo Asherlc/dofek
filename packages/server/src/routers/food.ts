@@ -2,6 +2,7 @@ import { formatWeekdayTime } from "@dofek/format/format";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
+import { withAiGenerationContext } from "dofek/lib/ai-observability";
 import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { invalidateNutritionCaches } from "../lib/nutrition-cache.ts";
@@ -217,8 +218,10 @@ export const foodRouter = router({
   /** Analyze a food description with AI and return estimated nutrition data */
   analyzeWithAi: protectedProcedure
     .input(z.object({ description: z.string().min(1).max(500) }))
-    .mutation(async ({ input }) => {
-      return analyzeNutrition(input.description);
+    .mutation(async ({ ctx, input }) => {
+      return withAiGenerationContext({ userId: ctx.userId }, () =>
+        analyzeNutrition(input.description),
+      );
     }),
 
   /** Analyze a natural-language meal and return parsed per-item nutrition entries (Slack parser). */
@@ -230,7 +233,9 @@ export const foodRouter = router({
       const inferredMeal = mealFromLocalizedTime(ctx.timezone, currentTime);
       let analysis: Awaited<ReturnType<typeof analyzeNutritionItems>>;
       try {
-        analysis = await analyzeNutritionItems(input.description, localTime);
+        analysis = await withAiGenerationContext({ userId: ctx.userId }, () =>
+          analyzeNutritionItems(input.description, localTime),
+        );
       } catch (error) {
         if (isAiStructuredOutputError(error)) {
           throw new TRPCError({

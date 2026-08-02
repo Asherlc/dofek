@@ -46,7 +46,7 @@ OAuth discovery and protocol endpoints ([MCP authorization specification](https:
 
 Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients authenticate automatically.
 
-Open Dofek Settings and use the **MCP** section to create, copy, list, and revoke tokens.
+Open Dofek web Settings, select **Advanced**, and use the **MCP** section to create, copy, list, and revoke tokens.
 
 The UI calls the authenticated tRPC `mcp.createToken` procedure from the logged-in Dofek client session.
 

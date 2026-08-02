@@ -1,3 +1,4 @@
+import type { InsightEvidence } from "./evidence.ts";
 import type { CorrelationResult, DescriptiveStats } from "./stats.ts";
 
 // ── Configuration ─────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ export interface Insight {
   correlation?: CorrelationResult;
   explanation?: string;
   confounders?: string[];
+  evidence?: InsightEvidence;
 
   /** Raw data points for scatter plot visualization (correlation/discovery types) */
   dataPoints?: Array<{ x: number; y: number; date: string }>;

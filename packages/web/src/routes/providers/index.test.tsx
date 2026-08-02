@@ -22,7 +22,7 @@ describe("providers index redirect", () => {
     expect(() => captured.beforeLoad?.()).toThrow();
     expect(mockRedirect).toHaveBeenCalledWith({
       to: "/settings",
-      search: { tab: "connections" },
+      search: { tab: "data-sources" },
     });
   });
 });

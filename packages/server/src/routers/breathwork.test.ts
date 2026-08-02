@@ -53,6 +53,9 @@ describe("breathworkRouter", () => {
       for (const technique of result) {
         expect(technique.id).toBeTruthy();
         expect(technique.name).toBeTruthy();
+        expect(technique.purpose).toBeTruthy();
+        expect(technique.difficulty).toMatch(/^(Beginner|Intermediate|Advanced)$/);
+        expect(technique.durationSeconds).toBeGreaterThan(0);
         expect(technique.inhaleSeconds).toBeGreaterThan(0);
         expect(technique.exhaleSeconds).toBeGreaterThan(0);
         expect(technique.safety.position).toBeTruthy();
@@ -60,6 +63,9 @@ describe("breathworkRouter", () => {
         expect(technique.safety.emergency).toBeTruthy();
       }
 
+      expect(result.find((technique) => technique.id === "box-breathing")?.durationSeconds).toBe(
+        64,
+      );
       expect(result.find((technique) => technique.id === "wim-hof")?.safety.warnings).toContain(
         "Intense rounds can, in rare cases, cause loss of consciousness.",
       );
@@ -181,7 +187,7 @@ describe("breathworkRouter", () => {
         },
         {
           id: "s2",
-          technique_id: "4-7-8",
+          technique_id: "resonance",
           rounds: 4,
           duration_seconds: 76,
           started_at: "2026-03-21T10:00:00.000Z",
@@ -201,7 +207,9 @@ describe("breathworkRouter", () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]?.techniqueId).toBe("box-breathing");
+      expect(result[0]?.techniqueLabel).toBe("Box Breathing");
       expect(result[1]?.notes).toBe("Before bed");
+      expect(result[1]?.techniqueLabel).toBe("Resonant Breathing");
       expect(result[1]).toMatchObject({
         stressBefore: 6,
         stressAfter: 2,
