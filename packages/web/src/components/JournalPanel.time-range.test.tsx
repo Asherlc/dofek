@@ -6,7 +6,7 @@ import {
   clearQueryCalls,
   expectCallsContaining,
   expectRegistryCovered,
-} from "./TimeRangeSelector.consumers.test-helper.tsx";
+} from "./test-helpers/TimeRangeSelectorConsumers.tsx";
 
 describe("JournalPanel time range", () => {
   beforeEach(clearQueryCalls);

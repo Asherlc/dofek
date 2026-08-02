@@ -7,7 +7,7 @@ import {
   expectCallsContaining,
   expectRegistryCovered,
   getCapturedRouteComponent,
-} from "./TimeRangeSelector.consumers.test-helper.tsx";
+} from "./test-helpers/TimeRangeSelectorConsumers.tsx";
 
 describe("Behavior impact page time range", () => {
   beforeEach(clearQueryCalls);

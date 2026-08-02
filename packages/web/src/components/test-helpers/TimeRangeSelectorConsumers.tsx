@@ -2,9 +2,9 @@
 
 import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { expect, vi } from "vitest";
-import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
-import { SELECTED_RANGE_QUERY_REGISTRY } from "../lib/selectedRangeQueryRegistry.test-helper.ts";
-import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
+import { BodyDaysContext } from "../../lib/bodyDaysContext.ts";
+import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
+import { emptyJournalTrendEvidence } from "../journal-trend-test-fixtures.ts";
 
 const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -24,40 +24,40 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-vi.mock("../hooks/useTodayQueryDate.ts", () => ({
+vi.mock("../../hooks/useTodayQueryDate.ts", () => ({
   useTodayQueryDate: () => "2026-07-08",
 }));
 
-vi.mock("../lib/unitContext.ts", () => ({
+vi.mock("../../lib/unitContext.ts", () => ({
   useUnitConverter: () => ({
     convertTemperature: (value: number) => value,
     temperatureLabel: "C",
   }),
 }));
 
-vi.mock("./AddJournalEntryModal.tsx", () => ({
+vi.mock("../AddJournalEntryModal.tsx", () => ({
   AddJournalEntryModal: () => <div data-testid="add-journal-entry-modal" />,
 }));
-vi.mock("./AdaptiveTdeeChart.tsx", () => ({ AdaptiveTdeeChart: () => <div /> }));
-vi.mock("./BehaviorImpactChart.tsx", async () => {
-  const actual = await vi.importActual<typeof import("./BehaviorImpactChart.tsx")>(
-    "./BehaviorImpactChart.tsx",
+vi.mock("../AdaptiveTdeeChart.tsx", () => ({ AdaptiveTdeeChart: () => <div /> }));
+vi.mock("../BehaviorImpactChart.tsx", async () => {
+  const actual = await vi.importActual<typeof import("../BehaviorImpactChart.tsx")>(
+    "../BehaviorImpactChart.tsx",
   );
   return actual;
 });
-vi.mock("./BodyRecompositionChart.tsx", () => ({ BodyRecompositionChart: () => <div /> }));
-vi.mock("./ChartDescriptionTooltip.tsx", () => ({ ChartDescriptionTooltip: () => null }));
-vi.mock("./CorrelationCard.tsx", () => ({
+vi.mock("../BodyRecompositionChart.tsx", () => ({ BodyRecompositionChart: () => <div /> }));
+vi.mock("../ChartDescriptionTooltip.tsx", () => ({ ChartDescriptionTooltip: () => null }));
+vi.mock("../CorrelationCard.tsx", () => ({
   CorrelationCard: () => <div />,
   CorrelationCardSkeleton: () => <div />,
 }));
-vi.mock("./GoalWeightInput.tsx", () => ({ GoalWeightInput: () => <div /> }));
-vi.mock("./HealthStatusBar.tsx", () => ({ HealthStatusBar: () => <div /> }));
-vi.mock("./HrvBaselineChart.tsx", () => ({ HrvBaselineChart: () => <div /> }));
-vi.mock("./Hypnogram.tsx", () => ({ Hypnogram: () => <div /> }));
-vi.mock("./LoadingSkeleton.tsx", () => ({ ChartLoadingSkeleton: () => <div /> }));
-vi.mock("./MicronutrientChart.tsx", () => ({ MicronutrientChart: () => <div /> }));
-vi.mock("./PageLayout.tsx", () => ({
+vi.mock("../GoalWeightInput.tsx", () => ({ GoalWeightInput: () => <div /> }));
+vi.mock("../HealthStatusBar.tsx", () => ({ HealthStatusBar: () => <div /> }));
+vi.mock("../HrvBaselineChart.tsx", () => ({ HrvBaselineChart: () => <div /> }));
+vi.mock("../Hypnogram.tsx", () => ({ Hypnogram: () => <div /> }));
+vi.mock("../LoadingSkeleton.tsx", () => ({ ChartLoadingSkeleton: () => <div /> }));
+vi.mock("../MicronutrientChart.tsx", () => ({ MicronutrientChart: () => <div /> }));
+vi.mock("../PageLayout.tsx", () => ({
   PageLayout: ({
     headerChildren,
     children,
@@ -71,20 +71,20 @@ vi.mock("./PageLayout.tsx", () => ({
     </div>
   ),
 }));
-vi.mock("./PageSection.tsx", () => ({
+vi.mock("../PageSection.tsx", () => ({
   PageSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
 }));
-vi.mock("./QueryStatePanel.tsx", () => ({ QueryStatePanel: () => <div /> }));
-vi.mock("./SleepChart.tsx", () => ({ SleepChart: () => <div /> }));
-vi.mock("./SleepDataSourcesTable.tsx", () => ({ SleepDataSourcesTable: () => <div /> }));
-vi.mock("./SleepNeedCard.tsx", () => ({ SleepNeedCard: () => <div /> }));
-vi.mock("./SleepPerformanceCard.tsx", () => ({ SleepPerformanceCard: () => <div /> }));
-vi.mock("./SmoothedWeightChart.tsx", () => ({ SmoothedWeightChart: () => <div /> }));
-vi.mock("./StressChart.tsx", () => ({ StressChart: () => <div /> }));
-vi.mock("./TimeSeriesChart.tsx", () => ({ TimeSeriesChart: () => <div /> }));
-vi.mock("./WeightPredictionSummary.tsx", () => ({ WeightPredictionSummary: () => <div /> }));
+vi.mock("../QueryStatePanel.tsx", () => ({ QueryStatePanel: () => <div /> }));
+vi.mock("../SleepChart.tsx", () => ({ SleepChart: () => <div /> }));
+vi.mock("../SleepDataSourcesTable.tsx", () => ({ SleepDataSourcesTable: () => <div /> }));
+vi.mock("../SleepNeedCard.tsx", () => ({ SleepNeedCard: () => <div /> }));
+vi.mock("../SleepPerformanceCard.tsx", () => ({ SleepPerformanceCard: () => <div /> }));
+vi.mock("../SmoothedWeightChart.tsx", () => ({ SmoothedWeightChart: () => <div /> }));
+vi.mock("../StressChart.tsx", () => ({ StressChart: () => <div /> }));
+vi.mock("../TimeSeriesChart.tsx", () => ({ TimeSeriesChart: () => <div /> }));
+vi.mock("../WeightPredictionSummary.tsx", () => ({ WeightPredictionSummary: () => <div /> }));
 
-vi.mock("../lib/trpc.ts", () => {
+vi.mock("../../lib/trpc.ts", () => {
   function queryResult(data: unknown = []) {
     return {
       data,
@@ -233,7 +233,7 @@ export function BodyHarness() {
   const [BodyPage, setBodyPage] = useState<ComponentType | null>(null);
 
   useEffect(() => {
-    void import("../pages/BodyPage.tsx").then((mod) => setBodyPage(() => mod.BodyPage));
+    void import("../../pages/BodyPage.tsx").then((mod) => setBodyPage(() => mod.BodyPage));
   }, []);
 
   if (!BodyPage) return null;
