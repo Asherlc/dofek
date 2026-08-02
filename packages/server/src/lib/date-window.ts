@@ -190,9 +190,8 @@ export function selectedChartDateRangeInput(
  * Optional — falls back to server's current date if omitted.
  * Dashboard clients SHOULD always pass this to ensure cache invalidation.
  */
-export const endDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date")
+export const endDateSchema = z.iso
+  .date()
   .optional()
   .transform((d) => d ?? formatDateYmd());
 

@@ -1,3 +1,7 @@
+import {
+  type SummaryDateContext,
+  summaryDateContextSchema,
+} from "@dofek/format/summary-date-context";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import {
   computeRecommendedBedtime,
@@ -120,6 +124,30 @@ function lowStressScore(stressScore: number | null | undefined): number | null {
   return Math.round(Math.min(Math.max(100 - (stressScore / 3) * 100, 0), 100));
 }
 
+const sleepPerformanceOutputSchema = z.object({
+  score: z.number(),
+  tier: z.enum(["Excellent", "Good", "Fair", "Poor"]),
+  components: z
+    .object({
+      hours: z.number(),
+      efficiency: z.number(),
+      consistency: z.number().nullable(),
+      lowStress: z.number().nullable(),
+    })
+    .optional(),
+  actualMinutes: z.number(),
+  neededMinutes: z.number(),
+  efficiency: z.number(),
+  recommendedBedtime: z.string(),
+  sleepDate: z.string(),
+  providerId: z.string().nullable(),
+  sourceName: z.string().nullable(),
+  sourceProviders: z.array(z.string()),
+  summaryDateContext: summaryDateContextSchema,
+});
+
+const SLEEP_PERFORMANCE_CACHE_KEY_VERSION = "sleep-performance-contract-v1";
+
 export interface SleepPerformanceInfo extends SleepPerformanceResult {
   actualMinutes: number;
   neededMinutes: number;
@@ -130,6 +158,7 @@ export interface SleepPerformanceInfo extends SleepPerformanceResult {
   providerId: string | null;
   sourceName: string | null;
   sourceProviders: string[];
+  summaryDateContext: SummaryDateContext;
 }
 
 export type { SleepNeedResult, SleepNeedV2, SleepNight };
@@ -320,8 +349,12 @@ export const sleepNeedRouter = router({
    * Sleep performance score for last night: how well did you sleep relative to need.
    * Returns score (0-100), tier (Peak/Perform/Get By/Low), and recommended bedtime.
    */
-  performance: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  performance: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: SLEEP_PERFORMANCE_CACHE_KEY_VERSION,
+  })
     .input(z.object({ endDate: endDateSchema }))
+    .output(sleepPerformanceOutputSchema.nullable())
     .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
       const tz = ctx.timezone ?? "UTC";
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.performance");
@@ -381,6 +414,10 @@ export const sleepNeedRouter = router({
         providerId: lastSleep.provider_id,
         sourceName: lastSleep.source_name,
         sourceProviders: lastSleep.source_providers,
+        summaryDateContext: {
+          effectiveDate: input.endDate,
+          timezone: tz,
+        },
       };
     }),
 });

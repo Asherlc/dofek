@@ -249,6 +249,7 @@ export function Dashboard() {
       <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <DailyOverview
         endDate={endDate}
+        summaryDateContext={sleepPerformance.data?.summaryDateContext}
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         strainTarget={strainTarget.data}

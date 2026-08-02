@@ -239,7 +239,11 @@ describe("mobileDashboard.dashboardV2", () => {
   it("versions the changed dashboard and recovery response contracts", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 120_000,
-      keyVersion: "sleep-need-metadata-v2",
+      keyVersion: "mobile-dashboard-contract-v1",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "mobile-dashboard-contract-v2",
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
@@ -276,6 +280,22 @@ describe("mobileDashboard.dashboardV2", () => {
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
     expect(result.sleepNeed).not.toHaveProperty("recentNights");
+  });
+
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("uses full access when the context has no access window", async () => {
@@ -356,6 +376,22 @@ describe("mobileDashboard.dashboard", () => {
     await expect(caller.dashboard({ endDate: "2026-03-28" })).rejects.toThrow(
       "mobileDashboard.dashboard requires the ClickHouse activity analytics store",
     );
+  });
+
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("identifies only today and yesterday as recent", () => {

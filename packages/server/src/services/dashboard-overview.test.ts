@@ -100,6 +100,21 @@ describe("loadDashboardOverview", () => {
     );
   });
 
+  it("returns the effective dashboard date and timezone from the server", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-08-02",
+      sensorStore: makeSensorStore(),
+      timezone: "America/Los_Angeles",
+      userId: "user-1",
+    });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
   it("normalizes ClickHouse daily strain dates before building load maps", async () => {
     const sensorStore = makeSensorStore({ metricDate: new Date("2026-06-29T00:00:00.000Z") });
 

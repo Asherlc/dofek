@@ -13,6 +13,7 @@
     "./medication-dose-events": "./src/medication-dose-events.ts",
     "./medication-reminders": "./src/medication-reminders.ts",
     "./record-local-time": "./src/record-local-time.ts",
+    "./summary-date-context": "./src/summary-date-context.ts",
     "./report-decision-synthesis": "./src/report-decision-synthesis.ts",
     "./sleep-data-state": "./src/sleep-data-state.ts",
     "./supplement-dose-events": "./src/supplement-dose-events.ts",
