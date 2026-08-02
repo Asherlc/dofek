@@ -3,7 +3,7 @@ import {
   type FoodEntryNutrientDetail,
   groupFoodEntryNutrientDetails,
 } from "@dofek/nutrition/food-entry-nutrition";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 interface FoodEntryRowProps {
   foodName: string;
@@ -23,9 +23,13 @@ export function FoodEntryRow({
   deleting,
 }: FoodEntryRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
   const groups = groupFoodEntryNutrientDetails(nutrients);
   const hasNutrients = nutrients.length > 0;
-  const toggleLabel = `${expanded ? "Hide" : "Show"} nutrition for ${foodName}`;
+  const visibleSummary = [servingDescription, formatCalories(calories)].filter(
+    (value): value is string => value !== null && value.trim().length > 0,
+  );
+  const toggleLabel = `${expanded ? "Hide" : "Show"} nutrition for ${foodName}, ${visibleSummary.join(", ")}`;
 
   return (
     <div className="rounded-md hover:bg-surface-hover group transition-colors">
@@ -34,6 +38,8 @@ export function FoodEntryRow({
           type="button"
           onClick={() => setExpanded((current) => !current)}
           aria-expanded={expanded}
+          aria-controls={expanded ? detailsId : undefined}
+          aria-describedby={expanded ? detailsId : undefined}
           aria-label={toggleLabel}
           className="min-w-0 flex flex-1 items-center gap-2 px-3 py-2 text-left"
         >
@@ -51,7 +57,9 @@ export function FoodEntryRow({
           </span>
         </button>
         <div className="flex shrink-0 items-center gap-3 py-2 pr-3">
-          <span className="text-sm text-foreground tabular-nums">{formatCalories(calories)}</span>
+          <span className="text-sm text-foreground tabular-nums" aria-hidden="true">
+            {formatCalories(calories)}
+          </span>
           <button
             type="button"
             onClick={onDelete}
@@ -76,7 +84,7 @@ export function FoodEntryRow({
         </div>
       </div>
       {expanded && (
-        <div className="px-8 pb-3">
+        <div id={detailsId} className="px-8 pb-3">
           {hasNutrients ? (
             <div className="space-y-3 rounded-md border border-border bg-page/50 p-3">
               {groups.map((group) => (

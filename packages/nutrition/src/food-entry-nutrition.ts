@@ -81,3 +81,14 @@ export function groupFoodEntryNutrientDetails(
     return nutrients ? [{ label: CATEGORY_LABELS[category], nutrients }] : [];
   });
 }
+
+export function formatFoodEntryNutrientDetailsForAccessibility(
+  details: readonly FoodEntryNutrientDetail[],
+): string {
+  return groupFoodEntryNutrientDetails(details)
+    .map(
+      (group) =>
+        `${group.label}: ${group.nutrients.map((nutrient) => `${nutrient.label}: ${nutrient.valueText}`).join(", ")}`,
+    )
+    .join(". ");
+}
