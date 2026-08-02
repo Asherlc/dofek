@@ -80,7 +80,7 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
       toString(recorded_date) AS recorded_date,
       toUnixTimestamp64Nano(max(changed_at)) AS changed_at
     FROM ${database}.metric_stream_day_change
-    WHERE user_id = {userId:UUID}
+    WHERE ${database}.metric_stream_day_change.user_id = {userId:UUID}
     GROUP BY user_id, provider_id, recorded_date
     ORDER BY user_id, provider_id, recorded_date`;
     const initialResult = await client.query({
@@ -150,7 +150,7 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     ]);
   });
 
-  it("resolves latest metric state by version and ingestion time through the recorded-at projection", async () => {
+  it("resolves latest metric state by version and ingestion time through the covering projection", async () => {
     const userId = randomUUID();
     const resurrectedId = randomUUID();
     const sameVersionId = randomUUID();
@@ -168,17 +168,17 @@ describe("0068_provider_metric_stream_daily_counts migration", () => {
     const result = await client.query({
       query: `SELECT
         toString(id) AS id,
-        toString(recorded_at) AS recorded_at,
-        toString(ingested_at) AS ingested_at,
-        version,
-        is_deleted
+        toString(latest.1) AS recorded_at,
+        toString(latest.2) AS ingested_at,
+        latest.3 AS version,
+        latest.4 AS is_deleted
       FROM (
         SELECT
           id,
-          argMax(recorded_at, tuple(version, ingested_at)) AS recorded_at,
-          argMax(ingested_at, tuple(version, ingested_at)) AS ingested_at,
-          argMax(version, tuple(version, ingested_at)) AS version,
-          argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
+          argMax(
+            tuple(recorded_at, ingested_at, version, is_deleted),
+            tuple(version, ingested_at)
+          ) AS latest
         FROM ${database}.metric_stream
         WHERE user_id = {userId:UUID}
           AND provider_id = 'test_provider'

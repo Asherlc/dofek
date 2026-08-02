@@ -21,13 +21,15 @@ describe("provider_stats model", () => {
     expect(modelSql).toContain("existing_provider_state AS");
     expect(modelSql).toContain("source_dirty_providers AS");
     expect(modelSql).not.toContain("stale_providers AS");
-    expect(modelSql).toContain("metric_stream_current AS");
-    expect(modelSql).toContain("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted");
+    expect(modelSql).toContain("ref('provider_metric_stream_daily')");
+    expect(modelSql).toContain("source('analytics', 'metric_stream_day_change')");
+    expect(modelSql).toContain("metric_stream_daily_dirty_providers AS");
+    expect(modelSql).toContain("metric_stream_counts AS");
+    expect(modelSql).toContain("sum(metric_stream_count) AS count");
+    expect(modelSql).toContain("ref('provider_metric_stream_daily') }} FINAL");
     expect(modelSql).toContain("'enable_materialized_cte': 1");
     expect(modelSql).toContain("'optimize_aggregation_in_order': 1");
-    expect(modelSql).toContain(
-      "'preferred_optimize_projection_name': 'by_provider_current_state'",
-    );
+    expect(modelSql).not.toContain("preferred_optimize_projection_name");
     expect(modelSql).toContain("current_provider_state AS materialized");
     expect(modelSql).toContain("providers AS materialized");
     expect(modelSql).toContain("provider_dirty_key_batch_size");
@@ -38,9 +40,7 @@ describe("provider_stats model", () => {
       "(user_id, provider_id) IN ( SELECT user_id, provider_id FROM providers )",
     );
     expect(modelSql).toContain("'join_use_nulls': 1");
-    expect(normalizedSql).not.toContain(
-      "FROM {{ source('ingest', 'metric_stream') }} FINAL",
-    );
+    expect(normalizedSql).not.toContain("source('ingest', 'metric_stream')");
     expect(normalizedSql).not.toContain("force_optimize_projection_name");
   });
 });

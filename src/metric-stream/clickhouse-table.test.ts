@@ -27,19 +27,24 @@ describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
 });
 
 describe("metric-stream recorded-at current-state projection", () => {
-  it("provides latest state ordered for provider/day counts", () => {
+  it("provides covering columns ordered for provider/day counts", () => {
     const definition = metricStreamProviderCurrentStateRecordedAtProjectionDefinition();
     const tableSql = buildIngestMetricStreamCreateTableSql();
 
     expect(METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION).toBe(
       "by_provider_current_state_recorded_at",
     );
-    expect(definition).toContain("argMax(recorded_at, tuple(version, ingested_at)) AS recorded_at");
-    expect(definition).toContain("argMax(ingested_at, tuple(version, ingested_at)) AS ingested_at");
-    expect(definition).toContain("argMax(version, tuple(version, ingested_at)) AS version");
-    expect(definition).toContain("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted");
-    expect(definition).toContain("GROUP BY user_id, provider_id, id");
-    expect(definition).toContain("ORDER BY (user_id, provider_id, recorded_at, id)");
+    expect(definition).toContain("user_id,");
+    expect(definition).toContain("provider_id,");
+    expect(definition).toContain("recorded_at,");
+    expect(definition).toContain("ingested_at,");
+    expect(definition).toContain("version,");
+    expect(definition).toContain("is_deleted");
+    expect(definition).toContain(
+      "ORDER BY (user_id, provider_id, recorded_at, id, version, ingested_at)",
+    );
+    expect(definition).not.toContain("argMax(");
+    expect(definition).not.toContain("GROUP BY");
     expect(tableSql).toContain(
       `PROJECTION ${METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION}`,
     );

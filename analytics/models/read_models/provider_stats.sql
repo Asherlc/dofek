@@ -10,8 +10,7 @@
         'max_threads': 1,
         'join_use_nulls': 1,
         'enable_materialized_cte': 1,
-        'optimize_aggregation_in_order': 1,
-        'preferred_optimize_projection_name': 'by_provider_current_state'
+        'optimize_aggregation_in_order': 1
     }
 ) }}
 
@@ -50,12 +49,55 @@ source_dirty_providers AS (
     {% endif %}
 ),
 
+metric_stream_daily_source_state AS materialized (
+    SELECT
+        user_id,
+        provider_id,
+        recorded_date,
+        max(changed_at) AS source_changed_at
+    FROM {{ source('analytics', 'metric_stream_day_change') }}
+    GROUP BY user_id, provider_id, recorded_date
+),
+
+metric_stream_daily_target_state AS materialized (
+    SELECT
+        user_id,
+        provider_id,
+        recorded_date,
+        max(source_changed_at) AS source_changed_at
+    FROM {{ ref('provider_metric_stream_daily') }} FINAL
+    GROUP BY user_id, provider_id, recorded_date
+),
+
+metric_stream_daily_dirty_providers AS materialized (
+    SELECT
+        metric_stream_daily_source_state.user_id AS user_id,
+        metric_stream_daily_source_state.provider_id AS provider_id
+    FROM metric_stream_daily_source_state
+    LEFT JOIN metric_stream_daily_target_state
+        ON metric_stream_daily_target_state.user_id = metric_stream_daily_source_state.user_id
+        AND metric_stream_daily_target_state.provider_id = metric_stream_daily_source_state.provider_id
+        AND metric_stream_daily_target_state.recorded_date = metric_stream_daily_source_state.recorded_date
+    WHERE metric_stream_daily_target_state.recorded_date IS NULL
+        OR metric_stream_daily_source_state.source_changed_at
+            > metric_stream_daily_target_state.source_changed_at
+    GROUP BY
+        metric_stream_daily_source_state.user_id,
+        metric_stream_daily_source_state.provider_id
+),
+
 candidate_dirty_providers AS (
     SELECT
         source_dirty_providers.user_id AS user_id,
         source_dirty_providers.provider_id AS provider_id,
         source_dirty_providers.source_changed_at AS source_changed_at
     FROM source_dirty_providers
+    WHERE (source_dirty_providers.user_id, source_dirty_providers.provider_id) NOT IN (
+        SELECT
+            user_id,
+            provider_id
+        FROM metric_stream_daily_dirty_providers
+    )
 ),
 
 providers AS materialized (
@@ -84,32 +126,18 @@ providers AS materialized (
     LIMIT {{ provider_dirty_key_batch_size }}
 ),
 
-metric_stream_current AS (
+metric_stream_counts AS (
     SELECT
         user_id,
         provider_id,
-        id,
-        argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
-    FROM {{ source('ingest', 'metric_stream') }}
+        sum(metric_stream_count) AS count
+    FROM {{ ref('provider_metric_stream_daily') }} FINAL
     WHERE (user_id, provider_id) IN (
         SELECT
             user_id,
             provider_id
         FROM providers
     )
-    GROUP BY
-        user_id,
-        provider_id,
-        id
-),
-
-metric_stream_counts AS (
-    SELECT
-        user_id,
-        provider_id,
-        count() AS count
-    FROM metric_stream_current
-    WHERE is_deleted = 0
     GROUP BY user_id, provider_id
 ),
 
@@ -175,6 +203,7 @@ current_providers AS (
         user_id,
         provider_id
     FROM metric_stream_counts
+    WHERE count > 0
 
     UNION DISTINCT
     SELECT DISTINCT

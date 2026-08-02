@@ -9,24 +9,13 @@ import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
-import {
-  buildIngestMetricStreamCreateTableSql,
-  METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION,
-} from "../../../../src/metric-stream/clickhouse-table.ts";
 
-const providerCountSchema = z.array(
-  z.object({
-    metric_stream: z.coerce.number().int(),
-  }),
-);
 const countSchema = z.array(z.object({ count: z.coerce.number().int() }));
 const providerSchema = z.array(
   z.object({
     provider_id: z.string(),
   }),
 );
-const explainSchema = z.array(z.object({ explain: z.string() }));
-
 function stripDbtModelWrapper(modelSql: string): string {
   return modelSql
     .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
@@ -45,8 +34,12 @@ function renderProviderStatsSql(
     .replaceAll("{{ provider_dirty_key_batch_size }}", String(batchSize))
     .replace(/\{\{\s*ref\('provider_change_watermark'\)\s*\}\}/g, watermarkTable)
     .replace(
-      /\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g,
-      `${ingestDatabase}.metric_stream`,
+      /\{\{\s*source\('analytics',\s*'metric_stream_day_change'\)\s*\}\}/g,
+      `${ingestDatabase}.metric_stream_day_change`,
+    )
+    .replace(
+      /\{\{\s*ref\('provider_metric_stream_daily'\)\s*\}\}/g,
+      `${ingestDatabase}.provider_metric_stream_daily`,
     )
     .replace(/\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g, `${ingestDatabase}.$1`)
     .replace(
@@ -63,15 +56,31 @@ function renderDirtyProviderSelectionSql(
   isIncremental: boolean,
   batchSize = 1,
 ): string {
+  const ingestDatabase = targetTable.split(".", 1)[0];
+  if (!ingestDatabase) {
+    throw new Error(`Expected database-qualified provider stats target: ${targetTable}`);
+  }
   const modelSql = renderProviderStatsSql(
     targetTable,
     watermarkTable,
-    "unused",
+    ingestDatabase,
     isIncremental,
     batchSize,
   );
   const currentProviderStateSql = extractCteSql(modelSql, "current_provider_state");
   const sourceDirtyProvidersSql = extractCteSql(modelSql, "source_dirty_providers");
+  const metricStreamDailySourceStateSql = extractCteSql(
+    modelSql,
+    "metric_stream_daily_source_state",
+  );
+  const metricStreamDailyTargetStateSql = extractCteSql(
+    modelSql,
+    "metric_stream_daily_target_state",
+  );
+  const metricStreamDailyDirtyProvidersSql = extractCteSql(
+    modelSql,
+    "metric_stream_daily_dirty_providers",
+  );
   const candidateDirtyProvidersSql = extractCteSql(modelSql, "candidate_dirty_providers");
   const providersSql = extractCteSql(modelSql, "providers");
   const existingProviderStateSql = isIncremental
@@ -87,6 +96,15 @@ function renderDirtyProviderSelectionSql(
   source_dirty_providers AS (
     ${sourceDirtyProvidersSql}
   ),
+  metric_stream_daily_source_state AS materialized (
+    ${metricStreamDailySourceStateSql}
+  ),
+  metric_stream_daily_target_state AS materialized (
+    ${metricStreamDailyTargetStateSql}
+  ),
+  metric_stream_daily_dirty_providers AS materialized (
+    ${metricStreamDailyDirtyProvidersSql}
+  ),
   candidate_dirty_providers AS (
     ${candidateDirtyProvidersSql}
   ),
@@ -100,39 +118,31 @@ function renderDirtyProviderSelectionSql(
 }
 
 function renderMetricStreamCountSql(
+  targetTable: string,
+  watermarkTable: string,
   ingestDatabase: string,
-  projectionMode: "force" | "prefer" = "force",
+  isIncremental: boolean,
+  batchSize = 1,
 ): string {
-  const modelSql = readModelSql("provider_stats.sql");
-  const currentSql = extractCteSql(modelSql, "metric_stream_current").replace(
-    /\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g,
-    `${ingestDatabase}.metric_stream`,
+  const modelSql = renderProviderStatsSql(
+    targetTable,
+    watermarkTable,
+    ingestDatabase,
+    isIncremental,
+    batchSize,
   );
   const countsSql = extractCteSql(modelSql, "metric_stream_counts");
-
-  const projectionSettings =
-    projectionMode === "force"
-      ? `force_optimize_projection = 1,
-    force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION}'`
-      : `preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION}'`;
 
   return `WITH providers AS (
     SELECT {userId:UUID} AS user_id, 'test_provider' AS provider_id
   ),
-  metric_stream_current AS (
-    ${currentSql}
-  ),
   metric_stream_counts AS (
     ${countsSql}
   )
-  SELECT metric_stream_counts.count AS metric_stream
+  SELECT metric_stream_counts.count AS count
   FROM metric_stream_counts
   WHERE user_id = {userId:UUID}
-    AND provider_id = 'test_provider'
-  SETTINGS
-    ${projectionSettings},
-    optimize_aggregation_in_order = 1,
-    max_memory_usage = 33554432`;
+    AND provider_id = 'test_provider'`;
 }
 
 function renderProviderConnectionSql(database: string): string {
@@ -158,10 +168,27 @@ describe("provider stats read model", () => {
     client = createClickHouseClientFromEnv();
     await client.command({ query: `CREATE DATABASE ${ingestDatabase}` });
     await client.command({
-      query: buildIngestMetricStreamCreateTableSql().replace(
-        "ingest.metric_stream",
-        `${ingestDatabase}.metric_stream`,
-      ),
+      query: `CREATE TABLE ${ingestDatabase}.metric_stream_day_change (
+        user_id UUID,
+        provider_id String,
+        recorded_date Date,
+        changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+      )
+      ENGINE = AggregatingMergeTree
+      ORDER BY (user_id, provider_id, recorded_date)`,
+    });
+    await client.command({
+      query: `CREATE TABLE ${ingestDatabase}.provider_metric_stream_daily (
+        user_id UUID,
+        provider_id String,
+        recorded_date Date,
+        metric_stream_count UInt64,
+        source_changed_at DateTime64(9, 'UTC'),
+        refresh_version UInt64,
+        refreshed_at DateTime64(9, 'UTC')
+      )
+      ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, provider_id, recorded_date)`,
     });
     await client.command({
       query: `CREATE TABLE ${ingestDatabase}.provider_connection (
@@ -177,124 +204,6 @@ describe("provider stats read model", () => {
 
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${ingestDatabase}` });
-  });
-
-  it("counts the current live version through the provider current-state projection", async () => {
-    const userId = randomUUID();
-    const deletedId = randomUUID();
-    const liveId = randomUUID();
-    const recordedAt = "2026-07-20 12:00:00";
-
-    await client.command({
-      query: `INSERT INTO ${ingestDatabase}.metric_stream (
-        id, activity_id, user_id, recorded_at, channel, provider_id, external_id,
-        device_id, source_type, scalar, vector, point, metadata, ingested_at,
-        is_deleted, version, generation
-      ) VALUES
-        (
-          {deletedId:UUID}, NULL, {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, 'heart_rate', 'test_provider',
-          NULL, NULL, 'api', 60, [], '', '', now64(9) - INTERVAL 1 SECOND, 0, 1, 0
-        ),
-        (
-          {deletedId:UUID}, NULL, {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, 'heart_rate', 'test_provider',
-          NULL, NULL, 'api', 60, [], '', '', now64(9), 1, 2, 0
-        ),
-        (
-          {deletedId:UUID}, NULL, {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, 'heart_rate', 'test_provider',
-          NULL, NULL, 'api', 60, [], '', '', now64(9) + INTERVAL 1 SECOND, 0, 3, 0
-        ),
-        (
-          {liveId:UUID}, NULL, {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, 'heart_rate', 'test_provider',
-          NULL, NULL, 'api', 61, [], '', '', now64(9), 0, 1, 0
-        )`,
-      query_params: { deletedId, liveId, recordedAt, userId },
-    });
-
-    const result = await client.query({
-      query: renderMetricStreamCountSql(ingestDatabase),
-      query_params: { userId },
-      format: "JSONEachRow",
-    });
-
-    expect(providerCountSchema.parse(await result.json())).toEqual([{ metric_stream: 2 }]);
-  });
-
-  it("selects the provider current-state projection without making it mandatory", async () => {
-    const userId = randomUUID();
-    await client.command({
-      query: `INSERT INTO ${ingestDatabase}.metric_stream (
-          id,
-          user_id,
-          recorded_at,
-          channel,
-          provider_id,
-          source_type,
-          is_deleted,
-          version
-        ) VALUES (
-          generateUUIDv4(),
-          {userId:UUID},
-          now64(6),
-          'heart_rate',
-          'test_provider',
-          'test',
-          0,
-          1
-        )`,
-      query_params: { userId },
-    });
-    const result = await client.query({
-      query: `EXPLAIN projections = 1
-        ${renderMetricStreamCountSql(ingestDatabase, "prefer")}`,
-      query_params: { userId },
-      format: "JSONEachRow",
-    });
-
-    const explain = explainSchema
-      .parse(await result.json())
-      .map((row) => row.explain)
-      .join("\n");
-    expect(explain).toContain(
-      `ReadFromMergeTree (${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION})`,
-    );
-  });
-
-  it("keeps a high-cardinality exact recount within a bounded memory budget", async () => {
-    const userId = randomUUID();
-    await client.command({
-      query: `INSERT INTO ${ingestDatabase}.metric_stream (
-          id,
-          user_id,
-          recorded_at,
-          channel,
-          provider_id,
-          source_type,
-          is_deleted,
-          version
-        )
-        SELECT
-          toUUID(concat(
-            '00000000-0000-0000-0000-',
-            leftPad(toString(number), 12, '0')
-          )),
-          {userId:UUID},
-          now64(6),
-          'heart_rate',
-          'test_provider',
-          'test',
-          toInt8(0),
-          toInt64(1)
-        FROM numbers(50000)`,
-      query_params: { userId },
-    });
-
-    const result = await client.query({
-      query: renderMetricStreamCountSql(ingestDatabase),
-      query_params: { userId },
-      format: "JSONEachRow",
-    });
-
-    expect(providerCountSchema.parse(await result.json())).toEqual([{ metric_stream: 50000 }]);
   });
 
   it("tracks provider connection and disconnection versions by provider_id", async () => {
@@ -328,6 +237,86 @@ describe("provider stats read model", () => {
     });
 
     expect(providerSchema.parse(await disconnectedResult.json())).toEqual([]);
+  });
+
+  it("sums daily metric rows and holds provider publication until day state catches up", async () => {
+    const userId = randomUUID();
+    const watermarkTable = `${ingestDatabase}.provider_change_watermark_daily_readiness`;
+    const targetTable = `${ingestDatabase}.provider_stats_daily_readiness`;
+    const recordedDate = "2026-08-01";
+    const markerChangedAt = "2026-08-02 12:00:00";
+
+    await client.command({
+      query: `CREATE TABLE ${watermarkTable} (
+        user_id UUID,
+        provider_id String,
+        changed_at DateTime64(9, 'UTC'),
+        refresh_version UInt64,
+        refreshed_at DateTime64(9, 'UTC')
+      ) ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, provider_id)`,
+    });
+    await client.command({
+      query: `CREATE TABLE ${targetTable} (
+        user_id UUID,
+        provider_id String,
+        refreshed_at DateTime64(9, 'UTC')
+      ) ENGINE = ReplacingMergeTree(refreshed_at)
+      ORDER BY (user_id, provider_id)`,
+    });
+
+    try {
+      await client.command({
+        query: `INSERT INTO ${watermarkTable}
+          VALUES ({userId:UUID}, 'test_provider', '2026-08-02 10:00:00', 1, '2026-08-02 10:00:00')`,
+        query_params: { userId },
+      });
+      await client.command({
+        query: `INSERT INTO ${targetTable}
+          VALUES ({userId:UUID}, 'test_provider', '2026-08-02 09:00:00')`,
+        query_params: { userId },
+      });
+      await client.command({
+        query: `INSERT INTO ${ingestDatabase}.metric_stream_day_change
+          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, {changedAt:DateTime64(9, 'UTC')})`,
+        query_params: { changedAt: markerChangedAt, recordedDate, userId },
+      });
+      await client.command({
+        query: `INSERT INTO ${ingestDatabase}.provider_metric_stream_daily
+          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, '2026-08-02 11:00:00', 1, '2026-08-02 11:00:00')`,
+        query_params: { recordedDate, userId },
+      });
+
+      const blockedResult = await client.query({
+        query: renderDirtyProviderSelectionSql(targetTable, watermarkTable, true),
+        format: "JSONEachRow",
+      });
+      expect(providerSchema.parse(await blockedResult.json())).toEqual([]);
+
+      const countResult = await client.query({
+        query: renderMetricStreamCountSql(targetTable, watermarkTable, ingestDatabase, true),
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(countSchema.parse(await countResult.json())).toEqual([{ count: 7 }]);
+
+      await client.command({
+        query: `INSERT INTO ${ingestDatabase}.provider_metric_stream_daily
+          VALUES ({userId:UUID}, 'test_provider', {recordedDate:Date}, 7, {changedAt:DateTime64(9, 'UTC')}, 2, '2026-08-02 12:01:00')`,
+        query_params: { changedAt: markerChangedAt, recordedDate, userId },
+      });
+
+      const readyResult = await client.query({
+        query: renderDirtyProviderSelectionSql(targetTable, watermarkTable, true),
+        format: "JSONEachRow",
+      });
+      expect(providerSchema.parse(await readyResult.json())).toEqual([
+        { provider_id: "test_provider" },
+      ]);
+    } finally {
+      await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
+      await client.command({ query: `DROP TABLE IF EXISTS ${watermarkTable}` });
+    }
   });
 
   it("recounts at most one dirty provider per incremental batch", async () => {

@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved direction; written-spec review pending.
+Implementation complete in source; production rollout pending.
 
 ## Problem and evidence
 
@@ -48,22 +48,23 @@ raw `ReplacingMergeTree` history is too expensive:
 
 ## Proposed architecture
 
-### 1. Date-aware latest-state projection
+### 1. Date-aware covering projection
 
 Add a ClickHouse projection to `ingest.metric_stream` named
-`by_provider_current_state_recorded_at`. It will group by
-`(user_id, provider_id, id)` and expose the latest `recorded_at`,
-`ingested_at`, `version`, and `is_deleted` using the same ordering tuple as
-the existing current-state projection: `(version, ingested_at)`. Its sort order
-will be `(user_id, provider_id, recorded_at, id)`.
+`by_provider_current_state_recorded_at`. It will cover
+`(user_id, provider_id, id, recorded_at, ingested_at, version, is_deleted)` and
+sort by `(user_id, provider_id, recorded_at, id, version, ingested_at)`. It is
+not an aggregate projection because ClickHouse rejects the aggregate-plus-sort
+definition needed to expose latest state directly in this projection.
 
 The projection is an optimizer support structure, not a second application
-source of truth. Queries will retain an `argMax`-based exact fallback so a
-partially materialized projection cannot produce incorrect counts. The dbt
-model will prefer the date-aware projection, and rollout verification will
-require it to be present on every active metric-stream part. ClickHouse requires
-an explicit `MATERIALIZE PROJECTION` operation for historical parts after a
-projection is added:
+source of truth. Queries will retain exact latest-state resolution with
+`argMax(tuple(recorded_at, ingested_at, version, is_deleted),
+tuple(version, ingested_at))`, so a partially materialized projection cannot
+produce incorrect counts. The dbt model will prefer the date-aware projection,
+and rollout verification will require it to be present on every active
+metric-stream part. ClickHouse requires an explicit `MATERIALIZE PROJECTION`
+operation for historical parts after a projection is added:
 <https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
 
 ### 2. Compact metric-stream day-change state

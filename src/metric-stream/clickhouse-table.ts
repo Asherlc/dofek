@@ -68,12 +68,11 @@ export function metricStreamProviderCurrentStateRecordedAtProjectionDefinition()
       user_id,
       provider_id,
       id,
-      argMax(recorded_at, tuple(version, ingested_at)) AS recorded_at,
-      argMax(ingested_at, tuple(version, ingested_at)) AS ingested_at,
-      argMax(version, tuple(version, ingested_at)) AS version,
-      argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
-    GROUP BY user_id, provider_id, id
-    ORDER BY (user_id, provider_id, recorded_at, id)`;
+      recorded_at,
+      ingested_at,
+      version,
+      is_deleted
+    ORDER BY (user_id, provider_id, recorded_at, id, version, ingested_at)`;
 }
 
 export function buildIngestMetricStreamCreateTableSql(): string {

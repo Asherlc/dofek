@@ -6,6 +6,7 @@ sources:
     tables:
       - name: body_measurement_sample
       - name: heart_rate_day_change
+      - name: metric_stream_day_change
       - name: provider_change_state
       - name: sleep_heart_rate_cutover
       - name: v_activity
@@ -16,6 +17,8 @@ sources:
       - name: metric_stream
         config:
           event_time: recorded_at
+      - name: metric_stream_current
+        identifier: metric_stream
       - name: metric_stream_freshness
         identifier: metric_stream
         config:
