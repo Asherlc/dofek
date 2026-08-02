@@ -107,6 +107,11 @@ vi.mock("../../components/StrengthVolumeChart.tsx", () => ({ StrengthVolumeChart
 vi.mock("../../components/TrainingMonotonyChart.tsx", () => ({
   TrainingMonotonyChart: () => <div />,
 }));
+vi.mock("../../components/TodayPlanCard.tsx", () => ({
+  TodayPlanCard: ({ plan }: { plan?: { status: "ready"; action: { title: string } } }) => (
+    <section aria-label="What matters today">{plan?.action.title}</section>
+  ),
+}));
 vi.mock("../../components/WorkloadRatioChart.tsx", () => ({ WorkloadRatioChart: () => <div /> }));
 vi.mock("../../components/DofekChart.tsx", () => ({ DofekChart: () => <div /> }));
 vi.mock("../../components/HeartRateZonesChart.tsx", () => ({
@@ -148,6 +153,21 @@ vi.mock("../../lib/trpc.ts", () => ({
               displayedStrain: 0,
               displayedDate: null,
               timeSeries: [],
+            },
+            isLoading: false,
+            error: null,
+          };
+        },
+      },
+    },
+    todayPlan: {
+      get: {
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "todayPlan.get", input, options });
+          return {
+            data: {
+              status: "ready" as const,
+              action: { title: "Server-authored recovery action" },
             },
             isLoading: false,
             error: null,
