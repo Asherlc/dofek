@@ -219,6 +219,26 @@ function createStoryData() {
     activityTypes: ["road_cycling", "strength"],
   };
 
+  const calendarData = [
+    {
+      date: yesterday,
+      activityCount: 1,
+      totalMinutes: 45,
+      activityTypes: ["strength"],
+      trainingTimeBand: "moderate" as const,
+      trainingTimeMeaning: "Moderate recorded training volume.",
+    },
+    {
+      date: today,
+      activityCount: 1,
+      totalMinutes: 90,
+      activityTypes: ["road_cycling"],
+      trainingTimeBand: "high" as const,
+      trainingTimeMeaning:
+        "High training volume; compare with recovery before stacking another hard day.",
+    },
+  ];
+
   const processingStatus = {
     generatedAt: `${today}T12:00:00.000Z`,
     scope: { providerId: null, datasets: ["activity"] },
@@ -237,7 +257,7 @@ function createStoryData() {
     operations: [],
   };
 
-  return { today, queryInput, weekList, activityOverview, processingStatus };
+  return { today, queryInput, weekList, activityOverview, calendarData, processingStatus };
 }
 
 function createMockLink(storyData: ReturnType<typeof createStoryData>): TRPCLink<AppRouter> {
@@ -256,6 +276,8 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.weekList } });
       } else if (path === "calendar.activityOverview") {
         observer.next?.({ result: { data: storyData.activityOverview } });
+      } else if (path === "calendar.calendarData") {
+        observer.next?.({ result: { data: storyData.calendarData } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
       } else {
@@ -284,6 +306,10 @@ function MockProviders({ children }: { children: React.ReactNode }) {
     client.setQueryData(
       [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
       storyData.activityOverview,
+    );
+    client.setQueryData(
+      [["calendar", "calendarData"], { input: { days: 28 }, type: "query" }],
+      storyData.calendarData,
     );
     client.setQueryData(
       [["processing", "status"], { input: { datasets: ["activity"] }, type: "query" }],
