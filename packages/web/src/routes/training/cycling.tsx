@@ -225,9 +225,9 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
                 data={activityAnalytics.data?.verticalAscent ?? []}
                 availability={activityAnalytics.data?.availability?.verticalAscent}
                 loading={activityAnalytics.isLoading}
-            />
-          </Section>
-        </div>
+              />
+            </Section>
+          </div>
 
           <Section
             title="Activity Variability Index"
