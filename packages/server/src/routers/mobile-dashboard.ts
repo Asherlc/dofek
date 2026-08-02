@@ -24,6 +24,8 @@ import {
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-activity-states-v2";
+const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
+const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -125,7 +127,10 @@ export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
 export type MobileDashboardV2Result = z.infer<typeof mobileDashboardV2OutputSchema>;
 
 export const mobileDashboardRouter = router({
-  dashboard: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  dashboard: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: MOBILE_DASHBOARD_CACHE_KEY_VERSION,
+  })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
@@ -150,7 +155,7 @@ export const mobileDashboardRouter = router({
 
   dashboardV2: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
-    keyVersion: "sleep-need-metadata-v2",
+    keyVersion: MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION,
   })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardV2OutputSchema)

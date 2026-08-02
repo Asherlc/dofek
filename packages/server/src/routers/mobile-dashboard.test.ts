@@ -239,7 +239,11 @@ describe("mobileDashboard.dashboardV2", () => {
   it("versions the changed dashboard and recovery response contracts", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 120_000,
-      keyVersion: "sleep-need-metadata-v2",
+      keyVersion: "mobile-dashboard-contract-v1",
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 120_000,
+      keyVersion: "mobile-dashboard-contract-v2",
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
