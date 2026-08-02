@@ -8,6 +8,8 @@ import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
+import { ProcessingRepository } from "../repositories/processing-repository.ts";
+import { baselineProcessingStatus } from "../services/baseline-progress.ts";
 import { loadDashboardOverview } from "../services/dashboard-overview.ts";
 import { HEALTH_STATUS_CACHE_KEY_VERSION } from "../services/health-status.ts";
 import {
@@ -180,6 +182,9 @@ export const mobileDashboardRouter = router({
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.recovery");
       const tabStart = performance.now();
+      const processingSnapshot = await new ProcessingRepository(ctx.db, ctx.userId).status({
+        datasets: ["recovery"],
+      });
       const result = await loadMobileRecoveryTab(
         {
           db: ctx.db,
@@ -187,6 +192,7 @@ export const mobileDashboardRouter = router({
           timezone: ctx.timezone ?? "UTC",
           accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.recovery"),
           sensorStore,
+          processingStatus: baselineProcessingStatus(processingSnapshot, "recovery"),
         },
         input.days,
         input.endDate,

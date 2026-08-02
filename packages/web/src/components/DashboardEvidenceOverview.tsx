@@ -1,5 +1,6 @@
 import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import type { BaselineProgress } from "dofek-server/mobile-dashboard-contracts";
 import type { ReactNode } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartContainer } from "./ChartContainer.tsx";
@@ -10,6 +11,8 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 export interface DashboardTrendSnapshot {
   latestRestingHeartRate: number | null | undefined;
   averageRestingHeartRate: number | null | undefined;
+  restingHeartRateTrendLabel?: string | null;
+  restingHeartRateBaselineProgress?: BaselineProgress | null;
   restingHeartRatePoints?: RestingHeartRatePoint[] | null | undefined;
 }
 
@@ -33,13 +36,7 @@ export function formatDashboardRange(endDate: string, days: number): string {
 }
 
 export function trendPositionLabel(trend: DashboardTrendSnapshot): string {
-  const { latestRestingHeartRate, averageRestingHeartRate } = trend;
-  if (latestRestingHeartRate == null || averageRestingHeartRate == null) {
-    return "Waiting for baseline";
-  }
-  if (latestRestingHeartRate < averageRestingHeartRate) return "below average";
-  if (latestRestingHeartRate > averageRestingHeartRate) return "above average";
-  return "at average";
+  return trend.restingHeartRateTrendLabel ?? "Waiting for baseline";
 }
 
 interface ChartLabels {
@@ -71,15 +68,15 @@ function formatChartNumber(value: number): string {
 }
 
 function restingHeartRateTone(trend: DashboardTrendSnapshot): RestingHeartRateTone {
-  const { latestRestingHeartRate, averageRestingHeartRate } = trend;
-  if (latestRestingHeartRate == null || averageRestingHeartRate == null) {
+  const trendLabel = trendPositionLabel(trend);
+  if (trendLabel === "Waiting for baseline") {
     return {
       className: "text-muted",
       colorVariable: "var(--color-muted)",
       fillOpacity: "0.08",
     };
   }
-  if (latestRestingHeartRate <= averageRestingHeartRate) {
+  if (trendLabel === "below average" || trendLabel === "at average") {
     return {
       className: "text-accent",
       colorVariable: "var(--color-accent)",
@@ -242,6 +239,26 @@ export function DashboardEvidenceOverview({
               />
             </MiniChartFrame>
           </div>
+          {trend.restingHeartRateBaselineProgress &&
+          trend.restingHeartRateBaselineProgress.blocker !== null ? (
+            <section
+              aria-label="Resting heart rate baseline progress"
+              className="mt-4 space-y-1 border-t border-border pt-3 text-xs"
+            >
+              <p className="font-medium text-muted">
+                {trend.restingHeartRateBaselineProgress.requirement}
+              </p>
+              <p className="text-subtle">
+                {trend.restingHeartRateBaselineProgress.observedObservationDays} of{" "}
+                {trend.restingHeartRateBaselineProgress.requiredObservationDays} required days
+                recorded
+              </p>
+              <p className="text-subtle">{trend.restingHeartRateBaselineProgress.summary}</p>
+              <p className="font-medium text-foreground">
+                {trend.restingHeartRateBaselineProgress.action}
+              </p>
+            </section>
+          ) : null}
         </EvidenceCard>
 
         <EvidenceCard eyebrow="Training load compared with sleep consistency">

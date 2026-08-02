@@ -149,6 +149,7 @@ export const bodyAnalyticsRouter = router({
               row.bodyFatPct == null ? [] : [row.bodyFatPct],
             ),
             intent: "neutral",
+            processingStatus: null,
           }),
         ],
       };

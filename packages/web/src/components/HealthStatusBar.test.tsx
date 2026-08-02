@@ -19,9 +19,65 @@ const serverMetric = {
   statusLabel: "Near baseline",
   evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
   explanation: "Skin Temperature is close to your usual range.",
+  baselineProgress: {
+    requiredObservationDays: 3,
+    observedObservationDays: 3,
+    hasMeasurableVariation: true,
+    blocker: null,
+    requirement: "A current value plus at least 2 more recorded days with measurable variation.",
+    summary: "Skin Temperature baseline is ready.",
+    action: "No action needed.",
+  },
 };
 
 describe("HealthStatusBar", () => {
+  it("renders the server-authored blocked baseline requirement and action", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            ...serverMetric,
+            value: null,
+            valueText: null,
+            baseline: null,
+            baselineText: null,
+            sampleDeviation: null,
+            deviation: null,
+            direction: "unknown",
+            statusToken: "insufficient_data",
+            statusColor: "muted",
+            statusLabel: "Not enough data",
+            explanation: "Not enough varied data yet to compare this value with your usual range.",
+            baselineProgress: {
+              ...serverMetric.baselineProgress,
+              observedObservationDays: 1,
+              hasMeasurableVariation: false,
+              blocker: "collecting",
+              summary:
+                "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
+              action: "Keep syncing skin temperature data for at least 2 more days.",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("1 of 3 required days recorded")).toBeDefined();
+    expect(
+      screen.getByText(
+        "A current value plus at least 2 more recorded days with measurable variation.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText("Keep syncing skin temperature data for at least 2 more days."),
+    ).toBeDefined();
+  });
+
   it("renders server-authored HRV and steps text instead of recomputing raw values", () => {
     render(
       <HealthStatusBar
