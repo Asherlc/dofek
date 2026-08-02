@@ -1,37 +1,6 @@
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
-
-type HealthMetricKey =
-  | "hrv"
-  | "resting_heart_rate"
-  | "respiratory_rate"
-  | "sleep_efficiency"
-  | "spo2"
-  | "steps"
-  | "skin_temperature"
-  | "trend_weight"
-  | "body_fat_percentage";
-
-interface HealthStatusMetric {
-  metric: HealthMetricKey;
-  label: string;
-  value: number | null;
-  baseline: number | null;
-  sampleDeviation: number | null;
-  deviation: number | null;
-  direction: "above" | "below" | "aligned" | "unknown";
-  intent: "higher" | "lower" | "maintain" | "neutral";
-  statusToken:
-    | "insufficient_data"
-    | "near_baseline"
-    | "moving_as_intended"
-    | "notable_deviation"
-    | "far_from_baseline";
-  statusColor: "positive" | "warning" | "danger" | "muted";
-  statusLabel: string;
-  evaluationRule: string;
-  explanation: string;
-}
 
 interface HealthStatusCardsProps {
   metrics: HealthStatusMetric[];
@@ -50,6 +19,13 @@ function defaultFormatValue(metric: HealthStatusMetric): string {
   return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
 }
 
+function displayValue(
+  metric: HealthStatusMetric,
+  formatValue: HealthStatusCardsProps["formatValue"],
+): string {
+  return metric.valueText ?? (formatValue ? formatValue(metric) : defaultFormatValue(metric));
+}
+
 function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
   if (status === "insufficient_data") return "?";
   if (status === "near_baseline" || status === "moving_as_intended") return "✓";
@@ -63,27 +39,44 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>HEALTH STATUS</Text>
-      {metrics.map((metric) => (
-        <View key={metric.metric} style={styles.card}>
-          <View style={styles.titleRow}>
+      {metrics.map((metric) => {
+        const baseline = metric.baselineText;
+        return (
+          <View key={metric.metric} style={styles.card}>
+            <View style={styles.titleRow}>
+              <Text
+                accessibilityLabel={`${metric.statusLabel} status`}
+                style={[styles.statusSymbol, { color: statusColor(metric.statusColor) }]}
+              >
+                {statusSymbol(metric.statusToken)}
+              </Text>
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+                numberOfLines={1}
+                style={styles.label}
+              >
+                {metric.label}
+              </Text>
+            </View>
             <Text
-              accessibilityLabel={`${metric.statusLabel} status`}
-              style={[styles.statusSymbol, { color: statusColor(metric.statusColor) }]}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              numberOfLines={1}
+              style={styles.value}
             >
-              {statusSymbol(metric.statusToken)}
+              {displayValue(metric, formatValue)}
             </Text>
-            <Text style={styles.label}>{metric.label}</Text>
+            <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
+              {baseline == null
+                ? metric.statusLabel
+                : `baseline ${baseline} · ${metric.statusLabel}`}
+            </Text>
+            <Text style={styles.rule}>{metric.evaluationRule}</Text>
+            <Text style={styles.explanation}>{metric.explanation}</Text>
           </View>
-          <Text style={styles.value}>
-            {formatValue ? formatValue(metric) : defaultFormatValue(metric)}
-          </Text>
-          <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
-            {metric.statusLabel}
-          </Text>
-          <Text style={styles.rule}>{metric.evaluationRule}</Text>
-          <Text style={styles.explanation}>{metric.explanation}</Text>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -118,7 +111,9 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.textSecondary,
-    fontSize: 12,
+    flexShrink: 1,
+    fontSize: 11,
+    lineHeight: 14,
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },

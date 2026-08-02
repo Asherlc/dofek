@@ -527,6 +527,11 @@ export function formatHRV(value: NullableNumber): string {
 export const formatHRVMeasurement: FormattedMeasurementFormatter = (value) =>
   formatMetricMeasurement(value, 0, "ms");
 
+/** Format step counts as grouped integers. */
+export function formatSteps(value: NullableNumber): string {
+  return formatMetricValue(value, 0, true);
+}
+
 /** Format a z-score as standard deviations from baseline, preserving its meaningful precision. */
 export function formatStandardDeviation(value: NullableNumber): string {
   if (value == null || !Number.isFinite(value)) return "--";

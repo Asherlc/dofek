@@ -124,6 +124,52 @@ describe("buildDailyMetricHealthStatuses", () => {
 });
 
 describe("buildHealthStatusFromSummary", () => {
+  it.each([
+    {
+      metric: "hrv" as const,
+      value: 51.5,
+      baseline: 50.5,
+      valueText: "52 ms",
+      baselineText: "51 ms",
+    },
+    {
+      metric: "steps" as const,
+      value: 7639.6,
+      baseline: 7640,
+      valueText: "7,640",
+      baselineText: "7,640",
+    },
+  ])("authors $metric current and baseline display text", (fixture) => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: fixture.metric,
+        label: fixture.metric,
+        value: fixture.value,
+        baseline: fixture.baseline,
+        sampleDeviation: 10,
+        intent: "neutral",
+      }),
+    ).toMatchObject({
+      value: fixture.value,
+      baseline: fixture.baseline,
+      valueText: fixture.valueText,
+      baselineText: fixture.baselineText,
+    });
+  });
+
+  it("leaves unit-sensitive display text to the client", () => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "skin_temperature",
+        label: "Skin Temperature",
+        value: 34.4,
+        baseline: 34,
+        sampleDeviation: 0.5,
+        intent: "neutral",
+      }),
+    ).toMatchObject({ valueText: null, baselineText: null });
+  });
+
   it("treats a positive deviation as moving as intended when higher values are supported", () => {
     expect(
       buildHealthStatusFromSummary({

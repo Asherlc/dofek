@@ -7,7 +7,9 @@ const serverMetric = {
   metric: "skin_temperature" as const,
   label: "Skin Temperature",
   value: 34.4,
+  valueText: null,
   baseline: 34,
+  baselineText: null,
   sampleDeviation: 0.5,
   deviation: 0.8,
   direction: "above" as const,
@@ -20,6 +22,43 @@ const serverMetric = {
 };
 
 describe("HealthStatusBar", () => {
+  it("renders server-authored HRV and steps text instead of recomputing raw values", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "hrv",
+            label: "Heart Rate Variability (HRV)",
+            value: 999,
+            valueText: "52 ms",
+            baseline: 998,
+            baselineText: "51 ms",
+          },
+          {
+            ...serverMetric,
+            metric: "steps",
+            label: "Steps",
+            value: 1,
+            valueText: "7,640",
+            baseline: 2,
+            baselineText: "7,640",
+          },
+        ]}
+        formatters={{
+          hrv: () => ({ text: "999 ms", parts: [{ type: "integer", value: "999" }] }),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("52 ms")).toBeDefined();
+    expect(screen.getByText(/baseline 51 ms/)).toBeDefined();
+    expect(screen.getByText("7,640")).toBeDefined();
+    expect(screen.getByText(/baseline 7,640/)).toBeDefined();
+    expect(screen.queryByText("999 ms")).toBeNull();
+    expect(screen.getByText("52 ms").classList).toContain("whitespace-nowrap");
+  });
+
   it("renders server-computed baseline deviation, comparison, and coverage", () => {
     render(
       <HealthStatusBar
