@@ -36,7 +36,7 @@ const targetAtScaleMaximumContext = {
   },
 } satisfies SelectedDateNutritionIntakeContext;
 
-const punctuationlessContext = {
+const messageWithoutPeriodContext = {
   ...overTargetContext,
   comparison: {
     ...overTargetContext.comparison,
@@ -68,8 +68,8 @@ describe("NutritionIntakeContext", () => {
     expect(screen.getByTestId("calorie-scale-target").style.marginLeft).toBe("-2px");
   });
 
-  it("separates comparison and scale context in the accessibility label", () => {
-    render(<NutritionIntakeContext context={punctuationlessContext} />);
+  it("adds a sentence separator before scale context", () => {
+    render(<NutritionIntakeContext context={messageWithoutPeriodContext} />);
 
     expect(
       screen.getByLabelText(/configured daily logged-intake target\. Scale: 0 to/i),

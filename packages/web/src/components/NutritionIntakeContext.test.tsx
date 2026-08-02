@@ -27,7 +27,7 @@ const overTargetContext = {
     "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
 } satisfies SelectedDateNutritionIntakeContext;
 
-const punctuationlessContext = {
+const messageWithoutPeriodContext = {
   ...overTargetContext,
   comparison: {
     ...overTargetContext.comparison,
@@ -71,8 +71,8 @@ describe("NutritionIntakeContext", () => {
     expect(headings[0]?.id).not.toBe(headings[1]?.id);
   });
 
-  it("separates comparison and scale context in the accessible label", () => {
-    render(<NutritionIntakeContext context={punctuationlessContext} />);
+  it("adds a sentence separator before scale context", () => {
+    render(<NutritionIntakeContext context={messageWithoutPeriodContext} />);
 
     expect(
       screen.getByRole("meter", {
