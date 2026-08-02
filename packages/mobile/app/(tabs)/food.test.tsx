@@ -191,6 +191,23 @@ describe("FoodScreen AI meal confirmation", () => {
     });
   });
 
+  it("puts the server-authored daily nutrition decision context before AI meal input", async () => {
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    const intakeMessage = screen.getByText(defaultIntakeContext.comparison.message);
+    const resolutionMessage = screen.getByText(availableResolution.message);
+    const aiInputHeading = screen.getByText("AI meal input");
+
+    expect(
+      intakeMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      resolutionMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("opens every food input mode from the nutrition screen", async () => {
     const { default: FoodScreen } = await import("./food");
 

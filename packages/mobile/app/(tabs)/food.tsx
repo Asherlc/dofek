@@ -244,6 +244,71 @@ export default function FoodScreen() {
           </TouchableOpacity>
         </View>
 
+        {!isToday(selectedDate) && (
+          <TouchableOpacity
+            onPress={() => setSelectedDate(new Date())}
+            style={styles.todayButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Today"
+          >
+            <Text style={styles.todayButtonText}>Go to Today</Text>
+          </TouchableOpacity>
+        )}
+
+        {summary && (
+          <>
+            {selectedDateFood.data?.intakeContext && (
+              <NutritionIntakeContext context={selectedDateFood.data.intakeContext} />
+            )}
+            <MacroSummary macros={summary.macros} />
+          </>
+        )}
+
+        {resolution &&
+        resolution.sourceProviders.length > 0 &&
+        resolution.status === "available" ? (
+          <View
+            style={styles.sourceResolution}
+            accessible
+            accessibilityLabel={[
+              "Source coverage",
+              resolution.contributionLabel,
+              resolution.message,
+              resolution.excludedSourceLabels.length > 0
+                ? `Excluded overlapping sources: ${resolution.excludedSourceLabels.join(", ")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(". ")}
+          >
+            <Text style={styles.sourceResolutionHeading}>Source coverage</Text>
+            {resolution.contributionLabel ? (
+              <Text style={styles.sourceResolutionTitle}>{resolution.contributionLabel}</Text>
+            ) : null}
+            <Text style={styles.sourceResolutionMessage}>{resolution.message}</Text>
+            {resolution.excludedSourceLabels.length > 0 ? (
+              <Text style={styles.sourceResolutionSources}>
+                Excluded overlapping sources: {resolution.excludedSourceLabels.join(", ")}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {resolution?.status === "source_conflict" && (
+          <View
+            style={styles.sourceConflict}
+            accessible
+            accessibilityRole="alert"
+            accessibilityLabel={`${resolution.message} Sources: ${resolution.sourceLabels.join(", ")}`}
+          >
+            <Text style={styles.sourceConflictTitle}>Nutrition source conflict</Text>
+            <Text style={styles.sourceConflictMessage}>{resolution.message}</Text>
+            <Text style={styles.sourceConflictSources}>
+              Sources: {resolution.sourceLabels.join(", ")}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.foodInputCard}>
           <Text style={styles.foodInputTitle}>Food input</Text>
           <View style={styles.foodInputGrid}>
@@ -345,71 +410,6 @@ export default function FoodScreen() {
             </View>
           )}
         </View>
-
-        {!isToday(selectedDate) && (
-          <TouchableOpacity
-            onPress={() => setSelectedDate(new Date())}
-            style={styles.todayButton}
-            accessibilityRole="button"
-            accessibilityLabel="Go to Today"
-          >
-            <Text style={styles.todayButtonText}>Go to Today</Text>
-          </TouchableOpacity>
-        )}
-
-        {summary && (
-          <>
-            {selectedDateFood.data?.intakeContext && (
-              <NutritionIntakeContext context={selectedDateFood.data.intakeContext} />
-            )}
-            <MacroSummary macros={summary.macros} />
-          </>
-        )}
-
-        {resolution &&
-        resolution.sourceProviders.length > 0 &&
-        resolution.status === "available" ? (
-          <View
-            style={styles.sourceResolution}
-            accessible
-            accessibilityLabel={[
-              "Source coverage",
-              resolution.contributionLabel,
-              resolution.message,
-              resolution.excludedSourceLabels.length > 0
-                ? `Excluded overlapping sources: ${resolution.excludedSourceLabels.join(", ")}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(". ")}
-          >
-            <Text style={styles.sourceResolutionHeading}>Source coverage</Text>
-            {resolution.contributionLabel ? (
-              <Text style={styles.sourceResolutionTitle}>{resolution.contributionLabel}</Text>
-            ) : null}
-            <Text style={styles.sourceResolutionMessage}>{resolution.message}</Text>
-            {resolution.excludedSourceLabels.length > 0 ? (
-              <Text style={styles.sourceResolutionSources}>
-                Excluded overlapping sources: {resolution.excludedSourceLabels.join(", ")}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {resolution?.status === "source_conflict" && (
-          <View
-            style={styles.sourceConflict}
-            accessible
-            accessibilityRole="alert"
-            accessibilityLabel={`${resolution.message} Sources: ${resolution.sourceLabels.join(", ")}`}
-          >
-            <Text style={styles.sourceConflictTitle}>Nutrition source conflict</Text>
-            <Text style={styles.sourceConflictMessage}>{resolution.message}</Text>
-            <Text style={styles.sourceConflictSources}>
-              Sources: {resolution.sourceLabels.join(", ")}
-            </Text>
-          </View>
-        )}
 
         {isFoodBlockingLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
