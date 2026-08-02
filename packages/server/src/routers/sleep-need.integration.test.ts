@@ -138,6 +138,7 @@ describe("sleep-need router integration", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result).not.toHaveProperty("totalNeedMinutes");
@@ -160,6 +161,7 @@ describe("sleep-need router integration", () => {
       versionedKey,
       {
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       },
       CacheTTL.SHORT,
@@ -169,6 +171,7 @@ describe("sleep-need router integration", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
   });
@@ -204,6 +207,7 @@ describe("sleep-need router integration", () => {
 
     expect(result).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result).not.toHaveProperty("totalNeedMinutes");
