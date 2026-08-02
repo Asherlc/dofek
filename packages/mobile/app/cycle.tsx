@@ -41,6 +41,9 @@ export default function CycleScreen() {
     ]);
   };
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
+    onSuccess: () => {
+      setPeriodNotes("");
+    },
     onError: (error) => {
       captureException(error, { source: "cycle-log-period" });
     },

@@ -38,6 +38,9 @@ function CyclePage() {
   };
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
     meta: locallyReportedErrorMeta,
+    onSuccess: () => {
+      setPeriodNotes("");
+    },
     onError: (error) => {
       captureException(error, { context: "cycle-log-period" });
     },

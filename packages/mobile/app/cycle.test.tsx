@@ -148,11 +148,13 @@ vi.mock("../lib/trpc", () => ({
       logPeriod: {
         useMutation: (options: {
           onError?: (error: Error) => void;
+          onSuccess?: () => void;
           onSettled?: () => Promise<void> | void;
         }) => ({
           mutate: (input: NonNullable<TestState["mutationInput"]>) => {
             state.mutationInput = input;
             if (state.mutationError) options.onError?.(state.mutationError);
+            else options.onSuccess?.();
             void options.onSettled?.();
           },
           isPending: false,
@@ -301,6 +303,18 @@ describe("CycleScreen", () => {
       startDate: "2026-07-24",
       notes: "Cramps and poor sleep",
     });
+  });
+
+  it("clears symptoms or context after a successful period log", async () => {
+    const { default: CycleScreen } = await import("./cycle");
+
+    render(<CycleScreen />);
+
+    const notesInput = screen.getByLabelText("Period symptoms or context");
+    fireEvent.change(notesInput, { target: { value: "Cramps and poor sleep" } });
+    fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
+
+    expect(notesInput.getAttribute("value")).toBe("");
   });
 
   it("renders the server-provided estimate method and observed uncertainty", async () => {
