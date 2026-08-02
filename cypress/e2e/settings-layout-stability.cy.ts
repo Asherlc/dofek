@@ -126,6 +126,20 @@ function waitForPaint(win: Window): Promise<void> {
   });
 }
 
+function waitForFiniteAnimations(win: Window): Promise<void> {
+  const animations = win.document.getAnimations().filter((animation) => {
+    return animation.effect?.getComputedTiming().iterations !== Infinity;
+  });
+  return Promise.all(
+    animations.map((animation) =>
+      animation.finished.then(
+        () => undefined,
+        () => undefined,
+      ),
+    ),
+  ).then(() => undefined);
+}
+
 function waitForPendingPageResources(win: Window): Promise<void> {
   const imageLoads = Array.from(win.document.images)
     .filter((image) => !image.complete)
@@ -186,6 +200,7 @@ function waitForLayoutShiftQuietWindow(win: Window, disconnectObserver: boolean)
 async function waitForStableLayout(win: Window, disconnectObserver: boolean): Promise<void> {
   await waitForPendingPageResources(win);
   await waitForPaint(win);
+  await waitForFiniteAnimations(win);
   await waitForLayoutShiftQuietWindow(win, disconnectObserver);
 }
 
