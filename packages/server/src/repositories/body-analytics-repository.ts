@@ -5,7 +5,15 @@ import { captureException } from "dofek/lib/error-reporting";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString, type RangeDays } from "../lib/date-window.ts";
-import { type BodyClickHouseStore, fetchBodyWeightRows } from "./body-clickhouse.ts";
+import {
+  type BodyDecisionContext,
+  buildBodyDecisionContext,
+} from "../services/body-decision-context.ts";
+import {
+  type BodyClickHouseStore,
+  fetchBodyDecisionMeasurements,
+  fetchBodyWeightRows,
+} from "./body-clickhouse.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -263,6 +271,31 @@ export class BodyAnalyticsRepository extends BaseRepository {
       endDate === "now" ? formatDateYmdInTimeZone(new Date(), this.timezone) : endDate;
     const windowStart = dateWindowStartString(resolvedEndDate, days);
     return smoothedWeight.filter((row) => row.date > windowStart);
+  }
+
+  async getBodyDecisionContext(endDate: string): Promise<BodyDecisionContext> {
+    const [trendRows, provenanceRows] = await Promise.all([
+      this.getSmoothedWeight(null, endDate),
+      fetchBodyDecisionMeasurements(
+        this.#bodyStore,
+        this.userId,
+        this.timezone,
+        endDate,
+        this.accessWindow,
+      ),
+    ]);
+
+    return buildBodyDecisionContext(
+      provenanceRows.map((row) => ({
+        date: row.date,
+        recordedAt: row.recorded_at,
+        recordedAtLocal: row.recorded_at_local,
+        weightKg: row.weight_kg,
+        providerId: row.provider_id,
+        sourceName: row.source_name,
+      })),
+      trendRows.map((row) => ({ date: row.date, smoothedWeight: row.smoothedWeight })),
+    );
   }
 
   /**

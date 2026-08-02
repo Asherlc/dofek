@@ -7,6 +7,7 @@ import type {
   HrvBaselineRow,
 } from "../repositories/daily-metrics-repository.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
+import type { BodyDecisionContext } from "./body-decision-context.ts";
 import {
   buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromValues,
@@ -108,6 +109,7 @@ async function runRecoveryTab(
     days?: number;
     endDate?: string;
     processingStatus?: "syncing" | "sync_error" | null;
+    decisionContext?: BodyDecisionContext | null;
   } = {},
 ) {
   const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
@@ -151,6 +153,11 @@ async function runRecoveryTab(
     projectionLine: [],
   });
   vi.spyOn(
+    (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+      .prototype,
+    "getBodyDecisionContext",
+  ).mockResolvedValue(options.decisionContext ?? null);
+  vi.spyOn(
     (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
     "get",
   ).mockResolvedValue(options.goalWeight != null ? { value: options.goalWeight } : null);
@@ -159,6 +166,40 @@ async function runRecoveryTab(
 }
 
 describe("loadMobileRecoveryTab", () => {
+  it("returns server-authored body decision context alongside recovery data", async () => {
+    const decisionContext: BodyDecisionContext = {
+      latestMeasurement: {
+        date: "2026-03-28",
+        recordedAt: "2026-03-28T08:00:00.000Z",
+        recordedAtLocal: "2026-03-28 08:00:00",
+        weightKg: 80,
+        providerId: "withings",
+        sourceName: "Body+",
+      },
+      trendWeight: {
+        smoothing: "ewma",
+        alpha: 0.1,
+        gapHandling: "linear_interpolation",
+        invalidWeightHandling: "exclude_non_positive",
+        outlierHandling: "retain",
+      },
+      variation: {
+        status: "insufficient_data",
+        observations: 1,
+        minimumObservations: 8,
+        maximumObservations: 30,
+        method: "tukey_inner_fence",
+        lowerResidualKg: null,
+        upperResidualKg: null,
+        outliersIncluded: true,
+      },
+    };
+
+    const result = await runRecoveryTab([], { decisionContext });
+
+    expect(result.decisionContext).toEqual(decisionContext);
+  });
+
   it("uses one daily_recovery query for readiness and stress", async () => {
     const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
       const sql = String(sqlText);

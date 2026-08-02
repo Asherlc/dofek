@@ -1,8 +1,10 @@
+import { BODY_TREND_WEIGHT_DECISION_COPY } from "@dofek/format/body-decision-context";
 import { formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
 import { useMemo } from "react";
 import { z } from "zod";
+import { BodyDecisionContext } from "../components/BodyDecisionContext.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import {
@@ -325,7 +327,7 @@ export function BodyPage() {
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">
                 <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
-                <ChartDescriptionTooltip description="Trend Weight starts from your first accessible scale reading, then moves 10% toward each day's weight. Missing days between readings are linearly interpolated. The chart also shows goal weight and a forward projection when set." />
+                <ChartDescriptionTooltip description={BODY_TREND_WEIGHT_DECISION_COPY} />
               </div>
               {weightOverview.isPending ? (
                 <SmoothedWeightChart data={[]} loading />
@@ -335,6 +337,7 @@ export function BodyPage() {
                   prediction={weightPredictionDisplay}
                 />
               )}
+              <BodyDecisionContext context={weightOverview.data?.decisionContext ?? null} />
             </div>
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">

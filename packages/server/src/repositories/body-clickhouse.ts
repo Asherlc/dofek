@@ -55,6 +55,15 @@ export const bodyWeightClickHouseSchema = z.object({
   body_fat_pct: z.coerce.number().nullable(),
 });
 
+export const bodyDecisionMeasurementClickHouseSchema = z.object({
+  date: dateStringSchema,
+  recorded_at: timestampStringSchema,
+  recorded_at_local: z.string(),
+  weight_kg: z.coerce.number(),
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
+});
+
 export const bodyLatestClickHouseSchema = z.object({
   weight_kg: z.coerce.number().nullable(),
   body_fat_pct: z.coerce.number().nullable(),
@@ -152,6 +161,36 @@ export async function fetchBodyWeightRows(
       ...rangeDaysParams(days),
       ...accessWindowParams(options.accessWindow),
     },
+  );
+}
+
+export async function fetchBodyDecisionMeasurements(
+  store: BodyClickHouseStore,
+  userId: string,
+  timezone: string,
+  endDate: string,
+  accessWindow?: AccessWindow,
+): Promise<z.infer<typeof bodyDecisionMeasurementClickHouseSchema>[]> {
+  const localDateExpression = "toDate(toTimeZone(recorded_at, {timezone:String}))";
+  return store.query(
+    bodyDecisionMeasurementClickHouseSchema,
+    `
+      SELECT
+        toString(${localDateExpression}) AS date,
+        toString(recorded_at) AS recorded_at,
+        toString(toTimeZone(recorded_at, {timezone:String})) AS recorded_at_local,
+        weight_kg,
+        provider_id,
+        source_name
+      FROM analytics.v_body_measurement
+      WHERE user_id = {userId:UUID}
+        AND weight_kg IS NOT NULL
+        AND weight_kg > 0
+        AND ${localDateExpression} <= ${endDateExpression(endDate)}
+        ${accessWindowDateClause(accessWindow)}
+      ORDER BY ${localDateExpression} ASC, recorded_at ASC
+    `,
+    { userId, timezone, endDate, ...accessWindowParams(accessWindow) },
   );
 }
 

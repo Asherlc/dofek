@@ -6,6 +6,7 @@ import {
   baselineRelativeMetricSchema,
 } from "./baseline-relative-metrics.ts";
 import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
+import { bodyDecisionContextOutputSchema } from "./body-decision-context.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
@@ -236,6 +237,7 @@ export const mobileRecoveryTabOutputSchema = z.object({
       interpolated: z.boolean(),
     }),
   ),
+  decisionContext: bodyDecisionContextOutputSchema.nullable(),
   weightPrediction: z.object({
     ratePerWeek: z.number().nullable(),
     rateConfidence: z.number().min(0).max(1).nullable(),

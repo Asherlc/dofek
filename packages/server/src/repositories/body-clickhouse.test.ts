@@ -4,6 +4,7 @@ import {
   fetchBodyComparisonRows,
   fetchBodyCompProvenanceRows,
   fetchBodyCompRows,
+  fetchBodyDecisionMeasurements,
   fetchBodyWeightRows,
 } from "./body-clickhouse.ts";
 
@@ -61,6 +62,45 @@ describe("fetchBodyWeightRows", () => {
     expect(calls[0]?.query).toContain(
       "argMin(body_fat_pct, (recorded_at, refresh_version, measurement_id))",
     );
+  });
+});
+
+describe("fetchBodyDecisionMeasurements", () => {
+  it("returns provider, source, and timestamp for positive body measurements", async () => {
+    const calls: Array<{ query: string; params?: Record<string, unknown> }> = [];
+    const store: BodyClickHouseStore = {
+      async query(schema, query, params) {
+        calls.push({ query, params });
+        return [
+          schema.parse({
+            date: "2026-07-25",
+            recorded_at: "2026-07-25T08:00:00.000Z",
+            recorded_at_local: "2026-07-25 08:00:00",
+            weight_kg: 72,
+            provider_id: "withings",
+            source_name: "Body+",
+          }),
+        ];
+      },
+    };
+
+    await expect(
+      fetchBodyDecisionMeasurements(store, "user-1", "America/Los_Angeles", "now"),
+    ).resolves.toEqual([
+      {
+        date: "2026-07-25",
+        recorded_at: "2026-07-25T08:00:00.000Z",
+        recorded_at_local: "2026-07-25 08:00:00",
+        weight_kg: 72,
+        provider_id: "withings",
+        source_name: "Body+",
+      },
+    ]);
+    expect(calls[0]?.query).toContain("FROM analytics.v_body_measurement");
+    expect(calls[0]?.query).toContain("weight_kg > 0");
+    expect(calls[0]?.query).toContain("provider_id");
+    expect(calls[0]?.query).toContain("recorded_at_local");
+    expect(calls[0]?.params).toMatchObject({ userId: "user-1", timezone: "America/Los_Angeles" });
   });
 });
 

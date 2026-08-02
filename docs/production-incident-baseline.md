@@ -163,9 +163,9 @@ the resource guidance in [`docs/testing.md`](testing.md#docker-disk-recovery).
 
 ### Symptoms
 
-PR #2303's successful `Mobile Preview OTA` workflow loaded an Infisical-provided
-OTA credential in its `Publish Mobile Preview OTA` job without registering a
-GitHub Actions mask first.
+During the diagnosis associated with PR #2303, a successful `Mobile Preview
+OTA` workflow loaded an Infisical-provided OTA credential in its `Publish
+Mobile Preview OTA` job without registering a GitHub Actions mask first.
 
 ### User Impact
 
@@ -175,8 +175,9 @@ or user health-data integrity impact has been identified.
 
 ### Evidence
 
-The affected key is `EXPO_TOKEN`. The PR #2303 Actions evidence includes
-successful `Publish Mobile Preview OTA` jobs `90889411701` and `90710536078`.
+The affected key is `EXPO_TOKEN`. The Actions evidence collected during the PR
+#2303 diagnosis includes successful `Publish Mobile Preview OTA` jobs
+`90889411701` and `90710536078`.
 Both invoked `.github/actions/load-infisical-secrets` and contained no
 `::add-mask::` registration before the action made fetched values available to
 later workflow steps. No secret value is recorded in this incident document.

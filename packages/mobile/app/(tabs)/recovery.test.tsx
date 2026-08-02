@@ -807,6 +807,12 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(screen.getByText("79.8 kg")).toBeTruthy();
     expect(screen.queryByText("Estimated")).toBeNull();
+    expect(screen.getByText("Scale: 80.0 kg")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Measurement decision context is temporarily unavailable. Refresh to try again.",
+      ),
+    ).toBeTruthy();
   });
 
   it("uses neutral text for weight-rate direction", async () => {

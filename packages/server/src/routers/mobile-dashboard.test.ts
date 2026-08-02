@@ -1063,6 +1063,7 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
+      decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
         rateConfidence: null,
@@ -1139,6 +1140,7 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
+      decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
         rateConfidence: null,

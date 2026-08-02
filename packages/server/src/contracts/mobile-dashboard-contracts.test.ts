@@ -127,6 +127,33 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
           interpolated: false,
         },
       ],
+      decisionContext: {
+        latestMeasurement: {
+          date: input.endDate,
+          recordedAt: "2026-07-27T08:00:00.000Z",
+          recordedAtLocal: "2026-07-27 08:00:00",
+          weightKg: 73.5,
+          providerId: "withings",
+          sourceName: "Body+",
+        },
+        trendWeight: {
+          smoothing: "ewma",
+          alpha: 0.1,
+          gapHandling: "linear_interpolation",
+          invalidWeightHandling: "exclude_non_positive",
+          outlierHandling: "retain",
+        },
+        variation: {
+          status: "available",
+          observations: 8,
+          minimumObservations: 8,
+          maximumObservations: 30,
+          method: "tukey_inner_fence",
+          lowerResidualKg: -0.4,
+          upperResidualKg: 0.5,
+          outliersIncluded: true,
+        },
+      },
       weightPrediction: {
         ratePerWeek: -0.2,
         rateConfidence: 0.72,

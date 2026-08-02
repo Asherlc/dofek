@@ -250,21 +250,24 @@ export async function loadMobileRecoveryTab(
   const goalWeightKg =
     parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg) ? parsedGoalWeightKg : null;
 
-  const [hrvBaseline, weight, weightPrediction, healthspanRaw] = await Promise.all([
-    metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
-    bodyRepo.getSmoothedWeight(weightDays, endDate),
-    bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
-    fetchHealthspanRawData(
-      {
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        accessWindow: ctx.accessWindow,
-        sensorStore: ctx.sensorStore,
-      },
-      endDate,
-      healthspanWeeks * 7,
-    ),
-  ]);
+  const [hrvBaseline, weight, weightPrediction, healthspanRaw, decisionContext] = await Promise.all(
+    [
+      metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
+      bodyRepo.getSmoothedWeight(weightDays, endDate),
+      bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
+      fetchHealthspanRawData(
+        {
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          accessWindow: ctx.accessWindow,
+          sensorStore: ctx.sensorStore,
+        },
+        endDate,
+        healthspanWeeks * 7,
+      ),
+      bodyRepo.getBodyDecisionContext(endDate),
+    ],
+  );
 
   const restingHeartRateBaseline = baselineRelative.find(
     (metric) => metric.metric === "resting_heart_rate",
@@ -332,6 +335,7 @@ export async function loadMobileRecoveryTab(
     trends: deriveTrends(dailyMetrics),
     dailyMetrics,
     weight,
+    decisionContext,
     weightPrediction,
     baselineRelative,
     healthStatus,

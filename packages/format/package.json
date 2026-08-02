@@ -8,6 +8,7 @@
     "./activity-data-state": "./src/activity-data-state.ts",
     "./baseline-context": "./src/baseline-context.ts",
     "./data-quality": "./src/data-quality.ts",
+    "./body-decision-context": "./src/body-decision-context.ts",
     "./format": "./src/format.ts",
     "./healthspan-context": "./src/healthspan-context.ts",
     "./medication-dose-events": "./src/medication-dose-events.ts",
