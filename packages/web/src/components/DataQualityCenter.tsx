@@ -17,6 +17,7 @@ interface DataQualityCenterProps {
 
 const reviewRoutes = {
   nutrition: "/nutrition",
+  activities: "/activities",
   dashboard: "/dashboard",
   journal: "/tracking",
 } as const satisfies Record<DataQualityReviewDestination, string>;

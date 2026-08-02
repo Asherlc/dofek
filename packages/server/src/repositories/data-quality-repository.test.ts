@@ -153,7 +153,7 @@ describe("DataQualityRepository", () => {
     await expect(repository.overview("2026-07-22")).resolves.toMatchObject({
       window: { days: 30, endDate: "2026-07-22" },
       overallStatus: "attention",
-      overallMessage: "4 data quality checks need review.",
+      overallMessage: "5 data quality checks need review.",
       checks: [
         expect.objectContaining({
           key: "coverage",
@@ -165,12 +165,16 @@ describe("DataQualityRepository", () => {
         expect.objectContaining({
           key: "source_overlap",
           status: "attention",
-          count: 4,
+          count: 3,
+          lastObservedDate: null,
+          details: ["Nutrition: 3 overlapping days (1 unresolved)."],
+        }),
+        expect.objectContaining({
+          key: "activity_source_overlap",
+          status: "attention",
+          count: 1,
           lastObservedDate: "2026-07-21",
-          details: [
-            "Nutrition: 3 overlapping days (1 unresolved).",
-            "Activities: 1 record has matched source records.",
-          ],
+          details: ["Activities: 1 record has matched source records."],
         }),
         expect.objectContaining({
           key: "sync_freshness",
@@ -273,10 +277,20 @@ describe("DataQualityRepository", () => {
       },
       {
         key: "source_overlap",
-        label: "Source overlap",
+        label: "Nutrition source overlap",
         status: "healthy",
-        title: "Sources are distinct",
-        message: "No overlapping nutrition or activity sources were detected.",
+        title: "Nutrition sources are distinct",
+        message: "No overlapping nutrition sources were detected.",
+        count: 0,
+        lastObservedDate: null,
+        details: [],
+      },
+      {
+        key: "activity_source_overlap",
+        label: "Activity source overlap",
+        status: "healthy",
+        title: "Activity sources are distinct",
+        message: "No overlapping activity sources were detected.",
         count: 0,
         lastObservedDate: null,
         details: [],
@@ -352,12 +366,12 @@ describe("DataQualityRepository", () => {
       overallStatus: "attention",
       overallMessage: "1 data quality check needs review.",
     });
-    expect(overview.checks[1]).toEqual({
-      key: "source_overlap",
-      label: "Source overlap",
+    expect(overview.checks.find((check) => check.key === "activity_source_overlap")).toEqual({
+      key: "activity_source_overlap",
+      label: "Activity source overlap",
       status: "attention",
-      title: "Some records have overlapping sources",
-      message: "Review the source decisions before interpreting these records.",
+      title: "Activity sources overlap",
+      message: "Review activity source records before interpreting them.",
       count: 2,
       lastObservedDate: "2026-07-22",
       details: ["Activities: 2 records have matched source records."],
@@ -399,7 +413,7 @@ describe("DataQualityRepository", () => {
 
     const overview = await makeRepository().overview("2026-07-22");
 
-    expect(overview.checks.find((check) => check.key === "source_overlap")).toMatchObject({
+    expect(overview.checks.find((check) => check.key === "activity_source_overlap")).toMatchObject({
       count: 1,
       lastObservedDate: "2026-06-23",
       details: ["Activities: 1 record has matched source records."],
@@ -739,7 +753,7 @@ describe("DataQualityRepository", () => {
       message: "Nutrition data is missing for 1 of the last 4 days.",
       details: ["3 of 4 days contain nutrition data."],
     });
-    expect(overview.checks.find((check) => check.key === "source_overlap")).toMatchObject({
+    expect(overview.checks.find((check) => check.key === "activity_source_overlap")).toMatchObject({
       count: 1,
       lastObservedDate: "2026-07-21",
     });

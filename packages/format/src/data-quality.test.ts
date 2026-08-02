@@ -19,6 +19,7 @@ describe("data-quality presentation metadata", () => {
   it.each([
     ["coverage", "nutrition", "Review nutrition"],
     ["source_overlap", "nutrition", "Review nutrition"],
+    ["activity_source_overlap", "activities", "Review activities"],
     ["sync_freshness", "dashboard", "Review dashboard"],
     ["outliers", "dashboard", "Review dashboard"],
     ["manual_edits", "journal", "Review journal"],

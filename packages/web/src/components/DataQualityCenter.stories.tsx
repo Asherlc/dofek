@@ -6,7 +6,7 @@ const overview: DataQualityOverview = {
   generatedAt: "2026-07-22T12:00:00.000Z",
   window: { days: 30, endDate: "2026-07-22" },
   overallStatus: "attention",
-  overallMessage: "2 data quality checks need review.",
+  overallMessage: "3 data quality checks need review.",
   checks: [
     {
       key: "coverage",
@@ -27,6 +27,16 @@ const overview: DataQualityOverview = {
       count: 2,
       lastObservedDate: "2026-07-21",
       details: ["Nutrition: 2 overlapping days (1 unresolved)."],
+    },
+    {
+      key: "activity_source_overlap",
+      label: "Activity source overlap",
+      status: "attention",
+      title: "Activity sources overlap",
+      message: "Review activity source records before interpreting them.",
+      count: 1,
+      lastObservedDate: "2026-07-21",
+      details: ["Activities: 1 record has matched source records."],
     },
     {
       key: "sync_freshness",

@@ -94,39 +94,52 @@ function coverageCheck(daysWithNutritionData: number, windowDays: number): DataQ
   });
 }
 
-function sourceOverlapCheck(
+function nutritionSourceOverlapCheck(
   nutritionOverlapDays: number,
   nutritionConflictDays: number,
-  activityOverlapDates: readonly string[],
 ): DataQualityCheck {
-  const activityOverlapCount = activityOverlapDates.length;
-  const totalOverlapCount = nutritionOverlapDays + activityOverlapCount;
-  const status: DataQualityCheckStatus = totalOverlapCount > 0 ? "attention" : "healthy";
-  const details: string[] = [];
-
-  if (nutritionOverlapDays > 0) {
-    details.push(
-      `Nutrition: ${nutritionOverlapDays} overlapping ${pluralize(nutritionOverlapDays, "day")} (${nutritionConflictDays} unresolved).`,
-    );
-  }
-  if (activityOverlapCount > 0) {
-    details.push(
-      `Activities: ${activityOverlapCount} ${pluralize(activityOverlapCount, "record")} ${activityOverlapCount === 1 ? "has" : "have"} matched source records.`,
-    );
-  }
-
+  const status: DataQualityCheckStatus = nutritionOverlapDays > 0 ? "attention" : "healthy";
   return check({
     key: "source_overlap",
-    label: "Source overlap",
+    label: "Nutrition source overlap",
     status,
-    title: totalOverlapCount > 0 ? "Some records have overlapping sources" : "Sources are distinct",
+    title:
+      nutritionOverlapDays > 0 ? "Nutrition sources overlap" : "Nutrition sources are distinct",
     message:
-      totalOverlapCount > 0
-        ? "Review the source decisions before interpreting these records."
-        : "No overlapping nutrition or activity sources were detected.",
-    count: totalOverlapCount,
+      nutritionOverlapDays > 0
+        ? "Review the nutrition source decisions before interpreting these records."
+        : "No overlapping nutrition sources were detected.",
+    count: nutritionOverlapDays,
+    lastObservedDate: null,
+    details:
+      nutritionOverlapDays > 0
+        ? [
+            `Nutrition: ${nutritionOverlapDays} overlapping ${pluralize(nutritionOverlapDays, "day")} (${nutritionConflictDays} unresolved).`,
+          ]
+        : [],
+  });
+}
+
+function activitySourceOverlapCheck(activityOverlapDates: readonly string[]): DataQualityCheck {
+  const activityOverlapCount = activityOverlapDates.length;
+  const status: DataQualityCheckStatus = activityOverlapCount > 0 ? "attention" : "healthy";
+  return check({
+    key: "activity_source_overlap",
+    label: "Activity source overlap",
+    status,
+    title: activityOverlapCount > 0 ? "Activity sources overlap" : "Activity sources are distinct",
+    message:
+      activityOverlapCount > 0
+        ? "Review activity source records before interpreting them."
+        : "No overlapping activity sources were detected.",
+    count: activityOverlapCount,
     lastObservedDate: latestDate(activityOverlapDates),
-    details,
+    details:
+      activityOverlapCount > 0
+        ? [
+            `Activities: ${activityOverlapCount} ${pluralize(activityOverlapCount, "record")} ${activityOverlapCount === 1 ? "has" : "have"} matched source records.`,
+          ]
+        : [],
   });
 }
 
@@ -270,7 +283,8 @@ export class DataQualityRepository {
       );
     const checks = [
       coverageCheck(nutrition.daysWithData, window.days),
-      sourceOverlapCheck(nutrition.overlapDays, nutrition.conflictDays, activityOverlapDates),
+      nutritionSourceOverlapCheck(nutrition.overlapDays, nutrition.conflictDays),
+      activitySourceOverlapCheck(activityOverlapDates),
       syncFreshnessCheck(processing.overallStatus, processing.datasets),
       outlierCheck(anomalies, window.days),
       manualEntriesCheck(journalEntries, window.days),

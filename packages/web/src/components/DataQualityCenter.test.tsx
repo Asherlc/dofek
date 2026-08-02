@@ -14,7 +14,7 @@ const overview: DataQualityOverview = {
   generatedAt: "2026-07-22T12:00:00.000Z",
   window: { days: 30, endDate: "2026-07-22" },
   overallStatus: "attention",
-  overallMessage: "1 data quality check needs review.",
+  overallMessage: "2 data quality checks need review.",
   checks: [
     {
       key: "coverage",
@@ -35,6 +35,16 @@ const overview: DataQualityOverview = {
       count: 2,
       lastObservedDate: "2026-07-21",
       details: ["Nutrition: 2 overlapping days."],
+    },
+    {
+      key: "activity_source_overlap",
+      label: "Activity source overlap",
+      status: "attention",
+      title: "Activity sources overlap",
+      message: "Review activity source records before interpreting them.",
+      count: 1,
+      lastObservedDate: "2026-07-21",
+      details: ["Activities: 1 record has matched source records."],
     },
     {
       key: "sync_freshness",
@@ -74,7 +84,7 @@ describe("DataQualityCenter", () => {
     render(<DataQualityCenter data={overview} />);
 
     expect(screen.getByRole("heading", { name: "Data quality" })).toBeTruthy();
-    expect(screen.getByText("1 data quality check needs review.")).toBeTruthy();
+    expect(screen.getByText("2 data quality checks need review.")).toBeTruthy();
     expect(screen.getByText("Nutrition data is missing for 5 of the last 30 days.")).toBeTruthy();
     expect(screen.getByText("Nutrition: 2 overlapping days.")).toBeTruthy();
     const nutritionLinks = screen.getAllByRole("link", { name: "Review nutrition" });
@@ -83,6 +93,10 @@ describe("DataQualityCenter", () => {
       "/nutrition",
       "/nutrition",
     ]);
+    expect(screen.getByRole("link", { name: "Review activities" })).toHaveAttribute(
+      "href",
+      "/activities",
+    );
     const dashboardLinks = screen.getAllByRole("link", { name: "Review dashboard" });
     expect(dashboardLinks).toHaveLength(2);
     expect(dashboardLinks.map((link) => link.getAttribute("href"))).toEqual([
@@ -121,7 +135,7 @@ describe("DataQualityCenter", () => {
     render(<DataQualityCenter data={data} />);
 
     expect(screen.getAllByText("Repeated detail")).toHaveLength(2);
-    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("same key"));
+    expect(consoleError.mock.calls.flat().map(String).join(" ")).not.toContain("same key");
     consoleError.mockRestore();
   });
 });

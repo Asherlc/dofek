@@ -40,6 +40,7 @@ vi.mock("../components/DataQualityCenter", () => ({
     const labels: Record<DataQualityCheckKey, string> = {
       coverage: "Review nutrition",
       source_overlap: "Review nutrition",
+      activity_source_overlap: "Review activities",
       sync_freshness: "Review dashboard",
       outliers: "Review dashboard",
       manual_edits: "Review journal",
@@ -108,7 +109,7 @@ const overview: DataQualityOverview = {
   generatedAt: "2026-07-22T12:00:00.000Z",
   window: { days: 30, endDate: "2026-07-22" },
   overallStatus: "attention",
-  overallMessage: "1 data quality check needs review.",
+  overallMessage: "2 data quality checks need review.",
   checks: [
     {
       key: "coverage",
@@ -127,6 +128,16 @@ const overview: DataQualityOverview = {
       title: "Some records have overlapping sources",
       message: "Review the source decisions before interpreting these records.",
       count: 2,
+      lastObservedDate: "2026-07-21",
+      details: [],
+    },
+    {
+      key: "activity_source_overlap",
+      label: "Activity source overlap",
+      status: "attention",
+      title: "Activity sources overlap",
+      message: "Review activity source records before interpreting them.",
+      count: 1,
       lastObservedDate: "2026-07-21",
       details: [],
     },
@@ -217,12 +228,14 @@ describe("DataQualityScreen", () => {
     render(<DataQualityScreen />);
 
     expect(screen.getByTestId("data-quality-center").textContent).toContain(
-      "1 data quality check needs review.",
+      "2 data quality checks need review.",
     );
     fireEvent.click(screen.getAllByRole("button", { name: "Review nutrition" })[0]);
     expect(mocks.routerPush).toHaveBeenLastCalledWith("/nutrition-analytics");
     fireEvent.click(screen.getAllByRole("button", { name: "Review dashboard" })[0]);
     expect(mocks.routerPush).toHaveBeenLastCalledWith("/(tabs)");
+    fireEvent.click(screen.getByRole("button", { name: "Review activities" }));
+    expect(mocks.routerPush).toHaveBeenLastCalledWith("/activities");
     fireEvent.click(screen.getByRole("button", { name: "Review journal" }));
     expect(mocks.routerPush).toHaveBeenLastCalledWith("/tracking");
   });

@@ -110,7 +110,14 @@ const dataQualityOutputSchema = z.object({
   overallMessage: z.string().min(1),
   checks: z.array(
     z.object({
-      key: z.enum(["coverage", "source_overlap", "sync_freshness", "outliers", "manual_edits"]),
+      key: z.enum([
+        "coverage",
+        "source_overlap",
+        "activity_source_overlap",
+        "sync_freshness",
+        "outliers",
+        "manual_edits",
+      ]),
       label: z.string().min(1),
       status: z.enum(["healthy", "attention", "informational"]),
       title: z.string().min(1),

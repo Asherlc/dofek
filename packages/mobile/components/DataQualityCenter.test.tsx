@@ -78,7 +78,7 @@ describe("DataQualityCenter", () => {
     render(<DataQualityCenter data={data} />);
 
     expect(screen.getAllByText("Repeated detail")).toHaveLength(2);
-    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("same key"));
+    expect(consoleError.mock.calls.flat().map(String).join(" ")).not.toContain("same key");
     consoleError.mockRestore();
   });
 });
