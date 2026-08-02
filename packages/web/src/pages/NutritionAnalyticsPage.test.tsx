@@ -39,6 +39,18 @@ function queryResult(
   };
 }
 
+const dataQualityMock = {
+  selectedWindowDays: 90,
+  daysWithData: 30,
+  usableDays: 30,
+  overlapDays: 0,
+  conflictDays: 0,
+  completenessPercent: 100,
+  sourceLabels: [],
+  contributingSourceLabels: [],
+  excludedSourceLabels: [],
+};
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
@@ -112,7 +124,10 @@ describe("NutritionAnalyticsPage", () => {
     );
     mocks.micronutrients.mockReturnValue(
       queryResult(mocks.micronutrientsRefetch, {
-        data: { nutrients: [{ nutrient: "Iron" }] },
+        data: {
+          nutrients: [{ nutrient: "Iron" }],
+          dataQuality: dataQualityMock,
+        },
       }),
     );
   });
@@ -178,7 +193,10 @@ describe("NutritionAnalyticsPage", () => {
     );
     mocks.micronutrients.mockReturnValue(
       queryResult(mocks.micronutrientsRefetch, {
-        data: { nutrients: [{ nutrient: "Iron" }] },
+        data: {
+          nutrients: [{ nutrient: "Iron" }],
+          dataQuality: dataQualityMock,
+        },
         error: new Error("Micronutrient refresh failed."),
         isError: true,
         isFetching: true,

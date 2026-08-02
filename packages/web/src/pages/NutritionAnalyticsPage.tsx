@@ -112,11 +112,12 @@ export function NutritionAnalyticsPage() {
             {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
               <Section
                 title="Micronutrient Adequacy"
-                subtitle={`Average over recorded days as % of the U.S. Food and Drug Administration (FDA) Daily Value (${formatTimeRangeLabel(days)}); this generic label reference is not a personalized deficiency or safety assessment`}
+                subtitle={`Average over recorded days as % of the U.S. Food and Drug Administration (FDA) Daily Value (${formatTimeRangeLabel(days)}); the Daily Value is a general target reference, while any Tolerable Upper Intake Level (UL) is shown separately`}
               >
                 <MicronutrientChart
                   data={micronutrients.data?.nutrients ?? []}
                   loading={micronutrients.isLoading && micronutrients.data === undefined}
+                  selectedWindowDays={micronutrients.data?.dataQuality.selectedWindowDays ?? days}
                 />
               </Section>
             ) : null}
