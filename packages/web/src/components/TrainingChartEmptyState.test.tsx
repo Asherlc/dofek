@@ -19,7 +19,9 @@ describe("TrainingChartEmptyState", () => {
     );
 
     expect(screen.getByText(/No running pace data is available/)).toBeTruthy();
-    expect(screen.getAllByText(/Running activity sensor summaries/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("0 of 1 required observations · Running activity sensor summaries"),
+    ).toBeTruthy();
     expect(container.querySelector("[style*='height']")).toBeNull();
   });
 });

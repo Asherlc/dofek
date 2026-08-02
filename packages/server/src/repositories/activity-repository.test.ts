@@ -198,6 +198,26 @@ describe("ActivityRepository", () => {
       ]);
     });
 
+    it("listVisibleActivityIdsInRange applies an exclusive local-date end", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles");
+
+      await expect(repo.listVisibleActivityIdsInRange("2026-02-01", "2026-03-01")).resolves.toEqual(
+        ["activity-1"],
+      );
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
+      expect(compiledQuery.sql).toContain("started_at < ($4::date AT TIME ZONE $5)");
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "2026-02-01",
+        "America/Los_Angeles",
+        "2026-03-01",
+        "America/Los_Angeles",
+      ]);
+    });
+
     it("countVisibleInWindow counts rows in v_activity", async () => {
       const { repo, execute } = makeRepository([{ activity_count: 4 }]);
 

@@ -3,6 +3,7 @@
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { TrainingChartAvailability } from "dofek-server/types";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../../lib/unitContext.ts";
@@ -101,17 +102,26 @@ interface QueryResult<Data> {
   error: Error | null;
 }
 
-let paceCurveQuery: QueryResult<typeof mockPaceCurveData> = {
+type PaceCurveResponse = {
+  points: typeof mockPaceCurveData.points;
+  availability: TrainingChartAvailability;
+};
+type ChartResponse<Data> = {
+  data: Data;
+  availability: TrainingChartAvailability;
+};
+
+let paceCurveQuery: QueryResult<PaceCurveResponse> = {
   data: mockPaceCurveData,
   isLoading: false,
   error: null,
 };
-let paceTrendQuery: QueryResult<typeof mockPaceTrendResponse> = {
+let paceTrendQuery: QueryResult<ChartResponse<typeof mockPaceTrendData>> = {
   data: mockPaceTrendResponse,
   isLoading: false,
   error: null,
 };
-let dynamicsQuery: QueryResult<typeof mockDynamicsResponse> = {
+let dynamicsQuery: QueryResult<ChartResponse<typeof mockDynamicsData>> = {
   data: mockDynamicsResponse,
   isLoading: false,
   error: null,
@@ -296,6 +306,62 @@ describe("RunningTab", () => {
       expect(screen.queryByText("Transient refetch failure")).toBeNull();
       expect(screen.getAllByText("Morning Run").length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByTestId("echarts").length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe("insufficient chart data", () => {
+    it("renders compact empty states for every running chart and table", async () => {
+      paceCurveQuery = {
+        data: {
+          points: [],
+          availability: {
+            status: "insufficient_data",
+            sourceLabel: "Running pace duration-curve read model",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "Pace curve data is unavailable.",
+          },
+        },
+        isLoading: false,
+        error: null,
+      };
+      paceTrendQuery = {
+        data: {
+          data: [],
+          availability: {
+            status: "insufficient_data",
+            sourceLabel: "Running activity sensor summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "Pace trend data is unavailable.",
+          },
+        },
+        isLoading: false,
+        error: null,
+      };
+      dynamicsQuery = {
+        data: {
+          data: [],
+          availability: {
+            status: "insufficient_data",
+            sourceLabel: "Running activity sensor summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "Running dynamics data is unavailable.",
+          },
+        },
+        isLoading: false,
+        error: null,
+      };
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(screen.getByText("Pace curve data is unavailable.")).toBeTruthy();
+      expect(screen.getByText("Pace trend data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText("Running dynamics data is unavailable.")).toHaveLength(2);
+      expect(screen.getAllByTestId("training-chart-empty-state")).toHaveLength(4);
+      expect(screen.queryAllByTestId("echarts")).toHaveLength(0);
     });
   });
 

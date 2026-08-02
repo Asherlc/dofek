@@ -22,6 +22,21 @@ let mockOverviewQuery: {
         totalElevationGainM: number | null;
         totalElevationState: { status: "available" } | { status: "missing"; reason: string };
         activityTypes: string[];
+        comparison?: {
+          periodLabel: string;
+          activityCount: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalMinutes: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalDistanceMeters: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+          totalElevationGainM: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+        };
       }
     | undefined;
   isLoading: boolean;
@@ -343,6 +358,48 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("10h 15m")).toBeDefined();
     expect(screen.getByText("42.3 km")).toBeDefined();
     expect(screen.getByText("520 m")).toBeDefined();
+    expect(screen.queryByText(/vs previous/)).toBeNull();
+  });
+
+  it("renders server-computed changes from the previous comparable period", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 12,
+        totalMinutes: 615,
+        totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
+        totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
+        activityTypes: ["running", "cycling"],
+        comparison: {
+          periodLabel: "previous 4 weeks",
+          activityCount: { magnitude: 1, trend: "higher" },
+          totalMinutes: { magnitude: 90, trend: "lower" },
+          totalDistanceMeters: {
+            magnitude: 0,
+            trend: "unchanged",
+            state: { status: "available" },
+          },
+          totalElevationGainM: {
+            magnitude: null,
+            trend: "unavailable",
+            state: { status: "missing", reason: "Previous period: Elevation gain not recorded" },
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
+    expect(
+      screen.getByText("Comparison unavailable: Previous period: Elevation gain not recorded"),
+    ).toBeDefined();
   });
 
   it("distinguishes unavailable overview measurements from measured zero", () => {

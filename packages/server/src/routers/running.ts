@@ -76,10 +76,10 @@ function runningAvailability(chartLabel: string, dataLabel: string, observedCoun
     sourceLabel: RUNNING_SENSOR_SOURCE,
     observedCount,
     minimumCount: 1,
-    message:
-      observedCount === 0
-        ? `No ${chartLabel} is available from ${RUNNING_SENSOR_SOURCE}. Record at least 1 running activity with ${dataLabel} to show this chart.`
-        : `${chartLabel} is available from ${RUNNING_SENSOR_SOURCE}.`,
+    messages: {
+      available: `${chartLabel} is available from ${RUNNING_SENSOR_SOURCE}.`,
+      insufficientData: `No ${chartLabel} is available from ${RUNNING_SENSOR_SOURCE}. Record at least 1 running activity with ${dataLabel} to show this chart.`,
+    },
   });
 }
 

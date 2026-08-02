@@ -21,3 +21,30 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const PartialData: Story = {
+  args: {
+    availability: {
+      status: "insufficient_data",
+      sourceLabel: "Daily strain model",
+      observedCount: 1,
+      minimumCount: 2,
+      message:
+        "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
+    },
+  },
+};
+
+export const LongMessage: Story = {
+  args: {
+    availability: {
+      status: "available",
+      sourceLabel:
+        "Cycling Zone 2 power and heart-rate summaries from the selected training history",
+      observedCount: 12,
+      minimumCount: 1,
+      message:
+        "Aerobic efficiency data is available from the selected cycling Zone 2 power and heart-rate summaries across the full training history.",
+    },
+  },
+};

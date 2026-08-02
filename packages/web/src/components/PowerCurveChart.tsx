@@ -81,7 +81,7 @@ export function PowerCurveChart({
   if (modelCurveData.length > 0 && model) {
     series.push(
       dofekSeries.line(
-        `Threshold Model (${model.cp}W, reserve=${Math.round(model.wPrime / 1000)}kJ)`,
+        `Critical Power model (${model.cp}W, anaerobic work capacity=${Math.round(model.wPrime / 1000)}kJ)`,
         modelCurveData,
         {
           color: chartColors.orange,

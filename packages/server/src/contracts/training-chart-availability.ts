@@ -15,10 +15,18 @@ export const trainingChartAvailabilitySchema = z.discriminatedUnion("status", [
 export type TrainingChartAvailability = z.infer<typeof trainingChartAvailabilitySchema>;
 
 export function makeTrainingChartAvailability(
-  input: Omit<TrainingChartAvailability, "status">,
+  input: Omit<TrainingChartAvailability, "status" | "message"> & {
+    messages: {
+      available: string;
+      insufficientData: string;
+    };
+  },
 ): TrainingChartAvailability {
+  const status = input.observedCount >= input.minimumCount ? "available" : "insufficient_data";
+  const { messages, ...availability } = input;
   return {
-    ...input,
-    status: input.observedCount >= input.minimumCount ? "available" : "insufficient_data",
+    ...availability,
+    status,
+    message: status === "available" ? messages.available : messages.insufficientData,
   };
 }

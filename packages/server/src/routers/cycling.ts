@@ -17,6 +17,8 @@ const powerPointSchema = z.object({
   label: z.string(),
   bestPower: z.number(),
   activityDate: z.string(),
+  sourceActivityId: z.string().nullable(),
+  sourceActivityName: z.string().nullable(),
 });
 const powerCurveSchema = z.object({
   points: z.array(powerPointSchema),
@@ -33,6 +35,23 @@ const powerSummaryPeriodSchema = z.object({
   maximalAerobicPower: z.number().nullable(),
   vo2Max: z.number().nullable(),
   timeToExhaustionSeconds: z.number().nullable(),
+});
+const sourceWorkoutSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  date: z.string(),
+});
+const estimateEvidenceSchema = z.object({
+  method: z.string(),
+  confidence: z.enum(["high", "moderate", "limited", "not_available"]),
+  confidenceLabel: z.string(),
+  confidenceDetail: z.string(),
+  sourceWorkouts: z.array(sourceWorkoutSchema),
+  pacingGuidance: z.string(),
+});
+const estimateEvidenceByPeriodSchema = z.object({
+  threshold: estimateEvidenceSchema,
+  vo2Max: estimateEvidenceSchema,
 });
 const pmcSchema = z.object({
   data: z.array(
@@ -74,6 +93,11 @@ const performanceOutputSchema = z.object({
     powerCurve: trainingChartAvailabilitySchema,
     pmc: trainingChartAvailabilitySchema,
     eftpTrend: trainingChartAvailabilitySchema,
+  }),
+  estimateEvidence: z.object({
+    recent: estimateEvidenceByPeriodSchema,
+    season: estimateEvidenceByPeriodSchema,
+    eftp: estimateEvidenceSchema,
   }),
 });
 
@@ -168,6 +192,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
+    { keyVersion: "cycling-performance-v2" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",

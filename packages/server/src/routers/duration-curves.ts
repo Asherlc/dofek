@@ -1,8 +1,31 @@
 import { TRPCError } from "@trpc/server";
-import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
+import { z } from "zod";
+import {
+  makeTrainingChartAvailability,
+  type TrainingChartAvailability,
+  trainingChartAvailabilitySchema,
+} from "../contracts/training-chart-availability.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import type { PaceCurvePoint } from "../repositories/duration-curves-repository.ts";
 import { DurationCurvesRepository } from "../repositories/duration-curves-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
+
+type PaceCurveResultWithAvailability = {
+  points: PaceCurvePoint[];
+  availability: TrainingChartAvailability;
+};
+
+const paceCurveOutputSchema = z.object({
+  points: z.array(
+    z.object({
+      durationSeconds: z.number(),
+      label: z.string(),
+      bestPaceSecondsPerKm: z.number(),
+      activityDate: z.string(),
+    }),
+  ),
+  availability: trainingChartAvailabilitySchema,
+}) satisfies z.ZodType<PaceCurveResultWithAvailability>;
 
 export const durationCurvesRouter = router({
   /**
@@ -33,7 +56,7 @@ export const durationCurvesRouter = router({
   paceCurve: selectedChartRangeQuery(
     "durationCurves.paceCurve",
     CacheTTL.LONG,
-    async ({ ctx, range }) => {
+    async ({ ctx, range }): Promise<PaceCurveResultWithAvailability> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -49,12 +72,18 @@ export const durationCurvesRouter = router({
           sourceLabel: "Running pace duration-curve read model",
           observedCount: result.points.length,
           minimumCount: 1,
-          message:
-            result.points.length === 0
-              ? "No running pace duration data is available from the running pace duration-curve read model. Record at least 1 running activity with pace data to show this chart."
-              : "Running pace duration data is available from the running pace duration-curve read model.",
+          messages: {
+            available:
+              "Running pace duration data is available from the running pace duration-curve read model.",
+            insufficientData:
+              "No running pace duration data is available from the running pace duration-curve read model. Record at least 1 running activity with pace data to show this chart.",
+          },
         }),
       };
+    },
+    {
+      keyVersion: "pace-curve-availability-v1",
+      outputSchema: paceCurveOutputSchema,
     },
   ),
 });

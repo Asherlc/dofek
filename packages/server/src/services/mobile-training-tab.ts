@@ -179,19 +179,22 @@ export async function loadMobileTrainingTab(
         sourceLabel: "Daily strain model",
         observedCount: strainRows.length,
         minimumCount: 2,
-        message:
-          strainRows.length < 2
-            ? "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart."
-            : "Daily strain trend is available from the daily strain model.",
+        messages: {
+          available: "Daily strain trend is available from the daily strain model.",
+          insufficientData:
+            "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
+        },
       }),
       verticalAscent: makeTrainingChartAvailability({
         sourceLabel: "Cycling activity altitude sensor summaries",
         observedCount: cyclingAnalytics.verticalAscent.length,
         minimumCount: 1,
-        message:
-          cyclingAnalytics.verticalAscent.length === 0
-            ? "No vertical ascent data is available from cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart."
-            : "Vertical ascent data is available from cycling activity altitude sensor summaries.",
+        messages: {
+          available:
+            "Vertical ascent data is available from cycling activity altitude sensor summaries.",
+          insufficientData:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart.",
+        },
       }),
     },
     climbing: {

@@ -5,6 +5,12 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
+  type ActivityOverviewComparison,
+  activityOverviewChangeForKey,
+  createActivityOverviewComparisonFormatters,
+  formatActivityOverviewChange,
+} from "@dofek/format/activity-overview";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -554,7 +560,14 @@ interface ActivityOverviewData {
   totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
   totalElevationState: ActivityDataState;
+  comparison?: ActivityOverviewComparison;
 }
+
+type ActivityOverviewItem =
+  | { key: "activityCount"; label: string; value: string }
+  | { key: "totalMinutes"; label: string; value: string }
+  | (ActivityMetric & { key: "totalDistanceMeters" })
+  | (ActivityMetric & { key: "totalElevationGainM" });
 
 function ActivityOverview({
   overview,
@@ -563,37 +576,52 @@ function ActivityOverview({
   overview: ActivityOverviewData | undefined;
   units: ReturnType<typeof useUnitConverter>;
 }) {
-  const items: Array<ActivityMetric | { label: string; value: string }> = overview
+  const items: ActivityOverviewItem[] = overview
     ? [
-        { label: "Activities", value: String(overview.activityCount) },
-        { label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
-        formatActivityMetric(
-          "Distance",
-          overview.totalDistanceMeters,
-          overview.totalDistanceState,
-          (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
-        ),
-        formatActivityMetric(
-          "Elevation",
-          overview.totalElevationGainM,
-          overview.totalElevationState,
-          (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
-        ),
+        { key: "activityCount", label: "Activities", value: String(overview.activityCount) },
+        { key: "totalMinutes", label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
+        {
+          key: "totalDistanceMeters",
+          ...formatActivityMetric(
+            "Distance",
+            overview.totalDistanceMeters,
+            overview.totalDistanceState,
+            (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+          ),
+        },
+        {
+          key: "totalElevationGainM",
+          ...formatActivityMetric(
+            "Elevation",
+            overview.totalElevationGainM,
+            overview.totalElevationState,
+            (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+          ),
+        },
       ]
     : [
-        { label: "Activities", value: "Loading…" },
-        { label: "Time", value: "Loading…" },
-        { label: "Distance", value: "Loading…" },
-        { label: "Elevation", value: "Loading…" },
+        { key: "activityCount", label: "Activities", value: "Loading…" },
+        { key: "totalMinutes", label: "Time", value: "Loading…" },
+        { key: "totalDistanceMeters", status: "missing", label: "Distance", reason: "Loading…" },
+        {
+          key: "totalElevationGainM",
+          status: "missing",
+          label: "Elevation",
+          reason: "Loading…",
+        },
       ];
+  const formatComparisonMagnitude = createActivityOverviewComparisonFormatters(units);
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {items.map((item) => {
         const isMetric = "status" in item;
+        const comparison = overview?.comparison
+          ? activityOverviewChangeForKey(overview.comparison, item.key)
+          : undefined;
         return (
           <div
-            key={item.label}
+            key={item.key}
             className="rounded-lg border border-border bg-surface-solid p-3"
             data-state={isMetric ? item.status : undefined}
           >
@@ -605,6 +633,15 @@ function ActivityOverview({
             <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
               {isMetric && item.status !== "available" ? item.reason : item.label}
             </div>
+            {comparison ? (
+              <div className="mt-1 text-xs text-subtle">
+                {formatActivityOverviewChange(
+                  comparison,
+                  overview?.comparison?.periodLabel ?? "previous period",
+                  formatComparisonMagnitude[item.key],
+                )}
+              </div>
+            ) : null}
           </div>
         );
       })}
