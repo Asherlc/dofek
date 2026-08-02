@@ -19,7 +19,7 @@ import type { Database } from "dofek/db";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import { dateWindowEndExclusiveString, dateWindowStartString } from "../lib/date-window.ts";
 import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
@@ -522,12 +522,17 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const days = input.weeks * 7;
     const currentWindowStart = dateWindowStartString(input.endDate, days);
     const previousWindowStart = dateWindowStartString(input.endDate, days * 2);
-    const visibleActivityIds = await activityRepositoryFor(
+    const endDateExclusive = dateWindowEndExclusiveString(input.endDate);
+    const activityRepository = activityRepositoryFor(
       this.db,
       this.userId,
       this.timezone,
       this.accessWindow,
-    ).listVisibleActivityIdsSince(previousWindowStart);
+    );
+    const visibleActivityIds = await activityRepository.listVisibleActivityIdsInRange(
+      previousWindowStart,
+      endDateExclusive,
+    );
     if (visibleActivityIds.length === 0) {
       return createActivityOverview(
         emptyActivityOverviewPeriod(),
@@ -536,68 +541,90 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         input.weeks,
       );
     }
+    const currentVisibleActivityIds = await activityRepository.listVisibleActivityIdsInRange(
+      currentWindowStart,
+      endDateExclusive,
+    );
 
     const activityTypeFilter = activityTypeFilterSql(input);
     const queryParams = {
       ...activitySummaryQueryParams(this.userId, this.timezone, previousWindowStart, input),
       currentWindowStart,
+      endDateExclusive,
       activityIds: visibleActivityIds,
     };
     const typeQueryParams = {
       ...activitySummaryQueryParams(this.userId, this.timezone, currentWindowStart, {}),
-      activityIds: visibleActivityIds,
+      endDateExclusive,
+      activityIds: currentVisibleActivityIds,
     };
     const [overviewRows, activityTypeRows] = await Promise.all([
       this.#sensorStore.query(
         overviewRowSchema,
         `WITH toDate(toTimeZone(activity.started_at, {timezone:String})) AS activity_date
           SELECT
-            countIf(activity_date >= toDate({currentWindowStart:String})) AS current_activity_count,
+            countIf(
+              activity_date >= toDate({currentWindowStart:String})
+              AND activity_date < toDate({endDateExclusive:String})
+            ) AS current_activity_count,
             coalesce(
               sumIf(
                 dateDiff('second', activity.started_at, activity.ended_at) / 60.0,
                 activity_date >= toDate({currentWindowStart:String})
+                AND activity_date < toDate({endDateExclusive:String})
               ),
               0
             ) AS current_total_minutes,
             sumOrNullIf(
               summary.total_distance,
               activity_date >= toDate({currentWindowStart:String})
+              AND activity_date < toDate({endDateExclusive:String})
             ) AS current_total_distance_meters,
             sumOrNullIf(
               summary.elevation_gain_m,
               activity_date >= toDate({currentWindowStart:String})
+              AND activity_date < toDate({endDateExclusive:String})
             ) AS current_total_elevation_gain_m,
             countIf(
               activity_date >= toDate({currentWindowStart:String})
+              AND activity_date < toDate({endDateExclusive:String})
               AND summary.total_distance IS NOT NULL
             ) AS current_distance_measurement_count,
             countIf(
               activity_date >= toDate({currentWindowStart:String})
+              AND activity_date < toDate({endDateExclusive:String})
               AND summary.elevation_gain_m IS NOT NULL
             ) AS current_elevation_measurement_count,
-            countIf(activity_date < toDate({currentWindowStart:String})) AS previous_activity_count,
+            countIf(
+              activity_date >= toDate({windowStart:String})
+              AND activity_date < toDate({currentWindowStart:String})
+            ) AS previous_activity_count,
             coalesce(
               sumIf(
                 dateDiff('second', activity.started_at, activity.ended_at) / 60.0,
-                activity_date < toDate({currentWindowStart:String})
+                activity_date >= toDate({windowStart:String})
+                AND activity_date < toDate({currentWindowStart:String})
               ),
               0
             ) AS previous_total_minutes,
             sumOrNullIf(
               summary.total_distance,
-              activity_date < toDate({currentWindowStart:String})
+              activity_date >= toDate({windowStart:String})
+              AND activity_date < toDate({currentWindowStart:String})
             ) AS previous_total_distance_meters,
             sumOrNullIf(
               summary.elevation_gain_m,
-              activity_date < toDate({currentWindowStart:String})
+              activity_date >= toDate({windowStart:String})
+              AND activity_date < toDate({currentWindowStart:String})
             ) AS previous_total_elevation_gain_m,
             countIf(
-              activity_date < toDate({currentWindowStart:String})
+              activity_date >= toDate({windowStart:String})
+              AND activity_date < toDate({currentWindowStart:String})
               AND summary.total_distance IS NOT NULL
             ) AS previous_distance_measurement_count,
             countIf(
-              activity_date < toDate({currentWindowStart:String})
+              activity_date >= toDate({windowStart:String})
+              AND activity_date < toDate({currentWindowStart:String})
               AND summary.elevation_gain_m IS NOT NULL
             ) AS previous_elevation_measurement_count
           FROM analytics.deduped_activities AS activity FINAL
@@ -609,6 +636,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
             AND activity_date >= toDate({windowStart:String})
+            AND activity_date < toDate({endDateExclusive:String})
             ${activityTypeFilter}`,
         queryParams,
       ),
@@ -623,6 +651,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
             AND activity_date >= toDate({windowStart:String})
+            AND activity_date < toDate({endDateExclusive:String})
           ORDER BY activity_type ASC`,
         typeQueryParams,
       ),

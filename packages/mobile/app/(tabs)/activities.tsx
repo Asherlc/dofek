@@ -5,11 +5,6 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
-  type ActivityOverviewComparison,
-  activityOverviewChangeForLabel,
-  formatActivityOverviewChange,
-} from "@dofek/format/activity-overview";
-import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -40,6 +35,7 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
+import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
@@ -616,98 +612,6 @@ function ActivityControls({
   );
 }
 
-interface ActivityOverviewData {
-  activityCount: number;
-  totalMinutes: number;
-  totalDistanceMeters: number | null;
-  totalDistanceState: ActivityDataState;
-  totalElevationGainM: number | null;
-  totalElevationState: ActivityDataState;
-  comparison?: ActivityOverviewComparison;
-}
-
-function ActivityOverview({
-  overview,
-  units,
-}: {
-  overview: ActivityOverviewData | undefined;
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const items: Array<ActivityMetric | { label: string; value: string }> = overview
-    ? [
-        { label: "Activities", value: String(overview.activityCount) },
-        { label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
-        formatActivityMetric(
-          "Distance",
-          overview.totalDistanceMeters,
-          overview.totalDistanceState,
-          (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
-        ),
-        formatActivityMetric(
-          "Elevation",
-          overview.totalElevationGainM,
-          overview.totalElevationState,
-          (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
-        ),
-      ]
-    : [
-        { label: "Activities", value: "Loading…" },
-        { label: "Time", value: "Loading…" },
-        { label: "Distance", value: "Loading…" },
-        { label: "Elevation", value: "Loading…" },
-      ];
-
-  return (
-    <View style={styles.overviewGrid}>
-      {items.map((item) => {
-        const isMetric = "status" in item;
-        const comparison = overview?.comparison
-          ? activityOverviewChangeForLabel(overview.comparison, item.label)
-          : undefined;
-        const formatComparisonMagnitude = {
-          Activities: (value: number) => String(value),
-          Time: (value: number) => formatDurationMinutes(value),
-          Distance: (value: number) => formatMeasurementText(units.formatDistance(value / 1000)),
-          Elevation: (value: number) => formatMeasurementText(units.formatElevation(value)),
-        }[item.label];
-        const comparisonText =
-          comparison && formatComparisonMagnitude
-            ? formatActivityOverviewChange(
-                comparison,
-                overview?.comparison?.periodLabel ?? "previous period",
-                formatComparisonMagnitude,
-              )
-            : undefined;
-        const currentAccessibilityLabel = isMetric
-          ? item.status === "available"
-            ? `${item.label} ${item.value}`
-            : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
-          : undefined;
-        return (
-          <View
-            key={item.label}
-            style={styles.overviewItem}
-            accessible={isMetric || comparisonText !== undefined}
-            accessibilityLabel={
-              [currentAccessibilityLabel, comparisonText].filter(Boolean).join(". ") || undefined
-            }
-          >
-            <Text style={styles.overviewValue}>
-              {isMetric && item.status !== "available"
-                ? `${item.label} ${activityDataStateLabel(item.status)}`
-                : item.value}
-            </Text>
-            <Text style={styles.overviewLabel}>
-              {isMetric && item.status !== "available" ? item.reason : item.label}
-            </Text>
-            {comparisonText ? <Text style={styles.activityMeta}>{comparisonText}</Text> : null}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 interface ActivityMapTileProps {
   location: {
     mapPreview: ActivityMapPreview;
@@ -942,32 +846,6 @@ const styles = StyleSheet.create({
   },
   filterChipTextSelected: {
     color: "#fff",
-  },
-  overviewGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  overviewItem: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    flexBasis: "47%",
-    flexGrow: 1,
-    padding: spacing.md,
-  },
-  overviewValue: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  overviewLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginTop: 2,
-    textTransform: "uppercase",
   },
   daySection: {
     gap: spacing.sm,

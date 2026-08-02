@@ -21,6 +21,12 @@ export interface ActivityOverviewComparison {
   totalElevationGainM: ActivityOverviewMeasurementChange;
 }
 
+export type ActivityOverviewKey =
+  | "activityCount"
+  | "totalMinutes"
+  | "totalDistanceMeters"
+  | "totalElevationGainM";
+
 function formatAvailableMeasurement(
   value: number | null,
   formatMeasured: FormatMeasuredValue,
@@ -60,13 +66,9 @@ export function formatActivityOverviewChange(
   return `${formatMagnitude(change.magnitude)} ${direction} vs ${periodLabel}`;
 }
 
-export function activityOverviewChangeForLabel(
+export function activityOverviewChangeForKey(
   comparison: ActivityOverviewComparison,
-  label: string,
-): ActivityOverviewChange | ActivityOverviewMeasurementChange | undefined {
-  if (label === "Activities") return comparison.activityCount;
-  if (label === "Time") return comparison.totalMinutes;
-  if (label === "Distance") return comparison.totalDistanceMeters;
-  if (label === "Elevation") return comparison.totalElevationGainM;
-  return undefined;
+  key: ActivityOverviewKey,
+): ActivityOverviewComparison[ActivityOverviewKey] {
+  return comparison[key];
 }

@@ -572,7 +572,10 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   it("returns activity overview totals from authorized ClickHouse activity rows", async () => {
-    const database = makeDatabase([[{ id: "running-activity" }, { id: "cycling-activity" }]]);
+    const database = makeDatabase([
+      [{ id: "running-activity" }, { id: "cycling-activity" }],
+      [{ id: "running-activity" }, { id: "cycling-activity" }],
+    ]);
     const sensorStore = makeSensorStore([
       [
         {
@@ -619,11 +622,14 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
-    expect(database.execute).toHaveBeenCalledTimes(1);
+    expect(database.execute).toHaveBeenCalledTimes(2);
   });
 
   it("returns server-computed changes from the immediately preceding comparable period", async () => {
-    const database = makeDatabase([[{ id: "running-activity" }, { id: "prior-activity" }]]);
+    const database = makeDatabase([
+      [{ id: "running-activity" }, { id: "prior-activity" }],
+      [{ id: "running-activity" }],
+    ]);
     const sensorStore = makeSensorStore([
       [
         {
@@ -671,12 +677,32 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({
         windowStart: "2026-01-23",
         currentWindowStart: "2026-02-20",
+        endDateExclusive: "2026-03-21",
+      }),
+    );
+    expect(normalizeSql(vi.mocked(sensorStore.query).mock.calls[0]?.[1])).toContain(
+      "activity_date < toDate({endDateExclusive:String})",
+    );
+    expect(normalizeSql(vi.mocked(sensorStore.query).mock.calls[0]?.[1])).toContain(
+      "activity_date < toDate({currentWindowStart:String})",
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining("activity_date < toDate({endDateExclusive:String})"),
+      expect.objectContaining({
+        windowStart: "2026-02-20",
+        endDateExclusive: "2026-03-21",
+        activityIds: ["running-activity"],
       }),
     );
   });
 
   it("preserves unavailable overview measurements as null", async () => {
-    const database = makeDatabase([[{ id: "activity-without-measurements" }]]);
+    const database = makeDatabase([
+      [{ id: "activity-without-measurements" }],
+      [{ id: "activity-without-measurements" }],
+    ]);
     const sensorStore = makeSensorStore([
       [
         {
@@ -714,11 +740,84 @@ describe("ActivitiesCalendarRepository", () => {
         reason: "Elevation gain was not recorded for every activity.",
       },
       activityTypes: ["walking"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 1, trend: "higher" },
+        totalMinutes: { magnitude: 60, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Distance was not recorded for every activity.",
+          },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Elevation gain was not recorded for every activity.",
+          },
+        },
+      },
+    });
+  });
+
+  it("authors lower, unchanged, and previous-period unavailable comparisons", async () => {
+    const database = makeDatabase([
+      [{ id: "current" }, { id: "previous-1" }, { id: "previous-2" }],
+      [{ id: "current" }],
+    ]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          current_activity_count: 1,
+          current_total_minutes: 60,
+          current_total_distance_meters: 10000,
+          current_total_elevation_gain_m: 120,
+          current_distance_measurement_count: 1,
+          current_elevation_measurement_count: 1,
+          previous_activity_count: 2,
+          previous_total_minutes: 60,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: 120,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 2,
+        },
+      ],
+      [{ activity_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      comparison: {
+        activityCount: { magnitude: 1, trend: "lower" },
+        totalMinutes: { magnitude: 0, trend: "unchanged" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Previous period: Distance was not recorded for every activity.",
+          },
+        },
+        totalElevationGainM: {
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
+        },
+      },
     });
   });
 
   it("does not report partial overview totals as available", async () => {
-    const database = makeDatabase([[{ id: "run" }, { id: "ride" }]]);
+    const database = makeDatabase([
+      [{ id: "run" }, { id: "ride" }],
+      [{ id: "run" }, { id: "ride" }],
+    ]);
     const sensorStore = makeSensorStore([
       [
         {
@@ -755,7 +854,10 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   it("counts indoor and virtual zero distance as measured with outdoor totals", async () => {
-    const database = makeDatabase([[{ id: "indoor" }, { id: "run" }]]);
+    const database = makeDatabase([
+      [{ id: "indoor" }, { id: "run" }],
+      [{ id: "indoor" }, { id: "run" }],
+    ]);
     const sensorStore = makeSensorStore([
       [
         {
@@ -805,13 +907,54 @@ describe("ActivitiesCalendarRepository", () => {
       totalElevationGainM: null,
       totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: [],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 0, trend: "unchanged" },
+        totalMinutes: { magnitude: 0, trend: "unchanged" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Elevation gain not recorded" },
+        },
+      },
     });
     expect(sensorStore.query).not.toHaveBeenCalled();
     expect(database.execute).toHaveBeenCalledTimes(1);
   });
 
+  it("uses empty aggregate rows to author an unavailable comparison", async () => {
+    const database = makeDatabase([[{ id: "activity" }], [{ id: "activity" }]]);
+    const sensorStore = makeSensorStore([[], [{ activity_type: "running" }]]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      activityCount: 0,
+      activityTypes: ["running"],
+      comparison: {
+        activityCount: { magnitude: 0, trend: "unchanged" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+      },
+    });
+  });
+
   it("excludes unauthorized activities from overview totals, types, and type-filter paths", async () => {
-    const database = makeDatabase([[{ id: "authorized-run" }], [{ id: "authorized-run" }]]);
+    const database = makeDatabase([
+      [{ id: "authorized-run" }],
+      [{ id: "authorized-run" }],
+      [{ id: "authorized-run" }],
+      [{ id: "authorized-run" }],
+    ]);
     const sensorStore = makeSensorStore([
       [
         {

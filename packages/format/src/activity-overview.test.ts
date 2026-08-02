@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityOverviewComparison } from "./activity-overview.ts";
 import {
-  activityOverviewChangeForLabel,
+  activityOverviewChangeForKey,
   formatActivityOverviewChange,
   formatActivityOverviewDistance,
   formatActivityOverviewElevation,
@@ -98,7 +98,7 @@ describe("activity overview availability formatting", () => {
     ).toBe("Comparison unavailable vs previous 4 weeks");
   });
 
-  it("maps each overview label to its server-authored comparison", () => {
+  it("maps each stable overview key to its server-authored comparison", () => {
     const comparison: ActivityOverviewComparison = {
       periodLabel: "previous 4 weeks",
       activityCount: { magnitude: 1, trend: "higher" },
@@ -115,14 +115,15 @@ describe("activity overview availability formatting", () => {
       },
     };
 
-    expect(activityOverviewChangeForLabel(comparison, "Activities")).toBe(comparison.activityCount);
-    expect(activityOverviewChangeForLabel(comparison, "Time")).toBe(comparison.totalMinutes);
-    expect(activityOverviewChangeForLabel(comparison, "Distance")).toBe(
+    expect(activityOverviewChangeForKey(comparison, "activityCount")).toBe(
+      comparison.activityCount,
+    );
+    expect(activityOverviewChangeForKey(comparison, "totalMinutes")).toBe(comparison.totalMinutes);
+    expect(activityOverviewChangeForKey(comparison, "totalDistanceMeters")).toBe(
       comparison.totalDistanceMeters,
     );
-    expect(activityOverviewChangeForLabel(comparison, "Elevation")).toBe(
+    expect(activityOverviewChangeForKey(comparison, "totalElevationGainM")).toBe(
       comparison.totalElevationGainM,
     );
-    expect(activityOverviewChangeForLabel(comparison, "Unknown")).toBeUndefined();
   });
 });

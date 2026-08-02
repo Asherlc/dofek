@@ -8,6 +8,7 @@ import {
   clickHouseToIntervalDayLowerBound,
   currentDateRangePredicate,
   dateWindowEnd,
+  dateWindowEndExclusiveString,
   dateWindowInput,
   dateWindowStart,
   dateWindowStartPredicate,
@@ -326,6 +327,12 @@ describe("dateWindowEnd", () => {
 describe("dateWindowStartString", () => {
   it("returns a YYYY-MM-DD lower bound for non-SQL query parameters", () => {
     expect(dateWindowStartString("2026-03-23", 30)).toBe("2026-02-21");
+  });
+});
+
+describe("dateWindowEndExclusiveString", () => {
+  it("returns the day after the inclusive end date", () => {
+    expect(dateWindowEndExclusiveString("2026-03-23")).toBe("2026-03-24");
   });
 });
 

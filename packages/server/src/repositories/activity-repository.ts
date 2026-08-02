@@ -350,12 +350,31 @@ export class ActivityRepository extends BaseRepository {
 
   /** Returns visible canonical activity IDs since an inclusive local calendar date. */
   async listVisibleActivityIdsSince(localDate: string): Promise<string[]> {
+    return this.#listVisibleActivityIdsInRange(localDate);
+  }
+
+  /** Returns visible canonical activity IDs in a half-open local calendar range. */
+  async listVisibleActivityIdsInRange(
+    localStartDate: string,
+    localEndDateExclusive: string,
+  ): Promise<string[]> {
+    return this.#listVisibleActivityIdsInRange(localStartDate, localEndDateExclusive);
+  }
+
+  async #listVisibleActivityIdsInRange(
+    localStartDate: string,
+    localEndDateExclusive?: string,
+  ): Promise<string[]> {
+    const endDatePredicate = localEndDateExclusive
+      ? sql`AND started_at < (${localEndDateExclusive}::date AT TIME ZONE ${this.timezone})`
+      : sql``;
     const rows = await this.query(
       z.object({ id: z.string() }),
       sql`SELECT id::text AS id
           FROM fitness.v_activity
           WHERE user_id = ${this.userId}::uuid
-            AND started_at >= (${localDate}::date AT TIME ZONE ${this.timezone})
+            AND started_at >= (${localStartDate}::date AT TIME ZONE ${this.timezone})
+            ${endDatePredicate}
             ${this.timestampAccessPredicate(sql`started_at`)}
           ORDER BY started_at DESC`,
     );

@@ -373,16 +373,16 @@ describe("ActivitiesPage", () => {
         comparison: {
           periodLabel: "previous 4 weeks",
           activityCount: { magnitude: 1, trend: "higher" },
-          totalMinutes: { magnitude: 90, trend: "higher" },
+          totalMinutes: { magnitude: 90, trend: "lower" },
           totalDistanceMeters: {
-            magnitude: 8000,
-            trend: "higher",
+            magnitude: 0,
+            trend: "unchanged",
             state: { status: "available" },
           },
           totalElevationGainM: {
-            magnitude: 140,
-            trend: "higher",
-            state: { status: "available" },
+            magnitude: null,
+            trend: "unavailable",
+            state: { status: "missing", reason: "Previous period: Elevation gain not recorded" },
           },
         },
       },
@@ -394,9 +394,11 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByText("1h 30m more vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByText("8.0 km more vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByText("140 m more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
+    expect(
+      screen.getByText("Comparison unavailable: Previous period: Elevation gain not recorded"),
+    ).toBeDefined();
   });
 
   it("distinguishes unavailable overview measurements from measured zero", () => {

@@ -386,6 +386,29 @@ describe("activity visibility consistency", () => {
     ).resolves.toEqual([]);
   });
 
+  it("bounds historical overview periods to equal-length half-open windows", async () => {
+    const repository = new ActivitiesCalendarRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      ACCESS_WINDOW,
+    );
+
+    await expect(
+      repository.getActivityOverview({ weeks: 1, endDate: "2026-03-15" }),
+    ).resolves.toMatchObject({
+      activityCount: 2,
+      totalMinutes: 60,
+      activityTypes: ["running"],
+      comparison: {
+        periodLabel: "previous 1 weeks",
+        activityCount: { magnitude: 2, trend: "higher" },
+        totalMinutes: { magnitude: 60, trend: "higher" },
+      },
+    });
+  });
+
   it("interprets access-window boundaries in the user's timezone", async () => {
     const repository = new ActivityRepository(
       testContext.db,
