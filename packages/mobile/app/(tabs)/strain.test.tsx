@@ -885,7 +885,7 @@ describe("StrainScreen recent activity navigation", () => {
     ).toBeTruthy();
   });
 
-  it("does not present a failed training query as empty exercise trend data", async () => {
+  it("shows one server error notice for a failed composite training query", async () => {
     mockTrainingState.data = undefined;
     mockTrainingState.isError = true;
     mockTrainingState.error = new Error("Training data failed to load");
@@ -893,33 +893,50 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
-    expect(screen.queryByText("No exercise volume trends in this period")).toBeNull();
-    expect(screen.getAllByText("Training data failed to load").length).toBeGreaterThan(0);
-  });
-
-  it("does not present failed training charts as empty data", async () => {
-    mockTrainingState.data = undefined;
-    mockTrainingState.isError = true;
-    mockTrainingState.error = new Error("Training data failed to load");
-
-    const { default: StrainScreen } = await import("./strain");
-    render(<StrainScreen />);
-
-    expect(screen.queryByText("No training data yet for this period")).toBeNull();
-    expect(screen.queryByText("No activities with altitude data available")).toBeNull();
-    expect(screen.getAllByText("Training data failed to load").length).toBeGreaterThanOrEqual(3);
-  });
-
-  it("shows the server error message for climbing data failures", async () => {
-    mockTrainingState.data = undefined;
-    mockTrainingState.isError = true;
-    mockTrainingState.error = new Error("Climbing data failed to load");
-
-    const { default: StrainScreen } = await import("./strain");
-    render(<StrainScreen />);
-
-    expect(screen.getAllByText("Climbing data failed to load").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
+    expect(screen.queryByText("Training Load")).toBeNull();
+    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByText("Weekly Volume")).toBeNull();
+    expect(screen.queryByText("Recent Activities")).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it("keeps successful companion analytics visible beside a training query failure", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+    mockHrZonesState.data = {
+      maxHr: 190,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 3600,
+        zones: [{ zone: 2, label: "Aerobic", seconds: 3600, percent: 100 }],
+        explanation: "Independent intensity data remains available.",
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
+    expect(screen.getByText("Independent intensity data remains available.")).toBeTruthy();
+  });
+
+  it("keeps equal messages separate when training and companion queries both fail", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training analytics unavailable");
+    mockHrZonesState.isError = true;
+    mockHrZonesState.error = new Error("Training analytics unavailable");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Training analytics unavailable")).toHaveLength(2);
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(2);
   });
 
   it("keeps cached climbing data visible during background refetch failures", async () => {
