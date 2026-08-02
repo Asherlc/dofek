@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -135,7 +136,7 @@ describe("CorrelationScreen", () => {
         unit: "g",
         domain: "nutrition",
         description: "Daily protein intake",
-        availabilityDescription: "Needs logged daily nutrition data.",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
       },
       {
         id: "hrv",
@@ -204,13 +205,9 @@ describe("CorrelationScreen", () => {
 
     expect(screen.getByRole("textbox", { name: "Search X Axis metrics" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Search Y Axis metrics" })).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Availability depends on data recorded in the selected date range. A correlation needs at least five paired calendar days, so sparse metrics may produce an insufficient-data result.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(CORRELATION_AVAILABILITY_DESCRIPTION)).toBeTruthy();
     expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(2);
-    expect(screen.getByText("Needs logged daily nutrition data.")).toBeTruthy();
+    expect(screen.getByText("Needs a complete, resolved daily nutrition record.")).toBeTruthy();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Search X Axis metrics" }), {
       target: { value: "heart" },
@@ -413,7 +410,7 @@ describe("CorrelationScreen", () => {
         unit: "g",
         domain: "nutrition",
         description: "Protein intake",
-        availabilityDescription: "Needs logged daily nutrition data.",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
       },
       {
         id: "hrv",

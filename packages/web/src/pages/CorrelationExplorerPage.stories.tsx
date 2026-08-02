@@ -24,7 +24,7 @@ const metrics = [
     unit: "g",
     domain: "nutrition",
     description: "Daily protein intake",
-    availabilityDescription: "Needs logged daily nutrition data.",
+    availabilityDescription: "Needs a complete, resolved daily nutrition record.",
   },
   {
     id: "hrv",

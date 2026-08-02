@@ -6,8 +6,7 @@ import { formatCalendarDayCount } from "./correlation-lag.ts";
 export type MetricDomain = "recovery" | "sleep" | "nutrition" | "activity" | "body";
 
 export const MIN_CORRELATION_PAIRS = 5;
-export const CORRELATION_AVAILABILITY_DESCRIPTION =
-  "Availability depends on data recorded in the selected date range. A correlation needs at least five paired calendar days, so sparse metrics may produce an insufficient-data result.";
+export const CORRELATION_AVAILABILITY_DESCRIPTION = `Availability depends on data recorded in the selected date range. A correlation needs at least ${MIN_CORRELATION_PAIRS} paired calendar days, so sparse metrics may produce an insufficient-data result.`;
 
 export interface CorrelationMetric {
   id: string;
@@ -114,7 +113,7 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     unit: "g",
     domain: "nutrition",
     description: "Daily protein intake",
-    availabilityDescription: "Needs logged daily nutrition data.",
+    availabilityDescription: "Needs a complete, resolved daily nutrition record.",
     joinedDayKey: "protein_g",
   },
   {

@@ -52,6 +52,7 @@ function groupByDomain(metrics: CorrelationMetricMetadata[]): MetricsByDomain {
 }
 
 function MetricSelect({
+  id,
   value,
   onChange,
   grouped,
@@ -61,6 +62,7 @@ function MetricSelect({
   onSearchChange,
   selectedMetric,
 }: {
+  id: string;
   value: string;
   onChange: (v: string) => void;
   grouped: MetricsByDomain;
@@ -78,6 +80,7 @@ function MetricSelect({
           domain,
           metrics.filter((metric) => {
             if (normalizedSearchQuery.length === 0) return true;
+            if (metric.id === value) return true;
             return [
               metric.label,
               metric.unit,
@@ -93,9 +96,13 @@ function MetricSelect({
     )
     .filter(([, metrics]) => metrics.length > 0);
   return (
-    <label className="min-w-0 block">
+    <div className="min-w-0 block">
       <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">{label}</span>
+      <label htmlFor={`${id}-search`} className="sr-only">
+        Search {label} metrics
+      </label>
       <input
+        id={`${id}-search`}
         type="search"
         value={searchQuery}
         onChange={(event) => onSearchChange(event.target.value)}
@@ -103,7 +110,11 @@ function MetricSelect({
         placeholder="Search metrics"
         className="mb-2 w-full rounded-md border border-border bg-accent/5 px-3 py-2 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong"
       />
+      <label htmlFor={`${id}-select`} className="sr-only">
+        {label}
+      </label>
       <select
+        id={`${id}-select`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
@@ -126,7 +137,7 @@ function MetricSelect({
           <p>{selectedMetric.availabilityDescription}</p>
         </div>
       )}
-    </label>
+    </div>
   );
 }
 
@@ -371,6 +382,7 @@ export function CorrelationExplorerPage() {
             <p className="text-[11px] text-dim">{CORRELATION_AVAILABILITY_DESCRIPTION}</p>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end sm:gap-3">
               <MetricSelect
+                id="correlation-metric-x"
                 value={metricX}
                 onChange={(nextMetric) => {
                   setMetricX(nextMetric);
@@ -385,6 +397,7 @@ export function CorrelationExplorerPage() {
               />
               <span className="hidden text-dim text-sm pb-2 sm:block">vs</span>
               <MetricSelect
+                id="correlation-metric-y"
                 value={metricY}
                 onChange={(nextMetric) => {
                   setMetricY(nextMetric);

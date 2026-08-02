@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { chartColors } from "@dofek/scoring/colors";
+import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -111,7 +112,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "g",
         domain: "nutrition",
         description: "Protein intake",
-        availabilityDescription: "Needs logged daily nutrition data.",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
       },
       {
         id: "hrv",
@@ -120,6 +121,14 @@ describe("CorrelationExplorerPage", () => {
         domain: "recovery",
         description: "Heart rate variability",
         availabilityDescription: "Needs a daily recovery measurement.",
+      },
+      {
+        id: "weight",
+        label: "Weight",
+        unit: "kg",
+        domain: "body",
+        description: "Body weight",
+        availabilityDescription: "Needs a body-weight measurement.",
       },
     ];
     state.correlationData = {
@@ -175,14 +184,12 @@ describe("CorrelationExplorerPage", () => {
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
 
-    expect(screen.getByRole("searchbox", { name: "Search X axis metrics" })).toBeTruthy();
-    expect(screen.getByRole("searchbox", { name: "Search Y axis metrics" })).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Availability depends on data recorded in the selected date range. A correlation needs at least five paired calendar days, so sparse metrics may produce an insufficient-data result.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getAllByText("Needs logged daily nutrition data.")).toHaveLength(1);
+    expect(screen.getByRole("searchbox", { name: "Search X axis metrics" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search Y axis metrics" })).toBeInTheDocument();
+    expect(screen.getByText(CORRELATION_AVAILABILITY_DESCRIPTION)).toBeInTheDocument();
+    expect(screen.getAllByText("Needs a complete, resolved daily nutrition record.")).toHaveLength(
+      1,
+    );
     expect(screen.getAllByRole("option", { name: "Protein (g)" })).toHaveLength(2);
 
     fireEvent.change(screen.getByRole("searchbox", { name: "Search Y axis metrics" }), {
@@ -190,10 +197,11 @@ describe("CorrelationExplorerPage", () => {
     });
 
     const yAxisSelect = screen.getByLabelText("Y axis");
-    expect(within(yAxisSelect).getByRole("option", { name: "Protein (g)" })).toBeTruthy();
+    expect(within(yAxisSelect).getByRole("option", { name: "Protein (g)" })).toBeInTheDocument();
     expect(
-      within(yAxisSelect).queryByRole("option", { name: "Heart Rate Variability (ms)" }),
-    ).toBeNull();
+      within(yAxisSelect).getByRole("option", { name: "Heart Rate Variability (ms)" }),
+    ).toBeInTheDocument();
+    expect(within(yAxisSelect).queryByRole("option", { name: "Weight (kg)" })).toBeNull();
   });
 
   it("renders the server-authored interpretation warning", async () => {
@@ -391,6 +399,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "g",
         domain: "nutrition",
         description: "Protein intake",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
       },
       {
         id: "hrv",
@@ -398,6 +407,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "ms",
         domain: "recovery",
         description: "Heart rate variability",
+        availabilityDescription: "Needs a daily recovery measurement.",
       },
     ];
     view.rerender(<CorrelationExplorerPage />);
