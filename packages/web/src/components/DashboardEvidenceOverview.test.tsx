@@ -13,12 +13,62 @@ describe("DashboardEvidenceOverview helpers", () => {
   });
 
   it("labels resting heart rate position against baseline", () => {
-    expect(trendPositionLabel({ latestRestingHeartRate: 52, averageRestingHeartRate: 56 })).toBe(
-      "below average",
+    expect(
+      trendPositionLabel({
+        latestRestingHeartRate: 52,
+        averageRestingHeartRate: 56,
+        restingHeartRateTrendLabel: "below average",
+      }),
+    ).toBe("below average");
+    expect(
+      trendPositionLabel({
+        latestRestingHeartRate: null,
+        averageRestingHeartRate: 56,
+        restingHeartRateTrendLabel: "Waiting for baseline",
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
+  it("renders the server-authored baseline requirement, progress, and action", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: null,
+          averageRestingHeartRate: null,
+          restingHeartRateTrendLabel: "Waiting for baseline",
+          restingHeartRateBaselineProgress: {
+            requiredObservationDays: 3,
+            observedObservationDays: 1,
+            hasMeasurableVariation: false,
+            blocker: "collecting",
+            requirement:
+              "A current value plus at least 2 more recorded days with measurable variation.",
+            summary:
+              "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+            action: "Keep syncing resting heart rate data for at least 2 more days.",
+          },
+        }}
+        healthMonitor={<div>Health monitor</div>}
+      />,
     );
-    expect(trendPositionLabel({ latestRestingHeartRate: null, averageRestingHeartRate: 56 })).toBe(
-      "Waiting for baseline",
-    );
+
+    expect(screen.getByText("Waiting for baseline")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "A current value plus at least 2 more recorded days with measurable variation.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
+    ).toBeTruthy();
   });
 });
 
@@ -35,6 +85,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 52,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "below average",
           restingHeartRatePoints: [
             { date: "2026-05-26", value: 56 },
             { date: "2026-05-27", value: 52 },
@@ -217,6 +268,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 52,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "below average",
           restingHeartRatePoints: [
             { date: "2026-05-25", value: 57 },
             { date: "2026-05-26", value: 55 },
@@ -346,6 +398,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 52,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "below average",
           restingHeartRatePoints: [
             { date: "2026-05-26", value: 56 },
             { date: "2026-05-27", value: 52 },
@@ -367,6 +420,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 60,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "above average",
           restingHeartRatePoints: [
             { date: "2026-05-26", value: 56 },
             { date: "2026-05-27", value: 60 },

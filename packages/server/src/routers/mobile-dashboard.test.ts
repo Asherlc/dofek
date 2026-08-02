@@ -151,6 +151,17 @@ vi.mock("../repositories/training-recommendation.ts", () => ({
   computeReadinessScore: vi.fn(() => 62),
 }));
 
+vi.mock("../repositories/processing-repository.ts", () => ({
+  ProcessingRepository: class {
+    async status() {
+      return {
+        overallStatus: "ready",
+        datasets: [{ key: "recovery", status: "ready" }],
+      };
+    }
+  },
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: {
     info: vi.fn(),
@@ -949,6 +960,7 @@ describe("mobileDashboard.recovery", () => {
         timezone: "UTC",
         accessWindow: fullAccessWindow,
         sensorStore: expect.anything(),
+        processingStatus: null,
       },
       30,
       "2026-03-28",

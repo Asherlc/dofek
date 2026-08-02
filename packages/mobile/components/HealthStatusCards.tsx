@@ -1,37 +1,6 @@
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
-
-type HealthMetricKey =
-  | "hrv"
-  | "resting_heart_rate"
-  | "respiratory_rate"
-  | "sleep_efficiency"
-  | "spo2"
-  | "steps"
-  | "skin_temperature"
-  | "trend_weight"
-  | "body_fat_percentage";
-
-interface HealthStatusMetric {
-  metric: HealthMetricKey;
-  label: string;
-  value: number | null;
-  baseline: number | null;
-  sampleDeviation: number | null;
-  deviation: number | null;
-  direction: "above" | "below" | "aligned" | "unknown";
-  intent: "higher" | "lower" | "maintain" | "neutral";
-  statusToken:
-    | "insufficient_data"
-    | "near_baseline"
-    | "moving_as_intended"
-    | "notable_deviation"
-    | "far_from_baseline";
-  statusColor: "positive" | "warning" | "danger" | "muted";
-  statusLabel: string;
-  evaluationRule: string;
-  explanation: string;
-}
 
 interface HealthStatusCardsProps {
   metrics: HealthStatusMetric[];
@@ -82,6 +51,17 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
           </Text>
           <Text style={styles.rule}>{metric.evaluationRule}</Text>
           <Text style={styles.explanation}>{metric.explanation}</Text>
+          {metric.baselineProgress.blocker !== null ? (
+            <View accessibilityLabel={`${metric.label} baseline progress`} style={styles.progress}>
+              <Text style={styles.progressRequirement}>{metric.baselineProgress.requirement}</Text>
+              <Text style={styles.progressCount}>
+                {metric.baselineProgress.observedObservationDays} of{" "}
+                {metric.baselineProgress.requiredObservationDays} required days recorded
+              </Text>
+              <Text style={styles.explanation}>{metric.baselineProgress.summary}</Text>
+              <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+            </View>
+          ) : null}
         </View>
       ))}
     </View>
@@ -141,6 +121,27 @@ const styles = StyleSheet.create({
   explanation: {
     color: colors.textSecondary,
     fontSize: 12,
+    lineHeight: 17,
+  },
+  progress: {
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  progressRequirement: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+  },
+  progressCount: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  action: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
     lineHeight: 17,
   },
 });

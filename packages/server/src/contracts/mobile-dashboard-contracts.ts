@@ -119,6 +119,27 @@ export const healthMetricKeySchema = z.enum([
 
 export const healthMetricIntentSchema = z.enum(["higher", "lower", "maintain", "neutral"]);
 
+export const baselineProgressBlockerSchema = z.enum([
+  "missing_source_data",
+  "collecting",
+  "needs_variation",
+  "syncing",
+  "sync_error",
+]);
+
+export const baselineProgressSchema = z.object({
+  requiredObservationDays: z.number().int().positive(),
+  observedObservationDays: z.number().int().nonnegative(),
+  hasMeasurableVariation: z.boolean(),
+  blocker: baselineProgressBlockerSchema.nullable(),
+  requirement: z.string(),
+  summary: z.string(),
+  action: z.string(),
+});
+
+export type BaselineProgress = z.infer<typeof baselineProgressSchema>;
+export type BaselineProgressBlocker = z.infer<typeof baselineProgressBlockerSchema>;
+
 export const healthStatusMetricSchema = z.object({
   metric: healthMetricKeySchema,
   label: z.string(),
@@ -139,7 +160,10 @@ export const healthStatusMetricSchema = z.object({
   statusLabel: z.string(),
   evaluationRule: z.string(),
   explanation: z.string(),
+  baselineProgress: baselineProgressSchema,
 });
+
+export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
 
 export const mobileRecoveryTabOutputSchema = z.object({
   hrvVariability: z.array(

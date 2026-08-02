@@ -20,6 +20,16 @@ describe("healthStatusMetricSchema", () => {
         statusLabel: "Moving as intended",
         evaluationRule: "Above your baseline, where higher values support this metric",
         explanation: "Heart Rate Variability is above your baseline.",
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 3,
+          hasMeasurableVariation: true,
+          blocker: null,
+          requirement:
+            "A current value plus at least 2 more recorded days with measurable variation.",
+          summary: "Heart Rate Variability baseline is ready.",
+          action: "No action needed.",
+        },
       }),
     ).toEqual({
       metric: "hrv",
@@ -35,6 +45,16 @@ describe("healthStatusMetricSchema", () => {
       statusLabel: "Moving as intended",
       evaluationRule: "Above your baseline, where higher values support this metric",
       explanation: "Heart Rate Variability is above your baseline.",
+      baselineProgress: {
+        requiredObservationDays: 3,
+        observedObservationDays: 3,
+        hasMeasurableVariation: true,
+        blocker: null,
+        requirement:
+          "A current value plus at least 2 more recorded days with measurable variation.",
+        summary: "Heart Rate Variability baseline is ready.",
+        action: "No action needed.",
+      },
     });
   });
 

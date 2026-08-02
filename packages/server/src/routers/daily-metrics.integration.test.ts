@@ -191,6 +191,18 @@ describe("dailyMetrics data correctness", () => {
       expect(result.stddev_steps).toBeGreaterThan(0);
     });
 
+    it("returns exact observed-day counts for baseline progress", async () => {
+      const result = await query<{
+        sample_count_hrv: number;
+        sample_count_spo2: number;
+        sample_count_steps: number;
+      }>("dailyMetrics.trends", { days: 30, endDate });
+
+      expect(result.sample_count_hrv).toBe(27);
+      expect(result.sample_count_spo2).toBe(27);
+      expect(result.sample_count_steps).toBe(27);
+    });
+
     it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {
       const repo = new DailyMetricsRepository(testCtx.db, TEST_USER_ID, "UTC");
       const result = await repo.getTrends(

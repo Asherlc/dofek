@@ -585,21 +585,24 @@ describe("loadMobileRecoveryTab", () => {
           label: "SpO2",
           values: [97, 99],
           intent: "neutral",
+          processingStatus: null,
         },
         {
           metric: "steps",
           label: "Steps",
           values: [8_000, 10_000],
           intent: "neutral",
+          processingStatus: null,
         },
         {
           metric: "skin_temperature",
           label: "Skin Temperature",
           values: [33.1, 33.5],
           intent: "neutral",
+          processingStatus: null,
         },
       ]);
-      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75);
+      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75, null);
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {

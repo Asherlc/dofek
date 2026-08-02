@@ -17,6 +17,15 @@ const serverMetric = {
   statusLabel: "Near baseline",
   evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
   explanation: "Skin Temperature is close to your usual range.",
+  baselineProgress: {
+    requiredObservationDays: 3,
+    observedObservationDays: 3,
+    hasMeasurableVariation: true,
+    blocker: null,
+    requirement: "A current value plus at least 2 more recorded days with measurable variation.",
+    summary: "Skin Temperature baseline is ready.",
+    action: "No action needed.",
+  },
 };
 
 describe("HealthStatusBar", () => {

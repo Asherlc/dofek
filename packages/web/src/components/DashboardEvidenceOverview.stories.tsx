@@ -23,6 +23,7 @@ const meta = {
     trend: {
       latestRestingHeartRate: 52,
       averageRestingHeartRate: 56,
+      restingHeartRateTrendLabel: "below average",
       restingHeartRatePoints: [
         { date: "2026-05-23", value: 57 },
         { date: "2026-05-24", value: 56 },
@@ -100,6 +101,7 @@ export const Loading: Story = {
     trend: {
       latestRestingHeartRate: undefined,
       averageRestingHeartRate: undefined,
+      restingHeartRateTrendLabel: "Waiting for baseline",
       restingHeartRatePoints: null,
     },
     trainingSleepPoints: null,
@@ -124,6 +126,7 @@ export const Empty: Story = {
     trend: {
       latestRestingHeartRate: null,
       averageRestingHeartRate: null,
+      restingHeartRateTrendLabel: "Waiting for baseline",
       restingHeartRatePoints: null,
     },
     trainingSleepPoints: null,

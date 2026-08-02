@@ -34,6 +34,17 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../repositories/processing-repository.ts", () => ({
+  ProcessingRepository: class {
+    async status() {
+      return {
+        overallStatus: "ready",
+        datasets: [{ key: "recovery", status: "ready" }],
+      };
+    }
+  },
+}));
+
 import { dailyMetricsRouter } from "./daily-metrics.ts";
 
 const createCaller = createTestCallerFactory(dailyMetricsRouter);
@@ -249,6 +260,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -272,8 +288,14 @@ describe("dailyMetricsRouter", () => {
         latest_spo2: 98,
         latest_steps: 9000,
         latest_skin_temp: 36.6,
+        sample_count_hrv: 4,
+        sample_count_resting_hr: 3,
+        sample_count_spo2: 4,
+        sample_count_steps: 4,
+        sample_count_skin_temp: 4,
         latest_date: "2024-01-16",
         latest_steps_date: "2024-01-16",
+        restingHeartRateTrendLabel: "below average",
         baselineRelative: [],
         healthStatus: expect.arrayContaining([
           expect.objectContaining({
@@ -303,6 +325,11 @@ describe("dailyMetricsRouter", () => {
           latest_spo2: null,
           latest_steps: null,
           latest_skin_temp: null,
+          sample_count_hrv: 1,
+          sample_count_resting_hr: 1,
+          sample_count_spo2: 0,
+          sample_count_steps: 0,
+          sample_count_skin_temp: 0,
           latest_date: "2024-01-16",
           latest_steps_date: null,
         },
@@ -398,6 +425,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -433,6 +465,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -491,6 +528,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -534,6 +576,11 @@ describe("dailyMetricsRouter", () => {
           latest_spo2: null,
           latest_steps: null,
           latest_skin_temp: null,
+          sample_count_hrv: 1,
+          sample_count_resting_hr: 1,
+          sample_count_spo2: 0,
+          sample_count_steps: 0,
+          sample_count_skin_temp: 0,
           latest_date: "2024-01-16",
           latest_steps_date: null,
         },
