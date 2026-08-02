@@ -13,7 +13,8 @@
     "./push-providers": "./src/push-providers.ts",
     "./processing-alerts": "./src/processing-alerts.ts",
     "./processing-status": "./src/processing-status.ts",
-    "./sync-actions": "./src/sync-actions.ts"
+    "./sync-actions": "./src/sync-actions.ts",
+    "./auth-provider-grouping": "./src/auth-provider-grouping.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*"

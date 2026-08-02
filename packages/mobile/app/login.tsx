@@ -34,6 +34,7 @@ import {
 import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 
 type AuthMode = "login" | "register" | "reset";
 
@@ -188,12 +189,12 @@ export default function LoginScreen() {
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
     (providers?.nativeApple ?? false);
-  const identityProviders = providers
-    ? providers.identity.filter((id) => !(useNativeApple && id === "apple"))
-    : [];
-  const dataProviders = providers?.data ?? [];
-  const showIdentityProviders = identityProviders.length > 0 || useNativeApple;
-  const showDataProviders = dataProviders.length > 0;
+  const providerGroups = groupConfiguredAuthProviders(
+    providers ?? { identity: [], data: [] },
+    useNativeApple ? ["apple"] : [],
+  );
+  const { identityProviders, dataProviders, showDataProviders } = providerGroups;
+  const showIdentityProviders = providerGroups.showIdentityProviders || useNativeApple;
   const showPasswordAuth = providers?.password ?? false;
   const showOAuthProviders = showIdentityProviders || showDataProviders;
   const passwordResetDisabled = loggingIn || !email.trim();
@@ -553,7 +554,7 @@ export default function LoginScreen() {
 
             {showDataProviders ? (
               <View testID="data-provider-section" style={styles.dataProviderSection}>
-                <Text style={styles.dataProviderHeading}>Connect health data after sign-in</Text>
+                <Text style={styles.dataProviderHeading}>Sign in with a health data provider</Text>
                 <View style={styles.dataProviderList}>
                   {dataProviders.map((id) => (
                     <TouchableOpacity
@@ -562,12 +563,12 @@ export default function LoginScreen() {
                       onPress={() => handleLogin(id, true)}
                       disabled={loggingIn}
                       accessibilityRole="button"
-                      accessibilityLabel={`Connect ${providerLabel(id)}`}
+                      accessibilityLabel={`Sign in with ${providerLabel(id)}`}
                       accessibilityState={{ busy: loggingIn, disabled: loggingIn }}
                     >
                       <View style={styles.providerButtonContent}>
                         <ProviderLogo provider={id} serverUrl={serverUrl} size={20} />
-                        <Text style={styles.providerText}>Connect {providerLabel(id)}</Text>
+                        <Text style={styles.providerText}>Sign in with {providerLabel(id)}</Text>
                       </View>
                     </TouchableOpacity>
                   ))}

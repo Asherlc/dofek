@@ -77,7 +77,7 @@ describe("Login route", () => {
     expect(returnTo).toBe("/dashboard?providerGuide=true");
   });
 
-  it("separates identity sign-in from health-data connections", async () => {
+  it("separates identity sign-in from health-data provider sign-in", async () => {
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
     mockFetchConfiguredProviders.mockResolvedValue({ identity: ["google"], data: ["strava"] });
 
@@ -89,11 +89,11 @@ describe("Login route", () => {
     });
 
     const dataSection = screen.getByRole("region", {
-      name: "Connect health data after sign-in",
+      name: "Sign in with a health data provider",
     });
-    const connectLink = within(dataSection).getByRole("link", { name: "Connect strava" });
-    expect(connectLink).toHaveAttribute("href", "/auth/login/data/strava");
-    expect(screen.queryByRole("link", { name: "Sign in with strava" })).toBeNull();
+    const dataSignInLink = within(dataSection).getByRole("link", { name: "Sign in with strava" });
+    expect(dataSignInLink).toHaveAttribute("href", "/auth/login/data/strava");
+    expect(screen.queryByRole("link", { name: "Connect strava" })).toBeNull();
     expect(dataSection).toHaveClass("bg-surface-hover/40", "border");
   });
 

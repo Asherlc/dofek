@@ -17,6 +17,7 @@ import {
   requestPasswordReset,
 } from "../lib/auth.ts";
 import { captureException } from "../lib/telemetry.ts";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 
 type AuthMode = "login" | "register" | "reset";
 
@@ -44,10 +45,8 @@ function LoginPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const identityProviders = providers?.identity ?? [];
-  const dataProviders = providers?.data ?? [];
-  const showIdentityProviders = identityProviders.length > 0;
-  const showDataProviders = dataProviders.length > 0;
+  const { identityProviders, dataProviders, showIdentityProviders, showDataProviders } =
+    groupConfiguredAuthProviders(providers ?? { identity: [], data: [] });
   const returnTo =
     requestedReturnTo ?? (providerGuide ? "/dashboard?providerGuide=true" : undefined);
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
@@ -404,14 +403,14 @@ function LoginPage() {
 
             {showDataProviders ? (
               <section
-                aria-labelledby="connect-health-data-heading"
+                aria-labelledby="health-data-sign-in-heading"
                 className="space-y-4 rounded-xl border border-border bg-surface-hover/40 p-4"
               >
                 <h2
-                  id="connect-health-data-heading"
+                  id="health-data-sign-in-heading"
                   className="text-sm font-semibold text-foreground"
                 >
-                  Connect health data after sign-in
+                  Sign in with a health data provider
                 </h2>
                 <div className="space-y-3">
                   {dataProviders.map((id) => (
@@ -421,7 +420,7 @@ function LoginPage() {
                       className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-surface-solid hover:bg-surface-hover border border-border text-foreground transition-colors text-sm font-medium"
                     >
                       <ProviderLogo provider={id} size={20} />
-                      Connect {providerLabel(id)}
+                      Sign in with {providerLabel(id)}
                     </a>
                   ))}
                 </div>
