@@ -576,12 +576,18 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: "1",
-          total_minutes: "60.2",
-          total_distance_meters: "10000.1",
-          total_elevation_gain_m: "120.1",
-          distance_measurement_count: "1",
-          elevation_measurement_count: "1",
+          current_activity_count: "1",
+          current_total_minutes: "60.2",
+          current_total_distance_meters: "10000.1",
+          current_total_elevation_gain_m: "120.1",
+          current_distance_measurement_count: "1",
+          current_elevation_measurement_count: "1",
+          previous_activity_count: "0",
+          previous_total_minutes: "0",
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: "0",
+          previous_elevation_measurement_count: "0",
         },
       ],
       [{ activity_type: "cycling" }, { activity_type: "running" }],
@@ -594,7 +600,7 @@ describe("ActivitiesCalendarRepository", () => {
       activityType: "running",
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       activityCount: 1,
       totalMinutes: 60.2,
       totalDistanceMeters: 10000.1,
@@ -616,17 +622,76 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
   });
 
+  it("returns server-computed changes from the immediately preceding comparable period", async () => {
+    const database = makeDatabase([[{ id: "running-activity" }, { id: "prior-activity" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          current_activity_count: "2",
+          current_total_minutes: "150.4",
+          current_total_distance_meters: "13000",
+          current_total_elevation_gain_m: "240",
+          current_distance_measurement_count: "2",
+          current_elevation_measurement_count: "2",
+          previous_activity_count: "1",
+          previous_total_minutes: "60.2",
+          previous_total_distance_meters: "5000",
+          previous_total_elevation_gain_m: "100",
+          previous_distance_measurement_count: "1",
+          previous_elevation_measurement_count: "1",
+        },
+      ],
+      [{ activity_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" });
+
+    expect(result.comparison).toEqual({
+      periodLabel: "previous 4 weeks",
+      activityCount: { magnitude: 1, trend: "higher" },
+      totalMinutes: { magnitude: 90.2, trend: "higher" },
+      totalDistanceMeters: {
+        magnitude: 8000,
+        trend: "higher",
+        state: { status: "available" },
+      },
+      totalElevationGainM: {
+        magnitude: 140,
+        trend: "higher",
+        state: { status: "available" },
+      },
+    });
+
+    expect(sensorStore.query.mock.calls[0]?.[1]).toContain("currentWindowStart");
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({
+        windowStart: "2026-01-23",
+        currentWindowStart: "2026-02-20",
+      }),
+    );
+  });
+
   it("preserves unavailable overview measurements as null", async () => {
     const database = makeDatabase([[{ id: "activity-without-measurements" }]]);
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: "1",
-          total_minutes: "60",
-          total_distance_meters: null,
-          total_elevation_gain_m: null,
-          distance_measurement_count: "0",
-          elevation_measurement_count: "0",
+          current_activity_count: "1",
+          current_total_minutes: "60",
+          current_total_distance_meters: null,
+          current_total_elevation_gain_m: null,
+          current_distance_measurement_count: "0",
+          current_elevation_measurement_count: "0",
+          previous_activity_count: "0",
+          previous_total_minutes: "0",
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: "0",
+          previous_elevation_measurement_count: "0",
         },
       ],
       [{ activity_type: "walking" }],
@@ -635,7 +700,7 @@ describe("ActivitiesCalendarRepository", () => {
 
     await expect(
       repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       activityCount: 1,
       totalMinutes: 60,
       totalDistanceMeters: null,
@@ -657,12 +722,18 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: 2,
-          total_minutes: 120,
-          total_distance_meters: 5000,
-          total_elevation_gain_m: 100,
-          distance_measurement_count: 1,
-          elevation_measurement_count: 2,
+          current_activity_count: 2,
+          current_total_minutes: 120,
+          current_total_distance_meters: 5000,
+          current_total_elevation_gain_m: 100,
+          current_distance_measurement_count: 1,
+          current_elevation_measurement_count: 2,
+          previous_activity_count: 0,
+          previous_total_minutes: 0,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 0,
         },
       ],
       [{ activity_type: "running" }, { activity_type: "cycling" }],
@@ -688,12 +759,18 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: 2,
-          total_minutes: 120,
-          total_distance_meters: 5000,
-          total_elevation_gain_m: 100,
-          distance_measurement_count: 2,
-          elevation_measurement_count: 2,
+          current_activity_count: 2,
+          current_total_minutes: 120,
+          current_total_distance_meters: 5000,
+          current_total_elevation_gain_m: 100,
+          current_distance_measurement_count: 2,
+          current_elevation_measurement_count: 2,
+          previous_activity_count: 0,
+          previous_total_minutes: 0,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 0,
         },
       ],
       [{ activity_type: "indoor_cycling" }, { activity_type: "running" }],
@@ -709,8 +786,8 @@ describe("ActivitiesCalendarRepository", () => {
     });
 
     const overviewQuery = normalizeSql(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
-    expect(overviewQuery).toContain("sumOrNull(summary.total_distance)");
-    expect(overviewQuery).toContain("countIf(summary.total_distance IS NOT NULL)");
+    expect(overviewQuery).toContain("sumOrNullIf(");
+    expect(overviewQuery).toContain("summary.total_distance IS NOT NULL");
   });
 
   it("returns an empty overview without querying ClickHouse when no activities are visible", async () => {
@@ -720,7 +797,7 @@ describe("ActivitiesCalendarRepository", () => {
 
     await expect(
       repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
@@ -738,23 +815,35 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: 1,
-          total_minutes: 45,
-          total_distance_meters: 5000,
-          total_elevation_gain_m: 100,
-          distance_measurement_count: 1,
-          elevation_measurement_count: 1,
+          current_activity_count: 1,
+          current_total_minutes: 45,
+          current_total_distance_meters: 5000,
+          current_total_elevation_gain_m: 100,
+          current_distance_measurement_count: 1,
+          current_elevation_measurement_count: 1,
+          previous_activity_count: 0,
+          previous_total_minutes: 0,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 0,
         },
       ],
       [{ activity_type: "running" }],
       [
         {
-          activity_count: 0,
-          total_minutes: 0,
-          total_distance_meters: null,
-          total_elevation_gain_m: null,
-          distance_measurement_count: 0,
-          elevation_measurement_count: 0,
+          current_activity_count: 0,
+          current_total_minutes: 0,
+          current_total_distance_meters: null,
+          current_total_elevation_gain_m: null,
+          current_distance_measurement_count: 0,
+          current_elevation_measurement_count: 0,
+          previous_activity_count: 0,
+          previous_total_minutes: 0,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 0,
         },
       ],
       [{ activity_type: "running" }],
@@ -768,7 +857,7 @@ describe("ActivitiesCalendarRepository", () => {
 
     await expect(
       repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       activityCount: 1,
       totalMinutes: 45,
       totalDistanceMeters: 5000,
@@ -783,7 +872,7 @@ describe("ActivitiesCalendarRepository", () => {
         endDate: "2026-03-20",
         activityType: "cycling",
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       activityCount: 0,
       totalMinutes: 0,
       totalDistanceMeters: null,
@@ -805,12 +894,18 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: "1",
-          total_minutes: "60",
-          total_distance_meters: "0",
-          total_elevation_gain_m: "0",
-          distance_measurement_count: "1",
-          elevation_measurement_count: "1",
+          current_activity_count: "1",
+          current_total_minutes: "60",
+          current_total_distance_meters: "0",
+          current_total_elevation_gain_m: "0",
+          current_distance_measurement_count: "1",
+          current_elevation_measurement_count: "1",
+          previous_activity_count: "0",
+          previous_total_minutes: "0",
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: "0",
+          previous_elevation_measurement_count: "0",
         },
       ],
       [{ activity_type: "cycling" }],
@@ -827,12 +922,12 @@ describe("ActivitiesCalendarRepository", () => {
     expect(normalizedOverviewQuery).not.toContain("analytics.v_activity");
     expect(normalizedOverviewQuery).toContain("LEFT JOIN analytics.activity_summary AS summary");
     expect(normalizedOverviewQuery).toContain(
-      "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
+      "sumIf( dateDiff('second', activity.started_at, activity.ended_at) / 60.0",
     );
-    expect(normalizedOverviewQuery).toContain("sumOrNull(summary.total_distance)");
-    expect(normalizedOverviewQuery).toContain("sumOrNull(summary.elevation_gain_m)");
-    expect(normalizedOverviewQuery).toContain("countIf(summary.total_distance IS NOT NULL)");
-    expect(normalizedOverviewQuery).toContain("countIf(summary.elevation_gain_m IS NOT NULL)");
+    expect(normalizedOverviewQuery).toContain("sumOrNullIf( summary.total_distance");
+    expect(normalizedOverviewQuery).toContain("sumOrNullIf( summary.elevation_gain_m");
+    expect(normalizedOverviewQuery).toContain("summary.total_distance IS NOT NULL");
+    expect(normalizedOverviewQuery).toContain("summary.elevation_gain_m IS NOT NULL");
     expect(normalizedOverviewQuery).toContain("activity.activity_id IN {activityIds:Array(UUID)}");
   });
 
@@ -841,12 +936,18 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: "1",
-          total_minutes: "60",
-          total_distance_meters: "0",
-          total_elevation_gain_m: "0",
-          distance_measurement_count: "1",
-          elevation_measurement_count: "1",
+          current_activity_count: "1",
+          current_total_minutes: "60",
+          current_total_distance_meters: "0",
+          current_total_elevation_gain_m: "0",
+          current_distance_measurement_count: "1",
+          current_elevation_measurement_count: "1",
+          previous_activity_count: "0",
+          previous_total_minutes: "0",
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: "0",
+          previous_elevation_measurement_count: "0",
         },
       ],
       [{ activity_type: "cycling" }],

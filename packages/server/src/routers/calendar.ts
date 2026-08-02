@@ -108,6 +108,15 @@ const activityListInputSchema = z.object({
   includeProviderAbsent: z.boolean().default(false).optional(),
 });
 
+const activityOverviewTrendSchema = z.enum(["higher", "lower", "unchanged", "unavailable"]);
+const activityOverviewChangeSchema = z.object({
+  magnitude: z.number().nonnegative().nullable(),
+  trend: activityOverviewTrendSchema,
+});
+const activityOverviewMeasurementChangeSchema = activityOverviewChangeSchema.extend({
+  state: activityDataStateSchema,
+});
+
 const activityOverviewSchema = z.object({
   activityCount: z.number().int().nonnegative(),
   totalMinutes: z.number().nonnegative(),
@@ -116,6 +125,13 @@ const activityOverviewSchema = z.object({
   totalElevationGainM: z.number().nonnegative().nullable(),
   totalElevationState: activityDataStateSchema,
   activityTypes: z.array(z.string()),
+  comparison: z.object({
+    periodLabel: z.string().trim().min(1),
+    activityCount: activityOverviewChangeSchema,
+    totalMinutes: activityOverviewChangeSchema,
+    totalDistanceMeters: activityOverviewMeasurementChangeSchema,
+    totalElevationGainM: activityOverviewMeasurementChangeSchema,
+  }),
 });
 
 export const calendarRouter = router({
@@ -156,7 +172,7 @@ export const calendarRouter = router({
 
   activityOverview: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-states-v1",
+    keyVersion: "activity-calendar-states-v2",
   })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)

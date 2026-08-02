@@ -263,6 +263,27 @@ describe("activity visibility consistency", () => {
         reason: "Elevation gain was not recorded for every activity.",
       },
       activityTypes: ["running", "walking"],
+      comparison: {
+        periodLabel: "previous 8 weeks",
+        activityCount: { magnitude: 3, trend: "higher" },
+        totalMinutes: { magnitude: 90, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Distance was not recorded for every activity.",
+          },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Elevation gain was not recorded for every activity.",
+          },
+        },
+      },
     });
     expect(unavailableOverview).toEqual({
       activityCount: 1,
@@ -278,6 +299,27 @@ describe("activity visibility consistency", () => {
         reason: "Elevation gain was not recorded for every activity.",
       },
       activityTypes: ["running", "walking"],
+      comparison: {
+        periodLabel: "previous 8 weeks",
+        activityCount: { magnitude: 1, trend: "higher" },
+        totalMinutes: { magnitude: 30, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Distance was not recorded for every activity.",
+          },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: {
+            status: "missing",
+            reason: "Elevation gain was not recorded for every activity.",
+          },
+        },
+      },
     });
     await expect(activityRepository.findById(AUTHORIZED_RUN_ID)).resolves.toMatchObject({
       id: AUTHORIZED_RUN_ID,
@@ -319,6 +361,21 @@ describe("activity visibility consistency", () => {
       totalElevationGainM: null,
       totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["running", "walking"],
+      comparison: {
+        periodLabel: "previous 8 weeks",
+        activityCount: { magnitude: 0, trend: "unchanged" },
+        totalMinutes: { magnitude: 0, trend: "unchanged" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Elevation gain not recorded" },
+        },
+      },
     });
     await expect(
       repository.getWeekList({

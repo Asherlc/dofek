@@ -2,6 +2,12 @@ import type {
   ActivityDataState,
   ActivityDataStateUnavailableStatus,
 } from "@dofek/format/activity-data-state";
+import type {
+  ActivityOverviewChange,
+  ActivityOverviewChangeTrend,
+  ActivityOverviewComparison,
+  ActivityOverviewMeasurementChange,
+} from "@dofek/format/activity-overview";
 import {
   localTimeContextUnknown,
   localTimeSourceSchema,
@@ -83,6 +89,7 @@ export interface ActivityOverview {
   totalElevationGainM: number | null;
   totalElevationState: ActivityDataState;
   activityTypes: string[];
+  comparison: ActivityOverviewComparison;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,12 +132,18 @@ const baselineRowSchema = z.object({
 });
 
 const overviewRowSchema = z.object({
-  activity_count: z.coerce.number(),
-  total_minutes: z.coerce.number(),
-  total_distance_meters: z.coerce.number().nullable(),
-  total_elevation_gain_m: z.coerce.number().nullable(),
-  distance_measurement_count: z.coerce.number(),
-  elevation_measurement_count: z.coerce.number(),
+  current_activity_count: z.coerce.number(),
+  current_total_minutes: z.coerce.number(),
+  current_total_distance_meters: z.coerce.number().nullable(),
+  current_total_elevation_gain_m: z.coerce.number().nullable(),
+  current_distance_measurement_count: z.coerce.number(),
+  current_elevation_measurement_count: z.coerce.number(),
+  previous_activity_count: z.coerce.number(),
+  previous_total_minutes: z.coerce.number(),
+  previous_total_distance_meters: z.coerce.number().nullable(),
+  previous_total_elevation_gain_m: z.coerce.number().nullable(),
+  previous_distance_measurement_count: z.coerce.number(),
+  previous_elevation_measurement_count: z.coerce.number(),
 });
 
 const activityTypeRowSchema = z.object({
@@ -507,44 +520,86 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
   async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
     const days = input.weeks * 7;
-    const windowStart = dateWindowStartString(input.endDate, days);
+    const currentWindowStart = dateWindowStartString(input.endDate, days);
+    const previousWindowStart = dateWindowStartString(input.endDate, days * 2);
     const visibleActivityIds = await activityRepositoryFor(
       this.db,
       this.userId,
       this.timezone,
       this.accessWindow,
-    ).listVisibleActivityIdsSince(windowStart);
+    ).listVisibleActivityIdsSince(previousWindowStart);
     if (visibleActivityIds.length === 0) {
-      return {
-        activityCount: 0,
-        totalMinutes: 0,
-        totalDistanceMeters: null,
-        totalDistanceState: activityMeasurementState("Distance", null),
-        totalElevationGainM: null,
-        totalElevationState: activityMeasurementState("Elevation gain", null),
-        activityTypes: [],
-      };
+      return createActivityOverview(
+        emptyActivityOverviewPeriod(),
+        emptyActivityOverviewPeriod(),
+        [],
+        input.weeks,
+      );
     }
 
     const activityTypeFilter = activityTypeFilterSql(input);
     const queryParams = {
-      ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, input),
+      ...activitySummaryQueryParams(this.userId, this.timezone, previousWindowStart, input),
+      currentWindowStart,
       activityIds: visibleActivityIds,
     };
     const typeQueryParams = {
-      ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, {}),
+      ...activitySummaryQueryParams(this.userId, this.timezone, currentWindowStart, {}),
       activityIds: visibleActivityIds,
     };
     const [overviewRows, activityTypeRows] = await Promise.all([
       this.#sensorStore.query(
         overviewRowSchema,
-        `SELECT
-            count() AS activity_count,
-            coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
-            sumOrNull(summary.total_distance) AS total_distance_meters,
-            sumOrNull(summary.elevation_gain_m) AS total_elevation_gain_m,
-            countIf(summary.total_distance IS NOT NULL) AS distance_measurement_count,
-            countIf(summary.elevation_gain_m IS NOT NULL) AS elevation_measurement_count
+        `WITH toDate(toTimeZone(activity.started_at, {timezone:String})) AS activity_date
+          SELECT
+            countIf(activity_date >= toDate({currentWindowStart:String})) AS current_activity_count,
+            coalesce(
+              sumIf(
+                dateDiff('second', activity.started_at, activity.ended_at) / 60.0,
+                activity_date >= toDate({currentWindowStart:String})
+              ),
+              0
+            ) AS current_total_minutes,
+            sumOrNullIf(
+              summary.total_distance,
+              activity_date >= toDate({currentWindowStart:String})
+            ) AS current_total_distance_meters,
+            sumOrNullIf(
+              summary.elevation_gain_m,
+              activity_date >= toDate({currentWindowStart:String})
+            ) AS current_total_elevation_gain_m,
+            countIf(
+              activity_date >= toDate({currentWindowStart:String})
+              AND summary.total_distance IS NOT NULL
+            ) AS current_distance_measurement_count,
+            countIf(
+              activity_date >= toDate({currentWindowStart:String})
+              AND summary.elevation_gain_m IS NOT NULL
+            ) AS current_elevation_measurement_count,
+            countIf(activity_date < toDate({currentWindowStart:String})) AS previous_activity_count,
+            coalesce(
+              sumIf(
+                dateDiff('second', activity.started_at, activity.ended_at) / 60.0,
+                activity_date < toDate({currentWindowStart:String})
+              ),
+              0
+            ) AS previous_total_minutes,
+            sumOrNullIf(
+              summary.total_distance,
+              activity_date < toDate({currentWindowStart:String})
+            ) AS previous_total_distance_meters,
+            sumOrNullIf(
+              summary.elevation_gain_m,
+              activity_date < toDate({currentWindowStart:String})
+            ) AS previous_total_elevation_gain_m,
+            countIf(
+              activity_date < toDate({currentWindowStart:String})
+              AND summary.total_distance IS NOT NULL
+            ) AS previous_distance_measurement_count,
+            countIf(
+              activity_date < toDate({currentWindowStart:String})
+              AND summary.elevation_gain_m IS NOT NULL
+            ) AS previous_elevation_measurement_count
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary AS summary
             ON summary.user_id = activity.user_id
@@ -553,61 +608,47 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
-            AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND activity_date >= toDate({windowStart:String})
             ${activityTypeFilter}`,
         queryParams,
       ),
       this.#sensorStore.query(
         activityTypeRowSchema,
-        `SELECT DISTINCT
+        `WITH toDate(toTimeZone(activity.started_at, {timezone:String})) AS activity_date
+          SELECT DISTINCT
             activity.activity_type AS activity_type
           FROM analytics.deduped_activities AS activity FINAL
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
-            AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND activity_date >= toDate({windowStart:String})
           ORDER BY activity_type ASC`,
         typeQueryParams,
       ),
     ]);
 
     const overview = overviewRows[0] ?? {
-      activity_count: 0,
-      total_minutes: 0,
-      total_distance_meters: null,
-      total_elevation_gain_m: null,
-      distance_measurement_count: 0,
-      elevation_measurement_count: 0,
+      current_activity_count: 0,
+      current_total_minutes: 0,
+      current_total_distance_meters: null,
+      current_total_elevation_gain_m: null,
+      current_distance_measurement_count: 0,
+      current_elevation_measurement_count: 0,
+      previous_activity_count: 0,
+      previous_total_minutes: 0,
+      previous_total_distance_meters: null,
+      previous_total_elevation_gain_m: null,
+      previous_distance_measurement_count: 0,
+      previous_elevation_measurement_count: 0,
     };
 
-    const activityCount = Math.round(overview.activity_count);
-    const distanceComplete = overview.distance_measurement_count === activityCount;
-    const elevationComplete = overview.elevation_measurement_count === activityCount;
-    const totalDistanceMeters = distanceComplete ? overview.total_distance_meters : null;
-    const totalElevationGainM = elevationComplete ? overview.total_elevation_gain_m : null;
-
-    return {
-      activityCount,
-      totalMinutes: Math.round(overview.total_minutes * 10) / 10,
-      totalDistanceMeters:
-        totalDistanceMeters == null ? null : Math.round(totalDistanceMeters * 10) / 10,
-      totalDistanceState: distanceComplete
-        ? activityMeasurementState("Distance", totalDistanceMeters)
-        : {
-            status: "missing",
-            reason: "Distance was not recorded for every activity.",
-          },
-      totalElevationGainM:
-        totalElevationGainM == null ? null : Math.round(totalElevationGainM * 10) / 10,
-      totalElevationState: elevationComplete
-        ? activityMeasurementState("Elevation gain", totalElevationGainM)
-        : {
-            status: "missing",
-            reason: "Elevation gain was not recorded for every activity.",
-          },
-      activityTypes: activityTypeRows.map((row) => row.activity_type),
-    };
+    return createActivityOverview(
+      overviewPeriodFromRow(overview, "current"),
+      overviewPeriodFromRow(overview, "previous"),
+      activityTypeRows.map((row) => row.activity_type),
+      input.weeks,
+    );
   }
 
   async #fetchSummaryMetricsByActivityId(activityIds: string[]) {
@@ -658,6 +699,164 @@ export function mergeDayGroups(
       ),
     }))
     .sort((left, right) => right.date.localeCompare(left.date));
+}
+
+interface ActivityOverviewPeriod {
+  activityCount: number;
+  totalMinutes: number;
+  totalDistanceMeters: number | null;
+  totalDistanceState: ActivityDataState;
+  totalElevationGainM: number | null;
+  totalElevationState: ActivityDataState;
+}
+
+function emptyActivityOverviewPeriod(): ActivityOverviewPeriod {
+  return {
+    activityCount: 0,
+    totalMinutes: 0,
+    totalDistanceMeters: null,
+    totalDistanceState: activityMeasurementState("Distance", null),
+    totalElevationGainM: null,
+    totalElevationState: activityMeasurementState("Elevation gain", null),
+  };
+}
+
+function overviewPeriodFromRow(
+  row: z.infer<typeof overviewRowSchema>,
+  period: "current" | "previous",
+): ActivityOverviewPeriod {
+  const activityCount = Math.round(
+    period === "current" ? row.current_activity_count : row.previous_activity_count,
+  );
+  const totalMinutes = roundMetric(
+    period === "current" ? row.current_total_minutes : row.previous_total_minutes,
+    1,
+  );
+  const totalDistanceMeters =
+    period === "current" ? row.current_total_distance_meters : row.previous_total_distance_meters;
+  const totalElevationGainM =
+    period === "current" ? row.current_total_elevation_gain_m : row.previous_total_elevation_gain_m;
+  const distanceMeasurementCount =
+    period === "current"
+      ? row.current_distance_measurement_count
+      : row.previous_distance_measurement_count;
+  const elevationMeasurementCount =
+    period === "current"
+      ? row.current_elevation_measurement_count
+      : row.previous_elevation_measurement_count;
+  const distanceComplete = distanceMeasurementCount === activityCount;
+  const elevationComplete = elevationMeasurementCount === activityCount;
+  const completeDistance = distanceComplete ? roundNullableMetric(totalDistanceMeters) : null;
+  const completeElevation = elevationComplete ? roundNullableMetric(totalElevationGainM) : null;
+
+  return {
+    activityCount,
+    totalMinutes,
+    totalDistanceMeters: completeDistance,
+    totalDistanceState: distanceComplete
+      ? activityMeasurementState("Distance", completeDistance)
+      : {
+          status: "missing",
+          reason: "Distance was not recorded for every activity.",
+        },
+    totalElevationGainM: completeElevation,
+    totalElevationState: elevationComplete
+      ? activityMeasurementState("Elevation gain", completeElevation)
+      : {
+          status: "missing",
+          reason: "Elevation gain was not recorded for every activity.",
+        },
+  };
+}
+
+function createActivityOverview(
+  current: ActivityOverviewPeriod,
+  previous: ActivityOverviewPeriod,
+  activityTypes: string[],
+  weeks: number,
+): ActivityOverview {
+  return {
+    ...current,
+    activityTypes,
+    comparison: {
+      periodLabel: `previous ${weeks} weeks`,
+      activityCount: createChange(current.activityCount, previous.activityCount, 0),
+      totalMinutes: createChange(current.totalMinutes, previous.totalMinutes, 1),
+      totalDistanceMeters: createMeasurementChange(
+        current.totalDistanceMeters,
+        current.totalDistanceState,
+        previous.totalDistanceMeters,
+        previous.totalDistanceState,
+      ),
+      totalElevationGainM: createMeasurementChange(
+        current.totalElevationGainM,
+        current.totalElevationState,
+        previous.totalElevationGainM,
+        previous.totalElevationState,
+      ),
+    },
+  };
+}
+
+function createChange(current: number, previous: number, decimals: 0 | 1): ActivityOverviewChange {
+  const difference = roundMetric(current - previous, decimals);
+  return {
+    magnitude: Math.abs(difference),
+    trend: trendForDifference(difference),
+  };
+}
+
+function createMeasurementChange(
+  current: number | null,
+  currentState: ActivityDataState,
+  previous: number | null,
+  previousState: ActivityDataState,
+): ActivityOverviewMeasurementChange {
+  if (currentState.status !== "available") {
+    return { magnitude: null, trend: "unavailable", state: currentState };
+  }
+  if (previousState.status !== "available") {
+    return {
+      magnitude: null,
+      trend: "unavailable",
+      state: {
+        status: previousState.status,
+        reason: `Previous period: ${previousState.reason}`,
+      },
+    };
+  }
+  if (current == null || previous == null) {
+    return {
+      magnitude: null,
+      trend: "unavailable",
+      state: {
+        status: "failed",
+        reason: "A complete comparison value was not returned.",
+      },
+    };
+  }
+
+  const difference = roundMetric(current - previous, 1);
+  return {
+    magnitude: Math.abs(difference),
+    trend: trendForDifference(difference),
+    state: { status: "available" },
+  };
+}
+
+function trendForDifference(difference: number): ActivityOverviewChangeTrend {
+  if (difference > 0) return "higher";
+  if (difference < 0) return "lower";
+  return "unchanged";
+}
+
+function roundMetric(value: number, decimals: 0 | 1): number {
+  const factor = decimals === 0 ? 1 : 10;
+  return Math.round(value * factor) / factor;
+}
+
+function roundNullableMetric(value: number | null): number | null {
+  return value == null ? null : roundMetric(value, 1);
 }
 
 function activityTypeFilterSql(input: Pick<WeekListInput, "activityType">): string {

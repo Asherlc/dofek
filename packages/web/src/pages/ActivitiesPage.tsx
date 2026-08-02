@@ -5,6 +5,11 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
+  type ActivityOverviewComparison,
+  activityOverviewChangeForLabel,
+  formatActivityOverviewChange,
+} from "@dofek/format/activity-overview";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -554,6 +559,7 @@ interface ActivityOverviewData {
   totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
   totalElevationState: ActivityDataState;
+  comparison?: ActivityOverviewComparison;
 }
 
 function ActivityOverview({
@@ -591,6 +597,15 @@ function ActivityOverview({
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {items.map((item) => {
         const isMetric = "status" in item;
+        const comparison = overview?.comparison
+          ? activityOverviewChangeForLabel(overview.comparison, item.label)
+          : undefined;
+        const formatComparisonMagnitude = {
+          Activities: (value: number) => String(value),
+          Time: (value: number) => formatDurationMinutes(value),
+          Distance: (value: number) => formatMeasurementText(units.formatDistance(value / 1000)),
+          Elevation: (value: number) => formatMeasurementText(units.formatElevation(value)),
+        }[item.label];
         return (
           <div
             key={item.label}
@@ -605,6 +620,15 @@ function ActivityOverview({
             <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
               {isMetric && item.status !== "available" ? item.reason : item.label}
             </div>
+            {comparison && formatComparisonMagnitude ? (
+              <div className="mt-1 text-xs text-subtle">
+                {formatActivityOverviewChange(
+                  comparison,
+                  overview?.comparison?.periodLabel ?? "previous period",
+                  formatComparisonMagnitude,
+                )}
+              </div>
+            ) : null}
           </div>
         );
       })}

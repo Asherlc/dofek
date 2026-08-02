@@ -5,6 +5,11 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
+  type ActivityOverviewComparison,
+  activityOverviewChangeForLabel,
+  formatActivityOverviewChange,
+} from "@dofek/format/activity-overview";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -618,6 +623,7 @@ interface ActivityOverviewData {
   totalDistanceState: ActivityDataState;
   totalElevationGainM: number | null;
   totalElevationState: ActivityDataState;
+  comparison?: ActivityOverviewComparison;
 }
 
 function ActivityOverview({
@@ -655,17 +661,35 @@ function ActivityOverview({
     <View style={styles.overviewGrid}>
       {items.map((item) => {
         const isMetric = "status" in item;
+        const comparison = overview?.comparison
+          ? activityOverviewChangeForLabel(overview.comparison, item.label)
+          : undefined;
+        const formatComparisonMagnitude = {
+          Activities: (value: number) => String(value),
+          Time: (value: number) => formatDurationMinutes(value),
+          Distance: (value: number) => formatMeasurementText(units.formatDistance(value / 1000)),
+          Elevation: (value: number) => formatMeasurementText(units.formatElevation(value)),
+        }[item.label];
+        const comparisonText =
+          comparison && formatComparisonMagnitude
+            ? formatActivityOverviewChange(
+                comparison,
+                overview?.comparison?.periodLabel ?? "previous period",
+                formatComparisonMagnitude,
+              )
+            : undefined;
+        const currentAccessibilityLabel = isMetric
+          ? item.status === "available"
+            ? `${item.label} ${item.value}`
+            : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
+          : undefined;
         return (
           <View
             key={item.label}
             style={styles.overviewItem}
-            accessible={isMetric}
+            accessible={isMetric || comparisonText !== undefined}
             accessibilityLabel={
-              isMetric
-                ? item.status === "available"
-                  ? `${item.label} ${item.value}`
-                  : `${item.label} ${activityDataStateLabel(item.status)}: ${item.reason}`
-                : undefined
+              [currentAccessibilityLabel, comparisonText].filter(Boolean).join(". ") || undefined
             }
           >
             <Text style={styles.overviewValue}>
@@ -676,6 +700,7 @@ function ActivityOverview({
             <Text style={styles.overviewLabel}>
               {isMetric && item.status !== "available" ? item.reason : item.label}
             </Text>
+            {comparisonText ? <Text style={styles.activityMeta}>{comparisonText}</Text> : null}
           </View>
         );
       })}
