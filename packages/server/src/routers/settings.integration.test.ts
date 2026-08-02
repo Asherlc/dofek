@@ -253,6 +253,11 @@ describe("Settings router", () => {
               VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
         ),
         testCtx.db.execute(
+          sql`INSERT INTO fitness.menstrual_period (user_id, start_date, notes)
+              VALUES (${SETTINGS_TEST_USER_ID}, '2024-01-15', 'Delete cycle note')
+              ON CONFLICT DO NOTHING`,
+        ),
+        testCtx.db.execute(
           sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)
               VALUES (${SETTINGS_TEST_USER_ID}, 'running', '2024-01-15', 260)
               ON CONFLICT DO NOTHING`,
@@ -282,6 +287,7 @@ describe("Settings router", () => {
         logsAfter,
         tokensAfter,
         eventsAfter,
+        menstrualPeriodsAfter,
         sportSettingsAfter,
         supplementsAfter,
         userSettingsAfter,
@@ -299,6 +305,9 @@ describe("Settings router", () => {
           sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.menstrual_period WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
           sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
@@ -313,6 +322,7 @@ describe("Settings router", () => {
       expect(logsAfter[0]?.count).toBe(0);
       expect(tokensAfter[0]?.count).toBe(0);
       expect(eventsAfter[0]?.count).toBe(0);
+      expect(menstrualPeriodsAfter[0]?.count).toBe(0);
       expect(sportSettingsAfter[0]?.count).toBe(0);
       expect(supplementsAfter[0]?.count).toBe(0);
       expect(userSettingsAfter[0]?.count).toBe(0);

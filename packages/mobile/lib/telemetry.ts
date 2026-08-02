@@ -8,6 +8,8 @@ import PostHog from "posthog-react-native";
 import { shouldSuppressBackgroundHealthKitTransientNetworkError } from "./health-kit-errors";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
+const SENTRY_RELEASE: string | undefined = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
+const SENTRY_DIST: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DIST;
 const OTEL_ENDPOINT: string | undefined = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
 const OTEL_HEADERS: string | undefined = process.env.EXPO_PUBLIC_OTEL_HEADERS;
 const POSTHOG_API_KEY = "phc_GsvyihTLSXrWGKYYGz84m44nuT59kYEwEXNnI0JICtg";
@@ -17,6 +19,34 @@ const POSTHOG_LOGS_URL = `${POSTHOG_HOST}/i/v1/logs`;
 let initialized = false;
 let loggerProvider: LoggerProvider | undefined;
 let posthogClient: PostHog | undefined;
+let currentTelemetryRoute: string | undefined;
+
+const uuidRouteSegment =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const numericRouteSegment = /^\d+$/;
+
+function normalizeTelemetryRoute(route: string | null | undefined): string | undefined {
+  if (!route || route.trim().length === 0) {
+    return undefined;
+  }
+
+  const path = route.trim().split(/[?#]/, 1)[0];
+  if (!path) {
+    return undefined;
+  }
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return normalizedPath
+    .split("/")
+    .map((segment) =>
+      uuidRouteSegment.test(segment) || numericRouteSegment.test(segment) ? ":id" : segment,
+    )
+    .join("/");
+}
+
+export function setTelemetryRoute(route: string | null | undefined): void {
+  currentTelemetryRoute = normalizeTelemetryRoute(route);
+}
 
 function parseHeaders(raw: string): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -115,6 +145,8 @@ export function initTelemetry() {
 
   Sentry.init({
     dsn: SENTRY_DSN,
+    ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
+    ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
     debug: __DEV__,
     tracesSampler: ({ name, inheritOrSampleWith }) =>
       name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
@@ -170,6 +202,13 @@ function sanitizePostHogProperties(
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
+  const hasExplicitRoute = typeof context.route === "string";
+  const explicitRoute =
+    typeof context.route === "string" ? normalizeTelemetryRoute(context.route) : undefined;
+  const telemetryContext =
+    hasExplicitRoute || currentTelemetryRoute
+      ? { ...context, route: hasExplicitRoute ? explicitRoute : currentTelemetryRoute }
+      : context;
   const source = typeof context.source === "string" ? context.source : undefined;
   // Suppress non-actionable transient background HealthKit network failures from
   // every error-tracking destination. Applying the check here (rather than only in
@@ -183,14 +222,16 @@ export function captureException(error: unknown, context: Record<string, unknown
   if (captureToErrorTracking) {
     Sentry.captureException(error, {
       ...(source ? { tags: { source } } : {}),
-      extra: context,
+      extra: telemetryContext,
     });
-    posthogClient?.captureException(error, sanitizePostHogProperties(context));
+    posthogClient?.captureException(error, sanitizePostHogProperties(telemetryContext));
   }
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
   const attributes =
-    error instanceof Error ? { ...context, errorName: error.name } : { ...context };
+    error instanceof Error
+      ? { ...telemetryContext, errorName: error.name }
+      : { ...telemetryContext };
   emitLog(SeverityNumber.ERROR, "ERROR", "exception", errorMessage, attributes);
 }
 
@@ -201,7 +242,13 @@ function emitLog(
   message: string,
   data?: Record<string, unknown>,
 ) {
-  const sanitizedData = sanitizeLogAttributes(data);
+  const logData =
+    typeof data?.route === "string"
+      ? { ...data, route: normalizeTelemetryRoute(data.route) }
+      : currentTelemetryRoute && (data === undefined || !("route" in data))
+        ? { ...data, route: currentTelemetryRoute }
+        : data;
+  const sanitizedData = sanitizeLogAttributes(logData);
   Sentry.addBreadcrumb({
     category,
     message,

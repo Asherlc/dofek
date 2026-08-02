@@ -81,6 +81,8 @@ vi.mock("@opentelemetry/semantic-conventions", () => ({
 
 describe("ios telemetry", () => {
   let originalDsn: string | undefined;
+  let originalRelease: string | undefined;
+  let originalDist: string | undefined;
   let originalOtelEndpoint: string | undefined;
   let originalOtelHeaders: string | undefined;
 
@@ -90,6 +92,8 @@ describe("ios telemetry", () => {
     vi.stubGlobal("__DEV__", true);
 
     originalDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+    originalRelease = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
+    originalDist = process.env.EXPO_PUBLIC_SENTRY_DIST;
     originalOtelEndpoint = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
     originalOtelHeaders = process.env.EXPO_PUBLIC_OTEL_HEADERS;
   });
@@ -100,6 +104,16 @@ describe("ios telemetry", () => {
       delete process.env.EXPO_PUBLIC_SENTRY_DSN;
     } else {
       process.env.EXPO_PUBLIC_SENTRY_DSN = originalDsn;
+    }
+    if (originalRelease === undefined) {
+      delete process.env.EXPO_PUBLIC_SENTRY_RELEASE;
+    } else {
+      process.env.EXPO_PUBLIC_SENTRY_RELEASE = originalRelease;
+    }
+    if (originalDist === undefined) {
+      delete process.env.EXPO_PUBLIC_SENTRY_DIST;
+    } else {
+      process.env.EXPO_PUBLIC_SENTRY_DIST = originalDist;
     }
     if (originalOtelEndpoint === undefined) {
       delete process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
@@ -150,6 +164,22 @@ describe("ios telemetry", () => {
     expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
   });
 
+  it("passes the bundled release and distribution to Sentry", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_SENTRY_RELEASE = "release-sha";
+    process.env.EXPO_PUBLIC_SENTRY_DIST = "build-123";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    expect(mocks.mockInit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        release: "release-sha",
+        dist: "build-123",
+      }),
+    );
+  });
+
   it("initializes PostHog with crash-only error autocapture in production builds", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     vi.stubGlobal("__DEV__", false);
@@ -189,6 +219,116 @@ describe("ios telemetry", () => {
         operation: "global-handler",
       },
     });
+  });
+
+  it("adds the sanitized current route to error context", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/activity/550e8400-e29b-41d4-a716-446655440000");
+
+    mod.captureException(new Error("request failed"), { source: "react-query" });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: "/activity/:id",
+        },
+      }),
+    );
+  });
+
+  it.each([
+    "550e8400-e29b-61d4-a716-446655440000",
+    "550e8400-e29b-71d4-a716-446655440000",
+    "550e8400-e29b-81d4-a716-446655440000",
+  ])("redacts UUID routes from versions 6 through 8 (%s)", async (uuid) => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute(`/activity/${uuid}`);
+
+    mod.captureException(new Error("request failed"), { source: "react-query" });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: "/activity/:id",
+        },
+      }),
+    );
+  });
+
+  it("keeps an explicitly supplied route over the global route", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/settings");
+
+    mod.captureException(new Error("request failed"), {
+      source: "react-query",
+      route: "/providers",
+    });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: "/providers",
+        },
+      }),
+    );
+  });
+
+  it("does not retain a malformed explicit route or fall back to the global route", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/settings");
+
+    mod.captureException(new Error("request failed"), {
+      source: "react-query",
+      route: "?token=secret",
+    });
+    mod.logger.error("invalid-route", "request failed", { route: "?token=secret" });
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extra: {
+          source: "react-query",
+          route: undefined,
+        },
+      }),
+    );
+    expect(mocks.mockAddBreadcrumb).toHaveBeenLastCalledWith({
+      category: "invalid-route",
+      message: "request failed",
+      level: "error",
+    });
+    expect(mocks.mockEmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        body: "[invalid-route] request failed",
+        attributes: undefined,
+      }),
+    );
+    expect(
+      JSON.stringify([
+        mocks.mockCaptureException.mock.calls,
+        mocks.mockAddBreadcrumb.mock.calls,
+        mocks.mockEmit.mock.calls,
+      ]),
+    ).not.toContain("secret");
   });
 
   it("drops transient background HealthKit network errors from Sentry and PostHog", async () => {
@@ -294,6 +434,35 @@ describe("ios telemetry", () => {
     );
   });
 
+  it("adds the current route to structured log breadcrumbs and OTel records", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.setTelemetryRoute("/activity/550e8400-e29b-41d4-a716-446655440000");
+
+    mod.logger.info("screen-navigation", "Activity opened", { selected: true });
+
+    expect(mocks.mockAddBreadcrumb).toHaveBeenCalledWith({
+      category: "screen-navigation",
+      message: "Activity opened",
+      level: "info",
+      data: {
+        selected: true,
+        route: "/activity/:id",
+      },
+    });
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attributes: {
+          selected: true,
+          route: "/activity/:id",
+        },
+      }),
+    );
+  });
+
   it("logger.info adds a Sentry breadcrumb with sanitized data", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
 
@@ -312,7 +481,7 @@ describe("ios telemetry", () => {
       message: "Nutrition tab selected",
       level: "info",
       data: {
-        route: "food",
+        route: "/food",
         selected: true,
         count: 1,
       },
