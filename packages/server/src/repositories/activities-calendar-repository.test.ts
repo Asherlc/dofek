@@ -698,6 +698,50 @@ describe("ActivitiesCalendarRepository", () => {
     );
   });
 
+  it("uses only current-period visible IDs for the activity-types query", async () => {
+    const database = makeDatabase([
+      [{ id: "current-activity" }, { id: "previous-only-activity" }],
+      [{ id: "current-activity" }],
+    ]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          current_activity_count: 1,
+          current_total_minutes: 60,
+          current_total_distance_meters: null,
+          current_total_elevation_gain_m: null,
+          current_distance_measurement_count: 0,
+          current_elevation_measurement_count: 0,
+          previous_activity_count: 1,
+          previous_total_minutes: 45,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 0,
+        },
+      ],
+      [{ activity_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" });
+
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({
+        activityIds: ["current-activity", "previous-only-activity"],
+      }),
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining("SELECT DISTINCT"),
+      expect.objectContaining({ activityIds: ["current-activity"] }),
+    );
+  });
+
   it("preserves unavailable overview measurements as null", async () => {
     const database = makeDatabase([
       [{ id: "activity-without-measurements" }],
