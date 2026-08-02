@@ -8,6 +8,8 @@ export const METRIC_STREAM_ORDER_BY = "(user_id, activity_id, channel, recorded_
 export const METRIC_STREAM_PROVIDER_GENERATION_PROJECTION = "by_provider_generation";
 export const METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION = "by_provider_live_generation";
 export const METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION = "by_provider_current_state";
+export const METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION =
+  "by_provider_current_state_recorded_at";
 export const METRIC_STREAM_PROVIDER_GENERATION_ORDER_BY = "(user_id, provider_id, generation, id)";
 export const METRIC_STREAM_PROVIDER_GENERATION_COVERING_ORDER_BY =
   "(user_id, provider_id, generation, id, version, ingested_at)";
@@ -61,6 +63,19 @@ export function metricStreamProviderCurrentStateProjectionDefinition(): string {
     GROUP BY user_id, provider_id, id`;
 }
 
+export function metricStreamProviderCurrentStateRecordedAtProjectionDefinition(): string {
+  return `SELECT
+      user_id,
+      provider_id,
+      id,
+      argMax(recorded_at, tuple(version, ingested_at)) AS recorded_at,
+      argMax(ingested_at, tuple(version, ingested_at)) AS ingested_at,
+      argMax(version, tuple(version, ingested_at)) AS version,
+      argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
+    GROUP BY user_id, provider_id, id
+    ORDER BY (user_id, provider_id, recorded_at, id)`;
+}
+
 export function buildIngestMetricStreamCreateTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_TABLE} (
   id UUID,
@@ -85,6 +100,9 @@ ${metricStreamIngestMetadataColumnDefinitions},
   ),
   PROJECTION ${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION} (
     ${metricStreamProviderCurrentStateProjectionDefinition()}
+  ),
+  PROJECTION ${METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION} (
+    ${metricStreamProviderCurrentStateRecordedAtProjectionDefinition()}
   )
 )
 ${metricStreamReplacingMergeTreeEngine()}`;
