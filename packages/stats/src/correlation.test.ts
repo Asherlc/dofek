@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CORRELATION_AVAILABILITY_DESCRIPTION,
   CORRELATION_METRICS,
   CorrelationResult,
   lgamma,
   linearRegression,
+  MIN_CORRELATION_PAIRS,
   pearsonCorrelation,
   regularizedBeta,
   tCDF,
@@ -33,7 +35,14 @@ describe("CORRELATION_METRICS", () => {
       expect(m.label.length).toBeGreaterThan(0);
       expect(m.unit.length).toBeGreaterThan(0);
       expect(m.description.length).toBeGreaterThan(0);
+      expect(m.availabilityDescription.length).toBeGreaterThan(0);
     }
+  });
+
+  it("keeps availability guidance tied to the minimum pair threshold", () => {
+    expect(CORRELATION_AVAILABILITY_DESCRIPTION).toContain(
+      `at least ${MIN_CORRELATION_PAIRS} paired calendar days`,
+    );
   });
 });
 

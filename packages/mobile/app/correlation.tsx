@@ -1,6 +1,7 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
+import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
@@ -13,6 +14,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -85,6 +87,8 @@ interface MetricItem {
   label: string;
   unit: string;
   domain: string;
+  description: string;
+  availabilityDescription: string;
 }
 
 function MetricPicker({
@@ -93,16 +97,28 @@ function MetricPicker({
   metrics,
   onSelect,
   unavailableMetricId,
+  searchQuery,
+  onSearchChange,
 }: {
   label: string;
   selected: string;
   metrics: MetricItem[];
   onSelect: (id: string) => void;
   unavailableMetricId: string;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
 }) {
   const grouped = useMemo(() => {
     const groups: Record<string, MetricItem[]> = {};
+    const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
     for (const m of metrics) {
+      const matchesSearch =
+        normalizedSearchQuery.length === 0 ||
+        [m.label, m.unit, m.domain, m.description, m.availabilityDescription]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(normalizedSearchQuery);
+      if (!matchesSearch) continue;
       const domain = m.domain.charAt(0).toUpperCase() + m.domain.slice(1);
       if (!groups[domain]) groups[domain] = [];
       groups[domain].push(m);
@@ -111,11 +127,21 @@ function MetricPicker({
       domain: d,
       items: groups[d] ?? [],
     }));
-  }, [metrics]);
+  }, [metrics, searchQuery]);
+  const selectedMetric = metrics.find((metric) => metric.id === selected);
 
   return (
     <View style={styles.pickerContainer}>
       <Text style={styles.pickerLabel}>{label}</Text>
+      <TextInput
+        value={searchQuery}
+        onChangeText={onSearchChange}
+        accessibilityLabel={`Search ${label} metrics`}
+        placeholder="Search metrics"
+        placeholderTextColor={colors.textTertiary}
+        autoCapitalize="none"
+        style={styles.metricSearch}
+      />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroller}>
         {grouped.map(({ domain, items }) => (
           <View key={domain} style={styles.chipGroup}>
@@ -134,7 +160,7 @@ function MetricPicker({
                     onPress={isUnavailable ? undefined : () => onSelect(m.id)}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={m.label}
+                    accessibilityLabel={`${m.label} (${m.unit})`}
                     accessibilityState={{
                       disabled: isUnavailable,
                       selected: selected === m.id,
@@ -148,7 +174,7 @@ function MetricPicker({
                         isUnavailable && styles.chipTextUnavailable,
                       ]}
                     >
-                      {m.label}
+                      {m.label} ({m.unit})
                     </Text>
                   </TouchableOpacity>
                 );
@@ -157,6 +183,13 @@ function MetricPicker({
           </View>
         ))}
       </ScrollView>
+      {grouped.length === 0 && <Text style={styles.noMatchingMetrics}>No matching metrics</Text>}
+      {selectedMetric && (
+        <View style={styles.metricDetails}>
+          <Text style={styles.metricDescription}>{selectedMetric.description}</Text>
+          <Text style={styles.metricAvailability}>{selectedMetric.availabilityDescription}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -469,6 +502,8 @@ export default function CorrelationScreen() {
   const { days, description, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
+  const [metricXSearch, setMetricXSearch] = useState("");
+  const [metricYSearch, setMetricYSearch] = useState("");
   const [lag, setLag] = useState(0);
   const [observationCursors, setObservationCursors] = useState<Array<string | undefined>>([
     undefined,
@@ -531,6 +566,7 @@ export default function CorrelationScreen() {
       {/* Metric pickers */}
       {metrics.length > 0 && (
         <>
+          <Text style={styles.availabilityHint}>{CORRELATION_AVAILABILITY_DESCRIPTION}</Text>
           <MetricPicker
             label="X Axis"
             selected={metricX}
@@ -540,6 +576,8 @@ export default function CorrelationScreen() {
               resetObservationCursor();
             }}
             unavailableMetricId={metricY}
+            searchQuery={metricXSearch}
+            onSearchChange={setMetricXSearch}
           />
           <MetricPicker
             label="Y Axis"
@@ -550,6 +588,8 @@ export default function CorrelationScreen() {
               resetObservationCursor();
             }}
             unavailableMetricId={metricX}
+            searchQuery={metricYSearch}
+            onSearchChange={setMetricYSearch}
           />
         </>
       )}
@@ -817,6 +857,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  metricSearch: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontSize: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   chipScroller: {
     flexGrow: 0,
   },
@@ -857,6 +907,26 @@ const styles = StyleSheet.create({
   },
   chipTextUnavailable: {
     color: colors.textSecondary,
+  },
+  noMatchingMetrics: {
+    fontSize: 12,
+    color: colors.textTertiary,
+  },
+  metricDetails: {
+    gap: 3,
+  },
+  metricDescription: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  metricAvailability: {
+    fontSize: 11,
+    color: colors.textTertiary,
+  },
+  availabilityHint: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    lineHeight: 16,
   },
 
   lagHint: {
