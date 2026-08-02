@@ -20,7 +20,7 @@ function stubPublicLandingRequests(): void {
 function expectWithinFirstViewport(text: string): void {
   cy.contains(text)
     .should("be.visible")
-    .then(($element) => {
+    .should(($element) => {
       const bottom = $element[0].getBoundingClientRect().bottom;
       expect(bottom, `${text} bottom edge`).to.be.at.most(667);
     });

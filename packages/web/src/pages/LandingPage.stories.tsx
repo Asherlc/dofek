@@ -51,8 +51,16 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen bg-page">
+    <div className="bg-page">
       <RouterProvider router={router} />
+    </div>
+  );
+}
+
+function withFixedMobileViewport(Story: ComponentType) {
+  return (
+    <div style={{ width: "390px", height: "667px", overflow: "hidden" }}>
+      <Story />
     </div>
   );
 }
@@ -90,19 +98,12 @@ export const MobileHeader: Story = {
 
 export const MobileFirstViewport: Story = {
   name: "Mobile first viewport",
+  decorators: [withFixedMobileViewport],
   parameters: {
-    viewport: {
-      defaultViewport: "landingMobile",
-      options: {
-        landingMobile: {
-          name: "Landing mobile (390 × 667)",
-          styles: { width: "390px", height: "667px" },
-        },
-      },
-    },
     docs: {
       description: {
-        story: "Keeps the concrete recovery outcome visible within a 390 × 667 first viewport.",
+        story:
+          "Keeps the concrete recovery outcome visible within a fixed 390 × 667 first-viewport frame.",
       },
     },
   },
