@@ -4,6 +4,7 @@ import {
   baselineComparisonDirectionSchema,
   baselineRelativeMetricSchema,
 } from "./baseline-relative-metrics.ts";
+import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
@@ -227,7 +228,9 @@ export const mobileRecoveryTabOutputSchema = z.object({
     z.object({
       date: dateSchema,
       rawWeight: nonnegativeNumberSchema.nullable(),
+      rawWeightStatus: epistemicStatusSchema.nullable(),
       smoothedWeight: nonnegativeNumberSchema,
+      smoothedWeightStatus: epistemicStatusSchema,
       weeklyChange: z.number().nullable(),
       interpolated: z.boolean(),
     }),

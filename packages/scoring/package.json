@@ -23,6 +23,7 @@
     "./tokens": "./src/tokens.ts",
     "./strain-target": "./src/strain-target.ts",
     "./today-plan": "./src/today-plan.ts",
+    "./epistemic-status": "./src/epistemic-status.ts",
     "./sleep-performance": "./src/sleep-performance.ts",
     "./healthspan-years": "./src/healthspan-years.ts",
     "./menstrual-cycle": "./src/menstrual-cycle.ts",
@@ -52,6 +53,10 @@
       "./today-plan": {
         "types": "./dist/today-plan.d.ts",
         "import": "./dist/today-plan.js"
+      },
+      "./epistemic-status": {
+        "types": "./dist/epistemic-status.d.ts",
+        "import": "./dist/epistemic-status.js"
       },
       "./sleep-performance": {
         "types": "./dist/sleep-performance.d.ts",

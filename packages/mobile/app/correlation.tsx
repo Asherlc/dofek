@@ -689,6 +689,7 @@ export default function CorrelationScreen() {
               description="The rank correlation, dependence-aware interval, and calendar-day coverage for the selected metrics."
               textStyle={styles.cardTitle}
             />
+            <Text style={styles.statText}>{data.epistemicStatus?.label}</Text>
 
             {data.availability === "available" ? (
               <>

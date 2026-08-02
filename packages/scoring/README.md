@@ -40,6 +40,7 @@ console.log({
 | `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
 | `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
 | `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, server-authored caveats, confidence, freshness, and shared presentation helpers |
+| `@dofek/scoring/epistemic-status` | Shared Observed / Estimated / Associated / Suggested / Unavailable status vocabulary |
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
 | `@dofek/scoring/menstrual-cycle` | Cycle-phase estimation, display metadata, and shared safety copy |

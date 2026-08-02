@@ -26,6 +26,7 @@ const emptyProvenance: Pick<
 
 const mockData = {
   availability: "available",
+  epistemicStatus: { kind: "estimated", label: "Estimated" },
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 90,
@@ -129,6 +130,7 @@ describe("SleepNeedCard", () => {
   it("presents the available value as an uncalibrated heuristic estimate", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
+    expect(screen.getByText("Estimated sleep need tonight")).toBeDefined();
     expect(screen.getByText("About 8h 35m")).toBeDefined();
     expect(screen.getByText("Heuristic estimate")).toBeDefined();
     expect(screen.getByText("Previous-day load adjustment")).toBeDefined();
@@ -229,6 +231,7 @@ describe("SleepNeedCard", () => {
     capturedOption = null;
     const unavailableData: SleepNeedV2 = {
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     };
     render(<SleepNeedCard data={unavailableData} />);
@@ -244,6 +247,7 @@ describe("SleepNeedCard", () => {
     capturedOption = null;
     const insufficientData: SleepNeedV2 = {
       availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       reason: "insufficient_baseline_history",
       message: "Sync at least 7 qualifying nights to estimate sleep need.",
       nextAction: "Sync more sleep and recovery data.",
@@ -251,6 +255,7 @@ describe("SleepNeedCard", () => {
 
     render(<SleepNeedCard data={insufficientData} />);
 
+    expect(screen.getByText("Unavailable")).toBeDefined();
     expect(screen.getByText(insufficientData.message)).toBeDefined();
     expect(screen.getByText(insufficientData.nextAction)).toBeDefined();
     expect(screen.queryByTestId("echarts")).toBeNull();

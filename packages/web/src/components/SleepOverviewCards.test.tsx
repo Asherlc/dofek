@@ -33,6 +33,7 @@ describe("SleepOverviewCards", () => {
       <SleepOverviewCards
         sleepNeed={{
           availability: "missing_previous_night",
+          epistemicStatus: { kind: "unavailable", label: "Unavailable" },
           message: MISSING_PREVIOUS_NIGHT_MESSAGE,
         }}
         sleepPerformance={null}
@@ -49,6 +50,7 @@ describe("SleepOverviewCards", () => {
       <SleepOverviewCards
         sleepNeed={{
           availability: "available",
+          epistemicStatus: { kind: "estimated", label: "Estimated" },
           baselineMinutes: 480,
           strainDebtMinutes: 12,
           accumulatedDebtMinutes: 85,
@@ -92,6 +94,7 @@ describe("SleepOverviewCards", () => {
       <SleepOverviewCards
         sleepNeed={{
           availability: "insufficient_data",
+          epistemicStatus: { kind: "unavailable", label: "Unavailable" },
           reason: "missing_previous_day_load",
           message: "Sync yesterday's activity data to include training load in sleep need.",
           nextAction: "Sync activity data for the previous day.",

@@ -1,3 +1,5 @@
+import { type EpistemicStatus, getEpistemicStatus } from "./epistemic-status.ts";
+
 export type TodayPlanConfidence = "high" | "moderate" | "low";
 export type TodayPlanZone = "Push" | "Maintain" | "Recovery";
 export type TodayPlanSleepTier = "Excellent" | "Good" | "Fair" | "Poor";
@@ -39,6 +41,7 @@ export interface BuildTodayPlanInput {
 export type TodayPlanResult =
   | {
       status: "ready";
+      epistemicStatus: EpistemicStatus;
       date: string;
       action: TodayPlanAction;
       supportingFacts: [TodayPlanSupportingFact, TodayPlanSupportingFact];
@@ -51,6 +54,7 @@ export type TodayPlanResult =
     }
   | {
       status: "insufficient_data";
+      epistemicStatus: EpistemicStatus;
       date: string;
       action: null;
       supportingFacts: [];
@@ -162,6 +166,7 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
   if (input.strainTarget == null) {
     return {
       status: "insufficient_data",
+      epistemicStatus: getEpistemicStatus("unavailable"),
       date: input.endDate,
       action: null,
       supportingFacts: [],
@@ -178,6 +183,7 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
 
   return {
     status: "ready",
+    epistemicStatus: getEpistemicStatus("suggested"),
     date: input.endDate,
     action: {
       id: "strain_target",

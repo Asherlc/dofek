@@ -147,7 +147,7 @@ export const mobileDashboardRouter = router({
 
   dashboardV2: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
-    keyVersion: "sleep-need-metadata-v1",
+    keyVersion: "sleep-need-metadata-v2",
   })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardV2OutputSchema)

@@ -157,6 +157,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       });
     });
@@ -173,6 +174,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         message: "Sync last night's sleep data to see tonight's sleep need.",
       });
     });
@@ -191,6 +193,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         reason: "insufficient_baseline_history",
         message: "Sync at least 7 qualifying nights to estimate sleep need.",
         nextAction: "Sync more sleep and recovery data.",
@@ -204,6 +207,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toEqual({
         availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
         reason: "missing_previous_day_load",
         message: "Sync yesterday's activity data to include training load in sleep need.",
         nextAction: "Sync activity data for the previous day.",
@@ -234,6 +238,7 @@ describe("sleepNeedRouter", () => {
 
       expect(result).toMatchObject({
         availability: "available",
+        epistemicStatus: { kind: "estimated", label: "Estimated" },
         accumulatedDebtMinutes: 0,
         debtRecoveryMinutes: 0,
         totalNeedMinutes: 480,
