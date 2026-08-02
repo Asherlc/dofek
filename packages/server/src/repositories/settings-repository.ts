@@ -145,15 +145,20 @@ export class SettingsRepository {
   async deleteAllUserData(providerChildTables: string[]): Promise<void> {
     await this.#db.transaction(async (transaction) => {
       const deleteTable = async (table: string): Promise<void> => {
+        await transaction.execute(sql`SAVEPOINT dofek_delete_user_data`);
         try {
           await transaction.execute(
             sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
           );
         } catch (error: unknown) {
+          await transaction.execute(sql`ROLLBACK TO SAVEPOINT dofek_delete_user_data`);
+          await transaction.execute(sql`RELEASE SAVEPOINT dofek_delete_user_data`);
           if (!isUndefinedTableError(error)) {
             throw error;
           }
+          return;
         }
+        await transaction.execute(sql`RELEASE SAVEPOINT dofek_delete_user_data`);
       };
 
       for (const table of providerChildTables) {

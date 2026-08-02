@@ -229,6 +229,121 @@ describe("SettingsRepository", () => {
       expect(transaction).toHaveBeenCalledTimes(1);
     });
 
+    it("skips global provider tables while deleting normal provider child tables", async () => {
+      const transactionExecute = vi.fn().mockResolvedValue([]);
+      const transaction = vi
+        .fn()
+        .mockImplementation(
+          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
+            await callback({ execute: transactionExecute });
+          },
+        );
+      const execute = vi.fn().mockResolvedValue([]);
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute,
+        transaction,
+      };
+      const repo = new SettingsRepository(db, "user-1");
+
+      await repo.deleteAllUserData(["fitness.exercise_alias", "fitness.activity"]);
+
+      const queries = transactionExecute.mock.calls.map(([query]) =>
+        JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
+      );
+      expect(queries.some((query) => query.includes("fitness.exercise_alias"))).toBe(false);
+      expect(queries.some((query) => query.includes("fitness.activity"))).toBe(true);
+    });
+
+    it("rolls back an absent-table delete before continuing the transaction", async () => {
+      let transactionAborted = false;
+      const transactionExecute = vi.fn(async (query: unknown) => {
+        const queryText = JSON.stringify(
+          typeof query === "object" && query !== null
+            ? (Reflect.get(query, "queryChunks") ?? [])
+            : [],
+        );
+        if (queryText.includes("ROLLBACK TO SAVEPOINT")) {
+          transactionAborted = false;
+          return [];
+        }
+        if (transactionAborted) {
+          throw new Error("current transaction is aborted");
+        }
+        if (queryText.includes("fitness.menstrual_period")) {
+          transactionAborted = true;
+          throw Object.assign(new Error('relation "fitness.menstrual_period" does not exist'), {
+            code: "42P01",
+          });
+        }
+        return [];
+      });
+      const transaction = vi
+        .fn()
+        .mockImplementation(
+          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
+            await callback({ execute: transactionExecute });
+          },
+        );
+      const execute = vi.fn().mockResolvedValue([]);
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute,
+        transaction,
+      };
+      const repo = new SettingsRepository(db, "user-1");
+
+      await expect(repo.deleteAllUserData([])).resolves.toBeUndefined();
+
+      const queries = transactionExecute.mock.calls.map(([query]) =>
+        JSON.stringify(
+          typeof query === "object" && query !== null
+            ? (Reflect.get(query, "queryChunks") ?? [])
+            : [],
+        ),
+      );
+      expect(queries.some((query) => query.includes("ROLLBACK TO SAVEPOINT"))).toBe(true);
+      expect(queries.some((query) => query.includes("fitness.sport_settings"))).toBe(true);
+    });
+
+    it("rethrows non-schema deletion errors after restoring the transaction", async () => {
+      const deletionError = new Error("permission denied");
+      const transactionExecute = vi.fn(async (query: unknown) => {
+        const queryText = JSON.stringify(
+          typeof query === "object" && query !== null
+            ? (Reflect.get(query, "queryChunks") ?? [])
+            : [],
+        );
+        if (queryText.includes("fitness.menstrual_period")) {
+          throw deletionError;
+        }
+        return [];
+      });
+      const transaction = vi
+        .fn()
+        .mockImplementation(
+          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
+            await callback({ execute: transactionExecute });
+          },
+        );
+      const execute = vi.fn().mockResolvedValue([]);
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute,
+        transaction,
+      };
+      const repo = new SettingsRepository(db, "user-1");
+
+      await expect(repo.deleteAllUserData([])).rejects.toBe(deletionError);
+
+      const queries = transactionExecute.mock.calls.map(([query]) =>
+        JSON.stringify(
+          typeof query === "object" && query !== null
+            ? (Reflect.get(query, "queryChunks") ?? [])
+            : [],
+        ),
+      );
+      expect(queries.some((query) => query.includes("ROLLBACK TO SAVEPOINT"))).toBe(true);
+      expect(queries.some((query) => query.includes("RELEASE SAVEPOINT"))).toBe(true);
+    });
+
     it("deletes exactly 6 user-scoped tables including menstrual periods", async () => {
       const transactionExecute = vi.fn().mockResolvedValue([]);
       const transaction = vi
@@ -247,10 +362,10 @@ describe("SettingsRepository", () => {
 
       // Pass 0 child tables to isolate user-scoped count.
       await repo.deleteAllUserData([]);
-      expect(transactionExecute).toHaveBeenCalledTimes(6);
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
       expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
     });
 
@@ -283,7 +398,6 @@ describe("SettingsRepository", () => {
       const repo = new SettingsRepository(db, "user-1");
 
       await expect(repo.deleteAllUserData([])).resolves.toBeUndefined();
-      expect(transactionExecute).toHaveBeenCalledTimes(6);
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(
           typeof query === "object" && query !== null
@@ -291,6 +405,7 @@ describe("SettingsRepository", () => {
             : [],
         ),
       );
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
       expect(queries.some((query) => query.includes("fitness.supplement"))).toBe(true);
     });
 
@@ -313,8 +428,11 @@ describe("SettingsRepository", () => {
       const childTables = ["fitness.sync_log", "fitness.activity"];
       await repo.deleteAllUserData(childTables);
 
-      // 2 child tables + 6 user-scoped tables = 8 execute calls
-      expect(transactionExecute).toHaveBeenCalledTimes(8);
+      const queries = transactionExecute.mock.calls.map(([query]) =>
+        JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
+      );
+      // 2 child tables + 6 user-scoped tables = 8 delete statements.
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(8);
     });
   });
 });

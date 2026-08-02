@@ -653,7 +653,10 @@ describe("settingsRouter", () => {
       const result = await caller.deleteAllUserData();
       expect(result).toEqual({ success: true });
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(PROVIDER_ACCOUNT_TABLES.length + 6);
+      const deleteQueries = txExecute.mock.calls.filter(([query]) =>
+        JSON.stringify(Reflect.get(query, "queryChunks") ?? []).includes("DELETE FROM"),
+      );
+      expect(deleteQueries).toHaveLength(PROVIDER_ACCOUNT_TABLES.length + 6);
       expectCallsUseNonEmptySql(txExecute);
       expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
