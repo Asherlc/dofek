@@ -19,6 +19,8 @@ function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMet
     statusLabel: "Moving as intended",
     evaluationRule: "Above your baseline, where higher values support this metric",
     explanation: "Heart Rate Variability (HRV) is above your baseline.",
+    provenance: null,
+    comparison: null,
     ...overrides,
   };
 }

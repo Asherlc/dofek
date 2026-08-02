@@ -19,6 +19,8 @@ const serverMetric = {
   statusLabel: "Near baseline",
   evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
   explanation: "Skin Temperature is close to your usual range.",
+  provenance: null,
+  comparison: null,
 };
 
 describe("HealthStatusBar", () => {

@@ -713,6 +713,8 @@ describe("buildHealthMetrics", () => {
       statusLabel: "Moving as intended",
       evaluationRule: "Below your baseline, where lower values support this metric",
       explanation: "Resting Heart Rate is below your baseline.",
+      provenance: null,
+      comparison: null,
     };
     const metrics = buildHealthMetrics({
       avg_hrv: 43.8,
