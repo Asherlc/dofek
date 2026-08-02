@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockUseSearch = vi.hoisted(() => vi.fn());
@@ -75,6 +75,26 @@ describe("Login route", () => {
     expect(href).not.toBeNull();
     const returnTo = new URLSearchParams(href?.split("?")[1]).get("return_to");
     expect(returnTo).toBe("/dashboard?providerGuide=true");
+  });
+
+  it("separates identity sign-in from health-data provider sign-in", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({ identity: ["google"], data: ["strava"] });
+
+    renderLoginPage();
+
+    expect(screen.getByRole("heading", { name: "Sign in to Dofek" })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Sign in with google" })).toBeTruthy();
+    });
+
+    const dataSection = screen.getByRole("region", {
+      name: "Sign in with a health data provider",
+    });
+    const dataSignInLink = within(dataSection).getByRole("link", { name: "Sign in with strava" });
+    expect(dataSignInLink).toHaveAttribute("href", "/auth/login/data/strava");
+    expect(screen.queryByRole("link", { name: "Connect strava" })).toBeNull();
+    expect(dataSection).toHaveClass("bg-surface-hover/40", "border");
   });
 
   it("renders email/password form when password auth is enabled", async () => {

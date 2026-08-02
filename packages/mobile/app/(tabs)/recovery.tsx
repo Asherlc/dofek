@@ -330,6 +330,15 @@ export default function RecoveryScreen() {
             }
             return `${formatNumber(metric.value, 0)} bpm`;
           }}
+          formatComparisonValue={(metric, value) => {
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperatureDelta(value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(value);
+            if (metric.metric === "hrv") return formatHRV(value);
+            if (metric.metric === "steps") return formatNumber(value, 0);
+            return formatNumber(value);
+          }}
         />
       )}
 

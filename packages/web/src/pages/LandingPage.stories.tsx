@@ -51,8 +51,16 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen bg-page">
+    <div className="bg-page">
       <RouterProvider router={router} />
+    </div>
+  );
+}
+
+function withFixedMobileViewport(Story: ComponentType) {
+  return (
+    <div style={{ width: "390px", height: "667px", overflow: "hidden" }}>
+      <Story />
     </div>
   );
 }
@@ -85,6 +93,26 @@ export const MobileHeader: Story = {
 
     await expect(signInLink).toBeVisible();
     await expect(signInLink).toHaveAttribute("href", "/login");
+  },
+};
+
+export const MobileFirstViewport: Story = {
+  name: "Mobile first viewport",
+  decorators: [withFixedMobileViewport],
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Keeps the concrete recovery outcome visible within a fixed 390 × 667 first-viewport frame.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Today's recovery picture")).toBeVisible();
+    await expect(canvas.getByText("74%")).toBeVisible();
+    await expect(canvas.getByText("Near baseline")).toBeVisible();
   },
 };
 

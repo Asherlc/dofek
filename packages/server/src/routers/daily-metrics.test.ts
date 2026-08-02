@@ -293,7 +293,40 @@ describe("dailyMetricsRouter", () => {
     });
 
     it("returns first row or null", async () => {
-      const rows = [makeTrendsRow()];
+      const rows = [
+        makeTrendsRow({
+          metric_evidence: {
+            hrv: {
+              latestDate: "2024-01-16",
+              sourceProviders: ["whoop"],
+              observedDays: 12,
+              recentMean: 62,
+              baselineMean: 58,
+            },
+            spo2: {
+              latestDate: "2024-01-15",
+              sourceProviders: ["garmin"],
+              observedDays: 8,
+              recentMean: 97.5,
+              baselineMean: 96.5,
+            },
+            steps: {
+              latestDate: "2024-01-16",
+              sourceProviders: ["apple_health"],
+              observedDays: 20,
+              recentMean: 9000,
+              baselineMean: 8000,
+            },
+            skin_temperature: {
+              latestDate: "2024-01-14",
+              sourceProviders: ["oura"],
+              observedDays: 6,
+              recentMean: 36.7,
+              baselineMean: 36.5,
+            },
+          },
+        }),
+      ];
       const caller = makeCaller(rows);
       const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
       expect(result).toEqual({
@@ -327,8 +360,78 @@ describe("dailyMetricsRouter", () => {
             sampleDeviation: 1200,
             statusToken: "near_baseline",
           }),
+          expect.objectContaining({
+            metric: "spo2",
+            provenance: expect.objectContaining({
+              latestDate: "2024-01-15",
+              sourceProviders: ["garmin"],
+            }),
+            comparison: expect.objectContaining({ delta: 1, direction: "increasing" }),
+          }),
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ sourceProviders: ["apple_health"] }),
+            comparison: expect.objectContaining({ delta: 1000 }),
+          }),
+          expect.objectContaining({
+            metric: "skin_temperature",
+            provenance: expect.objectContaining({ sourceProviders: ["oura"] }),
+            comparison: expect.objectContaining({ delta: 0.2 }),
+          }),
         ]),
       });
+    });
+
+    it("preserves selected ranges longer than the evidence window", async () => {
+      const caller = makeCaller([
+        {
+          avg_hrv: null,
+          avg_resting_hr: null,
+          avg_spo2: null,
+          avg_steps: 8_000,
+          avg_skin_temp: null,
+          stddev_hrv: null,
+          stddev_resting_hr: null,
+          stddev_spo2: null,
+          stddev_steps: 1_200,
+          stddev_skin_temp: null,
+          latest_hrv: null,
+          latest_resting_hr: null,
+          latest_spo2: null,
+          latest_steps: 9_000,
+          latest_skin_temp: null,
+          sample_count_hrv: 0,
+          sample_count_resting_hr: 0,
+          sample_count_spo2: 0,
+          sample_count_steps: 0,
+          sample_count_skin_temp: 0,
+          latest_date: "2024-01-16",
+          latest_steps_date: "2024-01-16",
+          metric_evidence: {
+            hrv: null,
+            spo2: null,
+            steps: {
+              latestDate: "2024-01-16",
+              sourceProviders: ["apple_health"],
+              observedDays: 20,
+              recentMean: 9_000,
+              baselineMean: 8_000,
+            },
+            skin_temperature: null,
+          },
+        },
+      ]);
+
+      const result = await caller.trends({ days: 90, endDate: "2024-01-16" });
+
+      expect(result?.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ windowDays: 90 }),
+          }),
+        ]),
+      );
     });
 
     it.each([
@@ -603,7 +706,7 @@ describe("dailyMetricsRouter", () => {
       expect(restingHeartRateQueryParams).not.toHaveProperty("rhrWindowStart");
       const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
       expect(queryText).toContain("dm.user_id =");
-      expect(queryText).not.toContain("date >");
+      expect(queryText).toContain("date >");
       expect(queryText).not.toContain("base_dates.date >");
     });
 

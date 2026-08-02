@@ -208,42 +208,42 @@ function LandingNav() {
 function HeroSection() {
   return (
     <section className="overflow-hidden border-b border-border bg-surface-solid">
-      <div className="mx-auto grid min-h-[615px] max-w-7xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:py-12">
-        <div className="max-w-2xl">
-          <div className="mb-7 inline-flex items-center gap-3 rounded-full border border-border-strong px-4 py-2 text-sm font-medium text-accent">
+      <div className="mx-auto grid min-h-0 max-w-7xl items-center gap-5 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10 lg:min-h-[615px] lg:grid-cols-[0.85fr_1.15fr] lg:py-12">
+        <div className="max-w-2xl lg:col-start-1 lg:row-start-1">
+          <div className="mb-4 hidden items-center gap-3 rounded-full border border-border-strong px-4 py-2 text-sm font-medium text-accent sm:inline-flex sm:mb-7">
             <span>Sources</span>
             <span className="h-1 w-1 rounded-full bg-accent-secondary" />
             <span>Trends</span>
             <span className="h-1 w-1 rounded-full bg-accent-secondary" />
             <span>History</span>
           </div>
-          <h1 className="font-serif text-5xl font-semibold leading-[1.03] tracking-normal text-foreground sm:text-6xl lg:text-[4.35rem]">
+          <h1 className="font-serif text-4xl font-semibold leading-[1.03] tracking-normal text-foreground sm:text-6xl lg:text-[4.35rem]">
             Your health data, in one place.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-muted">
+          <p className="mt-4 max-w-xl text-base leading-7 text-muted sm:mt-6 sm:text-lg sm:leading-8">
             Connect the apps and devices you use. Dofek keeps sleep, training, nutrition, body, and
             recovery records together so you can compare them over time.
           </p>
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-5 flex flex-col gap-3 sm:mt-7 sm:flex-row sm:items-center">
             <Link
               to="/login"
               search={GET_STARTED_SEARCH}
-              className="inline-flex items-center justify-center rounded-lg bg-accent px-8 py-4 text-base font-semibold text-on-accent shadow-lg shadow-accent/15 transition-colors hover:bg-accent/85"
+              className="inline-flex items-center justify-center rounded-lg bg-accent px-8 py-3 text-base font-semibold text-on-accent shadow-lg shadow-accent/15 transition-colors hover:bg-accent/85 sm:py-4"
             >
               Get started
             </Link>
           </div>
-          <div className="mt-8 flex flex-col gap-3 text-sm text-muted sm:flex-row sm:gap-6">
-            {HERO_PROOF_POINTS.map((point) => (
-              <div key={point} className="flex items-center gap-2">
-                <CheckCircleIcon />
-                <span>{point}</span>
-              </div>
-            ))}
-          </div>
         </div>
-        <div id="demo" className="scroll-mt-24">
+        <div id="demo" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <DashboardPreview />
+        </div>
+        <div className="flex flex-col gap-3 text-sm text-muted sm:flex-row sm:gap-6 lg:col-start-1 lg:row-start-2 lg:mt-8">
+          {HERO_PROOF_POINTS.map((point) => (
+            <div key={point} className="flex items-center gap-2">
+              <CheckCircleIcon />
+              <span>{point}</span>
+            </div>
+          ))}
         </div>
       </div>
     </section>

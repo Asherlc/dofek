@@ -21920,3 +21920,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   as locally confirmed. The focused settings Cypress attempt was separately
   blocked before startup because Docker reported `all predefined address pools
   have been fully subnetted` while creating `issue-2061-e2e_default`.
+
+## 2026-08-02 — LAND-04 local E2E stack could not allocate a Docker network
+
+- **Status:** Unresolved local validation blocker; no production impact.
+- **Symptoms:** `pnpm e2e:web:reuse -- --spec cypress/e2e/landing.cy.ts` stopped before Cypress while creating `issue-2095-e2e_default`.
+- **Evidence:** The first fatal line was `Error response from daemon: all predefined address pools have been fully subnetted`. The same landing assertion passed against a local Vite server with auth and provider requests stubbed.
+- **Root cause:** The Docker host had exhausted its predefined address pools; Docker documents those pools as the source for automatically allocated bridge-network subnets ([address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
+- **Fix / mitigation:** No shared or other-workspace Docker resources were pruned or changed. The browser regression was run against isolated Vite output; the repository-managed E2E stack remains unverified.
+- **Remaining risk / follow-up:** Run the focused landing spec through the repository-managed E2E stack on a host with an available isolated network pool.

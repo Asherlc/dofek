@@ -288,17 +288,28 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Sign in with Apple")).toBeTruthy();
   });
 
-  it("shows data provider buttons", async () => {
+  it("separates identity sign-in from health-data provider sign-in", async () => {
     mockFetchConfiguredProviders.mockResolvedValue({
-      identity: [],
+      identity: ["google"],
       data: ["strava", "wahoo"],
     });
     render(<LoginScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText("Sign in with Strava")).toBeTruthy();
+      expect(screen.getByText("Sign in with Google")).toBeTruthy();
     });
+    expect(screen.getByText("Sign in with a health data provider")).toBeTruthy();
+    expect(screen.getByText("Sign in with Strava")).toBeTruthy();
     expect(screen.getByText("Sign in with Wahoo")).toBeTruthy();
+    expect(screen.queryByText("Connect Strava")).toBeNull();
+
+    const dataSection = screen.getByTestId("data-provider-section");
+    expect(dataSection.style.borderWidth).toBe("1px");
+    expect(dataSection.style.borderRadius).toBe("16px");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with Strava" }));
+    await waitFor(() => {
+      expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "strava", true);
+    });
   });
 
   it("shows error message on fetch failure", async () => {

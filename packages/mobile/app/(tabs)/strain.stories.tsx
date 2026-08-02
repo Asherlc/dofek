@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
@@ -43,6 +45,28 @@ const STRAIN_COMPANION_RESPONSES = {
   },
   "cyclingAdvanced.trainingMonotony": [],
 } satisfies Parameters<typeof createProcessingStatusStoryLink>[1];
+
+function createTrainingFailureStoryLink(): TRPCLink<AppRouter> {
+  return () =>
+    ({ op, next }) => {
+      if (op.path !== "mobileDashboard.training") {
+        return next(op);
+      }
+
+      const result: OperationResultObservable<AppRouter, unknown> = {
+        subscribe(observer) {
+          observer.error?.(
+            TRPCClientError.from<AppRouter>(new Error("Training analytics are unavailable.")),
+          );
+          return { unsubscribe: () => {} };
+        },
+        pipe() {
+          return result;
+        },
+      };
+      return result;
+    };
+}
 
 function createMockWorkloadData(dates: FixtureDates) {
   const timeSeries = Array.from({ length: 7 }, (_, index) => {
@@ -106,7 +130,7 @@ function createMockActivities(dates: FixtureDates) {
   ];
 }
 
-function createSeededProviders(hasActivities: boolean) {
+function createSeededProviders(hasActivities: boolean, trainingUnavailable: boolean) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -163,10 +187,12 @@ function createSeededProviders(hasActivities: boolean) {
     },
   });
 
-  queryClient.setQueryData(
-    [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
-    fixture.data,
-  );
+  if (!trainingUnavailable) {
+    queryClient.setQueryData(
+      [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
+      fixture.data,
+    );
+  }
 
   const processingStatus = seedReadyProcessingStatus(queryClient, [
     "activity",
@@ -179,17 +205,20 @@ function createSeededProviders(hasActivities: boolean) {
 
 function MockProviders({
   children,
+  trainingUnavailable = false,
   withActivities = false,
 }: {
   children: React.ReactNode;
+  trainingUnavailable?: boolean;
   withActivities?: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders(withActivities);
+    const seededProviders = createSeededProviders(withActivities, trainingUnavailable);
     return {
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
         links: [
+          ...(trainingUnavailable ? [createTrainingFailureStoryLink()] : []),
           createProcessingStatusStoryLink(
             seededProviders.processingStatus,
             STRAIN_COMPANION_RESPONSES,
@@ -197,7 +226,7 @@ function MockProviders({
         ],
       }),
     };
-  }, [withActivities]);
+  }, [trainingUnavailable, withActivities]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -233,6 +262,18 @@ export const WithActivities: Story = {
   decorators: [
     (Story) => (
       <MockProviders withActivities>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </MockProviders>
+    ),
+  ],
+};
+
+export const TrainingUnavailable: Story = {
+  decorators: [
+    (Story) => (
+      <MockProviders trainingUnavailable>
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
         </View>

@@ -198,6 +198,19 @@ export class UnitConverter {
     );
   }
 
+  formatTemperatureDelta(celsius: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      celsius == null || !Number.isFinite(celsius)
+        ? celsius
+        : this.system === "imperial"
+          ? celsius * (9 / 5)
+          : celsius,
+      1,
+      this.system === "imperial" ? "fahrenheit" : "celsius",
+      this.temperatureLabel,
+    );
+  }
+
   formatSpeed(kmh: NullableNumber): FormattedMeasurement {
     return formatUnitMeasurement(
       kmh == null || !Number.isFinite(kmh) ? kmh : this.convertSpeed(kmh),

@@ -715,6 +715,8 @@ describe("buildHealthMetrics", () => {
       statusLabel: "Moving as intended",
       evaluationRule: "Below your baseline, where lower values support this metric",
       explanation: "Resting Heart Rate is below your baseline.",
+      provenance: null,
+      comparison: null,
       baselineProgress: {
         requiredObservationDays: 3,
         observedObservationDays: 3,
