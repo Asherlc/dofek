@@ -15,7 +15,7 @@ export default function SupportScreen() {
           <SupportPanel
             isPending={createTicket.isPending}
             errorMessage={createTicket.error?.message ?? null}
-            ticketNumber={createTicket.data?.ticketNumber ?? null}
+            ticketId={createTicket.data?.ticketId ?? null}
             onReset={() => createTicket.reset()}
             onSubmit={(draft) => createTicket.mutate(draft)}
           />

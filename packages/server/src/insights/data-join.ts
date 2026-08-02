@@ -104,6 +104,7 @@ export function joinByDate(
     { minutes: number; cardio: number; strength: number; flexibility: number }
   >();
   for (const a of activities) {
+    if (!a.ended_at) continue;
     const dateStr = a.date ? toDateStr(a.date) : new Date(a.started_at).toISOString().slice(0, 10);
     const existing = activityByDate.get(dateStr) ?? {
       minutes: 0,
@@ -111,14 +112,12 @@ export function joinByDate(
       strength: 0,
       flexibility: 0,
     };
-    if (a.ended_at) {
-      const dur = (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000;
-      existing.minutes += dur;
-      const cat = classifyActivity(a.activity_type);
-      if (cat === "cardio") existing.cardio += dur;
-      else if (cat === "strength") existing.strength += dur;
-      else if (cat === "flexibility") existing.flexibility += dur;
-    }
+    const dur = (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000;
+    existing.minutes += dur;
+    const cat = classifyActivity(a.activity_type);
+    if (cat === "cardio") existing.cardio += dur;
+    else if (cat === "strength") existing.strength += dur;
+    else if (cat === "flexibility") existing.flexibility += dur;
     activityByDate.set(dateStr, existing);
   }
 

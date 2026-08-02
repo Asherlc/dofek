@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { chartColors } from "@dofek/scoring/colors";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +19,7 @@ const state = vi.hoisted<{
         unit: string;
         domain: string;
         description: string;
+        availabilityDescription: string;
       }>
     | undefined;
 }>(() => ({
@@ -110,6 +112,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "g",
         domain: "nutrition",
         description: "Protein intake",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
       },
       {
         id: "hrv",
@@ -117,6 +120,15 @@ describe("CorrelationExplorerPage", () => {
         unit: "ms",
         domain: "recovery",
         description: "Heart rate variability",
+        availabilityDescription: "Needs a daily recovery measurement.",
+      },
+      {
+        id: "weight",
+        label: "Weight",
+        unit: "kg",
+        domain: "body",
+        description: "Body weight",
+        availabilityDescription: "Needs a body-weight measurement.",
       },
     ];
     state.correlationData = {
@@ -166,6 +178,30 @@ describe("CorrelationExplorerPage", () => {
     expect(proteinOptions[1]).toBeDisabled();
     expect(heartRateVariabilityOptions[0]).toBeDisabled();
     expect(heartRateVariabilityOptions[1]).not.toBeDisabled();
+  });
+
+  it("supports searching metrics and explains availability before selection", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByRole("searchbox", { name: "Search X axis metrics" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search Y axis metrics" })).toBeInTheDocument();
+    expect(screen.getByText(CORRELATION_AVAILABILITY_DESCRIPTION)).toBeInTheDocument();
+    expect(screen.getAllByText("Needs a complete, resolved daily nutrition record.")).toHaveLength(
+      1,
+    );
+    expect(screen.getAllByRole("option", { name: "Protein (g)" })).toHaveLength(2);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search Y axis metrics" }), {
+      target: { value: "protein" },
+    });
+
+    const yAxisSelect = screen.getByLabelText("Y axis");
+    expect(within(yAxisSelect).getByRole("option", { name: "Protein (g)" })).toBeInTheDocument();
+    expect(
+      within(yAxisSelect).getByRole("option", { name: "Heart Rate Variability (ms)" }),
+    ).toBeInTheDocument();
+    expect(within(yAxisSelect).queryByRole("option", { name: "Weight (kg)" })).toBeNull();
   });
 
   it("renders the server-authored interpretation warning", async () => {
@@ -363,6 +399,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "g",
         domain: "nutrition",
         description: "Protein intake",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
       },
       {
         id: "hrv",
@@ -370,6 +407,7 @@ describe("CorrelationExplorerPage", () => {
         unit: "ms",
         domain: "recovery",
         description: "Heart rate variability",
+        availabilityDescription: "Needs a daily recovery measurement.",
       },
     ];
     view.rerender(<CorrelationExplorerPage />);
