@@ -9,6 +9,9 @@ let mockRecoveryLoading = false;
 let mockRecoveryFetching = false;
 let mockRecoveryDataDays = 30;
 let sparkLinePropsCalls: Record<string, unknown>[];
+let mockTodayPlanData: { status: "ready"; action: { title: string } } | undefined;
+let mockTodayPlanQueryCalls: Array<{ days: number; endDate?: string }>;
+const mockTodayPlanInvalidate = vi.fn();
 let mockRecoveryQueryCalls: Array<{
   input: { days: number; endDate?: string };
   options: {
@@ -83,6 +86,21 @@ const insufficientHealthspan = {
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    todayPlan: {
+      get: {
+        useQuery: (input: { days: number; endDate?: string }) => {
+          mockTodayPlanQueryCalls.push(input);
+          return {
+            data: mockTodayPlanData,
+            error: null,
+            isError: false,
+            isLoading: false,
+            isFetching: false,
+            refetch: vi.fn(),
+          };
+        },
+      },
+    },
     mobileDashboard: {
       recovery: {
         useQuery: (
@@ -120,6 +138,9 @@ vi.mock("../../lib/trpc", () => ({
       mobileDashboard: {
         recovery: { invalidate: mockRecoveryInvalidate },
       },
+      todayPlan: {
+        get: { invalidate: mockTodayPlanInvalidate },
+      },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
       },
@@ -131,6 +152,10 @@ vi.mock("../../lib/useTimeRangePreference", () => ({
   useTimeRangePreference: () => mockTimeRangePreference,
 }));
 
+vi.mock("../../lib/useTodayQueryDate", () => ({
+  useTodayQueryDate: () => "2026-07-26",
+}));
+
 vi.mock("../../components/charts/SparkLine", () => ({
   SparkLine: (props: Record<string, unknown>) => {
     sparkLinePropsCalls.push(props);
@@ -140,6 +165,12 @@ vi.mock("../../components/charts/SparkLine", () => ({
 
 vi.mock("../../components/ProcessingStatusWidget", () => ({
   ProcessingStatusWidget: () => <div>Processing status</div>,
+}));
+
+vi.mock("../../components/TodayPlanCard", () => ({
+  TodayPlanCard: ({ plan }: { plan?: { status: "ready"; action: { title: string } } }) => (
+    <section aria-label="What matters today">{plan?.action.title}</section>
+  ),
 }));
 
 vi.mock("expo-router", () => ({
@@ -192,6 +223,11 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryLoading = false;
     mockRecoveryFetching = false;
     mockRecoveryDataDays = 30;
+    mockTodayPlanData = {
+      status: "ready",
+      action: { title: "Server-authored recovery action" },
+    };
+    mockTodayPlanQueryCalls = [];
     mockRecoveryQueryCalls = [];
     mockTimeRangePreference = {
       days: 30,
@@ -201,6 +237,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     };
     sparkLinePropsCalls = [];
     mockRecoveryInvalidate.mockReset();
+    mockTodayPlanInvalidate.mockReset();
     mockRecoveryRefetch.mockReset();
     mockProcessingStatusInvalidate.mockReset();
     mockRouterPush.mockReset();
@@ -208,6 +245,54 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryRefetch.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
+  });
+
+  it("leads the recovery metrics with the server-authored decision summary", async () => {
+    mockRecoveryData = {
+      healthStatus: [
+        {
+          metric: "hrv",
+          label: "Heart Rate Variability",
+          value: 55,
+          valueText: null,
+          baseline: 50,
+          baselineText: null,
+          sampleDeviation: 5,
+          deviation: 1,
+          direction: "above",
+          intent: "higher",
+          statusToken: "moving_as_intended",
+          statusColor: "positive",
+          statusLabel: "Moving as intended",
+          evaluationRule: "Above your baseline, where higher values support this metric",
+          explanation: "Heart Rate Variability is moving as intended.",
+          provenance: null,
+          comparison: null,
+          baselineProgress: {
+            requiredObservationDays: 3,
+            observedObservationDays: 3,
+            hasMeasurableVariation: true,
+            blocker: null,
+            requirement: "A current value plus at least 2 more recorded days.",
+            summary: "The baseline is ready.",
+            action: "No action needed.",
+          },
+        },
+      ],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    const decisionSummary = screen.getByLabelText("What matters today");
+    const healthStatus = screen.getByText("HEALTH STATUS");
+    expect(
+      decisionSummary.compareDocumentPosition(healthStatus) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText("Server-authored recovery action")).toBeTruthy();
+    expect(mockTodayPlanQueryCalls).toEqual([{ days: 30, endDate: "2026-07-26" }]);
   });
 
   it("does not consume cached default-range data during preference hydration", async () => {
@@ -248,6 +333,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     await mockRefreshInvalidate?.();
 
     expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
+    expect(mockTodayPlanInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
