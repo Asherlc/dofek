@@ -119,6 +119,8 @@ describe("CyclingAnalyticsRepository", () => {
         label: "5min",
         bestPower: 400,
         activityDate: "2026-07-10",
+        sourceActivityId: null,
+        sourceActivityName: null,
       },
     ]);
     expect(result.powerCurve.season.points[0]?.bestPower).toBe(500);
@@ -243,6 +245,90 @@ describe("CyclingAnalyticsRepository", () => {
       trend: [{ date: "2026-04-16", eftp: 285, activityName: null }],
       currentEftp: 285,
       model: null,
+    });
+  });
+
+  it("returns estimate methods, confidence, and source workouts", async () => {
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([
+        powerComparisonRow(120, 425, 450, {
+          recent_source_activity_id: "11111111-1111-4111-8111-111111111111",
+          recent_source_activity_name: "Threshold Intervals",
+          season_source_activity_id: "22222222-2222-4222-8222-222222222222",
+          season_source_activity_name: "Season Opener",
+        }),
+        powerComparisonRow(180, 380, 410, {
+          recent_source_activity_id: "11111111-1111-4111-8111-111111111111",
+          recent_source_activity_name: "Threshold Intervals",
+          season_source_activity_id: "22222222-2222-4222-8222-222222222222",
+          season_source_activity_name: "Season Opener",
+        }),
+        powerComparisonRow(300, 350, 375, {
+          recent_source_activity_id: "33333333-3333-4333-8333-333333333333",
+          recent_source_activity_name: "Five-Minute Test",
+          season_source_activity_id: "22222222-2222-4222-8222-222222222222",
+          season_source_activity_name: "Season Opener",
+        }),
+        powerComparisonRow(420, 330, 355, {
+          recent_source_activity_id: "44444444-4444-4444-8444-444444444444",
+          recent_source_activity_name: "Long Intervals",
+          season_source_activity_id: "22222222-2222-4222-8222-222222222222",
+          season_source_activity_name: "Season Opener",
+        }),
+        powerComparisonRow(600, 315, 340, {
+          recent_source_activity_id: "44444444-4444-4444-8444-444444444444",
+          recent_source_activity_name: "Long Intervals",
+          season_source_activity_id: "22222222-2222-4222-8222-222222222222",
+          season_source_activity_name: "Season Opener",
+        }),
+      ])
+      .mockResolvedValueOnce([
+        performanceActivityRow({
+          id: "11111111-1111-4111-8111-111111111111",
+          activity_name: "Threshold Intervals",
+          normalized_power: 280,
+        }),
+        performanceActivityRow({
+          id: "33333333-3333-4333-8333-333333333333",
+          activity_name: "Five-Minute Test",
+          date: "2026-07-11",
+          normalized_power: 300,
+        }),
+      ]);
+
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(result.estimateEvidence.recent.threshold).toMatchObject({
+      method: "Critical Power model fitted to 120–600 second best-power efforts",
+      confidence: "high",
+      confidenceLabel: "High fit quality",
+      sourceWorkouts: [
+        { id: "11111111-1111-4111-8111-111111111111", name: "Threshold Intervals" },
+        { id: "33333333-3333-4333-8333-333333333333", name: "Five-Minute Test" },
+        { id: "44444444-4444-4444-8444-444444444444", name: "Long Intervals" },
+      ],
+    });
+    expect(result.estimateEvidence.recent.vo2Max).toMatchObject({
+      method: "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
+      confidence: "limited",
+      confidenceLabel: "Indirect estimate",
+      sourceWorkouts: [{ id: "33333333-3333-4333-8333-333333333333", name: "Five-Minute Test" }],
+    });
+    expect(result.estimateEvidence.eftp).toMatchObject({
+      method:
+        "Critical Power model for the current value; trend points use normalized power × 0.95",
+      sourceWorkouts: [
+        { id: "11111111-1111-4111-8111-111111111111", name: "Threshold Intervals" },
+        { id: "33333333-3333-4333-8333-333333333333", name: "Five-Minute Test" },
+      ],
     });
   });
 

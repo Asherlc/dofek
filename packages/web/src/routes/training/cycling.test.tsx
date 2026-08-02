@@ -189,6 +189,66 @@ vi.mock("../../lib/trpc.ts", () => ({
                 model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
               },
               eftpTrend: { trend: [], currentEftp: null, model: null },
+              estimateEvidence: {
+                recent: {
+                  threshold: {
+                    method: "Critical Power model fitted to 120–600 second best-power efforts",
+                    confidence: "high",
+                    confidenceLabel: "High fit quality",
+                    confidenceDetail: "High fit quality across 5 observed power durations.",
+                    sourceWorkouts: [
+                      {
+                        id: "ride-1",
+                        name: "Threshold Intervals",
+                        date: "2026-03-15",
+                      },
+                    ],
+                    pacingGuidance: "Use this as a training estimate, not a tested threshold.",
+                  },
+                  vo2Max: {
+                    method:
+                      "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
+                    confidence: "limited",
+                    confidenceLabel: "Indirect estimate",
+                    confidenceDetail: "A field estimate, not a laboratory measurement.",
+                    sourceWorkouts: [
+                      { id: "ride-1", name: "Threshold Intervals", date: "2026-03-15" },
+                    ],
+                    pacingGuidance: "Do not use this estimate to set workout pacing.",
+                  },
+                },
+                season: {
+                  threshold: {
+                    method: "Critical Power model fitted to 120–600 second best-power efforts",
+                    confidence: "moderate",
+                    confidenceLabel: "Moderate fit quality",
+                    confidenceDetail: "Moderate fit quality across 5 observed power durations.",
+                    sourceWorkouts: [],
+                    pacingGuidance: "Use this as a training estimate, not a tested threshold.",
+                  },
+                  vo2Max: {
+                    method:
+                      "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
+                    confidence: "limited",
+                    confidenceLabel: "Indirect estimate",
+                    confidenceDetail: "A field estimate, not a laboratory measurement.",
+                    sourceWorkouts: [],
+                    pacingGuidance: "Do not use this estimate to set workout pacing.",
+                  },
+                },
+                eftp: {
+                  method:
+                    "Critical Power model for the current value; trend points use normalized power × 0.95",
+                  confidence: "limited",
+                  confidenceLabel: "Training estimate",
+                  confidenceDetail: "Based on source cycling workouts.",
+                  sourceWorkouts: [
+                    { id: "ride-1", name: "Threshold Intervals", date: "2026-03-15" },
+                  ],
+                  pacingGuidance:
+                    "Do not use this estimate to set pacing when the source ride is not representative.",
+                },
+              },
             },
           };
         },
@@ -270,6 +330,10 @@ describe("CyclingTab", () => {
     expect(screen.getByText("5.00")).toBeTruthy();
     expect(screen.getByText("50.2")).toBeTruthy();
     expect(screen.getByText("61")).toBeTruthy();
+    expect(screen.getByText("High fit quality")).toBeTruthy();
+    expect(screen.getAllByText("Indirect estimate")).toHaveLength(2);
+    expect(screen.getAllByText(/Threshold Intervals/)).toHaveLength(3);
+    expect(screen.getByText(/Do not use this estimate to set pacing/)).toBeTruthy();
   });
 
   it("does not render an empty power summary beside a query error", async () => {
