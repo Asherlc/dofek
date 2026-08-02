@@ -657,6 +657,17 @@ describe("correlationRouter", () => {
       });
     });
 
+    it("versions both correlation result cache contracts", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "correlation.compute:v2",
+      });
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "correlation.computeV2:v2",
+      });
+    });
+
     it("returns available correlation metrics", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },

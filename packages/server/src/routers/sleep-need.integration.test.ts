@@ -153,7 +153,7 @@ describe("sleep-need router integration", () => {
       "sleepNeed.calculateV2",
       input,
       "UTC",
-      "sleep-need-metadata-v1",
+      "sleep-need-metadata-v2",
     );
     await queryCache.set(legacyKey, { availability: "legacy-contract" }, CacheTTL.SHORT);
     await queryCache.set(

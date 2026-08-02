@@ -251,6 +251,7 @@ export const correlationRouter = router({
       );
     },
     correlationComputeOutputSchema,
+    { keyVersion: "correlation.compute:v2" },
   ),
 
   computeV2: selectedChartCustomRangeQuery(
@@ -269,6 +270,7 @@ export const correlationRouter = router({
       );
     },
     correlationComputeV2OutputSchema,
+    { keyVersion: "correlation.computeV2:v2" },
   ),
 
   observations: selectedChartCustomRangeQuery(

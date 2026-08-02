@@ -97,8 +97,12 @@ function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
 // ── Router ───────────────────────────────────────────────────────────
 
 export const bodyAnalyticsRouter = router({
-  smoothedWeight: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  smoothedWeight: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
+  })
     .input(dateWindowInput)
+    .output(z.array(smoothedWeightOutputSchema))
     .query(({ ctx, input }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getSmoothedWeight(input.days, input.endDate);
