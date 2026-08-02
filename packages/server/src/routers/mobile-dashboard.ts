@@ -20,6 +20,8 @@ import {
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-activity-states-v2";
+
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
   feature: string,
@@ -197,7 +199,7 @@ export const mobileDashboardRouter = router({
 
   training: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "training-activity-states-v1",
+    keyVersion: MOBILE_TRAINING_CACHE_KEY_VERSION,
   })
     .input(dateWindowInput)
     .output(mobileTrainingTabOutputSchema)

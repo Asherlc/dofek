@@ -2,6 +2,8 @@ import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -16,7 +18,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -284,6 +289,13 @@ describe("pmcRouter", () => {
   const createCaller = createTestCallerFactory(pmcRouter);
 
   describe("chart", () => {
+    it("versions the availability response cache contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "pmc-chart-availability-v1",
+      });
+    });
+
     it("returns empty when no globalMaxHr", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -295,6 +307,14 @@ describe("pmcRouter", () => {
 
       expect(result.data).toEqual([]);
       expect(result.model.type).toBe("generic");
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        sourceLabel: "Training load read model",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
+      });
     });
 
     it("computes PMC data from activities", async () => {
@@ -326,6 +346,13 @@ describe("pmcRouter", () => {
 
       expect(result.data.length).toBeGreaterThan(0);
       expect(result.model).toBeDefined();
+      expect(result.availability).toMatchObject({
+        status: "available",
+        sourceLabel: "Training load read model",
+        observedCount: result.data.length,
+        minimumCount: 1,
+        message: "Training load data is available from the training load read model.",
+      });
     });
 
     it("uses power TSS when power data available", async () => {

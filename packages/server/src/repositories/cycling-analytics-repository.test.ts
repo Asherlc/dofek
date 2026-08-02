@@ -131,6 +131,26 @@ describe("CyclingAnalyticsRepository", () => {
       { date: "2026-07-10", eftp: 266, activityName: "Intervals" },
     ]);
     expect(result.eftpTrend.currentEftp).toBe(266);
+    expect(result.availability).toMatchObject({
+      powerCurve: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "cycling power-curve data is available from Cycling power-curve read model.",
+      },
+      pmc: {
+        status: "available",
+        observedCount: result.pmc.data.length,
+        minimumCount: 1,
+        message: "training-load data is available from Cycling training-load model.",
+      },
+      eftpTrend: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "threshold power data is available from Cycling activity power summaries.",
+      },
+    });
     expect(result.estimateEvidence.recent.vo2Max).toMatchObject({
       confidence: "not_available",
       confidenceLabel: "Not available",
@@ -696,6 +716,22 @@ describe("CyclingAnalyticsRepository", () => {
         },
       ],
     });
+    expect(result.availability).toMatchObject({
+      verticalAscent: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message:
+          "vertical ascent data is available from Cycling activity altitude sensor summaries.",
+      },
+      aerobicEfficiency: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message:
+          "aerobic efficiency data is available from Cycling Zone 2 power and heart-rate summaries.",
+      },
+    });
     expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("analytics.cycling_activity"),
@@ -909,6 +945,24 @@ describe("CyclingAnalyticsRepository", () => {
       variability: { rows: [], totalCount: 0, emptyReason: "no_cycling_activities" },
       verticalAscent: [],
       aerobicEfficiency: { maxHr: null, activities: [] },
+      availability: {
+        verticalAscent: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling activity altitude sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No vertical ascent data is available from Cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart.",
+        },
+        aerobicEfficiency: {
+          status: "insufficient_data",
+          sourceLabel: "Cycling Zone 2 power and heart-rate summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No aerobic efficiency data is available from Cycling Zone 2 power and heart-rate summaries. Record at least 1 cycling activity with Zone 2 power and heart-rate data to show this chart.",
+        },
+      },
     });
   });
 

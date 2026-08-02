@@ -32,6 +32,7 @@ import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
@@ -294,6 +295,8 @@ export default function StrainScreen() {
         : `Last training day: ${formatDateShort(displayedDate)}`;
 
   const strainTrend = workloadData.map((d) => d.strain);
+  const strainTrendAvailability = trainingData?.chartAvailability?.strainTrend;
+  const verticalAscentAvailability = trainingData?.chartAvailability?.verticalAscent;
 
   const isLoading = shouldShowBlockingLoading({
     data: trainingData,
@@ -426,7 +429,11 @@ export default function StrainScreen() {
               description="This chart shows your day-to-day strain trend across the selected date range."
               textStyle={styles.cardTitle}
             />
-            {strainTrend.length >= 2 ? (
+            {shouldShowTrainingQueryError ? (
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load strain trend."}
+              </Text>
+            ) : strainTrendAvailability?.status === "available" ? (
               <SparkLine
                 data={strainTrend}
                 height={60}
@@ -434,22 +441,32 @@ export default function StrainScreen() {
                 showBaseline
                 showYAxis
               />
+            ) : strainTrendAvailability ? (
+              <TrainingChartEmptyState availability={strainTrendAvailability} />
             ) : (
               <Text style={styles.emptyChartText}>No training data yet for this period</Text>
             )}
           </View>
 
           {/* Vertical Ascent Rate */}
-          {verticalAscent.length > 0 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Vertical Ascent Rate"
-                description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
-                textStyle={styles.cardTitle}
-              />
+          <View style={styles.card}>
+            <ChartTitleWithTooltip
+              title="Vertical Ascent Rate"
+              description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
+              textStyle={styles.cardTitle}
+            />
+            {shouldShowTrainingQueryError ? (
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load vertical ascent."}
+              </Text>
+            ) : verticalAscentAvailability?.status === "available" ? (
               <VerticalAscentChart data={verticalAscent} units={units} />
-            </View>
-          )}
+            ) : verticalAscentAvailability ? (
+              <TrainingChartEmptyState availability={verticalAscentAvailability} />
+            ) : (
+              <Text style={styles.emptyChartText}>No activities with altitude data available</Text>
+            )}
+          </View>
 
           {shouldShowTrainingQueryError ? (
             <View style={styles.card}>
