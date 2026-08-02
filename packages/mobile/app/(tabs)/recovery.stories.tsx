@@ -110,7 +110,12 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
             yearsDelta: -2,
           },
         ],
-        history: [],
+        history: [
+          { weekStart: "2026-03-02", score: 73 },
+          { weekStart: "2026-03-09", score: 75 },
+          { weekStart: "2026-03-16", score: 78 },
+          { weekStart: "2026-03-23", score: 80 },
+        ],
         trend: "improving" as const,
         availability: {
           status: "available" as const,
