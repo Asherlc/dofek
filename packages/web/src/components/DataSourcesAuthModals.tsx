@@ -5,6 +5,23 @@ import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
+const enabledAuthSubmitButtonClassName =
+  "w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 transition-colors";
+const disabledAuthSubmitButtonClassName =
+  "w-full py-2 text-sm font-medium rounded bg-surface-hover text-muted cursor-not-allowed transition-colors";
+
+function authSubmitButtonClassName(disabled: boolean) {
+  return disabled ? disabledAuthSubmitButtonClassName : enabledAuthSubmitButtonClassName;
+}
+
+function credentialSubmitHint(username: string, password: string, loading: boolean) {
+  if (loading) return null;
+  if (!username.trim() && !password) return "Enter your email and password to continue.";
+  if (!username.trim()) return "Enter your email to continue.";
+  if (!password) return "Enter your password to continue.";
+  return null;
+}
+
 // -- Credential Auth Modal --
 
 export function CredentialAuthModal({
@@ -25,6 +42,8 @@ export function CredentialAuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+  const signInDisabled = loading || !username.trim() || !password;
+  const signInHint = credentialSubmitHint(username, password, loading);
 
   const signInMutation = trpc.credentialAuth.signIn.useMutation({
     meta: locallyReportedErrorMeta,
@@ -36,7 +55,7 @@ export function CredentialAuthModal({
       setError("");
       setLoading(true);
       try {
-        await signInMutation.mutateAsync({ providerId, username, password });
+        await signInMutation.mutateAsync({ providerId, username: username.trim(), password });
         onSuccess();
       } catch (err: unknown) {
         captureException(err, {
@@ -113,10 +132,16 @@ export function CredentialAuthModal({
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
           />
         </div>
+        {signInHint ? (
+          <p id={`${providerId}-auth-hint`} className="text-xs text-muted">
+            {signInHint}
+          </p>
+        ) : null}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          disabled={signInDisabled}
+          aria-describedby={signInHint ? `${providerId}-auth-hint` : undefined}
+          className={authSubmitButtonClassName(signInDisabled)}
         >
           {loading ? "Signing in..." : "Sign In"}
         </button>
@@ -146,6 +171,8 @@ export function TokenAuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const tokenRef = useRef<HTMLInputElement>(null);
+  const connectDisabled = loading || !token;
+  const connectHint = !loading && !token ? "Enter your token to continue." : null;
   const connectMutation = trpc.tokenAuth.connect.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -231,10 +258,16 @@ export function TokenAuthModal({
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
           />
         </div>
+        {connectHint ? (
+          <p id={`${providerId}-token-auth-hint`} className="text-xs text-muted">
+            {connectHint}
+          </p>
+        ) : null}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          disabled={connectDisabled}
+          aria-describedby={connectHint ? `${providerId}-token-auth-hint` : undefined}
+          className={authSubmitButtonClassName(connectDisabled)}
         >
           {loading ? "Connecting..." : "Connect"}
         </button>
@@ -257,6 +290,8 @@ export function GarminAuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+  const signInDisabled = loading || !username.trim() || !password;
+  const signInHint = credentialSubmitHint(username, password, loading);
 
   const signInMutation = trpc.garminAuth.signIn.useMutation({
     meta: locallyReportedErrorMeta,
@@ -268,7 +303,7 @@ export function GarminAuthModal({
       setError("");
       setLoading(true);
       try {
-        await signInMutation.mutateAsync({ username, password });
+        await signInMutation.mutateAsync({ username: username.trim(), password });
         onSuccess();
       } catch (err: unknown) {
         captureException(err, {
@@ -337,10 +372,16 @@ export function GarminAuthModal({
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
           />
         </div>
+        {signInHint ? (
+          <p id="garmin-auth-hint" className="text-xs text-muted">
+            {signInHint}
+          </p>
+        ) : null}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          disabled={signInDisabled}
+          aria-describedby={signInHint ? "garmin-auth-hint" : undefined}
+          className={authSubmitButtonClassName(signInDisabled)}
         >
           {loading ? "Signing in..." : "Sign In"}
         </button>
@@ -369,6 +410,10 @@ export function WhoopAuthModal({
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const credentialSignInDisabled = loading || !username.trim() || !password;
+  const credentialSignInHint = credentialSubmitHint(username, password, loading);
+  const verificationDisabled = loading || !code;
+  const verificationHint = !loading && !code ? "Enter the verification code to continue." : null;
 
   useEffect(() => {
     if (step === "verify") codeRef.current?.focus();
@@ -391,7 +436,7 @@ export function WhoopAuthModal({
       setLoading(true);
       let operation = "whoopAuth.signIn";
       try {
-        const result = await signInMutation.mutateAsync({ username, password });
+        const result = await signInMutation.mutateAsync({ username: username.trim(), password });
         if (result.status === "verification_required") {
           setChallengeId(result.challengeId);
           setStep("verify");
@@ -490,10 +535,16 @@ export function WhoopAuthModal({
               className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
             />
           </div>
+          {credentialSignInHint ? (
+            <p id="whoop-credentials-auth-hint" className="text-xs text-muted">
+              {credentialSignInHint}
+            </p>
+          ) : null}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+            disabled={credentialSignInDisabled}
+            aria-describedby={credentialSignInHint ? "whoop-credentials-auth-hint" : undefined}
+            className={authSubmitButtonClassName(credentialSignInDisabled)}
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
@@ -522,10 +573,16 @@ export function WhoopAuthModal({
               placeholder="000000"
             />
           </div>
+          {verificationHint ? (
+            <p id="whoop-verification-auth-hint" className="text-xs text-muted">
+              {verificationHint}
+            </p>
+          ) : null}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+            disabled={verificationDisabled}
+            aria-describedby={verificationHint ? "whoop-verification-auth-hint" : undefined}
+            className={authSubmitButtonClassName(verificationDisabled)}
           >
             {loading ? "Verifying..." : "Verify"}
           </button>

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockUseSearch = vi.hoisted(() => vi.fn());
@@ -132,5 +132,32 @@ describe("Reset password route", () => {
 
     expect(await screen.findByText("Use at least 8 characters.")).toBeTruthy();
     expect(mockConfirmPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it("uses a distinct disabled treatment while confirming the reset", async () => {
+    let resolveReset: (() => void) | undefined;
+    mockUseSearch.mockReturnValue({ token: "reset-token" });
+    mockConfirmPasswordReset.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveReset = resolve;
+      }),
+    );
+    if (!captured.component) throw new Error("Reset password route component not captured");
+    const ResetPasswordPage = captured.component;
+
+    render(<ResetPasswordPage />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+
+    const resetButton = await screen.findByRole("button", { name: "Resetting..." });
+    expect(resetButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(resetButton).not.toHaveClass("bg-emerald-600", "text-white", "disabled:opacity-50");
+
+    await act(async () => resolveReset?.());
   });
 });
