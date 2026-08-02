@@ -55,11 +55,12 @@ const DEMO_PREVIEW = {
   rangeDays: 30,
   trendDays: 7,
 } as const;
+const DEMO_DATE_FORMAT_OPTIONS = { timeZone: "UTC" } as const;
 const DEMO_PREVIEW_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.rangeDays - 1));
 const DEMO_TREND_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.trendDays - 1));
-const DEMO_END_DATE_LABEL = formatDateMedium(DEMO_PREVIEW.endDate);
-const DEMO_RANGE_LABEL = `${formatDateShort(DEMO_PREVIEW_START_DATE)}–${DEMO_END_DATE_LABEL}`;
-const DEMO_TREND_RANGE_LABEL = `${formatDateShort(DEMO_TREND_START_DATE)} to ${DEMO_END_DATE_LABEL}`;
+const DEMO_END_DATE_LABEL = formatDateMedium(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS);
+const DEMO_RANGE_LABEL = `${formatDateShort(DEMO_PREVIEW_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}–${DEMO_END_DATE_LABEL}`;
+const DEMO_TREND_RANGE_LABEL = `${formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)} to ${DEMO_END_DATE_LABEL}`;
 
 const ANALYSIS_CARDS = [
   {
@@ -457,8 +458,8 @@ function TrendPanel() {
         <LandingPreviewLineChart
           accessibleName={`Example resting heart rate trend. X-axis: ${DEMO_TREND_RANGE_LABEL}. Y-axis: ${heartRateAxis}.`}
           color={activityMetricColors.heartRate}
-          endLabel={formatDateShort(DEMO_PREVIEW.endDate)}
-          startLabel={formatDateShort(DEMO_TREND_START_DATE)}
+          endLabel={formatDateShort(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS)}
+          startLabel={formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}
           yAxisLabel={heartRateAxis}
           yTickLabels={["48", "56"]}
         />
