@@ -130,6 +130,11 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
             { label: "Recovery", value: "82/100" },
             { label: "Sleep performance", value: "88 (Good)" },
           ],
+      caveats: sleepDataUnavailable
+        ? [
+            "Sleep performance was unavailable, so this plan uses recovery and recent workload instead.",
+          ]
+        : [],
       confidence: sleepDataUnavailable ? "moderate" : "high",
       freshness: {
         recoveryDate: todayDate,

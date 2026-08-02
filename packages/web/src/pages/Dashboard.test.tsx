@@ -233,6 +233,7 @@ describe("Dashboard", () => {
           { label: "Recovery", value: "60/100" },
           { label: "Strain target", value: "12" },
         ],
+        caveats: [],
         confidence: "moderate",
         freshness: { recoveryDate: "2026-05-27", sleepDate: null },
         missingInputs: ["sleep"],

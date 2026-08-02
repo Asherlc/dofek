@@ -15,6 +15,7 @@ const readyPlan: TodayPlanResult = {
     { label: "Recovery", value: "82/100" },
     { label: "Sleep performance", value: "88 (Good)" },
   ],
+  caveats: [],
   confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",

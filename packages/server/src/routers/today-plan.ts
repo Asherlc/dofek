@@ -19,6 +19,7 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
       zone: z.enum(["Push", "Maintain", "Recovery"]),
     }),
     supportingFacts: z.tuple([supportingFactSchema, supportingFactSchema]),
+    caveats: z.array(z.string()),
     confidence: z.enum(["high", "moderate", "low"]),
     freshness: z.object({
       recoveryDate: z.string().nullable(),
@@ -42,7 +43,10 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
 ]);
 
 export const todayPlanRouter = router({
-  get: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  get: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "today-plan-evidence-v1",
+  })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .output(todayPlanResultSchema)
     .query(({ ctx, input }) =>

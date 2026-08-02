@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import type { TodayPlanResult } from "@dofek/scoring/today-plan";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { TodayPlanCard } from "./TodayPlanCard.tsx";
 
@@ -18,6 +18,7 @@ const readyPlan: TodayPlanResult = {
     { label: "Recovery", value: "82/100" },
     { label: "Sleep performance", value: "88 (Good)" },
   ],
+  caveats: [],
   confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",
@@ -41,6 +42,13 @@ const insufficientPlan: TodayPlanResult = {
     "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
 };
 
+const planWithCaveat = {
+  ...readyPlan,
+  caveats: [
+    "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+  ],
+};
+
 describe("TodayPlanCard", () => {
   it("renders the server action and supporting facts", () => {
     render(<TodayPlanCard plan={readyPlan} />);
@@ -48,12 +56,59 @@ describe("TodayPlanCard", () => {
     expect(screen.getByText("What matters today")).toBeTruthy();
     expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
     expect(screen.getByText(/Recovery is strong/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Why this?" }));
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(screen.getByText("82/100")).toBeTruthy();
     expect(screen.getByText("Sleep performance")).toBeTruthy();
     expect(screen.getByText("88 (Good)")).toBeTruthy();
     expect(screen.getByText("High confidence")).toBeTruthy();
     expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
+  });
+
+  it("discloses server-authored observations and caveats with an accessible Why this control", () => {
+    render(<TodayPlanCard plan={planWithCaveat} />);
+
+    const disclosure = screen.getByRole("button", { name: "Why this?" });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(disclosure);
+
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Contributing observations")).toBeTruthy();
+    expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("keeps evidence disclosure ids unique across multiple cards", () => {
+    render(
+      <>
+        <TodayPlanCard plan={readyPlan} />
+        <TodayPlanCard plan={readyPlan} />
+      </>,
+    );
+
+    const [firstDisclosure, secondDisclosure] = screen.getAllByRole("button", {
+      name: "Why this?",
+    });
+    if (!firstDisclosure || !secondDisclosure) {
+      throw new Error("Expected two Today Plan disclosure controls");
+    }
+
+    fireEvent.click(firstDisclosure);
+    fireEvent.click(secondDisclosure);
+
+    const firstEvidenceId = firstDisclosure.getAttribute("aria-controls");
+    const secondEvidenceId = secondDisclosure.getAttribute("aria-controls");
+    expect(firstEvidenceId).not.toBeNull();
+    expect(secondEvidenceId).not.toBeNull();
+    expect(firstEvidenceId).not.toBe(secondEvidenceId);
+    if (!firstEvidenceId || !secondEvidenceId) return;
+    expect(document.getElementById(firstEvidenceId)).not.toBeNull();
+    expect(document.getElementById(secondEvidenceId)).not.toBeNull();
   });
 
   it("renders the insufficient-data message from the server", () => {

@@ -193,6 +193,7 @@ describe("TodayScreen independent loading states", () => {
         { label: "Recovery", value: "85/100" },
         { label: "Sleep performance", value: "88 (Good)" },
       ],
+      caveats: [],
       confidence: "high",
       freshness: { recoveryDate: "2026-03-21", sleepDate: "2026-03-20" },
       missingInputs: [],
