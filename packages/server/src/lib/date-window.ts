@@ -278,6 +278,10 @@ export function dateWindowStartString(endDate: string, days: number): string {
   return formatDateYmdInTimeZone(windowStart, "UTC");
 }
 
+export function dateWindowEndExclusiveString(endDate: string): string {
+  return dateWindowStartString(endDate, -1);
+}
+
 /**
  * Build the SQL lower bound for a date window.
  * Replaces `CURRENT_DATE - ${days}::int` with a client-provided anchor.

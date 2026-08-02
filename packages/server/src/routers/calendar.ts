@@ -2,6 +2,7 @@ import {
   activityDataStateSchema,
   activityDataStateUnavailableStatusSchema,
 } from "@dofek/format/activity-data-state";
+import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -116,6 +117,7 @@ const activityOverviewSchema = z.object({
   totalElevationGainM: z.number().nonnegative().nullable(),
   totalElevationState: activityDataStateSchema,
   activityTypes: z.array(z.string()),
+  comparison: activityOverviewComparisonSchema,
 });
 
 export const calendarRouter = router({
@@ -156,7 +158,7 @@ export const calendarRouter = router({
 
   activityOverview: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-states-v1",
+    keyVersion: "activity-calendar-states-v2",
   })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)
