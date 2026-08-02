@@ -72,6 +72,98 @@ describe("provider auth modals", () => {
     whoopVerifyCode.mockReset();
   });
 
+  it("uses a distinct disabled treatment and guidance until credentials are entered", () => {
+    render(
+      <CredentialAuthModal
+        providerId="wahoo"
+        providerName="Wahoo"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    const signInButton = screen.getByRole("button", { name: "Sign in to Wahoo" });
+    const disabledBackgroundColor = signInButton.style.backgroundColor;
+    const disabledTextColor = signInButton.firstElementChild?.getAttribute("style");
+
+    expect(signInButton).toHaveProperty("disabled", true);
+    expect(signInButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter your email and password to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "athlete@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "secret" },
+    });
+
+    expect(signInButton).toHaveProperty("disabled", false);
+    expect(signInButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(signInButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter your email and password to continue.")).toBeNull();
+  });
+
+  it("uses a distinct disabled treatment and guidance until a token is entered", () => {
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    const connectButton = screen.getByRole("button", { name: "Connect Wger" });
+    const disabledBackgroundColor = connectButton.style.backgroundColor;
+    const disabledTextColor = connectButton.firstElementChild?.getAttribute("style");
+
+    expect(connectButton).toHaveProperty("disabled", true);
+    expect(connectButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter your token to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+      target: { value: "personal-refresh" },
+    });
+
+    expect(connectButton).toHaveProperty("disabled", false);
+    expect(connectButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(connectButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter your token to continue.")).toBeNull();
+  });
+
+  it("uses a distinct disabled treatment and guidance until a verification code is entered", async () => {
+    whoopSignIn.mockResolvedValue({ status: "verification_required", challengeId: "challenge-1" });
+
+    render(<WhoopAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "athlete@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to WHOOP" }));
+
+    await waitFor(() => expect(screen.getByPlaceholderText("Verification code")).toBeTruthy());
+    const verifyButton = screen.getByRole("button", { name: "Verify WHOOP code" });
+    const disabledBackgroundColor = verifyButton.style.backgroundColor;
+    const disabledTextColor = verifyButton.firstElementChild?.getAttribute("style");
+
+    expect(verifyButton).toHaveProperty("disabled", true);
+    expect(verifyButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter the verification code to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Verification code"), {
+      target: { value: "123456" },
+    });
+
+    expect(verifyButton).toHaveProperty("disabled", false);
+    expect(verifyButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(verifyButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter the verification code to continue.")).toBeNull();
+  });
+
   it("reports a credential provider sign-in error while preserving its message", async () => {
     const signInError = new Error("Provider rejected these credentials");
     credentialSignIn.mockRejectedValue(signInError);

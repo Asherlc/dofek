@@ -14,6 +14,14 @@ import { colors } from "../../theme";
 import { styles } from "./styles.ts";
 import type { ProviderDetailModals } from "./use-provider-detail-actions.ts";
 
+function credentialSubmitHint(username: string, password: string, loading: boolean) {
+  if (loading) return null;
+  if (!username.trim() && !password) return "Enter your email and password to continue.";
+  if (!username.trim()) return "Enter your email to continue.";
+  if (!password) return "Enter your password to continue.";
+  return null;
+}
+
 // ── Generic Credential Auth Modal ──
 
 export function CredentialAuthModal({
@@ -32,6 +40,8 @@ export function CredentialAuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<TextInput>(null);
+  const signInDisabled = loading || !username.trim() || !password;
+  const signInHint = credentialSubmitHint(username, password, loading);
 
   useEffect(() => {
     emailRef.current?.focus();
@@ -97,19 +107,25 @@ export function CredentialAuthModal({
             onChangeText={setPassword}
             secureTextEntry
           />
+          {signInHint ? <Text style={styles.disabledHint}>{signInHint}</Text> : null}
           <TouchableOpacity
-            style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+            style={[styles.signInButton, signInDisabled && styles.signInButtonDisabled]}
             onPress={handleSignIn}
             activeOpacity={0.7}
-            disabled={loading || !username || !password}
+            disabled={signInDisabled}
             accessibilityRole="button"
             accessibilityLabel={`Sign in to ${providerName}`}
+            accessibilityHint={signInHint ?? undefined}
             accessibilityState={{
               busy: loading,
-              disabled: loading || !username || !password,
+              disabled: signInDisabled,
             }}
           >
-            <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
+            <Text
+              style={[styles.signInButtonText, signInDisabled && styles.signInButtonTextDisabled]}
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -138,6 +154,8 @@ export function TokenAuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const tokenRef = useRef<TextInput>(null);
+  const connectDisabled = loading || !token;
+  const connectHint = !loading && !token ? "Enter your token to continue." : null;
   const connectMutation = trpc.tokenAuth.connect.useMutation();
 
   useEffect(() => {
@@ -222,19 +240,25 @@ export function TokenAuthModal({
             autoCorrect={false}
             secureTextEntry
           />
+          {connectHint ? <Text style={styles.disabledHint}>{connectHint}</Text> : null}
           <TouchableOpacity
-            style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+            style={[styles.signInButton, connectDisabled && styles.signInButtonDisabled]}
             onPress={handleConnect}
             activeOpacity={0.7}
-            disabled={loading || !token}
+            disabled={connectDisabled}
             accessibilityRole="button"
             accessibilityLabel={`Connect ${providerName}`}
+            accessibilityHint={connectHint ?? undefined}
             accessibilityState={{
               busy: loading,
-              disabled: loading || !token,
+              disabled: connectDisabled,
             }}
           >
-            <Text style={styles.signInButtonText}>{loading ? "Connecting..." : "Connect"}</Text>
+            <Text
+              style={[styles.signInButtonText, connectDisabled && styles.signInButtonTextDisabled]}
+            >
+              {loading ? "Connecting..." : "Connect"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -287,6 +311,8 @@ export function GarminAuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<TextInput>(null);
+  const signInDisabled = loading || !username.trim() || !password;
+  const signInHint = credentialSubmitHint(username, password, loading);
 
   useEffect(() => {
     emailRef.current?.focus();
@@ -358,19 +384,25 @@ export function GarminAuthModal({
             onChangeText={setPassword}
             secureTextEntry
           />
+          {signInHint ? <Text style={styles.disabledHint}>{signInHint}</Text> : null}
           <TouchableOpacity
-            style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+            style={[styles.signInButton, signInDisabled && styles.signInButtonDisabled]}
             onPress={handleSignIn}
             activeOpacity={0.7}
-            disabled={loading || !username || !password}
+            disabled={signInDisabled}
             accessibilityRole="button"
             accessibilityLabel="Sign in to Garmin"
+            accessibilityHint={signInHint ?? undefined}
             accessibilityState={{
               busy: loading,
-              disabled: loading || !username || !password,
+              disabled: signInDisabled,
             }}
           >
-            <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
+            <Text
+              style={[styles.signInButtonText, signInDisabled && styles.signInButtonTextDisabled]}
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -398,6 +430,10 @@ export function WhoopAuthModal({
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<TextInput>(null);
   const codeRef = useRef<TextInput>(null);
+  const credentialSignInDisabled = loading || !username.trim() || !password;
+  const credentialSignInHint = credentialSubmitHint(username, password, loading);
+  const verificationDisabled = loading || !code;
+  const verificationHint = !loading && !code ? "Enter the verification code to continue." : null;
 
   useEffect(() => {
     if (step === "credentials") emailRef.current?.focus();
@@ -505,19 +541,33 @@ export function WhoopAuthModal({
                 onChangeText={setPassword}
                 secureTextEntry
               />
+              {credentialSignInHint ? (
+                <Text style={styles.disabledHint}>{credentialSignInHint}</Text>
+              ) : null}
               <TouchableOpacity
-                style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+                style={[
+                  styles.signInButton,
+                  credentialSignInDisabled && styles.signInButtonDisabled,
+                ]}
                 onPress={handleSignIn}
                 activeOpacity={0.7}
-                disabled={loading || !username || !password}
+                disabled={credentialSignInDisabled}
                 accessibilityRole="button"
                 accessibilityLabel="Sign in to WHOOP"
+                accessibilityHint={credentialSignInHint ?? undefined}
                 accessibilityState={{
                   busy: loading,
-                  disabled: loading || !username || !password,
+                  disabled: credentialSignInDisabled,
                 }}
               >
-                <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
+                <Text
+                  style={[
+                    styles.signInButtonText,
+                    credentialSignInDisabled && styles.signInButtonTextDisabled,
+                  ]}
+                >
+                  {loading ? "Signing in..." : "Sign In"}
+                </Text>
               </TouchableOpacity>
             </>
           )}
@@ -537,19 +587,30 @@ export function WhoopAuthModal({
                 keyboardType="number-pad"
                 autoCapitalize="none"
               />
+              {verificationHint ? (
+                <Text style={styles.disabledHint}>{verificationHint}</Text>
+              ) : null}
               <TouchableOpacity
-                style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+                style={[styles.signInButton, verificationDisabled && styles.signInButtonDisabled]}
                 onPress={handleVerify}
                 activeOpacity={0.7}
-                disabled={loading || !code}
+                disabled={verificationDisabled}
                 accessibilityRole="button"
                 accessibilityLabel="Verify WHOOP code"
+                accessibilityHint={verificationHint ?? undefined}
                 accessibilityState={{
                   busy: loading,
-                  disabled: loading || !code,
+                  disabled: verificationDisabled,
                 }}
               >
-                <Text style={styles.signInButtonText}>{loading ? "Verifying..." : "Verify"}</Text>
+                <Text
+                  style={[
+                    styles.signInButtonText,
+                    verificationDisabled && styles.signInButtonTextDisabled,
+                  ]}
+                >
+                  {loading ? "Verifying..." : "Verify"}
+                </Text>
               </TouchableOpacity>
             </>
           )}

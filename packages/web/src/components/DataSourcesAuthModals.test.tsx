@@ -50,6 +50,47 @@ beforeEach(() => {
 describe("data source auth dialogs", () => {
   it.each([
     {
+      name: "credential sign-in",
+      renderDialog: () => (
+        <CredentialAuthModal
+          providerId="polar"
+          providerName="Polar"
+          onClose={vi.fn()}
+          onSuccess={vi.fn()}
+        />
+      ),
+    },
+    {
+      name: "Garmin sign-in",
+      renderDialog: () => <GarminAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />,
+    },
+    {
+      name: "WHOOP sign-in",
+      renderDialog: () => <WhoopAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />,
+    },
+  ])("uses actionable disabled styling for $name", ({ renderDialog }) => {
+    render(renderDialog());
+    const signInButton = screen.getByRole("button", { name: "Sign In" });
+
+    expect(signInButton).toBeDisabled();
+    expect(signInButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(signInButton).not.toHaveClass("bg-emerald-600", "text-white", "disabled:opacity-50");
+    expect(screen.getByText("Enter your email and password to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "athlete@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "secret" },
+    });
+
+    expect(signInButton).toBeEnabled();
+    expect(signInButton).toHaveClass("bg-emerald-600", "text-white");
+    expect(screen.queryByText("Enter your email and password to continue.")).toBeNull();
+  });
+
+  it.each([
+    {
       name: "Connect Polar",
       renderDialog: (onClose: () => void) => (
         <CredentialAuthModal
@@ -116,6 +157,35 @@ describe("Data source authentication telemetry", () => {
       "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
     );
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
+  });
+
+  it("uses actionable disabled styling until a personal token is entered", async () => {
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    const connectButton = screen.getByRole("button", { name: "Connect" });
+
+    expect(connectButton).toBeDisabled();
+    expect(connectButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(connectButton).not.toHaveClass("bg-emerald-600", "text-white", "disabled:opacity-50");
+    expect(screen.getByText("Enter your token to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("JWT refresh token"), {
+      target: { value: "personal-refresh" },
+    });
+
+    expect(connectButton).toBeEnabled();
+    expect(connectButton).toHaveClass("bg-emerald-600", "text-white");
+    expect(screen.queryByText("Enter your token to continue.")).toBeNull();
   });
 
   it("reports personal token failures with provider context only", async () => {

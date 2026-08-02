@@ -108,6 +108,8 @@ describe("Login route", () => {
       name: "Sign in with email",
     });
     expect(signInButton).toHaveProperty("disabled", true);
+    expect(signInButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(screen.getByText("Enter your email and password to continue.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "user@example.com" },
@@ -117,6 +119,7 @@ describe("Login route", () => {
     });
 
     expect(signInButton).toHaveProperty("disabled", false);
+    expect(screen.queryByText("Enter your email and password to continue.")).toBeNull();
   });
 
   it("reveals and hides the current password with an accessible control", async () => {
@@ -319,6 +322,32 @@ describe("Login route", () => {
 
     expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
     expect(screen.getByText("Enter your email to receive a password reset link.")).toBeTruthy();
+  });
+
+  it("keeps the password reset action visibly disabled until an email is entered", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+    const resetButton = screen.getByRole("button", { name: "Send reset link" });
+
+    expect(resetButton).toBeDisabled();
+    expect(resetButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
+    expect(screen.getByText("Enter your email to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "user@example.com" },
+    });
+
+    expect(resetButton).toBeEnabled();
+    expect(resetButton).toHaveClass("bg-emerald-600", "text-white");
+    expect(screen.queryByText("Enter your email to continue.")).toBeNull();
   });
 
   it("shows forgot password in email sign-in mode", async () => {

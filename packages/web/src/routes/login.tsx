@@ -55,7 +55,17 @@ function LoginPage() {
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   const showPasswordAuth = providers?.password ?? false;
   const showOAuthProviders = allProviders.length > 0;
+  const passwordResetDisabled = submitting || !email.trim();
   const passwordAuthDisabled = submitting || !email.trim() || !password;
+  const passwordResetHint = !submitting && !email.trim() ? "Enter your email to continue." : null;
+  const passwordAuthHint =
+    !submitting && passwordAuthDisabled
+      ? !email.trim() && !password
+        ? "Enter your email and password to continue."
+        : !email.trim()
+          ? "Enter your email to continue."
+          : "Enter your password to continue."
+      : null;
   const emailValidationError =
     authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
   const passwordValidationError = passwordTouched
@@ -190,10 +200,20 @@ function LoginPage() {
                           placeholder="you@example.com"
                         />
                       </div>
+                      {passwordResetHint ? (
+                        <p id="reset-email-submit-hint" className="text-xs text-muted">
+                          {passwordResetHint}
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
-                        disabled={submitting}
-                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        disabled={passwordResetDisabled}
+                        aria-describedby={passwordResetHint ? "reset-email-submit-hint" : undefined}
+                        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+                          passwordResetDisabled
+                            ? "bg-surface-hover text-muted cursor-not-allowed"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        }`}
                       >
                         {submitting ? "Sending..." : "Send reset link"}
                       </button>
@@ -339,9 +359,15 @@ function LoginPage() {
                           Forgot password?
                         </button>
                       ) : null}
+                      {passwordAuthHint ? (
+                        <p id="password-submit-hint" className="text-xs text-muted">
+                          {passwordAuthHint}
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
                         disabled={passwordAuthDisabled}
+                        aria-describedby={passwordAuthHint ? "password-submit-hint" : undefined}
                         className={`w-full py-2 text-sm font-medium rounded transition-colors ${
                           passwordAuthDisabled
                             ? "bg-surface-hover text-muted cursor-not-allowed"

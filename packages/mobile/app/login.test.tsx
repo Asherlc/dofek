@@ -506,6 +506,7 @@ describe("LoginScreen", () => {
     const disabledTextColor = signInButton.firstElementChild?.getAttribute("style");
     expect(signInButton).toHaveProperty("disabled", true);
     expect(signInButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter your email and password to continue.")).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "user@example.com" },
@@ -517,6 +518,35 @@ describe("LoginScreen", () => {
     expect(signInButton).toHaveProperty("disabled", false);
     expect(signInButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
     expect(signInButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter your email and password to continue.")).toBeNull();
+  });
+
+  it("keeps the password reset action visibly disabled until an email is entered", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
+    const resetButton = screen.getByRole("button", { name: "Send reset link" });
+    const disabledBackgroundColor = resetButton.style.backgroundColor;
+    const disabledTextColor = resetButton.firstElementChild?.getAttribute("style");
+
+    expect(resetButton).toHaveProperty("disabled", true);
+    expect(resetButton.style.opacity).toBe("");
+    expect(screen.getByText("Enter your email to continue.")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@example.com" },
+    });
+
+    expect(resetButton).toHaveProperty("disabled", false);
+    expect(resetButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
+    expect(resetButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
+    expect(screen.queryByText("Enter your email to continue.")).toBeNull();
   });
 
   it("uses neutral disabled registration styling until required details are entered", async () => {
