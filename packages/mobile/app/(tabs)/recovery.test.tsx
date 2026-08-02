@@ -702,10 +702,46 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         {
           date: "2026-04-05",
           rawWeight: 80.2,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },
+        {
+          date: "2026-04-06",
+          rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
+          smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+    expect(screen.getByText("Estimated")).toBeTruthy();
+    expect(screen.getByText("Observed: 80.0 kg")).toBeTruthy();
+    expect(
+      screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
+    ).toBeTruthy();
+  });
+
+  it("keeps a legacy cached weight row visible without epistemic statuses", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [
         {
           date: "2026-04-06",
           rawWeight: 80,
@@ -720,12 +756,8 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
-    expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
     expect(screen.getByText("79.8 kg")).toBeTruthy();
-    expect(screen.getByText("Scale: 80.0 kg")).toBeTruthy();
-    expect(
-      screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
-    ).toBeTruthy();
+    expect(screen.queryByText("Estimated")).toBeNull();
   });
 
   it("uses neutral text for weight-rate direction", async () => {
@@ -740,7 +772,9 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         {
           date: "2026-04-06",
           rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },

@@ -40,7 +40,7 @@ function hasFiniteValue(
   return observation.value != null && Number.isFinite(observation.value);
 }
 
-export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v3";
+export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v4";
 
 interface HealthStatusSummaryInput {
   metric: HealthStatusMetric["metric"];

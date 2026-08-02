@@ -1,4 +1,6 @@
+import { getEpistemicStatus } from "@dofek/scoring/epistemic-status";
 import { z } from "zod";
+import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 
 export const MISSING_PREVIOUS_NIGHT_MESSAGE =
   "Sync last night's sleep data to see tonight's sleep need.";
@@ -77,6 +79,7 @@ export type SleepNeedResult = z.infer<typeof sleepNeedV1Schema>;
 const availableSleepNeedV2Schema = sleepNeedRecommendationSchema
   .extend({
     availability: z.literal("available"),
+    epistemicStatus: epistemicStatusSchema,
     debtRecoveryMinutes: z.number(),
     estimateMetadata: availableSleepNeedEstimateMetadataSchema,
   })
@@ -85,6 +88,7 @@ const availableSleepNeedV2Schema = sleepNeedRecommendationSchema
 const missingPreviousNightSleepNeedV2Schema = z
   .object({
     availability: z.literal("missing_previous_night"),
+    epistemicStatus: epistemicStatusSchema,
     message: z.literal(MISSING_PREVIOUS_NIGHT_MESSAGE),
   })
   .strict();
@@ -92,6 +96,7 @@ const missingPreviousNightSleepNeedV2Schema = z
 const insufficientBaselineSleepNeedV2Schema = z
   .object({
     availability: z.literal("insufficient_data"),
+    epistemicStatus: epistemicStatusSchema,
     reason: z.literal("insufficient_baseline_history"),
     message: z.literal(INSUFFICIENT_BASELINE_HISTORY_MESSAGE),
     nextAction: z.literal(INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION),
@@ -101,6 +106,7 @@ const insufficientBaselineSleepNeedV2Schema = z
 const missingPreviousDayLoadSleepNeedV2Schema = z
   .object({
     availability: z.literal("insufficient_data"),
+    epistemicStatus: epistemicStatusSchema,
     reason: z.literal("missing_previous_day_load"),
     message: z.literal(MISSING_PREVIOUS_DAY_LOAD_MESSAGE),
     nextAction: z.literal(MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION),
@@ -183,6 +189,7 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
   if (!computation.hasPreviousNight) {
     return {
       availability: "missing_previous_night",
+      epistemicStatus: getEpistemicStatus("unavailable"),
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     };
   }
@@ -190,6 +197,7 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
   if (!computation.hasYesterdayLoad) {
     return {
       availability: "insufficient_data",
+      epistemicStatus: getEpistemicStatus("unavailable"),
       reason: "missing_previous_day_load",
       message: MISSING_PREVIOUS_DAY_LOAD_MESSAGE,
       nextAction: MISSING_PREVIOUS_DAY_LOAD_NEXT_ACTION,
@@ -199,6 +207,7 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
   if (computation.baselineQualifyingNightCount < 7) {
     return {
       availability: "insufficient_data",
+      epistemicStatus: getEpistemicStatus("unavailable"),
       reason: "insufficient_baseline_history",
       message: INSUFFICIENT_BASELINE_HISTORY_MESSAGE,
       nextAction: INSUFFICIENT_BASELINE_HISTORY_NEXT_ACTION,
@@ -212,6 +221,7 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
 
   return sleepNeedV2Schema.parse({
     availability: "available",
+    epistemicStatus: getEpistemicStatus("estimated"),
     baselineMinutes: computation.baselineMinutes,
     strainDebtMinutes: computation.strainDebtMinutes,
     accumulatedDebtMinutes: computation.accumulatedDebtMinutes,

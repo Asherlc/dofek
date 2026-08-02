@@ -13,6 +13,7 @@ const emptyProvenance: Pick<
 
 const sampleData = {
   availability: "available",
+  epistemicStatus: { kind: "estimated", label: "Estimated" },
   baselineMinutes: 462,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
@@ -131,6 +132,7 @@ export const CannotRecommend: Story = {
   args: {
     data: {
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     },
   },

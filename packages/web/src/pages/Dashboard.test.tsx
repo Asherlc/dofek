@@ -222,6 +222,7 @@ describe("Dashboard", () => {
     mockTodayPlanQuery.mockReturnValue({
       data: {
         status: "ready",
+        epistemicStatus: { kind: "suggested", label: "Suggested" },
         date: "2026-05-27",
         action: {
           id: "strain_target",

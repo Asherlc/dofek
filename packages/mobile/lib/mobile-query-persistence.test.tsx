@@ -7,6 +7,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createMobileQueryPersister,
+  MOBILE_QUERY_CACHE_CONTRACT_VERSION,
   MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES,
   mobileQueryCacheBuster,
   removeMobileQueryCache,
@@ -24,6 +25,11 @@ describe("mobile query persistence", () => {
   beforeEach(async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     await AsyncStorage.clear();
+  });
+
+  it("uses a new cache contract buster for epistemic status fields", () => {
+    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(7);
+    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v7");
   });
 
   it("restores persisted user data before the query refetches", async () => {
@@ -71,7 +77,7 @@ describe("mobile query persistence", () => {
       "dofek-query-cache:user-1",
       JSON.stringify({
         timestamp: Date.now(),
-        buster: "user-1:v5",
+        buster: "user-1:v6",
         clientState: dehydrate(seedClient),
       }),
     );

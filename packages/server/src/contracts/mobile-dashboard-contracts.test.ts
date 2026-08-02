@@ -120,7 +120,9 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
         {
           date: input.endDate,
           rawWeight: 73.5,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 73.6,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: -0.2,
           interpolated: false,
         },

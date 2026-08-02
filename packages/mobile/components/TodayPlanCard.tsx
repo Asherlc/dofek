@@ -58,6 +58,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         <Text style={styles.sectionTitle}>WHAT MATTERS TODAY</Text>
         {refreshWarning}
         <Text style={styles.message}>{plan.message}</Text>
+        <Text style={styles.meta}>{plan.epistemicStatus?.label}</Text>
         <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
       </View>
     );
@@ -106,6 +107,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
           ) : null}
         </View>
       ) : null}
+      <Text style={styles.meta}>{plan.epistemicStatus?.label}</Text>
       <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
       {freshness != null ? <Text style={styles.meta}>{freshness}</Text> : null}
     </View>

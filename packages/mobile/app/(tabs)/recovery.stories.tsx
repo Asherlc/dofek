@@ -178,7 +178,9 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
       weight: trendDates.map((date, index) => ({
         date,
         rawWeight: 74.2 - index * 0.05,
+        rawWeightStatus: { kind: "observed", label: "Observed" },
         smoothedWeight: 74.2 - index * 0.05,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: -0.2,
         interpolated: false,
       })),
