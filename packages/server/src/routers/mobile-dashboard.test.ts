@@ -378,6 +378,22 @@ describe("mobileDashboard.dashboard", () => {
     );
   });
 
+  it("returns the server-authored effective date and timezone", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-08-02" });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
   it("identifies only today and yesterday as recent", () => {
     expect(isRecent("2026-03-28", "2026-03-28")).toBe(true);
     expect(isRecent("2026-03-27", "2026-03-28")).toBe(true);
