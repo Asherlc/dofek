@@ -167,6 +167,23 @@ describe("NutritionPage", () => {
     });
   });
 
+  it("puts the server-authored daily nutrition decision context before AI meal input", async () => {
+    const { NutritionPage } = await import("./NutritionPage");
+
+    render(<NutritionPage />);
+
+    const intakeMessage = screen.getByText(defaultIntakeContext.comparison.message);
+    const resolutionMessage = screen.getByText(availableResolution.message);
+    const aiInputHeading = screen.getByRole("heading", { name: "AI meal input" });
+
+    expect(
+      intakeMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      resolutionMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("shows fatsecret attribution on the nutrition screen", async () => {
     const { NutritionPage } = await import("./NutritionPage");
 
