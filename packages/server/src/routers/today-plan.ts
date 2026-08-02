@@ -43,7 +43,10 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
 ]);
 
 export const todayPlanRouter = router({
-  get: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  get: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "today-plan-evidence-v1",
+  })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .output(todayPlanResultSchema)
     .query(({ ctx, input }) =>

@@ -3,7 +3,7 @@ import {
   formatTodayPlanFreshness,
   type TodayPlanResult,
 } from "@dofek/scoring/today-plan";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export interface TodayPlanCardProps {
@@ -13,6 +13,7 @@ export interface TodayPlanCardProps {
 }
 
 export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardProps) {
+  const evidenceId = useId();
   const [evidenceOpen, setEvidenceOpen] = useState(false);
 
   if (loading && plan == null) {
@@ -77,13 +78,13 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         type="button"
         className="w-fit text-xs text-link underline decoration-dotted underline-offset-2 hover:text-foreground"
         aria-expanded={evidenceOpen}
-        aria-controls="today-plan-evidence"
+        aria-controls={evidenceId}
         onClick={() => setEvidenceOpen((current) => !current)}
       >
         Why this?
       </button>
       {evidenceOpen ? (
-        <div id="today-plan-evidence" className="space-y-2 rounded border border-border p-3">
+        <div id={evidenceId} className="space-y-2 rounded border border-border p-3">
           <h3 className="text-xs font-medium text-foreground">Contributing observations</h3>
           <dl className="grid grid-cols-2 gap-3">
             {plan.supportingFacts.map((fact) => (

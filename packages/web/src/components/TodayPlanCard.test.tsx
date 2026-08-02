@@ -83,6 +83,34 @@ describe("TodayPlanCard", () => {
     ).toBeTruthy();
   });
 
+  it("keeps evidence disclosure ids unique across multiple cards", () => {
+    render(
+      <>
+        <TodayPlanCard plan={readyPlan} />
+        <TodayPlanCard plan={readyPlan} />
+      </>,
+    );
+
+    const [firstDisclosure, secondDisclosure] = screen.getAllByRole("button", {
+      name: "Why this?",
+    });
+    if (!firstDisclosure || !secondDisclosure) {
+      throw new Error("Expected two Today Plan disclosure controls");
+    }
+
+    fireEvent.click(firstDisclosure);
+    fireEvent.click(secondDisclosure);
+
+    const firstEvidenceId = firstDisclosure.getAttribute("aria-controls");
+    const secondEvidenceId = secondDisclosure.getAttribute("aria-controls");
+    expect(firstEvidenceId).not.toBeNull();
+    expect(secondEvidenceId).not.toBeNull();
+    expect(firstEvidenceId).not.toBe(secondEvidenceId);
+    if (!firstEvidenceId || !secondEvidenceId) return;
+    expect(document.getElementById(firstEvidenceId)).not.toBeNull();
+    expect(document.getElementById(secondEvidenceId)).not.toBeNull();
+  });
+
   it("renders the insufficient-data message from the server", () => {
     render(<TodayPlanCard plan={insufficientPlan} />);
 
