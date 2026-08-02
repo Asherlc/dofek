@@ -1,3 +1,4 @@
+import type { NutritionCalorieTargetType } from "@dofek/nutrition/selected-date-summary";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -24,6 +25,11 @@ export interface SlackStatus {
   connected: boolean;
 }
 
+export interface CalorieGoalContext {
+  target: number;
+  type: NutritionCalorieTargetType;
+}
+
 // ---------------------------------------------------------------------------
 // Tables deleted during full user data wipe
 // ---------------------------------------------------------------------------
@@ -40,12 +46,14 @@ const USER_SCOPED_DELETE_TABLES = [
 const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
 export const DEFAULT_CALORIE_GOAL = 2000;
 
-function parseCalorieGoal(value: unknown): number {
+function parseCalorieGoal(value: unknown): CalorieGoalContext {
   const numericValue =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
-  return Number.isFinite(numericValue) && numericValue > 0
-    ? Math.round(numericValue)
-    : DEFAULT_CALORIE_GOAL;
+  const roundedValue = Math.round(numericValue);
+  if (Number.isFinite(roundedValue) && roundedValue > 0) {
+    return { target: roundedValue, type: "configured" };
+  }
+  return { target: DEFAULT_CALORIE_GOAL, type: "default" };
 }
 
 function isUndefinedTableError(error: unknown): boolean {
@@ -101,6 +109,11 @@ export class SettingsRepository {
 
   /** Get the user's positive calorie goal, or the canonical default. */
   async getCalorieGoal(): Promise<number> {
+    return (await this.getCalorieGoalContext()).target;
+  }
+
+  /** Get the user's calorie target and whether it uses the configured or default value. */
+  async getCalorieGoalContext(): Promise<CalorieGoalContext> {
     const setting = await this.get("calorieGoal");
     return parseCalorieGoal(setting?.value);
   }

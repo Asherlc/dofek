@@ -1,4 +1,11 @@
-import { formatWeekdayTime } from "@dofek/format/format";
+import { formatCalories, formatWeekdayTime } from "@dofek/format/format";
+import {
+  type NutritionCalorieTargetType,
+  nutritionSourceResolutionSchema,
+  type SelectedDateNutritionIntakeContext,
+  selectedDateNutritionIntakeContextSchema,
+  selectedDateNutritionSummarySchema,
+} from "@dofek/nutrition/selected-date-summary";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
@@ -7,8 +14,11 @@ import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { invalidateNutritionCaches } from "../lib/nutrition-cache.ts";
 import { logger } from "../logger.ts";
-import { FoodRepository } from "../repositories/food-repository.ts";
-import { SettingsRepository } from "../repositories/settings-repository.ts";
+import { FoodRepository, foodEntryRowSchema } from "../repositories/food-repository.ts";
+import {
+  type CalorieGoalContext,
+  SettingsRepository,
+} from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -100,13 +110,20 @@ const foodByDateInputSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+const foodByDateV2OutputSchema = z.object({
+  entries: z.array(foodEntryRowSchema),
+  summary: selectedDateNutritionSummarySchema.nullable(),
+  resolution: nutritionSourceResolutionSchema,
+  intakeContext: selectedDateNutritionIntakeContextSchema.nullable(),
+});
+
 async function loadFoodByDate(db: Database, userId: string, timezone: string, date: string) {
   const repo = new FoodRepository(db, userId, timezone);
   const settingsRepo = new SettingsRepository(db, userId);
-  const calorieGoal = await settingsRepo.getCalorieGoal();
+  const calorieGoal = await settingsRepo.getCalorieGoalContext();
   const [entries, nutrition] = await Promise.all([
     repo.byDate(date),
-    repo.nutritionByDate(date, calorieGoal),
+    repo.nutritionByDate(date, calorieGoal.target),
   ]);
   if (entries.length === 0 && nutrition.resolution.sourceProviders.length === 0) {
     logger.info(`[food] byDate returned 0 rows for userId=${userId} date=${date}`);
@@ -114,6 +131,60 @@ async function loadFoodByDate(db: Database, userId: string, timezone: string, da
   return {
     entries: entries.map((entry) => entry.toDetail()),
     ...nutrition,
+    calorieGoal,
+  };
+}
+
+const calorieTargetLabels: Record<NutritionCalorieTargetType, string> = {
+  configured: "Configured daily logged-intake target",
+  default: "Default daily logged-intake target",
+};
+
+const intakeTargetDescriptions: Record<NutritionCalorieTargetType, string> = {
+  configured: "the configured daily logged-intake target",
+  default: "the default daily logged-intake target",
+};
+
+const INTAKE_CONTEXT_LIMITATION =
+  "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.";
+
+function createNutritionIntakeContext(
+  observedCalories: number,
+  calorieGoal: CalorieGoalContext,
+): SelectedDateNutritionIntakeContext {
+  const maximumCalories = Math.max(observedCalories, calorieGoal.target);
+  const differenceCalories = Math.abs(observedCalories - calorieGoal.target);
+  const status =
+    observedCalories < calorieGoal.target
+      ? "below_target"
+      : observedCalories > calorieGoal.target
+        ? "above_target"
+        : "at_target";
+  const message =
+    status === "at_target"
+      ? `Observed logged intake matches ${intakeTargetDescriptions[calorieGoal.type]}.`
+      : `Observed logged intake is ${formatCalories(differenceCalories)} ${
+          status === "below_target" ? "below" : "above"
+        } ${intakeTargetDescriptions[calorieGoal.type]}.`;
+
+  return {
+    observedCalories,
+    target: {
+      calories: calorieGoal.target,
+      type: calorieGoal.type,
+      label: calorieTargetLabels[calorieGoal.type],
+    },
+    scale: {
+      maximumCalories,
+      observedPercentage: (observedCalories / maximumCalories) * 100,
+      targetPercentage: (calorieGoal.target / maximumCalories) * 100,
+    },
+    comparison: {
+      status,
+      differenceCalories,
+      message,
+    },
+    limitation: INTAKE_CONTEXT_LIMITATION,
   };
 }
 
@@ -151,9 +222,23 @@ export const foodRouter = router({
     }),
 
   /** Get food entries and conflict-aware nutrition resolution metadata for a date. */
-  byDateV2: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  byDateV2: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "food.byDateV2:intake-context-v1",
+  })
     .input(foodByDateInputSchema)
-    .query(({ ctx, input }) => loadFoodByDate(ctx.db, ctx.userId, ctx.timezone, input.date)),
+    .output(foodByDateV2OutputSchema)
+    .query(async ({ ctx, input }) => {
+      const result = await loadFoodByDate(ctx.db, ctx.userId, ctx.timezone, input.date);
+      return {
+        entries: result.entries,
+        summary: result.summary,
+        resolution: result.resolution,
+        intakeContext: result.summary
+          ? createNutritionIntakeContext(result.summary.calories, result.calorieGoal)
+          : null,
+      };
+    }),
 
   /** Get daily calorie/macro totals aggregated by day */
   dailyTotals: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })

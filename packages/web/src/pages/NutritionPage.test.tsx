@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -33,6 +34,22 @@ const availableResolution = {
   contributionGrain: "itemized",
   contributionLabel: "Dofek itemized entries",
 };
+const defaultIntakeContext = {
+  observedCalories: 0,
+  target: {
+    calories: 2000,
+    type: "default",
+    label: "Default daily logged-intake target",
+  },
+  scale: { maximumCalories: 2000, observedPercentage: 0, targetPercentage: 100 },
+  comparison: {
+    status: "below_target",
+    differenceCalories: 2000,
+    message: "Observed logged intake is 2,000 kcal below the default daily logged-intake target.",
+  },
+  limitation:
+    "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+} satisfies SelectedDateNutritionIntakeContext;
 
 vi.mock("../lib/telemetry.ts", () => ({
   captureException: vi.fn(),
@@ -78,6 +95,7 @@ describe("NutritionPage", () => {
       data: {
         entries: [],
         resolution: availableResolution,
+        intakeContext: defaultIntakeContext,
         summary: {
           calories: 0,
           mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -173,6 +191,22 @@ describe("NutritionPage", () => {
           },
         ],
         resolution: availableResolution,
+        intakeContext: {
+          observedCalories: 120,
+          target: {
+            calories: 2000,
+            type: "default",
+            label: "Default daily logged-intake target",
+          },
+          scale: { maximumCalories: 2000, observedPercentage: 6, targetPercentage: 100 },
+          comparison: {
+            status: "below_target",
+            differenceCalories: 1880,
+            message:
+              "Observed logged intake is 1,880 kcal below the default daily logged-intake target.",
+          },
+          limitation: defaultIntakeContext.limitation,
+        },
         summary: {
           calories: 120,
           mealCalories: { breakfast: 120, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -211,6 +245,26 @@ describe("NutritionPage", () => {
             food_description: null,
           },
         ],
+        intakeContext: {
+          observedCalories: 999,
+          target: {
+            calories: 2200,
+            type: "configured",
+            label: "Configured daily logged-intake target",
+          },
+          scale: {
+            maximumCalories: 2200,
+            observedPercentage: 45.409090909090914,
+            targetPercentage: 100,
+          },
+          comparison: {
+            status: "below_target",
+            differenceCalories: 1201,
+            message:
+              "Observed logged intake is 1,201 kcal below the configured daily logged-intake target.",
+          },
+          limitation: defaultIntakeContext.limitation,
+        },
         resolution: availableResolution,
         summary: {
           calories: 999,
@@ -232,7 +286,11 @@ describe("NutritionPage", () => {
 
     expect(screen.getByText("999 kcal")).toBeTruthy();
     expect(screen.getByText("777 kcal")).toBeTruthy();
-    expect(screen.getByText("1,201 kcal remaining")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Observed logged intake is 1,201 kcal below the configured daily logged-intake target.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Share of energy" })).toBeTruthy();
     expect(screen.getByText("35% of energy")).toBeTruthy();
     expect(screen.getByText("88 g logged")).toBeTruthy();
@@ -259,6 +317,7 @@ describe("NutritionPage", () => {
           },
         ],
         summary: null,
+        intakeContext: null,
         resolution: {
           status: "source_conflict",
           message:
@@ -290,6 +349,22 @@ describe("NutritionPage", () => {
     foodByDateQuery = {
       data: {
         entries: [],
+        intakeContext: {
+          observedCalories: 1800,
+          target: {
+            calories: 2000,
+            type: "default",
+            label: "Default daily logged-intake target",
+          },
+          scale: { maximumCalories: 2000, observedPercentage: 90, targetPercentage: 100 },
+          comparison: {
+            status: "below_target",
+            differenceCalories: 200,
+            message:
+              "Observed logged intake is 200 kcal below the default daily logged-intake target.",
+          },
+          limitation: defaultIntakeContext.limitation,
+        },
         summary: {
           calories: 1800,
           mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 1800 },
@@ -398,6 +473,7 @@ describe("selectedDateFoodV2Schema", () => {
     const result = selectedDateFoodV2Schema.parse({
       entries: [makeEntry()],
       summary: null,
+      intakeContext: null,
       resolution: {
         status: "source_conflict",
         message: "Totals are unavailable because nutrition sources overlap.",
