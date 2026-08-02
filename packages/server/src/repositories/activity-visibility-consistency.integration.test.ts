@@ -94,7 +94,45 @@ describe("activity visibility consistency", () => {
     );
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
     await syncClickHouseTestActivitySensorStore(testContext);
+    // The final running overview includes both run fixtures; keep both canonical
+    // summaries measured so the assertion isolates the backfilled walking row.
     await seedClickHouseMetricStreamRows(testContext, [
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:00:00Z",
+        channel: "location",
+        providerId: "issue_2060",
+        sourceType: "api",
+        point: "(-122.0,37.0)",
+      },
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:01:00Z",
+        channel: "location",
+        providerId: "issue_2060",
+        sourceType: "api",
+        point: "(-122.0,37.0)",
+      },
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:00:00Z",
+        channel: "altitude",
+        providerId: "issue_2060",
+        sourceType: "api",
+        scalar: 100,
+      },
+      {
+        activityId: AUTHORIZED_RUN_ID,
+        userId: TEST_USER_ID,
+        recordedAt: "2026-03-15T10:01:00Z",
+        channel: "altitude",
+        providerId: "issue_2060",
+        sourceType: "api",
+        scalar: 100,
+      },
       {
         activityId: MEASURED_ZERO_RUN_ID,
         userId: TEST_USER_ID,
