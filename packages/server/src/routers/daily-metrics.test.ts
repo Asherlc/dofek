@@ -560,7 +560,7 @@ describe("dailyMetricsRouter", () => {
       expect(restingHeartRateQueryParams).not.toHaveProperty("rhrWindowStart");
       const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
       expect(queryText).toContain("dm.user_id =");
-      expect(queryText).not.toContain("date >");
+      expect(queryText).toContain("date >");
       expect(queryText).not.toContain("base_dates.date >");
     });
 

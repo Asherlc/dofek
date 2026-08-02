@@ -55,6 +55,17 @@ describe("dailyMetrics data correctness", () => {
     );
 
     // ── Insert 30 days of daily metrics from apple_health with real data ──
+    for (const i of [35, 34]) {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.daily_metrics (
+              date, provider_id, user_id, hrv, steps, spo2_avg, skin_temp_c
+            ) VALUES (
+              CURRENT_DATE - ${i}::int,
+              'apple_health', ${TEST_USER_ID}, 55, 7500, 97, 33.2
+            ) ON CONFLICT DO NOTHING`,
+      );
+    }
+
     for (let i = 30; i >= 4; i--) {
       const hrv = 50 + Math.round(Math.sin(i * 0.3) * 10);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
@@ -218,7 +229,7 @@ describe("dailyMetrics data correctness", () => {
         expect(status?.provenance).toEqual({
           latestDate: subtractDays(endDate, 4),
           sourceProviders: ["apple_health"],
-          observedDays: 27,
+          observedDays: 28,
           windowDays: 35,
         });
         expect(status?.comparison).toEqual(
@@ -231,6 +242,13 @@ describe("dailyMetrics data correctness", () => {
           }),
         );
       }
+    });
+
+    it("uses exactly 35 dates for unbounded metric evidence", async () => {
+      const repo = new DailyMetricsRepository(testCtx.db, TEST_USER_ID, "UTC");
+      const result = await repo.getTrends(null, endDate);
+
+      expect(result?.metric_evidence?.steps?.observedDays).toBe(28);
     });
 
     it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {

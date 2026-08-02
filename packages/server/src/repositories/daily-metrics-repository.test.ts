@@ -263,6 +263,29 @@ describe("DailyMetricsRepository", () => {
       expect(compiledQuery.sql).toContain("STDDEV(steps) AS stddev_steps");
     });
 
+    it("normalizes database date objects in metric evidence", async () => {
+      const { repo } = makeRepository([
+        makeTrendsRow({
+          metric_evidence: {
+            hrv: {
+              latestDate: new Date("2025-03-15T00:00:00.000Z"),
+              sourceProviders: ["whoop"],
+              observedDays: 1,
+              recentMean: 60,
+              baselineMean: 58,
+            },
+            spo2: null,
+            steps: null,
+            skin_temperature: null,
+          },
+        }),
+      ]);
+
+      const result = await repo.getTrends(30, "2025-03-15");
+
+      expect(result?.metric_evidence?.hrv?.latestDate).toBe("2025-03-15");
+    });
+
     it("joins resting heart rate values into the trends query", async () => {
       const { repo, execute } = makeRepository([makeTrendsRow()]);
 

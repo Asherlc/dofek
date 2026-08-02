@@ -1,9 +1,6 @@
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  HEALTH_METRIC_EVIDENCE_WINDOW_DAYS,
-  healthMetricEvidenceRowsSchema,
-} from "../contracts/mobile-dashboard-contracts.ts";
+import { HEALTH_METRIC_EVIDENCE_WINDOW_DAYS } from "../contracts/mobile-dashboard-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import {
   dateWindowEnd,
@@ -42,6 +39,23 @@ const healthTrendRowSchema = dailyMetricsViewRowSchema.extend({
 });
 
 export type HealthTrendRow = z.infer<typeof healthTrendRowSchema>;
+
+const healthMetricEvidenceRowSchema = z.object({
+  latestDate: dateStringSchema.nullable(),
+  sourceProviders: z.array(z.string()),
+  observedDays: z.number().int().nonnegative(),
+  recentMean: z.number().nullable(),
+  baselineMean: z.number().nullable(),
+});
+
+export type HealthMetricEvidenceRow = z.infer<typeof healthMetricEvidenceRowSchema>;
+
+const healthMetricEvidenceRowsSchema = z.object({
+  hrv: healthMetricEvidenceRowSchema.nullable(),
+  spo2: healthMetricEvidenceRowSchema.nullable(),
+  steps: healthMetricEvidenceRowSchema.nullable(),
+  skin_temperature: healthMetricEvidenceRowSchema.nullable(),
+});
 
 export type DailyMetricsViewRow = z.infer<typeof dailyMetricsViewRowSchema>;
 
@@ -205,14 +219,13 @@ export class DailyMetricsRepository extends BaseRepository {
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<TrendsRow | null> {
-    const evidenceWindowPredicate =
+    const evidenceWindowPredicate = dateWindowStartPredicate(
+      sql`date`,
+      endDate,
       days === null
-        ? sql`AND date BETWEEN ${dateWindowStartString(endDate, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS)} AND ${dateWindowEnd(endDate)}`
-        : dateWindowStartPredicate(
-            sql`date`,
-            endDate,
-            Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS),
-          );
+        ? HEALTH_METRIC_EVIDENCE_WINDOW_DAYS
+        : Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS),
+    );
     const rows = await this.query(
       trendsRowSchema,
       sql`WITH ${restingHeartRateCte},

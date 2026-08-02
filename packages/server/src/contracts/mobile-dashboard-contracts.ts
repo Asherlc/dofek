@@ -140,23 +140,6 @@ export const healthMetricComparisonSchema = z.object({
   direction: baselineComparisonDirectionSchema,
 });
 
-export const healthMetricEvidenceRowSchema = z.object({
-  latestDate: dateSchema.nullable(),
-  sourceProviders: z.array(z.string()),
-  observedDays: z.number().int().nonnegative(),
-  recentMean: z.number().nullable(),
-  baselineMean: z.number().nullable(),
-});
-
-export type HealthMetricEvidenceRow = z.infer<typeof healthMetricEvidenceRowSchema>;
-
-export const healthMetricEvidenceRowsSchema = z.object({
-  hrv: healthMetricEvidenceRowSchema.nullable(),
-  spo2: healthMetricEvidenceRowSchema.nullable(),
-  steps: healthMetricEvidenceRowSchema.nullable(),
-  skin_temperature: healthMetricEvidenceRowSchema.nullable(),
-});
-
 export type HealthMetricProvenance = z.infer<typeof healthMetricProvenanceSchema>;
 export type HealthMetricComparison = z.infer<typeof healthMetricComparisonSchema>;
 

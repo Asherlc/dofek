@@ -4,7 +4,6 @@ import type { z } from "zod";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import {
   type HealthMetricComparison,
-  type HealthMetricEvidenceRow,
   type HealthMetricProvenance,
   type HealthStatusMetric,
   healthMetricIntentSchema,
@@ -12,7 +11,10 @@ import {
   healthStatusMetricSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
-import type { TrendsRow } from "../repositories/daily-metrics-repository.ts";
+import type {
+  HealthMetricEvidenceRow,
+  TrendsRow,
+} from "../repositories/daily-metrics-repository.ts";
 
 export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSchema };
 
