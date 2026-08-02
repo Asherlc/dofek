@@ -39,6 +39,7 @@ describe("FoodEntryRow", () => {
       name: "Show nutrition for Chicken Bowl, 1 bowl, 420 kcal",
     });
     expect(collapsedButton).not.toHaveAttribute("aria-describedby");
+    expect(screen.getByText("420 kcal")).toHaveAttribute("aria-hidden", "true");
 
     fireEvent.click(collapsedButton);
 
