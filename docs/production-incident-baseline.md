@@ -7,6 +7,54 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-02: Local integration validation hit Compose and Redpanda host limits
+
+### Symptoms
+
+The first `pnpm test:integration` attempt failed while starting the workspace
+dependencies. A later attempt also reported that Docker's predefined address
+pools were exhausted. After the workspace network was created explicitly,
+Redpanda repeatedly restarted and the integration runner could not use the
+normal Compose startup path.
+
+### User Impact
+
+No production user impact was identified. Local integration validation was
+blocked until the workspace was isolated from the stale Docker state and the
+tests were run against the healthy dependencies that did not require Redpanda.
+
+### Evidence
+
+The first test-run fatal line was `Connection terminated unexpectedly`. The
+Redpanda fatal line was:
+`The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536. Set /proc/sys/fs/aio-max-nr to at least 1.`
+The Linux kernel documents `fs.aio-max-nr` as the system-wide limit for
+available asynchronous I/O events: [Linux fs sysctl documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html).
+
+### Root Cause
+
+The host had exhausted Docker's default network address pools from existing
+workspace networks. Once the current workspace network was isolated, the host
+kernel's asynchronous-I/O event limit was below the Redpanda container's
+startup requirement. The Compose test wrapper also attempted to run Vitest
+before every dependency had reached a healthy state.
+
+### Fix or Mitigation
+
+Only the current workspace's Compose resources were removed and recreated. The
+Redpanda container was stopped for the direct database-backed tests; Postgres,
+ClickHouse, and Redis were healthy. Running the four affected integration
+suites directly with the workspace environment passed all 13 tests, and the
+workspace containers, network, and named volumes were removed afterward. No
+production retry, timeout, or fallback was added.
+
+### Remaining Risk
+
+The repository's normal integration wrapper still needs a health-readiness
+preflight and a documented host AIO check for Redpanda-backed suites. A future
+workspace with the same stale networks or kernel limit may fail before tests
+start.
+
 ## 2026-08-01: ClickHouse account-erasure proof tracked unrelated inactive parts
 
 ### Symptoms
