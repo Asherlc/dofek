@@ -171,11 +171,22 @@ elevation_per_activity AS (
     activity_id,
     user_id,
     CAST(
-      sum(if(altitude - previous_altitude > 0, altitude - previous_altitude, 0)),
+      sum(if(
+        isNotNull(previous_altitude) AND altitude - previous_altitude > 0,
+        altitude - previous_altitude,
+        0
+      )),
       'Nullable(Float64)'
-    ) AS elevation_gain_m
+    ) AS elevation_gain_m,
+    CAST(
+      sum(if(
+        isNotNull(previous_altitude) AND altitude - previous_altitude < 0,
+        abs(altitude - previous_altitude),
+        0
+      )),
+      'Nullable(Float64)'
+    ) AS elevation_loss_m
   FROM altitude_deltas
-  WHERE previous_altitude IS NOT NULL
   GROUP BY activity_id, user_id
 )
 SELECT
@@ -196,7 +207,7 @@ SELECT
   CAST(NULL, 'Nullable(Float64)') AS avg_left_pedal_smooth,
   CAST(NULL, 'Nullable(Float64)') AS avg_right_pedal_smooth,
   elevation_per_activity.elevation_gain_m AS elevation_gain_m,
-  CAST(NULL, 'Nullable(Float64)') AS elevation_loss_m,
+  elevation_per_activity.elevation_loss_m AS elevation_loss_m,
   CAST(NULL, 'Nullable(Float64)') AS avg_stance_time,
   CAST(NULL, 'Nullable(Float64)') AS avg_vertical_osc,
   CAST(NULL, 'Nullable(Float64)') AS avg_ground_contact_time,

@@ -334,6 +334,7 @@ SELECT * REPLACE(
 FROM analytics.activity_sensor_summary_rows FINAL
 WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
     );
+    await executeClickHouseTestCommand(testContext, "TRUNCATE TABLE analytics.activity_summary");
     await executeClickHouseTestCommand(
       testContext,
       `INSERT INTO analytics.activity_summary (
