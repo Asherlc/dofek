@@ -229,7 +229,7 @@ describe("SettingsRepository", () => {
       expect(transaction).toHaveBeenCalledTimes(1);
     });
 
-    it("deletes exactly 5 user-scoped tables including dose events before supplements", async () => {
+    it("deletes exactly 6 user-scoped tables including menstrual periods", async () => {
       const transactionExecute = vi.fn().mockResolvedValue([]);
       const transaction = vi
         .fn()
@@ -247,7 +247,11 @@ describe("SettingsRepository", () => {
 
       // Pass 0 child tables to isolate user-scoped count.
       await repo.deleteAllUserData([]);
-      expect(transactionExecute).toHaveBeenCalledTimes(5);
+      expect(transactionExecute).toHaveBeenCalledTimes(6);
+      const queries = transactionExecute.mock.calls.map(([query]) =>
+        JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
+      );
+      expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
     });
 
     it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {
@@ -269,8 +273,8 @@ describe("SettingsRepository", () => {
       const childTables = ["fitness.sync_log", "fitness.activity"];
       await repo.deleteAllUserData(childTables);
 
-      // 2 child tables + 5 user-scoped tables = 7 execute calls
-      expect(transactionExecute).toHaveBeenCalledTimes(7);
+      // 2 child tables + 6 user-scoped tables = 8 execute calls
+      expect(transactionExecute).toHaveBeenCalledTimes(8);
     });
   });
 });

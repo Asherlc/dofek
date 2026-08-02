@@ -28,6 +28,7 @@ export default function CycleScreen() {
   const currentPhase = trpc.menstrualCycle.currentPhase.useQuery();
   const periodHistory = trpc.menstrualCycle.history.useQuery({ months: 6 });
   const [startDate, setStartDate] = useState(formatDateYmd());
+  const [periodNotes, setPeriodNotes] = useState("");
   const [editDraft, setEditDraft] = useState<PeriodEditDraft | null>(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [historyOffset, setHistoryOffset] = useState<number | null>(null);
@@ -181,6 +182,15 @@ export default function CycleScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Log Period Start</Text>
+          <View style={styles.editField}>
+            <Text style={styles.editLabel}>Symptoms or context (optional)</Text>
+            <TextInput
+              aria-label="Period symptoms or context"
+              onChangeText={setPeriodNotes}
+              style={styles.notesInput}
+              value={periodNotes}
+            />
+          </View>
           <View style={styles.logRow}>
             <DateTimePicker
               accessibilityLabel="Period start date"
@@ -197,7 +207,7 @@ export default function CycleScreen() {
               accessibilityLabel={logMutation.error ? "Retry" : "Log Period"}
               accessibilityState={{ busy: logMutation.isPending }}
               disabled={logMutation.isPending}
-              onPress={() => logMutation.mutate({ startDate })}
+              onPress={() => logMutation.mutate({ startDate, notes: periodNotes.trim() || null })}
               style={[styles.logButton, logMutation.isPending && styles.buttonDisabled]}
             >
               <Text style={styles.logButtonText}>

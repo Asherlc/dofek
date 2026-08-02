@@ -44,7 +44,7 @@ interface TestState {
     error: Error | null;
   };
   mutationError: Error | null;
-  mutationInput: { startDate: string } | null;
+  mutationInput: { startDate: string; notes: string | null } | null;
   updateMutationError: Error | null;
   updateMutationInput: {
     id: string;
@@ -120,7 +120,7 @@ vi.mock("../lib/trpc.ts", () => ({
           onError?: (error: Error) => void;
           onSettled?: () => Promise<void> | void;
         }) => ({
-          mutate: (input: { startDate: string }) => {
+          mutate: (input: NonNullable<TestState["mutationInput"]>) => {
             state.mutationInput = input;
             if (state.mutationError) options.onError?.(state.mutationError);
             void options.onSettled?.();
@@ -265,6 +265,23 @@ describe("CyclePage", () => {
       "href",
       "/settings?tab=account",
     );
+  });
+
+  it("logs a period with trimmed symptoms or context", () => {
+    renderCyclePage();
+
+    fireEvent.change(screen.getByLabelText("Period start date"), {
+      target: { value: "2026-07-03" },
+    });
+    fireEvent.change(screen.getByLabelText("Period symptoms or context"), {
+      target: { value: "  Cramps and poor sleep  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
+
+    expect(state.mutationInput).toEqual({
+      startDate: "2026-07-03",
+      notes: "Cramps and poor sleep",
+    });
   });
 
   it("renders the server-provided estimate method and observed uncertainty", () => {
@@ -441,7 +458,7 @@ describe("CyclePage", () => {
 
     expect(dateInput).toHaveValue("2026-07-03");
     expect(screen.getByText(mutationError.message)).toBeTruthy();
-    expect(state.mutationInput).toEqual({ startDate: "2026-07-03" });
+    expect(state.mutationInput).toEqual({ startDate: "2026-07-03", notes: null });
     expect(state.captureException).toHaveBeenCalledWith(mutationError, {
       context: "cycle-log-period",
     });

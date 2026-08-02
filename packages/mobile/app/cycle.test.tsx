@@ -45,7 +45,7 @@ interface TestState {
     error: Error | null;
   };
   mutationError: Error | null;
-  mutationInput: { startDate: string } | null;
+  mutationInput: { startDate: string; notes: string | null } | null;
   updateMutationError: Error | null;
   updateMutationInput: {
     id: string;
@@ -150,7 +150,7 @@ vi.mock("../lib/trpc", () => ({
           onError?: (error: Error) => void;
           onSettled?: () => Promise<void> | void;
         }) => ({
-          mutate: (input: { startDate: string }) => {
+          mutate: (input: NonNullable<TestState["mutationInput"]>) => {
             state.mutationInput = input;
             if (state.mutationError) options.onError?.(state.mutationError);
             void options.onSettled?.();
@@ -284,6 +284,22 @@ describe("CycleScreen", () => {
     expect(mockPush).toHaveBeenLastCalledWith({
       pathname: "/settings",
       params: { tab: "account" },
+    });
+  });
+
+  it("logs a period with trimmed symptoms or context", async () => {
+    const { default: CycleScreen } = await import("./cycle");
+
+    render(<CycleScreen />);
+
+    fireEvent.change(screen.getByLabelText("Period symptoms or context"), {
+      target: { value: "  Cramps and poor sleep  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log Period" }));
+
+    expect(state.mutationInput).toEqual({
+      startDate: "2026-07-24",
+      notes: "Cramps and poor sleep",
     });
   });
 
@@ -498,7 +514,7 @@ describe("CycleScreen", () => {
       "2026-07-03",
     );
     expect(screen.getByText(mutationError.message)).toBeTruthy();
-    expect(state.mutationInput).toEqual({ startDate: "2026-07-03" });
+    expect(state.mutationInput).toEqual({ startDate: "2026-07-03", notes: null });
     expect(state.captureException).toHaveBeenCalledWith(mutationError, {
       source: "cycle-log-period",
     });

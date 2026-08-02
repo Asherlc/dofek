@@ -31,6 +31,7 @@ export interface SlackStatus {
 const USER_SCOPED_DELETE_TABLES = [
   "fitness.user_settings",
   "fitness.life_events",
+  "fitness.menstrual_period",
   "fitness.sport_settings",
   "fitness.supplement_dose_event",
   "fitness.supplement",
