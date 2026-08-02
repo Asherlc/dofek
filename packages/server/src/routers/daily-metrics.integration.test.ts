@@ -1,7 +1,6 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -17,6 +16,7 @@ import { makeMockSensorStore } from "./test-helpers.ts";
  * cannot.
  */
 describe("dailyMetrics data correctness", () => {
+  const dashboardTestUserId = "00000000-0000-4000-8000-000000000001";
   const staleViewUserId = "00000000-0000-4000-8000-000000000002";
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
@@ -33,7 +33,18 @@ describe("dailyMetrics data correctness", () => {
     testCtx = await setupTestDatabase();
     await queryCache.invalidateAll();
 
-    const session = await createSession(testCtx.db, TEST_USER_ID);
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${dashboardTestUserId}, 'Dashboard Test User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+          VALUES (${dashboardTestUserId}, 'existing_account')
+          ON CONFLICT (user_id) DO NOTHING`,
+    );
+
+    const session = await createSession(testCtx.db, dashboardTestUserId);
     sessionCookie = `session=${session.sessionId}`;
 
     // Get the DB's current date so endDate is consistent with inserted data
@@ -45,17 +56,17 @@ describe("dailyMetrics data correctness", () => {
     // Insert provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('apple_health', 'Apple Health', ${TEST_USER_ID})
+          VALUES ('apple_health', 'Apple Health', ${dashboardTestUserId})
           ON CONFLICT DO NOTHING`,
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('garmin', 'Garmin Connect', ${TEST_USER_ID})
+          VALUES ('garmin', 'Garmin Connect', ${dashboardTestUserId})
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Insert 30 days of daily metrics from apple_health with real data ──
-    for (let i = 30; i >= 4; i--) {
+    // ── Insert 27 health-data days inside the 30-day window ──
+    for (let i = 29; i >= 3; i--) {
       const hrv = 50 + Math.round(Math.sin(i * 0.3) * 10);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
       const spo2 = 96 + Math.round(Math.sin(i * 0.5) * 2);
@@ -64,21 +75,21 @@ describe("dailyMetrics data correctness", () => {
               date, provider_id, user_id, hrv, steps, spo2_avg
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'apple_health', ${TEST_USER_ID}, ${hrv}, ${steps}, ${spo2}
+              'apple_health', ${dashboardTestUserId}, ${hrv}, ${steps}, ${spo2}
             ) ON CONFLICT DO NOTHING`,
       );
     }
 
-    // ── Days 3, 2, 1, 0: garmin creates rows with NO health metrics ──
+    // ── Days 2, 1, 0: garmin creates rows with NO health metrics ──
     // This simulates the production bug where garmin sync creates empty rows
     // for recent days, making latest_date point to a row with no actual data.
-    for (let i = 3; i >= 0; i--) {
+    for (let i = 2; i >= 0; i--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
               date, provider_id, user_id, distance_km
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'garmin', ${TEST_USER_ID}, 0
+              'garmin', ${dashboardTestUserId}, 0
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -204,7 +215,7 @@ describe("dailyMetrics data correctness", () => {
     });
 
     it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {
-      const repo = new DailyMetricsRepository(testCtx.db, TEST_USER_ID, "UTC");
+      const repo = new DailyMetricsRepository(testCtx.db, dashboardTestUserId, "UTC");
       const result = await repo.getTrends(
         30,
         endDate,
