@@ -17,7 +17,7 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
     var onSyncRequested: (() -> Void)?
     /// Callback triggered when the iPhone requests recording to start/restart.
     var onRecordingRequested: (() -> Void)?
-    var onPurgeRequested: ((Date?) -> Void)?
+    var onPurgeRequested: ((Date) -> Void)?
     var onAccountSyncEnabled: (() -> Void)?
     /// Callback triggered when a queued file transfer finishes.
     var onFileTransferFinished: ((WCSessionFileTransfer, Error?) -> Void)?
@@ -104,8 +104,12 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
             onSyncRequested?()
             return "recording_and_sync_started"
         case "purge_account_state":
-            let cutoff = (message["deviceErasureCutoff"] as? String)
-                .flatMap(Self.parseIsoDate)
+            guard
+                let cutoffString = message["deviceErasureCutoff"] as? String,
+                let cutoff = Self.parseIsoDate(cutoffString)
+            else {
+                return "invalid_erasure_cutoff"
+            }
             onPurgeRequested?(cutoff)
             return "account_state_purged"
         case "enable_account_sync":

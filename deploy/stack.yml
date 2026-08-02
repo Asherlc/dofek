@@ -7,6 +7,11 @@
 # compose-style ${VAR} interpolation and renders least-privilege env_file inputs
 # for the application services that need runtime credentials.
 
+secrets:
+  apple_private_key:
+    name: ${APPLE_PRIVATE_KEY_SECRET_NAME:?APPLE_PRIVATE_KEY_SECRET_NAME is required}
+    external: true
+
 services:
   traefik:
     image: traefik:3.6
@@ -41,6 +46,8 @@ services:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["web"]
     env_file: ${WEB_ENV_FILE:?WEB_ENV_FILE is required}
+    secrets:
+      - apple_private_key
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
@@ -96,6 +103,8 @@ services:
     command: ["worker"]
     stop_grace_period: 30m
     env_file: ${WORKER_ENV_FILE:?WORKER_ENV_FILE is required}
+    secrets:
+      - apple_private_key
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production

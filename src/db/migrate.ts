@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
@@ -8,13 +9,14 @@ import {
 } from "../account-erasure/postgres-erasure.ts";
 import { logger } from "../logger.ts";
 import { readBaselineMigration, runDrizzleMigrations } from "./postgres-migrator.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 /** Postgres advisory lock key — serializes concurrent migration runs across containers */
 export const MIGRATION_LOCK_KEY = 728370291;
 
 const migrationCountRowsSchema = z.array(z.object({ count: z.coerce.number().int() }));
 const schemaHasTablesRowsSchema = z.array(z.object({ has_tables: z.boolean() }));
-const accountErasureCoverageHookRowsSchema = z.array(z.object({ installed: z.boolean() }));
+const accountErasureCoverageHookRowSchema = z.object({ installed: z.boolean() });
 
 async function getMigrationCount(client: Client): Promise<number> {
   const result = await client.query("SELECT count(*) AS count FROM drizzle.__drizzle_migrations");
@@ -81,15 +83,16 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     await runDrizzleMigrations(client, dir);
     const count = (await getMigrationCount(client)) - countBeforeMigrate;
 
-    const coverageHookResult = await client.query(
-      `SELECT to_regprocedure(
-        'fitness.refresh_account_erasure_write_fences()'
-      ) IS NOT NULL AS installed`,
+    const database = drizzle(client);
+    const coverageHookRows = await executeWithSchema(
+      database,
+      accountErasureCoverageHookRowSchema,
+      sql`SELECT to_regprocedure(
+            'fitness.refresh_account_erasure_write_fences()'
+          ) IS NOT NULL AS installed`,
     );
-    const coverageHookInstalled =
-      accountErasureCoverageHookRowsSchema.parse(coverageHookResult.rows)[0]?.installed === true;
+    const coverageHookInstalled = coverageHookRows[0]?.installed === true;
     if (coverageHookInstalled) {
-      const database = drizzle(client);
       await refreshPostgresAccountErasureWriteFences(database);
       await assertPostgresAccountErasureCoverage(database);
     }

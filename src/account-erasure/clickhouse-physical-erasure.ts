@@ -60,6 +60,10 @@ function qualifiedTable(table: ClickHousePhysicalErasureTable): string {
   return `\`${table.database}\`.\`${table.name}\``;
 }
 
+function clickHouseStringLiteral(value: string): string {
+  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+}
+
 async function listMatchingActiveParts(
   client: ClickHousePhysicalErasureClient,
   table: ClickHousePhysicalErasureTable,
@@ -219,11 +223,10 @@ export async function applyClickHousePhysicalErasureMutation(
   await client.command({
     query: `ALTER TABLE ${qualifiedTable(target.table)}
       DELETE WHERE (${target.predicate.sql})
-        AND {account_erasure_mutation_marker:String}
-          = {account_erasure_mutation_marker:String}`,
+        AND ${clickHouseStringLiteral(mutationMarker)}
+          = ${clickHouseStringLiteral(mutationMarker)}`,
     query_params: {
       ...target.predicate.queryParameters,
-      account_erasure_mutation_marker: mutationMarker,
     },
     clickhouse_settings: {
       log_queries: 0,

@@ -16,6 +16,7 @@ import {
   clearSessionToken,
   createAccountErasureCleanupNonce,
   fetchCurrentUser,
+  getOrCreateSessionOwnerNonce,
   getSessionToken,
   invalidateSessionPersistence,
   rotateSessionOwnerNonce,
@@ -140,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== restoreGeneration)
         return;
       if (currentUser) {
-        const sessionOwnerNonce = await rotateSessionOwnerNonce();
+        const sessionOwnerNonce = await getOrCreateSessionOwnerNonce();
         if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== restoreGeneration) {
           return;
         }

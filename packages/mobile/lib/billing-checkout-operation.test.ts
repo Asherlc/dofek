@@ -36,6 +36,37 @@ describe("mobile billing checkout operation", () => {
     expect(mockRandomUUID).not.toHaveBeenCalled();
   });
 
+  it("replaces a malformed persisted UUID", async () => {
+    await SecureStore.setItemAsync(MOBILE_BILLING_CHECKOUT_OPERATION_KEY, "not-a-uuid");
+
+    await expect(getOrCreateMobileBillingCheckoutOperationId()).resolves.toBe(checkoutOperationId);
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(MOBILE_BILLING_CHECKOUT_OPERATION_KEY);
+    await expect(SecureStore.getItemAsync(MOBILE_BILLING_CHECKOUT_OPERATION_KEY)).resolves.toBe(
+      checkoutOperationId,
+    );
+  });
+
+  it("shares one operation ID across concurrent callers", async () => {
+    let resolveRead: ((value: string | null) => void) | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+
+    const first = getOrCreateMobileBillingCheckoutOperationId();
+    const second = getOrCreateMobileBillingCheckoutOperationId();
+    resolveRead?.(null);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      checkoutOperationId,
+      checkoutOperationId,
+    ]);
+    expect(mockRandomUUID).toHaveBeenCalledOnce();
+    expect(SecureStore.setItemAsync).toHaveBeenCalledOnce();
+  });
+
   it("clears only the operation that received a successful response", async () => {
     await SecureStore.setItemAsync(MOBILE_BILLING_CHECKOUT_OPERATION_KEY, nextCheckoutOperationId);
 

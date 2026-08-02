@@ -112,6 +112,41 @@ describe("Stripe erasure at account-deletion acceptance (integration)", () => {
     expect(checkpoints).toEqual([{ phase: "stripe_erasure" }]);
   });
 
+  it("claims the request before remote Stripe erasure so concurrent workers share one effect", async () => {
+    const userId = "11000000-0000-4000-8000-000000001995";
+    const requestId = "21000000-0000-4000-8000-000000001995";
+    await createRequest(userId, requestId);
+
+    let releaseFirstCall: () => void = () => {
+      throw new Error("Stripe erasure release was not initialized");
+    };
+    let reportFirstCallStarted: () => void = () => {
+      throw new Error("Stripe erasure start signal was not initialized");
+    };
+    const firstCallStarted = new Promise<void>((resolve) => {
+      reportFirstCallStarted = resolve;
+    });
+    const firstCallReleased = new Promise<void>((resolve) => {
+      releaseFirstCall = resolve;
+    });
+    const eraseStripe = vi.fn(async () => {
+      reportFirstCallStarted();
+      await firstCallReleased;
+      return { customersDeleted: 0, subscriptionsCanceled: 0 };
+    });
+
+    const first = eraseStripeForAcceptedAccountErasure(context.db, requestId, eraseStripe);
+    await firstCallStarted;
+    const second = eraseStripeForAcceptedAccountErasure(context.db, requestId, eraseStripe);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(eraseStripe).toHaveBeenCalledTimes(1);
+
+    releaseFirstCall();
+    await Promise.all([first, second]);
+    expect(eraseStripe).toHaveBeenCalledTimes(1);
+  });
+
   it("does not checkpoint a failed cancellation and retries the same durable request", async () => {
     const userId = "30000000-0000-4000-8000-000000001995";
     const requestId = "40000000-0000-4000-8000-000000001995";

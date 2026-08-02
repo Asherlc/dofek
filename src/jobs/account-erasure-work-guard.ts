@@ -1,17 +1,16 @@
 import * as Sentry from "@sentry/node";
+import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { z } from "zod";
 import { accountErasureQueuedUserWorkLockName } from "../db/account-erasure-locks.ts";
 import { isAccountErasureActive } from "../db/account-erasure-processing.ts";
 import type { Database } from "../db/index.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 const ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE = 4;
-const advisoryUnlockRowsSchema = z.tuple([
-  z.object({
-    unlocked: z.boolean(),
-  }),
-]);
+const advisoryUnlockRowSchema = z.object({ unlocked: z.boolean() });
 
 type WorkOutcome<T> =
   | {
@@ -41,10 +40,15 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
 
   async runWithSharedUserLock<T>(userId: string, work: () => Promise<T>): Promise<T> {
     const client = await this.#pool.connect();
+    const database = drizzle(client);
     try {
-      await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1::text, 0))", [
-        accountErasureQueuedUserWorkLockName(userId),
-      ]);
+      await executeWithSchema(
+        database,
+        z.object({}),
+        sql`SELECT pg_advisory_lock_shared(
+              hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
+            )`,
+      );
     } catch (error: unknown) {
       client.release(true);
       Sentry.captureException(error, {
@@ -64,12 +68,15 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
       );
 
     try {
-      const unlockResult = await client.query(
-        "SELECT pg_advisory_unlock_shared(hashtextextended($1::text, 0)) AS unlocked",
-        [accountErasureQueuedUserWorkLockName(userId)],
+      const unlockRows = await executeWithSchema(
+        database,
+        advisoryUnlockRowSchema,
+        sql`SELECT pg_advisory_unlock_shared(
+              hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
+            ) AS unlocked`,
       );
-      const [unlockRow] = advisoryUnlockRowsSchema.parse(unlockResult.rows);
-      if (!unlockRow.unlocked) {
+      const unlockRow = unlockRows[0];
+      if (!unlockRow?.unlocked) {
         throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
       }
     } catch (error: unknown) {

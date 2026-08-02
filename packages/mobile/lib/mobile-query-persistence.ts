@@ -38,10 +38,11 @@ export function createMobileQueryPersister(userId: string) {
 export async function removeMobileQueryCache(userId: string) {
   try {
     await AsyncStorage.removeItem(queryCacheKey(userId));
-  } catch {
+  } catch (error: unknown) {
     captureException(new Error("Mobile query persistence operation failed."), {
       source: "mobile-query-cache-clear",
     });
+    throw error;
   }
 }
 
@@ -53,7 +54,9 @@ export async function removeAllMobileQueryCaches(): Promise<void> {
       await AsyncStorage.multiRemove(accountCacheKeys);
     }
   } catch (error: unknown) {
-    captureException(error, { source: "mobile-query-cache-clear-all" });
+    captureException(new Error("Mobile query persistence operation failed."), {
+      source: "mobile-query-cache-clear-all",
+    });
     throw error;
   }
 }

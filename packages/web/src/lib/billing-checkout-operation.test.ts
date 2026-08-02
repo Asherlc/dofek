@@ -32,6 +32,14 @@ describe("web billing checkout operation", () => {
     expect(randomUUID).not.toHaveBeenCalled();
   });
 
+  it("replaces a malformed persisted UUID", () => {
+    localStorage.setItem(WEB_BILLING_CHECKOUT_OPERATION_KEY, "not-a-uuid");
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(checkoutOperationId);
+
+    expect(getOrCreateWebBillingCheckoutOperationId()).toBe(checkoutOperationId);
+    expect(localStorage.getItem(WEB_BILLING_CHECKOUT_OPERATION_KEY)).toBe(checkoutOperationId);
+  });
+
   it("clears only the operation that received a successful response", () => {
     localStorage.setItem(WEB_BILLING_CHECKOUT_OPERATION_KEY, nextCheckoutOperationId);
 

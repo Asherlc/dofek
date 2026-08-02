@@ -1,3 +1,4 @@
+import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { z } from "zod";
@@ -39,7 +40,9 @@ export async function downloadActivityExport({
   const baseUrl = serverUrl.replace(/\/+$/, "");
   const exportUrl = `${baseUrl}/api/activity/${activityId}/export?format=${format}`;
   const fallbackFilename = `activity-${activityId.slice(0, 8)}.${format}`;
-  const tempUri = createMobileExportCacheFile(fallbackFilename).uri;
+  const operationId = Crypto.randomUUID();
+  const uniqueFilename = (filename: string): string => `export-${operationId}-${filename}`;
+  const tempUri = createMobileExportCacheFile(uniqueFilename(fallbackFilename)).uri;
   const createdUris = new Set([tempUri]);
   let cleanupFailure: Error | null = null;
 
@@ -70,8 +73,9 @@ export async function downloadActivityExport({
     );
     let fileUri: string;
     try {
-      fileUri = createMobileExportCacheFile(filename).uri;
-    } catch {
+      fileUri = createMobileExportCacheFile(uniqueFilename(filename)).uri;
+    } catch (error: unknown) {
+      captureException(error, { source: "activity-export.filename" });
       throw new Error("Activity export filename is invalid");
     }
     createdUris.add(fileUri);

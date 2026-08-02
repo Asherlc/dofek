@@ -21,7 +21,9 @@ export function identifyPostHogUser(userId: string): void {
 }
 
 export function resetPostHogUser(): void {
+  const optedOut = posthog.has_opted_out_capturing();
   posthog.reset();
+  if (optedOut) posthog.opt_out_capturing();
 }
 
 export function disablePostHogForAccountErasure(): void {

@@ -25,7 +25,6 @@ export interface WatchFileSyncResult {
 export async function syncWatchAccelerometerFiles(
   trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<WatchFileSyncResult> {
-  const deviceErasureCutoff = await loadDeviceErasureCutoff();
   const fileNames = getPendingWatchFileNames();
 
   logger.info(TAG, `Found ${fileNames.length} pending files`);
@@ -33,6 +32,8 @@ export async function syncWatchAccelerometerFiles(
   if (fileNames.length === 0) {
     return { totalInserted: 0, filesProcessed: 0, filesFailed: 0 };
   }
+
+  const deviceErasureCutoff = await loadDeviceErasureCutoff();
 
   let totalInserted = 0;
   let filesProcessed = 0;

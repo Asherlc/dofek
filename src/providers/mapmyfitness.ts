@@ -252,8 +252,9 @@ export class MapMyFitnessProvider implements SyncProvider {
 
     return {
       oauthConfig: config,
-      exchangeCode: async (code) => {
+      exchangeCode: async (code, _codeVerifier, onTokensIssued) => {
         const tokens = await exchangeCodeForTokens(config, code, fetchFn);
+        onTokensIssued?.(tokens);
         const client = new MapMyFitnessClient(tokens.accessToken, config.clientId, fetchFn);
         return {
           ...tokens,

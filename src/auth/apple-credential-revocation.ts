@@ -1,4 +1,5 @@
 import { createAppleClientSecret, decodePemToDer } from "./apple-client-secret.ts";
+import { getApplePrivateKey } from "./apple-private-key.ts";
 
 export interface AppleRevocationCredential {
   accessToken: string;
@@ -19,7 +20,7 @@ export async function revokeAppleCredential(
   const clientSecret = await createAppleClientSecret(
     requiredEnvironmentValue("APPLE_TEAM_ID"),
     requiredEnvironmentValue("APPLE_KEY_ID"),
-    decodePemToDer(requiredEnvironmentValue("APPLE_PRIVATE_KEY")),
+    decodePemToDer(getApplePrivateKey()),
     credential.clientId,
   );
   const token = credential.refreshToken ?? credential.accessToken;

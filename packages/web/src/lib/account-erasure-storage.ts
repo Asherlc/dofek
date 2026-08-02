@@ -10,13 +10,27 @@ import { captureException } from "./telemetry.ts";
 
 export const ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY = "dofek:account-erasure:preparation:v1";
 export const ACCOUNT_ERASURE_STATUS_STORAGE_KEY = "dofek:account-erasure:status:v1";
+export const ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY =
+  "dofek:account-erasure:local-cleanup-ack:v1";
+
+type AccountErasureStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">;
+
+function reportStorageFailure(source: string): void {
+  captureException(new Error("Account erasure browser storage operation failed."), { source });
+}
 
 function parseStoredValue<T>(
-  storage: Storage,
+  storage: AccountErasureStorage,
   key: string,
   parse: (value: unknown) => { success: boolean; data?: T },
 ): T | null {
-  const raw = storage.getItem(key);
+  let raw: string | null;
+  try {
+    raw = storage.getItem(key);
+  } catch {
+    reportStorageFailure("account-erasure-capability-read");
+    return null;
+  }
   if (raw === null) return null;
 
   try {
@@ -24,17 +38,21 @@ function parseStoredValue<T>(
     if (result.success && result.data !== undefined) {
       return result.data;
     }
-  } catch (error: unknown) {
-    captureException(error, { source: "account-erasure-capability-read", key });
+  } catch {
+    reportStorageFailure("account-erasure-capability-parse");
   }
 
-  storage.removeItem(key);
+  try {
+    storage.removeItem(key);
+  } catch {
+    reportStorageFailure("account-erasure-capability-remove");
+  }
   return null;
 }
 
 export function loadAccountErasurePreparation(
   ownerUserId: string,
-  storage: Storage = window.localStorage,
+  storage: AccountErasureStorage = window.localStorage,
 ): AccountErasureUnattemptedPreparationCapability | null {
   const capability = parseStoredValue(storage, ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY, (value) =>
     AccountErasurePreparationCapabilitySchema.safeParse(value),
@@ -46,20 +64,31 @@ export function loadAccountErasurePreparation(
 
 export function saveAccountErasurePreparation(
   capability: AccountErasurePreparationCapability,
-  storage: Storage = window.localStorage,
+  storage: AccountErasureStorage = window.localStorage,
 ): void {
-  storage.setItem(
-    ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY,
-    JSON.stringify(AccountErasurePreparationCapabilitySchema.parse(capability)),
-  );
+  try {
+    storage.setItem(
+      ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY,
+      JSON.stringify(AccountErasurePreparationCapabilitySchema.parse(capability)),
+    );
+  } catch {
+    reportStorageFailure("account-erasure-preparation-write");
+    throw new Error("Account erasure browser storage write failed.");
+  }
 }
 
-export function clearAccountErasurePreparation(storage: Storage = window.localStorage): void {
-  storage.removeItem(ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY);
+export function clearAccountErasurePreparation(
+  storage: AccountErasureStorage = window.localStorage,
+): void {
+  try {
+    storage.removeItem(ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY);
+  } catch {
+    reportStorageFailure("account-erasure-preparation-remove");
+  }
 }
 
 export function loadAnyAccountErasurePreparation(
-  storage: Storage = window.localStorage,
+  storage: AccountErasureStorage = window.localStorage,
 ): AccountErasurePreparationCapability | null {
   return parseStoredValue(storage, ACCOUNT_ERASURE_PREPARATION_STORAGE_KEY, (value) =>
     AccountErasurePreparationCapabilitySchema.safeParse(value),
@@ -69,7 +98,7 @@ export function loadAnyAccountErasurePreparation(
 export function markAccountErasureConfirmationAttempted(
   cleanupOwnerNonce: string,
   attemptedAt = new Date().toISOString(),
-  storage: Storage = window.localStorage,
+  storage: AccountErasureStorage = window.localStorage,
 ): AccountErasureAttemptedPreparationCapability {
   const preparation = loadAnyAccountErasurePreparation(storage);
   if (!preparation || !("ownerUserId" in preparation)) {
@@ -86,7 +115,7 @@ export function markAccountErasureConfirmationAttempted(
 }
 
 export function loadAccountErasureStatusCapability(
-  storage: Storage = window.localStorage,
+  storage: AccountErasureStorage = window.localStorage,
 ): AccountErasureStatusCapability | null {
   return parseStoredValue(storage, ACCOUNT_ERASURE_STATUS_STORAGE_KEY, (value) =>
     AccountErasureStatusCapabilitySchema.safeParse(value),
@@ -95,14 +124,25 @@ export function loadAccountErasureStatusCapability(
 
 export function saveAccountErasureStatusCapability(
   capability: AccountErasureStatusCapability,
-  storage: Storage = window.localStorage,
+  storage: AccountErasureStorage = window.localStorage,
 ): void {
-  storage.setItem(
-    ACCOUNT_ERASURE_STATUS_STORAGE_KEY,
-    JSON.stringify(AccountErasureStatusCapabilitySchema.parse(capability)),
-  );
+  try {
+    storage.setItem(
+      ACCOUNT_ERASURE_STATUS_STORAGE_KEY,
+      JSON.stringify(AccountErasureStatusCapabilitySchema.parse(capability)),
+    );
+  } catch {
+    reportStorageFailure("account-erasure-status-write");
+    throw new Error("Account erasure browser storage write failed.");
+  }
 }
 
-export function clearAccountErasureStatusCapability(storage: Storage = window.localStorage): void {
-  storage.removeItem(ACCOUNT_ERASURE_STATUS_STORAGE_KEY);
+export function clearAccountErasureStatusCapability(
+  storage: AccountErasureStorage = window.localStorage,
+): void {
+  try {
+    storage.removeItem(ACCOUNT_ERASURE_STATUS_STORAGE_KEY);
+  } catch {
+    reportStorageFailure("account-erasure-status-remove");
+  }
 }

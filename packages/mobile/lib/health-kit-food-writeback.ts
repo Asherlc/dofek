@@ -155,8 +155,13 @@ function buildSamples(
 
 function loadLedger(rawLedger: string | null): Record<string, string> {
   if (!rawLedger) return {};
-  const parsed = ledgerSchema.safeParse(JSON.parse(rawLedger));
-  return parsed.success ? parsed.data : {};
+  try {
+    const parsed = ledgerSchema.safeParse(JSON.parse(rawLedger));
+    return parsed.success ? parsed.data : {};
+  } catch (error: unknown) {
+    captureException(error, { source: "healthkit-food-writeback-ledger-parse" });
+    return {};
+  }
 }
 
 function errorMessage(error: unknown): string {

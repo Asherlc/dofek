@@ -73,6 +73,7 @@ export async function handleSlackCallback(
 
   const redirectUri = getOAuthRedirectUri();
   let issuedBotToken: string | null = null;
+  const usersWithInvalidatedCaches = new Set<string>();
   let tokenData: z.infer<typeof slackTokenResponseSchema> | null;
   try {
     tokenData = await withAccountErasureUserWriteFence(
@@ -157,11 +158,11 @@ export async function handleSlackCallback(
             sql`UPDATE fitness.food_entry SET user_id = ${slackState.userId}
                 WHERE user_id = ${orphanUserId}`,
           );
-          await invalidateAllUserQueries(orphanUserId);
+          usersWithInvalidatedCaches.add(orphanUserId);
           logger.info("[auth] Migrated orphaned Slack food entries to the linked account");
         }
 
-        await invalidateAllUserQueries(slackState.userId);
+        usersWithInvalidatedCaches.add(slackState.userId);
         logger.info("[auth] Linked Slack identity to the authenticated account");
         return parsedTokenData;
       },
@@ -188,6 +189,10 @@ export async function handleSlackCallback(
     }
     throw persistenceError;
   }
+
+  await Promise.all(
+    [...usersWithInvalidatedCaches].map((userId) => invalidateAllUserQueries(userId)),
+  );
 
   if (!tokenData) {
     if (issuedBotToken) {

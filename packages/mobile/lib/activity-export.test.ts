@@ -14,6 +14,9 @@ const sharingMocks = vi.hoisted(() => ({
 const telemetryMocks = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
+const cryptoMocks = vi.hoisted(() => ({
+  randomUUID: vi.fn(() => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+}));
 
 vi.mock("expo-file-system/legacy", () => ({
   deleteAsync: fileSystemMocks.deleteAsync,
@@ -23,6 +26,8 @@ vi.mock("expo-file-system/legacy", () => ({
 }));
 
 vi.mock("expo-sharing", () => sharingMocks);
+
+vi.mock("expo-crypto", () => cryptoMocks);
 
 vi.mock("./mobile-export-cache", () => ({
   createMobileExportCacheFile: (filename: string) => {
@@ -37,6 +42,7 @@ vi.mock("./telemetry", () => telemetryMocks);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  cryptoMocks.randomUUID.mockReturnValue("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
   fileSystemMocks.deleteAsync.mockResolvedValue(undefined);
   fileSystemMocks.downloadAsync.mockResolvedValue({
     headers: {},
@@ -60,7 +66,7 @@ describe("downloadActivityExport", () => {
 
     expect(fileSystemMocks.downloadAsync).toHaveBeenCalledWith(
       "https://dofek.test/api/activity/12345678-1234-4123-8123-123456789abc/export?format=fit",
-      "file:///cache/dofek-exports-v1/activity-12345678.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
       {
         headers: {
           Authorization: "Bearer session-token",
@@ -68,11 +74,11 @@ describe("downloadActivityExport", () => {
       },
     );
     expect(sharingMocks.shareAsync).toHaveBeenCalledWith(
-      "file:///cache/dofek-exports-v1/activity-12345678.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
       expect.objectContaining({ mimeType: "application/vnd.ant.fit" }),
     );
     expect(fileSystemMocks.deleteAsync).toHaveBeenCalledWith(
-      "file:///cache/dofek-exports-v1/activity-12345678.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
       { idempotent: true },
     );
   });
@@ -87,15 +93,15 @@ describe("downloadActivityExport", () => {
     await downloadActivityExport(input);
 
     expect(fileSystemMocks.moveAsync).toHaveBeenCalledWith({
-      from: "file:///cache/dofek-exports-v1/activity-12345678.fit",
-      to: "file:///cache/dofek-exports-v1/morning-ride.fit",
+      from: "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
+      to: "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-morning-ride.fit",
     });
     expect(fileSystemMocks.deleteAsync).toHaveBeenCalledWith(
-      "file:///cache/dofek-exports-v1/activity-12345678.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
       { idempotent: true },
     );
     expect(fileSystemMocks.deleteAsync).toHaveBeenCalledWith(
-      "file:///cache/dofek-exports-v1/morning-ride.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-morning-ride.fit",
       { idempotent: true },
     );
   });
@@ -113,7 +119,7 @@ describe("downloadActivityExport", () => {
 
     expect(fileSystemMocks.moveAsync).not.toHaveBeenCalled();
     expect(fileSystemMocks.deleteAsync).toHaveBeenCalledWith(
-      "file:///cache/dofek-exports-v1/activity-12345678.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
       { idempotent: true },
     );
   });
@@ -124,7 +130,7 @@ describe("downloadActivityExport", () => {
     await expect(downloadActivityExport(input)).rejects.toThrow("share failed");
 
     expect(fileSystemMocks.deleteAsync).toHaveBeenCalledWith(
-      "file:///cache/dofek-exports-v1/activity-12345678.fit",
+      "file:///cache/dofek-exports-v1/export-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-activity-12345678.fit",
       { idempotent: true },
     );
   });

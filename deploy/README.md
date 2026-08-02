@@ -201,7 +201,6 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> non-pruning stack apply with consumers quiesced
               -> wait for Postgres and ClickHouse
               -> migrate requested image on <stack>_default
-              -> backfill Slack memberships and exercise provenance
               -> prune deploy requested image with consumers quiesced
               -> wait for app convergence and Postgres; run cutover
               -> wait for ClickHouse, PeerDB, and Temporal; configure CDC
@@ -355,28 +354,14 @@ terminated:
    9. Run the requested image's tracked Postgres and ClickHouse migrations in a
       detached one-shot container on `<stack>_default`. CI polls its status and
       logs, removes it on exit, and fails if it exceeds four hours.
-   10. Run the Slack team-membership backfill as a fail-closed one-shot
-      container before any account-erasure-capable web or worker task rolls
-      out. The command verifies each bot token's recorded workspace with
-      Slack `auth.test`, accepts a non-installer membership only when
-      `users.info` returns the exact user and an authoritative matching
-      workspace field, and writes all verified assignments atomically. Missing
-      `users:read`, an unusable token, a changed database snapshot, or an
-      unqualified identity matching multiple installed workspaces stops the
-      deploy without partial writes. Slack documents that `auth.test` reports
-      the token's workspace without an additional scope, that `users.info`
-      requires `users:read`, and that user IDs are workspace-qualified by
-      `team_id`:
-      [auth.test](https://docs.slack.dev/reference/methods/auth.test/),
-      [users.info](https://docs.slack.dev/reference/methods/users.info/),
-      [user object](https://docs.slack.dev/reference/objects/user-object/).
-   11. Run the idempotent historical exercise-provenance backfill as a one-shot
-      container immediately after migrations. It inserts provenance in bounded
-      batches, validates that no attributable exercise or alias rows remain,
-      and fails the deploy before new web or worker tasks roll out if
-      validation fails. Ordinary integration setup creates the current schema
-      directly and does not replay this historical scan.
-   12. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
+   10. Historical Slack-membership and exercise-provenance backfills are
+       operator-run one-time tasks, not deployment steps. Run them from the
+       image with an explicit `DATABASE_URL` only after reviewing their dry-run
+       output, and record the completion date, image commit, and operator in
+       the deployment change record. They must not be replayed on every deploy.
+       Ordinary integration setup creates the current schema directly and does
+       not replay either historical scan.
+   11. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    13. After every requested app service converges, wait for Postgres to be
        writable and run the resumable `provider-connection-cutover` one-shot

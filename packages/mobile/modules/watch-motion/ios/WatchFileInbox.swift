@@ -23,6 +23,7 @@ final class WatchFileInbox {
     }()
 
     private let fileManager: FileManager
+    private let operationLock = NSLock()
 
     init(pendingDirectory: URL, fileManager: FileManager = .default) {
         self.pendingDirectory = pendingDirectory
@@ -30,6 +31,29 @@ final class WatchFileInbox {
     }
 
     func persistReceivedFile(at sourceURL: URL, metadata: [String: Any]?) throws -> String {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        return try persistReceivedFileWithoutLock(at: sourceURL, metadata: metadata)
+    }
+
+    func persistReceivedFileIfAccepted(
+        at sourceURL: URL,
+        metadata: [String: Any]?,
+        shouldAccept: () -> Bool
+    ) throws -> String? {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        guard shouldAccept() else {
+            try fileManager.removeItem(at: sourceURL)
+            return nil
+        }
+        return try persistReceivedFileWithoutLock(at: sourceURL, metadata: metadata)
+    }
+
+    private func persistReceivedFileWithoutLock(
+        at sourceURL: URL,
+        metadata: [String: Any]?
+    ) throws -> String {
         try fileManager.createDirectory(
             at: pendingDirectory,
             withIntermediateDirectories: true
@@ -64,6 +88,8 @@ final class WatchFileInbox {
     }
 
     func purgePendingFiles() throws {
+        operationLock.lock()
+        defer { operationLock.unlock() }
         guard fileManager.fileExists(atPath: pendingDirectory.path) else {
             return
         }
@@ -108,11 +134,13 @@ final class WatchFileReceiver {
 
     func receive(fileURL: URL, metadata: [String: Any]?) {
         do {
-            guard shouldAcceptFile() else {
-                try FileManager.default.removeItem(at: fileURL)
+            guard let fileName = try inbox.persistReceivedFileIfAccepted(
+                at: fileURL,
+                metadata: metadata,
+                shouldAccept: shouldAcceptFile
+            ) else {
                 return
             }
-            let fileName = try inbox.persistReceivedFile(at: fileURL, metadata: metadata)
             let observer = observer
             observer?.watchFileReceiver(didPersist: fileName, metadata: metadata)
         } catch {

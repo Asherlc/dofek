@@ -123,17 +123,19 @@ final class WhoopBleSampleBuffer {
         let cutoff = deviceErasureCutoff.map { max($0, candidate) } ?? candidate
         deviceErasureCutoff = cutoff
 
-        let previousImuCount = imuSamples.count
+        let imuHeadRemovalCount = imuSamples.prefix {
+            imuSampleDate($0.sample) <= cutoff
+        }.count
         imuSamples.removeAll { imuSampleDate($0.sample) <= cutoff }
-        imuDrainCursor.recordHeadRemoval(count: previousImuCount - imuSamples.count)
+        imuDrainCursor.recordHeadRemoval(count: imuHeadRemovalCount)
 
-        let previousRealtimeCount = realtimeDataSamples.count
+        let realtimeHeadRemovalCount = realtimeDataSamples.prefix {
+            realtimeSampleDate($0.sample) <= cutoff
+        }.count
         realtimeDataSamples.removeAll {
             realtimeSampleDate($0.sample) <= cutoff
         }
-        realtimeDrainCursor.recordHeadRemoval(
-            count: previousRealtimeCount - realtimeDataSamples.count
-        )
+        realtimeDrainCursor.recordHeadRemoval(count: realtimeHeadRemovalCount)
     }
 
     // MARK: - Peek (read without removing)

@@ -254,21 +254,26 @@ export const activityRouter = router({
     .input(z.object({ id: z.guid() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
-          const repo = new ActivityRepository(
-            transaction,
-            ctx.userId,
-            ctx.timezone,
-            ctx.accessWindow,
-          );
-          const memberActivityIds = await repo.getActivityMemberIds(input.id);
-          if (!memberActivityIds) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-          }
-          await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, memberActivityIds);
-          await invalidateActivityListCaches(ctx.userId);
-          return { success: true };
-        });
+        const memberActivityIds = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            const memberActivityIds = await repo.getActivityMemberIds(input.id);
+            if (!memberActivityIds) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+            }
+            return memberActivityIds;
+          },
+        );
+        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, memberActivityIds);
+        await invalidateActivityListCaches(ctx.userId);
+        return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
@@ -286,18 +291,23 @@ export const activityRouter = router({
 
   delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
     try {
-      return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
-        const repo = new ActivityRepository(
-          transaction,
-          ctx.userId,
-          ctx.timezone,
-          ctx.accessWindow,
-        );
-        const { memberActivityIds } = await repo.bulkDelete([input.id]);
-        await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
-        return { success: true };
-      });
+      const memberActivityIds = await withAccountErasureUserWriteFence(
+        ctx.db,
+        ctx.userId,
+        async (transaction) => {
+          const repo = new ActivityRepository(
+            transaction,
+            ctx.userId,
+            ctx.timezone,
+            ctx.accessWindow,
+          );
+          const { memberActivityIds } = await repo.bulkDelete([input.id]);
+          return memberActivityIds;
+        },
+      );
+      await invalidateActivityListCaches(ctx.userId);
+      await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
+      return { success: true };
     } catch (error) {
       if (isRelationMissingError(error)) {
         throw new TRPCError({
@@ -314,18 +324,22 @@ export const activityRouter = router({
     .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
-          const repo = new ActivityRepository(
-            transaction,
-            ctx.userId,
-            ctx.timezone,
-            ctx.accessWindow,
-          );
-          const { deletedCount, memberActivityIds } = await repo.bulkDelete(input.ids);
-          await invalidateActivityListCaches(ctx.userId);
-          await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
-          return { success: true, deletedCount };
-        });
+        const deletion = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            return repo.bulkDelete(input.ids);
+          },
+        );
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityAnalyticsRefresh(ctx.userId, deletion.memberActivityIds);
+        return { success: true, deletedCount: deletion.deletedCount };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({
@@ -342,18 +356,23 @@ export const activityRouter = router({
     .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
-          const repo = new ActivityRepository(
-            transaction,
-            ctx.userId,
-            ctx.timezone,
-            ctx.accessWindow,
-          );
-          const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
-          await invalidateActivityListCaches(ctx.userId);
-          await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
-          return { success: true, restoredCount };
-        });
+        const restoredCount = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
+            return restoredCount;
+          },
+        );
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
+        return { success: true, restoredCount };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({

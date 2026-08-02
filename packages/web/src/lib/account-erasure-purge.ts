@@ -2,8 +2,10 @@ import { ACCOUNT_ERASURE_CLEANUP_OWNERSHIP_ERROR_MESSAGE } from "@dofek/auth/acc
 import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
+  ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY,
   ACCOUNT_ERASURE_STATUS_STORAGE_KEY,
   loadAccountErasureStatusCapability,
+  saveAccountErasureStatusCapability,
 } from "./account-erasure-storage.ts";
 import type { AccountErasureCleanupLease } from "./auth-context.tsx";
 import { disablePostHogForAccountErasure } from "./posthog.ts";
@@ -58,6 +60,7 @@ function errorFromUnknown(error: unknown): Error {
 
 const ACCOUNT_PURGE_CHANNEL_NAME = "dofek-account-purge-v1";
 const purgeRequestSchema = z.object({
+  cleanupGeneration: z.uuid(),
   cleanupOwnerNonce: z.uuid(),
   kind: z.literal("purge"),
   nonce: z.string().min(1),
@@ -76,6 +79,7 @@ function createBrowserChannel(channelName: string): WebAccountPurgeBroadcastChan
 
 function requestOtherTabsToPurge(
   options: Pick<PurgeWebAccountStateOptions, "channelFactory" | "cleanupLease">,
+  cleanupGeneration: string,
 ): void {
   const channel =
     options.channelFactory?.(ACCOUNT_PURGE_CHANNEL_NAME) ??
@@ -83,6 +87,7 @@ function requestOtherTabsToPurge(
   if (!channel) return;
   const nonce = crypto.randomUUID();
   channel.postMessage({
+    cleanupGeneration,
     cleanupOwnerNonce: options.cleanupLease.cleanupOwnerNonce,
     kind: "purge",
     nonce,
@@ -124,11 +129,23 @@ export async function purgeWebAccountState(
     }
   };
 
-  const statusCapability = loadAccountErasureStatusCapability(localStore);
+  let statusCapability = loadAccountErasureStatusCapability(localStore);
+  let cleanupGeneration = statusCapability?.localCleanupGeneration ?? null;
   if (!canContinue()) return { errors };
 
   if (options.notifyOtherTabs !== false) {
-    requestOtherTabsToPurge(options);
+    const generation = crypto.randomUUID();
+    cleanupGeneration = generation;
+    if (statusCapability) {
+      const nextStatusCapability = { ...statusCapability, localCleanupGeneration: generation };
+      statusCapability = nextStatusCapability;
+      await attempt("account-erasure-cleanup-generation-persist", () => {
+        saveAccountErasureStatusCapability(nextStatusCapability, localStore);
+      });
+    }
+    await attempt("account-erasure-other-tab-notification", () => {
+      requestOtherTabsToPurge(options, generation);
+    });
   }
   if (!canContinue()) return { errors };
 
@@ -149,6 +166,13 @@ export async function purgeWebAccountState(
     }),
   ]);
 
+  if (cleanupGeneration && canContinue()) {
+    const generation = cleanupGeneration;
+    await attempt("account-erasure-cleanup-generation-ack", () => {
+      sessionStore.setItem(ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY, generation);
+    });
+  }
+
   return { errors };
 }
 
@@ -166,15 +190,11 @@ export function installWebAccountPurgeListener(
     createBrowserChannel(ACCOUNT_PURGE_CHANNEL_NAME);
   if (!channel) return () => undefined;
 
-  const listener = (event: MessageEvent) => {
-    const request = purgeRequestSchema.safeParse(event.data);
-    if (!request.success) return;
+  const processRequest = (request: z.infer<typeof purgeRequestSchema>): void => {
     void (async () => {
       let cleanupLease: AccountErasureCleanupLease | null = null;
       try {
-        cleanupLease = await options.beginAccountErasureCleanupForNonce(
-          request.data.cleanupOwnerNonce,
-        );
+        cleanupLease = await options.beginAccountErasureCleanupForNonce(request.cleanupOwnerNonce);
         if (options.isCleanupLeaseCurrent(cleanupLease)) {
           disablePostHogForAccountErasure();
         }
@@ -193,7 +213,37 @@ export function installWebAccountPurgeListener(
       }
     })();
   };
+
+  const listener = (event: MessageEvent) => {
+    const request = purgeRequestSchema.safeParse(event.data);
+    if (!request.success) return;
+    processRequest(request.data);
+  };
   channel.addEventListener("message", listener);
+
+  const persistedStatus = loadAccountErasureStatusCapability(
+    options.localStorage ?? window.localStorage,
+  );
+  if (persistedStatus?.localCleanupGeneration) {
+    const sessionStore = options.sessionStorage ?? window.sessionStorage;
+    let acknowledgedGeneration: string | null = null;
+    try {
+      acknowledgedGeneration = sessionStore.getItem(ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY);
+    } catch {
+      captureException(new Error("Account erasure browser storage operation failed."), {
+        source: "account-erasure-cleanup-ack-read",
+      });
+    }
+    if (acknowledgedGeneration !== persistedStatus.localCleanupGeneration) {
+      const request = {
+        cleanupGeneration: persistedStatus.localCleanupGeneration,
+        cleanupOwnerNonce: persistedStatus.cleanupOwnerNonce,
+        kind: "purge" as const,
+        nonce: persistedStatus.localCleanupGeneration,
+      };
+      void Promise.resolve().then(() => processRequest(request));
+    }
+  }
   return () => {
     channel.removeEventListener("message", listener);
     channel.close();

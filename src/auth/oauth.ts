@@ -138,11 +138,16 @@ const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
 function parseTokenResponse(data: Record<string, unknown>): TokenSet {
   const expiresIn =
     typeof data.expires_in === "number" ? data.expires_in : DEFAULT_EXPIRES_IN_SECONDS;
+  const providerAccountId =
+    typeof data.user_id === "number" || typeof data.user_id === "string"
+      ? String(data.user_id).trim()
+      : null;
   return {
     accessToken: String(data.access_token),
     refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
     scopes: typeof data.scope === "string" ? data.scope : null,
+    ...(providerAccountId ? { providerAccountId } : {}),
   };
 }
 

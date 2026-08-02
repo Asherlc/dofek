@@ -306,6 +306,20 @@ jobs:
           process.exit(result.status ?? 1);
           NODE
 
+      - name: Create Apple private key Swarm secret
+        run: |
+          set -euo pipefail
+          apple_private_key_secret_name="${STACK_NAME}_apple_private_key_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          if ! node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'if (!process.env.APPLE_PRIVATE_KEY?.trim()) { throw new Error("APPLE_PRIVATE_KEY is required"); }' ; then
+            echo "::error::APPLE_PRIVATE_KEY is required to create the application Swarm secret"
+            exit 1
+          fi
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'process.stdout.write(process.env.APPLE_PRIVATE_KEY ?? "")' \
+            | docker secret create \
+              --label "com.dofek.stack=${STACK_NAME}" \
+              "$apple_private_key_secret_name" -
+          echo "APPLE_PRIVATE_KEY_SECRET_NAME=$apple_private_key_secret_name" >> "$GITHUB_ENV"
+
       - name: Export encoded ClickHouse password
         run: |
           encoded_clickhouse_password="$(
@@ -647,26 +661,6 @@ jobs:
           cleanup_migration_container
           echo "Migration succeeded."
 
-      - name: Backfill verified Slack team memberships
-        env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-        run: |
-          docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts scripts/backfill-slack-team-memberships.ts --execute'
-
-      - name: Backfill historical exercise provenance
-        env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-        run: |
-          docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts scripts/backfill-exercise-provenance.ts'
-
       - name: Deploy stack without ClickHouse consumers
         id: deploy_stack_quiesced
         env:
@@ -993,6 +987,26 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Remove unused Apple private key Swarm secrets
+        if: steps.deploy_stack_full.outcome == 'success'
+        run: |
+          set -euo pipefail
+          while IFS= read -r secret_name; do
+            [ -n "$secret_name" ] || continue
+            if [ "$secret_name" = "$APPLE_PRIVATE_KEY_SECRET_NAME" ]; then
+              continue
+            fi
+            if docker secret rm "$secret_name"; then
+              echo "Removed unused Apple private key secret ${secret_name}."
+            else
+              echo "Keeping ${secret_name}; Docker still reports it is in use."
+            fi
+          done < <(
+            docker secret ls \
+              --filter "label=com.dofek.stack=${STACK_NAME}" \
+              --format '{{.Name}}'
+          )
 
       - name: Verify database backup freshness
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')

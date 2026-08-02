@@ -102,6 +102,14 @@ describe("account identity", () => {
     expect(posthog.reset).toHaveBeenCalledOnce();
   });
 
+  it("preserves account-erasure opt-out when resetting identity", () => {
+    vi.mocked(posthog.has_opted_out_capturing).mockReturnValue(true);
+
+    resetPostHogUser();
+
+    expect(posthog.opt_out_capturing).toHaveBeenCalledOnce();
+  });
+
   it("resets identity and opts out before account erasure confirmation", () => {
     disablePostHogForAccountErasure();
 

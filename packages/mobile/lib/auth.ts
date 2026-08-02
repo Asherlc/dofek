@@ -138,6 +138,24 @@ export async function rotateSessionOwnerNonce(): Promise<string> {
   return nonce;
 }
 
+/** Restore the owner marker that belongs to a session surviving an app restart. */
+export async function getOrCreateSessionOwnerNonce(): Promise<string> {
+  const readGeneration = sessionPersistenceGeneration;
+  return serializeSessionPersistence(async () => {
+    const stored = await readSecureStoreItem(SESSION_OWNER_NONCE_KEY);
+    const parsed = stored === null ? null : z.uuid().safeParse(stored);
+    if (parsed?.success && readGeneration === sessionPersistenceGeneration) {
+      return parsed.data;
+    }
+
+    const nonce = createAccountErasureCleanupNonce();
+    if (readGeneration === sessionPersistenceGeneration) {
+      await writeSecureStoreItem(SESSION_OWNER_NONCE_KEY, nonce);
+    }
+    return nonce;
+  });
+}
+
 /** @internal Resets the in-memory session cache between tests. */
 export function resetSessionTokenCacheForTests(): void {
   cachedSessionToken = undefined;

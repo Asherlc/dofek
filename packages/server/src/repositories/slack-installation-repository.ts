@@ -47,9 +47,9 @@ export interface SlackBotCredentials {
 }
 
 export class SlackInstallationRepository {
-  readonly #db: Pick<Database, "execute">;
+  readonly #db: Pick<Database, "execute" | "transaction">;
 
-  constructor(db: Pick<Database, "execute">) {
+  constructor(db: Pick<Database, "execute" | "transaction">) {
     this.#db = db;
   }
 
@@ -148,35 +148,35 @@ export class SlackInstallationRepository {
   }
 
   async upsertTeamMembership(input: SlackTeamMembershipUpsertInput): Promise<void> {
-    await this.#db.execute(
-      sql`WITH reassigned_identity AS (
-            DELETE FROM fitness.slack_team_membership
+    await this.#db.transaction(async (transaction) => {
+      const installations = await executeWithSchema(
+        transaction,
+        z.object({ team_id: z.string().min(1) }),
+        sql`SELECT team_id
+            FROM fitness.slack_installation
             WHERE team_id = ${input.teamId}
-              AND slack_user_id = ${input.slackUserId}
-              AND user_id <> ${input.userId}::uuid
-            RETURNING user_id
-          )
-          INSERT INTO fitness.slack_team_membership (
-            team_id, user_id, slack_user_id
-          )
-          SELECT
-            ${input.teamId},
-            ${input.userId}::uuid,
-            ${input.slackUserId}
-          FROM (VALUES (true)) AS membership_candidate(required)
-          LEFT JOIN reassigned_identity
-            ON membership_candidate.required
-          WHERE NOT EXISTS (
-            SELECT 1
-            FROM fitness.slack_team_membership
+            FOR SHARE`,
+      );
+      if (!installations[0]) return;
+
+      await transaction.execute(
+        sql`DELETE FROM fitness.slack_team_membership
             WHERE team_id = ${input.teamId}
-              AND user_id = ${input.userId}::uuid
-              AND slack_user_id = ${input.slackUserId}
-          )
-          ON CONFLICT (team_id, user_id) DO UPDATE SET
-            slack_user_id = EXCLUDED.slack_user_id,
-            updated_at = NOW()`,
-    );
+              AND (
+                slack_user_id = ${input.slackUserId}
+                OR user_id = ${input.userId}::uuid
+              )`,
+      );
+      await transaction.execute(
+        sql`INSERT INTO fitness.slack_team_membership (
+              team_id, user_id, slack_user_id
+            ) VALUES (
+              ${input.teamId},
+              ${input.userId}::uuid,
+              ${input.slackUserId}
+            )`,
+      );
+    });
   }
 
   async getBotCredentialsByTeamId(teamId: string): Promise<SlackBotCredentials | null> {

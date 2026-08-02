@@ -1,7 +1,10 @@
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
+import { sql } from "drizzle-orm";
+import { drizzle, type NodePgClient, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
+import { executeWithSchema } from "../src/db/typed-sql.ts";
 import { decryptCredentialValue } from "../src/security/credential-encryption.ts";
 import { slackCredentialContext } from "../src/security/slack-credential-context.ts";
 
@@ -45,14 +48,8 @@ const usersInfoResponseSchema = z.discriminatedUnion("ok", [
   }),
 ]);
 
-interface QueryResult {
-  rowCount: number | null;
-  rows: unknown[];
-}
-
-interface BackfillClient {
-  query(queryText: string, values?: unknown[]): Promise<QueryResult>;
-}
+type BackfillClient = NodePgClient;
+type BackfillDatabase = NodePgDatabase<Record<string, never>>;
 
 interface SlackDatabaseState {
   accounts: z.infer<typeof authAccountRowSchema>[];
@@ -107,37 +104,48 @@ function stateFingerprint(state: SlackDatabaseState): string {
   return JSON.stringify(state);
 }
 
-async function readDatabaseState(client: BackfillClient): Promise<SlackDatabaseState> {
-  const installations = await client.query(
-    `SELECT team_id, bot_token, installer_slack_user_id
-     FROM fitness.slack_installation
-     ORDER BY team_id`,
-  );
-  const accounts = await client.query(
-    `SELECT user_id::text AS user_id, provider_account_id AS slack_user_id
-     FROM fitness.auth_account
-     WHERE auth_provider = 'slack'
-     ORDER BY provider_account_id, user_id`,
-  );
-  const memberships = await client.query(
-    `SELECT team_id, user_id::text AS user_id, slack_user_id
-     FROM fitness.slack_team_membership
-     ORDER BY team_id, user_id, slack_user_id`,
-  );
+function textArray(values: string[]) {
+  return sql`ARRAY[${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )}]::text[]`;
+}
 
-  const parsedInstallations = z.array(installationRowSchema).safeParse(installations.rows);
-  const parsedAccounts = z.array(authAccountRowSchema).safeParse(accounts.rows);
-  const parsedMemberships = z.array(membershipRowSchema).safeParse(memberships.rows);
-  if (!parsedInstallations.success || !parsedAccounts.success || !parsedMemberships.success) {
-    throw safeError(
-      "Slack membership backfill found invalid installation or identity state; repair it before rollout",
-    );
-  }
+function uuidArray(values: string[]) {
+  return sql`ARRAY[${sql.join(
+    values.map((value) => sql`${value}::uuid`),
+    sql`, `,
+  )}]::uuid[]`;
+}
+
+async function readDatabaseState(database: BackfillDatabase): Promise<SlackDatabaseState> {
+  const installations = await executeWithSchema(
+    database,
+    installationRowSchema,
+    sql`SELECT team_id, bot_token, installer_slack_user_id
+        FROM fitness.slack_installation
+        ORDER BY team_id`,
+  );
+  const accounts = await executeWithSchema(
+    database,
+    authAccountRowSchema,
+    sql`SELECT user_id::text AS user_id, provider_account_id AS slack_user_id
+        FROM fitness.auth_account
+        WHERE auth_provider = 'slack'
+        ORDER BY provider_account_id, user_id`,
+  );
+  const memberships = await executeWithSchema(
+    database,
+    membershipRowSchema,
+    sql`SELECT team_id, user_id::text AS user_id, slack_user_id
+        FROM fitness.slack_team_membership
+        ORDER BY team_id, user_id, slack_user_id`,
+  );
 
   return {
-    accounts: parsedAccounts.data,
-    installations: parsedInstallations.data,
-    memberships: parsedMemberships.data,
+    accounts,
+    installations,
+    memberships,
   };
 }
 
@@ -445,18 +453,18 @@ function isAccountErasureFenceError(error: unknown): boolean {
 }
 
 async function writeAssignments(
-  client: BackfillClient,
+  database: BackfillDatabase,
   expectedState: SlackDatabaseState,
   assignments: MembershipAssignment[],
 ): Promise<number> {
-  await client.query("BEGIN");
+  await database.execute(sql`BEGIN`);
   try {
-    await client.query(
-      `LOCK TABLE fitness.auth_account IN SHARE MODE;
-       LOCK TABLE fitness.slack_installation IN SHARE MODE;
-       LOCK TABLE fitness.slack_team_membership IN SHARE ROW EXCLUSIVE MODE`,
+    await database.execute(
+      sql`LOCK TABLE fitness.auth_account IN SHARE MODE;
+          LOCK TABLE fitness.slack_installation IN SHARE MODE;
+          LOCK TABLE fitness.slack_team_membership IN SHARE ROW EXCLUSIVE MODE`,
     );
-    const lockedState = await readDatabaseState(client);
+    const lockedState = await readDatabaseState(database);
     if (stateFingerprint(lockedState) !== stateFingerprint(expectedState)) {
       throw safeError(
         "Slack installation or identity state changed during preflight; rerun the backfill",
@@ -465,34 +473,32 @@ async function writeAssignments(
 
     let inserted = 0;
     if (assignments.length > 0) {
-      const result = await client.query(
-        `INSERT INTO fitness.slack_team_membership (
-           team_id, user_id, slack_user_id
-         )
-         SELECT assignment.team_id, assignment.user_id, assignment.slack_user_id
-         FROM unnest(
-           $1::text[],
-           $2::uuid[],
-           $3::text[]
-         ) AS assignment(team_id, user_id, slack_user_id)
-         ON CONFLICT DO NOTHING`,
-        [
-          assignments.map((assignment) => assignment.teamId),
-          assignments.map((assignment) => assignment.userId),
-          assignments.map((assignment) => assignment.slackUserId),
-        ],
+      const result = await executeWithSchema(
+        database,
+        z.object({ team_id: z.string().min(1) }),
+        sql`INSERT INTO fitness.slack_team_membership (
+              team_id, user_id, slack_user_id
+            )
+            SELECT assignment.team_id, assignment.user_id, assignment.slack_user_id
+            FROM unnest(
+              ${textArray(assignments.map((assignment) => assignment.teamId))},
+              ${uuidArray(assignments.map((assignment) => assignment.userId))},
+              ${textArray(assignments.map((assignment) => assignment.slackUserId))}
+            ) AS assignment(team_id, user_id, slack_user_id)
+            ON CONFLICT DO NOTHING
+            RETURNING team_id`,
       );
-      inserted = result.rowCount ?? 0;
+      inserted = result.length;
       if (inserted !== assignments.length) {
         throw safeError(
           "Slack membership backfill write validation failed; stop rollout and investigate",
         );
       }
     }
-    await client.query("COMMIT");
+    await database.execute(sql`COMMIT`);
     return inserted;
   } catch (error: unknown) {
-    await client.query("ROLLBACK");
+    await database.execute(sql`ROLLBACK`);
     if (error instanceof SlackTeamMembershipBackfillError) {
       throw error;
     }
@@ -511,24 +517,26 @@ export async function backfillSlackTeamMemberships(
   client: BackfillClient,
   options: SlackTeamMembershipBackfillOptions,
 ): Promise<SlackTeamMembershipBackfillResult> {
-  const lockResult = await client.query("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [
-    advisoryLockName,
-  ]);
-  const lock = advisoryLockRowSchema.safeParse(lockResult.rows[0]);
-  if (!lock.success || !lock.data.locked) {
+  const database = drizzle(client);
+  const lockRows = await executeWithSchema(
+    database,
+    advisoryLockRowSchema,
+    sql`SELECT pg_try_advisory_lock(hashtext(${advisoryLockName})) AS locked`,
+  );
+  if (lockRows[0]?.locked !== true) {
     throw safeError(
       "Another Slack membership backfill is active; wait for it to finish before rerunning",
     );
   }
 
   try {
-    const state = await readDatabaseState(client);
+    const state = await readDatabaseState(database);
     const installations = await decryptInstallations(state.installations);
     for (const installation of installations) {
       await verifyInstallation(installation);
     }
     const assignments = await discoverAssignments(state, installations);
-    const inserted = options.execute ? await writeAssignments(client, state, assignments) : 0;
+    const inserted = options.execute ? await writeAssignments(database, state, assignments) : 0;
 
     return {
       identitiesChecked: state.accounts.length,
@@ -538,7 +546,11 @@ export async function backfillSlackTeamMemberships(
       membershipsInserted: inserted,
     };
   } finally {
-    await client.query("SELECT pg_advisory_unlock(hashtext($1))", [advisoryLockName]);
+    await executeWithSchema(
+      database,
+      z.object({}),
+      sql`SELECT pg_advisory_unlock(hashtext(${advisoryLockName}))`,
+    );
   }
 }
 

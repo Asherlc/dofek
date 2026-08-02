@@ -8,10 +8,8 @@ export function getOrCreateWebBillingCheckoutOperationId(): string {
   const stored = window.localStorage.getItem(WEB_BILLING_CHECKOUT_OPERATION_KEY);
   if (stored !== null) {
     const parsed = BillingCheckoutOperationIdSchema.safeParse(stored);
-    if (!parsed.success) {
-      throw new Error("Stored billing checkout operation ID is invalid.");
-    }
-    return parsed.data;
+    if (parsed.success) return parsed.data;
+    window.localStorage.removeItem(WEB_BILLING_CHECKOUT_OPERATION_KEY);
   }
 
   const operationId = BillingCheckoutOperationIdSchema.parse(window.crypto.randomUUID());

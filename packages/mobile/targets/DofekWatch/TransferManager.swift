@@ -16,6 +16,7 @@ final class TransferManager: ObservableObject {
     private let altimeterRecorder: AltimeterRecorder
     private let session: WCSession
     private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
+    private let transferStateLock = NSLock()
     private let pendingAltitudeLock = NSLock()
     private var pendingAltitudeSampleCounts: [URL: Int] = [:]
     private let accountStateStore = WatchAccountStateStore()
@@ -42,10 +43,10 @@ final class TransferManager: ObservableObject {
             self?.handleFileTransferFinished(fileTransfer, error: error)
         }
         WatchSessionDelegate.shared.onPurgeRequested = { [weak self] cutoff in
-            self?.purgeAccountState(at: cutoff ?? Date())
+            self?.purgeAccountState(at: cutoff)
         }
         WatchSessionDelegate.shared.onAccountSyncEnabled = { [weak self] in
-            self?.accountStateStore.enableSync()
+            self?.enableAccountSync()
         }
     }
 
@@ -86,7 +87,12 @@ final class TransferManager: ObservableObject {
     }
 
     private func performTransfer() {
-        guard accountStateStore.isSyncEnabled else { return }
+        guard accountStateStore.isSyncEnabled else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isTransferring = false
+            }
+            return
+        }
         // Stream samples to a temp JSON file (memory-efficient)
         guard let result = accelerometerRecorder.streamSamplesToFile() else {
             let altitudeSamples = altimeterRecorder.copyBufferedSamples()
@@ -143,7 +149,16 @@ final class TransferManager: ObservableObject {
             metadata["gyroscopeSampleCount"] = gyroSamples.count
             metadata["transferredAt"] = ISO8601DateFormatter().string(from: Date())
 
-            session.transferFile(compressedURL, metadata: metadata)
+            guard queueTransferIfSyncEnabled(compressedURL, metadata: metadata) else {
+                for url in tempFilesToCleanup {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.isTransferring = false
+                    self?.lastTransferStatus = "Account sync disabled"
+                }
+                return
+            }
 
             DispatchQueue.main.async { [weak self] in
                 self?.lastTransferStatus =
@@ -286,6 +301,7 @@ final class TransferManager: ObservableObject {
     }
 
     private func transferAltimeterSamples() {
+        guard accountStateStore.isSyncEnabled else { return }
         let altitudeSamples = altimeterRecorder.copyBufferedSamples()
         guard !altitudeSamples.isEmpty else { return }
 
@@ -309,10 +325,16 @@ final class TransferManager: ObservableObject {
                 "sampleCount": altitudeSamples.count,
                 "transferredAt": ISO8601DateFormatter().string(from: Date()),
             ]
-            session.transferFile(compressedURL!, metadata: metadata)
-            pendingAltitudeLock.lock()
-            pendingAltitudeSampleCounts[compressedURL!] = altitudeSamples.count
-            pendingAltitudeLock.unlock()
+            guard queueAltitudeTransferIfSyncEnabled(
+                compressedURL!,
+                metadata: metadata,
+                sampleCount: altitudeSamples.count
+            ) else {
+                if let compressedURL {
+                    try? FileManager.default.removeItem(at: compressedURL)
+                }
+                return
+            }
         } catch {
             if let jsonURL {
                 try? FileManager.default.removeItem(at: jsonURL)
@@ -403,6 +425,8 @@ final class TransferManager: ObservableObject {
     }
 
     private func purgeAccountState(at cutoff: Date) {
+        transferStateLock.lock()
+        defer { transferStateLock.unlock() }
         accountStateStore.purge(at: cutoff)
         gyroscopeRecorder.purgeAccountState()
         altimeterRecorder.purgeAccountState()
@@ -428,6 +452,35 @@ final class TransferManager: ObservableObject {
             self?.isTransferring = false
             self?.lastTransferStatus = "Account data cleared"
         }
+    }
+
+    private func queueTransferIfSyncEnabled(_ url: URL, metadata: [String: Any]) -> Bool {
+        transferStateLock.lock()
+        defer { transferStateLock.unlock() }
+        guard accountStateStore.isSyncEnabled else { return false }
+        session.transferFile(url, metadata: metadata)
+        return true
+    }
+
+    private func enableAccountSync() {
+        transferStateLock.lock()
+        accountStateStore.enableSync()
+        transferStateLock.unlock()
+    }
+
+    private func queueAltitudeTransferIfSyncEnabled(
+        _ url: URL,
+        metadata: [String: Any],
+        sampleCount: Int
+    ) -> Bool {
+        transferStateLock.lock()
+        defer { transferStateLock.unlock() }
+        guard accountStateStore.isSyncEnabled else { return false }
+        session.transferFile(url, metadata: metadata)
+        pendingAltitudeLock.lock()
+        pendingAltitudeSampleCounts[url] = sampleCount
+        pendingAltitudeLock.unlock()
+        return true
     }
 
     /// Compress a file using zlib via Foundation's NSData.compressed(using:).

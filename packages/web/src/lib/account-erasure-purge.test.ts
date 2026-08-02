@@ -7,6 +7,7 @@ import {
   type WebAccountPurgeBroadcastChannel,
 } from "./account-erasure-purge.ts";
 import {
+  ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY,
   ACCOUNT_ERASURE_STATUS_STORAGE_KEY,
   saveAccountErasureStatusCapability,
 } from "./account-erasure-storage.ts";
@@ -66,7 +67,13 @@ describe("purgeWebAccountState", () => {
 
     expect(localStorage.length).toBe(1);
     expect(localStorage.getItem(ACCOUNT_ERASURE_STATUS_STORAGE_KEY)).toContain("s".repeat(43));
-    expect(sessionStorage.length).toBe(0);
+    expect(localStorage.getItem(ACCOUNT_ERASURE_STATUS_STORAGE_KEY)).toContain(
+      "localCleanupGeneration",
+    );
+    expect(sessionStorage.getItem(ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY)).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+    expect(sessionStorage.length).toBe(1);
     expect(clearQueries).toHaveBeenCalledOnce();
     expect(purgeUploads).toHaveBeenCalledOnce();
     expect(deleteCache).toHaveBeenCalledTimes(2);
@@ -181,6 +188,41 @@ describe("purgeWebAccountState", () => {
     expect(remoteUploadPurge).toHaveBeenCalledOnce();
     expect(mockDisablePostHog).toHaveBeenCalledOnce();
     expect(beginCleanup).toHaveBeenCalledWith(cleanupLease.cleanupOwnerNonce);
+    expect(finishCleanup).toHaveBeenCalledWith(cleanupLease);
+    removeListener();
+  });
+
+  it("replays a cleanup generation when a tab opens after the broadcast", async () => {
+    const generation = "33333333-3333-4333-8333-333333333333";
+    saveAccountErasureStatusCapability({
+      cleanupOwnerNonce: cleanupLease.cleanupOwnerNonce,
+      localCleanupGeneration: generation,
+      requestId: "11111111-1111-4111-8111-111111111111",
+      statusToken: "s".repeat(43),
+    });
+    class ReplayChannel implements WebAccountPurgeBroadcastChannel {
+      addEventListener(): void {}
+      close(): void {}
+      postMessage(): void {}
+      removeEventListener(): void {}
+    }
+    const channel = new ReplayChannel();
+    const beginCleanup = vi.fn(async () => cleanupLease);
+    const finishCleanup = vi.fn();
+    const removeListener = installWebAccountPurgeListener(
+      { clear: vi.fn() },
+      {
+        beginAccountErasureCleanupForNonce: beginCleanup,
+        channelFactory: () => channel,
+        finishAccountErasureCleanup: finishCleanup,
+        isCleanupLeaseCurrent: () => true,
+      },
+    );
+
+    await vi.waitFor(() =>
+      expect(beginCleanup).toHaveBeenCalledWith(cleanupLease.cleanupOwnerNonce),
+    );
+    expect(sessionStorage.getItem(ACCOUNT_ERASURE_LOCAL_CLEANUP_ACK_STORAGE_KEY)).toBe(generation);
     expect(finishCleanup).toHaveBeenCalledWith(cleanupLease);
     removeListener();
   });

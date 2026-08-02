@@ -25,7 +25,7 @@ function requiredEnvironmentValue(env: NodeJS.ProcessEnv, name: string): string 
   if (!value || value.trim().length === 0) {
     throw new Error(`${name} is required for account erasure`);
   }
-  return value;
+  return value.trim();
 }
 
 export function processorRetentionConfigFromEnv(

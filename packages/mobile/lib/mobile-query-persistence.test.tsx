@@ -168,7 +168,7 @@ describe("mobile query persistence", () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     vi.mocked(AsyncStorage.removeItem).mockRejectedValueOnce(new Error("AsyncStorage unavailable"));
 
-    await removeMobileQueryCache(userId);
+    await expect(removeMobileQueryCache(userId)).rejects.toThrow("AsyncStorage unavailable");
 
     const telemetry = mockCaptureException.mock.calls
       .map(
@@ -180,5 +180,22 @@ describe("mobile query persistence", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       source: "mobile-query-cache-clear",
     });
+  });
+
+  it("sanitizes telemetry while rethrowing clear-all failures", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    vi.mocked(AsyncStorage.getAllKeys).mockRejectedValueOnce(
+      new Error("failed for dofek-query-cache:private-user-id"),
+    );
+
+    await expect(removeAllMobileQueryCaches()).rejects.toThrow("private-user-id");
+
+    const [reportedError] = mockCaptureException.mock.calls[0] ?? [];
+    expect(reportedError).toEqual(
+      expect.objectContaining({ message: "Mobile query persistence operation failed." }),
+    );
+    expect(reportedError).not.toEqual(
+      expect.objectContaining({ message: expect.stringContaining("private-user-id") }),
+    );
   });
 });

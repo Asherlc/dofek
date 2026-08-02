@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/node";
 import {
   AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
 import { queryCache } from "dofek/lib/cache";
@@ -166,36 +167,51 @@ export async function handleIdentityCallback(
       externalIdentities.push({ email: identity.email, kind: "email" });
     }
     const db = getDb();
-    const targetUserId =
-      linkUserId ?? (await findExistingUserId(db, providerName, identity)) ?? randomUUID();
+    class IdentityTargetChangedError extends Error {
+      constructor(readonly resolvedUserId: string) {
+        super("Identity target changed during callback resolution");
+      }
+    }
     let result: {
       isNewUser: boolean;
       sessionInfo: Awaited<ReturnType<typeof createSession>> | null;
       userId: string;
     };
     try {
-      result = await withAccountErasureUserAndIdentityWriteFence(
-        db,
-        targetUserId,
-        externalIdentities,
-        async (transaction) => {
-          const { userId, isNewUser } = await resolveOrCreateUser(
-            transaction,
-            providerName,
-            identity,
-            linkUserId,
-            { newUserId: targetUserId },
+      let targetUserId =
+        linkUserId ?? (await findExistingUserId(db, providerName, identity)) ?? randomUUID();
+      while (true) {
+        try {
+          result = await withAccountErasureUserAndIdentityWriteFence(
+            db,
+            targetUserId,
+            externalIdentities,
+            async (transaction) => {
+              const resolvedUserId =
+                linkUserId ?? (await findExistingUserId(transaction, providerName, identity));
+              if (resolvedUserId && resolvedUserId !== targetUserId) {
+                throw new IdentityTargetChangedError(resolvedUserId);
+              }
+              const { userId, isNewUser } = await resolveOrCreateUser(
+                transaction,
+                providerName,
+                identity,
+                linkUserId,
+                { newUserId: targetUserId },
+              );
+              return {
+                userId,
+                isNewUser,
+                sessionInfo: linkUserId ? null : await createSession(transaction, userId),
+              };
+            },
           );
-          if (userId !== targetUserId) {
-            throw new Error(`Identity resolution changed from ${targetUserId} to ${userId}`);
-          }
-          return {
-            userId,
-            isNewUser,
-            sessionInfo: linkUserId ? null : await createSession(transaction, userId),
-          };
-        },
-      );
+          break;
+        } catch (error: unknown) {
+          if (!(error instanceof IdentityTargetChangedError)) throw error;
+          targetUserId = error.resolvedUserId;
+        }
+      }
     } catch (persistenceError: unknown) {
       try {
         await revokeIdentityCredentials(providerName, tokens, appleClientId);
@@ -241,7 +257,10 @@ export async function handleIdentityCallback(
     logger.info(`[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`);
     res.redirect(linkUserId ? "/settings" : getPostLoginRedirect(returnTo, isNewUser));
   } catch (err: unknown) {
-    if (err instanceof AccountErasureIdentityFencedError) {
+    if (
+      err instanceof AccountErasureIdentityFencedError ||
+      err instanceof AccountErasureUserFencedError
+    ) {
       res.status(409).type("text/plain").send(err.message);
       return;
     }

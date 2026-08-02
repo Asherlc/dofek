@@ -26,8 +26,9 @@ vi.mock("../db/account-erasure.ts", () => ({
     operation: (transaction: unknown) => Promise<unknown>,
   ) => mockWithUserWriteFence(database, userId, operation),
 }));
+const mockIsAccountErasureActive = vi.fn(async (..._args: unknown[]) => false);
 vi.mock("../db/account-erasure-processing.ts", () => ({
-  isAccountErasureActive: vi.fn(async () => false),
+  isAccountErasureActive: (...args: unknown[]) => mockIsAccountErasureActive(...args),
 }));
 let realUnlink: typeof import("node:fs/promises").unlink;
 const mockUnlink = vi.fn<(path: string) => Promise<void>>();
@@ -1043,6 +1044,23 @@ describe("processImportJob", () => {
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     });
+
+    it("does not convert a terminal import failure into success when erasure starts afterward", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+      mockIsAccountErasureActive.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      mockProcessGarminDumpImportJob.mockResolvedValueOnce({
+        provider: "garmin-dump",
+        batchId: "garmin-fit-batch-1",
+        totalFitFiles: 1,
+        recordsSynced: 0,
+        errors: [{ message: "invalid activity.fit" }],
+        duration: 100,
+      });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: "UnrecoverableError",
+      });
+    });
   });
 
   describe("fit-file import", () => {
@@ -1110,6 +1128,23 @@ describe("processImportJob", () => {
     });
   });
   describe("file cleanup", () => {
+    it("records a terminal skipped stage when erasure starts before ingest", async () => {
+      mockIsAccountErasureActive.mockResolvedValueOnce(true);
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "skipped",
+        errorMessage: "Import skipped because account deletion is active.",
+        idempotencyKey: "worker-skipped-account-erasure",
+      });
+      expect(mockImportAppleHealthFile).not.toHaveBeenCalled();
+      await expect(access(tempFilePath)).rejects.toThrow();
+    });
+
     it("cleans up uploaded file after successful import", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);

@@ -161,11 +161,6 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
             }
             let payload = ["action": "enable_account_sync"]
             session.transferUserInfo(payload)
-            if session.isReachable {
-                session.sendMessage(payload, replyHandler: nil) { error in
-                    SentrySDK.capture(error: error)
-                }
-            }
             promise.resolve(true)
         }
 
@@ -196,11 +191,6 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
                     "deviceErasureCutoff": cutoffString,
                 ]
                 session.transferUserInfo(payload)
-                if session.isReachable {
-                    session.sendMessage(payload, replyHandler: nil) { error in
-                        SentrySDK.capture(error: error)
-                    }
-                }
             }
             promise.resolve(true)
         }

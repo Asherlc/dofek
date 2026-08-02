@@ -1027,6 +1027,7 @@ public class HealthKitModule: Module {
 
             _ = self.stopBackgroundObservers()
             self.accountStateStore.purge(at: cutoff)
+            self.anchoredQueryCoordinator.invalidatePendingQueries()
             self.healthStore.disableAllBackgroundDelivery { succeeded, error in
                 if let error {
                     SentrySDK.capture(error: error)

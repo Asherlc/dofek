@@ -39,6 +39,7 @@ export const AccountErasurePreparationCapabilitySchema = z.union([
 
 export const AccountErasureStatusCapabilitySchema = z.object({
   cleanupOwnerNonce: z.uuid(),
+  localCleanupGeneration: z.uuid().optional(),
   localCleanupBlockedByAnotherSession: z.boolean().optional(),
   localCleanupPending: z.boolean().optional(),
   requestId: z.uuid(),

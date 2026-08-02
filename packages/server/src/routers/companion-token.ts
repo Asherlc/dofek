@@ -1,4 +1,8 @@
-import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
+import { TRPCError } from "@trpc/server";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { z } from "zod";
 import {
   createOrGetCompanionToken,
@@ -19,8 +23,15 @@ export const companionTokenRouter = router({
   }),
 
   regenerate: protectedProcedure.output(companionTokenOutputSchema).mutation(async ({ ctx }) => {
-    return withAccountErasureUserWriteFence(ctx.db, ctx.userId, (transaction) =>
-      regenerateCompanionTokenInTransaction(transaction, ctx.userId),
-    );
+    try {
+      return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, (transaction) =>
+        regenerateCompanionTokenInTransaction(transaction, ctx.userId),
+      );
+    } catch (error: unknown) {
+      if (error instanceof AccountErasureUserFencedError) {
+        throw new TRPCError({ code: "CONFLICT", message: error.message });
+      }
+      throw error;
+    }
   }),
 });

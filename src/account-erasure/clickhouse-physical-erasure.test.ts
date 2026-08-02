@@ -88,6 +88,9 @@ describe("prepareClickHousePhysicalErasure", () => {
 
     await applyClickHousePhysicalErasureMutation(client, target);
 
+    const mutationCommand = vi.mocked(client.command).mock.calls[0]?.[0];
+    expect(mutationCommand?.query).toMatch(/AND '[0-9a-f-]{36}'\s*=\s*'[0-9a-f-]{36}'/);
+    expect(mutationCommand?.query_params).not.toHaveProperty("account_erasure_mutation_marker");
     expect(target.partNames).toEqual(new Set(["target-part", "mutated-part", "source-part"]));
   });
 });

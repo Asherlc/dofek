@@ -98,6 +98,27 @@ describe("SlackInstallationRepository membership (integration)", () => {
     ]);
   });
 
+  it("keeps token-only Socket Mode fences safe when no OAuth installation exists", async () => {
+    const repository = new SlackInstallationRepository(context.db);
+    const teamId = "T-TOKEN-ONLY-1994";
+
+    await expect(
+      repository.upsertTeamMembership({
+        slackUserId: "U-TOKEN-ONLY-1994",
+        teamId,
+        userId: secondUserId,
+      }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      context.db.execute(
+        sql`SELECT team_id
+            FROM fitness.slack_team_membership
+            WHERE team_id = ${teamId}`,
+      ),
+    ).resolves.toEqual([]);
+  });
+
   it("atomically reassigns an inbound Slack identity to its current Dofek user", async () => {
     const repository = new SlackInstallationRepository(context.db);
     const shared = installationInput("T-REASSIGN-1994");

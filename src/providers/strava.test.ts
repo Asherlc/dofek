@@ -563,6 +563,7 @@ describe("StravaProvider.authSetup()", () => {
     expect(setup.oauthConfig?.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
     expect(setup.oauthConfig?.tokenUrl).toBe("https://www.strava.com/oauth/token");
     expect(setup.oauthConfig?.scopes).toEqual(["read", "activity:read_all"]);
+    expect(setup.reconnectStrategy).toBe("revoke-then-replace");
   });
 
   it("revokes the Strava grant with the current idempotent endpoint", async () => {
@@ -601,6 +602,23 @@ describe("StravaProvider.authSetup()", () => {
     delete process.env.STRAVA_CLIENT_SECRET;
     const provider = new StravaProvider();
     expect(() => provider.authSetup()).toThrow("STRAVA_CLIENT_ID");
+  });
+
+  it("accepts only Strava's documented 200 revocation response", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const provider = new StravaProvider(async () => new Response(null, { status: 204 }));
+    const revoke = provider.authSetup().revokeExistingTokens;
+    if (!revoke) throw new Error("Expected Strava token revocation");
+
+    await expect(
+      revoke({
+        accessToken: "strava-access",
+        expiresAt: new Date("2026-07-26T12:00:00.000Z"),
+        refreshToken: null,
+        scopes: "read",
+      }),
+    ).rejects.toThrow("Strava token revocation failed (204)");
   });
 });
 

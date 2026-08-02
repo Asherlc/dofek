@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildFoodWriteBackFingerprint,
+  FOOD_WRITE_BACK_STORAGE_KEY,
   type FoodWriteBackStorage,
   type HealthKitFoodWriteBackAdapter,
   type HealthKitFoodWriteBackTrpcClient,
@@ -274,5 +275,20 @@ describe("purgeDofekFoodWriteBackFromHealthKit", () => {
       "HealthKit denied",
     );
     expect(storage.deleteItem).not.toHaveBeenCalled();
+  });
+
+  it("continues purging when the stored ledger is corrupt", async () => {
+    const healthKit = {
+      deleteDietarySamples: vi.fn().mockResolvedValue(0),
+    };
+    const storage = {
+      getItem: vi.fn().mockResolvedValue("not-json"),
+      deleteItem: vi.fn().mockResolvedValue(undefined),
+      setItem: vi.fn(),
+    };
+
+    await expect(purgeDofekFoodWriteBackFromHealthKit({ healthKit, storage })).resolves.toBe(0);
+    expect(healthKit.deleteDietarySamples).not.toHaveBeenCalled();
+    expect(storage.deleteItem).toHaveBeenCalledWith(FOOD_WRITE_BACK_STORAGE_KEY);
   });
 });

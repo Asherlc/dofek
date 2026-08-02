@@ -65,4 +65,30 @@ describe("web account-erasure capability storage", () => {
     expect(loadAccountErasureStatusCapability()).toBeNull();
     expect(localStorage.getItem("dofek:account-erasure:status:v1")).toBeNull();
   });
+
+  it("treats unavailable browser storage as an empty capability", () => {
+    const storage = {
+      getItem: () => {
+        throw new Error("storage unavailable");
+      },
+      removeItem: () => {
+        throw new Error("storage unavailable");
+      },
+      setItem: () => {
+        throw new Error("storage unavailable");
+      },
+    } satisfies Pick<Storage, "getItem" | "removeItem" | "setItem">;
+
+    expect(loadAccountErasureStatusCapability(storage)).toBeNull();
+    expect(() =>
+      saveAccountErasureStatusCapability(
+        {
+          cleanupOwnerNonce: "22222222-2222-4222-8222-222222222222",
+          requestId: "11111111-1111-4111-8111-111111111111",
+          statusToken: "s".repeat(43),
+        },
+        storage,
+      ),
+    ).toThrow("Account erasure browser storage write failed.");
+  });
 });

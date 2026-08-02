@@ -27,4 +27,20 @@ describe("processorRetentionConfigFromEnv", () => {
       }),
     ).toThrow("SENTRY_AUTH_TOKEN is required for account erasure");
   });
+
+  it("trims credentials before they are used in outbound requests", () => {
+    expect(
+      processorRetentionConfigFromEnv({
+        AXIOM_API_TOKEN: " axiom-key ",
+        AXIOM_LOG_DATASET: " dofek-logs ",
+        SENTRY_AUTH_TOKEN: " sentry-key ",
+        SENTRY_ORG: " east-bay-software ",
+      }),
+    ).toMatchObject({
+      axiomApiToken: "axiom-key",
+      axiomDataset: "dofek-logs",
+      sentryAuthToken: "sentry-key",
+      sentryOrg: "east-bay-software",
+    });
+  });
 });

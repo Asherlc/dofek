@@ -250,6 +250,32 @@ describe("MapMyFitnessProvider", () => {
     );
   });
 
+  it("exposes issued tokens before identity lookup can fail", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "access-xyz",
+          refresh_token: "refresh-xyz",
+          expires_in: 3600,
+          user_id: "123456",
+        }),
+      )
+      .mockResolvedValueOnce(new Response("identity unavailable", { status: 503 }));
+    const issuedTokens = vi.fn();
+    const setup = new MapMyFitnessProvider(mockFetch).authSetup();
+    if (!setup.exchangeCode) throw new Error("exchangeCode not defined");
+
+    await expect(setup.exchangeCode("auth-code-123", undefined, issuedTokens)).rejects.toThrow(
+      "mapmyfitness API service unavailable (503)",
+    );
+    expect(issuedTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "access-xyz", providerAccountId: "123456" }),
+    );
+  });
+
   it("replays the documented authorization revocation request", async () => {
     process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";

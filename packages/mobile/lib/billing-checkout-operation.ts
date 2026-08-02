@@ -10,19 +10,29 @@ export const MOBILE_BILLING_CHECKOUT_OPERATION_KEY = "dofek_billing_checkout_ope
 
 const BillingCheckoutOperationIdSchema = z.uuid();
 
-export async function getOrCreateMobileBillingCheckoutOperationId(): Promise<string> {
-  const stored = await readSecureStoreItem(MOBILE_BILLING_CHECKOUT_OPERATION_KEY);
-  if (stored !== null) {
-    const parsed = BillingCheckoutOperationIdSchema.safeParse(stored);
-    if (!parsed.success) {
-      throw new Error("Stored billing checkout operation ID is invalid.");
-    }
-    return parsed.data;
-  }
+let inFlightOperationId: Promise<string> | null = null;
 
-  const operationId = BillingCheckoutOperationIdSchema.parse(Crypto.randomUUID());
-  await writeSecureStoreItem(MOBILE_BILLING_CHECKOUT_OPERATION_KEY, operationId);
-  return operationId;
+export async function getOrCreateMobileBillingCheckoutOperationId(): Promise<string> {
+  if (inFlightOperationId) return inFlightOperationId;
+
+  const operation = (async (): Promise<string> => {
+    const stored = await readSecureStoreItem(MOBILE_BILLING_CHECKOUT_OPERATION_KEY);
+    if (stored !== null) {
+      const parsed = BillingCheckoutOperationIdSchema.safeParse(stored);
+      if (parsed.success) return parsed.data;
+      await deleteSecureStoreItem(MOBILE_BILLING_CHECKOUT_OPERATION_KEY);
+    }
+
+    const operationId = BillingCheckoutOperationIdSchema.parse(Crypto.randomUUID());
+    await writeSecureStoreItem(MOBILE_BILLING_CHECKOUT_OPERATION_KEY, operationId);
+    return operationId;
+  })();
+  inFlightOperationId = operation;
+  try {
+    return await operation;
+  } finally {
+    if (inFlightOperationId === operation) inFlightOperationId = null;
+  }
 }
 
 export async function clearMobileBillingCheckoutOperation(operationId: string): Promise<void> {

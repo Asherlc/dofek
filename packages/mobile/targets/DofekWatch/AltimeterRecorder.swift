@@ -10,6 +10,7 @@ final class AltimeterRecorder: ObservableObject {
     static let shared = AltimeterRecorder()
 
     private let altimeter = CMAltimeter()
+    private let accountStateStore = WatchAccountStateStore()
     private let operationQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "com.dofek.watch.altimeter"
@@ -41,7 +42,7 @@ final class AltimeterRecorder: ObservableObject {
             publishError("Barometer not available on this device")
             return
         }
-        guard WatchAccountStateStore().isSyncEnabled else { return }
+        guard accountStateStore.isSyncEnabled else { return }
         guard !isRecording else { return }
 
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
@@ -56,6 +57,10 @@ final class AltimeterRecorder: ObservableObject {
             let pressureKPa = data.pressure.doubleValue
 
             self.bufferLock.lock()
+            guard self.accountStateStore.isSyncEnabled else {
+                self.bufferLock.unlock()
+                return
+            }
             if self.baselinePressureKPa == nil {
                 self.baselinePressureKPa = pressureKPa
             }

@@ -235,6 +235,9 @@ function AuthGate() {
         setDeletionRecoveryReady(true);
       } catch (error: unknown) {
         captureException(error, { source: "account-erasure-mobile-root-restore" });
+        if (active) {
+          setDeletionRecoveryReady(true);
+        }
       }
     };
     void restoreDeletionState();

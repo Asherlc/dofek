@@ -227,7 +227,7 @@ describe("billingRouter", () => {
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
-  it("expires checkout and deletes the customer when the fenced transaction fails to commit", async () => {
+  it("keeps Stripe resources valid when the fenced transaction commit is uncertain", async () => {
     stripeMocks.executeWithSchema.mockResolvedValue([
       {
         id: "user-1",
@@ -244,12 +244,6 @@ describe("billingRouter", () => {
       id: "cs_orphan",
       url: "https://checkout.stripe.test/session",
     });
-    stripeMocks.checkoutExpire.mockRejectedValue(
-      new Error("raw Stripe cleanup error for cs_orphan"),
-    );
-    stripeMocks.customerDelete.mockRejectedValue(
-      new Error("raw Stripe cleanup error for cus_orphan"),
-    );
     stripeMocks.withUserWriteFence.mockImplementationOnce(
       async (
         _database: unknown,
@@ -270,34 +264,41 @@ describe("billingRouter", () => {
       caller.createCheckoutSession({ operationId: checkoutOperationId }),
     ).rejects.toThrow("commit failed");
 
-    expect(stripeMocks.checkoutExpire).toHaveBeenCalledWith("cs_orphan");
-    expect(stripeMocks.customerDelete).toHaveBeenCalledWith("cus_orphan");
-    expect(stripeMocks.captureException).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        message: "Stripe checkout session cleanup failed",
-      }),
+    expect(stripeMocks.checkoutExpire).not.toHaveBeenCalled();
+    expect(stripeMocks.customerDelete).not.toHaveBeenCalled();
+    expect(stripeMocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports the original Stripe cleanup errors when an operation fails before commit", async () => {
+    stripeMocks.executeWithSchema.mockResolvedValue([
       {
-        tags: { source: "billing", operation: "expire-orphan-checkout-session" },
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+        created_at: "2026-04-10T18:30:00.000Z",
+        paid_grant_reason: null,
+        stripe_subscription_status: null,
+        stripe_customer_id: null,
       },
-    );
-    expect(stripeMocks.captureException).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        message: "Stripe customer cleanup failed",
-      }),
-      {
-        tags: { source: "billing", operation: "delete-orphan-stripe-customer" },
-      },
-    );
-    const capturedTelemetry = stripeMocks.captureException.mock.calls.map(([error, context]) => ({
-      context,
-      message: error instanceof Error ? error.message : String(error),
-    }));
-    expect(JSON.stringify(capturedTelemetry)).not.toContain("user-1");
-    expect(JSON.stringify(capturedTelemetry)).not.toContain("cus_orphan");
-    expect(JSON.stringify(capturedTelemetry)).not.toContain("cs_orphan");
-    expect(JSON.stringify(capturedTelemetry)).not.toContain("raw Stripe cleanup error");
+    ]);
+    stripeMocks.customerCreate.mockResolvedValue({ id: "cus_cleanup" });
+    stripeMocks.checkoutCreate.mockResolvedValue({ id: "cs_cleanup", url: null });
+    const checkoutCleanupError = new Error("raw Stripe cleanup error for cs_cleanup");
+    const customerCleanupError = new Error("raw Stripe cleanup error for cus_cleanup");
+    stripeMocks.checkoutExpire.mockRejectedValue(checkoutCleanupError);
+    stripeMocks.customerDelete.mockRejectedValue(customerCleanupError);
+    const caller = createCaller({ db: database(), userId: "user-1", timezone: "UTC" });
+
+    await expect(
+      caller.createCheckoutSession({ operationId: checkoutOperationId }),
+    ).rejects.toThrow("Stripe Checkout did not return a session URL");
+
+    expect(stripeMocks.captureException).toHaveBeenNthCalledWith(1, checkoutCleanupError, {
+      tags: { source: "billing", operation: "expire-orphan-checkout-session" },
+    });
+    expect(stripeMocks.captureException).toHaveBeenNthCalledWith(2, customerCleanupError, {
+      tags: { source: "billing", operation: "delete-orphan-stripe-customer" },
+    });
   });
 
   it("reuses the checkout idempotency key when a response-loss retry keeps the operation ID", async () => {

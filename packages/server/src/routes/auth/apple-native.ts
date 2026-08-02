@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/node";
 import { revokeAppleCredential } from "dofek/auth/apple-credential-revocation";
 import {
   AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
 import type { Request, Response } from "express";
@@ -63,13 +64,13 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
       externalIdentities.push({ email: identity.email, kind: "email" });
     }
     const db = getDb();
-    const targetUserId = (await findExistingUserId(db, "apple", identity)) ?? randomUUID();
     let result: {
       isNewUser: boolean;
       sessionInfo: Awaited<ReturnType<typeof createSession>>;
       userId: string;
     };
     try {
+      const targetUserId = (await findExistingUserId(db, "apple", identity)) ?? randomUUID();
       result = await withAccountErasureUserAndIdentityWriteFence(
         db,
         targetUserId,
@@ -110,7 +111,10 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
     logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
     res.json({ session: sessionInfo.sessionId, isNewUser });
   } catch (err: unknown) {
-    if (err instanceof AccountErasureIdentityFencedError) {
+    if (
+      err instanceof AccountErasureIdentityFencedError ||
+      err instanceof AccountErasureUserFencedError
+    ) {
       res.status(409).type("text/plain").send(err.message);
       return;
     }

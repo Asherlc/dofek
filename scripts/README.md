@@ -18,13 +18,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 - `backfill-exercise-provenance.ts`: Idempotently reconstructs user/provider
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
-  - Usage: `pnpm backfill:exercise-provenance`
+  - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
 - `backfill-slack-team-memberships.ts`: Verifies every stored Slack bot token
   against its recorded workspace, uses team-qualified Slack API responses to
   reconstruct legacy Dofek memberships, and fails before writing on missing
   scopes or ambiguous identities. It defaults to a dry run.
-  - Dry run: `pnpm backfill:slack-team-memberships`
-  - Execute: `pnpm backfill:slack-team-memberships -- --execute`
+  - Dry run: `DATABASE_URL=... pnpm backfill:slack-team-memberships`
+  - Execute: `DATABASE_URL=... pnpm backfill:slack-team-memberships -- --execute`
 
 ## Environment & Secrets
 

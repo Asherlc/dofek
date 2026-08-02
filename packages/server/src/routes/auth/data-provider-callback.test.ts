@@ -814,7 +814,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
-    expect(transactionEvents).toEqual(["delete", "exchange-failed", "commit"]);
+    expect(transactionEvents).toEqual(["exchange-failed", "commit", "delete"]);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(
       expect.stringContaining("previous Wahoo authorization was removed"),

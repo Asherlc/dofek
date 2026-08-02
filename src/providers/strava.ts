@@ -546,6 +546,7 @@ export class StravaProvider implements WebhookProvider {
     const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
+      reconnectStrategy: "revoke-then-replace",
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
       revokeExistingTokens: async (tokens) => {
         const token = tokens.refreshToken ?? tokens.accessToken;
@@ -560,7 +561,7 @@ export class StravaProvider implements WebhookProvider {
           },
           method: "POST",
         });
-        if (!response.ok) {
+        if (response.status !== 200) {
           throw new Error(`Strava token revocation failed (${response.status})`);
         }
       },

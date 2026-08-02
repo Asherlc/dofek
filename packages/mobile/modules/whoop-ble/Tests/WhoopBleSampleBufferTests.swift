@@ -441,6 +441,21 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         )
     }
 
+    func testErasureCutoffAdvancesPeekCursorOnlyForRemovedHeadSamples() {
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_003),
+        ])
+        XCTAssertEqual(buffer.peekImuSamples(maxCount: 4).count, 4)
+
+        buffer.advanceErasureCutoff(to: Date(timeIntervalSince1970: 1_711_000_001))
+        buffer.confirmImuDrain(count: 4)
+
+        XCTAssertEqual(buffer.imuSampleCount, 0)
+    }
+
     // MARK: - Helpers
 
     private func makeImuSamples(count: Int) -> [WhoopImuSample] {

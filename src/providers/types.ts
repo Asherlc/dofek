@@ -50,7 +50,11 @@ export interface ProviderAuthSetup {
   oauthConfig?: OAuthConfig;
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
-  exchangeCode?: (code: string, codeVerifier?: string) => Promise<TokenSet>;
+  exchangeCode?: (
+    code: string,
+    codeVerifier?: string,
+    onTokensIssued?: (tokens: TokenSet) => void,
+  ) => Promise<TokenSet>;
   /** Provider-specific cleanup for an existing authorization. */
   revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
   /**

@@ -1,6 +1,7 @@
 import type { OAuth2Tokens } from "arctic";
 import { Apple, decodeIdToken, Google, generateCodeVerifier, generateState } from "arctic";
 import { createAppleClientSecret, decodePemToDer } from "dofek/auth/apple-client-secret";
+import { getApplePrivateKey, hasApplePrivateKey } from "dofek/auth/apple-private-key";
 import { z } from "zod";
 
 const googleClaimsSchema = z.object({
@@ -81,7 +82,7 @@ function initGoogle(): IdentityProvider {
 }
 
 function initApple(): IdentityProvider {
-  const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
+  const privateKeyPem = getApplePrivateKey();
   const derBytes = decodePemToDer(privateKeyPem);
   if (derBytes.length === 0) {
     throw new Error(
@@ -143,7 +144,9 @@ const requiredEnvKeys: Record<IdentityProviderName, string[]> = {
 
 /** Check if all required env vars for a provider are set. */
 export function isProviderConfigured(name: IdentityProviderName): boolean {
-  return requiredEnvKeys[name].every((key) => !!process.env[key]);
+  return requiredEnvKeys[name].every((key) =>
+    key === "APPLE_PRIVATE_KEY" ? hasApplePrivateKey() : !!process.env[key],
+  );
 }
 
 /** Required env vars for native iOS Apple Sign In (uses Bundle ID, not Services ID). */
@@ -156,7 +159,9 @@ const nativeAppleRequiredEnvKeys = [
 
 /** Check if native iOS Apple Sign In is configured. */
 export function isNativeAppleConfigured(): boolean {
-  return nativeAppleRequiredEnvKeys.every((key) => !!process.env[key]);
+  return nativeAppleRequiredEnvKeys.every((key) =>
+    key === "APPLE_PRIVATE_KEY" ? hasApplePrivateKey() : !!process.env[key],
+  );
 }
 
 /** Get a configured identity provider. Throws if env vars are missing. */
@@ -198,7 +203,7 @@ export async function validateNativeAppleCallback(
   const bundleId = getEnvRequired("APPLE_BUNDLE_ID");
   const teamId = getEnvRequired("APPLE_TEAM_ID");
   const keyId = getEnvRequired("APPLE_KEY_ID");
-  const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
+  const privateKeyPem = getApplePrivateKey();
   const derBytes = decodePemToDer(privateKeyPem);
 
   const clientSecret = await createAppleClientSecret(teamId, keyId, derBytes, bundleId);

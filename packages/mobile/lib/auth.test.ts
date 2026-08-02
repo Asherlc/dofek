@@ -13,6 +13,7 @@ import {
   createProviderHandoffCode,
   fetchConfiguredProviders,
   fetchCurrentUser,
+  getOrCreateSessionOwnerNonce,
   getSessionToken,
   isNativeAppleSignInAvailable,
   loginWithPassword,
@@ -756,6 +757,17 @@ describe("session token storage", () => {
       "11111111-1111-4111-8111-111111111111",
       expect.any(Object),
     );
+  });
+
+  it("restores the persisted owner nonce after an app restart", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(
+      "11111111-1111-4111-8111-111111111111",
+    );
+
+    await expect(getOrCreateSessionOwnerNonce()).resolves.toBe(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
   it("deletes a deferred owner-nonce write after cleanup starts", async () => {

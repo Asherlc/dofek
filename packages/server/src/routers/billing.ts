@@ -62,6 +62,7 @@ export const billingRouter = router({
       const stripe = createStripeClient();
       let createdCustomerId: string | null = null;
       let createdCheckoutSessionId: string | null = null;
+      let transactionWorkCompleted = false;
       try {
         return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
           const billingRepository = new BillingRepository(transaction);
@@ -126,14 +127,21 @@ export const billingRouter = router({
             });
           }
 
+          // Keep external resources valid if the database commit fails after this
+          // callback returns. The client can retry with the same operation ID and
+          // Stripe's idempotency key will return the existing checkout session.
+          transactionWorkCompleted = true;
           return { url: session.url };
         });
       } catch (error: unknown) {
+        if (transactionWorkCompleted) {
+          throw error;
+        }
         if (createdCheckoutSessionId) {
           try {
             await stripe.checkout.sessions.expire(createdCheckoutSessionId);
-          } catch {
-            Sentry.captureException(new Error("Stripe checkout session cleanup failed"), {
+          } catch (cleanupError: unknown) {
+            Sentry.captureException(cleanupError, {
               tags: { source: "billing", operation: "expire-orphan-checkout-session" },
             });
           }
@@ -141,8 +149,8 @@ export const billingRouter = router({
         if (createdCustomerId) {
           try {
             await stripe.customers.del(createdCustomerId);
-          } catch {
-            Sentry.captureException(new Error("Stripe customer cleanup failed"), {
+          } catch (cleanupError: unknown) {
+            Sentry.captureException(cleanupError, {
               tags: { source: "billing", operation: "delete-orphan-stripe-customer" },
             });
           }

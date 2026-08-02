@@ -42,9 +42,17 @@ interface ReconnectFailure {
   providerName: string;
 }
 
-interface DeferredReconnectFailure {
-  error: unknown;
-}
+type DeferredOAuthResponse =
+  | {
+      kind: "redirect";
+      location: string;
+      sessionCookie?: { expiresAt: Date; sessionId: string };
+    }
+  | { body: string; kind: "send"; statusCode?: number };
+
+type DeferredOAuthCompletion =
+  | { kind: "failure"; error: unknown }
+  | { kind: "response"; response: DeferredOAuthResponse };
 
 type ProviderAuthorizationOperationDatabase = SyncDatabase & Pick<Database, "transaction">;
 
@@ -87,9 +95,24 @@ async function revokeSupersededAuthorization(params: {
   await revokeProviderCredentials(params);
 }
 
+function sendDeferredOAuthResponse(res: Response, response: DeferredOAuthResponse): void {
+  if (response.kind === "redirect") {
+    if (response.sessionCookie) {
+      setSessionCookie(res, response.sessionCookie.sessionId, response.sessionCookie.expiresAt);
+    }
+    res.redirect(response.location);
+    return;
+  }
+  if (response.statusCode !== undefined) {
+    res.status(response.statusCode);
+  }
+  res.send(response.body);
+}
+
 export async function handleOAuth2Callback(req: Request, res: Response): Promise<void> {
   let resolvedProviderName: string | undefined;
   let reconnectFailure: ReconnectFailure | undefined;
+  let revokedAuthorizationNeedsDurableRemoval = false;
   try {
     const code = typeof req.query.code === "string" ? req.query.code : undefined;
     const state = typeof req.query.state === "string" ? req.query.state : undefined;
@@ -237,7 +260,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     const completeOAuthConnection = async (
       operationDb: ProviderAuthorizationOperationDatabase,
       identityLockTransaction?: TransactionDatabase,
-    ): Promise<DeferredReconnectFailure | undefined> => {
+    ): Promise<DeferredOAuthCompletion> => {
       let existingTokens: TokenSet | null = null;
       const isDataReconnect = intent === "data";
       if (isDataReconnect && (setup.revokeExistingTokens || oauthConfig.revokeUrl)) {
@@ -257,13 +280,15 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         logger.info(`[auth] Existing ${providerId} authorization revoked`);
 
         reconnectFailure = { kind: "removed", providerName: provider.name };
-        await removeRevokedAuthorization(operationDb, providerId, stateUserId);
+        revokedAuthorizationNeedsDurableRemoval = true;
       }
 
       logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
       let tokens: TokenSet;
       try {
-        tokens = await exchangeCode(code, storedCodeVerifier);
+        tokens = await exchangeCode(code, storedCodeVerifier, (issued) => {
+          issuedTokens = issued;
+        });
         issuedTokens = tokens;
       } catch (exchangeError: unknown) {
         if (existingTokens) {
@@ -285,8 +310,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
               `[auth] Existing ${providerId} authorization revoked after token-limit error`,
             );
             reconnectFailure = { kind: "removed", providerName: provider.name };
-            await removeRevokedAuthorization(operationDb, providerId, stateUserId);
-            return { error: exchangeError };
+            revokedAuthorizationNeedsDurableRemoval = true;
+            return { error: exchangeError, kind: "failure" };
           }
           reconnectFailure = {
             kind: setup.reconnectStrategy === "revoke-then-replace" ? "removed" : "preserved",
@@ -294,7 +319,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           };
         }
         if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
-          return { error: exchangeError };
+          return { error: exchangeError, kind: "failure" };
         }
         throw exchangeError;
       }
@@ -365,14 +390,29 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
                 sessionId: sessionInfo.sessionId,
                 isNewUser,
               });
-              res.redirect(`${stateEntry.mobileScheme}://auth/callback?code=${exchangeCode}`);
-              return;
+              revokedAuthorizationNeedsDurableRemoval = false;
+              return {
+                kind: "response",
+                response: {
+                  kind: "redirect",
+                  location: `${stateEntry.mobileScheme}://auth/callback?code=${exchangeCode}`,
+                },
+              };
             }
 
-            setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-            res.redirect(getPostLoginRedirect(returnTo, isNewUser));
-            return;
+            revokedAuthorizationNeedsDurableRemoval = false;
+            return {
+              kind: "response",
+              response: {
+                kind: "redirect",
+                location: getPostLoginRedirect(returnTo, isNewUser),
+                sessionCookie: {
+                  expiresAt: sessionInfo.expiresAt,
+                  sessionId: sessionInfo.sessionId,
+                },
+              },
+            };
           } catch (loginErr: unknown) {
             if (loginErr instanceof MissingEmailForSignupError) {
               const token = await getPendingEmailSignupStoreRef().issue({
@@ -388,8 +428,14 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
                 mobileScheme: stateEntry.mobileScheme,
                 returnTo,
               });
-              res.status(200).send(completeSignupHtml(provider.name, token));
-              return;
+              return {
+                kind: "response",
+                response: {
+                  body: completeSignupHtml(provider.name, token),
+                  kind: "send",
+                  statusCode: 200,
+                },
+              };
             }
             throw loginErr;
           }
@@ -412,19 +458,14 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             tokens,
             userId: linkUserId,
           });
+          revokedAuthorizationNeedsDurableRemoval = false;
           logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
-          res.redirect("/settings");
-          return;
+          return {
+            kind: "response",
+            response: { kind: "redirect", location: "/settings" },
+          };
         }
       } else if (setup.getUserIdentity) {
-        await persistProviderConnection({
-          db: operationDb,
-          provider,
-          providerName: provider.name,
-          apiBaseUrl: setup.apiBaseUrl,
-          tokens,
-          userId: stateUserId,
-        });
         try {
           const identity = await setup.getUserIdentity(tokens.accessToken);
           if (!identityLockTransaction) {
@@ -452,6 +493,15 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           Sentry.captureException(identityErr);
           logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
         }
+        await persistProviderConnection({
+          db: operationDb,
+          provider,
+          providerName: provider.name,
+          apiBaseUrl: setup.apiBaseUrl,
+          tokens,
+          userId: stateUserId,
+        });
+        revokedAuthorizationNeedsDurableRemoval = false;
       } else {
         await persistProviderConnection({
           db: operationDb,
@@ -461,6 +511,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           tokens,
           userId: stateUserId,
         });
+        revokedAuthorizationNeedsDurableRemoval = false;
       }
 
       if (
@@ -485,26 +536,58 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         }
       }
 
-      res.send(
-        oauthSuccessHtml(
-          provider.name,
-          `Token expires: ${tokens.expiresAt.toISOString()}`,
-          provider.id,
-        ),
-      );
+      return {
+        kind: "response",
+        response: {
+          body: oauthSuccessHtml(
+            provider.name,
+            `Token expires: ${tokens.expiresAt.toISOString()}`,
+            provider.id,
+          ),
+          kind: "send",
+        },
+      };
     };
 
     const knownUserId = intent === "data" ? stateUserId : linkUserId;
+    const removeRevokedAuthorizationDurably = async (): Promise<void> => {
+      if (!revokedAuthorizationNeedsDurableRemoval) return;
+      await withAccountErasureUserWriteFence(db, stateUserId, (transaction) =>
+        removeRevokedAuthorization(transaction, providerId, stateUserId),
+      );
+      revokedAuthorizationNeedsDurableRemoval = false;
+    };
     try {
-      const deferredFailure = knownUserId
+      const completion = knownUserId
         ? await withAccountErasureUserWriteFence(db, knownUserId, (transaction) =>
             completeOAuthConnection(transaction, transaction),
           )
         : await completeOAuthConnection(db);
-      if (deferredFailure) {
-        throw deferredFailure.error;
+      if (completion.kind === "failure") {
+        throw completion.error;
       }
+      await removeRevokedAuthorizationDurably();
+      sendDeferredOAuthResponse(res, completion.response);
     } catch (callbackError: unknown) {
+      if (revokedAuthorizationNeedsDurableRemoval) {
+        try {
+          await removeRevokedAuthorizationDurably();
+        } catch (cleanupError: unknown) {
+          if (
+            cleanupError instanceof AccountErasureIdentityFencedError ||
+            cleanupError instanceof AccountErasureUserFencedError
+          ) {
+            throw cleanupError;
+          }
+          Sentry.captureException(cleanupError, {
+            tags: {
+              source: "data-provider-oauth",
+              operation: "remove-revoked-authorization",
+            },
+          });
+          throw cleanupError;
+        }
+      }
       if (issuedTokens) {
         try {
           await revokeSupersededAuthorization({
