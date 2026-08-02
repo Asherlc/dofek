@@ -4,6 +4,10 @@ import {
 } from "@dofek/format/activity-data-state";
 import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
+import {
+  ACTIVITY_HEATMAP_BAND_IDS,
+  type ActivityHeatmapBandId,
+} from "@dofek/training/activity-heatmap";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
@@ -19,6 +23,8 @@ export interface CalendarDay {
   activityCount: number;
   totalMinutes: number;
   activityTypes: string[];
+  trainingTimeBand: ActivityHeatmapBandId;
+  trainingTimeMeaning: string;
 }
 
 const routePathPointSchema = z.object({
@@ -120,6 +126,15 @@ const activityOverviewSchema = z.object({
   comparison: activityOverviewComparisonSchema,
 });
 
+const calendarDaySchema = z.object({
+  date: dateStringSchema,
+  activityCount: z.number().int().nonnegative(),
+  totalMinutes: z.number().nonnegative(),
+  activityTypes: z.array(z.string()),
+  trainingTimeBand: z.enum(ACTIVITY_HEATMAP_BAND_IDS),
+  trainingTimeMeaning: z.string().trim().min(1),
+});
+
 export const calendarRouter = router({
   calendarData: selectedChartRangeQuery(
     "calendar.calendarData",
@@ -129,6 +144,7 @@ export const calendarRouter = router({
       const days = await repo.getCalendarData(range.days);
       return days.map((day) => day.toDetail());
     },
+    { outputSchema: z.array(calendarDaySchema) },
   ),
 
   weekList: cachedProtectedQuery({

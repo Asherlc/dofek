@@ -1,3 +1,8 @@
+import {
+  type ActivityHeatmapBandId,
+  activityHeatmapBandById,
+  activityHeatmapBandForMinutes,
+} from "@dofek/training/activity-heatmap";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -33,7 +38,14 @@ export class CalendarDay {
   }
 
   toDetail() {
-    return { ...this.#row };
+    const trainingTimeBand: ActivityHeatmapBandId = activityHeatmapBandForMinutes(
+      this.#row.totalMinutes,
+    );
+    return {
+      ...this.#row,
+      trainingTimeBand,
+      trainingTimeMeaning: activityHeatmapBandById(trainingTimeBand).meaning,
+    };
   }
 }
 
