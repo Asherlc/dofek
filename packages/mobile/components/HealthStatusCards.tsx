@@ -109,6 +109,22 @@ export function HealthStatusCards({
                       metric.comparison.delta)}
               </Text>
             ) : null}
+            {metric.baselineProgress.blocker !== null ? (
+              <View
+                accessibilityLabel={`${metric.label} baseline progress`}
+                style={styles.progress}
+              >
+                <Text style={styles.progressRequirement}>
+                  {metric.baselineProgress.requirement}
+                </Text>
+                <Text style={styles.progressCount}>
+                  {metric.baselineProgress.observedObservationDays} of{" "}
+                  {metric.baselineProgress.requiredObservationDays} required days recorded
+                </Text>
+                <Text style={styles.explanation}>{metric.baselineProgress.summary}</Text>
+                <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+              </View>
+            ) : null}
           </View>
         );
       })}
@@ -176,6 +192,27 @@ const styles = StyleSheet.create({
   provenance: {
     color: colors.textTertiary,
     fontSize: 12,
+    lineHeight: 17,
+  },
+  progress: {
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  progressRequirement: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+  },
+  progressCount: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  action: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
     lineHeight: 17,
   },
 });

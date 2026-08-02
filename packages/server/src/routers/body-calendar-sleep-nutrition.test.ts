@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -87,6 +91,10 @@ describe("bodyRouter", () => {
 
 describe("calendarRouter", () => {
   describe("calendarData", () => {
+    beforeEach(() => {
+      captureException.mockReset();
+    });
+
     it("returns mapped calendar days", async () => {
       const rows = [
         {
@@ -105,6 +113,9 @@ describe("calendarRouter", () => {
           activityCount: 2,
           totalMinutes: 120,
           activityTypes: ["cycling", "running"],
+          trainingTimeBand: "high",
+          trainingTimeMeaning:
+            "High training volume; compare with recovery before stacking another hard day.",
         },
       ]);
     });
@@ -113,6 +124,44 @@ describe("calendarRouter", () => {
       const caller = makeCaller(calendarRouter, []);
       const result = await caller.calendarData({ days: 365 });
       expect(result).toEqual([]);
+    });
+
+    it("returns an actionable server error for malformed training durations", async () => {
+      const caller = makeCaller(calendarRouter, [
+        {
+          date: "2024-01-15",
+          activity_count: 1,
+          total_minutes: -1,
+          activity_types: ["cycling"],
+        },
+      ]);
+
+      await expect(caller.calendarData({ days: 365 })).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Activity calendar data is invalid. Please re-sync activities and try again.",
+      });
+      expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { trpcPath: "calendar.calendarData" },
+      });
+    });
+
+    it("reports and rethrows unexpected calendar data failures", async () => {
+      const failure = new Error("database unavailable");
+      const caller = createTestCallerFactory(calendarRouter)({
+        db: { execute: vi.fn().mockRejectedValue(failure) },
+        sensorStore: makeMockSensorStore(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.calendarData({ days: 365 })).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: failure.message,
+        cause: failure,
+      });
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        tags: { trpcPath: "calendar.calendarData" },
+      });
     });
   });
 });

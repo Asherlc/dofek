@@ -21,6 +21,15 @@ function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMet
     explanation: "Heart Rate Variability (HRV) is above your baseline.",
     provenance: null,
     comparison: null,
+    baselineProgress: {
+      requiredObservationDays: 3,
+      observedObservationDays: 3,
+      hasMeasurableVariation: true,
+      blocker: null,
+      requirement: "A current value plus at least 2 more recorded days with measurable variation.",
+      summary: "Heart Rate Variability (HRV) baseline is ready.",
+      action: "No action needed.",
+    },
     ...overrides,
   };
 }
@@ -115,6 +124,37 @@ export const Unknown: Story = {
         statusLabel: "Not enough data",
         evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
         explanation: "Not enough varied data yet to compare this value with your usual range.",
+      }),
+    ],
+  },
+};
+
+export const BlockedBaseline: Story = {
+  args: {
+    metrics: [
+      hrvMetric({
+        value: null,
+        valueText: null,
+        baseline: null,
+        baselineText: null,
+        sampleDeviation: null,
+        deviation: null,
+        direction: "unknown",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Not enough data",
+        explanation: "Not enough varied data yet to compare this value with your usual range.",
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 1,
+          hasMeasurableVariation: false,
+          blocker: "collecting",
+          requirement:
+            "A current value plus at least 2 more recorded days with measurable variation.",
+          summary:
+            "Heart Rate Variability (HRV) has 1 of 3 required days recorded; the baseline is still collecting observations.",
+          action: "Keep syncing heart rate variability (hrv) data for at least 2 more days.",
+        },
       }),
     ],
   },

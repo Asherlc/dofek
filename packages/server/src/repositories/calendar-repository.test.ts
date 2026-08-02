@@ -21,7 +21,12 @@ describe("CalendarDay", () => {
       totalMinutes: 90,
       activityTypes: ["cycling", "running"],
     };
-    expect(new CalendarDay(row).toDetail()).toEqual(row);
+    expect(new CalendarDay(row).toDetail()).toEqual({
+      ...row,
+      trainingTimeBand: "high",
+      trainingTimeMeaning:
+        "High training volume; compare with recovery before stacking another hard day.",
+    });
   });
 });
 

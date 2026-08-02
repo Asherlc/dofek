@@ -1,6 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { collectSqlText, createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
+type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+type ProcessingStatus = "ready" | "active" | "failed";
+type ProcessingStatusResult = {
+  overallStatus: ProcessingStatus;
+  datasets: readonly [{ key: "recovery"; status: ProcessingStatus }];
+};
+
+const processingStatusMock = vi.hoisted(() =>
+  vi.fn(
+    async (_input: ProcessingStatusQuery): Promise<ProcessingStatusResult> => ({
+      overallStatus: "ready" as const,
+      datasets: [{ key: "recovery" as const, status: "ready" as const }],
+    }),
+  ),
+);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -34,6 +50,14 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../repositories/processing-repository.ts", () => ({
+  ProcessingRepository: class {
+    status(input: ProcessingStatusQuery) {
+      return processingStatusMock(input);
+    }
+  },
+}));
+
 import { dailyMetricsRouter } from "./daily-metrics.ts";
 
 const createCaller = createTestCallerFactory(dailyMetricsRouter);
@@ -45,6 +69,37 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
     userId: "user-1",
     timezone: "UTC",
   });
+}
+
+function makeTrendsRow(overrides: Record<string, unknown> = {}) {
+  return {
+    avg_hrv: 60,
+    avg_resting_hr: 54,
+    avg_spo2: 98,
+    avg_steps: 8000,
+    avg_active_energy: 500,
+    avg_skin_temp: 36.5,
+    stddev_hrv: 10.5,
+    stddev_resting_hr: 2.5,
+    stddev_spo2: 0.5,
+    stddev_steps: 1200,
+    stddev_skin_temp: 0.3,
+    latest_hrv: 62,
+    latest_resting_hr: 53,
+    latest_spo2: 98,
+    latest_steps: 9000,
+    latest_active_energy: 550,
+    latest_skin_temp: 36.6,
+    sample_count_hrv: 4,
+    sample_count_resting_hr: 3,
+    sample_count_spo2: 4,
+    sample_count_steps: 4,
+    sample_count_skin_temp: 4,
+    latest_date: "2024-01-16",
+    latest_steps_date: "2024-01-16",
+    latest_active_energy_date: "2024-01-16",
+    ...overrides,
+  };
 }
 
 describe("dailyMetricsRouter", () => {
@@ -229,29 +284,17 @@ describe("dailyMetricsRouter", () => {
   });
 
   describe("trends", () => {
+    it("requests processing status for the recovery dataset", async () => {
+      processingStatusMock.mockClear();
+
+      await makeCaller([]).trends({ days: 30, endDate: "2024-01-16" });
+
+      expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
+    });
+
     it("returns first row or null", async () => {
       const rows = [
-        {
-          avg_hrv: 60,
-          avg_resting_hr: 54,
-          avg_spo2: 98,
-          avg_steps: 8000,
-          avg_active_energy: 500,
-          avg_skin_temp: 36.5,
-          stddev_hrv: 10.5,
-          stddev_resting_hr: 2.5,
-          stddev_spo2: 0.5,
-          stddev_steps: 1200,
-          stddev_skin_temp: 0.3,
-          latest_hrv: 62,
-          latest_resting_hr: 53,
-          latest_spo2: 98,
-          latest_steps: 9000,
-          latest_active_energy: 550,
-          latest_skin_temp: 36.6,
-          latest_date: "2024-01-16",
-          latest_steps_date: "2024-01-16",
-          latest_active_energy_date: "2024-01-16",
+        makeTrendsRow({
           metric_evidence: {
             hrv: {
               latestDate: "2024-01-16",
@@ -282,7 +325,7 @@ describe("dailyMetricsRouter", () => {
               baselineMean: 36.5,
             },
           },
-        },
+        }),
       ];
       const caller = makeCaller(rows);
       const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
@@ -302,8 +345,14 @@ describe("dailyMetricsRouter", () => {
         latest_spo2: 98,
         latest_steps: 9000,
         latest_skin_temp: 36.6,
+        sample_count_hrv: 4,
+        sample_count_resting_hr: 3,
+        sample_count_spo2: 4,
+        sample_count_steps: 4,
+        sample_count_skin_temp: 4,
         latest_date: "2024-01-16",
         latest_steps_date: "2024-01-16",
+        restingHeartRateTrendLabel: "below average",
         baselineRelative: [],
         healthStatus: expect.arrayContaining([
           expect.objectContaining({
@@ -351,6 +400,11 @@ describe("dailyMetricsRouter", () => {
           latest_spo2: null,
           latest_steps: 9_000,
           latest_skin_temp: null,
+          sample_count_hrv: 0,
+          sample_count_resting_hr: 0,
+          sample_count_spo2: 0,
+          sample_count_steps: 0,
+          sample_count_skin_temp: 0,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           metric_evidence: {
@@ -380,6 +434,30 @@ describe("dailyMetricsRouter", () => {
       );
     });
 
+    it.each([
+      { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
+      { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
+    ])("surfaces a non-ready recovery processing status in resting heart rate baseline progress", async ({
+      rawStatus,
+      normalizedStatus,
+    }) => {
+      processingStatusMock.mockResolvedValueOnce({
+        overallStatus: rawStatus,
+        datasets: [{ key: "recovery", status: rawStatus }],
+      });
+
+      const result = await makeCaller([makeTrendsRow()]).trends({
+        days: 30,
+        endDate: "2024-01-16",
+      });
+
+      expect(
+        result?.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({
+        baselineProgress: { blocker: normalizedStatus },
+      });
+    });
+
     it("returns canonical recovery baseline context with aggregate trends", async () => {
       const execute = vi.fn().mockResolvedValue([
         {
@@ -398,6 +476,11 @@ describe("dailyMetricsRouter", () => {
           latest_spo2: null,
           latest_steps: null,
           latest_skin_temp: null,
+          sample_count_hrv: 1,
+          sample_count_resting_hr: 1,
+          sample_count_spo2: 0,
+          sample_count_steps: 0,
+          sample_count_skin_temp: 0,
           latest_date: "2024-01-16",
           latest_steps_date: null,
         },
@@ -411,7 +494,7 @@ describe("dailyMetricsRouter", () => {
         hrv_mean_30d: 60,
         hrv_sd_30d: 6,
         hrv_z_score: 2,
-        hrv_baseline_sample_count: 24,
+        hrv_baseline_sample_count: 1,
         hrv_baseline_coverage: 0.8,
         hrv_mean_7d: 66,
         hrv_mean_previous_28d: 61,
@@ -454,9 +537,10 @@ describe("dailyMetricsRouter", () => {
       expect(result?.baselineRelative[0]).toMatchObject({
         metric: "hrv",
         value: 72,
-        baseline: { mean: 60, zScore: 2, sampleCount: 24, coverage: 0.8 },
+        baseline: { mean: 60, zScore: 2, sampleCount: 1, coverage: 0.8 },
         comparison: { delta: 5, direction: "increasing" },
       });
+      expect(result?.restingHeartRateTrendLabel).toBe("below average");
     });
 
     it("coerces PostgreSQL string aggregates to numbers via Zod schema", async () => {
@@ -493,6 +577,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -528,6 +617,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -586,6 +680,11 @@ describe("dailyMetricsRouter", () => {
           latest_steps: 9000,
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
+          sample_count_hrv: 4,
+          sample_count_resting_hr: 3,
+          sample_count_spo2: 4,
+          sample_count_steps: 4,
+          sample_count_skin_temp: 4,
           latest_date: "2024-01-16",
           latest_steps_date: "2024-01-16",
           latest_active_energy_date: "2024-01-16",
@@ -629,6 +728,11 @@ describe("dailyMetricsRouter", () => {
           latest_spo2: null,
           latest_steps: null,
           latest_skin_temp: null,
+          sample_count_hrv: 1,
+          sample_count_resting_hr: 1,
+          sample_count_spo2: 0,
+          sample_count_steps: 0,
+          sample_count_skin_temp: 0,
           latest_date: "2024-01-16",
           latest_steps_date: null,
         },

@@ -198,6 +198,20 @@ export function HealthStatusBar({
             </div>
             <div className="mt-1 text-[10px] font-medium text-muted">{metric.evaluationRule}</div>
             <div className="mt-1 text-[10px] text-subtle">{metric.explanation}</div>
+            {metric.baselineProgress.blocker !== null ? (
+              <section
+                aria-label={`${metric.label} baseline progress`}
+                className="mt-2 space-y-1 border-t border-border pt-2 text-[10px]"
+              >
+                <div className="font-medium text-muted">{metric.baselineProgress.requirement}</div>
+                <div className="text-subtle">
+                  {metric.baselineProgress.observedObservationDays} of{" "}
+                  {metric.baselineProgress.requiredObservationDays} required days recorded
+                </div>
+                <div className="text-subtle">{metric.baselineProgress.summary}</div>
+                <div className="font-medium text-foreground">{metric.baselineProgress.action}</div>
+              </section>
+            ) : null}
             {baselineContext ? (
               <div className="mt-1 text-[10px] text-subtle">
                 {formatBaselineContext(baselineContext, {

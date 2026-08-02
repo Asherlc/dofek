@@ -6,6 +6,7 @@ import {
   buildHealthStatusFromBaselineMetric,
   buildHealthStatusFromSummary,
   buildHealthStatusFromValues,
+  buildRestingHeartRateTrendLabel,
   buildWeightHealthStatus,
   resolveWeightGoalIntent,
 } from "./health-status.ts";
@@ -29,6 +30,11 @@ describe("buildDailyMetricHealthStatuses", () => {
         latest_spo2: 98,
         latest_steps: null,
         latest_skin_temp: null,
+        sample_count_hrv: 0,
+        sample_count_resting_hr: 0,
+        sample_count_spo2: 1,
+        sample_count_steps: 0,
+        sample_count_skin_temp: 0,
         latest_date: "2026-07-25",
         latest_steps_date: null,
       },
@@ -58,6 +64,11 @@ describe("buildDailyMetricHealthStatuses", () => {
         latest_spo2: null,
         latest_steps: null,
         latest_skin_temp: null,
+        sample_count_hrv: 1,
+        sample_count_resting_hr: 0,
+        sample_count_spo2: 0,
+        sample_count_steps: 0,
+        sample_count_skin_temp: 0,
         latest_date: "2026-07-25",
         latest_steps_date: null,
       },
@@ -82,6 +93,97 @@ describe("buildDailyMetricHealthStatuses", () => {
       sampleDeviation: 6,
       deviation: 2,
     });
+    expect(statuses.filter((status) => status.metric === "resting_heart_rate")).toHaveLength(1);
+  });
+
+  it("uses the canonical resting heart rate baseline without adding a duplicate trend status", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: 54,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: null,
+        stddev_resting_hr: 2,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: null,
+        latest_resting_hr: 52,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        sample_count_hrv: 0,
+        sample_count_resting_hr: 3,
+        sample_count_spo2: 0,
+        sample_count_steps: 0,
+        sample_count_skin_temp: 0,
+        latest_date: "2026-07-25",
+        latest_steps_date: null,
+      },
+      [
+        buildBaselineRelativeMetric({
+          metric: "resting_heart_rate",
+          label: "Resting Heart Rate",
+          value: 52,
+          baselineMean: 54,
+          baselineStandardDeviation: 2,
+          zScore: -1,
+          baselineSampleCount: 30,
+          baselineCoverage: 1,
+          recentMean: 52,
+          comparisonMean: 54,
+        }),
+      ],
+    );
+
+    expect(statuses.filter((status) => status.metric === "resting_heart_rate")).toHaveLength(1);
+    expect(statuses.find((status) => status.metric === "resting_heart_rate")).toMatchObject({
+      value: 52,
+      baseline: 54,
+      sampleDeviation: 2,
+    });
+  });
+
+  it("uses each aggregate metric's server-provided observation count", () => {
+    const statuses = buildDailyMetricHealthStatuses(
+      {
+        avg_hrv: null,
+        avg_resting_hr: null,
+        avg_spo2: 97,
+        avg_steps: 100,
+        avg_skin_temp: 36,
+        stddev_hrv: null,
+        stddev_resting_hr: null,
+        stddev_spo2: 1,
+        stddev_steps: 10,
+        stddev_skin_temp: 0.1,
+        latest_hrv: null,
+        latest_resting_hr: null,
+        latest_spo2: 98,
+        latest_steps: 120,
+        latest_skin_temp: 36.2,
+        sample_count_hrv: 0,
+        sample_count_resting_hr: 0,
+        sample_count_spo2: 3,
+        sample_count_steps: 4,
+        sample_count_skin_temp: 5,
+        latest_date: "2026-07-25",
+        latest_steps_date: "2026-07-25",
+      },
+      [],
+    );
+
+    expect(statuses.find((status) => status.metric === "spo2")?.baselineProgress).toMatchObject({
+      observedObservationDays: 3,
+    });
+    expect(statuses.find((status) => status.metric === "steps")?.baselineProgress).toMatchObject({
+      observedObservationDays: 4,
+    });
+    expect(
+      statuses.find((status) => status.metric === "skin_temperature")?.baselineProgress,
+    ).toMatchObject({ observedObservationDays: 5 });
   });
 
   it.each([
@@ -182,6 +284,7 @@ describe("buildDailyMetricHealthStatuses", () => {
           comparisonMean: 60,
         }),
       ],
+      null,
       35,
     );
 
@@ -346,7 +449,110 @@ describe("buildHealthMetricEvidence", () => {
   });
 });
 
+describe("buildRestingHeartRateTrendLabel", () => {
+  it("waits for the baseline before comparing a current value", () => {
+    expect(
+      buildRestingHeartRateTrendLabel({
+        latest: 48,
+        average: 54,
+        baselineProgress: { blocker: "collecting" },
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
+  it.each([
+    { latest: null, average: 54 },
+    { latest: 48, average: null },
+  ])("waits when the $latest/$average comparison value is missing", ({ latest, average }) => {
+    expect(
+      buildRestingHeartRateTrendLabel({
+        latest,
+        average,
+        baselineProgress: { blocker: null },
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
+  it.each([
+    { latest: 48, average: 54, label: "below average" },
+    { latest: 60, average: 54, label: "above average" },
+    { latest: 54, average: 54, label: "at average" },
+  ])("returns the server-owned comparison label for $latest/$average", ({
+    latest,
+    average,
+    label,
+  }) => {
+    expect(
+      buildRestingHeartRateTrendLabel({
+        latest,
+        average,
+        baselineProgress: { blocker: null },
+      }),
+    ).toBe(label);
+  });
+});
+
 describe("buildHealthStatusFromSummary", () => {
+  it("includes server-authored baseline requirements and action for insufficient data", () => {
+    const result = buildHealthStatusFromSummary({
+      metric: "resting_heart_rate",
+      label: "Resting Heart Rate",
+      value: 56,
+      baseline: 56,
+      sampleDeviation: null,
+      intent: "lower",
+      observedDays: 1,
+      processingStatus: null,
+    });
+
+    expect(result).toMatchObject({
+      statusToken: "insufficient_data",
+      baselineProgress: {
+        observedObservationDays: 1,
+        blocker: "collecting",
+        requirement:
+          "A current value plus at least 2 more recorded days with measurable variation.",
+        summary:
+          "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+        action: "Keep syncing resting heart rate data for at least 2 more days.",
+      },
+    });
+  });
+
+  it.each([
+    {
+      processingStatus: "syncing" as const,
+      blocker: "syncing" as const,
+      summary: "Resting Heart Rate baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+    },
+    {
+      processingStatus: "sync_error" as const,
+      blocker: "sync_error" as const,
+      summary: "Resting Heart Rate baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+    },
+  ])("surfaces the $processingStatus baseline processing state", (fixture) => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        value: null,
+        baseline: null,
+        sampleDeviation: null,
+        intent: "lower",
+        observedDays: 0,
+        processingStatus: fixture.processingStatus,
+      }),
+    ).toMatchObject({
+      baselineProgress: {
+        blocker: fixture.blocker,
+        summary: fixture.summary,
+        action: fixture.action,
+      },
+    });
+  });
+
   it.each([
     {
       metric: "hrv" as const,
@@ -371,6 +577,8 @@ describe("buildHealthStatusFromSummary", () => {
         baseline: fixture.baseline,
         sampleDeviation: 10,
         intent: "neutral",
+        observedDays: 3,
+        processingStatus: null,
       }),
     ).toMatchObject({
       value: fixture.value,
@@ -389,6 +597,8 @@ describe("buildHealthStatusFromSummary", () => {
         baseline: 34,
         sampleDeviation: 0.5,
         intent: "neutral",
+        observedDays: 3,
+        processingStatus: null,
       }),
     ).toMatchObject({ valueText: null, baselineText: null });
   });
@@ -402,6 +612,8 @@ describe("buildHealthStatusFromSummary", () => {
         baseline: 50,
         sampleDeviation: 10,
         intent: "higher",
+        observedDays: 3,
+        processingStatus: null,
       }),
     ).toMatchObject({
       deviation: 1.5,
@@ -423,6 +635,8 @@ describe("buildHealthStatusFromSummary", () => {
         baseline: 50,
         sampleDeviation: 10,
         intent: "higher",
+        observedDays: 3,
+        processingStatus: null,
       }),
     ).toMatchObject({
       deviation: -1.5,
@@ -465,6 +679,8 @@ describe("buildHealthStatusFromSummary", () => {
         baseline: 50,
         sampleDeviation: 10,
         intent: "neutral",
+        observedDays: 3,
+        processingStatus: null,
       }),
     ).toMatchObject({ statusToken, evaluationRule });
   });
@@ -480,6 +696,8 @@ describe("buildHealthStatusFromSummary", () => {
       baseline: 50,
       sampleDeviation: 10,
       intent: "neutral",
+      observedDays: 3,
+      processingStatus: null,
     });
 
     expect(result).toMatchObject({
@@ -503,6 +721,8 @@ describe("buildHealthStatusFromSummary", () => {
         metric: "skin_temperature",
         label: "Skin Temperature",
         intent: "neutral",
+        observedDays: 3,
+        processingStatus: null,
         ...input,
       }),
     ).toMatchObject({
@@ -524,6 +744,7 @@ describe("buildHealthStatusFromValues", () => {
         label: "Steps",
         values: [70, 72, 74],
         intent: "neutral",
+        processingStatus: null,
       }),
     ).toMatchObject({
       value: 74,

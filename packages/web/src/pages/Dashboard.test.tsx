@@ -496,6 +496,7 @@ describe("Dashboard", () => {
         latest_steps: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
+        restingHeartRateTrendLabel: "below average",
         baselineRelative: [],
         healthStatus: [],
       },
@@ -567,6 +568,7 @@ describe("Dashboard", () => {
         latest_steps: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
+        restingHeartRateTrendLabel: "below average",
         baselineRelative: [],
         healthStatus: [],
       },
@@ -715,6 +717,16 @@ describe("buildHealthMetrics", () => {
       explanation: "Resting Heart Rate is below your baseline.",
       provenance: null,
       comparison: null,
+      baselineProgress: {
+        requiredObservationDays: 3,
+        observedObservationDays: 3,
+        hasMeasurableVariation: true,
+        blocker: null,
+        requirement:
+          "A current value plus at least 2 more recorded days with measurable variation.",
+        summary: "Resting Heart Rate baseline is ready.",
+        action: "No action needed.",
+      },
     };
     const metrics = buildHealthMetrics({
       avg_hrv: 43.8,
@@ -733,6 +745,7 @@ describe("buildHealthMetrics", () => {
       latest_steps: null,
       latest_skin_temp: null,
       latest_date: "2025-03-15",
+      restingHeartRateTrendLabel: "below average",
       baselineRelative: [],
       healthStatus: [restingHeartRateStatus],
     });

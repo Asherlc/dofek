@@ -2,6 +2,7 @@ import { formatHRV, formatSteps } from "@dofek/format/format";
 import { mean, sampleStandardDeviation } from "simple-statistics";
 import type { z } from "zod";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
+import type { BaselineProgress } from "../contracts/mobile-dashboard-contracts.ts";
 import {
   type HealthMetricComparison,
   type HealthMetricProvenance,
@@ -15,6 +16,7 @@ import type {
   HealthMetricEvidenceRow,
   TrendsRow,
 } from "../repositories/daily-metrics-repository.ts";
+import { type BaselineProcessingStatus, buildBaselineProgress } from "./baseline-progress.ts";
 
 export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSchema };
 
@@ -47,6 +49,8 @@ interface HealthStatusSummaryInput {
   baseline: number | null;
   sampleDeviation: number | null;
   intent: HealthMetricIntent;
+  observedDays?: number;
+  processingStatus?: BaselineProcessingStatus;
   provenance?: HealthMetricProvenance | null;
   comparison?: HealthMetricComparison | null;
 }
@@ -58,6 +62,7 @@ interface HealthStatusValuesInput {
   intent: HealthMetricIntent;
   observations?: readonly HealthMetricObservation[];
   windowDays?: number;
+  processingStatus?: BaselineProcessingStatus;
 }
 
 interface WeightGoalIntentInput {
@@ -76,11 +81,16 @@ function formatHealthStatusValue(
   return null;
 }
 
-function healthStatusSummary(input: HealthStatusSummaryInput) {
+function metricFields(input: HealthStatusSummaryInput) {
   return {
-    ...input,
+    metric: input.metric,
+    label: input.label,
+    value: input.value,
     valueText: formatHealthStatusValue(input.metric, input.value),
+    baseline: input.baseline,
     baselineText: formatHealthStatusValue(input.metric, input.baseline),
+    sampleDeviation: input.sampleDeviation,
+    intent: input.intent,
     provenance: input.provenance ?? null,
     comparison: input.comparison ?? null,
   };
@@ -183,8 +193,16 @@ function evidenceForMetric(
 }
 
 function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
+  const baselineProgress = buildBaselineProgress({
+    label: input.label,
+    value: input.value,
+    observedDays: input.observedDays ?? 0,
+    sampleDeviation: input.sampleDeviation,
+    processingStatus: input.processingStatus ?? null,
+  });
+
   return {
-    ...healthStatusSummary(input),
+    ...metricFields(input),
     deviation: null,
     direction: "unknown",
     statusToken: "insufficient_data",
@@ -192,7 +210,18 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     statusLabel: "Not enough data",
     evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
     explanation: "Not enough varied data yet to compare this value with your usual range.",
+    baselineProgress,
   };
+}
+
+function baselineProgressFor(input: HealthStatusSummaryInput): BaselineProgress {
+  return buildBaselineProgress({
+    label: input.label,
+    value: input.value,
+    observedDays: input.observedDays ?? 0,
+    sampleDeviation: input.sampleDeviation,
+    processingStatus: input.processingStatus ?? null,
+  });
 }
 
 function directionFromDeviation(deviation: number): "above" | "below" | "aligned" {
@@ -237,6 +266,8 @@ function deviationExplanation(
 }
 
 export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): HealthStatusMetric {
+  const baselineProgress = baselineProgressFor(input);
+
   if (
     input.value == null ||
     input.baseline == null ||
@@ -254,7 +285,8 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
 
   if (isMovingAsIntended(input.intent, direction)) {
     return {
-      ...healthStatusSummary(input),
+      ...metricFields(input),
+      baselineProgress,
       deviation,
       direction,
       statusToken: "moving_as_intended",
@@ -268,7 +300,8 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
   const absoluteDeviation = Math.abs(deviation);
   if (absoluteDeviation < 1) {
     return {
-      ...healthStatusSummary(input),
+      ...metricFields(input),
+      baselineProgress,
       deviation,
       direction,
       statusToken: "near_baseline",
@@ -281,7 +314,8 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
 
   if (direction === "aligned") {
     return {
-      ...healthStatusSummary(input),
+      ...metricFields(input),
+      baselineProgress,
       deviation,
       direction,
       statusToken: "near_baseline",
@@ -294,7 +328,8 @@ export function buildHealthStatusFromSummary(input: HealthStatusSummaryInput): H
 
   const farFromBaseline = absoluteDeviation >= 2;
   return {
-    ...healthStatusSummary(input),
+    ...metricFields(input),
+    baselineProgress,
     deviation,
     direction,
     statusToken: farFromBaseline ? "far_from_baseline" : "notable_deviation",
@@ -323,6 +358,8 @@ export function buildHealthStatusFromValues(input: HealthStatusValuesInput): Hea
     baseline,
     sampleDeviation,
     intent: input.intent,
+    observedDays: values.length,
+    processingStatus: input.processingStatus ?? null,
     provenance: evidence?.provenance ?? null,
     comparison: evidence?.comparison ?? null,
   });
@@ -348,6 +385,7 @@ export function resolveWeightGoalIntent({
 export function buildWeightHealthStatus(
   values: readonly number[],
   goalWeightKg: number | null,
+  processingStatus: BaselineProcessingStatus = null,
 ): HealthStatusMetric {
   const finiteValues = values.filter(Number.isFinite);
   const currentWeightKg = finiteValues.at(-1) ?? null;
@@ -360,6 +398,8 @@ export function buildWeightHealthStatus(
     baseline: baselineKg,
     sampleDeviation: finiteValues.length > 1 ? sampleStandardDeviation(finiteValues) : null,
     intent: resolveWeightGoalIntent({ goalWeightKg, currentWeightKg, baselineKg }),
+    observedDays: finiteValues.length,
+    processingStatus,
   });
 }
 
@@ -372,6 +412,7 @@ const recoveryMetricIntents: Record<BaselineRelativeMetric["metric"], HealthMetr
 
 export function buildHealthStatusFromBaselineMetric(
   metric: BaselineRelativeMetric,
+  processingStatus: BaselineProcessingStatus = null,
   provenance: HealthMetricProvenance | null = null,
 ): HealthStatusMetric {
   return buildHealthStatusFromSummary({
@@ -381,6 +422,8 @@ export function buildHealthStatusFromBaselineMetric(
     baseline: metric.baseline.mean,
     sampleDeviation: metric.baseline.standardDeviation,
     intent: recoveryMetricIntents[metric.metric],
+    observedDays: metric.baseline.sampleCount,
+    processingStatus,
     provenance,
     comparison: metric.comparison,
   });
@@ -389,6 +432,7 @@ export function buildHealthStatusFromBaselineMetric(
 export function buildDailyMetricHealthStatuses(
   trends: TrendsRow,
   baselineRelative: BaselineRelativeMetric[],
+  processingStatus: BaselineProcessingStatus = null,
   windowDays = 30,
 ): HealthStatusMetric[] {
   const hrvEvidence = evidenceForMetric(trends, "hrv", windowDays);
@@ -396,13 +440,31 @@ export function buildDailyMetricHealthStatuses(
   const stepsEvidence = evidenceForMetric(trends, "steps", windowDays);
   const skinTemperatureEvidence = evidenceForMetric(trends, "skin_temperature", windowDays);
 
-  return [
-    ...baselineRelative.map((metric) =>
-      buildHealthStatusFromBaselineMetric(
-        metric,
-        metric.metric === "hrv" ? (hrvEvidence?.provenance ?? null) : null,
-      ),
+  const baselineStatuses = baselineRelative.map((metric) =>
+    buildHealthStatusFromBaselineMetric(
+      metric,
+      processingStatus,
+      metric.metric === "hrv" ? (hrvEvidence?.provenance ?? null) : null,
     ),
+  );
+  const restingHeartRateStatus = baselineRelative.some(
+    (metric) => metric.metric === "resting_heart_rate",
+  )
+    ? null
+    : buildHealthStatusFromSummary({
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        value: trends.latest_resting_hr,
+        baseline: trends.avg_resting_hr,
+        sampleDeviation: trends.stddev_resting_hr,
+        intent: "lower",
+        observedDays: trends.sample_count_resting_hr ?? 0,
+        processingStatus,
+      });
+
+  return [
+    ...baselineStatuses,
+    ...(restingHeartRateStatus ? [restingHeartRateStatus] : []),
     buildHealthStatusFromSummary({
       metric: "spo2",
       label: "Blood Oxygen Saturation (SpO2)",
@@ -410,6 +472,8 @@ export function buildDailyMetricHealthStatuses(
       baseline: trends.avg_spo2,
       sampleDeviation: trends.stddev_spo2,
       intent: "neutral",
+      observedDays: trends.sample_count_spo2 ?? 0,
+      processingStatus,
       provenance: spo2Evidence?.provenance ?? null,
       comparison: spo2Evidence?.comparison ?? null,
     }),
@@ -420,6 +484,8 @@ export function buildDailyMetricHealthStatuses(
       baseline: trends.avg_steps,
       sampleDeviation: trends.stddev_steps,
       intent: "neutral",
+      observedDays: trends.sample_count_steps ?? 0,
+      processingStatus,
       provenance: stepsEvidence?.provenance ?? null,
       comparison: stepsEvidence?.comparison ?? null,
     }),
@@ -430,8 +496,22 @@ export function buildDailyMetricHealthStatuses(
       baseline: trends.avg_skin_temp,
       sampleDeviation: trends.stddev_skin_temp,
       intent: "neutral",
+      observedDays: trends.sample_count_skin_temp ?? 0,
+      processingStatus,
       provenance: skinTemperatureEvidence?.provenance ?? null,
       comparison: skinTemperatureEvidence?.comparison ?? null,
     }),
   ];
+}
+
+export function buildRestingHeartRateTrendLabel(input: {
+  latest: number | null;
+  average: number | null;
+  baselineProgress: Pick<BaselineProgress, "blocker">;
+}): string {
+  if (input.baselineProgress.blocker !== null) return "Waiting for baseline";
+  if (input.latest == null || input.average == null) return "Waiting for baseline";
+  if (input.latest < input.average) return "below average";
+  if (input.latest > input.average) return "above average";
+  return "at average";
 }

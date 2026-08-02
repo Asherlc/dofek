@@ -61,6 +61,11 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     latest_spo2: "98",
     latest_steps: "9200",
     latest_skin_temp: "33.2",
+    sample_count_hrv: "4",
+    sample_count_resting_hr: "3",
+    sample_count_spo2: "4",
+    sample_count_steps: "4",
+    sample_count_skin_temp: "4",
     latest_date: "2025-03-15",
     latest_steps_date: "2025-03-15",
     ...overrides,
@@ -84,6 +89,11 @@ function makeAllNullTrendsRow(): Record<string, unknown> {
     latest_spo2: null,
     latest_steps: null,
     latest_skin_temp: null,
+    sample_count_hrv: 0,
+    sample_count_resting_hr: 0,
+    sample_count_spo2: 0,
+    sample_count_steps: 0,
+    sample_count_skin_temp: 0,
     latest_date: null,
     latest_steps_date: null,
   };
@@ -257,10 +267,13 @@ describe("DailyMetricsRepository", () => {
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_resting_hr).toBe(55);
       expect(result?.stddev_steps).toBe(1200);
+      expect(result?.sample_count_hrv).toBe(4);
+      expect(result?.sample_count_resting_hr).toBe(3);
       expect(result?.latest_date).toBe("2025-03-15");
       expect(execute).toHaveBeenCalledTimes(1);
       const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).toContain("STDDEV(steps) AS stddev_steps");
+      expect(compiledQuery.sql).toContain("COUNT(hrv) AS sample_count_hrv");
     });
 
     it("normalizes database date objects in metric evidence", async () => {

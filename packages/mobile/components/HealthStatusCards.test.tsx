@@ -4,6 +4,16 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HealthStatusCards } from "./HealthStatusCards";
 
+const readyBaselineProgress = {
+  requiredObservationDays: 3,
+  observedObservationDays: 3,
+  hasMeasurableVariation: true,
+  blocker: null,
+  requirement: "A current value plus at least 2 more recorded days with measurable variation.",
+  summary: "The baseline is ready.",
+  action: "No action needed.",
+} as const;
+
 describe("HealthStatusCards", () => {
   it("renders server-authored HRV and steps text instead of recomputing raw values", () => {
     render(
@@ -25,6 +35,7 @@ describe("HealthStatusCards", () => {
             statusLabel: "Near baseline",
             evaluationRule: "Server-selected rule.",
             explanation: "Server-selected explanation.",
+            baselineProgress: readyBaselineProgress,
           },
           {
             metric: "steps",
@@ -42,6 +53,7 @@ describe("HealthStatusCards", () => {
             statusLabel: "Near baseline",
             evaluationRule: "Server-selected rule.",
             explanation: "Server-selected explanation.",
+            baselineProgress: readyBaselineProgress,
           },
         ]}
         formatValue={() => "client-recomputed value"}
@@ -75,6 +87,7 @@ describe("HealthStatusCards", () => {
             statusLabel: "Moving as intended",
             evaluationRule: "Below your baseline, where lower values support this metric",
             explanation: "Trend Weight is below your baseline, in line with your weight goal.",
+            baselineProgress: readyBaselineProgress,
           },
         ]}
         formatValue={() => "176.4 lb"}
@@ -91,6 +104,57 @@ describe("HealthStatusCards", () => {
       screen.getByText("Trend Weight is below your baseline, in line with your weight goal."),
     ).toBeTruthy();
     expect(screen.getByLabelText("Moving as intended status").textContent).toBe("✓");
+  });
+
+  it("renders server-authored baseline requirements, progress, and action", () => {
+    render(
+      <HealthStatusCards
+        metrics={[
+          {
+            metric: "resting_heart_rate",
+            label: "Resting Heart Rate",
+            value: 56,
+            baseline: 56,
+            sampleDeviation: null,
+            deviation: null,
+            direction: "unknown",
+            intent: "lower",
+            statusToken: "insufficient_data",
+            statusColor: "muted",
+            statusLabel: "Waiting for baseline",
+            evaluationRule: "Server-selected rule.",
+            explanation: "Server-selected explanation.",
+            baselineProgress: {
+              requiredObservationDays: 3,
+              observedObservationDays: 1,
+              hasMeasurableVariation: false,
+              blocker: "collecting",
+              requirement:
+                "A current value plus at least 2 more recorded days with measurable variation.",
+              summary:
+                "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+              action: "Keep syncing resting heart rate data for at least 2 more days.",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Waiting for baseline")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "A current value plus at least 2 more recorded days with measurable variation.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
+    ).toBeTruthy();
   });
 
   it("does not reinterpret a server status from the numeric fields", () => {
@@ -113,6 +177,7 @@ describe("HealthStatusCards", () => {
             statusLabel: "Server-selected label",
             evaluationRule: "Server-selected rule.",
             explanation: "Server-selected explanation.",
+            baselineProgress: readyBaselineProgress,
           },
         ]}
       />,
@@ -156,6 +221,7 @@ describe("HealthStatusCards", () => {
               delta: 0.8,
               direction: "increasing",
             },
+            baselineProgress: readyBaselineProgress,
           },
         ]}
         formatComparisonValue={(_, value) => value.toFixed(1)}
@@ -198,6 +264,7 @@ describe("HealthStatusCards", () => {
             statusLabel,
             evaluationRule: "Server-selected rule.",
             explanation: "Server-selected explanation.",
+            baselineProgress: readyBaselineProgress,
           },
         ]}
       />,

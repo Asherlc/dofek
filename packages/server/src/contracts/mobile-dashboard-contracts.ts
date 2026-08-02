@@ -143,6 +143,27 @@ export const healthMetricComparisonSchema = z.object({
 export type HealthMetricProvenance = z.infer<typeof healthMetricProvenanceSchema>;
 export type HealthMetricComparison = z.infer<typeof healthMetricComparisonSchema>;
 
+export const baselineProgressBlockerSchema = z.enum([
+  "missing_source_data",
+  "collecting",
+  "needs_variation",
+  "syncing",
+  "sync_error",
+]);
+
+export const baselineProgressSchema = z.object({
+  requiredObservationDays: z.number().int().positive(),
+  observedObservationDays: z.number().int().nonnegative(),
+  hasMeasurableVariation: z.boolean(),
+  blocker: baselineProgressBlockerSchema.nullable(),
+  requirement: z.string(),
+  summary: z.string(),
+  action: z.string(),
+});
+
+export type BaselineProgress = z.infer<typeof baselineProgressSchema>;
+export type BaselineProgressBlocker = z.infer<typeof baselineProgressBlockerSchema>;
+
 export const healthStatusMetricSchema = z.object({
   metric: healthMetricKeySchema,
   label: z.string(),
@@ -167,6 +188,7 @@ export const healthStatusMetricSchema = z.object({
   explanation: z.string(),
   provenance: healthMetricProvenanceSchema.nullable(),
   comparison: healthMetricComparisonSchema.nullable(),
+  baselineProgress: baselineProgressSchema,
 });
 
 export type HealthMetricKey = z.infer<typeof healthMetricKeySchema>;
