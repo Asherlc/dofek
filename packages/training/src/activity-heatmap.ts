@@ -71,7 +71,7 @@ export function activityHeatmapBandForMinutes(totalMinutes: number): ActivityHea
   return band.id;
 }
 
-export function activityHeatmapBandById(bandId: ActivityHeatmapBandId): ActivityHeatmapBand {
+export function activityHeatmapBandById(bandId: string): ActivityHeatmapBand {
   const band = ACTIVITY_HEATMAP_BANDS.find((candidate) => candidate.id === bandId);
   if (!band) {
     throw new Error(`Unknown activity heatmap band: ${bandId}`);

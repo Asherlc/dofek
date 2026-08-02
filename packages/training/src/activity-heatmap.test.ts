@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_HEATMAP_BAND_IDS,
   ACTIVITY_HEATMAP_BANDS,
   ACTIVITY_HEATMAP_DESCRIPTION,
   ACTIVITY_HEATMAP_MEASURE_LABEL,
   ACTIVITY_HEATMAP_UNIT_LABEL,
+  activityHeatmapBandById,
   activityHeatmapBandForMinutes,
 } from "./activity-heatmap.ts";
 
@@ -35,5 +37,25 @@ describe("activity heatmap semantics", () => {
     [121, "very_high"],
   ] as const)("maps %s minutes to the server-owned %s band", (minutes, expectedBand) => {
     expect(activityHeatmapBandForMinutes(minutes)).toBe(expectedBand);
+  });
+
+  it("rejects negative training time instead of assigning a heatmap band", () => {
+    expect(() => activityHeatmapBandForMinutes(-1)).toThrow(
+      "Training time is outside the supported heatmap range: -1",
+    );
+  });
+
+  it.each(ACTIVITY_HEATMAP_BAND_IDS)("looks up the %s band definition", (bandId) => {
+    expect(activityHeatmapBandById(bandId)).toEqual(
+      ACTIVITY_HEATMAP_BANDS.find((band) => band.id === bandId),
+    );
+  });
+
+  it("rejects an unknown band id received at runtime", () => {
+    const unknownBandId = "unknown";
+
+    expect(() => activityHeatmapBandById(unknownBandId)).toThrow(
+      "Unknown activity heatmap band: unknown",
+    );
   });
 });
