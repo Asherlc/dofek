@@ -31,6 +31,9 @@ export function NutritionDataQualityPanel({
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Nutrition data quality</Text>
+      {dataQuality.overlapDays > 0 ? (
+        <Text style={styles.overlapPill}>Source overlap to review</Text>
+      ) : null}
       <Text style={styles.body}>{messages.recorded}</Text>
       <Text style={styles.body}>{messages.coverage}</Text>
       <Text style={styles.body}>{messages.overlap}</Text>
@@ -70,5 +73,18 @@ const styles = StyleSheet.create({
   detail: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  overlapPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(217, 119, 6, 0.12)",
+    borderColor: "rgba(217, 119, 6, 0.4)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: "#b45309",
+    fontSize: 12,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
 });

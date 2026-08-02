@@ -441,6 +441,9 @@ export default function ActivitiesScreen() {
                       </Text>
                       <View style={styles.provenanceRow}>
                         <Text style={styles.sourcePill}>{activity.source.primarySourceLabel}</Text>
+                        {activity.source.overlapSummary ? (
+                          <Text style={styles.overlapPill}>Source overlap</Text>
+                        ) : null}
                         {activity.lastProcessedAt &&
                         formatRelativeTime(activity.lastProcessedAt) ? (
                           <Text style={styles.processedAt}>
@@ -967,6 +970,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.sm,
     color: colors.text,
+    fontSize: 11,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  overlapPill: {
+    backgroundColor: "rgba(217, 119, 6, 0.12)",
+    borderColor: "rgba(217, 119, 6, 0.4)",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: "#b45309",
     fontSize: 11,
     fontWeight: "600",
     overflow: "hidden",

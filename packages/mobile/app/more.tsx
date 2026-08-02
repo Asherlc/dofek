@@ -22,6 +22,13 @@ const destinations = [
     title: "Cycle tracking",
     description: "Review cycle phases and record period dates.",
   },
+  {
+    href: "/data-quality",
+    icon: "shield-checkmark-outline",
+    title: "Data quality",
+    description:
+      "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
+  },
 ] as const;
 
 export default function MoreScreen() {

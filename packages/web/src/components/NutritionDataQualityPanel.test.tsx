@@ -30,6 +30,7 @@ describe("NutritionDataQualityPanel", () => {
     expect(
       screen.getByText("3 days contain overlapping sources; 2 remain unresolved."),
     ).toBeTruthy();
+    expect(screen.getByText("Source overlap to review")).toBeTruthy();
     expect(screen.getByText("Contributing sources: Manual")).toBeTruthy();
     expect(screen.getByText("Excluded or conflicting sources: Cronometer")).toBeTruthy();
   });

@@ -123,6 +123,11 @@ export function ActivityCardContent({
           <span className="rounded-full border border-border bg-surface-secondary px-2 py-0.5 font-medium text-foreground">
             {activity.source.primarySourceLabel}
           </span>
+          {activity.source.overlapSummary ? (
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">
+              Source overlap
+            </span>
+          ) : null}
           {processedRelative ? <span>Processed {processedRelative}</span> : null}
         </div>
         {activity.source.overlapSummary ? (
