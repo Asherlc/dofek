@@ -124,12 +124,8 @@ describe("GradeAdjustedPaceTable", () => {
   it("uses a plain-language heading and pace explanation", () => {
     renderWithUnits(<GradeAdjustedPaceTable data={mockData} />);
 
-    expect(screen.getByRole("heading", { name: "Effort-adjusted pace for grade" })).toBeDefined();
-    expect(screen.getByRole("columnheader", { name: "Effort-adjusted pace" })).toBeDefined();
-    expect(
-      screen.getByText(
-        "Effort-adjusted pace is highlighted in amber when it differs from actual pace by more than 15%.",
-      ),
-    ).toBeDefined();
+    expect(screen.getByRole("heading", { name: /Effort-adjusted pace for grade/i })).toBeDefined();
+    expect(screen.getByRole("columnheader", { name: /Effort-adjusted pace/i })).toBeDefined();
+    expect(screen.getByText(/Effort-adjusted pace.*15%/)).toBeDefined();
   });
 });

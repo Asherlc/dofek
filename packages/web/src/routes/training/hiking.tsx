@@ -6,6 +6,7 @@ import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { WalkingBiomechanicsChart } from "../../components/WalkingBiomechanicsChart.tsx";
+import { HIKING_PACE_COPY } from "../../lib/hikingPaceCopy.ts";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
@@ -43,10 +44,7 @@ function HikingTab() {
 
   return (
     <>
-      <Section
-        title="Effort-adjusted pace for grade"
-        subtitle="Pace adjusted for the effort of walking or hiking on slopes. Uses the Minetti slope-cost model."
-      >
+      <Section title={HIKING_PACE_COPY.title} subtitle={HIKING_PACE_COPY.description}>
         {shouldShowQueryError(gradeAdjustedPace) ? (
           <QueryStatePanel error={gradeAdjustedPace.error} />
         ) : (

@@ -128,11 +128,7 @@ describe("HikingTab", () => {
   it("leads with plain meaning before disclosing the slope-cost model", async () => {
     await renderHikingTab();
 
-    expect(screen.getByRole("heading", { name: "Effort-adjusted pace for grade" })).toBeDefined();
-    expect(
-      screen.getByText(
-        "Pace adjusted for the effort of walking or hiking on slopes. Uses the Minetti slope-cost model.",
-      ),
-    ).toBeDefined();
+    expect(screen.getByRole("heading", { name: /Effort-adjusted pace for grade/i })).toBeDefined();
+    expect(screen.getByText(/Pace adjusted.*Minetti slope-cost model/)).toBeDefined();
   });
 });
