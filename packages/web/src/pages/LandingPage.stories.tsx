@@ -88,6 +88,33 @@ export const MobileHeader: Story = {
   },
 };
 
+export const MobileFirstViewport: Story = {
+  name: "Mobile first viewport",
+  parameters: {
+    viewport: {
+      defaultViewport: "landingMobile",
+      options: {
+        landingMobile: {
+          name: "Landing mobile (390 × 667)",
+          styles: { width: "390px", height: "667px" },
+        },
+      },
+    },
+    docs: {
+      description: {
+        story: "Keeps the concrete recovery outcome visible within a 390 × 667 first viewport.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Today's recovery picture")).toBeVisible();
+    await expect(canvas.getByText("74%")).toBeVisible();
+    await expect(canvas.getByText("Near baseline")).toBeVisible();
+  },
+};
+
 export const IllustrativeDecisionPreview: Story = {
   name: "Illustrative decision preview",
   parameters: {

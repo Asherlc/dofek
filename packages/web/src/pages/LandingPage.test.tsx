@@ -185,6 +185,17 @@ describe("LandingPage", () => {
     ).toBeTruthy();
   });
 
+  it("places the concrete recovery preview before mobile proof points", () => {
+    render(<LandingPage />);
+
+    const dailySummary = screen.getByText("Today's recovery picture");
+    const proofPoint = screen.getByText("Connect sources");
+
+    expect(
+      dailySummary.compareDocumentPosition(proofPoint) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("demonstrates value, comparison, confidence, source, and action in the preview", () => {
     render(<LandingPage />);
 
