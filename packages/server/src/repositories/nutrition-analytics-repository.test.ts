@@ -725,6 +725,7 @@ describe("NutritionAnalyticsRepository", () => {
           providerDailyTotalAverage: 0,
           supplementDailyAverage: 50,
           daysTracked: 10,
+          selectedWindowDays: 30,
         },
         sourceBreakdown: [
           {
@@ -770,6 +771,7 @@ describe("NutritionAnalyticsRepository", () => {
           foodDailyAverage: 20,
           supplementDailyAverage: 100,
           daysTracked: 10,
+          selectedWindowDays: 30,
         },
         adequacy: {
           status: "at_or_above_daily_value",

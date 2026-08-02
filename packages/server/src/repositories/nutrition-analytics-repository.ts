@@ -110,6 +110,7 @@ export interface MicronutrientSafetyReviewData {
   readonly providerDailyTotalAverage: number;
   readonly supplementDailyAverage: number;
   readonly daysTracked: number;
+  readonly selectedWindowDays: RangeDays;
   readonly sourceBreakdown: NutritionSourceContribution[];
 }
 
@@ -221,6 +222,7 @@ export class MicronutrientSafetyReview {
         providerDailyTotalAverage: Math.round(this.#row.providerDailyTotalAverage * 10) / 10,
         supplementDailyAverage: Math.round(this.#row.supplementDailyAverage * 10) / 10,
         daysTracked: this.#row.daysTracked,
+        selectedWindowDays: this.#row.selectedWindowDays,
       },
       sourceBreakdown: this.#row.sourceBreakdown.map((source) => ({
         ...source,
@@ -810,6 +812,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
           providerDailyTotalAverage: row.avg_provider_daily_total_intake,
           supplementDailyAverage: row.avg_supplement_intake,
           daysTracked: row.days_tracked,
+          selectedWindowDays: days,
           sourceBreakdown: row.source_breakdown,
         }),
       ];

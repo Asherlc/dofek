@@ -153,7 +153,18 @@ describe("NutritionAnalyticsScreen", () => {
                 percentDailyValue: 67,
                 message:
                   "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
-                reference: { amount: 18 },
+                reference: {
+                  type: "daily_value",
+                  amount: 18,
+                  unit: "mg",
+                  population: "Adults and children age 4+",
+                  source: {
+                    agency: "FDA",
+                    title: "Daily Value",
+                    url: "https://www.fda.gov/",
+                    reviewedOn: "2026-07-27",
+                  },
+                },
               },
               upperLimit: {
                 status: "not_in_ruleset",
@@ -201,6 +212,137 @@ describe("NutritionAnalyticsScreen", () => {
     ).toBeTruthy();
     expect(screen.getByText("Itemized food: 12 mg/day")).toBeTruthy();
     expect(screen.getByText("Manual · Itemized food · 12 mg/day · 7 days")).toBeTruthy();
+  });
+
+  it("shows target and upper-limit context separately with source and averaging context", async () => {
+    mocks.micronutrients.mockReturnValue(
+      queryResult(mocks.micronutrientsRefetch, {
+        data: {
+          nutrients: [
+            {
+              nutrientId: "vitamin_d",
+              nutrient: "Vitamin D",
+              unit: "mcg",
+              intake: {
+                totalDailyAverage: 120,
+                foodDailyAverage: 20,
+                providerDailyTotalAverage: 0,
+                supplementDailyAverage: 100,
+                daysTracked: 10,
+              },
+              sourceBreakdown: [],
+              adequacy: {
+                status: "at_or_above_daily_value",
+                percentDailyValue: 600,
+                message: "Target guidance from the server.",
+                reference: {
+                  type: "daily_value",
+                  amount: 20,
+                  unit: "mcg",
+                  population: "Adults and children age 4+",
+                  source: {
+                    agency: "FDA",
+                    title: "Daily Value on the Nutrition and Supplement Facts Labels",
+                    url: "https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels",
+                    reviewedOn: "2026-07-27",
+                  },
+                },
+              },
+              upperLimit: {
+                status: "at_or_above_limit",
+                amount: 100,
+                unit: "mcg",
+                intakeScope: "total",
+                population: "U.S. adults age 19+",
+                nutrientForm: "all tracked forms",
+                intakeAmount: 120,
+                source: {
+                  agency: "NIH ODS",
+                  title: "Vitamin D - Health Professional Fact Sheet",
+                  url: "https://ods.od.nih.gov/factsheets/VitaminD-HealthProfessional/",
+                  reviewedOn: "2026-07-27",
+                },
+                message: "Review this intake with a doctor or pharmacist.",
+              },
+              safetyStatus: "at_or_above_upper_limit",
+            },
+            {
+              nutrientId: "vitamin_a",
+              nutrient: "Vitamin A",
+              unit: "mcg",
+              intake: {
+                totalDailyAverage: 3_500,
+                foodDailyAverage: 3_000,
+                providerDailyTotalAverage: 0,
+                supplementDailyAverage: 500,
+                daysTracked: 8,
+              },
+              sourceBreakdown: [],
+              adequacy: null,
+              upperLimit: {
+                status: "not_evaluable",
+                amount: 3_000,
+                unit: "mcg",
+                intakeScope: "total",
+                population: "U.S. adults age 19+",
+                nutrientForm: "preformed vitamin A",
+                limitation:
+                  "The NIH upper limit applies only to preformed vitamin A; tracked intake does not identify nutrient form.",
+                source: {
+                  agency: "NIH ODS",
+                  title: "Vitamin A and Carotenoids - Health Professional Fact Sheet",
+                  url: "https://ods.od.nih.gov/factsheets/VitaminA-HealthProfessional/",
+                  reviewedOn: "2026-07-27",
+                },
+                message:
+                  "The NIH upper limit applies only to preformed vitamin A; tracked intake does not identify nutrient form.",
+              },
+              safetyStatus: "upper_limit_not_evaluable",
+            },
+          ],
+          dataQuality: {
+            selectedWindowDays: 30,
+            daysWithData: 30,
+            usableDays: 30,
+            overlapDays: 0,
+            conflictDays: 0,
+            completenessPercent: 100,
+            sourceLabels: ["Manual"],
+            contributingSourceLabels: ["Manual"],
+            excludedSourceLabels: [],
+          },
+        },
+      }),
+    );
+    const { default: NutritionAnalyticsScreen } = await import("./nutrition-analytics");
+
+    render(<NutritionAnalyticsScreen />);
+
+    expect(
+      screen.getByText(
+        "Target: 600% of U.S. Food and Drug Administration (FDA) Daily Value (20 mcg/day)",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Tolerable Upper Intake Level (UL): 100 mcg/day for total daily intake"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("UL status: At or above the Tolerable Upper Intake Level (UL)"),
+    ).toBeTruthy();
+    expect(screen.getByText("UL source: Vitamin D - Health Professional Fact Sheet")).toBeTruthy();
+    expect(
+      screen.getByText("Average over 10 recorded days in a 30-day selected window."),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "Vitamin D. Target: 600% of U.S. Food and Drug Administration (FDA) Daily Value (20 mcg/day). Target status: Meets or exceeds target. Target source: Daily Value on the Nutrition and Supplement Facts Labels. Target guidance: Target guidance from the server. Tolerable Upper Intake Level (UL): 100 mcg/day for total daily intake. UL status: At or above the Tolerable Upper Intake Level (UL). UL source: Vitamin D - Health Professional Fact Sheet. UL guidance: Review this intake with a doctor or pharmacist. Average over 10 recorded days in a 30-day selected window.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Vitamin A")).toBeTruthy();
+    expect(
+      screen.getByText("Target: No FDA Daily Value target is available for this nutrient."),
+    ).toBeTruthy();
+    expect(screen.getByText("Tolerable Upper Intake Level (UL) not evaluable")).toBeTruthy();
   });
 
   it("consolidates query failures into one exact root error and one recovery action", async () => {
@@ -295,7 +437,18 @@ describe("NutritionAnalyticsScreen", () => {
                 status: "below_daily_value",
                 percentDailyValue: 67,
                 message: "Below Daily Value.",
-                reference: { amount: 18 },
+                reference: {
+                  type: "daily_value",
+                  amount: 18,
+                  unit: "mg",
+                  population: "Adults and children age 4+",
+                  source: {
+                    agency: "FDA",
+                    title: "Daily Value",
+                    url: "https://www.fda.gov/",
+                    reviewedOn: "2026-07-27",
+                  },
+                },
               },
               upperLimit: {
                 status: "not_in_ruleset",
@@ -336,7 +489,7 @@ describe("NutritionAnalyticsScreen", () => {
         "Excluded: 6 missing calorie days · 2 source-conflict days · 3 days with lower-priority sources",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Iron")).toBeTruthy();
+    expect(screen.getAllByText("Iron")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Retrying..." }).getAttribute("aria-disabled")).toBe(
       "true",
     );
