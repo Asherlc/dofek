@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { AccessibilityInfo } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface QueryState {
@@ -166,6 +167,38 @@ describe("SupplementsScreen", () => {
 
     expect(screen.getByText("Creatine")).toBeTruthy();
     expect(screen.getByText("Refresh failed: Supplement refresh failed.")).toBeTruthy();
+  });
+
+  it("renders persistent labeled move controls and announces a successful reorder", async () => {
+    mocks.query.data = [
+      { name: "Creatine", amount: 5, unit: "g" },
+      { name: "Vitamin D", amount: 25, unit: "mcg" },
+    ];
+    const { default: SupplementsScreen } = await import("./supplements");
+
+    render(<SupplementsScreen />);
+
+    const moveDown = screen.getByRole("button", { name: "Move Creatine down" });
+    expect(moveDown.textContent).toBe("Move down");
+    expect(screen.getByRole("button", { name: "Move Vitamin D up" })).toBeTruthy();
+
+    fireEvent.click(moveDown);
+
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      supplements: [
+        { name: "Vitamin D", amount: 25, unit: "mcg" },
+        { name: "Creatine", amount: 5, unit: "g" },
+      ],
+    });
+
+    await act(async () => {
+      await mocks.saveOptions?.onSuccess?.();
+    });
+
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      "Moved Creatine to position 2 of 2.",
+    );
+    expect(screen.getByText("Moved Creatine to position 2 of 2.")).toBeTruthy();
   });
 
   it("reports failed replacement mutations", async () => {

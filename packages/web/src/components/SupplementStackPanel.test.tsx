@@ -120,6 +120,35 @@ describe("SupplementStackPanel", () => {
     expect(screen.getByRole("button", { name: "+ Add supplement" })).toBeDefined();
   });
 
+  it("renders persistent labeled move controls and announces a successful reorder", async () => {
+    mocks.query.data = [
+      { name: "Creatine", amount: 5, unit: "g" },
+      { name: "Vitamin D", amount: 25, unit: "mcg" },
+    ];
+
+    render(<SupplementStackPanel />);
+
+    const moveDown = screen.getByRole("button", { name: "Move Creatine down" });
+    expect(moveDown.textContent).toBe("Move down");
+    expect(moveDown.className).not.toContain("opacity-0");
+    expect(screen.getByRole("button", { name: "Move Vitamin D up" })).toBeDefined();
+
+    fireEvent.click(moveDown);
+
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      supplements: [
+        { name: "Vitamin D", amount: 25, unit: "mcg" },
+        { name: "Creatine", amount: 5, unit: "g" },
+      ],
+    });
+
+    await act(async () => {
+      await mocks.saveOptions?.onSuccess?.();
+    });
+
+    expect(screen.getByRole("status").textContent).toBe("Moved Creatine to position 2 of 2.");
+  });
+
   it("reports failed replacement mutations and exposes the server error", () => {
     const saveError = new Error("Supplement stack changed. Reload and try again.");
     render(<SupplementStackPanel />);
