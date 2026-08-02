@@ -258,10 +258,10 @@ describe("TimeRangeSelector consumers", () => {
 
   it("passes finite and All ranges to Body selected chart queries", async () => {
     render(<BodyHarness />);
-    await screen.findByRole("button", { name: "All" });
+    await screen.findByRole("radio", { name: "All" });
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([
       { name: "dailyMetrics.trends", input: { days: 7, endDate: "2026-07-08" } },
@@ -274,7 +274,7 @@ describe("TimeRangeSelector consumers", () => {
     expectRegistryCovered("body");
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expectCallsContaining([
       { name: "dailyMetrics.trends", input: { days: null, endDate: "2026-07-08" } },
@@ -292,7 +292,7 @@ describe("TimeRangeSelector consumers", () => {
     render(<SleepPage />);
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([
       { name: "sleep.list", input: { days: 7, endDate: "2026-07-08" } },
@@ -301,7 +301,7 @@ describe("TimeRangeSelector consumers", () => {
     expectRegistryCovered("sleep");
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expectCallsContaining([
       { name: "sleep.list", input: { days: null, endDate: "2026-07-08" } },
@@ -316,7 +316,7 @@ describe("TimeRangeSelector consumers", () => {
     expect(screen.getByText("Adaptive Total Daily Energy Expenditure (TDEE)")).toBeTruthy();
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([
       { name: "nutritionAnalytics.micronutrientAdequacyV2", input: { days: 7 } },
@@ -326,7 +326,7 @@ describe("TimeRangeSelector consumers", () => {
     expectRegistryCovered("nutritionAnalytics");
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expectCallsContaining([
       { name: "nutritionAnalytics.micronutrientAdequacyV2", input: { days: null } },
@@ -345,7 +345,7 @@ describe("TimeRangeSelector consumers", () => {
     render(<CorrelationExplorerPage />);
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([
       {
@@ -366,7 +366,7 @@ describe("TimeRangeSelector consumers", () => {
     expectRegistryCovered("correlation");
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expectCallsContaining([
       {
@@ -394,13 +394,13 @@ describe("TimeRangeSelector consumers", () => {
     render(<BehaviorImpactPage />);
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([{ name: "behaviorImpact.impactSummary", input: { days: 7 } }]);
     expectRegistryCovered("behaviorImpact");
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expectCallsContaining([{ name: "behaviorImpact.impactSummary", input: { days: null } }]);
     expectRegistryCovered("behaviorImpact");
@@ -411,14 +411,14 @@ describe("TimeRangeSelector consumers", () => {
     render(<JournalPanel />);
 
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "7d" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([{ name: "journal.entries", input: { days: 7 } }]);
     expectRegistryCovered("journalLog");
 
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
     clearQueryCalls();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expectCallsContaining([
       {

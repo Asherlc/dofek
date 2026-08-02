@@ -417,7 +417,7 @@ describe("CyclingTab", () => {
     await renderCyclingTabInTrainingLayout();
 
     state.queryCalls.length = 0;
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(state.queryCalls).toEqual([
       { name: "cycling.performance", input: { days: null } },
@@ -446,7 +446,7 @@ describe("CyclingTab", () => {
       input: expect.objectContaining({ activityOffset: 20, variabilityOffset: 20 }),
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(
       state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),

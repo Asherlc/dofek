@@ -7,8 +7,30 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("react-native", () => ({
   View: ({ children }: { children?: React.ReactNode }) => React.createElement("div", {}, children),
   Text: ({ children }: { children?: React.ReactNode }) => React.createElement("span", {}, children),
-  TouchableOpacity: ({ children, onPress }: { children?: React.ReactNode; onPress?: () => void }) =>
-    React.createElement("button", { type: "button", onClick: onPress }, children),
+  TouchableOpacity: ({
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityState,
+    children,
+    onPress,
+  }: {
+    accessibilityLabel?: string;
+    accessibilityRole?: string;
+    accessibilityState?: { selected?: boolean };
+    children?: React.ReactNode;
+    onPress?: () => void;
+  }) =>
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        "aria-label": accessibilityLabel,
+        "aria-selected": accessibilityState?.selected,
+        onClick: onPress,
+        role: accessibilityRole,
+      },
+      children,
+    ),
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => styles,
   },
@@ -38,6 +60,13 @@ describe("DaySelector", () => {
     render(<DaySelector days={30} description="Recent changes." onChange={onChange} />);
     fireEvent.click(screen.getByText("7d"));
     expect(onChange).toHaveBeenCalledWith(7);
+  });
+
+  it("exposes the selected range as a native selected radio", () => {
+    render(<DaySelector days={30} description="Recent changes." onChange={vi.fn()} />);
+
+    expect(screen.getByRole("radio", { name: "30d" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("radio", { name: "7d" }).getAttribute("aria-selected")).toBe("false");
   });
 
   it("renders custom options when provided", () => {
