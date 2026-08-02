@@ -1,4 +1,11 @@
-import { formatHRVMeasurement, formatPercent, formatSpO2Measurement } from "@dofek/format/format";
+import {
+  formatDateMedium,
+  formatDateShort,
+  formatHRVMeasurement,
+  formatPercent,
+  formatSpO2Measurement,
+  shiftDateYmd,
+} from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
@@ -43,18 +50,29 @@ type FeaturedProvider = (typeof FEATURED_PROVIDERS)[number];
 
 const HERO_PROOF_POINTS = ["Connect sources", "Compare trends", "Keep history"] as const;
 const GET_STARTED_SEARCH = { returnTo: "/onboarding" };
+const DEMO_PREVIEW = {
+  endDate: "2026-05-27",
+  rangeDays: 30,
+  trendDays: 7,
+} as const;
+const DEMO_DATE_FORMAT_OPTIONS = { timeZone: "UTC" } as const;
+const DEMO_PREVIEW_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.rangeDays - 1));
+const DEMO_TREND_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.trendDays - 1));
+const DEMO_END_DATE_LABEL = formatDateMedium(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS);
+const DEMO_RANGE_LABEL = `${formatDateShort(DEMO_PREVIEW_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}–${DEMO_END_DATE_LABEL}`;
+const DEMO_TREND_RANGE_LABEL = `${formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)} to ${DEMO_END_DATE_LABEL}`;
 
 const ANALYSIS_CARDS = [
   {
     title: "Late dinners show up next to less consistent sleep",
     detail: "Compare meal times with sleep without switching apps.",
     value: "r = -0.58",
-    tone: "30-day correlation",
+    tone: `${DEMO_PREVIEW.rangeDays}-day correlation`,
   },
   {
     title: "Training load vs sleep",
     detail: "See hard weeks beside sleep, recovery, and resting heart rate.",
-    value: "30 days",
+    value: `${DEMO_PREVIEW.rangeDays} days`,
     tone: "Window",
   },
   {
@@ -290,10 +308,10 @@ function OverviewPreview() {
             Illustrative example
           </div>
           <div className="text-sm font-semibold text-foreground">Overview</div>
-          <div className="text-xs text-subtle">Apr 28–May 27, 2026</div>
+          <div className="text-xs text-subtle">{DEMO_RANGE_LABEL}</div>
         </div>
         <div className="rounded-md border border-border bg-surface-solid px-3 py-1 text-xs text-muted">
-          30 days
+          {DEMO_PREVIEW.rangeDays} days
         </div>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
@@ -330,11 +348,9 @@ function DailySummaryPreview() {
           <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
             Daily summary
           </div>
-          <div className="mt-1 text-sm font-semibold text-foreground">
-            Today&apos;s recovery picture
-          </div>
+          <div className="mt-1 text-sm font-semibold text-foreground">Example recovery picture</div>
         </div>
-        <div className="text-right text-xs text-subtle">May 27, 2026 · Example data</div>
+        <div className="text-right text-xs text-subtle">{DEMO_END_DATE_LABEL} · Example data</div>
       </div>
       <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
         {rings.map((ring) => (
@@ -432,15 +448,18 @@ function TrendPanel() {
           </div>
           <div className="text-xs text-subtle">average</div>
           <div className="mt-1 text-xs font-medium text-accent-secondary">
-            +{formatMeasurementText(units.formatHeartRate(3))} vs prior 7 days
+            +{formatMeasurementText(units.formatHeartRate(3))} vs prior {DEMO_PREVIEW.trendDays}{" "}
+            days
           </div>
-          <div className="text-xs text-subtle">7 of 7 nights</div>
+          <div className="text-xs text-subtle">
+            {DEMO_PREVIEW.trendDays} of {DEMO_PREVIEW.trendDays} nights
+          </div>
         </div>
         <LandingPreviewLineChart
-          accessibleName={`Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: ${heartRateAxis}.`}
+          accessibleName={`Example resting heart rate trend. X-axis: ${DEMO_TREND_RANGE_LABEL}. Y-axis: ${heartRateAxis}.`}
           color={activityMetricColors.heartRate}
-          endLabel="May 27"
-          startLabel="May 21"
+          endLabel={formatDateShort(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS)}
+          startLabel={formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}
           yAxisLabel={heartRateAxis}
           yTickLabels={["48", "56"]}
         />
@@ -468,7 +487,7 @@ function ComparisonPanel() {
         <div>
           <div className="text-2xl font-bold text-accent">r = -0.46</div>
           <div className="mt-1 text-xs font-medium text-accent-secondary">Moderate negative</div>
-          <div className="text-xs text-subtle">22 paired days of 30</div>
+          <div className="text-xs text-subtle">22 paired days of {DEMO_PREVIEW.rangeDays}</div>
         </div>
         <LandingPreviewScatterPlot
           accessibleName={`Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: ${sleepConsistencyAxis}.`}
@@ -520,7 +539,7 @@ function HealthMonitorPreview() {
         ))}
       </div>
       <div className="mt-2 border-t border-border pt-2 text-[10px] text-subtle">
-        Example data · 27 of 30 days · Oura + Apple Health
+        Example data · 27 of {DEMO_PREVIEW.rangeDays} days · Oura + Apple Health
       </div>
     </div>
   );

@@ -159,7 +159,7 @@ describe("LandingPage", () => {
 
     expect(screen.getByText("Illustrative example")).toBeTruthy();
     expect(screen.getByText("Daily summary")).toBeTruthy();
-    expect(screen.getByText("Today's recovery picture")).toBeTruthy();
+    expect(screen.getByText("Example recovery picture")).toBeTruthy();
     expect(screen.getByText("May 27, 2026 · Example data")).toBeTruthy();
     expect(screen.getByText("74%")).toBeTruthy();
     expect(screen.getByText("Near baseline")).toBeTruthy();
@@ -185,10 +185,17 @@ describe("LandingPage", () => {
     ).toBeTruthy();
   });
 
+  it("labels the fixed-date preview as an illustrative example", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("Example recovery picture")).toBeTruthy();
+    expect(screen.queryByText("Today's recovery picture")).toBeNull();
+  });
+
   it("places the concrete recovery preview before mobile proof points", () => {
     render(<LandingPage />);
 
-    const dailySummary = screen.getByText("Today's recovery picture");
+    const dailySummary = screen.getByText("Example recovery picture");
     const proofPoint = screen.getByText("Connect sources");
 
     expect(

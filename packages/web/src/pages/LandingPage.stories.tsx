@@ -110,7 +110,7 @@ export const MobileFirstViewport: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getByText("Today's recovery picture")).toBeVisible();
+    await expect(canvas.getByText("Example recovery picture")).toBeVisible();
     await expect(canvas.getByText("74%")).toBeVisible();
     await expect(canvas.getByText("Near baseline")).toBeVisible();
   },
