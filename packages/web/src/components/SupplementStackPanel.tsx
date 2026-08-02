@@ -1,5 +1,5 @@
 import { formatNutritionAmount } from "@dofek/format/format";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -116,17 +116,25 @@ function formatDose(supp: Supplement): string {
 export function SupplementStackPanel() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState<string | null>(null);
+  const reorderAnnouncementRef = useRef<string | null>(null);
 
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
     onSuccess: async () => {
+      const announcement = reorderAnnouncementRef.current;
+      reorderAnnouncementRef.current = null;
+      if (announcement) {
+        setReorderAnnouncement(announcement);
+      }
       await Promise.all([
         utils.supplements.list.invalidate(),
         utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
       ]);
     },
     onError: (error) => {
+      reorderAnnouncementRef.current = null;
       captureException(error, { operation: "supplements.save" });
     },
     meta: locallyReportedErrorMeta,
@@ -160,9 +168,16 @@ export function SupplementStackPanel() {
   };
 
   const handleReorder = (from: number, to: number) => {
+    if (!hasCanonicalStack) {
+      return;
+    }
     const updated = [...supplements];
     const [moved] = updated.splice(from, 1);
-    if (moved) updated.splice(to, 0, moved);
+    if (!moved) {
+      return;
+    }
+    updated.splice(to, 0, moved);
+    reorderAnnouncementRef.current = `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`;
     handleSave(updated);
   };
 
@@ -204,10 +219,17 @@ export function SupplementStackPanel() {
               onEdit={() => setEditingIndex(i)}
               onMoveUp={i > 0 ? () => handleReorder(i, i - 1) : undefined}
               onMoveDown={i < supplements.length - 1 ? () => handleReorder(i, i + 1) : undefined}
+              saving={saveMutation.isPending}
             />
           )}
         </div>
       ))}
+
+      {reorderAnnouncement ? (
+        <output aria-live="polite" aria-atomic="true" className="sr-only">
+          {reorderAnnouncement}
+        </output>
+      ) : null}
 
       {showAdd ? (
         <SupplementForm
@@ -226,7 +248,9 @@ export function SupplementStackPanel() {
       )}
 
       {saveMutation.isError && (
-        <p className="text-xs text-red-500">Failed to save: {saveMutation.error.message}</p>
+        <p role="alert" className="text-xs text-red-500">
+          Failed to save: {saveMutation.error.message}
+        </p>
       )}
     </div>
   );
@@ -237,34 +261,40 @@ function SupplementRow({
   onEdit,
   onMoveUp,
   onMoveDown,
+  saving,
 }: {
   supp: Supplement;
   onEdit: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  saving: boolean;
 }) {
   const dose = formatDose(supp);
   const nutrients = NUTRIENT_FIELDS.filter((f) => supp[f.key] != null && supp[f.key] !== 0);
 
   return (
     <div className="flex items-center gap-3 rounded border border-border bg-page px-3 py-2 group">
-      <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex shrink-0 flex-col gap-1">
         {onMoveUp && (
           <button
             type="button"
             onClick={onMoveUp}
-            className="text-[10px] text-dim hover:text-muted"
+            disabled={saving}
+            aria-label={`Move ${supp.name} up`}
+            className="text-xs text-dim hover:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ▲
+            Move up
           </button>
         )}
         {onMoveDown && (
           <button
             type="button"
             onClick={onMoveDown}
-            className="text-[10px] text-dim hover:text-muted"
+            disabled={saving}
+            aria-label={`Move ${supp.name} down`}
+            className="text-xs text-dim hover:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ▼
+            Move down
           </button>
         )}
       </div>
