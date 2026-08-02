@@ -1,8 +1,10 @@
+import { formatHRV, formatSteps } from "@dofek/format/format";
 import { mean, sampleStandardDeviation } from "simple-statistics";
 import type { z } from "zod";
 import type { BaselineRelativeMetric } from "../contracts/baseline-relative-metrics.ts";
 import type { BaselineProgress } from "../contracts/mobile-dashboard-contracts.ts";
 import {
+  type HealthStatusMetric,
   healthMetricIntentSchema,
   healthMetricKeySchema,
   healthStatusMetricSchema,
@@ -13,7 +15,7 @@ import { type BaselineProcessingStatus, buildBaselineProgress } from "./baseline
 export { healthMetricIntentSchema, healthMetricKeySchema, healthStatusMetricSchema };
 
 export type HealthMetricIntent = z.infer<typeof healthMetricIntentSchema>;
-export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
+export type { HealthStatusMetric };
 
 export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v3";
 
@@ -42,6 +44,29 @@ interface WeightGoalIntentInput {
   baselineKg: number | null;
 }
 
+function formatHealthStatusValue(
+  metric: HealthStatusMetric["metric"],
+  value: number | null,
+): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  if (metric === "hrv") return formatHRV(value);
+  if (metric === "steps") return formatSteps(value);
+  return null;
+}
+
+function metricFields(input: HealthStatusSummaryInput) {
+  return {
+    metric: input.metric,
+    label: input.label,
+    value: input.value,
+    valueText: formatHealthStatusValue(input.metric, input.value),
+    baseline: input.baseline,
+    baselineText: formatHealthStatusValue(input.metric, input.baseline),
+    sampleDeviation: input.sampleDeviation,
+    intent: input.intent,
+  };
+}
+
 function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
   const baselineProgress = buildBaselineProgress({
     label: input.label,
@@ -52,12 +77,7 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
   });
 
   return {
-    metric: input.metric,
-    label: input.label,
-    value: input.value,
-    baseline: input.baseline,
-    sampleDeviation: input.sampleDeviation,
-    intent: input.intent,
+    ...metricFields(input),
     deviation: null,
     direction: "unknown",
     statusToken: "insufficient_data",
@@ -77,17 +97,6 @@ function baselineProgressFor(input: HealthStatusSummaryInput): BaselineProgress 
     sampleDeviation: input.sampleDeviation,
     processingStatus: input.processingStatus,
   });
-}
-
-function metricFields(input: HealthStatusSummaryInput) {
-  return {
-    metric: input.metric,
-    label: input.label,
-    value: input.value,
-    baseline: input.baseline,
-    sampleDeviation: input.sampleDeviation,
-    intent: input.intent,
-  };
 }
 
 function directionFromDeviation(deviation: number): "above" | "below" | "aligned" {

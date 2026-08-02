@@ -19,6 +19,13 @@ function defaultFormatValue(metric: HealthStatusMetric): string {
   return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
 }
 
+function displayValue(
+  metric: HealthStatusMetric,
+  formatValue: HealthStatusCardsProps["formatValue"],
+): string {
+  return metric.valueText ?? (formatValue ? formatValue(metric) : defaultFormatValue(metric));
+}
+
 function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
   if (status === "insufficient_data") return "?";
   if (status === "near_baseline" || status === "moving_as_intended") return "✓";
@@ -32,38 +39,60 @@ export function HealthStatusCards({ metrics, formatValue }: HealthStatusCardsPro
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>HEALTH STATUS</Text>
-      {metrics.map((metric) => (
-        <View key={metric.metric} style={styles.card}>
-          <View style={styles.titleRow}>
-            <Text
-              accessibilityLabel={`${metric.statusLabel} status`}
-              style={[styles.statusSymbol, { color: statusColor(metric.statusColor) }]}
-            >
-              {statusSymbol(metric.statusToken)}
-            </Text>
-            <Text style={styles.label}>{metric.label}</Text>
-          </View>
-          <Text style={styles.value}>
-            {formatValue ? formatValue(metric) : defaultFormatValue(metric)}
-          </Text>
-          <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
-            {metric.statusLabel}
-          </Text>
-          <Text style={styles.rule}>{metric.evaluationRule}</Text>
-          <Text style={styles.explanation}>{metric.explanation}</Text>
-          {metric.baselineProgress.blocker !== null ? (
-            <View accessibilityLabel={`${metric.label} baseline progress`} style={styles.progress}>
-              <Text style={styles.progressRequirement}>{metric.baselineProgress.requirement}</Text>
-              <Text style={styles.progressCount}>
-                {metric.baselineProgress.observedObservationDays} of{" "}
-                {metric.baselineProgress.requiredObservationDays} required days recorded
+      {metrics.map((metric) => {
+        const baseline = metric.baselineText;
+        return (
+          <View key={metric.metric} style={styles.card}>
+            <View style={styles.titleRow}>
+              <Text
+                accessibilityLabel={`${metric.statusLabel} status`}
+                style={[styles.statusSymbol, { color: statusColor(metric.statusColor) }]}
+              >
+                {statusSymbol(metric.statusToken)}
               </Text>
-              <Text style={styles.explanation}>{metric.baselineProgress.summary}</Text>
-              <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+                numberOfLines={1}
+                style={styles.label}
+              >
+                {metric.label}
+              </Text>
             </View>
-          ) : null}
-        </View>
-      ))}
+            <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              numberOfLines={1}
+              style={styles.value}
+            >
+              {displayValue(metric, formatValue)}
+            </Text>
+            <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
+              {baseline == null
+                ? metric.statusLabel
+                : `baseline ${baseline} · ${metric.statusLabel}`}
+            </Text>
+            <Text style={styles.rule}>{metric.evaluationRule}</Text>
+            <Text style={styles.explanation}>{metric.explanation}</Text>
+            {metric.baselineProgress.blocker !== null ? (
+              <View
+                accessibilityLabel={`${metric.label} baseline progress`}
+                style={styles.progress}
+              >
+                <Text style={styles.progressRequirement}>
+                  {metric.baselineProgress.requirement}
+                </Text>
+                <Text style={styles.progressCount}>
+                  {metric.baselineProgress.observedObservationDays} of{" "}
+                  {metric.baselineProgress.requiredObservationDays} required days recorded
+                </Text>
+                <Text style={styles.explanation}>{metric.baselineProgress.summary}</Text>
+                <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -98,7 +127,9 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.textSecondary,
-    fontSize: 12,
+    flexShrink: 1,
+    fontSize: 11,
+    lineHeight: 14,
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },

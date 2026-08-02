@@ -1,6 +1,10 @@
-import { formatHRVMeasurement, formatSpO2Measurement } from "@dofek/format/format";
+import { formatSpO2Measurement } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { baselineRelativeMetricSchema } from "dofek-server/baseline-relative-metrics";
+import {
+  type HealthStatusMetric,
+  healthStatusMetricSchema,
+} from "dofek-server/mobile-dashboard-contracts";
 import { useMemo } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
@@ -15,7 +19,6 @@ import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
-import { type HealthStatusMetric, healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -201,11 +204,11 @@ export function Dashboard() {
           metrics={healthMetrics}
           loading={trends.isLoading}
           formatters={{
-            hrv: formatHRVMeasurement,
             spo2: formatSpO2Measurement,
             skin_temperature: (value) => units.formatTemperature(value),
           }}
           units={{
+            hrv: "ms",
             respiratory_rate: "breaths/min",
             resting_heart_rate: "bpm",
             sleep_efficiency: "%",

@@ -144,7 +144,9 @@ export const healthStatusMetricSchema = z.object({
   metric: healthMetricKeySchema,
   label: z.string(),
   value: z.number().nullable(),
+  valueText: z.string().nullable(),
   baseline: z.number().nullable(),
+  baselineText: z.string().nullable(),
   sampleDeviation: z.number().nullable(),
   deviation: z.number().nullable(),
   direction: z.enum(["above", "below", "aligned", "unknown"]),
@@ -163,6 +165,7 @@ export const healthStatusMetricSchema = z.object({
   baselineProgress: baselineProgressSchema,
 });
 
+export type HealthMetricKey = z.infer<typeof healthMetricKeySchema>;
 export type HealthStatusMetric = z.infer<typeof healthStatusMetricSchema>;
 
 export const mobileRecoveryTabOutputSchema = z.object({

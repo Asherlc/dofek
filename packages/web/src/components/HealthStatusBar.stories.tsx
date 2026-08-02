@@ -1,6 +1,5 @@
-import { formatHRVMeasurement } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { HealthStatusMetric } from "../lib/healthStatus";
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { HealthStatusBar } from "./HealthStatusBar";
 
 function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMetric {
@@ -8,7 +7,9 @@ function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMet
     metric: "hrv",
     label: "Heart Rate Variability (HRV)",
     value: 65,
+    valueText: "65 ms",
     baseline: 60,
+    baselineText: "60 ms",
     sampleDeviation: 8,
     deviation: 0.625,
     direction: "above",
@@ -60,7 +61,7 @@ const meta = {
       },
     ],
     metrics: [hrvMetric()],
-    formatters: { hrv: formatHRVMeasurement },
+    units: { hrv: "ms" },
   },
 } satisfies Meta<typeof HealthStatusBar>;
 
@@ -75,6 +76,7 @@ export const Warning: Story = {
     metrics: [
       hrvMetric({
         value: 48,
+        valueText: "48 ms",
         deviation: -1.5,
         direction: "below",
         statusToken: "notable_deviation",
@@ -93,6 +95,7 @@ export const Destructive: Story = {
     metrics: [
       hrvMetric({
         value: 38,
+        valueText: "38 ms",
         deviation: -2.75,
         direction: "below",
         statusToken: "far_from_baseline",
@@ -111,6 +114,7 @@ export const Unknown: Story = {
     metrics: [
       hrvMetric({
         value: null,
+        valueText: null,
         deviation: null,
         direction: "unknown",
         statusToken: "insufficient_data",
@@ -121,4 +125,28 @@ export const Unknown: Story = {
       }),
     ],
   },
+};
+
+export const NarrowDashboardCards: Story = {
+  args: {
+    metrics: [
+      hrvMetric({ value: 51.5, valueText: "52 ms", baseline: 50.5, baselineText: "51 ms" }),
+      hrvMetric({
+        metric: "steps",
+        label: "Steps",
+        value: 7640,
+        valueText: "7,640",
+        baseline: 7640,
+        baselineText: "7,640",
+        intent: "neutral",
+      }),
+    ],
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
 };

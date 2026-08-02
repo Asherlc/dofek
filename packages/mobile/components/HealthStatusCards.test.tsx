@@ -15,6 +15,58 @@ const readyBaselineProgress = {
 } as const;
 
 describe("HealthStatusCards", () => {
+  it("renders server-authored HRV and steps text instead of recomputing raw values", () => {
+    render(
+      <HealthStatusCards
+        metrics={[
+          {
+            metric: "hrv",
+            label: "Heart Rate Variability (HRV)",
+            value: 999,
+            valueText: "52 ms",
+            baseline: 998,
+            baselineText: "51 ms",
+            sampleDeviation: 5,
+            deviation: 0,
+            direction: "aligned",
+            intent: "higher",
+            statusToken: "near_baseline",
+            statusColor: "positive",
+            statusLabel: "Near baseline",
+            evaluationRule: "Server-selected rule.",
+            explanation: "Server-selected explanation.",
+            baselineProgress: readyBaselineProgress,
+          },
+          {
+            metric: "steps",
+            label: "Steps",
+            value: 1,
+            valueText: "7,640",
+            baseline: 2,
+            baselineText: "7,640",
+            sampleDeviation: 5,
+            deviation: 0,
+            direction: "aligned",
+            intent: "neutral",
+            statusToken: "near_baseline",
+            statusColor: "positive",
+            statusLabel: "Near baseline",
+            evaluationRule: "Server-selected rule.",
+            explanation: "Server-selected explanation.",
+            baselineProgress: readyBaselineProgress,
+          },
+        ]}
+        formatValue={() => "client-recomputed value"}
+      />,
+    );
+
+    expect(screen.getByText("52 ms")).toBeTruthy();
+    expect(screen.getByText(/baseline 51 ms/)).toBeTruthy();
+    expect(screen.getByText("7,640")).toBeTruthy();
+    expect(screen.getByText(/baseline 7,640/)).toBeTruthy();
+    expect(screen.queryByText("client-recomputed value")).toBeNull();
+  });
+
   it("renders the canonical status and explanation returned by the server", () => {
     render(
       <HealthStatusCards
@@ -23,7 +75,9 @@ describe("HealthStatusCards", () => {
             metric: "trend_weight",
             label: "Trend Weight",
             value: 80,
+            valueText: null,
             baseline: 82,
+            baselineText: null,
             sampleDeviation: 1,
             deviation: -2,
             direction: "below",
@@ -111,7 +165,9 @@ describe("HealthStatusCards", () => {
             metric: "body_fat_percentage",
             label: "Body Fat %",
             value: 30,
+            valueText: null,
             baseline: 20,
+            baselineText: null,
             sampleDeviation: 2,
             deviation: 5,
             direction: "above",
@@ -151,7 +207,9 @@ describe("HealthStatusCards", () => {
             metric: "hrv",
             label: "Heart Rate Variability (HRV)",
             value: 50,
+            valueText: "50 ms",
             baseline: 50,
+            baselineText: "50 ms",
             sampleDeviation: 5,
             deviation: 0,
             direction: "aligned",
