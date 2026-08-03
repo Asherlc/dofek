@@ -102,6 +102,37 @@ describe("fetchBodyDecisionMeasurements", () => {
     expect(calls[0]?.query).toContain("recorded_at_local");
     expect(calls[0]?.params).toMatchObject({ userId: "user-1", timezone: "America/Los_Angeles" });
   });
+
+  it("applies limited access to the measurement's computed local date", async () => {
+    const calls: Array<{ query: string; params?: Record<string, unknown> }> = [];
+    const store: BodyClickHouseStore = {
+      async query(_schema, query, params) {
+        calls.push({ query, params });
+        return [];
+      },
+    };
+
+    await fetchBodyDecisionMeasurements(store, "user-1", "UTC", "2026-07-25", {
+      kind: "limited",
+      paid: false,
+      reason: "free_signup_week",
+      startDate: "2026-07-20",
+      endDateExclusive: "2026-07-27",
+    });
+
+    const queryText = calls[0]?.query ?? "";
+    expect(queryText).toContain(
+      "AND toDate(toTimeZone(recorded_at, {timezone:String})) >= toDate({accessStart:String})",
+    );
+    expect(queryText).toContain(
+      "AND toDate(toTimeZone(recorded_at, {timezone:String})) < toDate({accessEnd:String})",
+    );
+    expect(queryText).not.toContain("AND local_date >=");
+    expect(calls[0]?.params).toMatchObject({
+      accessStart: "2026-07-20",
+      accessEnd: "2026-07-27",
+    });
+  });
 });
 
 describe("fetchBodyCompRows", () => {

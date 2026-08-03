@@ -140,7 +140,10 @@ export const bodyAnalyticsRouter = router({
         });
       }
       if (decisionContextResult.status === "rejected") {
-        captureException(decisionContextResult.reason);
+        captureException(decisionContextResult.reason, {
+          tags: { procedure: "bodyAnalytics.weightOverview" },
+          extra: { endDate: input.endDate, userId: ctx.userId },
+        });
       }
 
       const smoothedWeight = smoothedWeightResult.value;

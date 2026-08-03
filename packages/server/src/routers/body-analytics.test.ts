@@ -295,6 +295,22 @@ describe("bodyAnalyticsRouter", () => {
       });
     });
 
+    it("reports decision-context failures with request context", async () => {
+      const decisionContextError = new Error("body decision context unavailable");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getBodyDecisionContext").mockRejectedValueOnce(
+        decisionContextError,
+      );
+      const caller = makeCaller([]);
+
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
+
+      expect(result.decisionContext).toBeNull();
+      expect(captureException).toHaveBeenCalledWith(decisionContextError, {
+        tags: { procedure: "bodyAnalytics.weightOverview" },
+        extra: { endDate: "2024-01-20", userId: "user-1" },
+      });
+    });
+
     it("returns neutral body fat classifications from server-owned recomposition data", async () => {
       vi.spyOn(BodyAnalyticsRepository.prototype, "getRecomposition").mockResolvedValueOnce([
         {

@@ -85,9 +85,12 @@ function endDateExpression(endDate: string): string {
   return endDate === "now" ? "today()" : "toDate({endDate:String})";
 }
 
-function accessWindowDateClause(accessWindow: AccessWindow | undefined): string {
+function accessWindowDateClause(
+  accessWindow: AccessWindow | undefined,
+  localDateExpression = "local_date",
+): string {
   if (!accessWindow || accessWindow.kind === "full") return "";
-  return "AND local_date >= toDate({accessStart:String}) AND local_date < toDate({accessEnd:String})";
+  return `AND ${localDateExpression} >= toDate({accessStart:String}) AND ${localDateExpression} < toDate({accessEnd:String})`;
 }
 
 function accessWindowParams(accessWindow: AccessWindow | undefined): Record<string, unknown> {
@@ -187,7 +190,7 @@ export async function fetchBodyDecisionMeasurements(
         AND weight_kg IS NOT NULL
         AND weight_kg > 0
         AND ${localDateExpression} <= ${endDateExpression(endDate)}
-        ${accessWindowDateClause(accessWindow)}
+        ${accessWindowDateClause(accessWindow, localDateExpression)}
       ORDER BY ${localDateExpression} ASC, recorded_at ASC
     `,
     { userId, timezone, endDate, ...accessWindowParams(accessWindow) },
