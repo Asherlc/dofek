@@ -29,5 +29,3 @@ export const bodyDecisionContextOutputSchema = z.object({
     outliersIncluded: z.literal(true),
   }),
 });
-
-export type BodyDecisionContextOutput = z.infer<typeof bodyDecisionContextOutputSchema>;

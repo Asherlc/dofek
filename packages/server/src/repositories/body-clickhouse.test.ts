@@ -101,8 +101,9 @@ describe("fetchBodyDecisionMeasurements", () => {
     expect(calls[0]?.query).toContain("provider_id");
     expect(calls[0]?.query).toContain("recorded_at_local");
     expect(calls[0]?.query).toContain(
-      "toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate(toTimeZone(now(), {timezone:String}))",
+      "toDate(toTimeZone(body_measurement.recorded_at, {timezone:String})) <= toDate(toTimeZone(now(), {timezone:String}))",
     );
+    expect(calls[0]?.query).toContain("FROM analytics.v_body_measurement AS body_measurement");
     expect(calls[0]?.params).toMatchObject({ userId: "user-1", timezone: "America/Los_Angeles" });
   });
 
@@ -125,10 +126,10 @@ describe("fetchBodyDecisionMeasurements", () => {
 
     const queryText = calls[0]?.query ?? "";
     expect(queryText).toContain(
-      "AND toDate(toTimeZone(recorded_at, {timezone:String})) >= toDate({accessStart:String})",
+      "AND toDate(toTimeZone(body_measurement.recorded_at, {timezone:String})) >= toDate({accessStart:String})",
     );
     expect(queryText).toContain(
-      "AND toDate(toTimeZone(recorded_at, {timezone:String})) < toDate({accessEnd:String})",
+      "AND toDate(toTimeZone(body_measurement.recorded_at, {timezone:String})) < toDate({accessEnd:String})",
     );
     expect(queryText).not.toContain("AND local_date >=");
     expect(calls[0]?.params).toMatchObject({

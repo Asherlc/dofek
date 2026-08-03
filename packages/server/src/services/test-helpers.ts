@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { SmoothedWeightRow } from "../repositories/body-analytics-repository.ts";
 import type {
   DailyMetricsViewRow,
@@ -69,6 +70,29 @@ export function recoveryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function bodyDecisionContextFixture(): BodyDecisionContext {
+  return {
+    latestMeasurement: null,
+    trendWeight: {
+      smoothing: "ewma",
+      alpha: 0.1,
+      gapHandling: "linear_interpolation",
+      invalidWeightHandling: "exclude_non_positive",
+      outlierHandling: "retain",
+    },
+    variation: {
+      status: "insufficient_data",
+      observations: 0,
+      minimumObservations: 8,
+      maximumObservations: 30,
+      method: "tukey_inner_fence",
+      lowerResidualKg: null,
+      upperResidualKg: null,
+      outliersIncluded: true,
+    },
+  };
+}
+
 type LoadMobileRecoveryTab = typeof loadMobileRecoveryTab;
 
 export async function runRecoveryTab(
@@ -91,12 +115,25 @@ export async function runRecoveryTab(
     }
     return [];
   });
+  const sensorStore: ActivitySensorStore = {
+    query,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+  };
   const ctx = {
     db: { execute: vi.fn(async () => []), transaction: vi.fn() },
     userId: "user-1",
     timezone: "UTC",
     accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
-    sensorStore: { query },
+    sensorStore,
   };
 
   vi.spyOn(
@@ -132,12 +169,14 @@ export async function runRecoveryTab(
   if (options.decisionContextError) {
     decisionContextSpy.mockRejectedValue(options.decisionContextError);
   } else {
-    decisionContextSpy.mockResolvedValue(options.decisionContext ?? null);
+    decisionContextSpy.mockResolvedValue(options.decisionContext ?? bodyDecisionContextFixture());
   }
   vi.spyOn(
     (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
     "get",
-  ).mockResolvedValue(options.goalWeight != null ? { value: options.goalWeight } : null);
+  ).mockResolvedValue(
+    options.goalWeight != null ? { key: "goalWeight", value: options.goalWeight } : null,
+  );
 
   return loadRecoveryTab(ctx, options.days ?? 30, options.endDate ?? "2026-03-28");
 }

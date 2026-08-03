@@ -176,24 +176,24 @@ export async function fetchBodyDecisionMeasurements(
   endDate: string,
   accessWindow?: AccessWindow,
 ): Promise<z.infer<typeof bodyDecisionMeasurementClickHouseSchema>[]> {
-  const localDateExpression = "toDate(toTimeZone(recorded_at, {timezone:String}))";
+  const localDateExpression = "toDate(toTimeZone(body_measurement.recorded_at, {timezone:String}))";
   return store.query(
     bodyDecisionMeasurementClickHouseSchema,
     `
       SELECT
         toString(${localDateExpression}) AS date,
-        formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
-        toString(toTimeZone(recorded_at, {timezone:String})) AS recorded_at_local,
-        weight_kg,
-        provider_id,
-        source_name
-      FROM analytics.v_body_measurement
-      WHERE user_id = {userId:UUID}
-        AND weight_kg IS NOT NULL
-        AND weight_kg > 0
+        formatDateTime(body_measurement.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
+        toString(toTimeZone(body_measurement.recorded_at, {timezone:String})) AS recorded_at_local,
+        body_measurement.weight_kg AS weight_kg,
+        body_measurement.provider_id AS provider_id,
+        body_measurement.source_name AS source_name
+      FROM analytics.v_body_measurement AS body_measurement
+      WHERE body_measurement.user_id = {userId:UUID}
+        AND body_measurement.weight_kg IS NOT NULL
+        AND body_measurement.weight_kg > 0
         AND ${localDateExpression} <= ${endDateExpression(endDate)}
         ${accessWindowDateClause(accessWindow, localDateExpression)}
-      ORDER BY ${localDateExpression} ASC, recorded_at ASC
+      ORDER BY ${localDateExpression} ASC, body_measurement.recorded_at ASC
     `,
     { userId, timezone, endDate, ...accessWindowParams(accessWindow) },
   );

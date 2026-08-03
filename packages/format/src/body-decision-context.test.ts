@@ -10,6 +10,15 @@ import {
 const formatWeight = (value: number) => `${value.toFixed(1)} kg`;
 
 describe("body decision context formatting", () => {
+  it("returns no provenance when there is no latest measurement", () => {
+    expect(
+      formatBodyDecisionProvenance(null, {
+        formatWeight,
+        providerLabel: (providerId) => providerId,
+      }),
+    ).toBeNull();
+  });
+
   it("uses the same provenance copy for the measurement source and local time", () => {
     expect(
       formatBodyDecisionProvenance(
@@ -27,6 +36,29 @@ describe("body decision context formatting", () => {
     ).toBe(
       "Latest scale reading: 80.0 kg · Provider: Withings · Source: Body+ · Recorded: 2026-07-25 08:00:00",
     );
+  });
+
+  it("omits provenance copy when the source name is absent", () => {
+    expect(
+      formatBodyDecisionProvenance(
+        {
+          recordedAtLocal: "2026-07-25 08:00:00",
+          weightKg: 80,
+          providerId: "withings",
+          sourceName: null,
+        },
+        {
+          formatWeight,
+          providerLabel: () => "Withings",
+        },
+      ),
+    ).toBe("Latest scale reading: 80.0 kg · Provider: Withings · Recorded: 2026-07-25 08:00:00");
+  });
+
+  it("formats positive, negative, and zero residuals with absolute magnitudes", () => {
+    expect(formatSignedBodyResidual(0.4, formatWeight)).toBe("+0.4 kg");
+    expect(formatSignedBodyResidual(-0.4, formatWeight)).toBe("-0.4 kg");
+    expect(formatSignedBodyResidual(0, formatWeight)).toBe("0.0 kg");
   });
 
   it("describes available variation as an informational residual band", () => {
@@ -57,6 +89,47 @@ describe("body decision context formatting", () => {
           maximumObservations: 30,
           lowerResidualKg: null,
           upperResidualKg: null,
+        },
+        (value) => formatSignedBodyResidual(value, formatWeight),
+      ),
+    ).toBe(
+      "Personalized typical measurement variation is unavailable until at least 8 actual scale readings are available.",
+    );
+  });
+
+  it("treats either missing residual bound as unavailable", () => {
+    const formatResidual = (value: number) => formatSignedBodyResidual(value, formatWeight);
+    const baseVariation = {
+      status: "available" as const,
+      observations: 12,
+      minimumObservations: 8,
+      maximumObservations: 30,
+    };
+
+    expect(
+      formatBodyDecisionVariation(
+        { ...baseVariation, lowerResidualKg: null, upperResidualKg: 0.6 },
+        formatResidual,
+      ),
+    ).toContain("unavailable until at least 8 actual scale readings are available");
+    expect(
+      formatBodyDecisionVariation(
+        { ...baseVariation, lowerResidualKg: -0.4, upperResidualKg: null },
+        formatResidual,
+      ),
+    ).toContain("unavailable until at least 8 actual scale readings are available");
+  });
+
+  it("treats a non-available status as unavailable even when bounds are present", () => {
+    expect(
+      formatBodyDecisionVariation(
+        {
+          status: "insufficient_data",
+          observations: 8,
+          minimumObservations: 8,
+          maximumObservations: 30,
+          lowerResidualKg: -0.4,
+          upperResidualKg: 0.6,
         },
         (value) => formatSignedBodyResidual(value, formatWeight),
       ),

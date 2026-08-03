@@ -56,7 +56,7 @@ function selectDailyMeasurements(
 ): BodyDecisionMeasurement[] {
   const sorted = measurements
     .filter((measurement) => Number.isFinite(measurement.weightKg) && measurement.weightKg > 0)
-    .toSorted((left, right) => {
+    .sort((left, right) => {
       const dateOrder = left.date.localeCompare(right.date);
       return dateOrder === 0 ? left.recordedAt.localeCompare(right.recordedAt) : dateOrder;
     });
