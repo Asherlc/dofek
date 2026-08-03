@@ -15,6 +15,7 @@ const SHARED_SYSTEM_TABLES = new Set([
   "fitness.exercise_alias",
   "fitness.journal_question",
   "fitness.mcp_oauth_client",
+  "fitness.metric_stream_rebuild_task",
   "fitness.nutrient",
   "fitness.provider",
   "fitness.provider_connection_backfill_progress",

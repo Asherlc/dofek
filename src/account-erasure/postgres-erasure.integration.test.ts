@@ -501,6 +501,16 @@ describe("Postgres account-erasure schema drift (integration)", () => {
     await context?.cleanup();
   });
 
+  it("allows shared metric-stream rebuild task state", async () => {
+    await context.db.execute(
+      sql`CREATE TABLE fitness.metric_stream_rebuild_task (
+            id bigint PRIMARY KEY
+          )`,
+    );
+
+    await expect(assertPostgresAccountErasureCoverage(context.db)).resolves.toBeUndefined();
+  });
+
   it("fails closed when a base table has no ownership or shared-system policy", async () => {
     await context.db.execute(
       sql`CREATE TABLE analytics.unclassified_erasure_drift_1994 (
