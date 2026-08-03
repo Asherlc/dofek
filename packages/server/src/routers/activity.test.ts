@@ -132,11 +132,17 @@ function makeCaller(
   rows: Record<string, unknown>[] = [],
   sensorStore: unknown = makeSensorStoreStub(),
 ) {
-  return makeTestCaller(activityRouter, [rows], { sensorStore }).caller;
+  return makeTestCaller(createCaller, [rows], (db) => ({
+    db,
+    sensorStore,
+    userId: "user-1",
+    timezone: "UTC",
+  })).caller;
 }
 
 function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
-  return makeTestCaller(activityRouter, [rows]).caller;
+  return makeTestCaller(createCaller, [rows], (db) => ({ db, userId: "user-1", timezone: "UTC" }))
+    .caller;
 }
 
 function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
