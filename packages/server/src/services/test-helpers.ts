@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { SmoothedWeightRow } from "../repositories/body-analytics-repository.ts";
 import type {
@@ -109,12 +110,17 @@ export async function runRecoveryTab(
     decisionContextError?: Error;
   } = {},
 ) {
-  const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
-    if (String(sqlText).includes("analytics.daily_recovery")) {
-      return recoveryRows;
-    }
-    return [];
-  });
+  const query = vi.fn(
+    async <TSchema extends z.ZodType>(
+      _schema: TSchema,
+      sqlText: string,
+    ): Promise<z.infer<TSchema>[]> => {
+      if (sqlText.includes("analytics.daily_recovery")) {
+        return z.array(_schema).parse(recoveryRows);
+      }
+      return [];
+    },
+  );
   const sensorStore: ActivitySensorStore = {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),

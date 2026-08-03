@@ -101,6 +101,9 @@ describe("fetchBodyDecisionMeasurements", () => {
     expect(calls[0]?.query).toContain("provider_id");
     expect(calls[0]?.query).toContain("recorded_at_local");
     expect(calls[0]?.query).toContain(
+      "formatDateTime(body_measurement.recorded_at, '%Y-%m-%d %H:%i:%S', {timezone:String}) AS recorded_at_local",
+    );
+    expect(calls[0]?.query).toContain(
       "toDate(toTimeZone(body_measurement.recorded_at, {timezone:String})) <= toDate(toTimeZone(now(), {timezone:String}))",
     );
     expect(calls[0]?.query).toContain("FROM analytics.v_body_measurement AS body_measurement");

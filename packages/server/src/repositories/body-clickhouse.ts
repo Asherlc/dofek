@@ -183,7 +183,7 @@ export async function fetchBodyDecisionMeasurements(
       SELECT
         toString(${localDateExpression}) AS date,
         formatDateTime(body_measurement.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
-        toString(toTimeZone(body_measurement.recorded_at, {timezone:String})) AS recorded_at_local,
+        formatDateTime(body_measurement.recorded_at, '%Y-%m-%d %H:%i:%S', {timezone:String}) AS recorded_at_local,
         body_measurement.weight_kg AS weight_kg,
         body_measurement.provider_id AS provider_id,
         body_measurement.source_name AS source_name
