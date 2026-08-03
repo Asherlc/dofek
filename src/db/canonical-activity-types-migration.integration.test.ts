@@ -651,26 +651,24 @@ describe("canonical activity types Postgres migration", () => {
         ORDER BY provider_type
       `,
       );
+      const expectedProviderTypes = [
+        ...LEGACY_ACTIVITY_TYPES,
+        "future_vendor_activity",
+      ] satisfies Array<(typeof LEGACY_ACTIVITY_TYPES)[number] | "future_vendor_activity">;
       expect(everyLegacyType).toEqual(
-        (
-          [...LEGACY_ACTIVITY_TYPES, "future_vendor_activity"] as Array<
-            (typeof LEGACY_ACTIVITY_TYPES)[number] | "future_vendor_activity"
-          >
-        )
-          .sort()
-          .map((providerType) =>
-            providerType === "future_vendor_activity"
-              ? {
-                  canonical_type: "other",
-                  modality: null,
-                  provider_type: providerType,
-                }
-              : {
-                  canonical_type: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].canonicalType,
-                  modality: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].modality,
-                  provider_type: providerType,
-                },
-          ),
+        expectedProviderTypes.sort().map((providerType) =>
+          providerType === "future_vendor_activity"
+            ? {
+                canonical_type: "other",
+                modality: null,
+                provider_type: providerType,
+              }
+            : {
+                canonical_type: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].canonicalType,
+                modality: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].modality,
+                provider_type: providerType,
+              },
+        ),
       );
 
       const activityViewLocalTimeColumns = await executeWithSchema(

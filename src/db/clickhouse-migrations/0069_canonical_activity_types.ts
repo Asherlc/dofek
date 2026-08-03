@@ -7,8 +7,13 @@ interface ColumnCountRow {
   column_count: number | string;
 }
 
-const canonicalCase = classificationCase("canonicalType", "canonical_type");
-const modalityCase = classificationCase("modality", "NULL");
+function canonicalCase(): string {
+  return classificationCase("canonicalType", "canonical_type");
+}
+
+function modalityCase(): string {
+  return classificationCase("modality", "NULL");
+}
 
 const servingTables = [
   "activity_aerobic_efficiency",
@@ -119,8 +124,8 @@ async function migrateReplicatedActivity(client: ClickHouseCommandClient): Promi
       `ALTER TABLE postgres_fitness.activity
   UPDATE
     provider_type = if(provider_type = '', activity_type, provider_type),
-    modality = if(modality IS NULL, ${modalityCase.replaceAll("canonical_type", "activity_type")}, modality),
-    canonical_type = if(canonical_type = '', ${canonicalCase.replaceAll("canonical_type", "activity_type")}, canonical_type)
+    modality = if(modality IS NULL, ${modalityCase().replaceAll("canonical_type", "activity_type")}, modality),
+    canonical_type = if(canonical_type = '', ${canonicalCase().replaceAll("canonical_type", "activity_type")}, canonical_type)
   WHERE true
   SETTINGS mutations_sync = 2`,
     );
@@ -130,8 +135,8 @@ async function migrateReplicatedActivity(client: ClickHouseCommandClient): Promi
       client,
       `ALTER TABLE postgres_fitness.activity
   UPDATE
-    modality = if(modality IS NULL, ${modalityCase}, modality),
-    canonical_type = ${canonicalCase}
+    modality = if(modality IS NULL, ${modalityCase()}, modality),
+    canonical_type = ${canonicalCase()}
   WHERE true
   SETTINGS mutations_sync = 2`,
     );
@@ -163,7 +168,7 @@ async function migrateServingTables(client: ClickHouseCommandClient): Promise<vo
       await runStatement(
         client,
         `ALTER TABLE analytics.${table}
-  UPDATE canonical_type = ${canonicalCase}
+  UPDATE canonical_type = ${canonicalCase()}
   WHERE canonical_type IN (${Object.keys(LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS)
     .map(clickHouseString)
     .join(", ")})
@@ -204,7 +209,7 @@ export function createMigration(): ClickHouseMigration {
       `ALTER TABLE postgres_fitness.activity
   ADD COLUMN IF NOT EXISTS modality Nullable(String) AFTER provider_type`,
       `ALTER TABLE postgres_fitness.activity
-  UPDATE modality = if(modality IS NULL, ${modalityCase}, modality), canonical_type = ${canonicalCase}
+  UPDATE modality = if(modality IS NULL, ${modalityCase()}, modality), canonical_type = ${canonicalCase()}
   WHERE true
   SETTINGS mutations_sync = 2`,
       "ALTER TABLE analytics.activity_summary_rows RENAME COLUMN activity_type TO canonical_type",

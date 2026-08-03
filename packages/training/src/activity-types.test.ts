@@ -198,6 +198,12 @@ describe("resolveProviderActivityType", () => {
     });
   });
 
+  it("rejects blank provider types after trimming", () => {
+    expect(() => resolveProviderActivityType("   ", "cycling")).toThrow(
+      "Provider activity type must be non-empty",
+    );
+  });
+
   it("supports distinct canonical concepts absent from the legacy enum", () => {
     expect(resolveProviderActivityType("gaelic-football", "gaelic_football")).toEqual({
       canonicalType: "gaelic_football",
