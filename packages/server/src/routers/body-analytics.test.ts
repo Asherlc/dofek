@@ -56,9 +56,23 @@ const createCaller = createTestCallerFactory(bodyAnalyticsRouter);
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
-    sensorStore: makeMockSensorStore(rows),
+    sensorStore: makeMockSensorStore(withDecisionProvenance(rows)),
     userId: "user-1",
     timezone: "UTC",
+  });
+}
+
+function withDecisionProvenance(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) => {
+    const date = typeof row.date === "string" ? row.date : "2026-01-01";
+    return {
+      ...row,
+      recorded_at: typeof row.recorded_at === "string" ? row.recorded_at : `${date}T08:00:00.000Z`,
+      recorded_at_local:
+        typeof row.recorded_at_local === "string" ? row.recorded_at_local : `${date} 08:00:00`,
+      provider_id: typeof row.provider_id === "string" ? row.provider_id : "test-provider",
+      source_name: typeof row.source_name === "string" ? row.source_name : null,
+    };
   });
 }
 
@@ -68,7 +82,7 @@ function makeCallerWithSettings(
 ) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(settingRows) },
-    sensorStore: makeMockSensorStore(bodyRows),
+    sensorStore: makeMockSensorStore(withDecisionProvenance(bodyRows)),
     userId: "user-1",
     timezone: "UTC",
   });
@@ -235,6 +249,66 @@ describe("bodyAnalyticsRouter", () => {
           }),
         ]),
       );
+    });
+
+    it("returns server-authored measurement provenance and variation context", async () => {
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getBodyDecisionContext").mockResolvedValueOnce({
+        latestMeasurement: {
+          date: "2024-01-20",
+          recordedAt: "2024-01-20T08:00:00.000Z",
+          recordedAtLocal: "2024-01-20 08:00:00",
+          weightKg: 79.8,
+          providerId: "withings",
+          sourceName: "Body+",
+        },
+        trendWeight: {
+          smoothing: "ewma",
+          alpha: 0.1,
+          gapHandling: "linear_interpolation",
+          invalidWeightHandling: "exclude_non_positive",
+          outlierHandling: "retain",
+        },
+        variation: {
+          status: "available",
+          observations: 12,
+          minimumObservations: 8,
+          maximumObservations: 30,
+          method: "tukey_inner_fence",
+          lowerResidualKg: -0.6,
+          upperResidualKg: 0.7,
+          outliersIncluded: true,
+        },
+      });
+      const caller = makeCaller([]);
+
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
+
+      expect(result.decisionContext.latestMeasurement).toMatchObject({
+        providerId: "withings",
+        sourceName: "Body+",
+        recordedAt: "2024-01-20T08:00:00.000Z",
+      });
+      expect(result.decisionContext.variation).toMatchObject({
+        status: "available",
+        lowerResidualKg: -0.6,
+        upperResidualKg: 0.7,
+      });
+    });
+
+    it("reports decision-context failures with request context", async () => {
+      const decisionContextError = new Error("body decision context unavailable");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getBodyDecisionContext").mockRejectedValueOnce(
+        decisionContextError,
+      );
+      const caller = makeCaller([]);
+
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
+
+      expect(result.decisionContext).toBeNull();
+      expect(captureException).toHaveBeenCalledWith(decisionContextError, {
+        tags: { procedure: "bodyAnalytics.weightOverview" },
+        extra: { endDate: "2024-01-20", userId: "user-1" },
+      });
     });
 
     it("returns neutral body fat classifications from server-owned recomposition data", async () => {

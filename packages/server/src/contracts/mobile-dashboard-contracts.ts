@@ -5,6 +5,7 @@ import {
   baselineComparisonDirectionSchema,
   baselineRelativeMetricSchema,
 } from "./baseline-relative-metrics.ts";
+import { bodyDecisionContextOutputSchema } from "./body-decision-context.ts";
 import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
@@ -236,6 +237,7 @@ export const mobileRecoveryTabOutputSchema = z.object({
       interpolated: z.boolean(),
     }),
   ),
+  decisionContext: bodyDecisionContextOutputSchema.nullable(),
   weightPrediction: z.object({
     ratePerWeek: z.number().nullable(),
     rateConfidence: z.number().min(0).max(1).nullable(),
@@ -500,6 +502,9 @@ export const mobileRecoveryFixtureSchema = z
         ...data.stress.daily.map((row) => row.date),
         ...data.dailyMetrics.map((row) => row.date),
         ...data.weight.map((row) => row.date),
+        ...(data.decisionContext?.latestMeasurement
+          ? [data.decisionContext.latestMeasurement.date]
+          : []),
       ],
       context,
     );

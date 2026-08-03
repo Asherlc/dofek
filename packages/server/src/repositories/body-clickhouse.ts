@@ -55,6 +55,15 @@ export const bodyWeightClickHouseSchema = z.object({
   body_fat_pct: z.coerce.number().nullable(),
 });
 
+export const bodyDecisionMeasurementClickHouseSchema = z.object({
+  date: dateStringSchema,
+  recorded_at: timestampStringSchema,
+  recorded_at_local: z.string(),
+  weight_kg: z.coerce.number(),
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
+});
+
 export const bodyLatestClickHouseSchema = z.object({
   weight_kg: z.coerce.number().nullable(),
   body_fat_pct: z.coerce.number().nullable(),
@@ -73,12 +82,17 @@ type BodyWeightOptions = {
 };
 
 function endDateExpression(endDate: string): string {
-  return endDate === "now" ? "today()" : "toDate({endDate:String})";
+  return endDate === "now"
+    ? "toDate(toTimeZone(now(), {timezone:String}))"
+    : "toDate({endDate:String})";
 }
 
-function accessWindowDateClause(accessWindow: AccessWindow | undefined): string {
+function accessWindowDateClause(
+  accessWindow: AccessWindow | undefined,
+  localDateExpression = "local_date",
+): string {
   if (!accessWindow || accessWindow.kind === "full") return "";
-  return "AND local_date >= toDate({accessStart:String}) AND local_date < toDate({accessEnd:String})";
+  return `AND ${localDateExpression} >= toDate({accessStart:String}) AND ${localDateExpression} < toDate({accessEnd:String})`;
 }
 
 function accessWindowParams(accessWindow: AccessWindow | undefined): Record<string, unknown> {
@@ -155,6 +169,36 @@ export async function fetchBodyWeightRows(
   );
 }
 
+export async function fetchBodyDecisionMeasurements(
+  store: BodyClickHouseStore,
+  userId: string,
+  timezone: string,
+  endDate: string,
+  accessWindow?: AccessWindow,
+): Promise<z.infer<typeof bodyDecisionMeasurementClickHouseSchema>[]> {
+  const localDateExpression = "toDate(toTimeZone(body_measurement.recorded_at, {timezone:String}))";
+  return store.query(
+    bodyDecisionMeasurementClickHouseSchema,
+    `
+      SELECT
+        toString(${localDateExpression}) AS date,
+        formatDateTime(body_measurement.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
+        formatDateTime(body_measurement.recorded_at, '%Y-%m-%d %H:%i:%S', {timezone:String}) AS recorded_at_local,
+        body_measurement.weight_kg AS weight_kg,
+        body_measurement.provider_id AS provider_id,
+        body_measurement.source_name AS source_name
+      FROM analytics.v_body_measurement AS body_measurement
+      WHERE body_measurement.user_id = {userId:UUID}
+        AND body_measurement.weight_kg IS NOT NULL
+        AND body_measurement.weight_kg > 0
+        AND ${localDateExpression} <= ${endDateExpression(endDate)}
+        ${accessWindowDateClause(accessWindow, localDateExpression)}
+      ORDER BY ${localDateExpression} ASC, body_measurement.recorded_at ASC
+    `,
+    { userId, timezone, endDate, ...accessWindowParams(accessWindow) },
+  );
+}
+
 export async function fetchBodyCompRows(
   store: BodyClickHouseStore,
   userId: string,
@@ -184,7 +228,7 @@ export async function fetchBodyCompProvenanceRows(
     `
       SELECT
         toString(toDate(toTimeZone(body_measurements.recorded_at, {timezone:String}))) AS date,
-        toString(body_measurements.recorded_at) AS recorded_at,
+        formatDateTime(body_measurements.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
         body_measurements.provider_id AS provider_id,
         body_measurements.source_providers AS source_providers,
         weight_kg,

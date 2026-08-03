@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
+import { bodyDecisionContextOutputSchema } from "../contracts/body-decision-context.ts";
 import { epistemicStatusSchema } from "../contracts/epistemic-status-contract.ts";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { selectedDateRangeInput } from "../lib/date-window.ts";
@@ -115,11 +116,12 @@ export const bodyAnalyticsRouter = router({
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
       const predictionDays = range.days == null ? null : Math.max(range.days, 90);
-      const [smoothedWeightResult, predictionResult, recompositionResult] =
+      const [smoothedWeightResult, predictionResult, recompositionResult, decisionContextResult] =
         await Promise.allSettled([
           repo.getSmoothedWeight(range.days, input.endDate),
           repo.getWeightPrediction(predictionDays, input.endDate, goalWeightKg),
           repo.getRecomposition(range.days, input.endDate),
+          repo.getBodyDecisionContext(input.endDate),
         ]);
 
       if (smoothedWeightResult.status === "rejected") {
@@ -137,12 +139,20 @@ export const bodyAnalyticsRouter = router({
           cause: recompositionResult.reason,
         });
       }
+      if (decisionContextResult.status === "rejected") {
+        captureException(decisionContextResult.reason, {
+          tags: { procedure: "bodyAnalytics.weightOverview" },
+          extra: { endDate: input.endDate, userId: ctx.userId },
+        });
+      }
 
       const smoothedWeight = smoothedWeightResult.value;
       const recomposition = recompositionResult.value;
       return {
         smoothedWeight,
         prediction: predictionResult.status === "fulfilled" ? predictionResult.value : null,
+        decisionContext:
+          decisionContextResult.status === "fulfilled" ? decisionContextResult.value : null,
         recomposition,
         healthStatus: [
           buildWeightHealthStatus(
@@ -166,6 +176,7 @@ export const bodyAnalyticsRouter = router({
       outputSchema: z.object({
         smoothedWeight: z.array(smoothedWeightOutputSchema),
         prediction: weightPredictionOutputSchema.nullable(),
+        decisionContext: bodyDecisionContextOutputSchema.nullable(),
         recomposition: z.array(bodyRecompositionOutputSchema),
         healthStatus: z.array(healthStatusMetricSchema),
       }),

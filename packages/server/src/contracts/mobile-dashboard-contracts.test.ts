@@ -127,6 +127,33 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
           interpolated: false,
         },
       ],
+      decisionContext: {
+        latestMeasurement: {
+          date: input.endDate,
+          recordedAt: "2026-07-27T08:00:00.000Z",
+          recordedAtLocal: "2026-07-27 08:00:00",
+          weightKg: 73.5,
+          providerId: "withings",
+          sourceName: "Body+",
+        },
+        trendWeight: {
+          smoothing: "ewma",
+          alpha: 0.1,
+          gapHandling: "linear_interpolation",
+          invalidWeightHandling: "exclude_non_positive",
+          outlierHandling: "retain",
+        },
+        variation: {
+          status: "available",
+          observations: 8,
+          minimumObservations: 8,
+          maximumObservations: 30,
+          method: "tukey_inner_fence",
+          lowerResidualKg: -0.4,
+          upperResidualKg: 0.5,
+          outliersIncluded: true,
+        },
+      },
       weightPrediction: {
         ratePerWeek: -0.2,
         rateConfidence: 0.72,
@@ -397,6 +424,40 @@ describe("mobileRecoveryFixtureSchema", () => {
       [],
       "Fixture date 2026-07-28 is outside 2026-06-28..2026-07-27",
     );
+  });
+
+  it("rejects an out-of-window decision-context measurement date", () => {
+    const fixture = validRecoveryFixture();
+    const latestMeasurement = fixture.data.decisionContext?.latestMeasurement;
+    if (!latestMeasurement) throw new Error("Missing decision-context measurement fixture");
+    latestMeasurement.date = "2026-07-28";
+
+    expectIssue(
+      mobileRecoveryFixtureSchema.safeParse(fixture),
+      [],
+      "Fixture date 2026-07-28 is outside 2026-06-28..2026-07-27",
+    );
+  });
+
+  it.each([
+    [
+      "a missing decision context",
+      (fixture: z.input<typeof mobileRecoveryFixtureSchema>) => {
+        fixture.data.decisionContext = null;
+      },
+    ],
+    [
+      "a missing latest measurement",
+      (fixture: z.input<typeof mobileRecoveryFixtureSchema>) => {
+        if (!fixture.data.decisionContext) throw new Error("Missing decision-context fixture");
+        fixture.data.decisionContext.latestMeasurement = null;
+      },
+    ],
+  ])("accepts recovery fixtures with %s", (_label, removeMeasurement) => {
+    const fixture = validRecoveryFixture();
+    removeMeasurement(fixture);
+
+    expect(mobileRecoveryFixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it("rejects calendar-invalid dates even when they sort inside the selected window", () => {
