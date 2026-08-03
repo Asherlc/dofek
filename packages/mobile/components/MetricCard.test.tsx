@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MetricCard } from "./MetricCard";
 
 describe("MetricCard", () => {
@@ -74,5 +74,22 @@ describe("MetricCard", () => {
   it("hides chart tooltip button when no trend chart is rendered", () => {
     render(<MetricCard title="Stress" value="1.2" />);
     expect(screen.queryByLabelText("About Stress")).toBeNull();
+  });
+
+  it("hides the data action when no contributor destination is configured", () => {
+    render(<MetricCard title="Heart Rate Variability" value="62" />);
+
+    expect(
+      screen.queryByRole("button", { name: "View data for Heart Rate Variability" }),
+    ).toBeNull();
+  });
+
+  it("opens the configured contributor destination from an accessible data action", () => {
+    const onViewData = vi.fn();
+    render(<MetricCard title="Resting Heart Rate" value="52" onViewData={onViewData} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "View data for Resting Heart Rate" }));
+
+    expect(onViewData).toHaveBeenCalledOnce();
   });
 });

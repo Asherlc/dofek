@@ -169,6 +169,7 @@ export function SleepPage() {
 
         {/* Data Sources */}
         <PageSection
+          id="sleep-data-sources"
           title="Data Sources"
           subtitle="Which canonical session was selected and which overlapping sessions disagreed"
         >

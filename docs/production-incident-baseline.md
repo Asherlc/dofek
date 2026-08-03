@@ -22203,3 +22203,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** `.github/workflows/deploy-ota.yml` used the hyphenated flag spelling, which EOAS 2.3.22 does not recognize.
 - **Fix / mitigation:** Changed the workflow and matching mobile README reference to `--dumpSourcemap`. No retry, timeout, or warn-and-continue behavior was added.
 - **Remaining risk / follow-up:** Commit and push the source fix, run Deploy OTA, and rotate the unmasked `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN` values visible in the job log before rerunning.
+
+## 2026-08-02 — DQ-18 native validation could not start on the local Docker host
+
+- **Status:** Unresolved local validation blocker; no production impact.
+- **Symptoms:** `pnpm compose:up` stopped before the API, ClickHouse, Redis, or
+  Redpanda services could start, so the signed native audit could not reach
+  authenticated app data. The analytics phase of `pnpm lint` also could not
+  connect to ClickHouse at `127.0.0.1:50700`.
+- **Evidence:** The exact Compose command failed with the first fatal line
+  `failed to create network daegu-v1_default: Error response from daemon: all predefined address pools have been fully subnetted`.
+  The lint failure began with
+  `HTTPConnection(host='127.0.0.1', port=50700): Failed to establish a new connection`.
+- **Root cause:** The shared Docker host has exhausted its predefined bridge
+  network address pools; this is a host resource condition, not an application
+  or validation assertion failure ([Docker address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
+- **Fix / mitigation:** No other workspace containers, networks, or volumes
+  were stopped or pruned, and no repository retry, timeout, fallback, or
+  validation relaxation was added.
+- **Remaining risk / follow-up:** An operator must reclaim disposable
+  workspace networks or reconfigure Docker's address pools while preserving
+  active workspaces. Then rerun `pnpm compose:up`, verify API and ClickHouse
+  health, and repeat the signed Release native audit before merging DQ-18.

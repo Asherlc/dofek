@@ -505,6 +505,34 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(restingHeartRateSparklineCall).toBeDefined();
   });
 
+  it("opens contributing heart-rate readings from the resting-heart-rate card", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [
+        {
+          date: "2026-04-06",
+          hrv: 44,
+          resting_hr: 54,
+          resting_hr_mean_7d: 55,
+        },
+      ],
+      baselineRelative: [baselineMetric("resting_heart_rate", 54)],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "View data for Resting Heart Rate" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/daily-heart-rate");
+  });
+
   it("displays respiratory rate and sleep efficiency with canonical baseline context", async () => {
     mockRecoveryData = {
       hrvVariability: [],
@@ -529,6 +557,27 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("Sleep Efficiency")).toBeTruthy();
     expect(screen.getByText("90.0")).toBeTruthy();
     expect(screen.getAllByText(/24\/30 baseline days/)).toHaveLength(2);
+  });
+
+  it("opens contributing nights from the sleep-efficiency card", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      baselineRelative: [baselineMetric("sleep_efficiency", 90)],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "View data for Sleep Efficiency" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/sleep");
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {

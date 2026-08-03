@@ -458,8 +458,8 @@ table fitness.activity {
   perceived_exertion real
   source_name text
   timezone text
-  start_utc_offset_minutes smallint
-  end_utc_offset_minutes smallint
+  start_utc_offset_minutes bigint
+  end_utc_offset_minutes bigint
   local_time_source text [not null, default: 'unknown']
   strava_id text
   raw jsonb
@@ -528,12 +528,6 @@ table fitness.climbing_entry {
     activity_id [name: 'climbing_entry_activity_idx']
     (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
     (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
-
-
-
-
-
-
   }
 }
 
@@ -644,8 +638,8 @@ table fitness.sleep_session {
   sleep_need_from_nap_minutes integer
   source_name text
   timezone text
-  start_utc_offset_minutes smallint
-  end_utc_offset_minutes smallint
+  start_utc_offset_minutes bigint
+  end_utc_offset_minutes bigint
   local_time_source text [not null, default: 'unknown']
   created_at "timestamp with time zone" [not null, default: `now()`]
 
@@ -1518,6 +1512,7 @@ table fitness.life_events {
   category text
   ongoing boolean [not null, default: false]
   notes text
+  personal_experiment_id uuid
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
@@ -1561,6 +1556,23 @@ table fitness.personal_experiment {
 
 
 
+
+
+
+  }
+}
+
+table fitness.personal_experiment_check_in {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  personal_experiment_id uuid [not null]
+  date date [not null]
+  adherence text [not null]
+  confounder text
+  note text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (personal_experiment_id, date) [name: 'personal_experiment_check_in_experiment_date_unique', unique]
 
 
 
@@ -1924,9 +1936,13 @@ ref journal_entry_question_slug_journal_question_slug_fk: fitness.journal_entry.
 
 ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
+ref life_events_personal_experiment_id_personal_experiment_id_fk: fitness.life_events.personal_experiment_id > fitness.personal_experiment.id [delete: set null, update: no action]
+
 ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref personal_experiment_user_id_user_profile_id_fk: fitness.personal_experiment.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref personal_experiment_check_in_personal_experiment_id_personal_experiment_id_fk: fitness.personal_experiment_check_in.personal_experiment_id > fitness.personal_experiment.id [delete: cascade, update: no action]
 
 ref provider_data_deletion_outbox_user_id_user_profile_id_fk: fitness.provider_data_deletion_outbox.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

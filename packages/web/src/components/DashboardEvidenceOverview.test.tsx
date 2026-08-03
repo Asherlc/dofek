@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import type { HTMLAttributes } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DashboardEvidenceOverview,
   formatDashboardRange,
   trendPositionLabel,
 } from "./DashboardEvidenceOverview.tsx";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, ...props }: HTMLAttributes<HTMLAnchorElement> & { to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
 
 describe("DashboardEvidenceOverview helpers", () => {
   it("formats the dashboard date range inclusively", () => {
@@ -148,6 +157,9 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
     expect(screen.queryByText("Export confidence")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "View resting heart rate data" }).getAttribute("href"),
+    ).toBe("/body/heart-rate");
   });
 
   it("derives the dashboard relationship heading and value from conditional evidence", () => {

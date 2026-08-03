@@ -159,8 +159,8 @@ entity "activity" {
   perceived_exertion : real
   source_name : text
   timezone : text
-  start_utc_offset_minutes : smallint
-  end_utc_offset_minutes : smallint
+  start_utc_offset_minutes : bigint
+  end_utc_offset_minutes : bigint
   local_time_source : text
   strava_id : text
   raw : jsonb
@@ -301,8 +301,8 @@ entity "sleep_session" {
   sleep_need_from_nap_minutes : integer
   source_name : text
   timezone : text
-  start_utc_offset_minutes : smallint
-  end_utc_offset_minutes : smallint
+  start_utc_offset_minutes : bigint
+  end_utc_offset_minutes : bigint
   local_time_source : text
   created_at : timestamp
 }
@@ -964,6 +964,7 @@ entity "life_events" {
   category : text
   ongoing : boolean
   notes : text
+  personal_experiment_id : uuid <<FK>>
   created_at : timestamp
 }
 
@@ -990,6 +991,17 @@ entity "personal_experiment" {
   start_date : date
   status : text
   stopped_at : date
+  created_at : timestamp
+}
+
+entity "personal_experiment_check_in" {
+  * id : uuid <<PK>>
+  --
+  personal_experiment_id : uuid <<FK>>
+  date : date
+  adherence : text
+  confounder : text
+  note : text
   created_at : timestamp
 }
 
@@ -1195,8 +1207,10 @@ provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
 user_profile ||--o{ life_events
+personal_experiment ||--o{ life_events
 user_profile ||--o{ menstrual_period
 user_profile ||--o{ personal_experiment
+personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
 user_profile ||--o{ shared_report

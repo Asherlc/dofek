@@ -1,6 +1,11 @@
+import { TRPCError } from "@trpc/server";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
-import { LifeEventsRepository } from "../repositories/life-events-repository.ts";
+import {
+  LifeEventsRepository,
+  PersonalExperimentAssociationError,
+} from "../repositories/life-events-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const lifeEventsRouter = router({
@@ -18,13 +23,22 @@ export const lifeEventsRouter = router({
         category: z.string().nullable().default(null),
         ongoing: z.boolean().default(false),
         notes: z.string().nullable().default(null),
+        personalExperimentId: z.guid().nullable().default(null),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      const event = await repo.create(input);
-      await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
-      return event;
+      try {
+        const event = await repo.create(input);
+        await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
+        return event;
+      } catch (error) {
+        captureException(error, { tags: { trpcPath: "lifeEvents.create" } });
+        if (error instanceof PersonalExperimentAssociationError) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
+        }
+        throw error;
+      }
     }),
 
   update: protectedProcedure
@@ -37,16 +51,25 @@ export const lifeEventsRouter = router({
         category: z.string().nullable().optional(),
         ongoing: z.boolean().optional(),
         notes: z.string().nullable().optional(),
+        personalExperimentId: z.guid().nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...fields } = input;
       const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      const event = await repo.update(id, fields);
-      if (event !== null) {
-        await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
+      try {
+        const event = await repo.update(id, fields);
+        if (event !== null) {
+          await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
+        }
+        return event;
+      } catch (error) {
+        captureException(error, { tags: { trpcPath: "lifeEvents.update" } });
+        if (error instanceof PersonalExperimentAssociationError) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
+        }
+        throw error;
       }
-      return event;
     }),
 
   delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {

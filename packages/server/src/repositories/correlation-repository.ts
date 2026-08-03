@@ -130,6 +130,12 @@ export interface CorrelationObservationPage {
   nextCursor: string | null;
 }
 
+export interface CorrelationMetricOutcome {
+  date: string;
+  value: number;
+  sourceProviderIds: string[];
+}
+
 interface CorrelationObservationPagination {
   cursor?: string;
   pageSize: number;
@@ -629,6 +635,29 @@ export class CorrelationRepository {
         availabilityDescription,
       }),
     );
+  }
+
+  async listMetricOutcomes(
+    metricId: string,
+    days: RangeDays,
+    endDate: string,
+  ): Promise<CorrelationMetricOutcome[]> {
+    const { joined, evidenceByDate } = await this.#loadCorrelationData(days, endDate);
+    return joined.flatMap((day) => {
+      const value = extractMetricValue(day, metricId);
+      if (value === null) return [];
+      return [
+        {
+          date: day.date,
+          value,
+          sourceProviderIds: uniqueSorted(
+            contributorsForMetric(metricId, day.date, evidenceByDate).flatMap(
+              (contributor) => contributor.providerIds,
+            ),
+          ),
+        },
+      ];
+    });
   }
 
   async compute(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {

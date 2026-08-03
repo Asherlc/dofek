@@ -19,6 +19,7 @@ const lifeEventRowSchema = z.object({
   category: z.string().nullable(),
   ongoing: z.coerce.boolean(),
   notes: z.string().nullable(),
+  personal_experiment_id: z.string().nullable(),
   created_at: timestampStringSchema,
 });
 
@@ -76,6 +77,7 @@ export interface CreateLifeEventInput {
   category: string | null;
   ongoing: boolean;
   notes: string | null;
+  personalExperimentId?: string | null;
 }
 
 export interface UpdateLifeEventInput {
@@ -85,7 +87,10 @@ export interface UpdateLifeEventInput {
   category?: string | null;
   ongoing?: boolean;
   notes?: string | null;
+  personalExperimentId?: string | null;
 }
+
+export class PersonalExperimentAssociationError extends Error {}
 
 export interface AnalyzeResult {
   event: Record<string, unknown>;
@@ -165,7 +170,7 @@ export class LifeEventsRepository {
     return executeWithSchema(
       this.#db,
       lifeEventRowSchema,
-      sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, created_at
+      sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, personal_experiment_id, created_at
 				FROM fitness.life_events
 				WHERE user_id = ${this.#userId}
 				ORDER BY started_at DESC`,
@@ -174,11 +179,17 @@ export class LifeEventsRepository {
 
   /** Create a new life event, returning the full row. */
   async create(input: CreateLifeEventInput): Promise<LifeEventFullRow> {
+    const personalExperimentId = input.personalExperimentId ?? null;
+    await this.#assertPersonalExperimentOwned(personalExperimentId);
     const rows = await executeWithSchema(
       this.#db,
       lifeEventFullRowSchema,
-      sql`INSERT INTO fitness.life_events (user_id, label, started_at, ended_at, category, ongoing, notes)
-				VALUES (${this.#userId}, ${input.label}, ${input.startedAt}::date, ${input.endedAt}::date, ${input.category}, ${input.ongoing}, ${input.notes})
+      sql`INSERT INTO fitness.life_events (
+            user_id, label, started_at, ended_at, category, ongoing, notes, personal_experiment_id
+          ) VALUES (
+            ${this.#userId}, ${input.label}, ${input.startedAt}::date, ${input.endedAt}::date,
+            ${input.category}, ${input.ongoing}, ${input.notes}, ${personalExperimentId}
+          )
 				RETURNING *`,
     );
     const row = rows[0];
@@ -188,6 +199,9 @@ export class LifeEventsRepository {
 
   /** Update an existing life event, returning the updated row or null if not found. */
   async update(id: string, changes: UpdateLifeEventInput): Promise<LifeEventFullRow | null> {
+    if (changes.personalExperimentId !== undefined) {
+      await this.#assertPersonalExperimentOwned(changes.personalExperimentId);
+    }
     const setClauses: ReturnType<typeof sql>[] = [];
     if (changes.label !== undefined) setClauses.push(sql`label = ${changes.label}`);
     if (changes.startedAt !== undefined)
@@ -203,6 +217,8 @@ export class LifeEventsRepository {
     if (changes.ongoing !== undefined) setClauses.push(sql`ongoing = ${changes.ongoing}`);
     if (changes.notes !== undefined)
       setClauses.push(changes.notes ? sql`notes = ${changes.notes}` : sql`notes = NULL`);
+    if (changes.personalExperimentId !== undefined)
+      setClauses.push(sql`personal_experiment_id = ${changes.personalExperimentId}`);
 
     if (setClauses.length === 0) return null;
 
@@ -340,6 +356,24 @@ export class LifeEventsRepository {
       throw new Error("ClickHouse activity analytics store is required for life event analysis");
     }
     return this.#sensorStore;
+  }
+
+  async #assertPersonalExperimentOwned(
+    personalExperimentId: string | null | undefined,
+  ): Promise<void> {
+    if (personalExperimentId == null) return;
+    const rows = await executeWithSchema(
+      this.#db,
+      z.object({ id: z.string() }),
+      sql`SELECT id
+          FROM fitness.personal_experiment
+          WHERE id = ${personalExperimentId} AND user_id = ${this.#userId}`,
+    );
+    if (rows[0] === undefined) {
+      throw new PersonalExperimentAssociationError(
+        "Choose one of your own experiments to link this annotation.",
+      );
+    }
   }
 }
 
