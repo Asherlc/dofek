@@ -116,6 +116,12 @@ describe("Activity summary deduplication", () => {
     canonicalActivityId = aliasRow.id;
     memberActivityId = nonCanonicalMemberId;
 
+    await testCtx.db.execute(
+      sql`UPDATE fitness.activity
+          SET perceived_exertion = 8
+          WHERE id = ${memberActivityId}::uuid`,
+    );
+
     const previousLoadDate = dateDaysAgo(14);
     const recentLoadDate = dateDaysAgo(3);
     const previousLoadWeek = dateDaysAgo(14);
@@ -578,6 +584,7 @@ describe("Activity summary deduplication", () => {
     expect(byId.status).toBe(200);
     expect(byId.result.result.data).toMatchObject({
       id: canonicalActivityId,
+      perceivedExertion: 8,
       avgHr: 144,
       avgPower: 212,
       sampleCount: 1800,

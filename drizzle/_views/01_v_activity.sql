@@ -258,6 +258,10 @@ merged AS (
     bounds.started_at,
     bounds.ended_at,
     b.source_name,
+    (SELECT r.perceived_exertion
+     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id AND r.perceived_exertion IS NOT NULL
+     ORDER BY r.prio ASC, r.id ASC LIMIT 1) AS perceived_exertion,
     (SELECT r.name FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.name IS NOT NULL
      ORDER BY r.prio ASC LIMIT 1) AS name,
@@ -342,6 +346,7 @@ SELECT
   m.absent_source_external_ids,
   m.start_utc_offset_minutes,
   m.end_utc_offset_minutes,
-  COALESCE(m.local_time_source, 'unknown') AS local_time_source
+  COALESCE(m.local_time_source, 'unknown') AS local_time_source,
+  m.perceived_exertion
 FROM merged m
 ORDER BY m.started_at DESC;
