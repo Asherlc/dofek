@@ -53,6 +53,8 @@ export interface ProviderActivityExactIdentity {
   providerId: string;
   userId: string;
   canonicalType: StoredActivityInsert["canonicalType"];
+  providerType: StoredActivityInsert["providerType"];
+  modality: StoredActivityInsert["modality"];
   startedAt: Date;
   endedAt: Date;
 }
@@ -72,6 +74,8 @@ export async function findUniqueProviderActivityByExactIdentity(
         WHERE provider_id = ${identity.providerId}
           AND user_id = ${identity.userId}
           AND canonical_type = ${identity.canonicalType}
+          AND provider_type = ${identity.providerType}
+          AND modality IS NOT DISTINCT FROM ${identity.modality}
           AND started_at = ${identity.startedAt}
           AND ended_at = ${identity.endedAt}
           AND provider_absent_at IS NULL

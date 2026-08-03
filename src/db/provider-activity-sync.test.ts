@@ -49,6 +49,8 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
         providerId: "garmin-dump",
         userId: "00000000-0000-0000-0000-000000000001",
         canonicalType: "hiking",
+        providerType: "hiking",
+        modality: null,
         startedAt: new Date("2022-05-17T17:23:08.000Z"),
         endedAt: new Date("2022-05-17T19:03:19.201Z"),
       }),
@@ -60,6 +62,8 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
       providerId: "garmin-dump",
       userId: "00000000-0000-0000-0000-000000000001",
       canonicalType: "hiking",
+      providerType: "hiking",
+      modality: null,
       startedAt: new Date("2022-05-17T17:23:08.000Z"),
       endedAt: new Date("2022-05-17T19:03:19.201Z"),
     };

@@ -41,6 +41,8 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
       providerId: "garmin-dump-identity-test",
       userId: summaryActivity.userId,
       canonicalType: "hiking",
+      providerType: "hiking",
+      modality: null,
       startedAt,
       endedAt,
     };

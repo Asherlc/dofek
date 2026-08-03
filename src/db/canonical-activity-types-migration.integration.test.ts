@@ -5,11 +5,15 @@ import {
   LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS,
   LEGACY_ACTIVITY_TYPES,
 } from "@dofek/training/activity-types";
+import { sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { Client } from "pg";
 import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
 import { writeTestMigrationFiles } from "./test-helpers.ts";
+import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 // cspell:ignore conrelid contype functional_fitness relacl relkind relname relnamespace relreplident
 
@@ -46,19 +50,29 @@ interface CountRow {
   count: string;
 }
 
-interface IdentityRow {
-  provider_attnum: number;
-  relation_oid: number;
-}
-
 interface NameRow {
   name: string;
 }
 
-interface ObjectIdentityRow {
-  kind: "constraint" | "index";
-  name: string;
-  object_oid: number;
+const identityRowSchema = z.object({
+  provider_attnum: z.coerce.number().int(),
+  relation_oid: z.coerce.number().int(),
+});
+const objectIdentityRowSchema = z.object({
+  kind: z.enum(["constraint", "index"]),
+  name: z.string(),
+  object_oid: z.coerce.number().int(),
+});
+
+const pgDialect = new PgDialect();
+
+function makeClientDatabase(client: Client): SchemaExecutionDatabase {
+  return {
+    execute: async (query) => {
+      const compiled = pgDialect.sqlToQuery(query);
+      return client.query(compiled.sql, compiled.params);
+    },
+  };
 }
 
 async function createLegacySchema(client: Client): Promise<void> {
@@ -430,21 +444,29 @@ describe("canonical activity types Postgres migration", () => {
     const client = new Client({ connectionString });
     let migrationDirectory: string | undefined;
     await client.connect();
+    const database = makeClientDatabase(client);
 
     try {
       await createLegacySchema(client);
 
-      const identityBefore = await client.query<IdentityRow>(`
+      const identityBefore = await executeWithSchema(
+        database,
+        identityRowSchema,
+        sql`
         SELECT
           'fitness.activity'::regclass::oid::integer AS relation_oid,
           attribute.attnum::integer AS provider_attnum
         FROM pg_attribute AS attribute
         WHERE attribute.attrelid = 'fitness.activity'::regclass
           AND attribute.attname = 'activity_type'
-      `);
-      expect(identityBefore.rows).toHaveLength(1);
+      `,
+      );
+      expect(identityBefore).toHaveLength(1);
 
-      const catalogObjectsBefore = await client.query<ObjectIdentityRow>(`
+      const catalogObjectsBefore = await executeWithSchema(
+        database,
+        objectIdentityRowSchema,
+        sql`
         SELECT
           'constraint'::text AS kind,
           constraint_record.conname AS name,
@@ -461,7 +483,8 @@ describe("canonical activity types Postgres migration", () => {
         INNER JOIN pg_class AS index_class ON index_class.oid = index_record.indexrelid
         WHERE index_record.indrelid = 'fitness.activity'::regclass
         ORDER BY kind, name
-      `);
+      `,
+      );
 
       migrationDirectory = mkdtempSync(join(tmpdir(), "canonical-activity-types-"));
       const migrationContent = readFileSync(
@@ -478,19 +501,26 @@ describe("canonical activity types Postgres migration", () => {
 
       expect(await runMigrations(connectionString, migrationDirectory)).toBe(1);
 
-      const identityAfter = await client.query<IdentityRow>(`
+      const identityAfter = await executeWithSchema(
+        database,
+        identityRowSchema,
+        sql`
         SELECT
           'fitness.activity'::regclass::oid::integer AS relation_oid,
           attribute.attnum::integer AS provider_attnum
         FROM pg_attribute AS attribute
         WHERE attribute.attrelid = 'fitness.activity'::regclass
           AND attribute.attname = 'provider_type'
-      `);
-      expect(identityAfter.rows).toHaveLength(1);
-      expect(identityAfter.rows[0]?.relation_oid).not.toBe(identityBefore.rows[0]?.relation_oid);
-      expect(identityAfter.rows[0]?.provider_attnum).toBe(5);
+      `,
+      );
+      expect(identityAfter).toHaveLength(1);
+      expect(identityAfter[0]?.relation_oid).not.toBe(identityBefore[0]?.relation_oid);
+      expect(identityAfter[0]?.provider_attnum).toBe(5);
 
-      const catalogObjectsAfter = await client.query<ObjectIdentityRow>(`
+      const catalogObjectsAfter = await executeWithSchema(
+        database,
+        objectIdentityRowSchema,
+        sql`
         SELECT
           'constraint'::text AS kind,
           constraint_record.conname AS name,
@@ -507,12 +537,13 @@ describe("canonical activity types Postgres migration", () => {
         INNER JOIN pg_class AS index_class ON index_class.oid = index_record.indexrelid
         WHERE index_record.indrelid = 'fitness.activity'::regclass
         ORDER BY kind, name
-      `);
-      const catalogObjectNamesAfter = catalogObjectsAfter.rows.map(({ kind, name }) => ({
+      `,
+      );
+      const catalogObjectNamesAfter = catalogObjectsAfter.map(({ kind, name }) => ({
         kind,
         name,
       }));
-      const catalogObjectNamesBefore = catalogObjectsBefore.rows.map(({ kind, name }) => ({
+      const catalogObjectNamesBefore = catalogObjectsBefore.map(({ kind, name }) => ({
         kind,
         name,
       }));
@@ -527,8 +558,8 @@ describe("canonical activity types Postgres migration", () => {
             `${left.kind}:${left.name}`.localeCompare(`${right.kind}:${right.name}`),
           ),
       );
-      expect(catalogObjectsAfter.rows.map(({ object_oid }) => object_oid)).not.toEqual(
-        catalogObjectsBefore.rows.map(({ object_oid }) => object_oid),
+      expect(catalogObjectsAfter.map(({ object_oid }) => object_oid)).not.toEqual(
+        catalogObjectsBefore.map(({ object_oid }) => object_oid),
       );
 
       const normalizedRows = await client.query<ActivityTypeRow>(`

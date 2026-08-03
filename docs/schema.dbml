@@ -1,24 +1,36 @@
-enum activity_type {
-  cycling
-  road_cycling
-  mountain_biking
-  gravel_cycling
-  indoor_cycling
-  virtual_cycling
-  e_bike_cycling
+enum activity_modality {
+  road
+  mountain
+  gravel
+  indoor
+  virtual
+  electric
   cyclocross
-  track_cycling
+  track
   bmx
+  trail
+  open_water
+  functional
+  mixed
+  mixed_metabolic
+  cross_country
+  downhill
+  paddleboard
+  ice
+  cardio
+  social
+  hand_cycle
+  wheelchair
+  cooldown
+}
+
+enum canonical_activity_type {
+  cycling
   running
-  trail_running
   swimming
-  open_water_swimming
   walking
   hiking
   strength
-  strength_training
-  functional_strength
-  gym
   yoga
   pilates
   tai_chi
@@ -26,33 +38,24 @@ enum activity_type {
   meditation
   breathwork
   stretching
-  flexibility
   barre
   elliptical
   rowing
   cardio
   hiit
-  mixed_cardio
-  mixed_metabolic_cardio
   stair_climbing
-  stairmaster
-  stairs
   step_training
   jump_rope
   fitness_gaming
   cross_training
   bootcamp
   circuit_training
-  functional_fitness
   core
-  core_training
   boxing
   kickboxing
   martial_arts
   group_exercise
   skiing
-  cross_country_skiing
-  downhill_skiing
   snowboarding
   snow_sports
   snowshoeing
@@ -60,14 +63,10 @@ enum activity_type {
   surfing
   kayaking
   sailing
-  paddle_sports
-  paddleboarding
   paddling
   water_fitness
   water_polo
   water_sports
-  aqua_fitness
-  underwater_diving
   diving
   snorkeling
   tennis
@@ -77,15 +76,13 @@ enum activity_type {
   badminton
   pickleball
   padel
-  paddle_racquet
   basketball
   soccer
-  football
   american_football
   australian_football
+  gaelic_football
   rugby
   hockey
-  ice_hockey
   lacrosse
   baseball
   softball
@@ -95,16 +92,9 @@ enum activity_type {
   golf
   disc_golf
   climbing
-  rock_climbing
   dance
-  dancing
-  cardio_dance
-  social_dance
   triathlon
   multisport
-  hand_cycling
-  wheelchair_walk
-  wheelchair_run
   disc_sports
   equestrian
   fencing
@@ -122,7 +112,6 @@ enum activity_type {
   skydiving
   paragliding
   preparation_and_recovery
-  cooldown
   transition
   other
 }
@@ -415,7 +404,9 @@ table fitness.activity {
   provider_id text [not null]
   user_id uuid [not null]
   external_id text [not null]
-  activity_type activity_type [not null]
+  canonical_type canonical_activity_type [not null]
+  provider_type text [not null]
+  modality activity_modality
   started_at "timestamp with time zone" [not null]
   ended_at "timestamp with time zone"
   name text

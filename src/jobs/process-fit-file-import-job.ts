@@ -396,6 +396,8 @@ async function beginActivityImport(
           providerId: data.providerId,
           userId: data.userId,
           canonicalType: activityType.canonicalType,
+          providerType: activityType.providerType,
+          modality: activityType.modality,
           startedAt,
           endedAt,
         })

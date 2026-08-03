@@ -553,6 +553,8 @@ describe("processFitFileImportJob", () => {
       providerId: "garmin-dump",
       userId: "user-1",
       canonicalType: "hiking",
+      providerType: "generic",
+      modality: null,
       startedAt: new Date("2022-05-17T17:23:08.000Z"),
       endedAt: new Date("2022-05-17T19:03:19.201Z"),
     });

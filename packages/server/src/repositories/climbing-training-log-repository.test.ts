@@ -128,7 +128,11 @@ describe("ClimbingTrainingLogRepository", () => {
     });
     expect(transaction).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("INSERT INTO fitness.activity");
+    const activityInsert = collectSqlText(execute.mock.calls[0]?.[0]);
+    expect(activityInsert).toContain("INSERT INTO fitness.activity");
+    expect(activityInsert).toContain("canonical_type, provider_type, modality");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("strength");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("finger_loading");
     const entryInsert = collectSqlText(execute.mock.calls[1]?.[0]);
     expect(entryInsert).toContain("INSERT INTO fitness.finger_loading_entry");
     expect(entryInsert).toContain("max_hang");
@@ -197,7 +201,10 @@ describe("ClimbingTrainingLogRepository", () => {
       userId: "user-1",
     });
     expect(execute).toHaveBeenCalledTimes(4);
-    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("rock_climbing");
+    const activityInsert = collectSqlText(execute.mock.calls[0]?.[0]);
+    expect(activityInsert).toContain("canonical_type, provider_type, modality");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("climbing");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("rock_climbing");
     expect(collectSqlText(execute.mock.calls[1]?.[0])).toContain(
       "INSERT INTO fitness.climbing_entry",
     );
