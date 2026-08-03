@@ -81,7 +81,7 @@ describe("ActivityRepository", () => {
 
   function withUnknownLocalTimeContext(rows: Record<string, unknown>[]) {
     return rows.map((row) =>
-      "activity_type" in row
+      "canonical_type" in row || "activity_type" in row
         ? {
             timezone: null,
             start_utc_offset_minutes: null,
@@ -466,7 +466,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "route-less-activity",
-          activity_type: "strength",
+          canonical_type: "strength",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Strength Session",
@@ -687,7 +687,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepository([
         {
           id: "search-activity",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Run",
@@ -728,7 +728,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepository([
         {
           id: "zero-distance-activity",
-          activity_type: "strength",
+          canonical_type: "strength",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Strength Session",

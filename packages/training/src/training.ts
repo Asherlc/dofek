@@ -3,7 +3,7 @@ import {
   type LegacyActivityType,
   type ProviderActivityType,
   resolveProviderActivityType,
-} from "./activity-types.js";
+} from "./activity-types.ts";
 
 export const OTHER_ACTIVITY_TYPE = "__other__";
 

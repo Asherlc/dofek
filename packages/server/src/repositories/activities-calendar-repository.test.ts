@@ -50,7 +50,7 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
       Promise.resolve(
         rows.map((row) =>
           schema.parse(
-            "activity_type" in row && "started_at" in row
+            ("canonical_type" in row || "activity_type" in row) && "started_at" in row
               ? {
                   timezone: null,
                   start_utc_offset_minutes: null,
@@ -647,7 +647,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: "1",
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -720,7 +720,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -830,7 +830,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 2,
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -879,7 +879,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "running" }, { activity_type: "cycling" }],
+      [{ canonical_type: "running" }, { canonical_type: "cycling" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -919,7 +919,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "indoor_cycling" }, { activity_type: "running" }],
+      [{ canonical_type: "indoor_cycling" }, { canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -973,7 +973,7 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("uses empty aggregate rows to author an unavailable comparison", async () => {
     const database = makeDatabase([[{ id: "activity" }], [{ id: "activity" }]]);
-    const sensorStore = makeSensorStore([[], [{ activity_type: "running" }]]);
+    const sensorStore = makeSensorStore([[], [{ canonical_type: "running" }]]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     await expect(
@@ -1218,7 +1218,7 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "indoor-zero",
-          activity_type: "indoor_cycling",
+          canonical_type: "indoor_cycling",
           total_distance: 0,
           elevation_gain_m: 0,
           centroid_lat: null,
@@ -1226,7 +1226,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({
           id: "route-less-missing",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -1267,7 +1267,7 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "missing-route-measurements",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: 37.7749,
@@ -1275,7 +1275,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({
           id: "zero-route-measurements",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: 0,
           elevation_gain_m: 0,
           centroid_lat: 37.7749,

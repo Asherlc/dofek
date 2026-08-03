@@ -809,7 +809,7 @@ describe("buildCorrelationObservationPage", () => {
       },
       {
         id: "00000000-0000-4000-8000-000000000202",
-        activityType: "strength_training",
+        activityType: "strength",
         label: "Lift",
       },
       {
@@ -1095,7 +1095,7 @@ function makeCorrelationEvidenceSources() {
           date: undefined,
           started_at: "2026-01-02T08:00:00Z",
           ended_at: "2026-01-02T08:30:00Z",
-          activity_type: "running",
+          canonical_type: "running",
           name: null,
         },
         {
@@ -1103,7 +1103,7 @@ function makeCorrelationEvidenceSources() {
           date: "2026-01-02",
           started_at: "2026-01-02T09:00:00Z",
           ended_at: "2026-01-02T09:45:00Z",
-          activity_type: "strength_training",
+          canonical_type: "strength",
           name: "Lift",
         },
         {
@@ -1111,7 +1111,7 @@ function makeCorrelationEvidenceSources() {
           date: "2026-01-02",
           started_at: "2026-01-02T10:00:00Z",
           ended_at: null,
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Unfinished",
         },
       ])

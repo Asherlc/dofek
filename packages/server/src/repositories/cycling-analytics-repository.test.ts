@@ -699,6 +699,7 @@ describe("CyclingAnalyticsRepository", () => {
         date: "2026-07-10",
         activityName: "Intervals",
         activityType: "cycling",
+        modality: null,
         verticalAscentRate: 500,
         elevationGainMeters: 500,
         elapsedMinutes: 60,

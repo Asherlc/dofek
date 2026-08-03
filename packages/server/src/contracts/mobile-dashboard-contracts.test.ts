@@ -826,6 +826,7 @@ describe("mobileTrainingFixtureSchema", () => {
           date: "2026-06-27",
           activityName: "Hill repeats",
           activityType: "running",
+          modality: null,
           verticalAscentRate: 10,
           elevationGainMeters: 300,
           elapsedMinutes: 30,
