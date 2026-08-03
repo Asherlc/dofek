@@ -212,6 +212,55 @@ describe("capturePeerDbStagingBoundary", () => {
     expect(events.some((event) => event.startsWith("STATUS_"))).toBe(false);
   });
 
+  it("rejects duplicate ClickHouse writer identities", async () => {
+    const events: string[] = [];
+    await expect(
+      capturePeerDbStagingBoundary(
+        barrierDatabase(events),
+        mirrorApi(events, {
+          listMirrors: vi.fn(async () => [
+            { destinationType: 8, isCdc: true, name: "duplicate-writer" },
+            { destinationType: "CLICKHOUSE", isCdc: true, name: "duplicate-writer" },
+          ]),
+        }),
+        storage(events),
+        {
+          loadProgress: vi.fn(async () => null),
+          requestId,
+          saveProgress: vi.fn(async () => undefined),
+        },
+      ),
+    ).rejects.toThrow("duplicate ClickHouse staging writer identities");
+  });
+
+  it("detects a same-sized writer set with a different identity", async () => {
+    const events: string[] = [];
+    let state = "STATUS_RUNNING";
+    const listMirrors = vi
+      .fn<PeerDbMirrorApiClient["listMirrors"]>()
+      .mockResolvedValueOnce([{ destinationType: "CLICKHOUSE", isCdc: true, name: "writer-a" }])
+      .mockResolvedValueOnce([{ destinationType: "CLICKHOUSE", isCdc: true, name: "writer-b" }]);
+    const api = mirrorApi(events, {
+      listMirrors,
+      getMirrorStatus: vi.fn(async (name) => {
+        events.push(`status:${name}`);
+        return { currentFlowState: state, tableMappings: [] };
+      }),
+      changeMirrorState: vi.fn(async (request) => {
+        state = request.requestedFlowState;
+        events.push(`${request.requestedFlowState}:${request.flowJobName}`);
+      }),
+    });
+
+    await expect(
+      capturePeerDbStagingBoundary(barrierDatabase(events), api, storage(events), {
+        loadProgress: vi.fn(async () => null),
+        requestId,
+        saveProgress: vi.fn(async () => undefined),
+      }),
+    ).rejects.toThrow("writer set changed during account-erasure quiescence");
+  });
+
   it("preserves a pre-existing operator pause when no durable intent owns it", async () => {
     const events: string[] = [];
     const api = mirrorApi(events, {
@@ -323,6 +372,83 @@ describe("capturePeerDbStagingBoundary", () => {
     expect(createBoundaryMarker).not.toHaveBeenCalled();
     expect(events).not.toContain("list-mirrors");
     expect(events).toContain("STATUS_RUNNING:dofek_fitness_raw_analytics");
+  });
+
+  it("finishes a persisted pause request after a writer reaches paused state", async () => {
+    const events: string[] = [];
+    let state = "STATUS_PAUSING";
+    const api = mirrorApi(events, {
+      listMirrors: vi.fn(async () => [
+        {
+          destinationType: "CLICKHOUSE",
+          isCdc: true,
+          name: "dofek_fitness_raw_analytics",
+        },
+      ]),
+      getMirrorStatus: vi.fn(async (name) => {
+        const currentFlowState = state;
+        events.push(`status:${name}`);
+        if (state === "STATUS_PAUSING") state = "STATUS_PAUSED";
+        return { currentFlowState, tableMappings: [] };
+      }),
+      changeMirrorState: vi.fn(async (request) => {
+        state = request.requestedFlowState;
+        events.push(`${request.requestedFlowState}:${request.flowJobName}`);
+      }),
+    });
+
+    await expect(
+      capturePeerDbStagingBoundary(barrierDatabase(events), api, storage(events), {
+        loadProgress: vi.fn(async () => ({
+          boundaryKey,
+          mirrorNames: ["dofek_fitness_raw_analytics"],
+          stage: "pause_requested",
+        })),
+        requestId,
+        saveProgress: vi.fn(async () => undefined),
+      }),
+    ).resolves.toEqual({
+      ...boundary,
+      mirrors: [{ name: "dofek_fitness_raw_analytics", status: "STATUS_PAUSED" }],
+    });
+  });
+
+  it("times out when a persisted resume never reaches running state", async () => {
+    const events: string[] = [];
+    let statusCalls = 0;
+    const api = mirrorApi(events, {
+      getMirrorStatus: vi.fn(async (name) => {
+        statusCalls += 1;
+        events.push(`status:${name}`);
+        return {
+          currentFlowState: statusCalls === 1 ? "STATUS_PAUSED" : "STATUS_PAUSING",
+          tableMappings: [],
+        };
+      }),
+      changeMirrorState: vi.fn(async () => undefined),
+    });
+    let nowCalls = 0;
+    const timing = {
+      now: () => nowCalls++ * 120_001,
+      sleep: async () => undefined,
+    };
+
+    await expect(
+      capturePeerDbStagingBoundary(
+        barrierDatabase(events),
+        api,
+        storage(events),
+        {
+          loadProgress: vi.fn(async () => ({
+            boundary: { ...boundary, mirrors: boundary.mirrors.slice(0, 1) },
+            stage: "boundary_captured",
+          })),
+          requestId,
+          saveProgress: vi.fn(async () => undefined),
+        },
+        timing,
+      ),
+    ).rejects.toThrow("Unable to resume every PeerDB ClickHouse staging writer");
   });
 
   it("re-lists after marker capture and rejects a writer that resumed before persistence", async () => {

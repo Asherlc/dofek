@@ -508,4 +508,77 @@ describe("processAccountErasureRequest", () => {
       privateFailureDetail,
     );
   });
+
+  it("does not overlap lease renewals and stops the heartbeat after processing", async () => {
+    vi.useFakeTimers();
+    let resolveRenewal: (() => void) | undefined;
+    const firstRenewal = new Promise<void>((resolve) => {
+      resolveRenewal = resolve;
+    });
+    accountErasureDatabaseMocks.renewAccountErasureLease
+      .mockReturnValueOnce(firstRenewal)
+      .mockResolvedValue(undefined);
+    let finishPhase: () => void = () => {
+      throw new Error("phase release was not initialized");
+    };
+    const phaseBlocked = new Promise<void>((resolve) => {
+      finishPhase = resolve;
+    });
+    const processing = processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      phaseRunner(async () => {
+        await phaseBlocked;
+        return null;
+      }),
+      new Date("2026-07-26T12:00:00.000Z"),
+    );
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(accountErasureDatabaseMocks.renewAccountErasureLease).toHaveBeenCalledOnce();
+
+    resolveRenewal?.();
+    await vi.waitFor(() =>
+      expect(accountErasureDatabaseMocks.renewAccountErasureLease).toHaveBeenCalledOnce(),
+    );
+    finishPhase();
+    await expect(processing).resolves.toMatchObject({ status: "waiting", waitReason: "replay" });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(accountErasureDatabaseMocks.renewAccountErasureLease).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["profile", "deleteProfile"],
+    ["request PII", "scrubPii"],
+  ])("rejects a %s operation after identifying data was scrubbed", async (_label, operation) => {
+    const scrubbedRequest = { ...request, encryptedRemoteSnapshot: null, userId: null };
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue(scrubbedRequest);
+    const runner = phaseRunner(async (_phase, execution) => {
+      if (operation === "deleteProfile") {
+        await execution.deleteProfile();
+      } else {
+        await execution.scrubPii();
+      }
+      return null;
+    });
+
+    const processing = processAccountErasureRequest(database, request.id, "worker-1", runner);
+    await expect(processing).rejects.toThrow("initial account erasure");
+    const error = await processing.catch((failure: unknown) => failure);
+    if (!(error instanceof AggregateError)) throw error;
+    expect(error.errors).toEqual(
+      Array.from({ length: 4 }, () =>
+        expect.objectContaining({
+          message:
+            operation === "deleteProfile"
+              ? "Account erasure user profile was already deleted"
+              : "Account erasure request PII was already scrubbed",
+        }),
+      ),
+    );
+    expect(accountErasureDatabaseMocks.markAccountErasureFailed).toHaveBeenCalledOnce();
+  });
 });

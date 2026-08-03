@@ -581,7 +581,7 @@ describe("purgeAccountRedisState", () => {
   it("rejects malformed Redis persistence metadata", async () => {
     class MalformedPersistenceRedis extends FakeRedis {
       override async info(_section: "persistence"): Promise<string> {
-        return "# Persistence\nrdb_saves:not-a-number";
+        return ["# Persistence", "rdb_saves:not-a-number"].join("\n");
       }
     }
 

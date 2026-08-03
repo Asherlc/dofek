@@ -346,4 +346,74 @@ describe("purgeWebAccountState", () => {
     expect(localStorage.getItem("user-2-dashboard-cache")).toBe("private");
     removeListener();
   });
+
+  it("uses the browser BroadcastChannel fallback when no factory is supplied", async () => {
+    const messages: unknown[] = [];
+    let closed = false;
+    class FallbackBroadcastChannel {
+      addEventListener(): void {}
+      close(): void {
+        closed = true;
+      }
+      postMessage(message: unknown): void {
+        messages.push(message);
+      }
+      removeEventListener(): void {}
+    }
+    vi.stubGlobal("BroadcastChannel", FallbackBroadcastChannel);
+
+    try {
+      await purgeWebAccountState({
+        cleanupLease,
+        isCleanupLeaseCurrent: () => true,
+        localStorage,
+        notifyOtherTabs: true,
+        purgeUploads: vi.fn().mockResolvedValue(undefined),
+        queryClient: { clear: vi.fn() },
+        sessionStorage,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toEqual(
+      expect.objectContaining({
+        cleanupGeneration: expect.any(String),
+        cleanupOwnerNonce: cleanupLease.cleanupOwnerNonce,
+        kind: "purge",
+        nonce: expect.any(String),
+      }),
+    );
+    expect(closed).toBe(true);
+  });
+
+  it("records local cleanup errors and continues with the remaining stores", async () => {
+    const clearLocalStorage = vi.fn(() => {
+      throw new Error("local storage unavailable");
+    });
+    const failingLocalStorage = Object.create<Storage>(localStorage);
+    Object.defineProperties(failingLocalStorage, {
+      clear: { configurable: true, value: clearLocalStorage },
+      getItem: { configurable: true, value: (key: string) => localStorage.getItem(key) },
+      setItem: {
+        configurable: true,
+        value: (key: string, value: string) => localStorage.setItem(key, value),
+      },
+    });
+    const clearQueries = vi.fn();
+
+    const result = await purgeWebAccountState({
+      cleanupLease,
+      isCleanupLeaseCurrent: () => true,
+      localStorage: failingLocalStorage,
+      notifyOtherTabs: false,
+      purgeUploads: vi.fn().mockResolvedValue(undefined),
+      queryClient: { clear: clearQueries },
+      sessionStorage,
+    });
+
+    expect(result.errors.map((error) => error.message)).toEqual(["local storage unavailable"]);
+    expect(clearQueries).toHaveBeenCalledOnce();
+  });
 });
