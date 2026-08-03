@@ -146,6 +146,46 @@ describe("R2AccountErasureRestoreLedger", () => {
     );
   });
 
+  it("preserves the precondition failure cause and does not treat it as success", async () => {
+    const intent = {
+      keyId: "test-v1",
+      requestId,
+      requestedAt: "2026-07-26T12:00:00.000Z",
+      statusToken,
+      userHash,
+    };
+    const preconditionError = Object.assign(new Error("precondition failed"), {
+      $metadata: { httpStatusCode: 412 },
+    });
+    const requests: CapturedRequest[] = [];
+    const client = makeClient(async (request) => {
+      requests.push(request);
+      if (request.method === "PUT") throw preconditionError;
+      return {
+        response: {
+          body: Readable.from(
+            JSON.stringify(
+              sealAccountErasureRestoreIntent({
+                ...intent,
+                statusToken: "b".repeat(43),
+              }),
+            ),
+          ),
+          headers: { "content-type": "application/json" },
+          statusCode: 200,
+        },
+      };
+    });
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(ledger.recordIntent(intent)).rejects.toMatchObject({
+      cause: preconditionError,
+      message:
+        "Account erasure restore intent 10000000-0000-4000-8000-000000001994 conflicts with its immutable ledger entry",
+    });
+    expect(requests.map((request) => request.method)).toEqual(["PUT", "GET"]);
+  });
+
   it.each([
     ["requestedAt", { requestedAt: "2026-07-26T13:00:00.000Z" }],
     ["statusToken", { statusToken: "b".repeat(43) }],
@@ -202,6 +242,30 @@ describe("R2AccountErasureRestoreLedger", () => {
     ).rejects.toBeDefined();
   });
 
+  it("propagates a non-412 object error without attempting an immutable lookup", async () => {
+    const error = Object.assign(new Error("precondition unavailable"), {
+      $metadata: { httpStatusCode: 400 },
+    });
+    const requests: CapturedRequest[] = [];
+    const client = makeClient(async (request) => {
+      requests.push(request);
+      throw error;
+    });
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(
+      ledger.recordIntent({
+        keyId: "test-v1",
+        requestId,
+        requestedAt: "2026-07-26T12:00:00.000Z",
+        statusToken,
+        userHash,
+      }),
+    ).rejects.toBe(error);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBe("PUT");
+  });
+
   it("returns null for each supported R2 not-found error shape", async () => {
     const errors: unknown[] = [
       Object.assign(new Error("missing"), { name: "NoSuchKey" }),
@@ -218,6 +282,22 @@ describe("R2AccountErasureRestoreLedger", () => {
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).resolves.toBeNull();
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).resolves.toBeNull();
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).resolves.toBeNull();
+  });
+
+  it("propagates a non-404 object read error without treating it as missing", async () => {
+    const error = Object.assign(new Error("restore ledger unavailable"), {
+      $metadata: { httpStatusCode: 403 },
+    });
+    const requests: CapturedRequest[] = [];
+    const client = makeClient(async (request) => {
+      requests.push(request);
+      throw error;
+    });
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).rejects.toBe(error);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBe("GET");
   });
 
   it.each([
@@ -358,6 +438,38 @@ describe("R2AccountErasureRestoreLedger", () => {
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.query?.prefix).toBe(`account-erasure/v1/test-v1/${userHash}/`);
+  });
+
+  it("downloads and returns intents found for bounded identities", async () => {
+    const intent = {
+      keyId: "test-v1",
+      requestId,
+      requestedAt: "2026-07-26T12:00:00.000Z",
+      statusToken,
+      userHash,
+    };
+    const key = `account-erasure/v1/test-v1/${userHash}/${requestId}.json`;
+    const client = makeClient(async (request) => ({
+      response:
+        request.method === "GET" && request.query?.prefix
+          ? {
+              body: Readable.from(
+                `<?xml version="1.0"?><ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>${key}</Key></Contents></ListBucketResult>`,
+              ),
+              headers: { "content-type": "application/xml" },
+              statusCode: 200,
+            }
+          : {
+              body: Readable.from(JSON.stringify(sealAccountErasureRestoreIntent(intent))),
+              headers: { "content-type": "application/json" },
+              statusCode: 200,
+            },
+    }));
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(
+      ledger.listIntentsForIdentities([{ keyId: "test-v1", userHash }]),
+    ).resolves.toEqual([intent]);
   });
 
   it("lists global intent references without downloading every retained object", async () => {
