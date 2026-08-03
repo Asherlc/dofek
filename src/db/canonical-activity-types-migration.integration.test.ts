@@ -20,6 +20,7 @@ import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts"
 const activityIds = {
   football: "00000000-0000-4000-8000-000000000105",
   functionalFitness: "00000000-0000-4000-8000-000000000103",
+  futureVendor: "00000000-0000-4000-8000-000000000107",
   openWaterSwimming: "00000000-0000-4000-8000-000000000104",
   other: "00000000-0000-4000-8000-000000000106",
   roadCycling: "00000000-0000-4000-8000-000000000101",
@@ -93,7 +94,7 @@ async function createLegacySchema(database: SchemaExecutionDatabase): Promise<vo
     CREATE ROLE activity_reader;
 
     CREATE TYPE fitness.activity_type AS ENUM (
-      ${LEGACY_ACTIVITY_TYPES.map((activityType) => `'${activityType}'`).join(",\n      ")}
+      ${[...LEGACY_ACTIVITY_TYPES, "future_vendor_activity"].map((activityType) => `'${activityType}'`).join(",\n      ")}
     );
 
     CREATE TABLE fitness.user_profile (
@@ -385,6 +386,25 @@ async function createLegacySchema(database: SchemaExecutionDatabase): Promise<vo
         NULL,
         'unknown',
         NULL
+      ),
+      (
+        '${activityIds.futureVendor}',
+        'provider-a',
+        'future-vendor',
+        'future_vendor_activity',
+        '2026-07-07T08:00:00Z',
+        '2026-07-07T09:00:00Z',
+        NULL,
+        '{}',
+        'Future vendor activity',
+        '00000000-0000-4000-8000-000000000001',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        'unknown',
+        NULL
       );
 
     INSERT INTO fitness.activity (
@@ -413,7 +433,8 @@ async function createLegacySchema(database: SchemaExecutionDatabase): Promise<vo
       'functional_fitness',
       'open_water_swimming',
       'football',
-      'other'
+      'other',
+      'future_vendor_activity'
     );
 
     INSERT INTO fitness.activity_interval (activity_id)
@@ -595,6 +616,11 @@ describe("canonical activity types Postgres migration", () => {
           provider_type: "functional_fitness",
         },
         {
+          canonical_type: "other",
+          modality: null,
+          provider_type: "future_vendor_activity",
+        },
+        {
           canonical_type: "swimming",
           modality: "open_water",
           provider_type: "open_water_swimming",
@@ -626,11 +652,21 @@ describe("canonical activity types Postgres migration", () => {
       `,
       );
       expect(everyLegacyType).toEqual(
-        [...LEGACY_ACTIVITY_TYPES].sort().map((providerType) => ({
-          canonical_type: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].canonicalType,
-          modality: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].modality,
-          provider_type: providerType,
-        })),
+        ([...LEGACY_ACTIVITY_TYPES, "future_vendor_activity"] as const)
+          .sort()
+          .map((providerType) =>
+            providerType === "future_vendor_activity"
+              ? {
+                  canonical_type: "other",
+                  modality: null,
+                  provider_type: providerType,
+                }
+              : {
+                  canonical_type: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].canonicalType,
+                  modality: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].modality,
+                  provider_type: providerType,
+                },
+          ),
       );
 
       const activityViewLocalTimeColumns = await executeWithSchema(

@@ -358,6 +358,7 @@ SELECT
     WHEN activity_type::text IN ('preparation_and_recovery', 'cooldown') THEN 'preparation_and_recovery'
     WHEN activity_type::text = 'transition' THEN 'transition'
     WHEN activity_type::text = 'other' THEN 'other'
+    ELSE 'other'
   END::fitness.canonical_activity_type AS canonical_type,
   CASE activity_type::text
     WHEN 'road_cycling' THEN 'road'
