@@ -310,6 +310,7 @@ describe("loadMobileTrainingTab", () => {
           date: "2026-03-28",
           activityName: "Hill Climb",
           activityType: "road_cycling",
+          modality: "road",
           elevationGainMeters: 500,
           elapsedSeconds: 1800,
         }),

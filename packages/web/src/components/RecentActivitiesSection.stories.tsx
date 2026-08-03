@@ -191,7 +191,7 @@ export const ScopedStrengthEmpty: Story = {
     <ActivitiesStory
       scenario={{ items: [], totalCount: 0 }}
       activityTypes={STRENGTH_ACTIVITY_TYPES}
-      emptyMessage="No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness."
+      emptyMessage="No strength workouts in the selected 30-day range."
     />
   ),
 };

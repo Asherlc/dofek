@@ -7,12 +7,7 @@ import {
 
 export const OTHER_ACTIVITY_TYPE = "__other__";
 
-export const STRENGTH_ACTIVITY_TYPES = [
-  "strength",
-  "strength_training",
-  "functional_strength",
-  "functional_fitness",
-] as const;
+export const STRENGTH_ACTIVITY_TYPES = ["strength"] as const;
 
 // ============================================================
 // Cycling activity types

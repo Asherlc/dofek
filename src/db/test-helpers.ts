@@ -219,23 +219,6 @@ async function migrateTestDatabase(connectionString: string): Promise<void> {
     }
   }
 
-  for (const file of [
-    "0008_clickhouse_activity_views.sql",
-    "0017_drop_derived_resting_heart_rate.sql",
-    "0019_clickhouse_proxy_views_after_body_measurement_migration.sql",
-    "0025_drop_v_sleep.sql",
-  ]) {
-    const content = readFileSync(resolve(drizzleDir, file), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(isRunnableMigrationStatement);
-
-    for (const statement of statements) {
-      await migrationClient.query(statement);
-    }
-  }
-
   // Seed the canonical integration-test user.
   // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
   await migrationClient.query(

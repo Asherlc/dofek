@@ -1,4 +1,5 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
+import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { z } from "zod";
 import {
   baselineComparisonDirectionSchema,
@@ -329,6 +330,7 @@ export const mobileTrainingTabOutputSchema = z.object({
       date: dateSchema,
       activityName: z.string(),
       activityType: z.string(),
+      modality: z.enum(ACTIVITY_MODALITIES).nullable(),
       verticalAscentRate: nonnegativeNumberSchema,
       elevationGainMeters: nonnegativeNumberSchema,
       elapsedMinutes: nonnegativeNumberSchema,

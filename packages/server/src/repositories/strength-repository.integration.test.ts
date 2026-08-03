@@ -36,12 +36,12 @@ describe("StrengthRepository activity scope", () => {
         testContext.db,
         idRowSchema,
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
             ) VALUES (
               'strength_scope_test',
               ${TEST_USER_ID},
               ${`strength-scope-${activityType}`},
-              ${activityType},
+              ${activityType}, ${activityType}, NULL,
               CURRENT_TIMESTAMP - ${activityIndex + 1}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${activityIndex + 1}::int * INTERVAL '1 day' + INTERVAL '1 hour',
               ${`Scope Test ${activityType}`}
@@ -77,12 +77,12 @@ describe("StrengthRepository activity scope", () => {
         testContext.db,
         idRowSchema,
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
             ) VALUES (
               'strength_scope_test',
               ${TEST_USER_ID},
               ${`progressive-overload-gap-${weekOffset}`},
-              'strength_training',
+              'strength', 'strength_training', NULL,
               date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 - ${weekOffset}::int * INTERVAL '1 week' + INTERVAL '1 day',
               date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
@@ -119,8 +119,8 @@ describe("StrengthRepository activity scope", () => {
       activityTypes: [...STRENGTH_ACTIVITY_TYPES],
     });
 
-    expect(activities.items.map((activity) => activity.activity_type)).toEqual(
-      expect.arrayContaining(["functional_strength", "functional_fitness"]),
+    expect(activities.items.map((activity) => activity.canonical_type)).toEqual(
+      expect.arrayContaining(["strength"]),
     );
     expect(volume.reduce((total, week) => total + week.toDetail().workoutCount, 0)).toBe(
       activities.totalCount,

@@ -38,6 +38,7 @@ const mockActivity: ActivityDetail = {
   sampleCountState: { status: "missing", reason: "Sample Count not recorded" },
   name: "Morning Run",
   activityType: "running",
+  modality: null,
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
   localTimeContext: {

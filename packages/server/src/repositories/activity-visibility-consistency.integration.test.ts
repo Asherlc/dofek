@@ -475,7 +475,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       `INSERT INTO analytics.activity_summary (
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         name,
         started_at,
         ended_at,

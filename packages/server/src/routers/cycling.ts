@@ -1,4 +1,5 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
+import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
@@ -138,6 +139,7 @@ const activitiesOutputSchema = z.object({
       date: z.string(),
       activityName: z.string(),
       activityType: z.string(),
+      modality: z.enum(ACTIVITY_MODALITIES).nullable(),
       verticalAscentRate: z.number(),
       elevationGainMeters: z.number(),
       elapsedMinutes: z.number(),

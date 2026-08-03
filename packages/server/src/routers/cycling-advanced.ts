@@ -1,3 +1,4 @@
+import type { ActivityModality } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -80,7 +81,7 @@ export interface VerticalAscentRow {
   date: string;
   activityName: string;
   activityType: string;
-  modality: string | null;
+  modality: ActivityModality | null;
   verticalAscentRate: number;
   elevationGainMeters: number;
   elapsedMinutes: number;

@@ -152,7 +152,7 @@ export const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
 };
 
-type WorkoutActivityType = (typeof activity.$inferInsert)["activityType"];
+type WorkoutActivityType = (typeof activity.$inferInsert)["canonicalType"];
 
 /**
  * HKWorkoutActivityType rawValue → canonical snake_case activity type.

@@ -1,5 +1,6 @@
 import { formatDateShort, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import type { ActivityModality } from "@dofek/training/activity-types";
 import {
   formatVerticalAscentActivityTypeGroupLabel,
   getVerticalAscentActivityTypeGroup,
@@ -15,7 +16,7 @@ export interface VerticalAscentDataPoint {
   date: string;
   activityName: string;
   activityType: string;
-  modality: string | null;
+  modality: ActivityModality | null;
   verticalAscentRate: number;
   elevationGainMeters: number;
   elapsedMinutes: number;
