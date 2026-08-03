@@ -300,6 +300,18 @@ describe("R2AccountErasureRestoreLedger", () => {
     expect(requests[0]?.method).toBe("GET");
   });
 
+  it("preserves an object-read failure with malformed metadata", async () => {
+    const error = { $metadata: "not-metadata" };
+    const client = new S3Client({
+      credentials: { accessKeyId: "test", secretAccessKey: "test" },
+      region: "auto",
+    });
+    vi.spyOn(client, "send").mockRejectedValue(error);
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).rejects.toBe(error);
+  });
+
   it.each([
     null,
     "not-an-error",
