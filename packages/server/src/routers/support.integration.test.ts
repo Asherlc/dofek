@@ -9,8 +9,8 @@ import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
-const USER_WITH_EMAIL = "00000000-0000-0000-0000-0000000000e1";
-const USER_WITHOUT_EMAIL = "00000000-0000-0000-0000-0000000000e2";
+const USER_WITH_EMAIL = "00000000-0000-4000-8000-0000000000e1";
+const USER_WITHOUT_EMAIL = "00000000-0000-4000-8000-0000000000e2";
 
 const mswServer = setupServer();
 const postHogConfigUrl = `${POSTHOG_HOST}/array/${POSTHOG_API_KEY}/config`;
@@ -181,5 +181,104 @@ describe("support router", () => {
     expect(body.error?.message).toBe(
       "PostHog Support Tickets is unavailable. Please try again shortly.",
     );
+  });
+
+  it("does not create a PostHog ticket after account erasure is activated", async () => {
+    let ticketRequests = 0;
+    mswServer.use(
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, () => {
+        ticketRequests += 1;
+        return HttpResponse.json({ ticket_id: "unexpected" });
+      }),
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.account_erasure_request (
+            user_id,
+            user_hash,
+            user_hash_key_id,
+            write_fence_hash,
+            status_token_hash,
+            replay_retained_until,
+            completion_deadline
+          )
+          VALUES (
+            ${USER_WITH_EMAIL},
+            'support-user-hash',
+            'test-key',
+            encode(public.digest(${USER_WITH_EMAIL}, 'sha256'), 'hex'),
+            'support-status-token',
+            now() + interval '30 days',
+            now() + interval '30 days'
+          )`,
+    );
+
+    try {
+      const { body } = await createTicket(USER_WITH_EMAIL, {
+        subject: "Must be rejected",
+        message: "This must never reach PostHog.",
+      });
+
+      expect(body.error).toBeDefined();
+      expect(ticketRequests).toBe(0);
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.account_erasure_request
+            WHERE user_id = ${USER_WITH_EMAIL}`,
+      );
+    }
+  });
+
+  it("does not recreate PostHog data after account erasure has completed", async () => {
+    let ticketRequests = 0;
+    mswServer.use(
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, () => {
+        ticketRequests += 1;
+        return HttpResponse.json({ ticket_id: "unexpected" });
+      }),
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.account_erasure_request (
+            user_id,
+            user_hash,
+            user_hash_key_id,
+            write_fence_hash,
+            status_token_hash,
+            status,
+            replay_retained_until,
+            completion_deadline,
+            completed_at
+          )
+          VALUES (
+            NULL,
+            'completed-support-user-hash',
+            'test-key',
+            encode(public.digest(${USER_WITH_EMAIL}, 'sha256'), 'hex'),
+            'completed-support-status-token',
+            'completed',
+            now() + interval '30 days',
+            now(),
+            now()
+          )`,
+    );
+
+    try {
+      const { body } = await createTicket(USER_WITH_EMAIL, {
+        subject: "Must remain rejected",
+        message: "Completed erasure must permanently fence this user ID.",
+      });
+
+      expect(body.error).toBeDefined();
+      expect(ticketRequests).toBe(0);
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.account_erasure_request
+            WHERE write_fence_hash = encode(
+              public.digest(${USER_WITH_EMAIL}, 'sha256'),
+              'hex'
+            )`,
+      );
+    }
   });
 });

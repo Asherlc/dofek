@@ -50,6 +50,7 @@ import {
 } from "./oura/schemas.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
@@ -210,7 +211,7 @@ function createMockDb() {
     execute: vi.fn().mockResolvedValue([]),
   };
 
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 function expectConflictTarget(

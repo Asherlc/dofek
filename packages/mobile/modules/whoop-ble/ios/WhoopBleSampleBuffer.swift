@@ -39,6 +39,7 @@ private struct DeviceScopedSample<Sample> {
 final class WhoopBleSampleBuffer {
     private var imuSamples: [DeviceScopedSample<WhoopImuSample>] = []
     private var realtimeDataSamples: [DeviceScopedSample<WhoopRealtimeDataSample>] = []
+    private var deviceErasureCutoff: Date?
     private let lock = NSLock()
     private let imuDrainCursor = PeekConfirmDrainCursor()
     private let realtimeDrainCursor = PeekConfirmDrainCursor()
@@ -67,7 +68,13 @@ final class WhoopBleSampleBuffer {
     func appendImuSamples(_ samples: [WhoopImuSample], deviceId: String = "WHOOP Strap") {
         guard !samples.isEmpty else { return }
         lock.lock()
-        imuSamples.append(contentsOf: samples.map { DeviceScopedSample(deviceId: deviceId, sample: $0) })
+        let accepted = samples.filter { sample in
+            guard let cutoff = deviceErasureCutoff else { return true }
+            return self.imuSampleDate(sample) > cutoff
+        }
+        imuSamples.append(contentsOf: accepted.map {
+            DeviceScopedSample(deviceId: deviceId, sample: $0)
+        })
         if imuSamples.count > Self.maxImuBufferSize {
             let overflow = imuSamples.count - Self.maxImuBufferSize
             imuSamples.removeFirst(overflow)
@@ -85,7 +92,11 @@ final class WhoopBleSampleBuffer {
     ) {
         guard !samples.isEmpty else { return }
         lock.lock()
-        realtimeDataSamples.append(contentsOf: samples.map {
+        let accepted = samples.filter { sample in
+            guard let cutoff = deviceErasureCutoff else { return true }
+            return self.realtimeSampleDate(sample) > cutoff
+        }
+        realtimeDataSamples.append(contentsOf: accepted.map {
             DeviceScopedSample(deviceId: deviceId, sample: $0)
         })
         if realtimeDataSamples.count > Self.maxRealtimeBufferSize {
@@ -104,6 +115,27 @@ final class WhoopBleSampleBuffer {
         imuSamples.removeAll()
         realtimeDataSamples.removeAll()
         lock.unlock()
+    }
+
+    func advanceErasureCutoff(to candidate: Date) {
+        lock.lock()
+        defer { lock.unlock() }
+        let cutoff = deviceErasureCutoff.map { max($0, candidate) } ?? candidate
+        deviceErasureCutoff = cutoff
+
+        let imuHeadRemovalCount = imuSamples.prefix {
+            imuSampleDate($0.sample) <= cutoff
+        }.count
+        imuSamples.removeAll { imuSampleDate($0.sample) <= cutoff }
+        imuDrainCursor.recordHeadRemoval(count: imuHeadRemovalCount)
+
+        let realtimeHeadRemovalCount = realtimeDataSamples.prefix {
+            realtimeSampleDate($0.sample) <= cutoff
+        }.count
+        realtimeDataSamples.removeAll {
+            realtimeSampleDate($0.sample) <= cutoff
+        }
+        realtimeDrainCursor.recordHeadRemoval(count: realtimeHeadRemovalCount)
     }
 
     // MARK: - Peek (read without removing)
@@ -214,6 +246,25 @@ final class WhoopBleSampleBuffer {
             return minPast
         }
         return rawInterval
+    }
+
+    private func imuSampleDate(_ sample: WhoopImuSample) -> Date {
+        let samplingInterval =
+            sample.samplesInFrame > 0 ? 1 / Double(sample.samplesInFrame) : 0.01
+        return Date(
+            timeIntervalSince1970:
+                TimeInterval(sample.timestampSeconds)
+                + TimeInterval(sample.subSeconds) / 1_000
+                + Double(sample.sampleIndex) * samplingInterval
+        )
+    }
+
+    private func realtimeSampleDate(_ sample: WhoopRealtimeDataSample) -> Date {
+        Date(
+            timeIntervalSince1970:
+                TimeInterval(sample.timestampSeconds)
+                + TimeInterval(sample.subSeconds) / 1_000
+        )
     }
 
     private func serializeImuSamples(_ samples: [DeviceScopedSample<WhoopImuSample>]) -> [[String: Any]] {

@@ -23,6 +23,7 @@ final class WatchFileInbox {
     }()
 
     private let fileManager: FileManager
+    private let operationLock = NSLock()
 
     init(pendingDirectory: URL, fileManager: FileManager = .default) {
         self.pendingDirectory = pendingDirectory
@@ -30,6 +31,29 @@ final class WatchFileInbox {
     }
 
     func persistReceivedFile(at sourceURL: URL, metadata: [String: Any]?) throws -> String {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        return try persistReceivedFileWithoutLock(at: sourceURL, metadata: metadata)
+    }
+
+    func persistReceivedFileIfAccepted(
+        at sourceURL: URL,
+        metadata: [String: Any]?,
+        shouldAccept: () -> Bool
+    ) throws -> String? {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        guard shouldAccept() else {
+            try fileManager.removeItem(at: sourceURL)
+            return nil
+        }
+        return try persistReceivedFileWithoutLock(at: sourceURL, metadata: metadata)
+    }
+
+    private func persistReceivedFileWithoutLock(
+        at sourceURL: URL,
+        metadata: [String: Any]?
+    ) throws -> String {
         try fileManager.createDirectory(
             at: pendingDirectory,
             withIntermediateDirectories: true
@@ -62,6 +86,20 @@ final class WatchFileInbox {
         .map(\.lastPathComponent)
         .sorted()
     }
+
+    func purgePendingFiles() throws {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        guard fileManager.fileExists(atPath: pendingDirectory.path) else {
+            return
+        }
+        for fileURL in try fileManager.contentsOfDirectory(
+            at: pendingDirectory,
+            includingPropertiesForKeys: nil
+        ) {
+            try fileManager.removeItem(at: fileURL)
+        }
+    }
 }
 
 final class WatchFileReceiver {
@@ -79,18 +117,30 @@ final class WatchFileReceiver {
     }
 
     private let inbox: WatchFileInbox
+    private let shouldAcceptFile: () -> Bool
     private let reportError: (Error) -> Void
     private let observerLock = NSLock()
     private weak var storedObserver: WatchFileReceiverObserver?
 
-    init(inbox: WatchFileInbox, reportError: @escaping (Error) -> Void) {
+    init(
+        inbox: WatchFileInbox,
+        shouldAcceptFile: @escaping () -> Bool = { true },
+        reportError: @escaping (Error) -> Void
+    ) {
         self.inbox = inbox
+        self.shouldAcceptFile = shouldAcceptFile
         self.reportError = reportError
     }
 
     func receive(fileURL: URL, metadata: [String: Any]?) {
         do {
-            let fileName = try inbox.persistReceivedFile(at: fileURL, metadata: metadata)
+            guard let fileName = try inbox.persistReceivedFileIfAccepted(
+                at: fileURL,
+                metadata: metadata,
+                shouldAccept: shouldAcceptFile
+            ) else {
+                return
+            }
             let observer = observer
             observer?.watchFileReceiver(didPersist: fileName, metadata: metadata)
         } catch {

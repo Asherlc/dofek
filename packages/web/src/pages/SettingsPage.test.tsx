@@ -92,6 +92,9 @@ vi.mock("../components/PersonalizationPanel.tsx", () => ({
 vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
   PrimaryGoalSelector: () => <div>PrimaryGoalSelector</div>,
 }));
+vi.mock("../components/AccountErasurePanel.tsx", () => ({
+  AccountErasurePanel: () => <div>AccountErasurePanel</div>,
+}));
 vi.mock("../components/SlackIntegrationPanel.tsx", () => ({
   SlackIntegrationPanel: () => <div>SlackIntegrationPanel</div>,
 }));

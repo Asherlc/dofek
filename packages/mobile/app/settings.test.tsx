@@ -7,14 +7,26 @@ import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
+const mockFileDelete = vi.fn();
 const mockDownloadFileAsync = vi.fn();
 vi.mock("expo-file-system", () => {
-  const MockFile = vi.fn().mockImplementation((_cache, filename: string) => ({
-    uri: `file:///tmp/cache/${filename}`,
+  const MockDirectory = vi
+    .fn()
+    .mockImplementation((parent: { uri: string }, directoryName: string) => ({
+      create: vi.fn(),
+      delete: vi.fn(),
+      exists: true,
+      uri: `${parent.uri}/${directoryName}`,
+    }));
+  const MockFile = vi.fn().mockImplementation((parent: { uri: string }, filename: string) => ({
+    delete: mockFileDelete,
+    exists: true,
+    uri: `${parent.uri}/${filename}`,
     write: mockFileWrite,
   }));
   MockFile.downloadFileAsync = mockDownloadFileAsync;
   return {
+    Directory: MockDirectory,
     Paths: { cache: { uri: "file:///tmp/cache" } },
     File: MockFile,
   };
@@ -40,6 +52,10 @@ vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));
 
+vi.mock("../components/AccountErasurePanel", () => ({
+  AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
+}));
+
 vi.mock("../components/SlackIntegrationPanel", () => ({
   SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
 }));
@@ -55,6 +71,7 @@ let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {}
 const mockLogout = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
+const checkoutOperationId = "10000000-0000-4000-8000-000000000001";
 let mockSessionToken: string | null = "test-token";
 const defaultBillingStatus = {
   hasFullAccess: false,
@@ -76,6 +93,10 @@ let mockBillingStatus = {
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush, setParams: mockRouterSetParams }),
   useLocalSearchParams: () => mockSearchParams,
+}));
+
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => checkoutOperationId,
 }));
 
 vi.mock("../lib/auth-context", () => ({
@@ -802,7 +823,11 @@ describe("SettingsScreen billing", () => {
 
     fireEvent.click(screen.getByText("Upgrade to Full Access"));
 
-    expect(mockCheckoutSession).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockCheckoutSession).toHaveBeenCalledWith({
+        operationId: checkoutOperationId,
+      }),
+    );
   });
 
   it("shows manage billing when billing is managed by Stripe", async () => {
@@ -848,7 +873,7 @@ describe("SettingsScreen export UI rendering", () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText("Danger Zone")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Delete All User Data" })).toBeTruthy();
+    expect(screen.getByText("AccountErasurePanel")).toBeTruthy();
   });
 
   it("shows Starting... and disables the button while processing", async () => {
@@ -899,6 +924,21 @@ describe("SettingsScreen OTA debug details", () => {
     ).toBeTruthy();
 
     updatesModule.createdAt = null;
+  });
+});
+
+describe("SettingsScreen account erasure", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "privacy-export" };
+  });
+
+  it("uses the durable account-erasure flow in the danger zone", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("AccountErasurePanel")).toBeTruthy();
+    expect(screen.queryByText("Delete All User Data")).toBeNull();
   });
 });
 
@@ -1085,16 +1125,19 @@ describe("SettingsScreen export flow", () => {
       expect(ExpoFile).toHaveBeenCalled();
       expect(mockDownloadFileAsync).toHaveBeenCalledWith(
         "https://test.example.com/api/export/download/export-789",
-        expect.objectContaining({ uri: "file:///tmp/cache/export-789-dofek-export.zip" }),
+        expect.objectContaining({
+          uri: "file:///tmp/cache/dofek-exports-v1/export-789-dofek-export.zip",
+        }),
         expect.objectContaining({
           headers: { Authorization: "Bearer test-token" },
           idempotent: true,
         }),
       );
       expect(shareAsync).toHaveBeenCalledWith(
-        "file:///tmp/cache/export-789-dofek-export.zip",
+        "file:///tmp/cache/dofek-exports-v1/export-789-dofek-export.zip",
         expect.objectContaining({ mimeType: "application/zip" }),
       );
+      expect(mockFileDelete).toHaveBeenCalledOnce();
     });
   });
 });

@@ -223,7 +223,7 @@ describe("planRideWithGpsActivityBackfill", () => {
 
     expect(replaceMetricStreamBatchMock).toHaveBeenCalledWith(
       db,
-      { activityId: "activity-1" },
+      { activityId: "activity-1", userId: "user-1" },
       [],
       "api",
     );
@@ -259,7 +259,7 @@ describe("planRideWithGpsActivityBackfill", () => {
     expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("activity-1");
     expect(replaceMetricStreamBatchMock).toHaveBeenCalledWith(
       db,
-      { activityId: "activity-1" },
+      { activityId: "activity-1", userId: "user-1" },
       expect.arrayContaining([
         expect.objectContaining({
           activityId: "activity-1",

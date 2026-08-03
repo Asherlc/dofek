@@ -33,11 +33,29 @@ entity "exercise_alias" {
   provider_exercise_name : text
 }
 
+entity "exercise_alias_source" {
+  alias_id : uuid
+  source_id : uuid
+  exercise_id : uuid
+  created_at : timestamp
+}
+
+entity "exercise_source" {
+  * id : uuid <<PK>>
+  --
+  exercise_id : uuid <<FK>>
+  source_kind : text
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  created_at : timestamp
+}
+
 entity "oauth_token" {
   user_id : uuid <<FK>>
   provider_id : text <<FK>>
   access_token : text
   refresh_token : text
+  provider_account_id : text
   expires_at : timestamp
   scopes : text
   created_at : timestamp
@@ -561,6 +579,66 @@ entity "medication_dose_event" {
   created_at : timestamp
 }
 
+entity "account_erasure_checkpoint" {
+  request_id : uuid <<FK>>
+  phase : text
+  details : jsonb
+  completed_at : timestamp
+}
+
+entity "account_erasure_identity_fence" {
+  request_id : uuid <<FK>>
+  identity_kind : text
+  key_id : text
+  identity_hash : text
+  created_at : timestamp
+}
+
+entity "account_erasure_outbox" {
+  * request_id : uuid <<PK>>
+  --
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+}
+
+entity "account_erasure_preparation" {
+  * user_id : uuid <<PK>>
+  --
+  request_id : uuid
+  preparation_token_hash : text
+  expires_at : timestamp
+  created_at : timestamp
+}
+
+entity "account_erasure_request" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid
+  user_hash : text
+  user_hash_key_id : text
+  write_fence_hash : text
+  preparation_token_hash : text
+  status_token_hash : text
+  status : text
+  current_phase : text
+  encrypted_remote_snapshot : text
+  requested_at : timestamp
+  replay_retained_until : timestamp
+  completion_deadline : timestamp
+  retry_at : timestamp
+  lease_owner : text
+  lease_expires_at : timestamp
+  phase_progress : jsonb
+  failure_count : bigint
+  recovered_from_restore : timestamp
+  started_at : timestamp
+  pii_scrubbed_at : timestamp
+  completed_at : timestamp
+  last_error : text
+  updated_at : timestamp
+}
+
 entity "auth_account" {
   * id : uuid <<PK>>
   --
@@ -570,6 +648,9 @@ entity "auth_account" {
   email : text
   name : text
   groups : text_array
+  revocation_access_token : text
+  revocation_refresh_token : text
+  revocation_client_id : text
   created_at : timestamp
 }
 
@@ -676,6 +757,14 @@ entity "slack_installation" {
   updated_at : timestamp
 }
 
+entity "slack_team_membership" {
+  team_id : text <<FK>>
+  user_id : uuid <<FK>>
+  slack_user_id : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "stripe_webhook_event" {
   * event_id : text <<PK>>
   --
@@ -695,6 +784,17 @@ entity "user_billing" {
   paid_grant_reason : text
   created_at : timestamp
   updated_at : timestamp
+}
+
+entity "user_external_effect" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  system : text
+  resource_type : text
+  external_id : text
+  contact_email : text
+  created_at : timestamp
 }
 
 entity "user_password_credential" {
@@ -1071,6 +1171,9 @@ entity "processing_stage_event" {
 
 exercise ||--o{ exercise_alias
 provider ||--o{ exercise_alias
+exercise ||--o{ exercise_source
+user_profile ||--o{ exercise_source
+provider ||--o{ exercise_source
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
 user_profile ||--o{ provider
@@ -1118,6 +1221,9 @@ provider ||--o{ medication
 user_profile ||--o{ medication
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
+account_erasure_request ||--o{ account_erasure_checkpoint
+account_erasure_request ||--o{ account_erasure_identity_fence
+account_erasure_request ||--o{ account_erasure_outbox
 user_profile ||--o{ auth_account
 user_profile ||--o{ companion_token
 user_profile ||--o{ data_export
@@ -1127,7 +1233,10 @@ user_profile ||--o{ mcp_oauth_refresh_token
 mcp_access_token ||--o{ mcp_oauth_refresh_token
 mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
+slack_installation ||--o{ slack_team_membership
+user_profile ||--o{ slack_team_membership
 user_profile ||--o{ user_billing
+user_profile ||--o{ user_external_effect
 user_profile ||--o{ user_password_credential
 user_profile ||--o{ user_settings
 user_profile ||--o{ breathwork_session

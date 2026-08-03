@@ -35,6 +35,7 @@ private final class PeekConfirmDrainCursor {
 /// upload failure leaves samples in place for retry rather than losing them.
 final class BleHeartRateSampleBuffer {
     private var samples: [BleHeartRateSample] = []
+    private var deviceErasureCutoff: Date?
     private let lock = NSLock()
     private let drainCursor = PeekConfirmDrainCursor()
 
@@ -52,6 +53,9 @@ final class BleHeartRateSampleBuffer {
     func append(_ sample: BleHeartRateSample) {
         lock.lock()
         defer { lock.unlock() }
+        guard deviceErasureCutoff.map({ sample.timestamp > $0 }) ?? true else {
+            return
+        }
         samples.append(sample)
         if samples.count > Self.maxBufferSize {
             let overflow = samples.count - Self.maxBufferSize
@@ -66,6 +70,16 @@ final class BleHeartRateSampleBuffer {
         drainCursor.recordHeadRemoval(count: samples.count)
         samples.removeAll()
         lock.unlock()
+    }
+
+    func advanceErasureCutoff(to candidate: Date) {
+        lock.lock()
+        defer { lock.unlock() }
+        let cutoff = deviceErasureCutoff.map { max($0, candidate) } ?? candidate
+        deviceErasureCutoff = cutoff
+        let previousCount = samples.count
+        samples.removeAll { $0.timestamp <= cutoff }
+        drainCursor.recordHeadRemoval(count: previousCount - samples.count)
     }
 
     /// Peek at up to `maxCount` samples WITHOUT removing them.

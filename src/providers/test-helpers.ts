@@ -40,6 +40,19 @@ export async function resolveProviderDataGenerationsForTest(
   };
 }
 
+export function makeTransactionalTestDatabase<TDatabase extends Database>(
+  database: TDatabase,
+): TDatabase & {
+  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
+} {
+  async function transaction<TResult>(
+    work: (transaction: TDatabase) => Promise<TResult>,
+  ): Promise<TResult> {
+    return work(database);
+  }
+  return Object.assign(database, { transaction });
+}
+
 /**
  * Options for configuring the mock database behavior.
  */
@@ -180,12 +193,12 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   // Build the db object that structurally satisfies SyncDatabase.
   // We use a function-typed variable so TypeScript infers the mock
   // return values' chain types without needing type assertions.
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return { db, spies };
 }

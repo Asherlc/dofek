@@ -1,6 +1,18 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
+  mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),
+}));
+
+vi.mock("./device-erasure-cutoff", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./device-erasure-cutoff")>();
+  return {
+    ...actual,
+    loadDeviceErasureCutoff: mockLoadDeviceErasureCutoff,
+  };
+});
+
 const mockGetPendingWatchFileNames = vi.fn((): string[] => []);
 const mockReadWatchFile = vi.fn(
   (_fileName: string): Promise<InertialMeasurementUnitSample[]> => Promise.resolve([]),
@@ -49,6 +61,7 @@ describe("syncWatchAccelerometerFiles", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     trpcClient = makeTrpcClient();
   });
 
@@ -147,6 +160,28 @@ describe("syncWatchAccelerometerFiles", () => {
     expect(result.filesFailed).toBe(0);
     expect(mockDeleteWatchFile).toHaveBeenCalledWith("empty-file.json.gz");
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+  });
+
+  it("deletes old-account samples and uploads only samples strictly after the cutoff", async () => {
+    const cutoff = "2026-03-30T12:00:00.000Z";
+    const retained = {
+      timestamp: "2026-03-30T12:00:01.000Z",
+      x: 4,
+      y: 5,
+      z: 6,
+    };
+    mockLoadDeviceErasureCutoff.mockResolvedValue(cutoff);
+    mockGetPendingWatchFileNames.mockReturnValue(["watch-accel-old-account.json.gz"]);
+    mockReadWatchFile.mockResolvedValue([{ timestamp: cutoff, x: 1, y: 2, z: 3 }, retained]);
+
+    await syncWatchAccelerometerFiles(trpcClient);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "Apple Watch",
+      deviceType: "apple_watch",
+      samples: [retained],
+    });
+    expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-accel-old-account.json.gz");
   });
 
   it("uploads samples in batches of 5000", async () => {

@@ -1,4 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { userProfile } from "dofek/db/schema/reference";
 import { captureException } from "dofek/lib/error-reporting";
 import { eq } from "drizzle-orm";
@@ -125,44 +129,56 @@ export const supportRouter = router({
     .input(createTicketInput)
     .output(createTicketOutput)
     .mutation(async ({ ctx, input }) => {
-      const [profile] = await ctx.db
-        .select({ name: userProfile.name, email: userProfile.email })
-        .from(userProfile)
-        .where(eq(userProfile.id, ctx.userId))
-        .limit(1);
-
-      const contactEmail = input.email ?? profile?.email ?? undefined;
-      if (!contactEmail) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "We need an email to reply to. Add an email to your profile or enter one above.",
-        });
-      }
-
-      const description = buildDescription(
-        input.subject,
-        input.message,
-        ctx.userId,
-        ctx.appVersion,
-      );
-      if ([...description].length > POSTHOG_WIDGET_MESSAGE_MAX_LENGTH) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Support message is too long after context is added. Shorten it and try again.",
-        });
-      }
-
       try {
-        const ticket = await getPostHogConversationsClient().createTicket({
-          message: description,
-          contactEmail,
-          contactName: profile?.name ?? contactEmail,
-          distinctId: ctx.userId,
-          widgetSessionId: crypto.randomUUID(),
+        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+          const [profile] = await transaction
+            .select({ name: userProfile.name, email: userProfile.email })
+            .from(userProfile)
+            .where(eq(userProfile.id, ctx.userId))
+            .limit(1);
+
+          const contactEmail = input.email ?? profile?.email ?? undefined;
+          if (!contactEmail) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "We need an email to reply to. Add an email to your profile or enter one above.",
+            });
+          }
+
+          const description = buildDescription(
+            input.subject,
+            input.message,
+            ctx.userId,
+            ctx.appVersion,
+          );
+          if ([...description].length > POSTHOG_WIDGET_MESSAGE_MAX_LENGTH) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Support message is too long after context is added. Shorten it and try again.",
+            });
+          }
+
+          const ticket = await getPostHogConversationsClient().createTicket({
+            message: description,
+            contactEmail,
+            contactName: profile?.name ?? contactEmail,
+            distinctId: ctx.userId,
+            widgetSessionId: crypto.randomUUID(),
+          });
+          logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
+          return { ticketId: ticket.ticketId };
         });
-        logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
-        return { ticketId: ticket.ticketId };
-      } catch (error) {
+      } catch (error: unknown) {
+        if (error instanceof AccountErasureUserFencedError) {
+          logger.info("[support] ticket creation blocked by account deletion");
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: error.message,
+          });
+        }
+        if (error instanceof TRPCError) throw error;
         if (
           !(error instanceof PostHogConversationsError) ||
           error.status >= 500 ||

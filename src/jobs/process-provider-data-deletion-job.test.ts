@@ -80,6 +80,7 @@ describe("processProviderDataDeletionJob", () => {
     const job = makeJob();
 
     await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, insert: vi.fn(async () => undefined), query },
       enqueueAnalyticsRefresh,
       enqueueContinuation,
@@ -127,12 +128,14 @@ describe("processProviderDataDeletionJob", () => {
     const job = makeJob();
 
     await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh,
       enqueueContinuation,
       markCompleted,
     });
     await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh,
       enqueueContinuation,
@@ -270,6 +273,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await expect(
       processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: vi.fn(async () => true),
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
         enqueueContinuation: vi.fn(async () => undefined),
@@ -283,6 +287,41 @@ describe("processProviderDataDeletionJob", () => {
     expect(markCompleted).not.toHaveBeenCalled();
   });
 
+  it("does not checkpoint a batch when account erasure blocks its tombstone insert", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
+      })
+      .mockResolvedValueOnce({ json: async () => [{ generation: 0, id: firstId }] })
+      .mockResolvedValueOnce({ json: async () => [tombstoneRow(firstId, 0)] });
+    const accountErasureAllowsWork = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    const job = makeJob();
+    const enqueueContinuation = vi.fn(async () => undefined);
+
+    await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork,
+      clickHouseClient: {
+        command: vi.fn(async () => undefined),
+        insert: vi.fn(async () => undefined),
+        query,
+      },
+      enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+      enqueueContinuation,
+      markCompleted: vi.fn(async () => undefined),
+    });
+
+    expect(job.updateData).not.toHaveBeenCalled();
+    expect(enqueueContinuation).not.toHaveBeenCalled();
+  });
+
   it("requires an insert-capable ClickHouse client before creating tombstones", async () => {
     const command = vi.fn(async () => undefined);
     const query = vi
@@ -294,6 +333,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await expect(
       processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: vi.fn(async () => true),
         clickHouseClient: { command, query },
         enqueueAnalyticsRefresh: vi.fn(async () => undefined),
         enqueueContinuation: vi.fn(async () => undefined),
@@ -316,6 +356,7 @@ describe("processProviderDataDeletionJob", () => {
     };
 
     await processProviderDataDeletionJob(makeJob({ checkpoint }), {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       enqueueContinuation: vi.fn(async () => undefined),
@@ -345,6 +386,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await expect(
       processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: vi.fn(async () => true),
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
         enqueueContinuation: vi.fn(async () => undefined),
@@ -375,6 +417,7 @@ describe("processProviderDataDeletionJob", () => {
     job.updateProgress.mockRejectedValue(progressError);
 
     await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, query },
       enqueueAnalyticsRefresh,
       enqueueContinuation: vi.fn(async () => undefined),

@@ -32,6 +32,7 @@ const acknowledgementAggregateRowsSchema = z.array(
   z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
 );
 const queryLogRowsSchema = z.array(z.object({ read_rows: z.coerce.number().int().nonnegative() }));
+const accountErasureAllowsWork = async (): Promise<boolean> => true;
 
 async function runProviderDataDeletionToCompletion(
   initialData: ProviderDataDeletionJobData,
@@ -133,6 +134,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     });
 
     await runProviderDataDeletionToCompletion(data, {
+      accountErasureAllowsWork,
       clickHouseClient,
       enqueueAnalyticsRefresh,
       markCompleted,
@@ -322,6 +324,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       userId,
     };
     await runProviderDataDeletionToCompletion(data, {
+      accountErasureAllowsWork,
       clickHouseClient: deletionClient,
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
@@ -357,6 +360,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       userId,
     };
     await runProviderDataDeletionToCompletion(firstDeletionData, {
+      accountErasureAllowsWork,
       clickHouseClient,
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
@@ -385,6 +389,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
         updateProgress: vi.fn(async () => undefined),
       },
       {
+        accountErasureAllowsWork,
         clickHouseClient: {
           command: (options) => clickHouseClient.command(options),
           query: async (options) => {
@@ -485,6 +490,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
           updateProgress: vi.fn(async () => undefined),
         },
         {
+          accountErasureAllowsWork,
           clickHouseClient: deletionClient,
           enqueueAnalyticsRefresh: vi.fn(async () => undefined),
           enqueueContinuation: vi.fn(async () => undefined),

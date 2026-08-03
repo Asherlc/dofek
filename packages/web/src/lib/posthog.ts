@@ -17,5 +17,22 @@ export function initPostHog() {
 }
 
 export function capturePageView() {
+  if (posthog.has_opted_out_capturing()) return;
   posthog.capture("$pageview");
+}
+
+export function identifyPostHogUser(userId: string): void {
+  posthog.opt_in_capturing();
+  posthog.identify(userId);
+}
+
+export function resetPostHogUser(): void {
+  const optedOut = posthog.has_opted_out_capturing();
+  posthog.reset();
+  if (optedOut) posthog.opt_out_capturing();
+}
+
+export function disablePostHogForAccountErasure(): void {
+  posthog.reset();
+  posthog.opt_out_capturing();
 }

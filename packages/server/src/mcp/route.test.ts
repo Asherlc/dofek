@@ -27,6 +27,7 @@ const toolTestMocks = vi.hoisted(() => {
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     subjectiveTimeline: vi.fn(),
+    withUserWriteFence: vi.fn(),
   };
   return {
     ...mocks,
@@ -115,6 +116,11 @@ import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: (...args: unknown[]) =>
+    toolTestMocks.withUserWriteFence(...args),
 }));
 
 vi.mock("./tools.ts", async (importOriginal) => {
@@ -308,6 +314,13 @@ describe("createMcpRouter", () => {
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
     toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
+    toolTestMocks.withUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   it("returns 401 with a bearer challenge when Authorization is missing", async () => {
@@ -1477,6 +1490,11 @@ describe("createMcpRouter", () => {
       }),
       { skipWhenRateLimited: true },
     );
+    expect(toolTestMocks.withUserWriteFence).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-id",
+      expect.any(Function),
+    );
     expect(toolTestMocks.getProviderSyncQueue).toHaveBeenCalledWith("wahoo");
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
@@ -1496,6 +1514,27 @@ describe("createMcpRouter", () => {
       queueName: "sync-wahoo",
       status: "queued",
     });
+  });
+
+  it("rejects provider sync dispatch before queueing when account erasure is active", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getAllProviders.mockReturnValue([
+      { id: "wahoo", name: "Wahoo", validate: () => null },
+    ]);
+    toolTestMocks.withUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("start_provider_sync", {
+        providerId: "wahoo",
+        sinceDays: 7,
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("Account erasure is active");
+    expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
   });
 
   it("returns a tool error when sync enqueue is skipped for rate-limit cooldown", async () => {

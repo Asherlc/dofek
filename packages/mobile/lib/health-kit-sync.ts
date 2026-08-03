@@ -5,6 +5,7 @@ import type {
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
+import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   isBackgroundHealthKitTransientNetworkError,
   isHealthKitDatabaseInaccessible,
@@ -64,15 +65,35 @@ export const BACKGROUND_HEALTH_KIT_TYPES = [
 
 const BATCH_SIZE = 500;
 
-function syncWindowStart(syncRangeDays: number | null): string {
+function syncWindowStart(syncRangeDays: number | null, minimumSampleDate: string | null): string {
+  let rangeStart: string;
   if (syncRangeDays === null) {
-    return new Date(0).toISOString();
+    rangeStart = new Date(0).toISOString();
+  } else {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - syncRangeDays);
+    startDate.setHours(0, 0, 0, 0);
+    rangeStart = startDate.toISOString();
   }
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - syncRangeDays);
-  startDate.setHours(0, 0, 0, 0);
-  return startDate.toISOString();
+  if (minimumSampleDate === null) return rangeStart;
+  const cutoffTime = Date.parse(minimumSampleDate);
+  if (!Number.isFinite(cutoffTime)) {
+    throw new Error("Device erasure cutoff is invalid.");
+  }
+  return cutoffTime > Date.parse(rangeStart) ? minimumSampleDate : rangeStart;
+}
+
+function localCalendarDate(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("Device erasure cutoff is invalid.");
+  }
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
@@ -182,6 +203,8 @@ export interface SyncTrpcClient {
 export interface SyncOptions {
   trpcClient: SyncTrpcClient;
   healthKit: HealthKitAdapter;
+  /** Device-wide lower bound retained across deleted accounts. */
+  minimumSampleDate?: string | null;
   /** Number of days to sync, or null for all-time */
   syncRangeDays: number | null;
   onProgress?: (message: string) => void;
@@ -242,10 +265,19 @@ async function pushQuantitySampleBatches(
  * Queries all HealthKit types and pushes them to the server via tRPC.
  */
 export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncResult> {
-  const { trpcClient, healthKit, syncRangeDays, onProgress, onStage } = options;
+  const {
+    trpcClient,
+    healthKit,
+    minimumSampleDate = null,
+    syncRangeDays,
+    onProgress,
+    onStage,
+  } = options;
 
-  const startDate = syncWindowStart(syncRangeDays);
+  const startDate = syncWindowStart(syncRangeDays, minimumSampleDate);
   const endDate = new Date().toISOString();
+  const cutoffCalendarDate =
+    minimumSampleDate === null ? null : localCalendarDate(minimumSampleDate);
 
   const allSamples: HealthKitSample[] = [];
   const totalTypes = ALL_QUANTITY_TYPES.length;
@@ -270,6 +302,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       dailyStats = [];
     }
     for (const stat of dailyStats) {
+      if (cutoffCalendarDate !== null && stat.date <= cutoffCalendarDate) {
+        continue;
+      }
       allSamples.push({
         type: typeId,
         value: stat.value,
@@ -294,7 +329,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     });
 
     const samples = await healthKit.queryQuantitySamples(typeId, startDate, endDate);
-    allSamples.push(...samples);
+    allSamples.push(
+      ...samples.filter(
+        (sample) =>
+          minimumSampleDate === null ||
+          isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+      ),
+    );
     typeIndex++;
   }
 
@@ -312,7 +353,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Sync workouts
   onProgress?.("Querying workouts...");
   onStage?.({ operation: "queryWorkouts" });
-  const workouts = (await healthKit.queryWorkouts(startDate, endDate)).map(normalizeWorkout);
+  const workouts = (await healthKit.queryWorkouts(startDate, endDate))
+    .filter(
+      (workout) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(workout.startDate, minimumSampleDate),
+    )
+    .map(normalizeWorkout);
   {
     onStage?.({
       operation: "pushWorkouts",
@@ -345,7 +392,11 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
             continue;
           }
           try {
-            const locations = await healthKit.queryWorkoutRoutes(workout.uuid);
+            const locations = (await healthKit.queryWorkoutRoutes(workout.uuid)).filter(
+              (location) =>
+                minimumSampleDate === null ||
+                isAfterDeviceErasureCutoff(location.date, minimumSampleDate),
+            );
             if (locations.length > 0) {
               workerRoutes.push({
                 workoutUuid: workout.uuid,
@@ -394,7 +445,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Sync sleep
   onProgress?.("Querying sleep...");
   onStage?.({ operation: "querySleepSamples" });
-  const sleepSamples = await healthKit.querySleepSamples(startDate, endDate);
+  const sleepSamples = (await healthKit.querySleepSamples(startDate, endDate)).filter(
+    (sample) =>
+      minimumSampleDate === null || isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+  );
   if (sleepSamples.length > 0) {
     onStage?.({
       operation: "pushSleepSamples",
@@ -412,6 +466,8 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
 export interface ObserverSyncOptions {
   trpcClient: SyncTrpcClient;
   healthKit: HealthKitAdapter;
+  /** Device-wide lower bound retained across deleted accounts. */
+  minimumSampleDate?: string | null;
   typeIdentifiers: readonly string[];
   onStage?: (stage: HealthKitSyncStage) => void;
 }
@@ -437,12 +493,20 @@ async function syncAnchoredQuantityType(
   typeIdentifier: string,
   initialStartDate: string,
 ): Promise<SyncResult> {
-  const { healthKit, onStage, trpcClient } = options;
+  const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
   onStage?.({ operation: "queryAnchoredSamples", typeIdentifier });
   const changes = await healthKit.queryAnchoredSamples(typeIdentifier, initialStartDate);
 
   try {
-    const uploadResult = await pushQuantitySampleBatches(trpcClient, changes.samples, onStage);
+    const uploadResult = await pushQuantitySampleBatches(
+      trpcClient,
+      changes.samples.filter(
+        (sample) =>
+          minimumSampleDate === null ||
+          isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+      ),
+      onStage,
+    );
     if (uploadResult.errors.length > 0) {
       throw new Error(uploadResult.errors.join("; "));
     }
@@ -510,10 +574,16 @@ async function syncObserverWorkouts(
   startDate: string,
   endDate: string,
 ): Promise<SyncResult> {
-  const { healthKit, onStage, trpcClient } = options;
+  const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
   const errors: string[] = [];
   onStage?.({ operation: "queryWorkouts" });
-  const workouts = (await healthKit.queryWorkouts(startDate, endDate)).map(normalizeWorkout);
+  const workouts = (await healthKit.queryWorkouts(startDate, endDate))
+    .filter(
+      (workout) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(workout.startDate, minimumSampleDate),
+    )
+    .map(normalizeWorkout);
   onStage?.({ operation: "pushWorkouts", itemCount: workouts.length });
   const workoutResult = await trpcClient.healthKitSync.pushWorkouts.mutate({
     workouts,
@@ -526,7 +596,11 @@ async function syncObserverWorkouts(
   onStage?.({ operation: "queryWorkoutRoutes", itemCount: workouts.length });
   for (const workout of workouts) {
     try {
-      const locations = await healthKit.queryWorkoutRoutes(workout.uuid);
+      const locations = (await healthKit.queryWorkoutRoutes(workout.uuid)).filter(
+        (location) =>
+          minimumSampleDate === null ||
+          isAfterDeviceErasureCutoff(location.date, minimumSampleDate),
+      );
       if (locations.length === 0) {
         continue;
       }
@@ -574,10 +648,19 @@ async function syncObserverWorkouts(
 export async function syncHealthKitObserverChanges(
   options: ObserverSyncOptions,
 ): Promise<SyncResult> {
-  const { healthKit, onStage, trpcClient } = options;
+  const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
   const typeIdentifiers = new Set(options.typeIdentifiers);
-  const startDate = syncWindowStart(1);
+  // A reset native anchor must replay every sample after the device cutoff so
+  // the next account does not miss HealthKit history that belongs after the
+  // previous account was erased. Once the anchor is persisted, native code
+  // keeps subsequent observer queries incremental.
+  const startDate =
+    minimumSampleDate === null
+      ? syncWindowStart(1, null)
+      : syncWindowStart(null, minimumSampleDate);
   const endDate = new Date().toISOString();
+  const cutoffCalendarDate =
+    minimumSampleDate === null ? null : localCalendarDate(minimumSampleDate);
   let deleted = 0;
   let inserted = 0;
   const errors: string[] = [];
@@ -598,7 +681,12 @@ export async function syncHealthKitObserverChanges(
     }
     const result = await pushQuantitySampleBatches(
       trpcClient,
-      dailyStatisticsSamples(typeIdentifier, statistics),
+      dailyStatisticsSamples(
+        typeIdentifier,
+        statistics.filter(
+          (statistic) => cutoffCalendarDate === null || statistic.date > cutoffCalendarDate,
+        ),
+      ),
       onStage,
     );
     inserted += result.inserted;
@@ -618,7 +706,13 @@ export async function syncHealthKitObserverChanges(
     }
 
     onStage?.({ operation: "queryQuantitySamples", typeIdentifier });
-    const samples = await healthKit.queryQuantitySamples(typeIdentifier, startDate, endDate);
+    const samples = (
+      await healthKit.queryQuantitySamples(typeIdentifier, startDate, endDate)
+    ).filter(
+      (sample) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+    );
     const result = await pushQuantitySampleBatches(trpcClient, samples, onStage);
     inserted += result.inserted;
     errors.push(...result.errors);
@@ -635,7 +729,11 @@ export async function syncHealthKitObserverChanges(
 
   if (typeIdentifiers.has(SLEEP_TYPE_IDENTIFIER)) {
     onStage?.({ operation: "querySleepSamples" });
-    const samples = await healthKit.querySleepSamples(startDate, endDate);
+    const samples = (await healthKit.querySleepSamples(startDate, endDate)).filter(
+      (sample) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+    );
     if (samples.length > 0) {
       onStage?.({ operation: "pushSleepSamples", itemCount: samples.length });
       const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples });

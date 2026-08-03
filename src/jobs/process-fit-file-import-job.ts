@@ -36,6 +36,7 @@ import {
   fitImportDroppedFieldOccurrencesTotal,
   fitImportFilesWithDroppedFieldTotal,
 } from "../sync-metrics.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import {
   type FitFileImportJobData,
   type FitFileImportJobResult,
@@ -428,7 +429,7 @@ async function beginActivityImport(
     ));
 
   if (activity?.id) {
-    const scope = { activityId: activity.id };
+    const scope = { activityId: activity.id, userId: data.userId };
     if (metricStreamPublisher) {
       await replaceMetricStreamBatch(db, scope, [], SOURCE_TYPE_FILE, metricStreamPublisher);
     } else {
@@ -616,6 +617,9 @@ export async function processFitFileImportJob(
       throw error;
     }
     throw unrecoverableErrorFromResult(fitFileImportErrorResult(job.data, error));
+  }
+  if (!(await accountErasureAllowsQueuedUserWork(db, data.userId, "FIT file decode and import"))) {
+    return { recordsSynced: 0, errors: [] };
   }
   const result = await importFitFile(
     db,

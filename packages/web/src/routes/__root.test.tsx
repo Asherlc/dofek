@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockUseLocation = vi.hoisted(() => vi.fn());
+const mockInstallAccountPurgeListener = vi.hoisted(() => vi.fn(() => vi.fn()));
 
 // Capture the component and validateSearch passed to createRootRoute so we can
 // test them directly, avoiding type assertions on the mocked Route object.
@@ -45,6 +46,10 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../lib/auth-context.tsx", () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAuth: mockUseAuth,
+}));
+
+vi.mock("../lib/account-erasure-purge.ts", () => ({
+  installWebAccountPurgeListener: mockInstallAccountPurgeListener,
 }));
 
 vi.mock("../lib/processing-alerts-context.tsx", () => ({
@@ -235,6 +240,21 @@ describe("AuthGate", () => {
     expect(getByTestId("outlet")).toBeTruthy();
   });
 
+  it("allows the public account deletion status route without a session", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/account-deletion", href: "/account-deletion" });
+
+    const { getByTestId } = renderAuthGate();
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(getByTestId("outlet")).toBeTruthy();
+  });
+
   it("keeps an unauthenticated health report management route protected", () => {
     mockUseAuth.mockReturnValue({
       user: null,
@@ -307,6 +327,23 @@ describe("AuthGate", () => {
     const { container } = renderAuthGate();
 
     expect(container.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("does not expose routed login content while accepted deletion cleanup is running", () => {
+    mockUseAuth.mockReturnValue({
+      accountErasureCleanupInProgress: true,
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/login", href: "/login" });
+
+    const view = renderAuthGate();
+
+    expect(view.getByText("Finishing account deletion cleanup…")).toBeTruthy();
+    expect(view.queryByTestId("outlet")).toBeNull();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("shows bootstrap failure instead of redirecting to login", () => {

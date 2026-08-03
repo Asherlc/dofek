@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  createProviderDataDeletionRequest,
   findProviderDataDeletionRequest,
   getProviderDataGenerations,
+  listPendingProviderDataDeletionRequests,
   markProviderDataDeletionFailed,
 } from "./provider-data-deletion.ts";
 import { providerDataDeletionOutbox, providerDataGeneration } from "./schema/events.ts";
@@ -87,5 +91,39 @@ describe("provider data deletion persistence (integration)", () => {
       status: "failed",
       userId: firstUserId,
     });
+  });
+
+  it("excludes pending requests owned by an account being erased", async () => {
+    const fencedEventId = randomUUID();
+    const visibleEventId = randomUUID();
+    await createProviderDataDeletionRequest(context.db, firstUserId, "wahoo", fencedEventId);
+    await createProviderDataDeletionRequest(context.db, secondUserId, "wahoo", visibleEventId);
+    await context.db.execute(
+      sql`INSERT INTO fitness.account_erasure_request (
+            id,
+            user_id,
+            user_hash,
+            user_hash_key_id,
+            write_fence_hash,
+            status_token_hash,
+            replay_retained_until,
+            completion_deadline
+          )
+          VALUES (
+            ${randomUUID()}::uuid,
+            ${firstUserId}::uuid,
+            ${"1".repeat(64)},
+            'test-key',
+            ${"2".repeat(64)},
+            ${"3".repeat(64)},
+            now() + interval '7 days',
+            now() + interval '30 days'
+          )`,
+    );
+
+    const requests = await listPendingProviderDataDeletionRequests(context.db, 100);
+
+    expect(requests.map((request) => request.eventId)).not.toContain(fencedEventId);
+    expect(requests.map((request) => request.eventId)).toContain(visibleEventId);
   });
 });

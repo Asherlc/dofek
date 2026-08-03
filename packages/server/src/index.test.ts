@@ -14,7 +14,17 @@ const mockQueue = {
 };
 const mockLoggerInfo = vi.fn();
 const mockSentryCaptureException = vi.fn();
+const mockInitSentry = vi.fn();
 const mockGetDefaultMetricStreamEventPublisher = vi.fn();
+const mockValidateAccountErasureLedgerKeyring = vi.fn();
+const mockReconcileAccountErasureRestoreIntents = vi.fn(async () => ({ recoveredRequestIds: [] }));
+const mockAccountErasureRestoreLedger = {
+  findIntent: vi.fn(async () => null),
+  listIntentReferences: vi.fn(async () => []),
+  listIntentsForIdentities: vi.fn(async () => []),
+  recordIntent: vi.fn(async () => undefined),
+};
+const mockCreateAccountErasureRestoreLedgerFromEnv = vi.fn(() => mockAccountErasureRestoreLedger);
 const mockCreateExpressMiddleware = vi.fn(
   (_options: {
     createContext: (input: {
@@ -84,6 +94,19 @@ vi.mock("dofek/db/clickhouse", () => ({
 vi.mock("../../../src/metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: mockGetDefaultMetricStreamEventPublisher,
 }));
+vi.mock("../../../src/account-erasure/identity.ts", () => ({
+  validateAccountErasureLedgerKeyring: mockValidateAccountErasureLedgerKeyring,
+}));
+vi.mock("../../../src/account-erasure/remote-snapshot.ts", () => ({
+  createEncryptedAccountErasureSnapshot: vi.fn(),
+}));
+vi.mock("../../../src/account-erasure/restore-ledger.ts", () => ({
+  createAccountErasureRestoreLedgerFromEnv: mockCreateAccountErasureRestoreLedgerFromEnv,
+  createLazyAccountErasureRestoreLedger: mockCreateAccountErasureRestoreLedgerFromEnv,
+}));
+vi.mock("../../../src/account-erasure/restore-reconciliation.ts", () => ({
+  reconcileAccountErasureRestoreIntents: mockReconcileAccountErasureRestoreIntents,
+}));
 vi.mock("dofek/jobs/queues", () => ({
   createActivityDeleteAnalyticsQueue: vi.fn(() => mockQueue),
   createExportQueue: vi.fn(() => mockQueue),
@@ -102,8 +125,8 @@ vi.mock("../repositories/clickhouse-activity-sensor-store.ts", () => ({
 vi.mock("../repositories/limited-activity-sensor-store.ts", () => ({
   LimitedActivitySensorStore: vi.fn(),
 }));
-vi.mock("../lib/sentry.ts", () => ({
-  initSentry: vi.fn(),
+vi.mock("./lib/sentry.ts", () => ({
+  initSentry: mockInitSentry,
   sentryErrorHandler: vi.fn(
     () => (_error: unknown, _req: unknown, _res: unknown, next: (error?: unknown) => void) =>
       next(),
@@ -433,6 +456,27 @@ describe("main", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetDefaultMetricStreamEventPublisher.mockReset();
+    mockReconcileAccountErasureRestoreIntents.mockResolvedValue({
+      recoveredRequestIds: [],
+    });
+  });
+
+  it("does not initialize traffic dependencies when restore reconciliation fails", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://health:health@db:5432/health");
+    vi.stubEnv("CLICKHOUSE_URL", "http://default:health@clickhouse:8123");
+    const restoreError = new Error("restore intent reconciliation failed");
+    mockReconcileAccountErasureRestoreIntents.mockRejectedValueOnce(restoreError);
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(restoreError);
+      expect(mockInitSentry).toHaveBeenCalled();
+      expect(mockGetDefaultMetricStreamEventPublisher).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not listen when the metric-stream producer cannot connect", async () => {

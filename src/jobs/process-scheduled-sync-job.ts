@@ -1,6 +1,10 @@
 import { isStepChainSyncProvider } from "@dofek/provider-http/adaptive-rate-limit";
 import { sql } from "drizzle-orm";
-import type { SyncDatabase } from "../db/index.ts";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "../db/account-erasure.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import { listProviderSyncJobsForUser } from "../lib/sync-request-queue.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
@@ -32,7 +36,9 @@ async function updateScheduledSyncProgress(
  * and enqueue per-user sync jobs into per-provider queues so different
  * providers sync in parallel (while the same provider stays serialized).
  */
-export async function processScheduledSyncJob(job: ScheduledSyncJob, db: SyncDatabase) {
+type ScheduledSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+export async function processScheduledSyncJob(job: ScheduledSyncJob, db: ScheduledSyncDatabase) {
   await updateScheduledSyncProgress(job, 0, "Starting scheduled sync dispatch...");
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
@@ -82,46 +88,57 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: SyncDat
   }
 
   for (const [userId, providerIds] of userProviders) {
-    for (const providerId of providerIds) {
-      const provider = getProvider(providerId);
-      if (!provider || !isSyncEligibleProvider(provider)) {
-        logger.info(`[scheduled-sync] Skipping non-sync provider ${providerId}`);
-        processedConnections++;
-        await reportDispatchProgress();
-        continue;
-      }
+    try {
+      await withAccountErasureUserWriteFence(db, userId, async () => {
+        for (const providerId of providerIds) {
+          const provider = getProvider(providerId);
+          if (!provider || !isSyncEligibleProvider(provider)) {
+            logger.info(`[scheduled-sync] Skipping non-sync provider ${providerId}`);
+            processedConnections++;
+            await reportDispatchProgress();
+            continue;
+          }
 
-      if (isStepChainSyncProvider(providerId)) {
-        const pendingJobs = await listProviderSyncJobsForUser(providerId, userId);
-        if (pendingJobs.length > 0) {
-          skippedDueToInFlight++;
-          logger.info(
-            `[scheduled-sync] Skipping ${providerId} for ${userId}: ${pendingJobs.length} sync job(s) already queued`,
-          );
+          if (isStepChainSyncProvider(providerId)) {
+            const pendingJobs = await listProviderSyncJobsForUser(providerId, userId);
+            if (pendingJobs.length > 0) {
+              skippedDueToInFlight++;
+              logger.info(
+                `[scheduled-sync] Skipping ${providerId} for ${userId}: ${pendingJobs.length} sync job(s) already queued`,
+              );
+              processedConnections++;
+              await reportDispatchProgress();
+              continue;
+            }
+          }
+
+          const jobData = {
+            userId,
+            providerId,
+            sinceDays: provider.scheduledSyncLookbackDays ?? 1,
+          };
+
+          const syncJob = await enqueueSyncJob(providerId, jobData, {
+            skipWhenRateLimited: true,
+          });
+          if (!syncJob) {
+            skippedDueToCooldown++;
+            logger.info(
+              `[scheduled-sync] Skipping ${providerId} for ${userId}: rate-limit cooldown active`,
+            );
+            processedConnections++;
+            await reportDispatchProgress();
+            continue;
+          }
+          jobCount++;
           processedConnections++;
           await reportDispatchProgress();
-          continue;
         }
-      }
-
-      const jobData = {
-        userId,
-        providerId,
-        sinceDays: provider?.scheduledSyncLookbackDays ?? 1,
-      };
-
-      const job = await enqueueSyncJob(providerId, jobData, { skipWhenRateLimited: true });
-      if (!job) {
-        skippedDueToCooldown++;
-        logger.info(
-          `[scheduled-sync] Skipping ${providerId} for ${userId}: rate-limit cooldown active`,
-        );
-        processedConnections++;
-        await reportDispatchProgress();
-        continue;
-      }
-      jobCount++;
-      processedConnections++;
+      });
+    } catch (error: unknown) {
+      if (!(error instanceof AccountErasureUserFencedError)) throw error;
+      processedConnections += providerIds.length;
+      logger.info("[scheduled-sync] Skipping one account with active erasure");
       await reportDispatchProgress();
     }
   }

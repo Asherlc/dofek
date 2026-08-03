@@ -39,6 +39,24 @@ vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
+const mockWithUserWriteFence = vi.fn(
+  async (
+    database: unknown,
+    _userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => operation(database),
+);
+vi.mock("../db/account-erasure.ts", () => ({
+  withAccountErasureUserWriteFence: (
+    database: unknown,
+    userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => mockWithUserWriteFence(database, userId, operation),
+}));
+vi.mock("../db/account-erasure-processing.ts", () => ({
+  isAccountErasureActive: vi.fn(async () => false),
+}));
+
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
@@ -376,6 +394,13 @@ describe("processSyncJob", () => {
     );
     mockMetricStreamPublishRows.mockClear();
     mockMetricStreamReplaceRows.mockClear();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   afterEach(() => {
@@ -1573,6 +1598,7 @@ describe("processSyncJob", () => {
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
   });
 
   it("enqueues a continuation job and skips post-sync when sync returns continued", async () => {
@@ -1608,6 +1634,7 @@ describe("processSyncJob", () => {
     );
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
     expect(job.updateProgress).toHaveBeenCalledWith(
       expect.objectContaining({
         providers: { whoop: { status: "running", message: "4 synced so far" } },

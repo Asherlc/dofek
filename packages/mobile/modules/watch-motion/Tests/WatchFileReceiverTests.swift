@@ -147,6 +147,46 @@ final class WatchFileReceiverTests: XCTestCase {
         XCTAssertEqual(moduleObserver.receivedFileNames.count, 1)
     }
 
+    func testDropsLateTransferWhileAccountSyncIsDisabled() throws {
+        let rootDirectory = try makeTemporaryDirectory()
+        let sourceURL = rootDirectory.appendingPathComponent("received.json.gz")
+        let pendingDirectory = rootDirectory.appendingPathComponent("pending", isDirectory: true)
+        try Data("old account samples".utf8).write(to: sourceURL)
+        let inbox = WatchFileInbox(pendingDirectory: pendingDirectory)
+        let receiver = WatchFileReceiver(
+            inbox: inbox,
+            shouldAcceptFile: { false },
+            reportError: { error in
+                XCTFail("Unexpected discard error: \(error)")
+            }
+        )
+
+        receiver.receive(fileURL: sourceURL, metadata: nil)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pendingDirectory.path))
+    }
+
+    func testPurgePendingFilesRemovesOnlyInboxContents() throws {
+        let rootDirectory = try makeTemporaryDirectory()
+        let pendingDirectory = rootDirectory.appendingPathComponent("pending", isDirectory: true)
+        let unrelatedURL = rootDirectory.appendingPathComponent("keep.txt")
+        try FileManager.default.createDirectory(
+            at: pendingDirectory,
+            withIntermediateDirectories: true
+        )
+        try Data("pending".utf8).write(
+            to: pendingDirectory.appendingPathComponent("watch-accel.json.gz")
+        )
+        try Data("keep".utf8).write(to: unrelatedURL)
+        let inbox = WatchFileInbox(pendingDirectory: pendingDirectory)
+
+        try inbox.purgePendingFiles()
+
+        XCTAssertTrue(try inbox.listPendingFileNames().isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelatedURL.path))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WatchFileReceiverTests-\(UUID().uuidString)", isDirectory: true)

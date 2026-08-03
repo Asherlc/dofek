@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
@@ -29,9 +30,9 @@ import { logger } from "../logger.ts";
 import { watchAltitudeSyncRouter } from "./watch-altitude-sync.ts";
 
 function makeMockDb() {
-  return {
+  return makeTransactionalTestDatabase({
     execute: vi.fn(async () => []),
-  };
+  });
 }
 
 function makeMetricStreamPublisher() {
@@ -85,7 +86,7 @@ describe("watchAltitudeSyncRouter", () => {
         samples: [{ timestamp: "2026-03-30T12:00:00.000Z", altitudeM: 12.5 }],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
       expect(JSON.stringify(mockDb.execute.mock.calls)).toContain("apple_motion");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
     });

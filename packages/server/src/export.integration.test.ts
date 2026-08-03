@@ -1,12 +1,14 @@
 import type { Server } from "node:http";
-import { TEST_USER_ID } from "dofek/db/schema/core";
-import type { ExportJobData } from "dofek/jobs/queues";
+import type { DataExportQueue, ExportJobData } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
+import { dispatchDataExportOutbox } from "../../../src/jobs/data-export-outbox.ts";
 import { createSession } from "./auth/session.ts";
 import { createExportRouter } from "./routes/export.ts";
+
+const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
 
 const exportStorageMocks = vi.hoisted(() => ({
   createSignedExportDownloadUrl: vi.fn(
@@ -64,6 +66,7 @@ describe("Data Export", () => {
   let server: Server;
   let baseUrl: string;
   let authorizationHeader: string;
+  let exportQueue: DataExportQueue;
   let queuedExportJobs: ExportJobData[];
 
   beforeEach(() => {
@@ -75,7 +78,15 @@ describe("Data Export", () => {
     testCtx = await setupTestDatabase();
 
     await testCtx.db.execute(
-      sql`UPDATE fitness.user_profile SET email = 'test@example.com' WHERE id = ${TEST_USER_ID}`,
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (${TEST_USER_ID}, 'Test User', 'test@example.com')
+          ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+          VALUES (${TEST_USER_ID}, 'existing_account')
+          ON CONFLICT (user_id) DO NOTHING`,
     );
 
     await testCtx.db.execute(
@@ -93,7 +104,7 @@ describe("Data Export", () => {
     }
     authorizationHeader = `Bearer ${session.sessionId}`;
 
-    const exportQueue = {
+    exportQueue = {
       add: vi.fn(async (_name: string, data: ExportJobData) => {
         queuedExportJobs.push(data);
         return { id: data.exportId };
@@ -166,6 +177,7 @@ describe("Data Export", () => {
     });
     expect(triggerResponse.status).toBe(200);
     const { exportId }: { exportId: string } = await triggerResponse.json();
+    await dispatchDataExportOutbox(testCtx.db, exportQueue);
     const queuedJob = queuedExportJobs.find((job) => job.exportId === exportId);
     if (!queuedJob) {
       throw new Error(`Export ${exportId} was not enqueued`);

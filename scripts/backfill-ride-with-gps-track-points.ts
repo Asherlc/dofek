@@ -255,7 +255,7 @@ export async function applyRideWithGpsActivityBackfillPlan(
 
   const result = await replaceMetricStreamBatch(
     db,
-    { activityId: plan.id },
+    { activityId: plan.id, userId: plan.userId },
     plan.metricRows,
     SOURCE_TYPE_API,
   );

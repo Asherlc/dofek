@@ -1,4 +1,5 @@
 import type { BleHeartRateSample } from "../modules/ble-heart-rate";
+import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { DeviceSampleGroups } from "./device-sample-groups.ts";
 import type { RecordingSensorService } from "./recording-sensor-service.ts";
 
@@ -62,6 +63,8 @@ export function createHeartRateRecordingService(
     },
 
     async syncForTimeRange(startedAt: string, endedAt: string): Promise<void> {
+      const deviceErasureCutoff = await loadDeviceErasureCutoff();
+
       // Gate on buffer access (a known device), not on live radio state: the UI
       // keeps the device ID after a disconnect so buffered samples still upload
       // on save even when Bluetooth is off. Draining reads the local buffer and
@@ -81,7 +84,12 @@ export function createHeartRateRecordingService(
         if (page.length === 0) break;
 
         const drainable = page.filter((sample) => sample.timestamp <= endedAt);
-        const inWindow = drainable.filter((sample) => sample.timestamp >= startedAt);
+        const inWindow = drainable.filter(
+          (sample) =>
+            sample.timestamp >= startedAt &&
+            (deviceErasureCutoff === null ||
+              isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff)),
+        );
         const groups = new DeviceSampleGroups(fallbackDeviceId, toBleHeartRateUploadSample);
         for (const sample of inWindow) {
           groups.add(sample);

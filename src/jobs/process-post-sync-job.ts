@@ -3,6 +3,7 @@ import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import { reportJobProgress } from "./job-progress.ts";
 import type { PostSyncJobData } from "./queues.ts";
 
@@ -47,8 +48,17 @@ export async function processPostSyncJob(
   }
 
   await updatePostSyncProgress(job, 0, "Starting post-sync refit...");
-  logger.info(`[post-sync] Running post-sync refit for user ${job.data.userId}`);
+  logger.info("[post-sync] Running post-sync refit");
 
+  if (
+    !(await accountErasureAllowsQueuedUserWork(
+      db,
+      job.data.userId,
+      "post-sync body measurement refresh",
+    ))
+  ) {
+    return;
+  }
   try {
     await updatePostSyncProgress(job, 20, "Refreshing body measurements...");
     await refreshBodyMeasurements();
@@ -62,6 +72,11 @@ export async function processPostSyncJob(
     throw error;
   }
 
+  if (
+    !(await accountErasureAllowsQueuedUserWork(db, job.data.userId, "personalized parameter refit"))
+  ) {
+    return;
+  }
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
     await updatePostSyncProgress(job, 45, "Refitting personalized parameters...");
@@ -77,10 +92,15 @@ export async function processPostSyncJob(
   }
 
   // Invalidate user-specific cache after personalized parameters are refitted.
+  if (
+    !(await accountErasureAllowsQueuedUserWork(db, job.data.userId, "post-sync cache invalidation"))
+  ) {
+    return;
+  }
   try {
     await updatePostSyncProgress(job, 75, "Invalidating user cache...");
     await invalidateAllUserQueries(job.data.userId);
-    logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);
+    logger.info("[post-sync] User cache invalidated");
   } catch (error) {
     logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${error}`);
     captureException(error, {
@@ -90,6 +110,6 @@ export async function processPostSyncJob(
     throw error;
   }
 
-  logger.info(`[post-sync] Post-sync refit complete for user ${job.data.userId}`);
+  logger.info("[post-sync] Post-sync refit complete");
   await updatePostSyncProgress(job, 100, "Post-sync refit complete.");
 }

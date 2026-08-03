@@ -6,12 +6,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth } from "./auth-context";
 
 const mockRemoveMobileQueryCache = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const mockClearAccountErasurePreparation = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 // expo-secure-store, expo-web-browser, expo-apple-authentication, and react-native
 // are mocked globally in test-setup.ts
 
 vi.mock("./mobile-query-persistence", () => ({
   removeMobileQueryCache: mockRemoveMobileQueryCache,
+}));
+
+vi.mock("./account-erasure-storage", () => ({
+  clearMobileAccountErasurePreparation: mockClearAccountErasurePreparation,
 }));
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
@@ -37,7 +42,10 @@ vi.mock("./auth", async (importOriginal) => {
     ...original,
     logout: vi.fn(() => Promise.resolve()),
     clearSessionToken: vi.fn(() => Promise.resolve()),
+    createAccountErasureCleanupNonce: vi.fn(() => "22222222-2222-4222-8222-222222222222"),
     getSessionToken: vi.fn(() => Promise.resolve(null)),
+    invalidateSessionPersistence: vi.fn(),
+    rotateSessionOwnerNonce: vi.fn(() => Promise.resolve("11111111-1111-4111-8111-111111111111")),
     saveSessionToken: vi.fn(() => Promise.resolve()),
     fetchCurrentUser: vi.fn(() => Promise.resolve(null)),
   };
@@ -353,6 +361,205 @@ describe("auth-context", () => {
       });
 
       expect(mockRemoveMobileQueryCache).toHaveBeenCalledWith("user-1");
+    });
+
+    it("clears an unused deletion preparation during normal logout", async () => {
+      const { getSessionToken, fetchCurrentUser, logout: authLogout } = await import("./auth");
+      vi.mocked(getSessionToken).mockResolvedValue("test-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+      vi.mocked(authLogout).mockResolvedValue();
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      await act(async () => result.current.logout());
+
+      expect(mockClearAccountErasurePreparation).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("account erasure", () => {
+    it("holds a global cleanup gate and rejects a new login until cleanup finishes", async () => {
+      vi.clearAllMocks();
+      const {
+        getSessionToken,
+        fetchCurrentUser,
+        logout: authLogout,
+        saveSessionToken,
+      } = await import("./auth");
+      vi.mocked(getSessionToken).mockResolvedValue("test-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      let cleanupLease: ReturnType<typeof result.current.beginAccountErasureCleanup> | undefined;
+      act(() => {
+        cleanupLease = result.current.beginAccountErasureCleanup("user-1");
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(result.current.sessionToken).toBeNull();
+      expect(result.current.accountErasureCleanupInProgress).toBe(true);
+      expect(authLogout).not.toHaveBeenCalled();
+
+      await expect(result.current.onLoginSuccess("user-2-token")).rejects.toThrow(
+        /account deletion cleanup is still in progress/i,
+      );
+      expect(saveSessionToken).not.toHaveBeenCalledWith("user-2-token");
+
+      act(() => {
+        if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+        result.current.finishAccountErasureCleanup(cleanupLease);
+      });
+      expect(result.current.accountErasureCleanupInProgress).toBe(false);
+    });
+
+    it("invalidates an in-flight new-token write before cleanup can purge persistence", async () => {
+      vi.clearAllMocks();
+      const { fetchCurrentUser, getSessionToken, invalidateSessionPersistence, saveSessionToken } =
+        await import("./auth");
+      vi.mocked(getSessionToken).mockResolvedValue("user-1-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-1",
+        name: "First User",
+        email: "first@example.com",
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+      vi.clearAllMocks();
+
+      let resolveWrite: (() => void) | undefined;
+      vi.mocked(saveSessionToken).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      let login: Promise<void> | undefined;
+      act(() => {
+        login = result.current.onLoginSuccess("user-2-token");
+      });
+      await waitFor(() => expect(saveSessionToken).toHaveBeenCalledWith("user-2-token"));
+
+      let cleanupLease: ReturnType<typeof result.current.beginAccountErasureCleanup> | undefined;
+      act(() => {
+        cleanupLease = result.current.beginAccountErasureCleanup("user-1");
+      });
+      expect(invalidateSessionPersistence).toHaveBeenCalledOnce();
+
+      resolveWrite?.();
+      if (!login) throw new Error("Login did not start.");
+      await expect(login).rejects.toThrow(/account deletion cleanup is still in progress/i);
+      expect(result.current.user).toBeNull();
+      if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+      act(() => result.current.finishAccountErasureCleanup(cleanupLease));
+    });
+
+    it("does not re-save a restored token when cleanup starts during the SecureStore read", async () => {
+      vi.clearAllMocks();
+      const { getSessionToken, invalidateSessionPersistence, saveSessionToken } = await import(
+        "./auth"
+      );
+      vi.mocked(getSessionToken).mockResolvedValueOnce(null);
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      vi.clearAllMocks();
+
+      let resolveRead: ((token: string) => void) | undefined;
+      vi.mocked(getSessionToken).mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveRead = resolve;
+          }),
+      );
+      let retry: Promise<void> | undefined;
+      act(() => {
+        retry = result.current.retryBootstrap();
+      });
+      await waitFor(() => expect(getSessionToken).toHaveBeenCalledOnce());
+
+      let cleanupLease: ReturnType<typeof result.current.beginAccountErasureCleanup> | undefined;
+      act(() => {
+        cleanupLease = result.current.beginAccountErasureCleanup("user-1");
+      });
+      expect(invalidateSessionPersistence).toHaveBeenCalledOnce();
+      resolveRead?.("stale-restored-token");
+      if (!retry) throw new Error("Bootstrap retry did not start.");
+      await act(async () => retry);
+
+      expect(saveSessionToken).not.toHaveBeenCalled();
+      if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+      act(() => result.current.finishAccountErasureCleanup(cleanupLease));
+    });
+
+    it("does not invalidate a different active account's session persistence", async () => {
+      vi.clearAllMocks();
+      const { fetchCurrentUser, getSessionToken, invalidateSessionPersistence } = await import(
+        "./auth"
+      );
+      vi.mocked(getSessionToken).mockResolvedValue("user-2-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-2",
+        name: "Second User",
+        email: "second@example.com",
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user?.id).toBe("user-2"));
+      vi.clearAllMocks();
+
+      let cleanupLease: ReturnType<typeof result.current.beginAccountErasureCleanup> | undefined;
+      act(() => {
+        cleanupLease = result.current.beginAccountErasureCleanup("user-1");
+      });
+
+      expect(invalidateSessionPersistence).not.toHaveBeenCalled();
+      expect(result.current.user?.id).toBe("user-2");
+      expect(result.current.sessionToken).toBe("user-2-token");
+      if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+      expect(result.current.isAccountErasureCleanupLeaseCurrent(cleanupLease)).toBe(false);
+      act(() => result.current.finishAccountErasureCleanup(cleanupLease));
+    });
+
+    it("makes an old cleanup lease stale when a later account becomes active", async () => {
+      vi.clearAllMocks();
+      const { getSessionToken, fetchCurrentUser } = await import("./auth");
+      vi.mocked(getSessionToken).mockResolvedValue("user-1-token");
+      vi.mocked(fetchCurrentUser)
+        .mockResolvedValueOnce({
+          id: "user-1",
+          name: "First User",
+          email: "first@example.com",
+        })
+        .mockResolvedValueOnce({
+          id: "user-2",
+          name: "Second User",
+          email: "second@example.com",
+        });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+
+      let cleanupLease: ReturnType<typeof result.current.beginAccountErasureCleanup> | undefined;
+      act(() => {
+        cleanupLease = result.current.beginAccountErasureCleanup("user-1");
+      });
+      act(() => {
+        if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+        result.current.finishAccountErasureCleanup(cleanupLease);
+      });
+      await act(async () => {
+        await result.current.onLoginSuccess("user-2-token");
+      });
+
+      if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+      expect(result.current.user?.id).toBe("user-2");
+      expect(result.current.isAccountErasureCleanupLeaseCurrent(cleanupLease)).toBe(false);
     });
   });
 });

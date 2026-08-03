@@ -7,16 +7,15 @@ import { SettingsRepository } from "./settings-repository.ts";
 
 function makeRepository(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const transactionCallback = vi.fn();
   const transaction = vi
     .fn()
-    .mockImplementation(async (callback: (tx: { execute: typeof execute }) => Promise<void>) => {
-      const transactionExecute = vi.fn().mockResolvedValue([]);
-      transactionCallback.mockImplementation(callback);
-      await callback({ execute: transactionExecute });
-      return transactionExecute;
+    .mockImplementation(async (callback: (tx: { execute: typeof execute }) => Promise<unknown>) => {
+      await callback({ execute });
     });
-  const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = { execute, transaction };
+  const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+    execute,
+    transaction,
+  };
   const repo = new SettingsRepository(db, "user-1");
   return { repo, execute, transaction };
 }

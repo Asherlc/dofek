@@ -148,9 +148,20 @@ describe("createMetricStreamDeletedEvent", () => {
     );
   });
 
+  it("creates an account-wide deletion scope from a user alone", () => {
+    const event = createCurrentMetricStreamDeletedEvent({
+      userId: "10000000-0000-4000-8000-000000000001",
+    });
+
+    expect(event.scope).toEqual({
+      userId: "10000000-0000-4000-8000-000000000001",
+    });
+    expect(event.partitionKey).toBe("account:10000000-0000-4000-8000-000000000001");
+  });
+
   it("rejects empty delete scopes", () => {
     expect(() => createCurrentMetricStreamDeletedEvent({})).toThrow(
-      "Metric stream delete scope must include activityId or providerId",
+      "Metric stream delete scope must include userId, activityId, or providerId",
     );
   });
 

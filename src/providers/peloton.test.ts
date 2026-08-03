@@ -17,6 +17,7 @@ import {
 } from "./peloton.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
@@ -922,7 +923,7 @@ function makeSyncPerformanceGraph(slugs: string[] = ["heart_rate"]): object {
 }
 
 function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -942,7 +943,7 @@ function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
     }),
     delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 }
 
 // ============================================================

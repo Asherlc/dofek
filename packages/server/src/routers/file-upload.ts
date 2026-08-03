@@ -1,6 +1,7 @@
 import { extname } from "node:path";
 import { TRPCError } from "@trpc/server";
-import type { Database } from "dofek/db";
+import type { Database, TransactionDatabase } from "dofek/db";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import {
   abortFileUpload,
   type CreateFileUploadInput,
@@ -71,30 +72,34 @@ interface ImportValidationConfig {
 }
 
 export interface FileUploadRepository {
-  abort(database: Database, uploadId: string, userId: string): Promise<FileUpload>;
-  create(database: Database, input: CreateFileUploadInput): Promise<FileUpload>;
-  find(database: Database, uploadId: string, userId: string): Promise<FileUpload | null>;
+  abort(database: TransactionDatabase, uploadId: string, userId: string): Promise<FileUpload>;
+  create(database: TransactionDatabase, input: CreateFileUploadInput): Promise<FileUpload>;
+  find(database: TransactionDatabase, uploadId: string, userId: string): Promise<FileUpload | null>;
   markUploading(
-    database: Database,
+    database: TransactionDatabase,
     uploadId: string,
     userId: string,
     multipartUploadId: string,
   ): Promise<FileUpload>;
-  markUploaded(database: Database, uploadId: string, userId: string): Promise<FileUpload>;
+  markUploaded(
+    database: TransactionDatabase,
+    uploadId: string,
+    userId: string,
+  ): Promise<FileUpload>;
   queue(
-    database: Database,
+    database: TransactionDatabase,
     uploadId: string,
     userId: string,
     completion: { importJobId: string; objectSizeBytes: number },
   ): Promise<FileUpload>;
   recordCompletionParts(
-    database: Database,
+    database: TransactionDatabase,
     uploadId: string,
     userId: string,
     parts: readonly { partNumber: number; etag: string }[],
   ): Promise<FileUpload>;
   rateAllowed(
-    database: Database,
+    database: TransactionDatabase,
     userId: string,
     operation: "initiate" | "complete",
   ): Promise<boolean>;
@@ -103,6 +108,11 @@ export interface FileUploadRepository {
 interface FileUploadRouterDependencies {
   repository: FileUploadRepository;
   storage?: ImportUploadStorage;
+  withUserWriteFence<T>(
+    database: Pick<Database, "transaction">,
+    userId: string,
+    operation: (transaction: TransactionDatabase) => Promise<T>,
+  ): Promise<T>;
 }
 
 const defaultRepository: FileUploadRepository = {
@@ -286,85 +296,134 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
         if (partCount > MAX_PART_COUNT) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Upload has too many parts" });
         }
-        const existingUpload = await dependencies.repository.find(
-          ctx.db,
-          input.uploadId,
-          ctx.userId,
-        );
-        const isIncrementalAppleHealth =
-          input.importType === "apple-health" && input.fullSync !== true;
-        const existingIncrementalSince =
-          existingUpload?.importType === "apple-health" && existingUpload.since.getTime() !== 0
-            ? existingUpload.since
-            : null;
-        const since = isIncrementalAppleHealth
-          ? (existingIncrementalSince ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-          : new Date(0);
-        if (
-          !existingUpload &&
-          !(await dependencies.repository.rateAllowed(ctx.db, ctx.userId, "initiate"))
-        ) {
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message: "Too many uploads initiated; try again shortly",
-          });
-        }
-        let upload = await dependencies.repository.create(ctx.db, {
-          id: input.uploadId,
-          userId: ctx.userId,
-          importType: input.importType,
-          objectKey: objectKey(ctx.userId, input.uploadId),
-          originalFilename: input.filename,
-          contentType: input.contentType.toLowerCase(),
-          expectedSizeBytes: input.sizeBytes,
-          expectedSha256: input.sha256,
-          partSizeBytes: DEFAULT_PART_SIZE_BYTES,
-          expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
-          since,
-          weightUnit: input.importType === "strong-csv" ? (input.weightUnit ?? "kg") : undefined,
-        });
-        if (!existingUpload) {
-          fileUploadLifecycleTotal.add(1, { state: "initiated", import_type: input.importType });
-        }
-        if (upload.state === "initiated") {
-          const multipartUploadId = await storageFor(dependencies).createMultipartUpload(
-            upload.objectKey,
-            upload.contentType,
-          );
-          try {
-            upload = await translateExpiredUploadError(() =>
-              dependencies.repository.markUploading(
-                ctx.db,
-                upload.id,
-                ctx.userId,
-                multipartUploadId,
-              ),
-            );
-          } catch (error) {
-            try {
-              await storageFor(dependencies).abortMultipartUpload(
-                upload.objectKey,
-                multipartUploadId,
-              );
-            } catch (abortError) {
-              captureException(abortError, {
-                tags: { source: "file-upload-initiate", operation: "abortMultipartUpload" },
-                extra: { uploadId: upload.id, multipartUploadId },
-              });
-            }
-            const concurrentUpload = await dependencies.repository.find(
-              ctx.db,
-              upload.id,
+        const remoteSideEffect: {
+          createdMultipart: {
+            multipartUploadId: string;
+            objectKey: string;
+            uploadId: string;
+          } | null;
+        } = { createdMultipart: null };
+        try {
+          return await dependencies.withUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+            const existingUpload = await dependencies.repository.find(
+              transaction,
+              input.uploadId,
               ctx.userId,
             );
-            if (concurrentUpload?.state === "uploading" && concurrentUpload.r2MultipartUploadId) {
-              upload = concurrentUpload;
-            } else {
-              throw error;
+            const isIncrementalAppleHealth =
+              input.importType === "apple-health" && input.fullSync !== true;
+            const existingIncrementalSince =
+              existingUpload?.importType === "apple-health" && existingUpload.since.getTime() !== 0
+                ? existingUpload.since
+                : null;
+            const since = isIncrementalAppleHealth
+              ? (existingIncrementalSince ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+              : new Date(0);
+            if (
+              !existingUpload &&
+              !(await dependencies.repository.rateAllowed(transaction, ctx.userId, "initiate"))
+            ) {
+              throw new TRPCError({
+                code: "TOO_MANY_REQUESTS",
+                message: "Too many uploads initiated; try again shortly",
+              });
+            }
+            let upload = await dependencies.repository.create(transaction, {
+              id: input.uploadId,
+              userId: ctx.userId,
+              importType: input.importType,
+              objectKey: objectKey(ctx.userId, input.uploadId),
+              originalFilename: input.filename,
+              contentType: input.contentType.toLowerCase(),
+              expectedSizeBytes: input.sizeBytes,
+              expectedSha256: input.sha256,
+              partSizeBytes: DEFAULT_PART_SIZE_BYTES,
+              expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
+              since,
+              weightUnit:
+                input.importType === "strong-csv" ? (input.weightUnit ?? "kg") : undefined,
+            });
+            if (!existingUpload) {
+              fileUploadLifecycleTotal.add(1, {
+                state: "initiated",
+                import_type: input.importType,
+              });
+            }
+            if (upload.state === "initiated") {
+              const multipartUploadId = await storageFor(dependencies).createMultipartUpload(
+                upload.objectKey,
+                upload.contentType,
+              );
+              remoteSideEffect.createdMultipart = {
+                multipartUploadId,
+                objectKey: upload.objectKey,
+                uploadId: upload.id,
+              };
+              try {
+                upload = await translateExpiredUploadError(() =>
+                  dependencies.repository.markUploading(
+                    transaction,
+                    upload.id,
+                    ctx.userId,
+                    multipartUploadId,
+                  ),
+                );
+              } catch (error) {
+                try {
+                  await storageFor(dependencies).abortMultipartUpload(
+                    upload.objectKey,
+                    multipartUploadId,
+                  );
+                  remoteSideEffect.createdMultipart = null;
+                } catch (abortError) {
+                  captureException(abortError, {
+                    tags: {
+                      source: "file-upload-initiate",
+                      operation: "abortMultipartUpload",
+                    },
+                    extra: { uploadId: upload.id, multipartUploadId },
+                  });
+                }
+                const concurrentUpload = await dependencies.repository.find(
+                  transaction,
+                  upload.id,
+                  ctx.userId,
+                );
+                if (
+                  concurrentUpload?.state === "uploading" &&
+                  concurrentUpload.r2MultipartUploadId
+                ) {
+                  upload = concurrentUpload;
+                } else {
+                  throw error;
+                }
+              }
+            }
+            return serializeUpload(upload);
+          });
+        } catch (error: unknown) {
+          if (remoteSideEffect.createdMultipart) {
+            const createdMultipart = remoteSideEffect.createdMultipart;
+            try {
+              await storageFor(dependencies).abortMultipartUpload(
+                createdMultipart.objectKey,
+                createdMultipart.multipartUploadId,
+              );
+            } catch (abortError: unknown) {
+              captureException(abortError, {
+                tags: {
+                  source: "file-upload-initiate",
+                  operation: "abortMultipartUpload",
+                },
+                extra: {
+                  uploadId: createdMultipart.uploadId,
+                  multipartUploadId: createdMultipart.multipartUploadId,
+                },
+              });
             }
           }
+          throw error;
         }
-        return serializeUpload(upload);
       }),
 
     authorizeParts: protectedProcedure
@@ -375,27 +434,32 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
       )
       .output(z.object({ upload: serializedUploadSchema, parts: z.array(authorizedPartSchema) }))
       .mutation(async ({ ctx, input }) => {
-        const upload = requireActiveUpload(
-          requireUpload(
-            await dependencies.repository.find(ctx.db, input.uploadId, ctx.userId),
-            input.uploadId,
-          ),
-        );
-        if (upload.state !== "uploading" || !upload.r2MultipartUploadId) {
-          throw new TRPCError({ code: "CONFLICT", message: "Upload is not accepting parts" });
-        }
-        const uniquePartNumbers = [...new Set(input.partNumbers)];
-        const parts = await Promise.all(
-          uniquePartNumbers.map((partNumber) =>
-            storageFor(dependencies).authorizeUploadPart({
-              objectKey: upload.objectKey,
-              multipartUploadId: upload.r2MultipartUploadId ?? "",
-              partNumber,
-              contentLength: partLength(upload, partNumber),
-            }),
-          ),
-        );
-        return { upload: serializeUpload(upload), parts };
+        return dependencies.withUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+          const upload = requireActiveUpload(
+            requireUpload(
+              await dependencies.repository.find(transaction, input.uploadId, ctx.userId),
+              input.uploadId,
+            ),
+          );
+          if (upload.state !== "uploading" || !upload.r2MultipartUploadId) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Upload is not accepting parts",
+            });
+          }
+          const uniquePartNumbers = [...new Set(input.partNumbers)];
+          const parts = await Promise.all(
+            uniquePartNumbers.map((partNumber) =>
+              storageFor(dependencies).authorizeUploadPart({
+                objectKey: upload.objectKey,
+                multipartUploadId: upload.r2MultipartUploadId ?? "",
+                partNumber,
+                contentLength: partLength(upload, partNumber),
+              }),
+            ),
+          );
+          return { upload: serializeUpload(upload), parts };
+        });
       }),
 
     resume: protectedProcedure
@@ -423,66 +487,115 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
       )
       .output(serializedUploadSchema)
       .mutation(async ({ ctx, input }) => {
-        let upload = requireUpload(
-          await dependencies.repository.find(ctx.db, input.uploadId, ctx.userId),
-          input.uploadId,
-        );
-        if (["queued", "processing", "completed"].includes(upload.state) && upload.importJobId) {
-          return serializeUpload(upload);
-        }
-        requireActiveUpload(upload);
-        if (!(await dependencies.repository.rateAllowed(ctx.db, ctx.userId, "complete"))) {
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message: "Too many uploads completed; try again shortly",
-          });
-        }
-        if (upload.state !== "uploading" || !upload.r2MultipartUploadId) {
-          throw new TRPCError({ code: "CONFLICT", message: "Upload is not ready to complete" });
-        }
-        const authoritativeParts = await storageFor(dependencies).listParts(
-          upload.objectKey,
-          upload.r2MultipartUploadId,
-        );
-        const verifiedParts = verifyParts(upload, authoritativeParts, input.parts);
-        upload = await translateExpiredUploadError(() =>
-          dependencies.repository.recordCompletionParts(
-            ctx.db,
-            upload.id,
-            ctx.userId,
-            verifiedParts,
-          ),
-        );
-        let object: { sizeBytes: number };
+        const remoteSideEffect: {
+          completedObject: { objectKey: string; uploadId: string } | null;
+        } = { completedObject: null };
         try {
-          await storageFor(dependencies).completeMultipartUpload(
-            upload.objectKey,
-            upload.r2MultipartUploadId ?? "",
-            verifiedParts,
-          );
-          object = await storageFor(dependencies).headObject(upload.objectKey);
-        } catch (completionError) {
-          try {
-            object = await storageFor(dependencies).headObject(upload.objectKey);
-          } catch {
-            throw completionError;
+          return await dependencies.withUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+            let upload = requireUpload(
+              await dependencies.repository.find(transaction, input.uploadId, ctx.userId),
+              input.uploadId,
+            );
+            if (
+              ["queued", "processing", "completed"].includes(upload.state) &&
+              upload.importJobId
+            ) {
+              return serializeUpload(upload);
+            }
+            requireActiveUpload(upload);
+            if (!(await dependencies.repository.rateAllowed(transaction, ctx.userId, "complete"))) {
+              throw new TRPCError({
+                code: "TOO_MANY_REQUESTS",
+                message: "Too many uploads completed; try again shortly",
+              });
+            }
+            if (upload.state !== "uploading" || !upload.r2MultipartUploadId) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message: "Upload is not ready to complete",
+              });
+            }
+            const authoritativeParts = await storageFor(dependencies).listParts(
+              upload.objectKey,
+              upload.r2MultipartUploadId,
+            );
+            const verifiedParts = verifyParts(upload, authoritativeParts, input.parts);
+            upload = await translateExpiredUploadError(() =>
+              dependencies.repository.recordCompletionParts(
+                transaction,
+                upload.id,
+                ctx.userId,
+                verifiedParts,
+              ),
+            );
+            let object: { sizeBytes: number };
+            try {
+              await storageFor(dependencies).completeMultipartUpload(
+                upload.objectKey,
+                upload.r2MultipartUploadId ?? "",
+                verifiedParts,
+              );
+              remoteSideEffect.completedObject = {
+                objectKey: upload.objectKey,
+                uploadId: upload.id,
+              };
+              object = await storageFor(dependencies).headObject(upload.objectKey);
+            } catch (completionError) {
+              try {
+                object = await storageFor(dependencies).headObject(upload.objectKey);
+                remoteSideEffect.completedObject = {
+                  objectKey: upload.objectKey,
+                  uploadId: upload.id,
+                };
+              } catch {
+                throw completionError;
+              }
+            }
+            upload = await translateExpiredUploadError(() =>
+              dependencies.repository.markUploaded(transaction, upload.id, ctx.userId),
+            );
+            upload = await translateExpiredUploadError(() =>
+              dependencies.repository.queue(transaction, upload.id, ctx.userId, {
+                importJobId: `file-import-${upload.id}`,
+                objectSizeBytes: object.sizeBytes,
+              }),
+            );
+            fileUploadLifecycleTotal.add(1, {
+              state: "queued",
+              import_type: upload.importType,
+            });
+            fileUploadBytesTotal.add(object.sizeBytes, {
+              import_type: upload.importType,
+            });
+            fileUploadCompletionDuration.record((Date.now() - upload.createdAt.getTime()) / 1_000, {
+              import_type: upload.importType,
+            });
+            return serializeUpload(upload);
+          });
+        } catch (error: unknown) {
+          if (remoteSideEffect.completedObject) {
+            const completedObject = remoteSideEffect.completedObject;
+            captureException(error, {
+              tags: {
+                source: "file-upload-complete",
+                operation: "persistCompletedObject",
+              },
+              extra: completedObject,
+            });
+            try {
+              await storageFor(dependencies).deleteObject(completedObject.objectKey);
+            } catch (cleanupError: unknown) {
+              captureException(cleanupError, {
+                tags: {
+                  source: "file-upload-complete",
+                  operation: "deleteCompletedObject",
+                },
+                extra: completedObject,
+              });
+            }
           }
+          throw error;
         }
-        upload = await translateExpiredUploadError(() =>
-          dependencies.repository.markUploaded(ctx.db, upload.id, ctx.userId),
-        );
-        upload = await translateExpiredUploadError(() =>
-          dependencies.repository.queue(ctx.db, upload.id, ctx.userId, {
-            importJobId: `file-import-${upload.id}`,
-            objectSizeBytes: object.sizeBytes,
-          }),
-        );
-        fileUploadLifecycleTotal.add(1, { state: "queued", import_type: upload.importType });
-        fileUploadBytesTotal.add(object.sizeBytes, { import_type: upload.importType });
-        fileUploadCompletionDuration.record((Date.now() - upload.createdAt.getTime()) / 1_000, {
-          import_type: upload.importType,
-        });
-        return serializeUpload(upload);
       }),
 
     abort: protectedProcedure
@@ -507,4 +620,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
   });
 }
 
-export const fileUploadRouter = createFileUploadRouter({ repository: defaultRepository });
+export const fileUploadRouter = createFileUploadRouter({
+  repository: defaultRepository,
+  withUserWriteFence: withAccountErasureUserWriteFence,
+});

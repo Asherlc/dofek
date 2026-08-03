@@ -567,13 +567,21 @@ export async function recordMetricStreamBatchPublished(
   database: Pick<Database, "transaction">,
   input: z.input<typeof recordMetricStreamBatchInputSchema>,
 ): Promise<void> {
-  const parsed = recordMetricStreamBatchInputSchema.parse(input);
   await database.transaction(async (transaction) => {
-    const datasetKeys = sql.join(
-      parsed.datasetKeys.map((datasetKey) => sql`${datasetKey}`),
-      sql`, `,
-    );
-    await transaction.execute(sql`INSERT INTO fitness.processing_metric_stream_batch
+    await recordMetricStreamBatchPublishedInTransaction(transaction, input);
+  });
+}
+
+export async function recordMetricStreamBatchPublishedInTransaction(
+  database: SchemaExecutionDatabase,
+  input: z.input<typeof recordMetricStreamBatchInputSchema>,
+): Promise<void> {
+  const parsed = recordMetricStreamBatchInputSchema.parse(input);
+  const datasetKeys = sql.join(
+    parsed.datasetKeys.map((datasetKey) => sql`${datasetKey}`),
+    sql`, `,
+  );
+  await database.execute(sql`INSERT INTO fitness.processing_metric_stream_batch
         (operation_id, batch_id, dataset_keys, expected_event_count)
       VALUES (
         ${parsed.operationId}::uuid,
@@ -583,34 +591,34 @@ export async function recordMetricStreamBatchPublished(
       )
       ON CONFLICT (operation_id, batch_id) DO NOTHING`);
 
-    for (const datasetKey of parsed.datasetKeys) {
-      await recordProcessingOutput(transaction, {
-        operationId: parsed.operationId,
-        datasetKey,
-        outputPath: "metric_stream",
-      });
-      await appendEvent(transaction, {
-        operationId: parsed.operationId,
-        stage: "canonical_commit",
-        status: "succeeded",
-        datasetKey,
-        outputPath: "metric_stream",
-        sourceWatermark: parsed.batchId,
-        idempotencyKey: parsed.batchId,
-      });
-      await appendEvent(transaction, {
-        operationId: parsed.operationId,
-        stage: "cdc",
-        status: "queued",
-        datasetKey,
-        outputPath: "metric_stream",
-        sourceWatermark: parsed.batchId,
-        message: "Waiting for stored data to become available for analysis",
-        idempotencyKey: `cdc:${parsed.batchId}`,
-      });
-    }
+  for (const datasetKey of parsed.datasetKeys) {
+    await recordProcessingOutput(database, {
+      operationId: parsed.operationId,
+      datasetKey,
+      outputPath: "metric_stream",
+    });
+    await appendEvent(database, {
+      operationId: parsed.operationId,
+      stage: "canonical_commit",
+      status: "succeeded",
+      datasetKey,
+      outputPath: "metric_stream",
+      sourceWatermark: parsed.batchId,
+      idempotencyKey: parsed.batchId,
+    });
+    await appendEvent(database, {
+      operationId: parsed.operationId,
+      stage: "cdc",
+      status: "queued",
+      datasetKey,
+      outputPath: "metric_stream",
+      sourceWatermark: parsed.batchId,
+      message: "Waiting for stored data to become available for analysis",
+      idempotencyKey: `cdc:${parsed.batchId}`,
+    });
+  }
 
-    await transaction.execute(sql`INSERT INTO fitness.processing_queue_outbox
+  await database.execute(sql`INSERT INTO fitness.processing_queue_outbox
         (operation_id, queue_name, job_id)
       VALUES (
         ${parsed.operationId}::uuid,
@@ -618,7 +626,6 @@ export async function recordMetricStreamBatchPublished(
         ${`${parsed.operationId}:${parsed.batchId}`}
       )
       ON CONFLICT (queue_name, job_id) DO NOTHING`);
-  });
 }
 
 interface ProcessingHistoryInput {

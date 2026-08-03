@@ -1,9 +1,16 @@
+import { randomUUID } from "node:crypto";
 import {
   PasswordLoginRequestSchema,
   PasswordRegisterRequestSchema,
   PasswordResetConfirmSchema,
   PasswordResetRequestSchema,
 } from "@dofek/auth/auth";
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+  withAccountErasureUserAndIdentityWriteFence,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { setSessionCookie } from "../../auth/cookies.ts";
@@ -51,8 +58,22 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     }
 
     const db = getDb();
-    const { userId, isNewUser } = await registerPasswordUser(db, parsed.data);
-    const sessionInfo = await createSession(db, userId);
+    const targetUserId = randomUUID();
+    const result = await withAccountErasureUserAndIdentityWriteFence(
+      db,
+      targetUserId,
+      [{ email: parsed.data.email, kind: "email" }],
+      async (transaction) => {
+        const registration = await registerPasswordUser(transaction, parsed.data, {
+          newUserId: targetUserId,
+        });
+        return {
+          ...registration,
+          sessionInfo: await createSession(transaction, registration.userId),
+        };
+      },
+    );
+    const { userId, isNewUser, sessionInfo } = result;
     const returnTo = getReturnTo(req);
     const redirectTo = getPostLoginRedirect(returnTo, isNewUser);
 
@@ -71,6 +92,10 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
     res.redirect(isNewUser ? "/?newUser=true" : "/");
   } catch (error: unknown) {
+    if (error instanceof AccountErasureIdentityFencedError) {
+      sendAuthError(res, 409, error.message);
+      return;
+    }
     if (error instanceof DuplicateEmailError) {
       sendAuthError(res, 409, error.message);
       return;
@@ -95,7 +120,9 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
 
     const db = getDb();
     const { userId } = await authenticatePasswordUser(db, parsed.data.email, parsed.data.password);
-    const sessionInfo = await createSession(db, userId);
+    const sessionInfo = await withAccountErasureUserWriteFence(db, userId, (transaction) =>
+      createSession(transaction, userId),
+    );
     const returnTo = getReturnTo(req);
     const redirectTo = getPostLoginRedirect(returnTo, false);
 
@@ -116,6 +143,10 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
   } catch (error: unknown) {
     if (error instanceof InvalidCredentialsError) {
       sendAuthError(res, 401, error.message);
+      return;
+    }
+    if (error instanceof AccountErasureUserFencedError) {
+      sendAuthError(res, 409, error.message);
       return;
     }
     captureException(error);

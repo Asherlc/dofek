@@ -34,6 +34,7 @@ let package = Package(
             sources: [
                 "AccelerometerTransferCursor.swift",
                 "GyroscopeSampleBuffer.swift",
+                "WatchAccountStateStore.swift",
             ]
         ),
         .testTarget(
@@ -49,6 +50,7 @@ let package = Package(
             sources: [
                 "AccelerometerTransferCursor.test.swift",
                 "GyroscopeSampleBuffer.test.swift",
+                "WatchAccountStateStore.test.swift",
             ]
         ),
     ]

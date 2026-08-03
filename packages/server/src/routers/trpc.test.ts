@@ -671,8 +671,9 @@ describe("trpc", () => {
         type: "query",
       });
       expect(logger.warn).toHaveBeenCalledWith(
-        "[trpc] Slow query procedure=cachedQuery type=query user_id=user-1 db_duration_ms=705 total_duration_ms=750 cache_hit=false app_version=unknown assets_version=unknown",
+        "[trpc] Slow query procedure=cachedQuery type=query authenticated=true db_duration_ms=705 total_duration_ms=750 cache_hit=false app_version=unknown assets_version=unknown",
       );
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain("user-1");
 
       nowSpy.mockRestore();
     });

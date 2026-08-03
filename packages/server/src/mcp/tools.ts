@@ -1,6 +1,7 @@
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Database } from "dofek/db";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
@@ -737,14 +738,16 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         sinceDate,
         untilDate,
       });
-      const job = await enqueueSyncJob(
-        providerId,
-        {
+      const job = await withAccountErasureUserWriteFence(context.db, context.userId, async () =>
+        enqueueSyncJob(
           providerId,
-          userId: context.userId,
-          ...syncWindowToJobData(syncWindow, sinceDays),
-        },
-        { skipWhenRateLimited: true },
+          {
+            providerId,
+            userId: context.userId,
+            ...syncWindowToJobData(syncWindow, sinceDays),
+          },
+          { skipWhenRateLimited: true },
+        ),
       );
       if (!job) {
         throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);

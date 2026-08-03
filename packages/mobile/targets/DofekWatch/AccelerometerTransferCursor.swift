@@ -51,4 +51,8 @@ final class AccelerometerTransferCursor {
     func confirm(through boundary: Date) {
         defaults.set(boundary, forKey: Self.defaultsKey)
     }
+
+    func purge() {
+        defaults.removeObject(forKey: Self.defaultsKey)
+    }
 }

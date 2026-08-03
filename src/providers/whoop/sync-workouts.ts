@@ -5,14 +5,15 @@ import {
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import type { WhoopWorkoutRecord } from "@dofek/whoop/types";
 import { parseDuringRange } from "@dofek/whoop/utils";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { resolveUserExerciseWithProvenance } from "../../db/exercise-provenance.ts";
 import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../../db/provider-activity-sync.ts";
 import { strengthSet } from "../../db/schema/activity.ts";
-import { exercise, exerciseAlias } from "../../db/schema/reference.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { resolveScopedUserId } from "../../lib/user-context.ts";
 import { SyncWindow } from "../sync-window.ts";
 import {
   buildV2ActivityTypeLookup,
@@ -284,6 +285,7 @@ export async function syncWhoopStrength(
 ): Promise<WhoopWorkoutSyncResult> {
   const { db, client, providerId, options } = context;
   const { workouts } = collectWhoopWorkouts(context);
+  const userId = resolveScopedUserId(options?.userId);
 
   try {
     const count = await withSyncLog(
@@ -352,51 +354,17 @@ export async function syncWhoopStrength(
               let exerciseId = exerciseCache.get(cacheKey);
 
               if (!exerciseId) {
-                await db
-                  .insert(exercise)
-                  .values({
-                    name: exerciseRecord.exerciseName,
-                    equipment: exerciseRecord.equipment,
-                    muscleGroups: exerciseRecord.muscleGroups,
-                    exerciseType: exerciseRecord.exerciseType,
-                  })
-                  .onConflictDoNothing();
-
-                const whereClause = exerciseRecord.equipment
-                  ? and(
-                      eq(exercise.name, exerciseRecord.exerciseName),
-                      eq(exercise.equipment, exerciseRecord.equipment),
-                    )
-                  : eq(exercise.name, exerciseRecord.exerciseName);
-
-                const exerciseRows = await db
-                  .select({ id: exercise.id })
-                  .from(exercise)
-                  .where(whereClause)
-                  .limit(1);
-
-                exerciseId = exerciseRows[0]?.id;
-                if (exerciseId) {
-                  exerciseCache.set(cacheKey, exerciseId);
-
-                  await db
-                    .insert(exerciseAlias)
-                    .values({
-                      exerciseId,
-                      providerId,
-                      providerExerciseId: exerciseRecord.providerExerciseId,
-                      providerExerciseName: exerciseRecord.exerciseName,
-                    })
-                    .onConflictDoNothing();
-                }
-              }
-
-              if (!exerciseId) {
-                context.errors.push({
-                  message: `Could not resolve exercise: ${exerciseRecord.exerciseName}`,
-                  externalId: activityId,
+                exerciseId = await resolveUserExerciseWithProvenance(db, {
+                  equipment: exerciseRecord.equipment,
+                  exerciseType: exerciseRecord.exerciseType,
+                  muscleGroups: exerciseRecord.muscleGroups,
+                  name: exerciseRecord.exerciseName,
+                  providerExerciseId: exerciseRecord.providerExerciseId,
+                  providerExerciseName: exerciseRecord.exerciseName,
+                  providerId,
+                  userId,
                 });
-                continue;
+                exerciseCache.set(cacheKey, exerciseId);
               }
 
               for (const set of exerciseRecord.sets) {
@@ -455,7 +423,7 @@ export async function syncWhoopStrengthForActivity(
   activityId: string,
   exerciseCache = new Map<string, string>(),
 ): Promise<number> {
-  const { db, client, providerId } = context;
+  const { db, client, providerId, options } = context;
   const { workouts } = collectWhoopWorkouts(context);
   const workoutRecord = workouts.find(
     (workout) => resolveWhoopWorkoutExternalId(workout) === activityId,
@@ -508,6 +476,7 @@ export async function syncWhoopStrengthForActivity(
 
   const dbActivityId = activityRow?.id;
   if (!dbActivityId) return 0;
+  const userId = resolveScopedUserId(options?.userId);
 
   const setRows: (typeof strengthSet.$inferInsert)[] = [];
   for (const exerciseRecord of parsed.exercises) {
@@ -515,50 +484,17 @@ export async function syncWhoopStrengthForActivity(
     let exerciseId = exerciseCache.get(cacheKey);
 
     if (!exerciseId) {
-      await db
-        .insert(exercise)
-        .values({
-          name: exerciseRecord.exerciseName,
-          equipment: exerciseRecord.equipment,
-          muscleGroups: exerciseRecord.muscleGroups,
-          exerciseType: exerciseRecord.exerciseType,
-        })
-        .onConflictDoNothing();
-
-      const whereClause = exerciseRecord.equipment
-        ? and(
-            eq(exercise.name, exerciseRecord.exerciseName),
-            eq(exercise.equipment, exerciseRecord.equipment),
-          )
-        : eq(exercise.name, exerciseRecord.exerciseName);
-
-      const exerciseRows = await db
-        .select({ id: exercise.id })
-        .from(exercise)
-        .where(whereClause)
-        .limit(1);
-
-      exerciseId = exerciseRows[0]?.id;
-      if (exerciseId) {
-        exerciseCache.set(cacheKey, exerciseId);
-        await db
-          .insert(exerciseAlias)
-          .values({
-            exerciseId,
-            providerId,
-            providerExerciseId: exerciseRecord.providerExerciseId,
-            providerExerciseName: exerciseRecord.exerciseName,
-          })
-          .onConflictDoNothing();
-      }
-    }
-
-    if (!exerciseId) {
-      context.errors.push({
-        message: `Could not resolve exercise: ${exerciseRecord.exerciseName}`,
-        externalId: activityId,
+      exerciseId = await resolveUserExerciseWithProvenance(db, {
+        equipment: exerciseRecord.equipment,
+        exerciseType: exerciseRecord.exerciseType,
+        muscleGroups: exerciseRecord.muscleGroups,
+        name: exerciseRecord.exerciseName,
+        providerExerciseId: exerciseRecord.providerExerciseId,
+        providerExerciseName: exerciseRecord.exerciseName,
+        providerId,
+        userId,
       });
-      continue;
+      exerciseCache.set(cacheKey, exerciseId);
     }
 
     for (const set of exerciseRecord.sets) {

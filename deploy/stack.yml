@@ -3,9 +3,14 @@
 # Deployed from CI via a remote Docker context:
 #   docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek
 #
-# Secrets come from Infisical, exported by CI to a local .env.<env> file
-# that `docker stack deploy` reads (env_file) and inlines into the service
-# specs. Shell env is also used for compose-style ${VAR} interpolation.
+# Secrets come from Infisical. CI keeps the complete export on the runner for
+# compose-style ${VAR} interpolation and renders least-privilege env_file inputs
+# for the application services that need runtime credentials.
+
+secrets:
+  apple_private_key:
+    name: ${APPLE_PRIVATE_KEY_SECRET_NAME:?APPLE_PRIVATE_KEY_SECRET_NAME is required}
+    external: true
 
 services:
   traefik:
@@ -40,7 +45,9 @@ services:
   web:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["web"]
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${WEB_ENV_FILE:?WEB_ENV_FILE is required}
+    secrets:
+      - apple_private_key
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
@@ -58,6 +65,7 @@ services:
       OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
       IMPORT_R2_BUCKET: dofek-imports
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
       SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
@@ -94,7 +102,9 @@ services:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["worker"]
     stop_grace_period: 30m
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${WORKER_ENV_FILE:?WORKER_ENV_FILE is required}
+    secrets:
+      - apple_private_key
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
@@ -110,6 +120,9 @@ services:
       OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
       IMPORT_R2_BUCKET: dofek-imports
+      DB_BACKUPS_R2_BUCKET: dofek-db-backups
+      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:?METRIC_STREAM_R2_BUCKET is required}
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
     healthcheck:
@@ -138,7 +151,7 @@ services:
   analytics-worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["analytics-worker"]
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${ANALYTICS_WORKER_ENV_FILE:?ANALYTICS_WORKER_ENV_FILE is required}
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
@@ -179,7 +192,7 @@ services:
   cdc-health:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["cdc-health"]
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${CDC_HEALTH_ENV_FILE:?CDC_HEALTH_ENV_FILE is required}
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
@@ -336,7 +349,6 @@ services:
   metric-stream-clickhouse-sink:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["metric-stream-clickhouse-sink"]
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       NODE_ENV: production
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
@@ -446,7 +458,10 @@ services:
     environment:
       MINIO_ROOT_USER: peerdb
       MINIO_ROOT_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 15m
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled"}]}'
     volumes:
       - /mnt/dofek-data/peerdb-minio:/data
     entrypoint: >
@@ -462,6 +477,8 @@ services:
         sleep 1;
       done;
       mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      printf '%s\n' "$$PEERDB_STAGE_LIFECYCLE_CONFIG" |
+        mc ilm rule import peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
       wait
       "
     deploy:
@@ -624,7 +641,7 @@ services:
   collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
     user: "0:0"
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${COLLECTOR_ENV_FILE:?COLLECTOR_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     configs:
@@ -633,7 +650,6 @@ services:
 
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}
       BASE_URL: ${OTA_BASE_URL:-https://ota.dofek.asherlc.com}

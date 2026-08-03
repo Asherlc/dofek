@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   parseHeartRateValues,
@@ -171,7 +172,7 @@ function makeChainableMock(resolvedValue: unknown = []) {
   };
 
   // Return an object that is both SyncDatabase and has chain spies accessible
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 // Helper to make a WhoopClient-shaped mock via fetch
@@ -3205,6 +3206,27 @@ describe("WhoopProvider.sync() — journal sync", () => {
 });
 
 describe("WhoopProvider.sync() — strength sync", () => {
+  const resolvedExerciseId = "20000000-0000-4000-8000-000000000001";
+
+  function mockResolvedExercise(db: ReturnType<typeof makeChainableMock>) {
+    vi.mocked(db.execute).mockImplementation(async (query) => {
+      if (!JSON.stringify(query).includes("resolved_exercise")) return [];
+      return [
+        {
+          alias_exercise_id: resolvedExerciseId,
+          exercise_id: resolvedExerciseId,
+          source_linked: true,
+        },
+      ];
+    });
+  }
+
+  function getExerciseResolutionCalls(db: ReturnType<typeof makeChainableMock>) {
+    return vi
+      .mocked(db.execute)
+      .mock.calls.filter((call) => JSON.stringify(call[0]).includes("resolved_exercise"));
+  }
+
   it("syncs weightlifting exercises and sets from workouts", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
@@ -3300,7 +3322,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-1" }]);
+    mockResolvedExercise(db);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
@@ -3331,28 +3353,16 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(JSON.stringify(strengthUpdate?.raw)).toContain("scaledMskStrainScore");
     expect(JSON.stringify(strengthUpdate?.raw)).toContain("cardioStrainScore");
 
+    const exerciseResolutionCalls = getExerciseResolutionCalls(db);
+    expect(exerciseResolutionCalls).toHaveLength(1);
+    const serializedExerciseResolution = JSON.stringify(exerciseResolutionCalls);
+    expect(serializedExerciseResolution).toContain("BENCHPRESS");
+    expect(serializedExerciseResolution).toContain("Bench Press");
+    expect(serializedExerciseResolution).toContain("BARBELL");
+    expect(serializedExerciseResolution).toContain("CHEST");
+    expect(serializedExerciseResolution).toContain("whoop");
+
     const valuesCallArgs = getValuesCallArgs(db);
-    const exerciseAliasInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) =>
-        rec.exerciseId === "exercise-uuid-1" &&
-        rec.providerExerciseId === "BENCHPRESS" &&
-        rec.providerId === "whoop",
-    );
-    expect(exerciseAliasInsert).toBeDefined();
-    expect(exerciseAliasInsert?.providerExerciseName).toBe("Bench Press");
-
-    // Verify onConflictDoNothing was called (for exercise and exercise alias)
-    expect(db.onConflictDoNothing).toHaveBeenCalled();
-
-    // Verify exercise upsert
-    const exerciseInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.name === "Bench Press" && rec.equipment === "BARBELL",
-    );
-    expect(exerciseInsert).toBeDefined();
-    expect(exerciseInsert?.muscleGroups).toEqual(["CHEST"]);
-    expect(exerciseInsert?.exerciseType).toBe("STRENGTH");
 
     // Verify strength set batch insert (2 complete sets)
     const setInsert = findValuesBatch(
@@ -3361,7 +3371,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     );
     expect(setInsert).toBeDefined();
     expect(setInsert?.[0]?.activityId).toBe("workout-uuid-1");
-    expect(setInsert?.[0]?.exerciseId).toBe("exercise-uuid-1");
+    expect(setInsert?.[0]?.exerciseId).toBe(resolvedExerciseId);
     expect(setInsert?.[0]?.weightKg).toBe(60);
     expect(setInsert?.[0]?.reps).toBe(10);
     expect(setInsert?.[0]?.setIndex).toBe(0);
@@ -3464,7 +3474,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-named" }]);
+    mockResolvedExercise(db);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
@@ -3769,25 +3779,22 @@ describe("WhoopProvider.sync() — strength sync", () => {
     providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
       id: "workout-uuid-cache",
     });
-    db.limit.mockResolvedValue([{ id: "exercise-uuid-cache" }]);
+    mockResolvedExercise(db);
 
     await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
 
-    expect(db.select).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
-    const exerciseSelectCalls = vi
-      .mocked(db.select)
-      .mock.calls.filter(
-        (call: Parameters<typeof db.select>) => isRecord(call[0]) && "id" in call[0],
-      );
-    expect(exerciseSelectCalls).toHaveLength(1);
-
+    expect(getExerciseResolutionCalls(db)).toHaveLength(1);
     const valuesCallArgs = getValuesCallArgs(db);
-    const exerciseInserts = valuesCallArgs.filter(
-      (arg) => isRecord(arg) && arg.name === "Bench Press" && arg.equipment === "BARBELL",
+    const setBatch = findValuesBatch(
+      valuesCallArgs,
+      (rows) =>
+        rows.length === 2 &&
+        rows.every((row) => row.exerciseId === resolvedExerciseId) &&
+        rows.every((row) => typeof row.setIndex === "number"),
     );
-    expect(exerciseInserts).toHaveLength(1);
+    expect(setBatch).toHaveLength(2);
   });
 
   it("records unresolved exercise when lookup returns no row and avoids set insert", async () => {
@@ -3880,7 +3887,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
       id: "workout-uuid-missing",
     });
-    db.limit.mockResolvedValueOnce([]);
+    vi.mocked(db.execute).mockResolvedValue([]);
 
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),

@@ -27,6 +27,17 @@ const hoisted = vi.hoisted(() => {
     $client: { end: vi.fn(() => Promise.resolve()) },
   };
   const mockClickHouseClient = {};
+  const mockValidateAccountErasureLedgerKeyring = vi.fn();
+  const mockReconcileAccountErasureRestoreIntents = vi.fn(() =>
+    Promise.resolve({ recoveredRequestIds: [] }),
+  );
+  const mockAccountErasureRestoreLedger = {
+    findIntent: vi.fn(() => Promise.resolve(null)),
+    listIntentReferences: vi.fn(() => Promise.resolve([])),
+    listIntentsForIdentities: vi.fn(() => Promise.resolve([])),
+    recordIntent: vi.fn(() => Promise.resolve()),
+  };
+  const mockCreateAccountErasureRestoreLedgerFromEnv = vi.fn(() => mockAccountErasureRestoreLedger);
 
   // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
   // registered by a specific worker rather than relying on call order.
@@ -49,6 +60,9 @@ const hoisted = vi.hoisted(() => {
   const reconcileGarminProgressError = new Error("progress Redis unavailable");
   const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
   const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
+  const mockCloseAccountErasureOutbox = vi.fn().mockResolvedValue(undefined);
+  const mockCloseAccountErasureRuntime = vi.fn().mockResolvedValue(undefined);
+  const mockCloseAccountErasureWorkLockPool = vi.fn().mockResolvedValue(undefined);
   const mockCloseProviderDataDeletionOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseDataExportOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseFileUploadOutbox = vi.fn().mockResolvedValue(undefined);
@@ -60,6 +74,20 @@ const hoisted = vi.hoisted(() => {
     reconcile: mockReconcileGarminProgress,
     close: mockCloseGarminProgress,
   };
+  const mockAccountErasurePhaseRunner = {
+    runPhase: vi.fn(async () => undefined),
+  };
+  const mockAccountErasureRuntime = {
+    close: mockCloseAccountErasureRuntime,
+    phaseRunner: mockAccountErasurePhaseRunner,
+  };
+  const mockAccountErasureWorkPurger = {
+    close: vi.fn(async () => undefined),
+    purge: vi.fn(async () => undefined),
+  };
+  const mockCreateAccountErasureRuntime = vi.fn(async () => mockAccountErasureRuntime);
+  const mockCreateAccountErasureWorkPurgerFromEnv = vi.fn(() => mockAccountErasureWorkPurger);
+  const mockProcessAccountErasureRequest = vi.fn(async () => undefined);
 
   return {
     exitSpy: vi.spyOn(process, "exit").mockImplementation(noOpExit),
@@ -71,6 +99,10 @@ const hoisted = vi.hoisted(() => {
     mockAddJobLog,
     mockDatabase,
     mockClickHouseClient,
+    mockValidateAccountErasureLedgerKeyring,
+    mockReconcileAccountErasureRestoreIntents,
+    mockAccountErasureRestoreLedger,
+    mockCreateAccountErasureRestoreLedgerFromEnv,
     mockReadinessListen,
     mockReadinessClose,
     mockReadinessServer,
@@ -79,6 +111,15 @@ const hoisted = vi.hoisted(() => {
     reconcileGarminProgressError,
     mockReconcileGarminProgress,
     mockCloseGarminProgress,
+    mockCloseAccountErasureOutbox,
+    mockCloseAccountErasureRuntime,
+    mockCloseAccountErasureWorkLockPool,
+    mockAccountErasurePhaseRunner,
+    mockAccountErasureRuntime,
+    mockAccountErasureWorkPurger,
+    mockCreateAccountErasureRuntime,
+    mockCreateAccountErasureWorkPurgerFromEnv,
+    mockProcessAccountErasureRequest,
     mockCloseProviderDataDeletionOutbox,
     mockCloseDataExportOutbox,
     mockCloseFileUploadOutbox,
@@ -109,6 +150,22 @@ vi.mock("../db/index.ts", () => ({
 
 vi.mock("../db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: vi.fn(() => hoisted.mockClickHouseClient),
+}));
+
+vi.mock("../account-erasure/identity.ts", () => ({
+  validateAccountErasureLedgerKeyring: hoisted.mockValidateAccountErasureLedgerKeyring,
+}));
+
+vi.mock("../account-erasure/remote-snapshot.ts", () => ({
+  createEncryptedAccountErasureSnapshot: vi.fn(),
+}));
+
+vi.mock("../account-erasure/restore-ledger.ts", () => ({
+  createAccountErasureRestoreLedgerFromEnv: hoisted.mockCreateAccountErasureRestoreLedgerFromEnv,
+}));
+
+vi.mock("../account-erasure/restore-reconciliation.ts", () => ({
+  reconcileAccountErasureRestoreIntents: hoisted.mockReconcileAccountErasureRestoreIntents,
 }));
 
 vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
@@ -168,6 +225,24 @@ vi.mock("./process-provider-data-deletion-job.ts", () => ({
   processProviderDataDeletionJob: vi.fn(),
 }));
 
+vi.mock("./process-account-erasure-request.ts", () => ({
+  processAccountErasureRequest: hoisted.mockProcessAccountErasureRequest,
+}));
+
+vi.mock("./account-erasure-runtime.ts", () => ({
+  createAccountErasureRuntime: hoisted.mockCreateAccountErasureRuntime,
+}));
+
+vi.mock("./account-erasure-work-purger.ts", () => ({
+  createAccountErasureWorkPurgerFromEnv: hoisted.mockCreateAccountErasureWorkPurgerFromEnv,
+}));
+
+vi.mock("./account-erasure-outbox.ts", () => ({
+  startAccountErasureOutboxDispatcher: vi.fn(() => ({
+    close: hoisted.mockCloseAccountErasureOutbox,
+  })),
+}));
+
 vi.mock("./provider-data-deletion-outbox.ts", () => ({
   startProviderDataDeletionOutboxDispatcher: vi.fn(() => ({
     close: hoisted.mockCloseProviderDataDeletionOutbox,
@@ -207,6 +282,22 @@ vi.mock("./garmin-import-progress.ts", () => ({
   createGarminImportProgressCoordinator: vi.fn(() => hoisted.mockGarminProgressCoordinator),
 }));
 
+vi.mock("./account-erasure-work-guard.ts", () => ({
+  accountErasureAllowsQueuedUserWork: vi.fn(async () => true),
+  createAccountErasureWorkLockPoolFromEnv: vi.fn(() => ({
+    close: hoisted.mockCloseAccountErasureWorkLockPool,
+  })),
+  runQueuedUserWorkUnlessAccountErasing: vi.fn(
+    async (
+      _workLockPool: unknown,
+      _database: unknown,
+      _userId: string,
+      _workKind: string,
+      run: () => unknown,
+    ) => run(),
+  ),
+}));
+
 vi.mock("./provider-queue-config.ts", () => ({
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
   getProviderQueueConfig: vi.fn(() => ({
@@ -217,6 +308,21 @@ vi.mock("./provider-queue-config.ts", () => ({
 }));
 
 vi.mock("./queues.ts", () => ({
+  accountErasureJobDataSchema: {
+    parse: vi.fn((data: unknown) => {
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "type" in data &&
+        data.type === "account-erasure" &&
+        "requestId" in data &&
+        typeof data.requestId === "string"
+      ) {
+        return data;
+      }
+      throw new Error("Invalid account erasure payload containing private@example.com");
+    }),
+  },
   providerDataDeletionJobDataSchema: {
     parse: vi.fn((data: unknown) => {
       if (
@@ -233,6 +339,7 @@ vi.mock("./queues.ts", () => ({
   getRedisConnection: vi.fn(() => ({})),
   getImportQueue: vi.fn(() => ({})),
   getDataExportQueue: vi.fn(() => ({})),
+  getAccountErasureQueue: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
   FIT_FILE_IMPORT_QUEUE: "fit-file-import-queue",
@@ -244,6 +351,7 @@ vi.mock("./queues.ts", () => ({
   POST_SYNC_QUEUE: "post-sync-queue",
   ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
   PROVIDER_DATA_DELETION_QUEUE: "provider-data-deletion-queue",
+  ACCOUNT_ERASURE_QUEUE: "account-erasure-queue",
   enqueueProviderDeleteAnalyticsRefresh: vi.fn(() => Promise.resolve()),
   getProviderDataDeletionQueue: vi.fn(() => ({})),
   closeAllQueueResources: vi.fn(() => Promise.resolve()),
@@ -284,6 +392,9 @@ const {
   reconcileGarminProgressError,
   mockReconcileGarminProgress,
   mockCloseGarminProgress,
+  mockCloseAccountErasureOutbox,
+  mockCloseAccountErasureRuntime,
+  mockCloseAccountErasureWorkLockPool,
   mockCloseProviderDataDeletionOutbox,
   mockCloseDataExportOutbox,
   workerOnMocks,
@@ -306,9 +417,9 @@ afterAll(() => {
 describe("worker module", () => {
   // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
-  // + 1 activity-delete-analytics + 1 provider-data-deletion = 12
+  // + 1 activity-delete-analytics + 1 provider-data-deletion + 1 account-erasure = 13
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
-  const EXPECTED_WORKER_COUNT = 12;
+  const EXPECTED_WORKER_COUNT = 13;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -356,6 +467,50 @@ describe("worker module", () => {
       expect.any(Function),
       expect.objectContaining({ concurrency: 1 }),
     );
+    expect(Worker).toHaveBeenCalledWith(
+      "account-erasure-queue",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 1 }),
+    );
+  });
+
+  it("reconciles external deletion intents before creating any queue worker", async () => {
+    const { Worker } = await import("bullmq");
+    expect(hoisted.mockValidateAccountErasureLedgerKeyring).toHaveBeenCalledOnce();
+    expect(hoisted.mockReconcileAccountErasureRestoreIntents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        database: mockDatabase,
+        ledger: hoisted.mockAccountErasureRestoreLedger,
+      }),
+    );
+    const reconciliationOrder =
+      hoisted.mockReconcileAccountErasureRestoreIntents.mock.invocationCallOrder[0];
+    const firstWorkerOrder = vi.mocked(Worker).mock.invocationCallOrder[0];
+    expect(reconciliationOrder).toBeDefined();
+    expect(firstWorkerOrder).toBeDefined();
+    if (reconciliationOrder === undefined || firstWorkerOrder === undefined) {
+      throw new Error("Startup invocation order was not recorded");
+    }
+    expect(reconciliationOrder).toBeLessThan(firstWorkerOrder);
+  });
+
+  it("initializes the durable erasure runtime before creating queue workers", async () => {
+    const { Worker } = await import("bullmq");
+    const { createAccountErasureRuntime } = await import("./account-erasure-runtime.ts");
+
+    expect(createAccountErasureRuntime).toHaveBeenCalledWith(
+      mockDatabase,
+      mockClickHouseClient,
+      hoisted.mockAccountErasureWorkPurger,
+    );
+    const runtimeOrder = hoisted.mockCreateAccountErasureRuntime.mock.invocationCallOrder[0];
+    const firstWorkerOrder = vi.mocked(Worker).mock.invocationCallOrder[0];
+    expect(runtimeOrder).toBeDefined();
+    expect(firstWorkerOrder).toBeDefined();
+    if (runtimeOrder === undefined || firstWorkerOrder === undefined) {
+      throw new Error("Runtime startup invocation order was not recorded");
+    }
+    expect(runtimeOrder).toBeLessThan(firstWorkerOrder);
   });
 
   it("rejects invalid provider deletion jobs at the Redis boundary", () => {
@@ -433,6 +588,7 @@ describe("worker module", () => {
     const Sentry = await import("@sentry/node");
     const { initProductionPostHog } = await import("../lib/posthog.ts");
     expect(Sentry.init).toHaveBeenCalledWith({
+      beforeSend: expect.any(Function),
       dsn: "https://test@sentry.io/123",
       environment: "production",
       skipOpenTelemetrySetup: true,
@@ -478,6 +634,16 @@ describe("worker module", () => {
     );
   });
 
+  it("starts account erasure outbox recovery with the durable request row", async () => {
+    const { startAccountErasureOutboxDispatcher } = await import("./account-erasure-outbox.ts");
+    const { getAccountErasureQueue } = await import("./queues.ts");
+
+    expect(startAccountErasureOutboxDispatcher).toHaveBeenCalledWith(
+      mockDatabase,
+      vi.mocked(getAccountErasureQueue).mock.results[0]?.value,
+    );
+  });
+
   it("observes completed and failed FIT jobs for durable parent progress", () => {
     mockObserveFitJob.mockClear();
     const completedHandlers = mockOn.mock.calls.filter((mockCall) => mockCall[0] === "completed");
@@ -512,16 +678,23 @@ describe("worker module", () => {
     expect(setTimeoutSpy).toHaveBeenCalled();
   });
 
-  function getWorkerHandler(eventName: string): (...args: unknown[]) => unknown {
-    const on = workerOnMocks["sync-strava"];
-    if (!on) throw new Error("sync-strava worker on mock was not registered");
+  function getQueueWorkerHandler(
+    queueName: string,
+    eventName: string,
+  ): (...args: unknown[]) => unknown {
+    const on = workerOnMocks[queueName];
+    if (!on) throw new Error(`${queueName} worker on mock was not registered`);
     const call = on.mock.calls.find((mockCall) => mockCall[0] === eventName);
     expect(call).toBeDefined();
     const handler = call?.[1];
     if (typeof handler !== "function") {
-      throw new Error(`No ${eventName} handler registered`);
+      throw new Error(`No ${eventName} handler registered for ${queueName}`);
     }
     return handler;
+  }
+
+  function getWorkerHandler(eventName: string): (...args: unknown[]) => unknown {
+    return getQueueWorkerHandler("sync-strava", eventName);
   }
 
   it("active event handler resets idle timer without starting a new one", () => {
@@ -585,6 +758,75 @@ describe("worker module", () => {
         100,
       );
     });
+  });
+
+  it("sanitizes account erasure job failures across Sentry, logs, and BullMQ", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const privateRequestId = "10000000-0000-4000-8000-000000001994";
+    const privateFailure = new Error("Processor rejected private@example.com");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockClear();
+
+    getQueueWorkerHandler("account-erasure-queue", "failed")(
+      { id: privateRequestId },
+      privateFailure,
+    );
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Account erasure job failed",
+      }),
+      {
+        tags: {
+          bullmqEvent: "failed",
+          queue: "account-erasure-queue",
+        },
+      },
+    );
+    expect(logger.error).toHaveBeenCalledWith("[worker] Account erasure job failed");
+    expect(mockAddJobLog).not.toHaveBeenCalled();
+    const capturedMessages = vi
+      .mocked(Sentry.captureException)
+      .mock.calls.map(([error]) => (error instanceof Error ? error.message : String(error)))
+      .join("\n");
+    const loggedMessages = vi.mocked(logger.error).mock.calls.flat().map(String).join("\n");
+    expect(`${capturedMessages}\n${loggedMessages}`).not.toContain(privateRequestId);
+    expect(`${capturedMessages}\n${loggedMessages}`).not.toContain("private@example.com");
+  });
+
+  it("sanitizes account erasure stalled, lock, and worker errors", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const privateRequestId = "20000000-0000-4000-8000-000000001994";
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockClear();
+
+    getQueueWorkerHandler("account-erasure-queue", "stalled")(privateRequestId, "active");
+    getQueueWorkerHandler("account-erasure-queue", "lockRenewalFailed")([privateRequestId]);
+    getQueueWorkerHandler(
+      "account-erasure-queue",
+      "error",
+    )(new Error("Redis rejected private@example.com"));
+
+    const capturedMessages = vi
+      .mocked(Sentry.captureException)
+      .mock.calls.map(([error]) => (error instanceof Error ? error.message : String(error)));
+    expect(capturedMessages).toEqual([
+      "Account erasure BullMQ job stalled",
+      "Account erasure BullMQ lock renewal failed",
+      "Account erasure worker error",
+    ]);
+    expect(vi.mocked(logger.error).mock.calls).toEqual([
+      ["[worker] Account erasure BullMQ job stalled"],
+      ["[worker] Account erasure BullMQ lock renewal failed"],
+      ["[worker] Account erasure worker error"],
+    ]);
+    expect(mockAddJobLog).not.toHaveBeenCalled();
+    expect(capturedMessages.join("\n")).not.toContain(privateRequestId);
+    expect(capturedMessages.join("\n")).not.toContain("private@example.com");
   });
 
   it("reports a failed-event BullMQ job-log write failure", async () => {
@@ -1284,7 +1526,6 @@ describe("worker module", () => {
       "../db/clickhouse-read-model-refresh.ts"
     );
     const { processPostSyncJob } = await import("./process-post-sync-job.ts");
-    vi.mocked(createClickHouseClientFromEnv).mockClear();
     vi.mocked(createRefitSensorStore).mockClear();
     vi.mocked(refreshBodyMeasurementReadModel).mockClear();
     vi.mocked(processPostSyncJob).mockClear();
@@ -1358,6 +1599,44 @@ describe("worker module", () => {
     );
   });
 
+  it("account-erasure processor validates and delegates to the durable phase runner", async () => {
+    const requestId = "50000000-0000-4000-8000-000000001994";
+    hoisted.mockProcessAccountErasureRequest.mockClear();
+
+    await invokeProcessor("account-erasure-queue", {
+      type: "account-erasure",
+      requestId,
+    });
+
+    expect(hoisted.mockProcessAccountErasureRequest).toHaveBeenCalledWith(
+      mockDatabase,
+      requestId,
+      expect.stringMatching(/^account-erasure-worker:/),
+      hoisted.mockAccountErasurePhaseRunner,
+    );
+  });
+
+  it("rejects invalid account-erasure payloads without disclosing their contents", async () => {
+    const privateEmail = "private@example.com";
+    hoisted.mockProcessAccountErasureRequest.mockClear();
+
+    await expect(
+      invokeProcessor("account-erasure-queue", {
+        type: "account-erasure",
+        requestId: 1994,
+        privateEmail,
+      }),
+    ).rejects.toThrow("Invalid account erasure job payload");
+    await expect(
+      invokeProcessor("account-erasure-queue", {
+        type: "account-erasure",
+        requestId: 1994,
+        privateEmail,
+      }),
+    ).rejects.not.toThrow(privateEmail);
+    expect(hoisted.mockProcessAccountErasureRequest).not.toHaveBeenCalled();
+  });
+
   it("closes readiness and Garmin progress resources during graceful shutdown", async () => {
     const { closeAllQueueResources } = await import("./queues.ts");
     const shutdownOrder: string[] = [];
@@ -1380,6 +1659,9 @@ describe("worker module", () => {
 
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
+    expect(mockCloseAccountErasureOutbox).toHaveBeenCalledOnce();
+    expect(mockCloseAccountErasureRuntime).toHaveBeenCalledOnce();
+    expect(mockCloseAccountErasureWorkLockPool).toHaveBeenCalledOnce();
     expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
     expect(mockCloseDataExportOutbox).toHaveBeenCalledOnce();
     expect(hoisted.mockCloseFileUploadOutbox).toHaveBeenCalledOnce();

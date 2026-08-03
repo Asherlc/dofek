@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
@@ -90,6 +90,10 @@ const createCaller = createTestCallerFactory(healthKitSyncRouter);
 
 function makeExecute() {
   return vi.fn().mockResolvedValue([]);
+}
+
+function makeDatabase(execute = makeExecute()) {
+  return makeTransactionalTestDatabase({ execute });
 }
 
 const WORKOUT_SYNC_WINDOW = {
@@ -383,7 +387,7 @@ describe("healthKitSyncRouter", () => {
     it("processes body measurement samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -405,7 +409,7 @@ describe("healthKitSyncRouter", () => {
     it("ignores calorie expenditure samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -442,7 +446,7 @@ describe("healthKitSyncRouter", () => {
     it("applies body fat percentage transform (value * 100)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -471,7 +475,7 @@ describe("healthKitSyncRouter", () => {
     it("applies distance transform (value / 1000)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -499,7 +503,7 @@ describe("healthKitSyncRouter", () => {
     it("processes additive daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -557,7 +561,7 @@ describe("healthKitSyncRouter", () => {
     it("rounds float steps to integer before inserting into daily_metrics", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -587,7 +591,7 @@ describe("healthKitSyncRouter", () => {
     it("rounds float heart rate before publishing metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -611,7 +615,7 @@ describe("healthKitSyncRouter", () => {
     it("processes point-in-time daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -633,7 +637,7 @@ describe("healthKitSyncRouter", () => {
     it("processes metric stream samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -660,7 +664,7 @@ describe("healthKitSyncRouter", () => {
     it("does not touch the retired Postgres metric_stream table after inserting heart-rate metrics", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -677,7 +681,7 @@ describe("healthKitSyncRouter", () => {
     it("processes health event samples (catch-all)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -694,7 +698,7 @@ describe("healthKitSyncRouter", () => {
     it("handles empty samples array", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -708,7 +712,7 @@ describe("healthKitSyncRouter", () => {
     it("applies body fat percentage transform", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -729,7 +733,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics materialized view after processing skin temp samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -756,7 +760,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics after processing SpO2 samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -783,7 +787,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics when daily metric samples are inserted", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -809,7 +813,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics when no daily metrics or metric stream samples present", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -839,7 +843,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("DB connection failed"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -861,7 +865,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Metric stream Redpanda error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -884,7 +888,7 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("Daily metrics DB error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -907,7 +911,7 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("Health event DB error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -925,7 +929,7 @@ describe("healthKitSyncRouter", () => {
     it("applies distance transform (m to km)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -946,7 +950,7 @@ describe("healthKitSyncRouter", () => {
     it("emits HealthKit metrics with per-category counts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -990,7 +994,7 @@ describe("healthKitSyncRouter", () => {
   describe("pushWorkouts", () => {
     it("rejects inverted sync window bounds", async () => {
       const caller = createCaller({
-        db: { execute: makeExecute() },
+        db: makeDatabase(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1006,7 +1010,7 @@ describe("healthKitSyncRouter", () => {
 
     it("rejects equal sync window bounds", async () => {
       const caller = createCaller({
-        db: { execute: makeExecute() },
+        db: makeDatabase(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1023,7 +1027,7 @@ describe("healthKitSyncRouter", () => {
     it("processes workout samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1050,7 +1054,7 @@ describe("healthKitSyncRouter", () => {
     it("does not touch the retired Postgres metric_stream table after workout upsert", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1077,7 +1081,7 @@ describe("healthKitSyncRouter", () => {
     it("maps unknown workout type to other", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1104,7 +1108,7 @@ describe("healthKitSyncRouter", () => {
     it("handles empty workouts array", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1116,7 +1120,7 @@ describe("healthKitSyncRouter", () => {
     it("emits HealthKit metrics for workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1152,7 +1156,7 @@ describe("healthKitSyncRouter", () => {
     it("processes sleep session with stages", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1219,7 +1223,7 @@ describe("healthKitSyncRouter", () => {
     it("includes duration_minutes and sleep_type in SQL", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1283,7 +1287,7 @@ describe("healthKitSyncRouter", () => {
     it("stores null sleep_type for short sessions", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1313,7 +1317,7 @@ describe("healthKitSyncRouter", () => {
     it("stores per-source rows for multi-source data (dedup at query time)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -1387,7 +1391,7 @@ describe("healthKitSyncRouter", () => {
     it("derives a sleep session when only stage samples are present", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1424,7 +1428,7 @@ describe("healthKitSyncRouter", () => {
     it("emits HealthKit metrics for sleep samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1454,7 +1458,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_sleep materialized view after inserting sleep data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1481,7 +1485,7 @@ describe("healthKitSyncRouter", () => {
     it("does not issue fallback refresh when sleep data is inserted", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1518,7 +1522,7 @@ describe("healthKitSyncRouter", () => {
         return Promise.resolve([]);
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1548,7 +1552,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_activity after inserting workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1589,7 +1593,7 @@ describe("healthKitSyncRouter", () => {
         return [];
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1657,7 +1661,7 @@ describe("healthKitSyncRouter", () => {
     it("skips routes when no matching activity exists", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1683,7 +1687,7 @@ describe("healthKitSyncRouter", () => {
         return [];
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1708,7 +1712,7 @@ describe("healthKitSyncRouter", () => {
     it("skips routes with empty locations array", async () => {
       const execute = vi.fn().mockResolvedValue([{ id: "activity-789" }]);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1729,7 +1733,7 @@ describe("healthKitSyncRouter", () => {
         return [];
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2416,7 +2420,7 @@ describe("healthKitSyncRouter", () => {
     it("includes all additive fields in SQL when non-zero (kills ObjectLiteral {} mutations on field entries)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2462,7 +2466,7 @@ describe("healthKitSyncRouter", () => {
     it("includes all point-in-time fields in SQL when non-null (kills ObjectLiteral {} mutations on pointFields)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2522,7 +2526,7 @@ describe("healthKitSyncRouter", () => {
     it("does not write absent additive fields for point-in-time-only samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2553,7 +2557,7 @@ describe("healthKitSyncRouter", () => {
     it("writes additive fields with zero value when a zero sample is present", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2584,7 +2588,7 @@ describe("healthKitSyncRouter", () => {
     it("properly categorizes pointInTimeDailyMetric types (kills if(false) mutation on categorize)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2611,7 +2615,7 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("Daily metrics DB error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2637,7 +2641,7 @@ describe("healthKitSyncRouter", () => {
     it("initializes aggregatedDailyMetrics as false and only refreshes view when aggregation occurs (kills false to true mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2678,7 +2682,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2706,7 +2710,7 @@ describe("healthKitSyncRouter", () => {
     it("correctly filters SpO2 samples using .some() not .every() (kills some to every mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2740,7 +2744,7 @@ describe("healthKitSyncRouter", () => {
     it("correctly filters skin temp samples (kills filter to identity mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2770,7 +2774,7 @@ describe("healthKitSyncRouter", () => {
     it("maps known workout type to correct activity type (kills ?? to && mutation on workoutActivityTypeMap)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2805,7 +2809,7 @@ describe("healthKitSyncRouter", () => {
     it("includes raw workout data in JSON (kills JSON.stringify({}) mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2845,7 +2849,7 @@ describe("healthKitSyncRouter", () => {
     it("stores workout metadata and workoutActivities in raw JSON column", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2901,7 +2905,7 @@ describe("healthKitSyncRouter", () => {
     it("does not touch the retired Postgres metric_stream table after processing workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2928,7 +2932,7 @@ describe("healthKitSyncRouter", () => {
     it("does not touch the retired Postgres metric_stream table when no workouts are provided", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3005,7 +3009,7 @@ describe("healthKitSyncRouter", () => {
         return Promise.resolve([]);
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3050,7 +3054,7 @@ describe("healthKitSyncRouter", () => {
     it("calculates duration_minutes correctly (kills / to *, + to -, * to / arithmetic mutations)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3080,7 +3084,7 @@ describe("healthKitSyncRouter", () => {
     it("keeps generic asleep intervals out of the canonical stage bundle", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3117,7 +3121,7 @@ describe("healthKitSyncRouter", () => {
     it("handles inBed-only session with no stages (kills stagesBySource.size > 0 ArrayDeclaration mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3146,7 +3150,7 @@ describe("healthKitSyncRouter", () => {
     it("filters out stages outside the inBed session (kills overlap check mutations >= to >, <= to <, && to ||)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3201,7 +3205,7 @@ describe("healthKitSyncRouter", () => {
     it("returns 0 when no inBed and no derivable sessions (kills if(false) on inBedSamples.length === 0)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3226,7 +3230,7 @@ describe("healthKitSyncRouter", () => {
     it("cleans up legacy external IDs before inserting (verifies DELETE call)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3401,7 +3405,7 @@ describe("healthKitSyncRouter", () => {
     it("stores source metadata in metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3429,7 +3433,7 @@ describe("healthKitSyncRouter", () => {
     it("constructs proper external_id for body measurements (kills mapping continue on valid type)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3455,7 +3459,7 @@ describe("healthKitSyncRouter", () => {
     it("processes BMI sample type (kills mapping guard)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3491,7 +3495,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("fail"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3518,7 +3522,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3543,7 +3547,7 @@ describe("healthKitSyncRouter", () => {
     it("invalidates all user caches after pushSleepSamples inserts data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -3565,7 +3569,7 @@ describe("healthKitSyncRouter", () => {
     it("invalidates all user caches after pushWorkouts inserts data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -3591,7 +3595,7 @@ describe("healthKitSyncRouter", () => {
     it("invalidates all user caches after pushQuantitySamples inserts data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -3611,7 +3615,7 @@ describe("healthKitSyncRouter", () => {
       const execute = makeExecute();
       const refreshBodyMeasurements = vi.fn().mockResolvedValue(undefined);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: { refreshBodyMeasurements },
@@ -3641,7 +3645,7 @@ describe("healthKitSyncRouter", () => {
       const refreshError = new Error("boom");
       const refreshBodyMeasurements = vi.fn().mockRejectedValue(refreshError);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: { refreshBodyMeasurements },

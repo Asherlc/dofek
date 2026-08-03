@@ -2,6 +2,7 @@ import { createElement, type ReactNode } from "react";
 import { beforeEach, vi } from "vitest";
 
 const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
+const secureStoreValues = vi.hoisted(() => new Map<string, string>());
 
 // __DEV__ is a Metro compile-time global in React Native. Vitest cannot
 // statically define it per-test, so expose it as a runtime global instead.
@@ -38,6 +39,10 @@ vi.mock("@sentry/react-native", () => ({
   setExtra: vi.fn(),
 }));
 
+vi.mock("expo-crypto", () => ({
+  randomUUID: vi.fn(() => crypto.randomUUID()),
+}));
+
 vi.mock("posthog-react-native", () => ({
   __esModule: true,
   default: vi.fn().mockImplementation(() => ({
@@ -65,12 +70,18 @@ vi.mock("@react-native-async-storage/async-storage", () => {
         asyncStorageValues.clear();
         return Promise.resolve();
       }),
+      getAllKeys: vi.fn(() => Promise.resolve([...asyncStorageValues.keys()])),
+      multiRemove: vi.fn((keys: string[]) => {
+        for (const key of keys) asyncStorageValues.delete(key);
+        return Promise.resolve();
+      }),
     },
   };
 });
 
 beforeEach(() => {
   asyncStorageValues.clear();
+  secureStoreValues.clear();
 });
 
 // ── React Native mock ────────────────────────────────────────────────
@@ -482,9 +493,15 @@ vi.mock("react-native-screens", () => ({}));
 
 // ── Expo module mocks ────────────────────────────────────────────────
 vi.mock("expo-secure-store", () => ({
-  setItemAsync: vi.fn(),
-  getItemAsync: vi.fn(() => Promise.resolve(null)),
-  deleteItemAsync: vi.fn(),
+  setItemAsync: vi.fn((key: string, value: string) => {
+    secureStoreValues.set(key, value);
+    return Promise.resolve();
+  }),
+  getItemAsync: vi.fn((key: string) => Promise.resolve(secureStoreValues.get(key) ?? null)),
+  deleteItemAsync: vi.fn((key: string) => {
+    secureStoreValues.delete(key);
+    return Promise.resolve();
+  }),
   AFTER_FIRST_UNLOCK: "kSecAttrAccessibleAfterFirstUnlock",
 }));
 
@@ -549,6 +566,8 @@ vi.mock("./modules/health-kit", async () => {
     queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
     querySleepSamples: vi.fn(() => Promise.resolve([])),
     queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
+    deleteDietarySamples: vi.fn(() => Promise.resolve(0)),
+    purgeAccountState: vi.fn(() => Promise.resolve(true)),
   };
 });
 
@@ -562,6 +581,7 @@ vi.mock("./modules/core-motion", () => ({
   queryRecordedData: vi.fn(() => Promise.resolve([])),
   getLastSyncTimestamp: vi.fn(() => null),
   setLastSyncTimestamp: vi.fn(),
+  purgeAccountState: vi.fn(),
 }));
 
 // ── Background Refresh native module mock ──────────────────────────
@@ -609,6 +629,7 @@ vi.mock("./modules/whoop-ble", () => ({
   getBufferedRealtimeData: vi.fn(() => Promise.resolve([])),
   addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   disconnect: vi.fn(),
+  purgeAccountState: vi.fn(),
 }));
 
 // ── BLE heart-rate native module mock ──────────────────────────────
@@ -623,6 +644,7 @@ vi.mock("./modules/ble-heart-rate", () => ({
   disconnect: vi.fn(),
   addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   addHeartRateListener: vi.fn(() => ({ remove: vi.fn() })),
+  purgeAccountState: vi.fn(),
 }));
 
 // ── React Native Maps mock ──────────────────────────────────────────
@@ -664,4 +686,5 @@ vi.mock("./modules/watch-motion", () => ({
   readWatchFile: vi.fn(() => Promise.resolve([])),
   readWatchAltitudeFile: vi.fn(() => Promise.resolve([])),
   deleteWatchFile: vi.fn(),
+  purgeAccountState: vi.fn(() => Promise.resolve(true)),
 }));

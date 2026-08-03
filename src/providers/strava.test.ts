@@ -83,6 +83,7 @@ import {
 } from "./strava.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
@@ -569,11 +570,44 @@ describe("StravaProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig?.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.revokeExistingTokens).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://www.strava.com/api/v3/");
     expect(setup.identityCapabilities?.providesEmail).toBe(false);
     expect(setup.oauthConfig?.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
     expect(setup.oauthConfig?.tokenUrl).toBe("https://www.strava.com/oauth/token");
     expect(setup.oauthConfig?.scopes).toEqual(["read", "activity:read_all"]);
+    expect(setup.reconnectStrategy).toBe("revoke-then-replace");
+  });
+
+  it("revokes the Strava grant with the current idempotent endpoint", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const requests: Array<{ authorization: string | null; body: string; url: string }> = [];
+    const provider = new StravaProvider(async (input, init) => {
+      requests.push({
+        authorization: new Headers(init?.headers).get("authorization"),
+        body: String(init?.body),
+        url: String(input),
+      });
+      return new Response(null, { status: 200 });
+    });
+    const revoke = provider.authSetup().revokeExistingTokens;
+    if (!revoke) throw new Error("Expected Strava token revocation");
+
+    await revoke({
+      accessToken: "strava-access",
+      expiresAt: new Date("2026-07-26T12:00:00.000Z"),
+      refreshToken: "strava-refresh",
+      scopes: "read,activity:read_all",
+    });
+
+    expect(requests).toEqual([
+      {
+        authorization: `Basic ${Buffer.from("test-id:test-secret").toString("base64")}`,
+        body: "token=strava-refresh&token_type_hint=refresh_token",
+        url: "https://www.strava.com/oauth/revoke",
+      },
+    ]);
   });
 
   it("throws when env vars are missing", () => {
@@ -581,6 +615,23 @@ describe("StravaProvider.authSetup()", () => {
     delete process.env.STRAVA_CLIENT_SECRET;
     const provider = new StravaProvider();
     expect(() => provider.authSetup()).toThrow("STRAVA_CLIENT_ID");
+  });
+
+  it("accepts only Strava's documented 200 revocation response", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    const provider = new StravaProvider(async () => new Response(null, { status: 204 }));
+    const revoke = provider.authSetup().revokeExistingTokens;
+    if (!revoke) throw new Error("Expected Strava token revocation");
+
+    await expect(
+      revoke({
+        accessToken: "strava-access",
+        expiresAt: new Date("2026-07-26T12:00:00.000Z"),
+        refreshToken: null,
+        scopes: "read",
+      }),
+    ).rejects.toThrow("Strava token revocation failed (204)");
   });
 });
 
@@ -1095,12 +1146,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
       where: vi.fn().mockResolvedValue(undefined),
     });
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: mockDelete,
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1129,7 +1180,10 @@ describe("StravaProvider.syncWebhookEvent", () => {
     );
     expect(publishedMetricStreamReplacements).toEqual([
       {
-        scope: { activityId: "10000000-0000-4000-8000-000000000001" },
+        scope: {
+          activityId: "10000000-0000-4000-8000-000000000001",
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
         rows: [
           expect.objectContaining({
             activityId: "10000000-0000-4000-8000-000000000001",
@@ -2056,7 +2110,7 @@ function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
 }
 
 function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
-  return {
+  return makeTransactionalTestDatabase<SyncDatabase>({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -2076,7 +2130,7 @@ function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
     }),
     delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 }
 
 const MOCK_ACTIVITY = {
@@ -2330,7 +2384,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     // Need a db mock that returns a UUID for every insert
-    const mockDb: SyncDatabase = {
+    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2352,7 +2406,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(
@@ -2597,7 +2651,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json({ ...MOCK_ACTIVITY }));
     });
 
-    const mockDb: SyncDatabase = {
+    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2619,7 +2673,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(
@@ -2853,7 +2907,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       };
     });
 
-    const mockDb: SyncDatabase = {
+    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2866,7 +2920,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(

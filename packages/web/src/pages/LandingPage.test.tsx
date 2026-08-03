@@ -145,6 +145,15 @@ describe("LandingPage", () => {
     ).toBe(true);
   });
 
+  it("links to the public account deletion status and disclosure page", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByRole("link", { name: "Account deletion" })).toHaveAttribute(
+      "href",
+      "/account-deletion",
+    );
+  });
+
   it("keeps the sign-in path visible in the mobile header", () => {
     render(<LandingPage />);
 

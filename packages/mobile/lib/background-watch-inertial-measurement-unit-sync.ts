@@ -1,5 +1,10 @@
 import { AppState, type AppStateStatus } from "react-native";
-import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
+import {
+  enableAccountSync,
+  isWatchAppInstalled,
+  isWatchPaired,
+  requestWatchRecording,
+} from "../modules/watch-motion";
 import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
 import {
@@ -53,6 +58,7 @@ export async function initBackgroundWatchInertialMeasurementUnitSync(
   logger.info(TAG, `init: paired=${paired}, appInstalled=${installed}`);
 
   if (!paired || !installed) return;
+  await enableAccountSync();
 
   // Clean up existing listener
   if (appStateSubscription) {

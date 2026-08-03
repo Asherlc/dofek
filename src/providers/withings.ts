@@ -220,11 +220,19 @@ async function withingsTokenExchange(
 
   const data = json.body;
   const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 10800;
+  const providerAccountId = z
+    .union([z.string().min(1), z.number().int().nonnegative()])
+    .safeParse(data.userid);
 
   return {
     accessToken: String(data.access_token),
     refreshToken: String(data.refresh_token),
     expiresAt: new Date(Date.now() + expiresIn * 1000),
+    ...(providerAccountId.success
+      ? {
+          providerAccountId: String(providerAccountId.data),
+        }
+      : {}),
     scopes: typeof data.scope === "string" ? data.scope : "",
   };
 }

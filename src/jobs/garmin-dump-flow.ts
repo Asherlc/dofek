@@ -46,6 +46,7 @@ function fitFileImportFlowChild(
           outputExtension: "fit",
           maxBytes: entry.maxBytes,
           nestedArchiveMaxBytes: entry.nestedArchiveMaxBytes,
+          userId: preparedImport.userId,
         },
         opts: {
           jobId: `garmin-dump-fit-extract-${jobHash}`,
@@ -82,7 +83,7 @@ async function addBatchFlow(
   return getFlowProducer().add({
     name: FIT_FILE_IMPORT_BATCH_JOB_NAME,
     queueName: FIT_FILE_IMPORT_BATCH_QUEUE,
-    data: { type: "fit-file-import-batch" },
+    data: { type: "fit-file-import-batch", userId: preparedImport.userId },
     opts: {
       jobId: batchId,
       ...(parent ? { parent } : {}),

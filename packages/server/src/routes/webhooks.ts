@@ -14,6 +14,10 @@
  */
 
 import { randomBytes } from "node:crypto";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { runWithTokenUser } from "dofek/db/token-user-context";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { captureException } from "dofek/lib/error-reporting";
@@ -50,7 +54,6 @@ function captureWebhookFailure(
 ): void {
   if (event) {
     captureException(error, {
-      extra: { ownerExternalId: event.ownerExternalId },
       tags: {
         provider: providerName,
         webhookEventType: event.eventType,
@@ -243,54 +246,63 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
 
           const row = rows[0];
           if (!row) {
-            logger.warn(
-              `[webhook] ${providerName}: no user found for external ID ${event.ownerExternalId}`,
-            );
+            logger.warn(`[webhook] ${providerName}: no user found for external account`);
             continue;
           }
 
           const { provider_id, user_id } = row;
 
-          // If the provider supports targeted webhook sync, use it directly
-          // instead of enqueueing a full sync job. This is much more efficient
-          // (e.g., 2 API calls for Strava instead of 41, or 0 for Wahoo).
-          const syncWebhookEvent = provider.syncWebhookEvent;
-          if (syncWebhookEvent) {
-            try {
-              const result = await runWithTokenUser(user_id, () =>
-                syncWebhookEvent(db, event, { userId: user_id }),
-              );
-              logger.info(
-                `[webhook] ${providerName}: synced ${result.recordsSynced} records for ${event.eventType} ${event.objectType} (${result.duration}ms)`,
-              );
-              processed++;
-              continue;
-            } catch (err) {
-              captureWebhookFailure(err, providerName, "targeted-sync", event);
-              logger.warn(
-                `[webhook] ${providerName}: targeted sync failed, falling back to full sync: ${err}`,
-              );
-              // Fall through to enqueue a full sync as fallback
-            }
-          }
+          const processingKind = await withAccountErasureUserWriteFence(
+            db,
+            user_id,
+            async (transaction): Promise<"enqueued" | "targeted"> => {
+              // If the provider supports targeted webhook sync, use it directly
+              // instead of enqueueing a full sync job. This is much more efficient
+              // (e.g., 2 API calls for Strava instead of 41, or 0 for Wahoo).
+              const syncWebhookEvent = provider.syncWebhookEvent;
+              if (syncWebhookEvent) {
+                try {
+                  const result = await runWithTokenUser(user_id, () =>
+                    syncWebhookEvent(transaction, event, { userId: user_id }),
+                  );
+                  logger.info(
+                    `[webhook] ${providerName}: synced ${result.recordsSynced} records for ${event.eventType} ${event.objectType} (${result.duration}ms)`,
+                  );
+                  return "targeted";
+                } catch (err: unknown) {
+                  captureWebhookFailure(err, providerName, "targeted-sync", event);
+                  logger.warn(
+                    `[webhook] ${providerName}: targeted sync failed, falling back to full sync: ${err}`,
+                  );
+                  // Fall through to enqueue a full sync as fallback
+                }
+              }
 
-          // Fallback: enqueue a full 1-day sync via BullMQ
-          await enqueueSyncJob(provider_id, {
-            providerId: provider_id,
-            sinceDays: 1,
-            userId: user_id,
-          });
+              // Fallback: enqueue a full 1-day sync via BullMQ
+              await enqueueSyncJob(provider_id, {
+                providerId: provider_id,
+                sinceDays: 1,
+                userId: user_id,
+              });
+              return "enqueued";
+            },
+          );
           processed++;
 
-          logger.info(
-            `[webhook] ${providerName}: enqueued full sync for user ${user_id} (${event.eventType} ${event.objectType})`,
-          );
+          if (processingKind === "enqueued") {
+            logger.info(
+              `[webhook] ${providerName}: enqueued full sync (${event.eventType} ${event.objectType})`,
+            );
+          }
         } catch (err) {
+          if (err instanceof AccountErasureUserFencedError) {
+            processed++;
+            logger.info(`[webhook] ${providerName}: ignored event for an account being erased`);
+            continue;
+          }
           failed++;
           captureWebhookFailure(err, providerName, "event-processing", event);
-          logger.error(
-            `[webhook] ${providerName}: failed to process event for ${event.ownerExternalId}: ${err}`,
-          );
+          logger.error(`[webhook] ${providerName}: failed to process event: ${err}`);
         }
       }
 
@@ -320,7 +332,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
  * For per-user webhooks (Withings): creates a subscription per provider connection.
  */
 export async function registerWebhookForProvider(
-  db: import("dofek/db").Database,
+  db: Pick<import("dofek/db").Database, "execute">,
   provider: WebhookProvider,
   userId: string,
 ): Promise<void> {
@@ -342,14 +354,28 @@ export async function registerWebhookForProvider(
   const verifyToken = randomBytes(32).toString("hex");
   const result = await provider.registerWebhook(callbackUrl, verifyToken);
   const userScoped = provider.webhookScope === "user";
-  await webhookSubscriptionRepository.upsertActiveSubscription({
-    userId: userScoped ? userId : null,
-    providerId: userScoped ? provider.id : null,
-    providerName: provider.id,
-    subscriptionExternalId: result.subscriptionId,
-    verifyToken,
-    signingSecret: result.signingSecret ?? null,
-    expiresAt: result.expiresAt ?? null,
-    metadata: { callbackUrl },
-  });
+  try {
+    await webhookSubscriptionRepository.upsertActiveSubscription({
+      userId: userScoped ? userId : null,
+      providerId: userScoped ? provider.id : null,
+      providerName: provider.id,
+      subscriptionExternalId: result.subscriptionId,
+      verifyToken,
+      signingSecret: result.signingSecret ?? null,
+      expiresAt: result.expiresAt ?? null,
+      metadata: { callbackUrl },
+    });
+  } catch (error: unknown) {
+    captureException(error, {
+      tags: { provider: provider.id, webhookPhase: "subscription-persistence" },
+    });
+    try {
+      await provider.unregisterWebhook(result.subscriptionId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "registration-compensation" },
+      });
+    }
+    throw error;
+  }
 }

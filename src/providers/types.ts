@@ -50,9 +50,18 @@ export interface ProviderAuthSetup {
   oauthConfig?: OAuthConfig;
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
-  exchangeCode?: (code: string, codeVerifier?: string) => Promise<TokenSet>;
+  exchangeCode?: (
+    code: string,
+    codeVerifier?: string,
+    onTokensIssued?: (tokens: TokenSet) => void,
+  ) => Promise<TokenSet>;
   /** Provider-specific cleanup for an existing authorization. */
   revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
+  /**
+   * Provider-specific revocation semantics for durable account-erasure replay.
+   * This must accept only provider-documented terminal outcomes.
+   */
+  revokeTokensForAccountErasure?: (tokens: TokenSet) => Promise<void>;
   /**
    * Provider-specific reconnect lifecycle.
    * `revoke-then-replace` revokes before exchange.

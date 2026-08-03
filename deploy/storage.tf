@@ -57,6 +57,26 @@ resource "cloudflare_r2_bucket" "metric_stream_archive" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "account_erasure_ledger" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-account-erasure-ledger"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_lock" "account_erasure_ledger" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.account_erasure_ledger.name
+
+  rules = [{
+    id      = "retain-account-erasure-intents-indefinitely"
+    enabled = true
+    prefix  = "account-erasure/v1/"
+    condition = {
+      type = "Indefinite"
+    }
+  }]
+}
+
 resource "cloudflare_r2_bucket" "exports" {
   account_id = var.cloudflare_account_id
   name       = "dofek-exports"
@@ -67,6 +87,56 @@ resource "cloudflare_r2_bucket" "imports" {
   account_id = var.cloudflare_account_id
   name       = "dofek-imports"
   location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "db_backups_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.db_backups.name
+
+  rules = [{
+    id      = "expire-database-backups"
+    enabled = true
+    conditions = {
+      prefix = ""
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 1814400
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 86400
+        type    = "Age"
+      }
+    }
+  }]
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "metric_stream_archive_staging_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.metric_stream_archive.name
+
+  rules = [{
+    id      = "expire-account-erasure-staging"
+    enabled = true
+    conditions = {
+      prefix = "account-erasure-staging/"
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 86400
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 86400
+        type    = "Age"
+      }
+    }
+  }]
 }
 
 resource "cloudflare_r2_bucket_cors" "imports" {

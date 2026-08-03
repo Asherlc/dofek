@@ -24,6 +24,11 @@ vi.mock("dofek/lib/cache", () => ({
 const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueActivityRecomputeAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockWithUserWriteFence = vi.fn();
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockWithUserWriteFence(...args),
+}));
 
 vi.mock("dofek/jobs/queues", () => ({
   enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
@@ -108,6 +113,16 @@ vi.mock("dofek/providers/registry", () => ({
     return providers[id];
   }),
 }));
+
+beforeEach(() => {
+  mockWithUserWriteFence.mockImplementation(
+    async (
+      database: unknown,
+      _userId: string,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  );
+});
 
 import { activityRouter } from "./activity.ts";
 

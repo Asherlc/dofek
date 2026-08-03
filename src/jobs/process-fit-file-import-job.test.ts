@@ -18,6 +18,11 @@ const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
+const mockAccountErasureAllowsQueuedUserWork = vi.fn().mockResolvedValue(true);
+vi.mock("./account-erasure-work-guard.ts", () => ({
+  accountErasureAllowsQueuedUserWork: (database: unknown, userId: string, workKind: string) =>
+    mockAccountErasureAllowsQueuedUserWork(database, userId, workKind),
+}));
 
 const mockReplaceMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
 const mockWriteMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
@@ -342,6 +347,7 @@ describe("processFitFileImportJob", () => {
     mockWriteMetricStreamBatch.mockResolvedValue(undefined);
     mockWriteMetricStreamBatchForScope.mockResolvedValue(undefined);
     mockStreamFitFile.mockImplementation(streamGeneratedTestFit);
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
   });
 
   afterEach(async () => {
@@ -373,6 +379,27 @@ describe("processFitFileImportJob", () => {
     expect(mockStreamFitFile).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("does not decode a FIT child when erasure activates after dequeue", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+      ),
+    ).resolves.toEqual({ recordsSynced: 0, errors: [] });
+
+    expect(mockStreamFitFile).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("propagates unexpected extraction lookup failures for BullMQ retries", async () => {
@@ -477,7 +504,7 @@ describe("processFitFileImportJob", () => {
     );
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
-      { activityId: "activity-row-1" },
+      { activityId: "activity-row-1", userId: "user-1" },
       [],
       "file",
     );
@@ -561,7 +588,7 @@ describe("processFitFileImportJob", () => {
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
-      { activityId: "garmin-summary-row" },
+      { activityId: "garmin-summary-row", userId: "user-1" },
       [],
       "file",
     );
@@ -768,7 +795,7 @@ describe("processFitFileImportJob", () => {
 
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
-      { activityId: "activity-row-1" },
+      { activityId: "activity-row-1", userId: "user-1" },
       [],
       "file",
     );
@@ -814,7 +841,7 @@ describe("processFitFileImportJob", () => {
 
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
-      { activityId: "activity-row-1" },
+      { activityId: "activity-row-1", userId: "user-1" },
       [],
       "file",
       metricStreamPublisher,
@@ -975,7 +1002,7 @@ describe("processFitFileImportJob", () => {
     );
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
-      { activityId: "activity-row-1" },
+      { activityId: "activity-row-1", userId: "user-1" },
       [],
       "file",
     );

@@ -7,6 +7,7 @@ import {
   processWorkouts,
 } from "./health-kit-sync-processors.ts";
 import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
@@ -57,14 +58,14 @@ describe("processMetricStream", () => {
     };
 
     const inserted = await processMetricStream(
-      { execute },
+      makeTransactionalTestDatabase({ execute }),
       "00000000-0000-0000-0000-000000000001",
       [heartRateSample],
       publisher,
     );
 
     expect(inserted).toBe(1);
-    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(publisher.publishRows).toHaveBeenCalledWith(
       [
         {
@@ -92,7 +93,7 @@ describe("processBodyMeasurements", () => {
     };
 
     const inserted = await processBodyMeasurements(
-      { execute },
+      makeTransactionalTestDatabase({ execute }),
       "00000000-0000-0000-0000-000000000001",
       [
         {
@@ -106,7 +107,7 @@ describe("processBodyMeasurements", () => {
     );
 
     expect(inserted).toBe(1);
-    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(publisher.publishRows).toHaveBeenCalledWith(
       [
         {

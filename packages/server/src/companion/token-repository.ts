@@ -106,36 +106,44 @@ export async function regenerateCompanionToken(
   userId: string,
   connectionType: CompanionConnectionType = DEFAULT_COMPANION_CONNECTION_TYPE,
 ): Promise<CompanionTokenMetadata> {
-  return db.transaction(async (transaction) => {
-    const lockRows = await executeWithSchema(
-      transaction,
-      advisoryLockRowSchema,
-      sql`SELECT pg_try_advisory_xact_lock(
-            hashtext(${userId} || ':' || ${connectionType})
-          ) AS acquired`,
-    );
-    if (!lockRows[0]?.acquired) {
-      const activeToken = await findActiveCompanionToken(transaction, userId, connectionType);
-      if (!activeToken) {
-        throw new Error("Companion token regeneration is already in progress");
-      }
-      return {
-        id: activeToken.id,
-        connectionType: activeToken.connection_type,
-        token: null,
-        createdAt: activeToken.created_at,
-        revokedAt: activeToken.revoked_at,
-      };
+  return db.transaction((transaction) =>
+    regenerateCompanionTokenInTransaction(transaction, userId, connectionType),
+  );
+}
+
+export async function regenerateCompanionTokenInTransaction(
+  transaction: ExecutableDatabase,
+  userId: string,
+  connectionType: CompanionConnectionType = DEFAULT_COMPANION_CONNECTION_TYPE,
+): Promise<CompanionTokenMetadata> {
+  const lockRows = await executeWithSchema(
+    transaction,
+    advisoryLockRowSchema,
+    sql`SELECT pg_try_advisory_xact_lock(
+          hashtext(${userId} || ':' || ${connectionType})
+        ) AS acquired`,
+  );
+  if (!lockRows[0]?.acquired) {
+    const activeToken = await findActiveCompanionToken(transaction, userId, connectionType);
+    if (!activeToken) {
+      throw new Error("Companion token regeneration is already in progress");
     }
-    await transaction.execute(
-      sql`UPDATE fitness.companion_token
-          SET revoked_at = COALESCE(revoked_at, NOW())
-          WHERE user_id = ${userId}
-            AND connection_type = ${connectionType}
-            AND revoked_at IS NULL`,
-    );
-    return createOrGetCompanionToken(transaction, userId, connectionType);
-  });
+    return {
+      id: activeToken.id,
+      connectionType: activeToken.connection_type,
+      token: null,
+      createdAt: activeToken.created_at,
+      revokedAt: activeToken.revoked_at,
+    };
+  }
+  await transaction.execute(
+    sql`UPDATE fitness.companion_token
+        SET revoked_at = COALESCE(revoked_at, NOW())
+        WHERE user_id = ${userId}
+          AND connection_type = ${connectionType}
+          AND revoked_at IS NULL`,
+  );
+  return createOrGetCompanionToken(transaction, userId, connectionType);
 }
 
 export async function listActiveCompanionTokens(

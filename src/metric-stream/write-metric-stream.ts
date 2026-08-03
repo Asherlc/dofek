@@ -1,7 +1,9 @@
+import { sql } from "drizzle-orm";
 import { getProviderDataGenerations } from "../db/provider-data-deletion.ts";
 import type { Database } from "../db/typed-sql.ts";
 import type { MetricStreamEventV2, MetricStreamRowInput } from "./events.ts";
 import type { MetricStreamEventPublisher } from "./redpanda-producer.ts";
+import { runWithMetricStreamWriteDatabase } from "./write-fence-context.ts";
 
 export interface WriteMetricStreamRowsOptions {
   database: Database;
@@ -17,6 +19,35 @@ export interface WriteMetricStreamRowsResult {
 export interface PreparedMetricStreamRows {
   operationRevision: string;
   rows: MetricStreamRowInput[];
+}
+
+interface TransactionalMetricStreamDatabase extends Database {
+  transaction<T>(work: (database: Database) => Promise<T>): Promise<T>;
+}
+
+function isTransactionalMetricStreamDatabase(
+  database: Database,
+): database is TransactionalMetricStreamDatabase {
+  return "transaction" in database && typeof database.transaction === "function";
+}
+
+export async function withAccountErasureMetricStreamWriteFence<T>(
+  database: Database,
+  userIds: readonly string[],
+  work: (database: Database) => Promise<T>,
+): Promise<T> {
+  if (!isTransactionalMetricStreamDatabase(database)) {
+    throw new Error("Metric stream publishing requires a transactional database");
+  }
+  const uniqueUserIds = [...new Set(userIds)].sort();
+  return database.transaction(async (transaction) => {
+    for (const userId of uniqueUserIds) {
+      await transaction.execute(
+        sql`SELECT fitness.lock_and_reject_account_erasure_write(${userId}::uuid)`,
+      );
+    }
+    return runWithMetricStreamWriteDatabase(transaction, () => work(transaction));
+  });
 }
 
 export async function prepareMetricStreamRows(
@@ -54,12 +85,18 @@ export async function writeMetricStreamRows(
   if (options.rows.length === 0) {
     return { events: [], published: 0 };
   }
-  const prepared = await prepareMetricStreamRows(options.database, options.rows);
-  const events = await options.publisher.publishRows(prepared.rows, {
-    operationRevision: prepared.operationRevision,
-  });
-  return {
-    events,
-    published: events.length,
-  };
+  return withAccountErasureMetricStreamWriteFence(
+    options.database,
+    options.rows.map((row) => row.userId),
+    async (transaction) => {
+      const prepared = await prepareMetricStreamRows(transaction, options.rows);
+      const events = await options.publisher.publishRows(prepared.rows, {
+        operationRevision: prepared.operationRevision,
+      });
+      return {
+        events,
+        published: events.length,
+      };
+    },
+  );
 }

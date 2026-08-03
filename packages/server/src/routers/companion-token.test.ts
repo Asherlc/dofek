@@ -27,6 +27,25 @@ vi.mock("../lib/typed-sql.ts", () => ({
   ),
 }));
 
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureUserFencedError: class AccountErasureUserFencedError extends Error {},
+  withAccountErasureUserWriteFence: vi.fn(
+    async (
+      db: {
+        transaction: <T>(
+          operation: (transaction: {
+            execute: (query: unknown) => Promise<unknown[]>;
+          }) => Promise<T>,
+        ) => Promise<T>;
+      },
+      _userId: string,
+      operation: (transaction: {
+        execute: (query: unknown) => Promise<unknown[]>;
+      }) => Promise<unknown>,
+    ) => db.transaction(operation),
+  ),
+}));
+
 const { companionTokenRouter } = await import("./companion-token.ts");
 
 const createCaller = createTestCallerFactory(companionTokenRouter);
@@ -101,6 +120,23 @@ describe("companionTokenRouter", () => {
       const result = await caller.regenerate();
       expect(result.id).toBe("new-id");
       expect(result.token).not.toBeNull();
+    });
+
+    it("returns a conflict when account deletion fences the write", async () => {
+      const fenceError = new Error("Account deletion is active for this user.");
+      const accountErasure = await import("dofek/db/account-erasure");
+      vi.mocked(accountErasure.withAccountErasureUserWriteFence).mockRejectedValueOnce(
+        Object.assign(new accountErasure.AccountErasureUserFencedError(), {
+          message: fenceError.message,
+        }),
+      );
+      const caller = createCaller({
+        db: { transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.regenerate()).rejects.toMatchObject({ code: "CONFLICT" });
     });
   });
 

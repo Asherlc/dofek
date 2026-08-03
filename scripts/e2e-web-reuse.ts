@@ -49,7 +49,17 @@ const cypressArgs = process.argv.slice(2).filter((arg) => arg !== upOnlyFlag && 
 const upOnly = process.argv.includes(upOnlyFlag);
 const isFocusedReviewStackRun = cypressArgs.includes(reviewStackSpec);
 
-dockerCompose(["up", "-d", "--wait", "--no-build", "db", "clickhouse", "redis", "redpanda"]);
+dockerCompose([
+  "up",
+  "-d",
+  "--wait",
+  "--no-build",
+  "db",
+  "clickhouse",
+  "redis",
+  "account-erasure-minio",
+  "redpanda",
+]);
 runOneShotService("migrate");
 if (isFocusedReviewStackRun) {
   runOneShotService("seed");

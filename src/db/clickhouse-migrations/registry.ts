@@ -66,6 +66,7 @@ import { createMigration as createMigration0066 } from "./0066_daily_sleep_overl
 import { createMigration as createMigration0067 } from "./0067_repair_local_time_column_order.ts";
 import { createMigration as createMigration0068 } from "./0068_provider_metric_stream_daily_counts.ts";
 import { createMigration as createMigration0069 } from "./0069_canonical_activity_types.ts";
+import { createMigration as createMigration0070 } from "./0070_account_erasure_fence.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -137,6 +138,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0067,
   createMigration0068,
   createMigration0069,
+  createMigration0070,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

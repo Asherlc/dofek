@@ -155,6 +155,106 @@ describe("syncHealthKitToServer", () => {
     expect(startDate.getFullYear()).toBeLessThanOrEqual(1970);
   });
 
+  it("never uploads HealthKit history from before a deleted account cutoff", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cutoff = "2026-03-21T12:00:00.000Z";
+    const sample = (uuid: string, startDate: string) => ({
+      type: "HKQuantityTypeIdentifierHeartRate",
+      value: 72,
+      unit: "count/min",
+      startDate,
+      endDate: startDate,
+      sourceName: "Apple Watch",
+      sourceBundle: "com.apple.health",
+      uuid,
+    });
+    healthKit.queryDailyStatistics.mockResolvedValue([
+      { date: "2026-03-21", value: 100 },
+      { date: "2026-03-22", value: 200 },
+    ]);
+    healthKit.queryQuantitySamples.mockResolvedValue([
+      sample("old", "2026-03-21T11:59:59.000Z"),
+      sample("equal", cutoff),
+      sample("new", "2026-03-21T12:00:00.001Z"),
+    ]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "old-workout",
+        workoutType: "running",
+        startDate: cutoff,
+        endDate: "2026-03-21T13:00:00.000Z",
+        duration: 3600,
+        totalDistance: 1000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+      {
+        uuid: "new-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T12:00:00.001Z",
+        endDate: "2026-03-21T13:00:00.000Z",
+        duration: 3600,
+        totalDistance: 1000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.querySleepSamples.mockResolvedValue([
+      {
+        uuid: "old-sleep",
+        startDate: cutoff,
+        endDate: "2026-03-21T13:00:00.000Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      },
+      {
+        uuid: "new-sleep",
+        startDate: "2026-03-21T12:00:00.001Z",
+        endDate: "2026-03-21T13:00:00.000Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: cutoff, lat: 1, lng: 1 },
+      { date: "2026-03-21T12:00:00.001Z", lat: 2, lng: 2 },
+    ]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      minimumSampleDate: cutoff,
+      syncRangeDays: null,
+    });
+
+    const quantitySamples = client.healthKitSync.pushQuantitySamples.mutate.mock.calls.flatMap(
+      ([input]) => input.samples,
+    );
+    expect(quantitySamples.every((value) => value.startDate > cutoff)).toBe(true);
+    expect(quantitySamples.some((value) => value.uuid === "new")).toBe(true);
+    expect(quantitySamples.some((value) => value.startDate.startsWith("2026-03-21"))).toBe(true);
+    expect(quantitySamples.some((value) => value.startDate.startsWith("2026-03-22"))).toBe(true);
+
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith({
+      workouts: [expect.objectContaining({ uuid: "new-workout" })],
+      windowStart: cutoff,
+      windowEnd: expect.any(String),
+    });
+    expect(client.healthKitSync.pushSleepSamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "new-sleep" })],
+    });
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
+      routes: [
+        {
+          workoutUuid: "new-workout",
+          sourceName: "Apple Watch",
+          locations: [{ date: "2026-03-21T12:00:00.001Z", lat: 2, lng: 2 }],
+        },
+      ],
+    });
+  });
+
   it("starts incremental daily statistics at the local day boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-26T15:30:00-07:00"));
@@ -620,6 +720,56 @@ describe("syncHealthKitObserverChanges", () => {
     expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
     expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
     expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
+  });
+
+  it("never uploads observer samples at or before the device erasure cutoff", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cutoff = "2026-07-27T10:00:00.000Z";
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "query-cutoff",
+      samples: [
+        {
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 70,
+          unit: "count/min",
+          startDate: cutoff,
+          endDate: "2026-07-27T10:00:05.000Z",
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          uuid: "heart-rate-at-cutoff",
+        },
+        {
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 72,
+          unit: "count/min",
+          startDate: "2026-07-27T10:00:01.000Z",
+          endDate: "2026-07-27T10:00:06.000Z",
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          uuid: "heart-rate-after-cutoff",
+        },
+      ],
+      deletedUUIDs: [],
+    });
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      minimumSampleDate: cutoff,
+      typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(healthKit.queryAnchoredSamples).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      cutoff,
+    );
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-after-cutoff" })],
+    });
+    expect(client.healthKitSync.pushQuantitySamples.mutate).not.toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-at-cutoff" })],
+    });
   });
 
   it("batches anchored deletions to the server endpoint limit before committing", async () => {

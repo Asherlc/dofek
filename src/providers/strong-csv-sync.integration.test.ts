@@ -2,7 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { activity, strengthSet } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
-import { exercise, exerciseAlias } from "../db/schema/reference.ts";
+import {
+  exercise,
+  exerciseAlias,
+  exerciseAliasSource,
+  exerciseSource,
+} from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { importStrongCsv, STRONG_PROVIDER_ID } from "./strong-csv.ts";
 
@@ -173,6 +178,29 @@ describe("importStrongCsv() (integration)", () => {
     expect(aliases.length).toBeGreaterThanOrEqual(2);
     const benchAlias = aliases.find((a) => a.providerExerciseName === "Bench Press (Barbell)");
     expect(benchAlias).toBeDefined();
+
+    const sources = await ctx.db
+      .select()
+      .from(exerciseSource)
+      .where(
+        and(
+          eq(exerciseSource.userId, TEST_USER_ID),
+          eq(exerciseSource.providerId, STRONG_PROVIDER_ID),
+        ),
+      );
+    expect(sources.length).toBeGreaterThanOrEqual(2);
+
+    const aliasSources = await ctx.db.select().from(exerciseAliasSource);
+    expect(aliasSources).toEqual(
+      expect.arrayContaining(
+        aliases.map((alias) =>
+          expect.objectContaining({
+            aliasId: alias.id,
+            exerciseId: alias.exerciseId,
+          }),
+        ),
+      ),
+    );
   });
 
   it("returns empty result for empty CSV", async () => {

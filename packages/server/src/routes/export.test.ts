@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCaptureException } = vi.hoisted(() => ({
-  mockCaptureException: vi.fn(),
-}));
-
-vi.mock("@sentry/node", () => ({
-  captureException: (...args: unknown[]) => mockCaptureException(...args),
+const { mockWithUserWriteFence } = vi.hoisted(() => ({
+  mockWithUserWriteFence: vi.fn(),
 }));
 
 vi.mock("../auth/cookies.ts", () => ({
@@ -20,10 +16,13 @@ vi.mock("../logger.ts", () => ({
   logger: { error: vi.fn(), warn: vi.fn() },
 }));
 
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
+}));
+
 const mockCreateSignedExportDownloadUrl = vi.fn();
 
 import type { AddressInfo } from "node:net";
-import cookieParser from "cookie-parser";
 import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
@@ -40,6 +39,7 @@ type MockQueue = NonNullable<Parameters<typeof createExportRouter>[0]["exportQue
 
 const mockDatabase: MockDatabase = {
   execute: vi.fn(),
+  transaction: vi.fn(),
 };
 
 const mockQueue = {
@@ -52,7 +52,6 @@ function mockExecute() {
 
 function createTestApp() {
   const app = express();
-  app.use(cookieParser());
   app.use(
     "/api/export",
     createExportRouter({
@@ -111,7 +110,14 @@ describe("createExportRouter", () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     mockExecute().mockReset();
-    vi.mocked(mockQueue.add).mockResolvedValue({ id: "job-42" });
+    mockWithUserWriteFence.mockReset();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: MockDatabase) => Promise<unknown>,
+      ) => operation(mockDatabase),
+    );
     mockCreateSignedExportDownloadUrl.mockResolvedValue(
       "https://r2.example.test/signed-export.zip",
     );
@@ -124,7 +130,6 @@ describe("createExportRouter", () => {
       expect(response.status).toBe(401);
       expect(parseJson(response.text)).toEqual({ error: "Not authenticated" });
       expect(mockExecute()).not.toHaveBeenCalled();
-      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
     });
 
     it("returns 401 when the session has expired", async () => {
@@ -136,10 +141,9 @@ describe("createExportRouter", () => {
       expect(response.status).toBe(401);
       expect(parseJson(response.text)).toEqual({ error: "Session expired" });
       expect(mockExecute()).not.toHaveBeenCalled();
-      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
     });
 
-    it("creates a queued export record and enqueues the export job", async () => {
+    it("commits a queued export record for the durable dispatcher", async () => {
       authenticate();
       mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
       const nowSpy = vi
@@ -157,18 +161,21 @@ describe("createExportRouter", () => {
         throw new Error("Expected the export insert query");
       }
       expect(new PgDialect().sqlToQuery(insertQuery).params).toContain("2026-07-31T00:00:00.000Z");
-      expect(vi.mocked(mockQueue.add)).toHaveBeenCalledWith(
-        "export",
-        {
-          exportId: createdExportId,
-          userId: exportUserId,
-        },
-        {
-          jobId: createdExportId,
-          removeOnComplete: true,
-          removeOnFail: true,
-        },
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+        mockDatabase,
+        exportUserId,
+        expect.any(Function),
       );
+    });
+
+    it("does not create an export when the erasure fence rejects the user", async () => {
+      authenticate();
+      mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+
+      const response = await request(createTestApp(), "post", "/api/export");
+
+      expect(response.status).toBe(500);
+      expect(mockExecute()).not.toHaveBeenCalled();
     });
 
     it("returns 500 when the export row cannot be created", async () => {
@@ -179,30 +186,6 @@ describe("createExportRouter", () => {
 
       expect(response.status).toBe(500);
       expect(parseJson(response.text)).toEqual({ error: "Failed to create export" });
-      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
-    });
-
-    it("returns a retryable error when the committed export cannot be enqueued", async () => {
-      authenticate();
-      mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
-      vi.mocked(mockQueue.add).mockRejectedValueOnce(new Error("Redis unavailable"));
-
-      const response = await request(createTestApp(), "post", "/api/export");
-
-      expect(response.status).toBe(503);
-      expect(parseJson(response.text)).toEqual({
-        error:
-          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
-        exportId: createdExportId,
-        retryable: true,
-      });
-      expect(mockCaptureException).toHaveBeenCalledWith(
-        expect.objectContaining({ message: "Redis unavailable" }),
-        {
-          extra: { exportId: createdExportId, userId: exportUserId },
-          tags: { source: "data-export-enqueue" },
-        },
-      );
     });
   });
 

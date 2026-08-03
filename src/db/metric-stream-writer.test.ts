@@ -244,16 +244,24 @@ describe("sourceRowToMetricStream", () => {
 
 describe("writeMetricStreamBatch", () => {
   it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValueOnce([
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
         {
           generation: 0,
           operation_revision: operationRevision,
           provider_id: "withings",
           user_id: "00000000-0000-4000-8000-000000000001",
         },
-      ]),
+      ]);
+    const db = {
+      execute,
       insert: vi.fn(),
+      transaction: vi.fn(
+        async <T>(work: (transaction: { execute: typeof execute }) => Promise<T>) =>
+          work({ execute }),
+      ),
     };
 
     const count = await runWithTokenUser("00000000-0000-4000-8000-000000000001", () =>
@@ -332,17 +340,25 @@ describe("writeMetricStreamBatch", () => {
 
 describe("replaceMetricStreamBatch", () => {
   it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValueOnce([
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
         {
           generation: 0,
           operation_revision: operationRevision,
           provider_id: "wahoo",
           user_id: "00000000-0000-4000-8000-000000000001",
         },
-      ]),
+      ]);
+    const db = {
+      execute,
       insert: vi.fn(),
       delete: vi.fn(),
+      transaction: vi.fn(
+        async <T>(work: (transaction: { execute: typeof execute }) => Promise<T>) =>
+          work({ execute }),
+      ),
     };
 
     const result = await runWithTokenUser("00000000-0000-4000-8000-000000000001", () =>
@@ -369,7 +385,10 @@ describe("replaceMetricStreamBatch", () => {
     expect(db.delete).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(mockReplaceRows).toHaveBeenCalledWith(
-      { activityId: "20000000-0000-4000-8000-000000000001" },
+      {
+        activityId: "20000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
+      },
       [
         expect.objectContaining({
           userId: "00000000-0000-4000-8000-000000000001",
@@ -411,16 +430,24 @@ describe("replaceMetricStreamBatch", () => {
 
 describe("writeMetricStreamBatchForScope", () => {
   it("publishes rows with the delete scope partition key", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValueOnce([
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
         {
           generation: 0,
           operation_revision: operationRevision,
           provider_id: "apple_health",
           user_id: "00000000-0000-4000-8000-000000000001",
         },
-      ]),
+      ]);
+    const db = {
+      execute,
       insert: vi.fn(),
+      transaction: vi.fn(
+        async <T>(work: (transaction: { execute: typeof execute }) => Promise<T>) =>
+          work({ execute }),
+      ),
     };
 
     const count = await runWithTokenUser("00000000-0000-4000-8000-000000000001", () =>

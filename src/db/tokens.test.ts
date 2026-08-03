@@ -118,10 +118,11 @@ describe("saveTokens", () => {
       accessToken: "access-plain",
       refreshToken: "refresh-plain",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
+      providerAccountId: "polar-user-123",
       scopes: "read write",
     };
 
-    await saveTokens(mock.db, "wahoo", tokens, TEST_USER_ID);
+    await saveTokens(mock.db, "polar", tokens, TEST_USER_ID);
 
     const firstCall = mock.spies.values.mock.calls[0];
     const firstInsert = firstCall?.[0];
@@ -131,8 +132,10 @@ describe("saveTokens", () => {
 
     expect(firstInsert.accessToken).not.toBe("access-plain");
     expect(firstInsert.refreshToken).not.toBe("refresh-plain");
+    expect(firstInsert.providerAccountId).not.toBe("polar-user-123");
     expect(isEncryptedCredentialValue(firstInsert.accessToken)).toBe(true);
     expect(isEncryptedCredentialValue(firstInsert.refreshToken)).toBe(true);
+    expect(isEncryptedCredentialValue(firstInsert.providerAccountId)).toBe(true);
   });
 
   it("handles null refreshToken and scopes", async () => {
@@ -278,11 +281,17 @@ describe("loadTokens", () => {
       columnName: "refresh_token",
       scopeId: `${TEST_USER_ID}:wahoo`,
     });
+    const encryptedProviderAccountId = await encryptCredentialValue("provider-account-789", {
+      tableName: "fitness.oauth_token",
+      columnName: "provider_account_id",
+      scopeId: `${TEST_USER_ID}:wahoo`,
+    });
     mock.spies.limit.mockResolvedValue([
       {
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
         expiresAt: new Date("2026-04-01T00:00:00Z"),
+        providerAccountId: encryptedProviderAccountId,
         scopes: "read",
       },
     ]);
@@ -293,6 +302,7 @@ describe("loadTokens", () => {
       accessToken: "access-123",
       refreshToken: "refresh-456",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
+      providerAccountId: "provider-account-789",
       scopes: "read",
     });
   });

@@ -13,6 +13,12 @@ const mockWaitForMetricStreamDeleteAcknowledgement = vi.fn().mockResolvedValue(u
 const mockWaitForPeerDbProviderDeletes = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
 const mockClose = vi.fn().mockResolvedValue(undefined);
+const mockAccountErasureAllowsQueuedUserWork = vi.fn().mockResolvedValue(true);
+
+vi.mock("./account-erasure-work-guard.ts", () => ({
+  accountErasureAllowsQueuedUserWork: (database: unknown, userId: string, workKind: string) =>
+    mockAccountErasureAllowsQueuedUserWork(database, userId, workKind),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },
@@ -41,6 +47,8 @@ vi.mock("../lib/cache.ts", () => ({
 }));
 
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
+
+const fakeDb = { execute: vi.fn() };
 
 function createActivityAnalyticsJob(
   type:
@@ -85,10 +93,11 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockRunProviderDeleteReadModelBuild.mockClear();
     mockWaitForMetricStreamDeleteAcknowledgement.mockClear();
     mockWaitForPeerDbProviderDeletes.mockClear();
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
   });
 
   it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
-    await processActivityDeleteAnalyticsJob(createProviderDeleteAnalyticsJob());
+    await processActivityDeleteAnalyticsJob(createProviderDeleteAnalyticsJob(), fakeDb);
 
     expect(mockWaitForMetricStreamDeleteAcknowledgement).not.toHaveBeenCalled();
     expect(mockWaitForPeerDbProviderDeletes).toHaveBeenCalledWith(
@@ -104,7 +113,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("waits for PeerDB, rebuilds activity read models, and invalidates user caches", async () => {
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job);
+    await processActivityDeleteAnalyticsJob(job, fakeDb);
 
     expect(mockWaitForPeerDbActivityDeletes).toHaveBeenCalledWith(expect.anything(), [
       "00000000-0000-0000-0000-000000000001",
@@ -118,7 +127,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockRunActivityReadModelBuild.mockRejectedValueOnce(new Error("dbt failed"));
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
-    await expect(processActivityDeleteAnalyticsJob(job)).rejects.toThrow("dbt failed");
+    await expect(processActivityDeleteAnalyticsJob(job, fakeDb)).rejects.toThrow("dbt failed");
     expect(mockClose).toHaveBeenCalledOnce();
   });
 
@@ -127,6 +136,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
       createActivityAnalyticsJob("activity-restore-analytics-refresh", [
         "00000000-0000-0000-0000-000000000002",
       ]),
+      fakeDb,
     );
 
     expect(mockWaitForPeerDbActivityRestores).toHaveBeenCalledWith(expect.anything(), [
@@ -143,6 +153,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
       createActivityAnalyticsJob("activity-recompute-analytics-refresh", [
         "00000000-0000-0000-0000-000000000003",
       ]),
+      fakeDb,
     );
 
     expect(mockWaitForPeerDbActivityDeletes).not.toHaveBeenCalled();
@@ -155,7 +166,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("reports delete analytics progress", async () => {
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job);
+    await processActivityDeleteAnalyticsJob(job, fakeDb);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -182,7 +193,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("reports restore analytics progress", async () => {
     const job = createActivityAnalyticsJob("activity-restore-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job);
+    await processActivityDeleteAnalyticsJob(job, fakeDb);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -209,7 +220,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("reports recompute analytics progress", async () => {
     const job = createActivityAnalyticsJob("activity-recompute-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job);
+    await processActivityDeleteAnalyticsJob(job, fakeDb);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -234,7 +245,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
     job.updateProgress = vi.fn().mockRejectedValue(progressError);
 
-    await processActivityDeleteAnalyticsJob(job);
+    await processActivityDeleteAnalyticsJob(job, fakeDb);
 
     expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");

@@ -10,10 +10,18 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { DashboardLayoutProvider } from "../components/DashboardLayoutProvider.tsx";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { UnitProvider } from "../components/UnitProvider.tsx";
+import { installWebAccountPurgeListener } from "../lib/account-erasure-purge.ts";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password", "/terms"]);
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/account-deletion",
+  "/login",
+  "/privacy",
+  "/reset-password",
+  "/terms",
+]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",
@@ -30,7 +38,17 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 }
 
 function AuthGate() {
-  const { user, isLoading, bootstrapError, logout, retryBootstrap } = useAuth();
+  const {
+    accountErasureCleanupInProgress,
+    beginAccountErasureCleanupForNonce,
+    finishAccountErasureCleanup,
+    isAccountErasureCleanupLeaseCurrent,
+    user,
+    isLoading,
+    bootstrapError,
+    logout,
+    retryBootstrap,
+  } = useAuth();
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
@@ -39,6 +57,21 @@ function AuthGate() {
     new URLSearchParams(location.href.split("?")[1] ?? "").has("token");
   const isPublic = PUBLIC_PATHS.has(location.pathname) || isSharedHealthReport;
   const previousUserIdRef = useRef<string | null>(null);
+
+  useEffect(
+    () =>
+      installWebAccountPurgeListener(queryClient, {
+        beginAccountErasureCleanupForNonce,
+        finishAccountErasureCleanup,
+        isCleanupLeaseCurrent: isAccountErasureCleanupLeaseCurrent,
+      }),
+    [
+      beginAccountErasureCleanupForNonce,
+      finishAccountErasureCleanup,
+      isAccountErasureCleanupLeaseCurrent,
+      queryClient,
+    ],
+  );
 
   useLayoutEffect(() => {
     const previousUserId = previousUserIdRef.current;
@@ -50,19 +83,37 @@ function AuthGate() {
   }, [queryClient, user?.id]);
 
   useEffect(() => {
-    if (!isLoading && !bootstrapError && !user && !isPublic) {
+    if (!accountErasureCleanupInProgress && !isLoading && !bootstrapError && !user && !isPublic) {
       const returnTo = typeof location.href === "string" ? location.href : location.pathname;
       navigate({ to: "/login", search: { returnTo } });
     }
-    if (!isLoading && user && location.pathname === "/login") {
+    if (!accountErasureCleanupInProgress && !isLoading && user && location.pathname === "/login") {
       navigate({ to: "/dashboard" });
     }
-  }, [isLoading, bootstrapError, user, isPublic, location.href, location.pathname, navigate]);
+  }, [
+    accountErasureCleanupInProgress,
+    isLoading,
+    bootstrapError,
+    user,
+    isPublic,
+    location.href,
+    location.pathname,
+    navigate,
+  ]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-page flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-border-strong border-t-accent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (accountErasureCleanupInProgress) {
+    return (
+      <div className="min-h-screen bg-page flex flex-col gap-3 items-center justify-center">
+        <div className="w-6 h-6 border-2 border-border-strong border-t-accent rounded-full animate-spin" />
+        <p className="text-sm text-muted">Finishing account deletion cleanup…</p>
       </div>
     );
   }

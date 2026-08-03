@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildFoodWriteBackFingerprint,
+  FOOD_WRITE_BACK_STORAGE_KEY,
   type FoodWriteBackStorage,
   type HealthKitFoodWriteBackAdapter,
   type HealthKitFoodWriteBackTrpcClient,
+  purgeDofekFoodWriteBackFromHealthKit,
   syncDofekFoodToHealthKit,
 } from "./health-kit-food-writeback";
 
@@ -19,6 +21,9 @@ function createStorage(initial: string | null = null): FoodWriteBackStorage {
     getItem: vi.fn(async () => value),
     setItem: vi.fn(async (_key: string, nextValue: string) => {
       value = nextValue;
+    }),
+    deleteItem: vi.fn(async () => {
+      value = null;
     }),
   };
 }
@@ -235,5 +240,55 @@ describe("syncDofekFoodToHealthKit", () => {
       foodName: "Chicken Rice Bowl",
     });
     expect(storage.setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("purgeDofekFoodWriteBackFromHealthKit", () => {
+  it("deletes every Dofek-written nutrient sample before removing the ledger", async () => {
+    const storage = createStorage(
+      JSON.stringify({ "food-1": "fingerprint-1", "food-2": "fingerprint-2" }),
+    );
+    const healthKit = createHealthKit();
+
+    const deleted = await purgeDofekFoodWriteBackFromHealthKit({ healthKit, storage });
+
+    expect(deleted).toBe(8);
+    expect(healthKit.deleteDietarySamples).toHaveBeenCalledWith([
+      "dofek:food:food-1:HKQuantityTypeIdentifierDietaryEnergyConsumed",
+      "dofek:food:food-1:HKQuantityTypeIdentifierDietaryProtein",
+      "dofek:food:food-1:HKQuantityTypeIdentifierDietaryCarbohydrates",
+      "dofek:food:food-1:HKQuantityTypeIdentifierDietaryFatTotal",
+      "dofek:food:food-2:HKQuantityTypeIdentifierDietaryEnergyConsumed",
+      "dofek:food:food-2:HKQuantityTypeIdentifierDietaryProtein",
+      "dofek:food:food-2:HKQuantityTypeIdentifierDietaryCarbohydrates",
+      "dofek:food:food-2:HKQuantityTypeIdentifierDietaryFatTotal",
+    ]);
+    expect(storage.deleteItem).toHaveBeenCalledWith("dofek_healthkit_food_writeback_v1");
+  });
+
+  it("keeps the ledger when HealthKit deletion fails so cleanup can retry", async () => {
+    const storage = createStorage(JSON.stringify({ "food-1": "fingerprint-1" }));
+    const healthKit = createHealthKit();
+    vi.mocked(healthKit.deleteDietarySamples).mockRejectedValue(new Error("HealthKit denied"));
+
+    await expect(purgeDofekFoodWriteBackFromHealthKit({ healthKit, storage })).rejects.toThrow(
+      "HealthKit denied",
+    );
+    expect(storage.deleteItem).not.toHaveBeenCalled();
+  });
+
+  it("continues purging when the stored ledger is corrupt", async () => {
+    const healthKit = {
+      deleteDietarySamples: vi.fn().mockResolvedValue(0),
+    };
+    const storage = {
+      getItem: vi.fn().mockResolvedValue("not-json"),
+      deleteItem: vi.fn().mockResolvedValue(undefined),
+      setItem: vi.fn(),
+    };
+
+    await expect(purgeDofekFoodWriteBackFromHealthKit({ healthKit, storage })).resolves.toBe(0);
+    expect(healthKit.deleteDietarySamples).not.toHaveBeenCalled();
+    expect(storage.deleteItem).toHaveBeenCalledWith(FOOD_WRITE_BACK_STORAGE_KEY);
   });
 });

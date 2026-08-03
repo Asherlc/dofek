@@ -30,6 +30,9 @@ export const authAccount = fitness.table(
     email: text("email"),
     name: text("name"),
     groups: text("groups").array(),
+    revocationAccessToken: text("revocation_access_token"),
+    revocationRefreshToken: text("revocation_refresh_token"),
+    revocationClientId: text("revocation_client_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -58,6 +61,32 @@ export const slackInstallation = fitness.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("slack_installation_team_idx").on(table.teamId)],
+);
+
+/**
+ * Canonical Dofek-user membership in a shared Slack workspace.
+ *
+ * The installation owns shared bot credentials; this join records which
+ * Dofek users depend on them and the Slack identity for each member.
+ */
+export const slackTeamMembership = fitness.table(
+  "slack_team_membership",
+  {
+    teamId: text("team_id")
+      .notNull()
+      .references(() => slackInstallation.teamId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    slackUserId: text("slack_user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.teamId, table.userId] }),
+    uniqueIndex("slack_team_membership_identity_idx").on(table.teamId, table.slackUserId),
+    index("slack_team_membership_user_idx").on(table.userId),
+  ],
 );
 
 // ============================================================
@@ -114,6 +143,139 @@ export const companionToken = fitness.table(
     uniqueIndex("companion_token_user_connection_type_idx")
       .on(table.userId, table.connectionType)
       .where(sql`${table.revokedAt} IS NULL`),
+  ],
+);
+
+// ============================================================
+// Durable account erasure
+// ============================================================
+
+/**
+ * Short-lived activation capabilities created before account erasure begins.
+ *
+ * The bearer itself is never stored. This table intentionally has no user
+ * foreign key because activation deletes authentication state in the same
+ * transaction that consumes the preparation.
+ */
+export const accountErasurePreparation = fitness.table(
+  "account_erasure_preparation",
+  {
+    userId: uuid("user_id").primaryKey(),
+    requestId: uuid("request_id").notNull(),
+    preparationTokenHash: text("preparation_token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("account_erasure_preparation_request_idx").on(table.requestId),
+    uniqueIndex("account_erasure_preparation_token_idx").on(table.preparationTokenHash),
+  ],
+);
+
+/**
+ * Live account-erasure state plus the opaque public-status credential.
+ *
+ * userId intentionally has no foreign key: the coordinator clears it only after
+ * deleting user_profile, while the pseudonymous request remains available for
+ * restore-ledger enforcement and public completion status.
+ */
+export const accountErasureRequest = fitness.table(
+  "account_erasure_request",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id"),
+    userHash: text("user_hash").notNull(),
+    userHashKeyId: text("user_hash_key_id").notNull(),
+    writeFenceHash: text("write_fence_hash").notNull(),
+    preparationTokenHash: text("preparation_token_hash"),
+    statusTokenHash: text("status_token_hash").notNull(),
+    status: text("status").notNull().default("pending"),
+    currentPhase: text("current_phase"),
+    encryptedRemoteSnapshot: text("encrypted_remote_snapshot"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    replayRetainedUntil: timestamp("replay_retained_until", { withTimezone: true }).notNull(),
+    completionDeadline: timestamp("completion_deadline", { withTimezone: true }).notNull(),
+    retryAt: timestamp("retry_at", { withTimezone: true }),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    phaseProgress: jsonb("phase_progress").notNull().default({}),
+    failureCount: bigint("failure_count", { mode: "number" }).notNull().default(0),
+    recoveredFromRestore: timestamp("recovered_from_restore", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    piiScrubbedAt: timestamp("pii_scrubbed_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "account_erasure_request_status_valid",
+      sql`${table.status} IN (
+        'pending',
+        'running',
+        'waiting_replay',
+        'waiting_retention',
+        'failed',
+        'completed'
+      )`,
+    ),
+    uniqueIndex("account_erasure_request_active_user_idx").on(table.userId),
+    uniqueIndex("account_erasure_request_write_fence_idx").on(table.writeFenceHash),
+    uniqueIndex("account_erasure_request_preparation_token_idx").on(table.preparationTokenHash),
+    uniqueIndex("account_erasure_request_status_token_idx").on(table.statusTokenHash),
+    index("account_erasure_request_status_retry_idx").on(table.status, table.retryAt),
+  ],
+);
+
+export const accountErasureCheckpoint = fitness.table(
+  "account_erasure_checkpoint",
+  {
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => accountErasureRequest.id, { onDelete: "cascade" }),
+    phase: text("phase").notNull(),
+    details: jsonb("details"),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.requestId, table.phase] })],
+);
+
+export const accountErasureIdentityFence = fitness.table(
+  "account_erasure_identity_fence",
+  {
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => accountErasureRequest.id, { onDelete: "restrict" }),
+    identityKind: text("identity_kind").notNull(),
+    keyId: text("key_id").notNull(),
+    identityHash: text("identity_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "account_erasure_identity_fence_kind_valid",
+      sql`${table.identityKind} IN ('provider_account', 'email')`,
+    ),
+    primaryKey({
+      columns: [table.identityKind, table.keyId, table.identityHash],
+    }),
+    index("account_erasure_identity_fence_request_idx").on(table.requestId),
+  ],
+);
+
+export const accountErasureOutbox = fitness.table(
+  "account_erasure_outbox",
+  {
+    requestId: uuid("request_id")
+      .primaryKey()
+      .references(() => accountErasureRequest.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("account_erasure_outbox_status_valid", sql`${table.status} IN ('pending', 'dispatched')`),
+    index("account_erasure_outbox_pending_idx").on(table.status, table.createdAt),
   ],
 );
 
@@ -232,6 +394,39 @@ export const userBilling = fitness.table(
   (table) => [
     index("user_billing_stripe_customer_idx").on(table.stripeCustomerId),
     index("user_billing_stripe_subscription_idx").on(table.stripeSubscriptionId),
+  ],
+);
+
+export const userExternalEffect = fitness.table(
+  "user_external_effect",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    system: text("system").notNull(),
+    resourceType: text("resource_type").notNull(),
+    externalId: text("external_id").notNull(),
+    contactEmail: text("contact_email"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "user_external_effect_supported_resource",
+      sql`(
+        ${table.system} = 'stripe'
+        AND ${table.resourceType} = 'customer'
+      ) OR (
+        ${table.system} = 'zoho_desk'
+        AND ${table.resourceType} = 'ticket'
+      )`,
+    ),
+    uniqueIndex("user_external_effect_resource_idx").on(
+      table.system,
+      table.resourceType,
+      table.externalId,
+    ),
+    index("user_external_effect_user_idx").on(table.userId),
   ],
 );
 

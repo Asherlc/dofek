@@ -226,13 +226,16 @@ describe("MapMyFitnessProvider", () => {
     process.env.MAPMYFITNESS_CLIENT_ID = "id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "secret";
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      Response.json({
-        access_token: "access-xyz",
-        refresh_token: "refresh-xyz",
-        expires_in: 3600,
-      }),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "access-xyz",
+          refresh_token: "refresh-xyz",
+          expires_in: 3600,
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ id: 123456 }));
 
     const setup = new MapMyFitnessProvider(mockFetch).authSetup();
     const { exchangeCode } = setup;
@@ -240,9 +243,96 @@ describe("MapMyFitnessProvider", () => {
     const tokens = await exchangeCode("auth-code-123");
 
     expect(tokens.accessToken).toBe("access-xyz");
+    expect(tokens.providerAccountId).toBe("123456");
     const [url, init] = mockFetch.mock.calls[0] ?? [];
     expect(String(url)).toContain("/oauth2/access_token/");
     expect(String(init?.body)).toContain("auth-code-123");
+    expect(String(mockFetch.mock.calls[1]?.[0])).toBe(
+      "https://api.mapmyfitness.com/v7.1/user/self/",
+    );
+  });
+
+  it("exposes issued tokens before identity lookup can fail", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "access-xyz",
+          refresh_token: "refresh-xyz",
+          expires_in: 3600,
+          user_id: "123456",
+        }),
+      )
+      .mockResolvedValueOnce(new Response("identity unavailable", { status: 503 }));
+    const issuedTokens = vi.fn();
+    const setup = new MapMyFitnessProvider(mockFetch).authSetup();
+    if (!setup.exchangeCode) throw new Error("exchangeCode not defined");
+
+    await expect(setup.exchangeCode("auth-code-123", undefined, issuedTokens)).rejects.toThrow(
+      "mapmyfitness API service unavailable (503)",
+    );
+    expect(issuedTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "access-xyz", providerAccountId: "123456" }),
+    );
+  });
+
+  it("replays the documented authorization revocation request", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const setup = new MapMyFitnessProvider(mockFetch).authSetup();
+    const revoke = setup.revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "map-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      providerAccountId: "123456",
+      refreshToken: "map-refresh",
+      scopes: "read",
+    };
+
+    await revoke(tokens);
+    await revoke(tokens);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    for (const [input, init] of mockFetch.mock.calls) {
+      const url = new URL(String(input));
+      expect(url.origin + url.pathname).toBe(
+        "https://api.mapmyfitness.com/v7.1/oauth2/connection/",
+      );
+      expect(url.searchParams.get("user_id")).toBe("123456");
+      expect(url.searchParams.get("client_id")).toBe("map-client");
+      expect(init?.method).toBe("DELETE");
+      expect(init?.headers).toEqual({
+        Accept: "application/json",
+        Authorization: "Bearer map-access",
+        "Api-Key": "map-client",
+      });
+    }
+  });
+
+  it("requires a durable user id and the documented 204 response", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi.fn().mockResolvedValue(new Response("not found", { status: 404 }));
+    const revoke = new MapMyFitnessProvider(mockFetch).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "map-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      refreshToken: "map-refresh",
+      scopes: "read",
+    };
+
+    await expect(revoke(tokens)).rejects.toThrow(
+      "Reconnect MapMyFitness before deleting your account",
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+    await expect(revoke({ ...tokens, providerAccountId: "123456" })).rejects.toThrow(
+      "MapMyFitness authorization revocation failed (404)",
+    );
   });
 
   it("validate returns errors for missing env vars", () => {

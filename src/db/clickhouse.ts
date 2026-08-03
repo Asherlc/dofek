@@ -16,9 +16,11 @@ export interface ClickHouseCommandClient {
   }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     abort_signal?: AbortSignal;
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
   close?(): Promise<void>;
 }
@@ -26,9 +28,11 @@ export interface ClickHouseCommandClient {
 export interface ClickHouseClient extends ClickHouseCommandClient {
   query<TRow extends object>(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     abort_signal?: AbortSignal;
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
 }
 

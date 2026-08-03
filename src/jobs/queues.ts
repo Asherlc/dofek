@@ -82,12 +82,14 @@ export const zipEntryExtractJobDataSchema = z.object({
   outputExtension: z.string().regex(/^[A-Za-z0-9]+$/),
   maxBytes: z.number().int().positive().optional(),
   nestedArchiveMaxBytes: z.number().int().positive().optional(),
+  userId: z.uuid(),
 });
 
 export type ZipEntryExtractJobData = z.infer<typeof zipEntryExtractJobDataSchema>;
 
 export interface FitFileImportBatchJobData {
   type: "fit-file-import-batch";
+  userId: string;
 }
 
 export interface ExportJobData {
@@ -170,6 +172,19 @@ export interface ProviderDataDeletionQueue {
   add(name: string, data: ProviderDataDeletionJobData, options?: JobsOptions): Promise<unknown>;
 }
 
+export const accountErasureJobDataSchema = z
+  .object({
+    type: z.literal("account-erasure"),
+    requestId: z.uuid(),
+  })
+  .strict();
+
+export type AccountErasureJobData = z.infer<typeof accountErasureJobDataSchema>;
+
+export interface AccountErasureQueue {
+  add(name: string, data: AccountErasureJobData, options?: JobsOptions): Promise<unknown>;
+}
+
 export type ActivityAnalyticsJobData =
   | ActivityDeleteAnalyticsJobData
   | ActivityRestoreAnalyticsJobData
@@ -188,6 +203,7 @@ export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
 export const PROVIDER_DATA_DELETION_QUEUE = "provider-data-deletion";
+export const ACCOUNT_ERASURE_QUEUE = "account-erasure";
 export const ACTIVITY_DELETE_ANALYTICS_QUEUE = "activity-delete-analytics";
 export const POST_SYNC_DEBOUNCE_MS = 10_000;
 export const SYNC_JOB_RETRY_OPTIONS = {
@@ -204,6 +220,7 @@ const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh"
 const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
 const PROVIDER_DELETE_ANALYTICS_JOB_NAME = "provider-delete-analytics-refresh";
 const PROVIDER_DATA_DELETION_JOB_NAME = "provider-data-deletion";
+const ACCOUNT_ERASURE_JOB_NAME = "account-erasure";
 const DATA_EXPORT_JOB_NAME = "export";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
@@ -377,9 +394,18 @@ export function createProviderDataDeletionQueue(
   });
 }
 
+export function createAccountErasureQueue(
+  connection?: ConnectionOptions,
+): Queue<AccountErasureJobData> {
+  return new Queue(ACCOUNT_ERASURE_QUEUE, {
+    connection: connection ?? getRedisConnection(),
+  });
+}
+
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
 let cachedProviderDataDeletionQueue: Queue<ProviderDataDeletionJobData> | null = null;
+let cachedAccountErasureQueue: Queue<AccountErasureJobData> | null = null;
 let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedDataExportQueue: Queue<ExportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
@@ -463,6 +489,30 @@ export function getProviderDataDeletionQueue(): Queue<ProviderDataDeletionJobDat
     cachedProviderDataDeletionQueue = createProviderDataDeletionQueue();
   }
   return cachedProviderDataDeletionQueue;
+}
+
+export function getAccountErasureQueue(): Queue<AccountErasureJobData> {
+  cachedAccountErasureQueue ??= createAccountErasureQueue();
+  return cachedAccountErasureQueue;
+}
+
+export async function enqueueAccountErasure(
+  request: { id: string },
+  queue: AccountErasureQueue = getAccountErasureQueue(),
+): Promise<void> {
+  await queue.add(
+    ACCOUNT_ERASURE_JOB_NAME,
+    {
+      type: "account-erasure",
+      requestId: request.id,
+    },
+    {
+      attempts: 1,
+      jobId: request.id,
+      removeOnComplete: true,
+      removeOnFail: true,
+    },
+  );
 }
 
 export async function enqueueProviderDataDeletion(
@@ -644,6 +694,7 @@ export async function closeAllQueueResources(): Promise<void> {
   if (cachedActivityDeleteAnalyticsQueue)
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
   if (cachedProviderDataDeletionQueue) closePromises.push(cachedProviderDataDeletionQueue.close());
+  if (cachedAccountErasureQueue) closePromises.push(cachedAccountErasureQueue.close());
   if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
   if (cachedDataExportQueue) closePromises.push(cachedDataExportQueue.close());
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
@@ -653,6 +704,7 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
   cachedProviderDataDeletionQueue = null;
+  cachedAccountErasureQueue = null;
   cachedImportQueue = null;
   cachedDataExportQueue = null;
   cachedFitFileImportQueue = null;

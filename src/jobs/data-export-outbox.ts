@@ -1,5 +1,9 @@
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "../db/account-erasure.ts";
 import { listQueuedDataExportRequests } from "../db/data-export.ts";
-import type { Database } from "../db/typed-sql.ts";
+import type { Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { type DataExportQueue, enqueueDataExport } from "./queues.ts";
@@ -8,15 +12,23 @@ const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
 export async function dispatchDataExportOutbox(
-  database: Database,
+  database: Pick<Database, "execute" | "transaction">,
   queue: DataExportQueue,
   limit = DEFAULT_BATCH_SIZE,
 ): Promise<number> {
   const requests = await listQueuedDataExportRequests(database, limit);
+  let dispatched = 0;
   for (const request of requests) {
-    await enqueueDataExport(request, queue);
+    try {
+      await withAccountErasureUserWriteFence(database, request.userId, async () => {
+        await enqueueDataExport(request, queue);
+      });
+      dispatched++;
+    } catch (error: unknown) {
+      if (!(error instanceof AccountErasureUserFencedError)) throw error;
+    }
   }
-  return requests.length;
+  return dispatched;
 }
 
 export interface DataExportOutboxDispatcher {
@@ -24,7 +36,7 @@ export interface DataExportOutboxDispatcher {
 }
 
 export function startDataExportOutboxDispatcher(
-  database: Database,
+  database: Pick<Database, "execute" | "transaction">,
   queue: DataExportQueue,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 ): DataExportOutboxDispatcher {

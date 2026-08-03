@@ -21,6 +21,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
@@ -31,6 +32,10 @@ import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStateP
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
+import {
+  clearMobileBillingCheckoutOperation,
+  getOrCreateMobileBillingCheckoutOperationId,
+} from "../lib/billing-checkout-operation";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
@@ -232,17 +237,16 @@ export default function SettingsScreen() {
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const setSettingMutation = trpc.settings.set.useMutation();
   const lastUnitReadError = useRef<unknown>(null);
-  const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
-    onSuccess: async () => {
-      await trpcUtils.invalidate();
-      Alert.alert("Data Deleted", "All synced and manually-entered data has been deleted.");
-    },
-    onError: (error) => Alert.alert("Error", error.message),
-  });
   const billingStatus = trpc.billing.status.useQuery();
   const medicationDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
+  const [checkoutClientError, setCheckoutClientError] = useState<string | null>(null);
   const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
-    onSuccess: ({ url }) => {
+    onSuccess: async ({ url }, { operationId }) => {
+      try {
+        await clearMobileBillingCheckoutOperation(operationId);
+      } catch (error: unknown) {
+        captureException(error, { context: "billing-checkout-operation-clear" });
+      }
       void Linking.openURL(url);
     },
   });
@@ -254,6 +258,19 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
+
+  async function startCheckout(): Promise<void> {
+    setCheckoutClientError(null);
+    try {
+      const operationId = await getOrCreateMobileBillingCheckoutOperationId();
+      checkoutSessionMutation.mutate({ operationId });
+    } catch (error: unknown) {
+      captureException(error, { context: "billing-checkout-operation-create" });
+      setCheckoutClientError(
+        error instanceof Error ? error.message : "Checkout could not be started on this device.",
+      );
+    }
+  }
 
   useEffect(() => {
     if (
@@ -315,21 +332,6 @@ export default function SettingsScreen() {
         onPress: () => auth.logout(),
       },
     ]);
-  }
-
-  function handleDeleteAllUserData() {
-    Alert.alert(
-      "Delete All User Data",
-      "Delete all synced and manually-entered data? This action cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteAllDataMutation.mutate(),
-        },
-      ],
-    );
   }
 
   function handleCategoryChange(category: SettingsCategory) {
@@ -690,6 +692,9 @@ export default function SettingsScreen() {
                     {checkoutSessionMutation.error.message}
                   </Text>
                 ) : null}
+                {checkoutClientError ? (
+                  <Text style={styles.billingErrorText}>{checkoutClientError}</Text>
+                ) : null}
                 {portalSessionMutation.error ? (
                   <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
                 ) : null}
@@ -700,7 +705,7 @@ export default function SettingsScreen() {
                         styles.billingPrimaryButton,
                         checkoutSessionMutation.isPending && styles.buttonDisabled,
                       ]}
-                      onPress={() => checkoutSessionMutation.mutate()}
+                      onPress={() => void startCheckout()}
                       activeOpacity={0.7}
                       disabled={checkoutSessionMutation.isPending}
                       accessibilityRole="button"
@@ -867,28 +872,10 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           <Text style={styles.sectionDescription}>
-            Permanently delete all synced and manually-entered data for your account
+            Permanently close your account and delete Dofek-held account and health data
           </Text>
           <View style={styles.dangerCard}>
-            <TouchableOpacity
-              style={[
-                styles.deleteButton,
-                deleteAllDataMutation.isPending && styles.deleteButtonDisabled,
-              ]}
-              onPress={handleDeleteAllUserData}
-              activeOpacity={0.7}
-              disabled={deleteAllDataMutation.isPending}
-              accessibilityRole="button"
-              accessibilityLabel="Delete All User Data"
-              accessibilityState={{
-                busy: deleteAllDataMutation.isPending,
-                disabled: deleteAllDataMutation.isPending,
-              }}
-            >
-              <Text style={styles.deleteButtonText}>
-                {deleteAllDataMutation.isPending ? "Deleting..." : "Delete All User Data"}
-              </Text>
-            </TouchableOpacity>
+            <AccountErasurePanel />
           </View>
         </View>
       ) : null}

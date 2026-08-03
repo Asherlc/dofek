@@ -88,7 +88,9 @@ async function request(body: unknown): Promise<{ status: number; text: string }>
   const app = express();
   app.use(
     "/api/mcp",
-    createMcpRouter({ db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() } }),
+    createMcpRouter({
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+    }),
   );
 
   return new Promise((resolve, reject) => {

@@ -1,8 +1,16 @@
+import { randomUUID } from "node:crypto";
+import * as Sentry from "@sentry/node";
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+  withAccountErasureUserAndIdentityWriteFence,
+} from "dofek/db/account-erasure";
 import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { resolveOrCreateUser } from "../../auth/account-linking.ts";
+import { findExistingUserId, resolveOrCreateUser } from "../../auth/account-linking.ts";
 import { isValidMobileScheme, setSessionCookie } from "../../auth/cookies.ts";
+import { revokeProviderCredentials } from "../../auth/provider-credential-revocation.ts";
 import { createSession } from "../../auth/session.ts";
 import type {
   PendingEmailSignupClaim,
@@ -116,13 +124,12 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     const claimedPending = pendingClaim.entry;
 
     const db = getDb();
-    const { userId, isNewUser } = await resolveOrCreateUser(db, claimedPending.providerId, {
+    const identity = {
       providerAccountId: claimedPending.identity.providerAccountId,
       email: parsedEmail.data,
       emailVerified: false,
       name: claimedPending.identity.name,
-    });
-    await pendingClaimRenewal.throwIfFailed();
+    };
     const { getAllProviders } = await import("dofek/providers/registry");
     await pendingClaimRenewal.throwIfFailed();
     const provider = getAllProviders().find(
@@ -139,16 +146,50 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       return;
     }
 
-    await persistProviderConnection({
+    const targetUserId =
+      (await findExistingUserId(db, claimedPending.providerId, identity)) ?? randomUUID();
+    const activePendingClaimRenewal = pendingClaimRenewal;
+    const result = await withAccountErasureUserAndIdentityWriteFence(
       db,
-      provider,
-      providerName: claimedPending.providerName,
-      apiBaseUrl: claimedPending.apiBaseUrl,
-      tokens: claimedPending.tokens,
-      userId,
-    });
-    await pendingClaimRenewal.throwIfFailed();
-    const sessionInfo = await createSession(db, userId);
+      targetUserId,
+      [
+        {
+          authProvider: claimedPending.providerId,
+          kind: "provider_account",
+          providerAccountId: identity.providerAccountId,
+        },
+        { email: parsedEmail.data, kind: "email" },
+      ],
+      async (transaction) => {
+        const resolution = await resolveOrCreateUser(
+          transaction,
+          claimedPending.providerId,
+          identity,
+          undefined,
+          { newUserId: targetUserId },
+        );
+        if (resolution.userId !== targetUserId) {
+          throw new Error(
+            `Pending identity resolution changed from ${targetUserId} to ${resolution.userId}`,
+          );
+        }
+        await activePendingClaimRenewal.throwIfFailed();
+        await persistProviderConnection({
+          db: transaction,
+          provider,
+          providerName: claimedPending.providerName,
+          apiBaseUrl: claimedPending.apiBaseUrl,
+          tokens: claimedPending.tokens,
+          userId: resolution.userId,
+        });
+        await activePendingClaimRenewal.throwIfFailed();
+        return {
+          ...resolution,
+          sessionInfo: await createSession(transaction, resolution.userId),
+        };
+      },
+    );
+    const { userId, isNewUser, sessionInfo } = result;
     await pendingClaimRenewal.throwIfFailed();
 
     if (claimedPending.mobileScheme && isValidMobileScheme(claimedPending.mobileScheme)) {
@@ -187,6 +228,55 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       if (renewalFailure && renewalFailure !== err) {
         logger.error("[auth] Pending signup claim renewal failed");
       }
+    }
+    if (
+      (err instanceof AccountErasureIdentityFencedError ||
+        err instanceof AccountErasureUserFencedError) &&
+      pendingClaim
+    ) {
+      const fencedClaim = pendingClaim;
+      try {
+        const { getAllProviders } = await import("dofek/providers/registry");
+        const provider = getAllProviders().find(
+          (candidate) => candidate.id === fencedClaim.entry.providerId,
+        );
+        if (!provider) {
+          throw new Error(
+            `Provider ${fencedClaim.entry.providerId} is unavailable for pending credential revocation`,
+          );
+        }
+        const setup = provider.authSetup?.({ host: req.get("host") });
+        await revokeProviderCredentials({
+          oauthConfig: setup?.oauthConfig,
+          providerId: provider.id,
+          revokeExistingTokens: setup?.revokeExistingTokens,
+          tokens: fencedClaim.entry.tokens,
+        });
+        await getPendingEmailSignupStoreRef().complete(fencedClaim);
+        pendingClaim = null;
+      } catch (cleanupError: unknown) {
+        Sentry.captureException(cleanupError, {
+          tags: {
+            context: "pending-email-signup-fenced-cleanup",
+            providerId: fencedClaim.entry.providerId,
+          },
+        });
+        logger.error(`[auth] Fenced pending signup credential cleanup failed: ${cleanupError}`);
+        res
+          .status(500)
+          .type("text/plain")
+          .send("Signup credential cleanup failed — please try again");
+        return;
+      }
+      res
+        .status(409)
+        .type("text/plain")
+        .send(
+          err instanceof AccountErasureIdentityFencedError
+            ? "This identity belongs to an account that is currently being deleted. Try again after deletion completes."
+            : "Account deletion is active for this user.",
+        );
+      return;
     }
     if (pendingClaim) {
       try {

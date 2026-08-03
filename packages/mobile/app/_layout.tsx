@@ -1,11 +1,17 @@
 import * as Sentry from "@sentry/react-native";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import * as Notifications from "expo-notifications";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AccountDeletionStatusScreen } from "../components/AccountDeletionStatusScreen";
+import {
+  loadAnyMobileAccountErasurePreparation,
+  loadMobileAccountErasureStatusCapability,
+} from "../lib/account-erasure-storage";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import {
   initBackgroundAccelerometerSync,
@@ -179,9 +185,24 @@ function TelemetryRouteSync({
 }
 
 function AuthGate() {
-  const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
-    useAuth();
+  const {
+    accountErasureCleanupInProgress,
+    accountSessionOwnerNonce,
+    user,
+    serverUrl,
+    isLoading,
+    sessionToken,
+    bootstrapError,
+    logout,
+    retryBootstrap,
+  } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
+  const [deletionRecoveryReady, setDeletionRecoveryReady] = useState(false);
+  const [hasSavedDeletionRecovery, setHasSavedDeletionRecovery] = useState(false);
+  const [localCleanupPending, setLocalCleanupPending] = useState(false);
+  const [localCleanupOwnerNonce, setLocalCleanupOwnerNonce] = useState<string | null>(null);
   const startupInteractiveMarkedRef = useRef(false);
 
   const [queryClient] = useState(createAppQueryClient);
@@ -230,6 +251,44 @@ function AuthGate() {
   }, [serverUrl, sessionToken]);
 
   useEffect(() => {
+    let active = true;
+    let restored = false;
+    const restoreDeletionState = async (): Promise<void> => {
+      try {
+        const [statusCapability, preparation] = await Promise.all([
+          loadMobileAccountErasureStatusCapability(),
+          loadAnyMobileAccountErasurePreparation(),
+        ]);
+        if (!active) return;
+        restored = true;
+        setHasSavedDeletionRecovery(
+          statusCapability !== null ||
+            (preparation !== null && "confirmationAttemptedAt" in preparation),
+        );
+        setLocalCleanupPending(statusCapability?.localCleanupPending === true);
+        setLocalCleanupOwnerNonce(statusCapability?.cleanupOwnerNonce ?? null);
+        setDeletionRecoveryReady(true);
+      } catch (error: unknown) {
+        captureException(error, { source: "account-erasure-mobile-root-restore" });
+        if (active) {
+          setDeletionRecoveryReady(true);
+        }
+      }
+    };
+    void restoreDeletionState();
+    const appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && !restored) {
+        void restoreDeletionState();
+      }
+    });
+
+    return () => {
+      active = false;
+      appStateSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!user?.id) return;
     return () => {
       queryClient.clear();
@@ -260,7 +319,14 @@ function AuthGate() {
   }, [isLoading, user]);
 
   useEffect(() => {
-    if (!user) {
+    const localCleanupBlocksSession =
+      localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
+    if (
+      !user ||
+      !deletionRecoveryReady ||
+      accountErasureCleanupInProgress ||
+      localCleanupBlocksSession
+    ) {
       setBackgroundSyncReady(false);
       return;
     }
@@ -274,11 +340,26 @@ function AuthGate() {
       idleHandle.cancel();
       setBackgroundSyncReady(false);
     };
-  }, [user]);
+  }, [
+    accountErasureCleanupInProgress,
+    accountSessionOwnerNonce,
+    deletionRecoveryReady,
+    localCleanupOwnerNonce,
+    localCleanupPending,
+    user,
+  ]);
 
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
-    if (!user || !trpcClient || !backgroundSyncReady) return;
+    if (
+      !user ||
+      !trpcClient ||
+      !backgroundSyncReady ||
+      !deletionRecoveryReady ||
+      accountErasureCleanupInProgress ||
+      (localCleanupPending && localCleanupOwnerNonce === accountSessionOwnerNonce)
+    )
+      return;
     startStartupPhase("service-bootstrap");
     let serviceBootstrapFailed = false;
     const syncClient: SyncTrpcClient = {
@@ -404,7 +485,17 @@ function AuthGate() {
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
-  }, [user, trpcClient, queryClient, backgroundSyncReady]);
+  }, [
+    user,
+    trpcClient,
+    queryClient,
+    backgroundSyncReady,
+    accountErasureCleanupInProgress,
+    accountSessionOwnerNonce,
+    deletionRecoveryReady,
+    localCleanupOwnerNonce,
+    localCleanupPending,
+  ]);
 
   if (isLoading) {
     return (
@@ -414,6 +505,15 @@ function AuthGate() {
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
       </>
+    );
+  }
+
+  if (accountErasureCleanupInProgress) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.accent} size="large" />
+        <Text style={styles.authErrorMessage}>Finishing account deletion cleanup…</Text>
+      </View>
     );
   }
 
@@ -449,7 +549,42 @@ function AuthGate() {
     );
   }
 
-  // No user — show login
+  if (!deletionRecoveryReady) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.accent} size="large" />
+      </View>
+    );
+  }
+
+  const localCleanupBlocksSession =
+    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
+  const showPublicDeletionStatus =
+    localCleanupBlocksSession ||
+    (!user && (pathname === "/account-deletion" || hasSavedDeletionRecovery));
+
+  if (showPublicDeletionStatus) {
+    const showLogin = () => {
+      setHasSavedDeletionRecovery(false);
+      router.replace("/login");
+    };
+    return (
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <AccountDeletionStatusScreen
+            onForget={showLogin}
+            onLocalCleanupComplete={() => {
+              setLocalCleanupPending(false);
+              setLocalCleanupOwnerNonce(null);
+            }}
+            onSignIn={showLogin}
+          />
+        </QueryClientProvider>
+      </trpc.Provider>
+    );
+  }
+
+  // No user or recoverable deletion request — show login
   if (!user) {
     return (
       <>
@@ -496,6 +631,12 @@ function AuthGate() {
             name="settings"
             options={{
               title: "Settings",
+            }}
+          />
+          <Stack.Screen
+            name="account-deletion"
+            options={{
+              title: "Account Deletion Status",
             }}
           />
           <Stack.Screen

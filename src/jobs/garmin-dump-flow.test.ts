@@ -69,7 +69,7 @@ describe("attachGarminFitImportFlow", () => {
     expect(mockAdd).toHaveBeenCalledWith({
       name: "fit-file-import-batch",
       queueName: "fit-file-import-batch",
-      data: { type: "fit-file-import-batch" },
+      data: { type: "fit-file-import-batch", userId: "user-1" },
       opts: {
         jobId: "garmin-dump-fit-batch-abc123",
         parent: { id: "import-job-1", queue: "bull:import" },
@@ -104,6 +104,7 @@ describe("attachGarminFitImportFlow", () => {
                 outputExtension: "fit",
                 maxBytes: 128 * 1024 * 1024,
                 nestedArchiveMaxBytes: 1024 * 1024 * 1024,
+                userId: "user-1",
               },
               opts: expect.objectContaining({
                 jobId: expect.stringMatching(/^garmin-dump-fit-extract-[a-f0-9]{64}$/),

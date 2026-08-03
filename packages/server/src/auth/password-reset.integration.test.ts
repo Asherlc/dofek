@@ -1,4 +1,6 @@
+import { initiateAccountErasure } from "dofek/db/account-erasure";
 import { sql } from "drizzle-orm";
+import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -12,6 +14,9 @@ import {
 import { createSession, validateSession } from "./session.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+const RESET_REQUEST_ERASURE_USER_ID = "10000000-0000-4000-8000-000000001995";
+const RESET_CONFIRM_ERASURE_USER_ID = "20000000-0000-4000-8000-000000001995";
+const RESET_EMAIL_ERASURE_USER_ID = "30000000-0000-4000-8000-000000001995";
 const mockSendPlainTextEmail = vi.fn().mockResolvedValue(undefined);
 
 const tokenDurationRowSchema = z.object({
@@ -53,6 +58,81 @@ function extractResetUrlFromLastEmail(): string {
   return resetUrl;
 }
 
+async function waitForAdvisoryLockWaiters(
+  connectionString: string,
+  minimumWaiters: number,
+): Promise<void> {
+  const observer = new Client({ connectionString });
+  await observer.connect();
+  try {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const result = await observer.query<{ waiter_count: string }>(
+        `SELECT count(DISTINCT waiting_lock.pid)::text AS waiter_count
+         FROM pg_locks AS waiting_lock
+         JOIN pg_stat_activity AS waiting_activity
+           ON waiting_activity.pid = waiting_lock.pid
+         WHERE waiting_lock.locktype = 'advisory'
+           AND waiting_lock.granted = false
+           AND waiting_activity.datname = current_database()
+           AND waiting_activity.wait_event = 'advisory'`,
+      );
+      if (Number(result.rows[0]?.waiter_count ?? 0) >= minimumWaiters) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`Expected at least ${minimumWaiters} advisory-lock waiters`);
+  } finally {
+    await observer.end();
+  }
+}
+
+async function waitForErasureEmailOrdering(
+  connectionString: string,
+  userId: string,
+): Promise<"erasure_blocked" | "erasure_committed"> {
+  const observer = new Client({ connectionString });
+  await observer.connect();
+  try {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const result = await observer.query<{
+        erasure_committed: boolean;
+        erasure_waiting: boolean;
+      }>(
+        `SELECT
+           EXISTS (
+             SELECT 1
+             FROM fitness.account_erasure_request
+             WHERE user_id = $1::uuid
+           ) AS erasure_committed,
+           EXISTS (
+             SELECT 1
+             FROM pg_locks AS waiting_lock
+             JOIN pg_stat_activity AS waiting_activity
+               ON waiting_activity.pid = waiting_lock.pid
+             WHERE waiting_lock.locktype = 'advisory'
+               AND waiting_lock.granted = false
+               AND waiting_activity.datname = current_database()
+               AND waiting_activity.wait_event = 'advisory'
+               AND waiting_lock.classid::bigint =
+                 ((hashtextextended($1::text, 0) >> 32) & 4294967295)
+               AND waiting_lock.objid::bigint =
+                 (hashtextextended($1::text, 0) & 4294967295)
+               AND waiting_lock.objsubid = 1
+           ) AS erasure_waiting`,
+        [userId],
+      );
+      const ordering = result.rows[0];
+      if (ordering?.erasure_committed) return "erasure_committed";
+      if (ordering?.erasure_waiting) return "erasure_blocked";
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Account erasure neither committed nor waited for the reset email");
+  } finally {
+    await observer.end();
+  }
+}
+
 describe("password reset service", () => {
   let ctx: TestContext;
 
@@ -71,7 +151,15 @@ describe("password reset service", () => {
     await ctx.db.execute(sql`DELETE FROM fitness.password_reset_token`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_password_credential`);
     await ctx.db.execute(sql`DELETE FROM fitness.auth_account`);
-    await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE id != ${TEST_USER_ID}`);
+    await ctx.db.execute(
+      sql`DELETE FROM fitness.user_profile
+          WHERE id NOT IN (
+            ${TEST_USER_ID}::uuid,
+            ${RESET_REQUEST_ERASURE_USER_ID}::uuid,
+            ${RESET_CONFIRM_ERASURE_USER_ID}::uuid,
+            ${RESET_EMAIL_ERASURE_USER_ID}::uuid
+          )`,
+    );
     await ctx.db.execute(
       sql`UPDATE fitness.user_profile SET email = NULL, name = 'Baseline User' WHERE id = ${TEST_USER_ID}`,
     );
@@ -283,5 +371,149 @@ describe("password reset service", () => {
     await expect(resetPasswordWithToken(ctx.db, token, "new-password123")).rejects.toThrow(
       InvalidPasswordResetTokenError,
     );
+  });
+
+  it("returns the same non-enumerating result when erasure wins a reset-request race", async () => {
+    await registerPasswordUser(
+      ctx.db,
+      {
+        email: "reset-erasure-request@example.com",
+        password: "password123",
+        name: "Reset Request Race",
+      },
+      { newUserId: RESET_REQUEST_ERASURE_USER_ID },
+    );
+    const blocker = new Client({ connectionString: ctx.connectionString });
+    await blocker.connect();
+    let blockerReleased = false;
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
+        RESET_REQUEST_ERASURE_USER_ID,
+      ]);
+      const erasure = initiateAccountErasure(
+        ctx.db,
+        RESET_REQUEST_ERASURE_USER_ID,
+        async () => "encrypted-reset-request-race",
+        async () => undefined,
+      );
+      await waitForAdvisoryLockWaiters(ctx.connectionString, 1);
+      const resetRequest = createPasswordResetToken(ctx.db, "reset-erasure-request@example.com");
+      await waitForAdvisoryLockWaiters(ctx.connectionString, 2);
+      await blocker.query("COMMIT");
+      blockerReleased = true;
+
+      const [, result] = await Promise.all([erasure, resetRequest]);
+
+      expect(result).toEqual({ sent: false });
+      expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+      const tokens = await executeWithSchema(
+        ctx.db,
+        tokenCountRowSchema,
+        sql`SELECT COUNT(*) AS token_count
+            FROM fitness.password_reset_token
+            WHERE user_id = ${RESET_REQUEST_ERASURE_USER_ID}::uuid`,
+      );
+      expect(Number(tokens[0]?.token_count)).toBe(0);
+    } finally {
+      if (!blockerReleased) await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
+  });
+
+  it("rejects password mutation when erasure wins a reset-confirmation race", async () => {
+    await registerPasswordUser(
+      ctx.db,
+      {
+        email: "reset-erasure-confirm@example.com",
+        password: "password123",
+        name: "Reset Confirmation Race",
+      },
+      { newUserId: RESET_CONFIRM_ERASURE_USER_ID },
+    );
+    await createPasswordResetToken(ctx.db, "reset-erasure-confirm@example.com");
+    const token = extractResetTokenFromLastEmail();
+    const blocker = new Client({ connectionString: ctx.connectionString });
+    await blocker.connect();
+    let blockerReleased = false;
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
+        RESET_CONFIRM_ERASURE_USER_ID,
+      ]);
+      const erasure = initiateAccountErasure(
+        ctx.db,
+        RESET_CONFIRM_ERASURE_USER_ID,
+        async () => "encrypted-reset-confirm-race",
+        async () => undefined,
+      );
+      await waitForAdvisoryLockWaiters(ctx.connectionString, 1);
+      const resetConfirmation = resetPasswordWithToken(ctx.db, token, "new-password123");
+      await waitForAdvisoryLockWaiters(ctx.connectionString, 2);
+      await blocker.query("COMMIT");
+      blockerReleased = true;
+
+      await erasure;
+      await expect(resetConfirmation).rejects.toThrow(InvalidPasswordResetTokenError);
+      await expect(
+        authenticatePasswordUser(ctx.db, "reset-erasure-confirm@example.com", "password123"),
+      ).resolves.toEqual({ userId: RESET_CONFIRM_ERASURE_USER_ID });
+      await expect(
+        authenticatePasswordUser(ctx.db, "reset-erasure-confirm@example.com", "new-password123"),
+      ).rejects.toThrow("Invalid email or password");
+    } finally {
+      if (!blockerReleased) await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
+  });
+
+  it("finishes the reset email before a concurrent erasure can commit", async () => {
+    await registerPasswordUser(
+      ctx.db,
+      {
+        email: "reset-erasure-email@example.com",
+        password: "password123",
+        name: "Reset Email Race",
+      },
+      { newUserId: RESET_EMAIL_ERASURE_USER_ID },
+    );
+    let signalEmailStarted: (() => void) | undefined;
+    const emailStarted = new Promise<void>((resolve) => {
+      signalEmailStarted = resolve;
+    });
+    let releaseEmailSend: (() => void) | undefined;
+    const emailCanFinish = new Promise<void>((resolve) => {
+      releaseEmailSend = resolve;
+    });
+    const operationOrder: string[] = [];
+    mockSendPlainTextEmail.mockImplementationOnce(async () => {
+      operationOrder.push("email_started");
+      signalEmailStarted?.();
+      await emailCanFinish;
+      operationOrder.push("email_finished");
+    });
+
+    const resetRequest = createPasswordResetToken(ctx.db, "reset-erasure-email@example.com");
+    await emailStarted;
+    const erasure = initiateAccountErasure(
+      ctx.db,
+      RESET_EMAIL_ERASURE_USER_ID,
+      async () => "encrypted-reset-email-race",
+      async () => undefined,
+    ).then((result) => {
+      operationOrder.push("erasure_committed");
+      return result;
+    });
+
+    try {
+      await expect(
+        waitForErasureEmailOrdering(ctx.connectionString, RESET_EMAIL_ERASURE_USER_ID),
+      ).resolves.toBe("erasure_blocked");
+    } finally {
+      releaseEmailSend?.();
+    }
+    await Promise.all([resetRequest, erasure]);
+
+    expect(operationOrder).toEqual(["email_started", "email_finished", "erasure_committed"]);
   });
 });

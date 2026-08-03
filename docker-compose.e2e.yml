@@ -72,6 +72,38 @@ services:
       retries: 30
       start_period: 5s
 
+  account-erasure-minio:
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: accounterasure
+      MINIO_ROOT_PASSWORD: account-erasure-e2e-secret
+      MINIO_DOMAIN: account-erasure-minio
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
+    networks:
+      default:
+        aliases:
+          - dofek-account-erasure-ledger.account-erasure-minio
+    entrypoint: >
+      /bin/sh -euc "
+      minio server /data --console-address=:36987 &
+      attempts=0;
+      until mc alias set account-erasure-minio http://account-erasure-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 30 ]; then
+          echo account-erasure-minio did not become ready in time >&2;
+          exit 1;
+        fi;
+        sleep 1;
+      done;
+      mc mb --ignore-existing account-erasure-minio/$$ACCOUNT_ERASURE_LEDGER_R2_BUCKET;
+      wait
+      "
+    healthcheck:
+      test: ["CMD", "mc", "ready", "account-erasure-minio"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
   migrate:
     image: e2e-server
     build:
@@ -163,6 +195,12 @@ services:
       PUBLIC_URL: http://localhost:3100
       DISABLE_QUERY_CACHE: "true"
       MATERIALIZED_VIEW_REFRESH_TOKEN: e2e-refresh-token
+      CREDENTIAL_ENCRYPTION_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: '{"activeKeyId":"e2e-v1","keys":{"e2e-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}'
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
+      R2_ENDPOINT: http://account-erasure-minio:9000
+      R2_ACCESS_KEY_ID: accounterasure
+      R2_SECRET_ACCESS_KEY: account-erasure-e2e-secret
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -175,6 +213,8 @@ services:
       redis:
         condition: service_healthy
       redpanda:
+        condition: service_healthy
+      account-erasure-minio:
         condition: service_healthy
     command: ["web"]
     healthcheck:

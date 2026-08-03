@@ -53,6 +53,15 @@ describe("parseStrongExerciseName", () => {
     });
   });
 
+  it("handles long names without pathological parsing time", () => {
+    const longName = `${"a".repeat(10_000)}${" ".repeat(10_000)}b`;
+
+    expect(parseStrongExerciseName(longName)).toEqual({
+      exerciseName: longName,
+      equipment: null,
+    });
+  });
+
   it("trims whitespace", () => {
     expect(parseStrongExerciseName("  Squat (Barbell)  ")).toEqual({
       exerciseName: "Squat",
@@ -143,10 +152,11 @@ describe("importStrongCsv", () => {
       "kg",
     ]);
 
-    expect(sqlText(execute.mock.calls[0]?.[0])).toContain(
-      "SET muscle_groups = COALESCE(muscle_groups, ARRAY[",
-    );
-    expect(sqlText(execute.mock.calls[0]?.[0])).toContain("]::text[]");
+    const exerciseStatement = sqlText(execute.mock.calls[0]?.[0]);
+    expect(exerciseStatement).toContain("muscle_groups = COALESCE(");
+    expect(exerciseStatement).toContain("ARRAY[");
+    expect(exerciseStatement).toContain("fitness.exercise_source");
+    expect(exerciseStatement).toContain("fitness.exercise_alias_source");
   });
 });
 
@@ -965,6 +975,18 @@ describe("parseStrongExerciseName — additional cases", () => {
     const result = parseStrongExerciseName("Curl (Dumbbell)");
     expect(result.exerciseName).toBe("Curl");
     expect(result.equipment).toBe("Dumbbell");
+  });
+
+  it.each([
+    "Curl",
+    "Curl (Dumbbell",
+    "(Dumbbell)",
+    "Curl ()",
+  ])("does not invent equipment for malformed parentheses: %s", (name) => {
+    expect(parseStrongExerciseName(name)).toEqual({
+      equipment: null,
+      exerciseName: name,
+    });
   });
 });
 

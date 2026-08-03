@@ -19,8 +19,10 @@ vi.mock("react-native", () => ({
 const mockIsWatchPaired = vi.fn(() => true);
 const mockIsWatchAppInstalled = vi.fn(() => true);
 const mockRequestWatchRecording = vi.fn(() => Promise.resolve(true));
+const mockEnableAccountSync = vi.fn(() => Promise.resolve(true));
 
 vi.mock("../modules/watch-motion", () => ({
+  enableAccountSync: () => mockEnableAccountSync(),
   isWatchPaired: () => mockIsWatchPaired(),
   isWatchAppInstalled: () => mockIsWatchAppInstalled(),
   requestWatchRecording: () => mockRequestWatchRecording(),
@@ -93,6 +95,8 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     mockIsWatchAppInstalled.mockReturnValue(true);
     mockRequestWatchRecording.mockReset();
     mockRequestWatchRecording.mockResolvedValue(true);
+    mockEnableAccountSync.mockClear();
+    mockEnableAccountSync.mockResolvedValue(true);
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundWatchInertialMeasurementUnitSync();
   });
@@ -115,6 +119,15 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
 
     expect(mockRequestWatchRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-enables account sync before reading pending Watch files", async () => {
+    await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
+
+    expect(mockEnableAccountSync).toHaveBeenCalledOnce();
+    expect(mockEnableAccountSync.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSyncWatchInertialMeasurementUnitFiles.mock.invocationCallOrder[0] ?? Infinity,
+    );
   });
 
   it("skips init when Watch is not paired", async () => {
