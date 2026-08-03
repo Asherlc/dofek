@@ -1,13 +1,17 @@
 ALTER TABLE fitness.activity
 ADD CONSTRAINT activity_perceived_exertion_range
-CHECK (perceived_exertion IS NULL OR perceived_exertion BETWEEN 0 AND 10);
+CHECK (perceived_exertion IS NULL OR perceived_exertion BETWEEN 0 AND 10)
+NOT VALID;
+
+ALTER TABLE fitness.activity
+VALIDATE CONSTRAINT activity_perceived_exertion_range;
 
 CREATE TABLE fitness.body_region (
   id text PRIMARY KEY,
   parent_id text REFERENCES fitness.body_region (id) ON DELETE RESTRICT,
   label text NOT NULL,
   kind text NOT NULL,
-  sort_order integer NOT NULL DEFAULT 0,
+  sort_order bigint NOT NULL DEFAULT 0,
   CONSTRAINT body_region_id_nonempty CHECK (btrim(id) <> ''),
   CONSTRAINT body_region_label_nonempty CHECK (btrim(label) <> ''),
   CONSTRAINT body_region_kind_valid CHECK (kind IN ('body', 'limb', 'hand', 'digit', 'pulley'))
@@ -92,7 +96,7 @@ CREATE TABLE fitness.subjective_symptom (
   check_in_id uuid NOT NULL REFERENCES fitness.subjective_check_in (id) ON DELETE CASCADE,
   body_region_id text NOT NULL REFERENCES fitness.body_region (id) ON DELETE RESTRICT,
   kind text NOT NULL,
-  score integer NOT NULL,
+  score bigint NOT NULL,
   CONSTRAINT subjective_symptom_kind_valid CHECK (kind IN ('soreness', 'stiffness', 'tenderness')),
   CONSTRAINT subjective_symptom_score_range CHECK (score BETWEEN 1 AND 10),
   CONSTRAINT subjective_symptom_unique_kind UNIQUE (check_in_id, body_region_id, kind)
@@ -108,7 +112,7 @@ CREATE TABLE fitness.injury_event (
   body_region_id text NOT NULL REFERENCES fitness.body_region (id) ON DELETE RESTRICT,
   onset_date date NOT NULL,
   resolved_date date,
-  severity integer NOT NULL,
+  severity bigint NOT NULL,
   description text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
