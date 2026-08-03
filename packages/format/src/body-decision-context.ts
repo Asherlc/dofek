@@ -7,23 +7,6 @@ export const BODY_SOURCE_GUIDANCE =
 export const BODY_DECISION_CONTEXT_UNAVAILABLE =
   "Measurement decision context is temporarily unavailable. Refresh to try again.";
 
-export interface BodyDecisionContextView {
-  latestMeasurement: {
-    recordedAtLocal: string;
-    weightKg: number;
-    providerId: string;
-    sourceName: string | null;
-  } | null;
-  variation: {
-    status: "available" | "insufficient_data";
-    observations: number;
-    minimumObservations: number;
-    maximumObservations: number;
-    lowerResidualKg: number | null;
-    upperResidualKg: number | null;
-  };
-}
-
 interface BodyDecisionLatestMeasurement {
   recordedAtLocal: string;
   weightKg: number;
@@ -38,6 +21,11 @@ interface BodyDecisionVariation {
   maximumObservations: number;
   lowerResidualKg: number | null;
   upperResidualKg: number | null;
+}
+
+export interface BodyDecisionContextView {
+  latestMeasurement: BodyDecisionLatestMeasurement | null;
+  variation: BodyDecisionVariation;
 }
 
 export function formatBodyDecisionProvenance(

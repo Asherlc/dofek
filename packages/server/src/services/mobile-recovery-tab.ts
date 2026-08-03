@@ -10,6 +10,7 @@ import {
 } from "@dofek/recovery/stress";
 import { baselineReadinessComponents } from "@dofek/scoring/scoring";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -265,7 +266,10 @@ export async function loadMobileRecoveryTab(
         endDate,
         healthspanWeeks * 7,
       ),
-      bodyRepo.getBodyDecisionContext(endDate),
+      bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
+        captureException(error);
+        return null;
+      }),
     ],
   );
 

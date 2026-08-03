@@ -1,3 +1,4 @@
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { dateWindowStartString } from "../lib/date-window.ts";
@@ -17,6 +18,10 @@ import { loadMobileRecoveryTab } from "./mobile-recovery-tab.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn(async () => null),
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
 }));
 
 vi.mock("../routers/healthspan-query.ts", () => ({
@@ -110,6 +115,7 @@ async function runRecoveryTab(
     endDate?: string;
     processingStatus?: "syncing" | "sync_error" | null;
     decisionContext?: BodyDecisionContext | null;
+    decisionContextError?: Error;
   } = {},
 ) {
   const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
@@ -152,11 +158,16 @@ async function runRecoveryTab(
     goal: null,
     projectionLine: [],
   });
-  vi.spyOn(
+  const decisionContextSpy = vi.spyOn(
     (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
       .prototype,
     "getBodyDecisionContext",
-  ).mockResolvedValue(options.decisionContext ?? null);
+  );
+  if (options.decisionContextError) {
+    decisionContextSpy.mockRejectedValue(options.decisionContextError);
+  } else {
+    decisionContextSpy.mockResolvedValue(options.decisionContext ?? null);
+  }
   vi.spyOn(
     (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
     "get",
@@ -198,6 +209,18 @@ describe("loadMobileRecoveryTab", () => {
     const result = await runRecoveryTab([], { decisionContext });
 
     expect(result.decisionContext).toEqual(decisionContext);
+  });
+
+  it("keeps recovery data when body decision context fails", async () => {
+    const error = new Error("body decision context unavailable");
+
+    const result = await runRecoveryTab([recoveryRow()], {
+      decisionContextError: error,
+    });
+
+    expect(result.decisionContext).toBeNull();
+    expect(result.readinessScore).toHaveLength(1);
+    expect(captureException).toHaveBeenCalledWith(error);
   });
 
   it("uses one daily_recovery query for readiness and stress", async () => {

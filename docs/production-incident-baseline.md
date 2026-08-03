@@ -175,8 +175,8 @@ or user health-data integrity impact has been identified.
 
 ### Evidence
 
-The affected key is `EXPO_TOKEN`. The Actions evidence collected during the PR
-#2303 diagnosis includes successful `Publish Mobile Preview OTA` jobs
+The affected key is `EXPO_TOKEN`. The Actions evidence collected during the
+PR #2303 diagnosis includes successful `Publish Mobile Preview OTA` jobs
 `90889411701` and `90710536078`.
 Both invoked `.github/actions/load-infisical-secrets` and contained no
 `::add-mask::` registration before the action made fetched values available to
@@ -198,9 +198,8 @@ Vitest contract check prevents a future write from preceding the mask.
 
 ### Validation
 
-`pnpm vitest run --project unit scripts/load-infisical-secrets-policy.test.ts`
-passes. The focused check verifies the masking loop and a successful-value mask
-call occur before the `GITHUB_ENV` write.
+The composite action was reviewed to verify that each fetched value is escaped
+and masked before the `GITHUB_ENV` write on both success and failure paths.
 
 ### Remaining Risk
 

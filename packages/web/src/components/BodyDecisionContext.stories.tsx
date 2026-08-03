@@ -56,3 +56,9 @@ export const InsufficientData: Story = {
     },
   },
 };
+
+export const Unavailable: Story = {
+  args: {
+    context: null,
+  },
+};

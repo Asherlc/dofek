@@ -107,7 +107,10 @@ runs:
         mask_value() {
           local mask_line
           while IFS= read -r mask_line || [ -n "$mask_line" ]; do
-            echo "::add-mask::$mask_line"
+            mask_line="${mask_line//'%'/'%25'}"
+            mask_line="${mask_line//$'\r'/'%0D'}"
+            mask_line="${mask_line//$'\n'/'%0A'}"
+            printf '::add-mask::%s\n' "$mask_line"
           done <<< "$1"
         }
 

@@ -156,7 +156,9 @@ describe("fetchBodyCompRows", () => {
     expect(queryText).toContain(
       "toString(toDate(toTimeZone(body_measurements.recorded_at, {timezone:String}))) AS date",
     );
-    expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
+    expect(queryText).toContain(
+      "formatDateTime(body_measurements.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at",
+    );
     expect(queryText).toContain(
       "AND toDate(toTimeZone(recorded_at, {timezone:String})) <= today()",
     );
