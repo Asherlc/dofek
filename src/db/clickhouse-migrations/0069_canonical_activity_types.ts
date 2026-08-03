@@ -150,7 +150,8 @@ async function migrateReplicatedActivity(client: ClickHouseCommandClient): Promi
     client,
     `SELECT throwIf(countIf(canonical_type = '') > 0 OR countIf(provider_type = '') > 0,
   'Canonical activity type backfill left unmapped rows')
-FROM postgres_fitness.activity`,
+FROM postgres_fitness.activity
+WHERE _peerdb_is_deleted = 0`,
   );
 }
 
@@ -215,7 +216,8 @@ export function createMigration(): ClickHouseMigration {
       "ALTER TABLE analytics.activity_summary_rows RENAME COLUMN activity_type TO canonical_type",
       `SELECT throwIf(countIf(canonical_type = '') > 0 OR countIf(provider_type = '') > 0,
   'Canonical activity type backfill left unmapped rows')
-FROM postgres_fitness.activity`,
+FROM postgres_fitness.activity
+WHERE _peerdb_is_deleted = 0`,
     ],
     run: async (client) => {
       await migrateReplicatedActivity(client);

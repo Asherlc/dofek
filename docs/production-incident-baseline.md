@@ -7,6 +7,79 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-03: Production deploy blocked by missing secrets and tombstone validation
+
+### Symptoms
+
+The [Deploy Web run](https://github.com/Asherlc/dofek/actions/runs/30807158839)
+first failed in the deploy-stack job before any Docker stack deployment because
+the rendered production dotenv did not contain the four account-erasure
+processor and retention prerequisites `BREVO_API_KEY`,
+`POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, and `SENTRY_ORG`. After those
+secrets were provisioned, the rerun reached migrations and failed while
+validating the canonical activity-type backfill.
+
+### User Impact
+
+No stack mutation or new production user impact was observed because the
+deployment stopped during prerequisite validation. The release containing the
+account-erasure workflow remains blocked from production.
+
+### Evidence
+
+The first fatal line in [the original job 91665420690](https://github.com/Asherlc/dofek/actions/runs/30807158839/job/91665420690)
+was `Error: Rendered Infisical dotenv is missing required keys:
+BREVO_API_KEY, POSTHOG_PERSONAL_API_KEY, POSTHOG_PROJECT_ID, SENTRY_ORG`, from
+[`scripts/validate-deploy-env.ts`](../scripts/validate-deploy-env.ts). The
+preceding production-deploy eligibility, target-resolution, and Terraform jobs
+passed. An authenticated Infisical project inspection showed that the CI
+machine identity has the project-level Viewer role, while all four names were
+absent from the Production environment (and also absent from Development and
+Staging). The GitHub OIDC machine-identity export therefore could not render
+them.
+
+The rerun passed Infisical export, required-secret validation, dotenv
+rendering, stack validation, image pulls, and backup checks, then failed at
+[`Run migrations` in job 91725065218](https://github.com/Asherlc/dofek/actions/runs/30807158839/job/91725065218)
+with `Canonical activity type backfill left unmapped rows`. A read-only query
+of production ClickHouse found 761 empty-type rows; every one had
+`_peerdb_is_deleted=1` and default epoch activity fields, while the live rows
+passed the same validation when filtered with `_peerdb_is_deleted=0`.
+
+### Root Cause
+
+There were two independent causes: the four account-erasure processor and
+retention prerequisites were not provisioned in Infisical's Production
+environment, and migration `0069_canonical_activity_types` treated deleted
+PeerDB rows with empty default payloads as live rows during its validation
+query. The CI machine identity's Viewer role was sufficient to read project
+secrets; the first failure was a missing-secret configuration issue, not a
+repository or GitHub Actions permissions issue.
+
+### Fix or Mitigation
+
+No repository workaround, fallback, retry, or weakened validation was added.
+All four credentials have now been provisioned in Production. Migration
+`0069_canonical_activity_types` now excludes rows where
+`_peerdb_is_deleted != 0` from the unmapped-row validation; no retry,
+fallback, or weakened validation was added. The required credential contract
+is documented in the
+[`deploy/README.md`](../deploy/README.md) deployment runbook.
+
+### Validation
+
+The corrected migration unit suite passes: 8 tests. The production validation
+query excluding deleted rows returns no unmapped live rows. The full local
+ClickHouse integration test could not start because the local Docker daemon was
+not running. The corrected image still needs to be deployed and the workflow
+rerun to clear the partially applied migration.
+
+### Remaining Risk
+
+The production host has a partially applied but unrecorded migration from the
+failed rerun; the corrected image must complete it before the release is
+considered deployed.
+
 ## 2026-08-02: Local integration validation hit Compose and Redpanda host limits
 
 ### Symptoms

@@ -74,6 +74,7 @@ describe("0069_canonical_activity_types", () => {
     );
     expect(commands.join("\n")).toContain("canonical_type = CASE canonical_type");
     expect(commands.join("\n")).toContain("SELECT throwIf(countIf(canonical_type = '') > 0");
+    expect(commands.join("\n")).toContain("WHERE _peerdb_is_deleted = 0");
   });
 
   it("fails when the client cannot inspect ClickHouse columns", async () => {
