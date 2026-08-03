@@ -22,7 +22,7 @@ const injuryFieldsSchema = z.object({
   bodyRegionId: z.string().min(1),
   onsetDate: dateSchema,
   resolvedDate: dateSchema.nullable(),
-  severity: z.number().int().min(0).max(10),
+  severity: z.number().int().min(0).max(10).nullable(),
   description: z.string().trim().min(1),
 });
 
@@ -68,7 +68,7 @@ export const subjectiveRouter = router({
         bodyRegionId: z.string().min(1).optional(),
         onsetDate: dateSchema.optional(),
         resolvedDate: dateSchema.nullable().optional(),
-        severity: z.number().int().min(0).max(10).optional(),
+        severity: z.number().int().min(0).max(10).nullable().optional(),
         description: z.string().trim().min(1).optional(),
       }),
     )

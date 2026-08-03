@@ -39,7 +39,7 @@ const injuryRowSchema = z.object({
   body_region_id: z.string(),
   onset_date: dateStringSchema,
   resolved_date: dateStringSchema.nullable(),
-  severity: z.coerce.number().int().min(0).max(10),
+  severity: z.coerce.number().int().min(0).max(10).nullable(),
   description: z.string(),
   created_at: timestampStringSchema,
   updated_at: timestampStringSchema,
@@ -132,7 +132,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
     bodyRegionId: string;
     onsetDate: string;
     resolvedDate: string | null;
-    severity: number;
+    severity: number | null;
     description: string;
   }): Promise<InjuryEvent> {
     const rows = await this.query(
@@ -158,7 +158,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
       bodyRegionId: string;
       onsetDate: string;
       resolvedDate: string | null;
-      severity: number;
+      severity: number | null;
       description: string;
     }>,
   ): Promise<InjuryEvent | null> {

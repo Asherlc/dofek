@@ -1,5 +1,5 @@
-import { formatDateYmd } from "@dofek/format/format";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -21,7 +21,7 @@ function isInjuryKind(value: string): value is InjuryKind {
 }
 
 export function SubjectiveTrackingPanel() {
-  const date = useMemo(() => formatDateYmd(), []);
+  const date = useTodayQueryDate();
   const utils = trpc.useUtils();
   const checkIn = trpc.subjective.checkIn.useQuery({ date });
   const regions = trpc.subjective.regions.useQuery();
@@ -49,6 +49,7 @@ export function SubjectiveTrackingPanel() {
       setInjuryOnsetDate(date);
       setInjuryResolvedDate(null);
       void utils.subjective.injuries.invalidate();
+      void utils.subjective.timeline.invalidate();
     },
     onError: (error) => captureException(error, { operation: "subjective.createInjury" }),
   });
@@ -292,7 +293,9 @@ export function SubjectiveTrackingPanel() {
           <ul className="space-y-1 text-sm">
             {injuries.data.map((injury) => (
               <li key={injury.id}>
-                {injury.kind} · {injury.description} · {injury.severity}/10 · {injury.onset_date}
+                {injury.kind} · {injury.description} ·{" "}
+                {injury.severity == null ? "Severity not recorded" : `${injury.severity}/10`} ·{" "}
+                {injury.onset_date}
               </li>
             ))}
           </ul>

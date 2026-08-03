@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -24,6 +24,7 @@ export function SubjectiveTrackingPanel() {
   const [savedSymptoms, setSavedSymptoms] = useState<
     Array<{ bodyRegionId: string; kind: "soreness" | "stiffness" | "tenderness"; score: number }>
   >([]);
+  const initializedCheckInRef = useRef(false);
   const save = trpc.subjective.saveCheckIn.useMutation({
     onSuccess: (result) => {
       setSavedSymptoms(
@@ -50,7 +51,8 @@ export function SubjectiveTrackingPanel() {
   });
 
   useEffect(() => {
-    if (!checkIn.data) return;
+    if (!checkIn.data || initializedCheckInRef.current) return;
+    initializedCheckInRef.current = true;
     setSavedSymptoms(
       checkIn.data.symptoms.map((symptom) => ({
         bodyRegionId: symptom.body_region_id,
@@ -223,7 +225,8 @@ export function SubjectiveTrackingPanel() {
       ) : injuries.data?.length ? (
         injuries.data.map((injury) => (
           <Text key={injury.id} style={styles.injury}>
-            {injury.kind}: {injury.description} ({injury.severity}/10)
+            {injury.kind}: {injury.description} (
+            {injury.severity == null ? "severity not recorded" : `${injury.severity}/10`})
           </Text>
         ))
       ) : (

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     captureException: vi.fn(),
     checkInResult: { data: { logged: false, symptoms: [] }, error: null, isLoading: false },
     createInjury: vi.fn(),
+    saveCheckIn: vi.fn(),
     injuriesResult: { data: [], error: null, isLoading: false },
     invalidate: vi.fn(),
     regionsResult: {
@@ -40,7 +41,9 @@ vi.mock("../lib/trpc", () => ({
       },
       injuries: { useQuery: () => mocks.injuriesResult },
       regions: { useQuery: () => mocks.regionsResult },
-      saveCheckIn: { useMutation: () => ({ error: null, isPending: false, mutate: vi.fn() }) },
+      saveCheckIn: {
+        useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }),
+      },
     },
   },
 }));
@@ -51,7 +54,17 @@ describe("SubjectiveTrackingPanel", () => {
   beforeEach(() => {
     mocks.captureException.mockReset();
     mocks.createInjury.mockReset();
+    mocks.saveCheckIn.mockReset();
     mocks.invalidate.mockReset();
+    mocks.regionsResult.data = [{ id: "left_hand", label: "Left hand" }];
+    mocks.regionsResult.error = null;
+    mocks.regionsResult.isLoading = false;
+    mocks.checkInResult.data = { logged: false, symptoms: [] };
+    mocks.checkInResult.error = null;
+    mocks.checkInResult.isLoading = false;
+    mocks.injuriesResult.data = [];
+    mocks.injuriesResult.error = null;
+    mocks.injuriesResult.isLoading = false;
   });
 
   it("creates an injury with an explicit zero severity", () => {
@@ -94,6 +107,22 @@ describe("SubjectiveTrackingPanel", () => {
         resolvedDate: "2026-08-01",
       }),
     );
+  });
+
+  it("preserves unsaved symptoms when the check-in refetches", () => {
+    const view = render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByLabelText("Choose body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
+
+    mocks.checkInResult.data = { logged: false, symptoms: [] };
+    view.rerender(<SubjectiveTrackingPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
+      date: "2026-08-02",
+      symptoms: [{ bodyRegionId: "left_hand", kind: "soreness", score: 1 }],
+    });
   });
 
   it("shows a region query error instead of enabling an empty selector", () => {

@@ -126,4 +126,30 @@ describe("subjectiveRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  it("accepts nullable injury severity", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand",
+      onset_date: "2026-08-02",
+      resolved_date: null,
+      severity: null,
+      description: "Hand soreness",
+      created_at: "2026-08-02T08:00:00Z",
+      updated_at: "2026-08-02T08:00:00Z",
+    };
+    const { caller } = makeCaller([[injury]]);
+
+    await expect(
+      caller.createInjury({
+        kind: "niggle",
+        bodyRegionId: "left_hand",
+        onsetDate: "2026-08-02",
+        resolvedDate: null,
+        severity: null,
+        description: "Hand soreness",
+      }),
+    ).resolves.toEqual(injury);
+  });
 });

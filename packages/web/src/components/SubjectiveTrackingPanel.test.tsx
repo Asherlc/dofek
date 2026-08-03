@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/telemetry.ts", () => ({ captureException: mocks.captureException }));
+vi.mock("../hooks/useTodayQueryDate.ts", () => ({
+  useTodayQueryDate: () => "2026-08-02",
+}));
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({

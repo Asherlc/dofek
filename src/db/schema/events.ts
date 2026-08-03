@@ -316,7 +316,7 @@ export const injuryEvent = fitness.table(
       .references(() => bodyRegion.id, { onDelete: "restrict" }),
     onsetDate: date("onset_date").notNull(),
     resolvedDate: date("resolved_date"),
-    severity: integer("severity").notNull(),
+    severity: integer("severity"),
     description: text("description").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
