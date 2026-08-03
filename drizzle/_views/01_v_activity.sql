@@ -258,6 +258,10 @@ merged AS (
     bounds.started_at,
     bounds.ended_at,
     b.source_name,
+    (SELECT r.perceived_exertion
+     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
+     WHERE fg2.group_id = b.group_id AND r.perceived_exertion IS NOT NULL
+     ORDER BY r.prio ASC, r.id ASC LIMIT 1) AS perceived_exertion,
     (SELECT r.name FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.name IS NOT NULL
      ORDER BY r.prio ASC LIMIT 1) AS name,
@@ -280,14 +284,15 @@ merged AS (
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
      ORDER BY r.prio ASC LIMIT 1) AS local_time_source,
-    (SELECT jsonb_object_agg(key, value)
+    (SELECT jsonb_object_agg(sub.key, sub.value)
      FROM (
-       SELECT key, value, ROW_NUMBER() OVER (PARTITION BY key ORDER BY r.prio ASC) AS rn
+       SELECT raw_entry.key, raw_entry.value,
+              ROW_NUMBER() OVER (PARTITION BY raw_entry.key ORDER BY r.prio ASC) AS rn
        FROM final_groups fg2
        JOIN ranked r ON r.id = fg2.activity_id,
-       LATERAL jsonb_each(COALESCE(r.raw, '{}'::jsonb))
+       LATERAL jsonb_each(COALESCE(r.raw, '{}'::jsonb)) AS raw_entry (key, value)
        WHERE fg2.group_id = b.group_id
-     ) sub WHERE rn = 1
+     ) sub WHERE sub.rn = 1
     ) AS raw,
     (SELECT array_agg(DISTINCT r.provider_id ORDER BY r.provider_id)
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
@@ -342,6 +347,7 @@ SELECT
   m.absent_source_external_ids,
   m.start_utc_offset_minutes,
   m.end_utc_offset_minutes,
-  COALESCE(m.local_time_source, 'unknown') AS local_time_source
+  COALESCE(m.local_time_source, 'unknown') AS local_time_source,
+  m.perceived_exertion
 FROM merged m
 ORDER BY m.started_at DESC;

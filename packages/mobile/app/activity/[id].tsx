@@ -29,6 +29,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { RouteMap } from "../../components/RouteMap";
@@ -819,6 +820,7 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
+      <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
 
       {/* Route Map */}
       {hasGps && <RouteMap points={points} hoveredPosition={hoveredPosition} />}

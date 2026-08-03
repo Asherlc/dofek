@@ -813,6 +813,15 @@ entity "user_settings" {
   updated_at : timestamp
 }
 
+entity "body_region" {
+  * id : text <<PK>>
+  --
+  parent_id : text
+  label : text
+  kind : text
+  sort_order : integer
+}
+
 entity "breathwork_session" {
   * id : uuid <<PK>>
   --
@@ -932,6 +941,20 @@ entity "imu_session" {
   created_at : timestamp
 }
 
+entity "injury_event" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  kind : text
+  body_region_id : text <<FK>>
+  onset_date : date
+  resolved_date : date
+  severity : integer
+  description : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "journal_entry" {
   * id : uuid <<PK>>
   --
@@ -1037,6 +1060,24 @@ entity "shared_report" {
   report_data : jsonb
   expires_at : timestamp
   created_at : timestamp
+}
+
+entity "subjective_check_in" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  date : date
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "subjective_symptom" {
+  * id : uuid <<PK>>
+  --
+  check_in_id : uuid <<FK>>
+  body_region_id : text <<FK>>
+  kind : text
+  score : integer
 }
 
 entity "sync_log" {
@@ -1205,6 +1246,8 @@ dexa_scan ||--o{ dexa_scan_region
 user_profile ||--o{ file_upload
 file_upload ||--o{ file_upload_outbox
 user_profile ||--o{ imu_session
+user_profile ||--o{ injury_event
+body_region ||--o{ injury_event
 provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
@@ -1216,6 +1259,9 @@ personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
 user_profile ||--o{ shared_report
+user_profile ||--o{ subjective_check_in
+subjective_check_in ||--o{ subjective_symptom
+body_region ||--o{ subjective_symptom
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 processing_operation ||--o{ processing_flow_marker

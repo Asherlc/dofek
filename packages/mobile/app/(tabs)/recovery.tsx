@@ -38,6 +38,7 @@ import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { SubjectiveTrackingPanel } from "../../components/SubjectiveTrackingPanel";
 import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -283,6 +284,8 @@ export default function RecoveryScreen() {
       }
     >
       <DaySelector days={days} description={description} onChange={setDays} />
+
+      <SubjectiveTrackingPanel />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

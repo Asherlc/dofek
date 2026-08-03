@@ -8,6 +8,7 @@ import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
+import { dateSchema } from "../lib/date-schema.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
@@ -25,6 +26,7 @@ import {
   localDateString,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
+import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
@@ -51,7 +53,6 @@ function dateFromOptionalDateTime(value: string | undefined, timezone: string): 
   return localDateString(value ? new Date(value) : new Date(), timezone);
 }
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const healthMetricSchema = z.enum([
   "hrv",
   "resting_hr",
@@ -277,7 +278,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Daily Health Summary",
       description: "Return server-computed health metrics for one day.",
       inputSchema: {
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        date: dateSchema,
         timezone: z.string().optional(),
       },
     },
@@ -421,14 +422,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Search Activities",
       description: "Search authenticated user activity summaries.",
       inputSchema: {
-        from: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional(),
-        to: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional(),
+        from: dateSchema.optional(),
+        to: dateSchema.optional(),
         query: z.string().max(200).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       },
@@ -603,6 +598,24 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           source_provider: row.providerId,
         })),
       );
+    },
+  );
+
+  server.registerTool(
+    "get_subjective_timeline",
+    {
+      title: "Get Subjective Timeline",
+      description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
+      inputSchema: {
+        start_date: dateSchema,
+        end_date: dateSchema,
+      },
+    },
+    async ({ start_date, end_date }) => {
+      requireMcpScope(context.scopes, "health:read");
+      assertDateRange(start_date, end_date);
+      const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
+      return jsonContent(await repository.timeline(start_date, end_date));
     },
   );
 
