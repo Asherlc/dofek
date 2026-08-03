@@ -233,6 +233,7 @@ const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefi
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockPerceivedExertionMutate = vi.fn();
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -259,6 +260,9 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      setPerceivedExertion: {
+        useMutation: () => ({ mutate: mockPerceivedExertionMutate, isPending: false, error: null }),
+      },
     },
     climbing: {
       activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
@@ -293,6 +297,7 @@ const baseCyclingActivity = {
   },
   name: "Morning Ride",
   notes: null,
+  perceivedExertion: null,
   providerId: "wahoo",
   subsource: null,
   sourceProviders: ["wahoo"],
@@ -369,6 +374,7 @@ beforeEach(() => {
   mockActivityListInvalidate.mockClear();
   mockCalendarWeekListInvalidate.mockClear();
   mockCalendarActivityOverviewInvalidate.mockClear();
+  mockPerceivedExertionMutate.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
@@ -443,6 +449,20 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("renders the activity's session perceived exertion control", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, perceivedExertion: 7 },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByLabelText("Session perceived exertion")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
   });
 
   it("renders server-authored detail state when a metric is unavailable without GPS", async () => {

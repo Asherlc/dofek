@@ -22414,3 +22414,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workspace networks or reconfigure Docker's address pools while preserving
   active workspaces. Then rerun `pnpm compose:up`, verify API and ClickHouse
   health, and repeat the signed Release native audit before merging DQ-18.
+
+## 2026-08-02 — #2247 subjective-input integration test could not allocate Docker network
+
+- **Status:** Unresolved local validation blocker; no production impact.
+- **Symptoms:** `pnpm test:integration -- src/db/subjective-inputs.integration.test.ts --retry=0` stopped during Compose startup before the Postgres fixture ran.
+- **Evidence:** The first fatal line was `failed to create network issue-2247-authorized_default: Error response from daemon: all predefined address pools have been fully subnetted`.
+- **Root cause:** The shared Docker host had exhausted its automatic bridge-network address pools; Docker documents these pools as the source for automatically allocated subnets ([address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
+- **Fix / mitigation:** No repository retry, timeout, skip, or fallback was added. Focused unit tests, typechecks, and migration-policy validation remain available; the database-backed test needs a host with an available isolated network pool.
+- **Remaining risk / follow-up:** Re-run the integration test through `pnpm test:integration` after workspace-scoped Docker network capacity is restored.

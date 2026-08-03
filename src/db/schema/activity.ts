@@ -252,6 +252,10 @@ export const activity = fitness.table(
         AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
       )`,
     ),
+    check(
+      "activity_perceived_exertion_range",
+      sql`${table.perceivedExertion} IS NULL OR ${table.perceivedExertion} BETWEEN 0 AND 10`,
+    ),
   ],
 );
 

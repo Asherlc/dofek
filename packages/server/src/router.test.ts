@@ -191,6 +191,7 @@ describe("appRouter", () => {
       "intervals",
       "journal",
       "support",
+      "subjective",
     ];
 
     // The router definition record should have entries for each sub-router

@@ -1305,6 +1305,21 @@ table fitness.user_settings {
   }
 }
 
+table fitness.body_region {
+  id text [pk, not null]
+  parent_id text
+  label text [not null]
+  kind text [not null]
+  sort_order integer [not null, default: 0]
+
+  indexes {
+    (parent_id, sort_order, id) [name: 'body_region_parent_sort_idx']
+    
+    
+    
+  }
+}
+
 table fitness.breathwork_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -1465,6 +1480,27 @@ table fitness.imu_session {
   }
 }
 
+table fitness.injury_event {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  kind text [not null]
+  body_region_id text [not null]
+  onset_date date [not null]
+  resolved_date date
+  severity integer [not null]
+  description text [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, onset_date) [name: 'injury_event_user_onset_idx']
+    
+    
+    
+    
+  }
+}
+
 table fitness.journal_entry {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   date date [not null]
@@ -1612,6 +1648,34 @@ table fitness.shared_report {
 
   indexes {
     user_id [name: 'shared_report_user_idx']
+  }
+}
+
+table fitness.subjective_check_in {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  date date [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, date) [name: 'subjective_check_in_user_date_key', unique]
+    (user_id, date) [name: 'subjective_check_in_user_date_idx']
+  }
+}
+
+table fitness.subjective_symptom {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  check_in_id uuid [not null]
+  body_region_id text [not null]
+  kind text [not null]
+  score integer [not null]
+
+  indexes {
+    (check_in_id, body_region_id, kind) [name: 'subjective_symptom_unique_kind', unique]
+    body_region_id [name: 'subjective_symptom_region_idx']
+    
+    
   }
 }
 
@@ -1919,6 +1983,10 @@ ref file_upload_outbox_upload_id_file_upload_id_fk: fitness.file_upload_outbox.u
 
 ref imu_session_user_id_user_profile_id_fk: fitness.imu_session.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
+ref injury_event_user_id_user_profile_id_fk: fitness.injury_event.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref injury_event_body_region_id_body_region_id_fk: fitness.injury_event.body_region_id > fitness.body_region.id [delete: restrict, update: no action]
+
 ref journal_entry_provider_id_provider_id_fk: fitness.journal_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref journal_entry_user_id_user_profile_id_fk: fitness.journal_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
@@ -1940,6 +2008,12 @@ ref provider_data_deletion_outbox_user_id_user_profile_id_fk: fitness.provider_d
 ref provider_data_generation_user_id_user_profile_id_fk: fitness.provider_data_generation.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref shared_report_user_id_user_profile_id_fk: fitness.shared_report.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref subjective_check_in_user_id_user_profile_id_fk: fitness.subjective_check_in.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref subjective_symptom_check_in_id_subjective_check_in_id_fk: fitness.subjective_symptom.check_in_id > fitness.subjective_check_in.id [delete: cascade, update: no action]
+
+ref subjective_symptom_body_region_id_body_region_id_fk: fitness.subjective_symptom.body_region_id > fitness.body_region.id [delete: restrict, update: no action]
 
 ref sync_log_provider_id_provider_id_fk: fitness.sync_log.provider_id > fitness.provider.id [delete: no action, update: no action]
 

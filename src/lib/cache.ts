@@ -165,6 +165,7 @@ export const queryCache: CacheStore =
       : new RedisCacheStore();
 
 const USER_QUERY_PREFIXES = {
+  activity: ["activity.", "calendar."],
   breathwork: ["breathwork.history"],
   journalEntries: ["journal.entries", "journal.trends", "behaviorImpact."],
   lifeEvents: ["lifeEvents."],
@@ -172,6 +173,7 @@ const USER_QUERY_PREFIXES = {
   personalExperiments: ["personalExperiments."],
   personalization: ["personalization.", "mobileDashboard.", "recovery.", "stress.", "pmc."],
   sportSettings: ["sportSettings."],
+  subjective: ["subjective."],
 } as const;
 
 export type UserQueryCacheDomain = keyof typeof USER_QUERY_PREFIXES;

@@ -29,6 +29,7 @@ export interface ActivityDetail {
   endedAt: string | null;
   name: string | null;
   notes: string | null;
+  perceivedExertion: number | null;
   providerId: string;
   localTimeContext: RecordLocalTimeContext;
   subsource: string | null;
@@ -68,6 +69,7 @@ export interface ActivityRow {
   ended_at: string | null;
   name: string | null;
   notes: string | null;
+  perceived_exertion: number | null;
   provider_id: string;
   timezone: string | null;
   start_utc_offset_minutes: number | null;
@@ -132,6 +134,10 @@ export class Activity {
 
   get notes(): string | null {
     return this.#row.notes ? String(this.#row.notes) : null;
+  }
+
+  get perceivedExertion(): number | null {
+    return this.#row.perceived_exertion != null ? Number(this.#row.perceived_exertion) : null;
   }
 
   get providerId(): string {
@@ -222,6 +228,7 @@ export class Activity {
       endedAt: this.endedAt,
       name: this.name,
       notes: this.notes,
+      perceivedExertion: this.perceivedExertion,
       providerId: this.providerId,
       localTimeContext: this.localTimeContext,
       subsource: this.subsource,

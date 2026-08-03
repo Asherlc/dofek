@@ -565,6 +565,13 @@
     {
       "idx": 80,
       "version": "7",
+      "when": 1785725169000,
+      "tag": "0069_subjective_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
       "when": 1785770819000,
       "tag": "0062_account_erasure",
       "breakpoints": true
