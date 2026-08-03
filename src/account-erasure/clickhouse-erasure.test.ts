@@ -13,7 +13,15 @@ interface QueryOptions {
   query_params?: Record<string, unknown>;
 }
 
-function emptyCapturedIdentifiers() {
+interface CapturedIdentifiers {
+  activity_ids: string[];
+  operation_ids: string[];
+  record_ids: string[];
+  sleep_ids: string[];
+  string_relation_ids: string[];
+}
+
+function emptyCapturedIdentifiers(): CapturedIdentifiers[] {
   return [
     {
       activity_ids: [],
@@ -25,13 +33,16 @@ function emptyCapturedIdentifiers() {
   ];
 }
 
-function queryReturningTables(tables: readonly Record<string, unknown>[]) {
+function queryReturningTables(
+  tables: readonly Record<string, unknown>[],
+  capturedIdentifiers = emptyCapturedIdentifiers(),
+) {
   return vi.fn(async (options: QueryOptions) => {
     if (options.query.includes("FROM system.tables")) {
       return { json: async () => tables };
     }
     if (options.query.includes(" AS activity_ids")) {
-      return { json: async () => emptyCapturedIdentifiers() };
+      return { json: async () => capturedIdentifiers };
     }
     if (options.query.includes("SELECT DISTINCT _part")) {
       return { json: async () => [] };
@@ -50,6 +61,20 @@ function queryReturningTables(tables: readonly Record<string, unknown>[]) {
     }
     return { json: async () => [{ count: "0" }] };
   });
+}
+
+function managedTable(
+  name: string,
+  columns: readonly (readonly [string, string])[],
+  database = "analytics",
+) {
+  return {
+    age_milliseconds: 1_000_000,
+    columns,
+    database,
+    engine: "ReplacingMergeTree",
+    name,
+  };
 }
 
 function successfulQuery() {
@@ -96,6 +121,14 @@ describe("eraseClickHouseAccount", () => {
     expect(command.mock.calls.map(([options]) => options.query).join("\n")).toContain(
       "ALTER TABLE `analytics`.`daily_sleep`",
     );
+    const mutationCall = command.mock.calls.find(([options]) =>
+      options.query.includes("ALTER TABLE `analytics`.`daily_sleep`"),
+    );
+    expect(mutationCall?.[0].query).toContain("SHA256(toString(user_id))");
+    expect(mutationCall?.[0].query).not.toContain(userId);
+    expect(mutationCall?.[0].query_params).toEqual({
+      user_hash: createHash("sha256").update(userId).digest("hex"),
+    });
     expect(command.mock.calls[0]?.[0]).toEqual({
       query: expect.stringContaining("INSERT INTO ingest.account_erasure_fence"),
       query_params: {
@@ -137,6 +170,116 @@ describe("eraseClickHouseAccount", () => {
     expect(discoveryCall?.[0].query_params).toEqual({
       managed_databases: ["account_erasure_test"],
     });
+  });
+
+  it("handles every supported ownership relation and verified staging schema", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const activityId = "30000000-0000-4000-8000-000000001994";
+    const recordId = "40000000-0000-4000-8000-000000001994";
+    const sleepId = "50000000-0000-4000-8000-000000001994";
+    const capturedIdentifiers = [
+      {
+        activity_ids: [activityId],
+        operation_ids: [operationId],
+        record_ids: [recordId],
+        sleep_ids: [sleepId],
+        string_relation_ids: ["group-1994"],
+      },
+    ];
+    const query = queryReturningTables(
+      [
+        managedTable("activity", [
+          ["id", "UUID"],
+          ["user_id", "UUID"],
+          ["activity_id", "UUID"],
+          ["operation_id", "UUID"],
+          ["member_activity_ids", "Array(UUID)"],
+          ["group_id", "String"],
+          ["email", "String"],
+        ]),
+        managedTable("sleep_session", [
+          ["id", "UUID"],
+          ["user_id", "Nullable(UUID)"],
+          ["sleep_session_id", "UUID"],
+        ]),
+        managedTable("user_profile", [
+          ["id", "UUID"],
+          ["email", "String"],
+        ]),
+        managedTable("daily_sleep", [
+          ["id", "UUID"],
+          ["user_id", "UUID"],
+          ["source_metric_stream_id", "UUID"],
+          ["metadata", "String"],
+        ]),
+        managedTable("relation_rows", [
+          ["activity_id", "UUID"],
+          ["operation_id", "UUID"],
+          ["member_activity_ids", "Array(UUID)"],
+          ["group_id", "String"],
+          ["metric_stream_id", "Nullable(UUID)"],
+        ]),
+        managedTable("group_rows", [["group_id", "String"]]),
+        managedTable("user_profile__dbt_new_data_60000000_0000_4000_8000_000000001994", [
+          ["id", "UUID"],
+          ["email", "String"],
+        ]),
+        managedTable(
+          "user_profile",
+          [
+            ["id", "UUID"],
+            ["email", "String"],
+          ],
+          "postgres_fitness",
+        ),
+        {
+          age_milliseconds: 1_000_000,
+          columns: [
+            ["user_hash", "FixedString(64)"],
+            ["erased_at", "DateTime64(9)"],
+          ],
+          database: "ingest",
+          engine: "ReplacingMergeTree",
+          name: "account_erasure_fence",
+        },
+        {
+          age_milliseconds: 1_000_000,
+          columns: [
+            ["operation_hash", "FixedString(64)"],
+            ["erased_at", "DateTime64(9)"],
+          ],
+          database: "ingest",
+          engine: "ReplacingMergeTree",
+          name: "account_erasure_operation_fence",
+        },
+      ],
+      capturedIdentifiers,
+    );
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        {
+          activityIds: [activityId],
+          operationIds: [operationId],
+          sleepSessionIds: [sleepId],
+          userId,
+        },
+      ),
+    ).resolves.toBeUndefined();
+
+    const mutations = command.mock.calls
+      .map(([options]) => options.query)
+      .filter((queryText) => queryText.includes("ALTER TABLE"));
+    expect(mutations).toHaveLength(8);
+    expect(mutations.join("\n")).toContain(
+      "identifier_value -> lower(hex(SHA256(toString(identifier_value)))",
+    );
+    expect(mutations.join("\n")).toContain("SHA256(toString(`group_id`))");
+    expect(mutations.join("\n")).toContain("SHA256(toString(id))");
+    expect(mutations.join("\n")).not.toContain(userId);
+    expect(mutations.join("\n")).not.toContain(operationId);
   });
 
   it("fails closed when a new ownership identifier is not mapped", async () => {

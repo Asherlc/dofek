@@ -3,6 +3,10 @@ import { Readable } from "node:stream";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { S3Client } from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createMetricStreamBatchCompletedEvent,
+  createMetricStreamDeletedEvent,
+} from "../metric-stream/events.ts";
 import type { MetricStreamArchiveObject, MetricStreamArchiveStorage } from "./archive-erasure.ts";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
 
@@ -183,6 +187,59 @@ describe("eraseMetricStreamArchive", () => {
     expect(storage.completedExpectedEtags).toEqual([]);
     expect(storage.getCounts.get(key)).toBe(1);
     expect(storage.objects.get(key)).toEqual(original);
+  });
+
+  it("removes matching batch, delete, user, and activity events", async () => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-12-12.jsonl.gz";
+    const activityId = "30000000-0000-4000-8000-000000001994";
+    const operationId = "40000000-0000-4000-8000-000000001994";
+    const matchingBatch = createMetricStreamBatchCompletedEvent(
+      { batchId: "batch-1994", datasetKeys: ["metric-stream"], operationId },
+      1,
+    );
+    const otherBatch = createMetricStreamBatchCompletedEvent(
+      {
+        batchId: "other-batch-1994",
+        datasetKeys: ["metric-stream"],
+        operationId: "50000000-0000-4000-8000-000000001994",
+      },
+      1,
+    );
+    const matchingDelete = createMetricStreamDeletedEvent({ activityId }, "1");
+    const otherDelete = createMetricStreamDeletedEvent(
+      {
+        activityId: "60000000-0000-4000-8000-000000001994",
+      },
+      "1",
+    );
+    const matchingActivity = metricEvent(otherUserId, "70000000-0000-4000-8000-000000001994");
+    matchingActivity.activityId = activityId;
+    const nullActivity = metricEvent(otherUserId, "80000000-0000-4000-8000-000000001994");
+    nullActivity.activityId = null;
+    const original = [
+      matchingBatch,
+      otherBatch,
+      matchingDelete,
+      otherDelete,
+      matchingActivity,
+      nullActivity,
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    storage.objects.set(key, gzipSync(`${original}\n`));
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        activityIds: new Set([activityId]),
+        operationIds: new Set([operationId]),
+        userId: deletingUserId,
+      }),
+    ).resolves.toMatchObject({ recordsRemoved: 3, objectsRewritten: 1 });
+
+    expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
+      `${JSON.stringify(otherBatch)}\n${JSON.stringify(otherDelete)}\n${JSON.stringify(nullActivity)}\n`,
+    );
   });
 
   it("fails closed without replacing an object that contains malformed JSON", async () => {
@@ -454,9 +511,133 @@ describe("R2MetricStreamArchiveStorage metadata", () => {
     expect(requests[0]?.headers["x-amz-meta-archive-generation"]).toBe("7");
     expect(requests[0]?.headers["x-amz-meta-source-cluster"]).toBe("redpanda-production");
   });
+
+  it("reads and validates object metadata", async () => {
+    const client = makeR2Client(async () => ({
+      response: {
+        body: Readable.from("body"),
+        headers: { "content-type": "application/xml" },
+        statusCode: 200,
+      },
+    }));
+    const storage = new R2MetricStreamArchiveStorage(client, "metric-archive");
+
+    await expect(storage.getObject("missing-evidence")).rejects.toThrow(
+      "is missing a readable body or ETag",
+    );
+  });
+
+  it("uploads, completes, deletes, and aborts multipart objects", async () => {
+    const requests: CapturedRequest[] = [];
+    const client = makeR2Client(
+      async (
+        request,
+      ): Promise<{
+        response: { body: Readable; headers: Record<string, string>; statusCode: number };
+      }> => {
+        requests.push(request);
+        if (request.method === "PUT") {
+          return {
+            response: {
+              body: Readable.from(""),
+              headers: { etag: '"part-etag"' },
+              statusCode: 200,
+            },
+          };
+        }
+        if (request.method === "POST") {
+          return {
+            response: {
+              body: Readable.from(
+                "<CompleteMultipartUploadResult><ETag>&quot;complete-etag&quot;</ETag></CompleteMultipartUploadResult>",
+              ),
+              headers: { "content-type": "application/xml" },
+              statusCode: 200,
+            },
+          };
+        }
+        return {
+          response: {
+            body: Readable.from(""),
+            headers: {},
+            statusCode: 204,
+          },
+        };
+      },
+    );
+    const storage = new R2MetricStreamArchiveStorage(client, "metric-archive");
+
+    await expect(
+      storage.uploadPart("staging-key", "upload-id", 2, Buffer.from("part")),
+    ).resolves.toBe('"part-etag"');
+    await expect(
+      storage.completeMultipart("staging-key", "upload-id", [
+        { etag: '"part-etag"', partNumber: 2 },
+      ]),
+    ).resolves.toBe('"complete-etag"');
+    await expect(storage.deleteObject("staging-key")).resolves.toBeUndefined();
+    await expect(storage.abortMultipart("staging-key", "upload-id")).resolves.toBeUndefined();
+    expect(requests).toHaveLength(4);
+  });
+
+  it.each([
+    [
+      "createMultipart",
+      async (storage: R2MetricStreamArchiveStorage) =>
+        storage.createMultipart("key", { metadata: {} }),
+    ],
+    [
+      "uploadPart",
+      async (storage: R2MetricStreamArchiveStorage) =>
+        storage.uploadPart("key", "upload", 1, Buffer.from("body")),
+    ],
+    [
+      "completeMultipart",
+      async (storage: R2MetricStreamArchiveStorage) =>
+        storage.completeMultipart("key", "upload", []),
+    ],
+  ])("rejects a missing ETag or upload ID from %s", async (_name, operation) => {
+    const storage = new R2MetricStreamArchiveStorage(
+      makeR2Client(async () => ({
+        response: {
+          body: Readable.from("<Response />"),
+          headers: { "content-type": "application/xml" },
+          statusCode: 200,
+        },
+      })),
+      "metric-archive",
+    );
+
+    await expect(operation(storage)).rejects.toThrow();
+  });
 });
 
 describe("R2MetricStreamArchiveStorage listing", () => {
+  it("lists archive keys across pages and resumes after a key", async () => {
+    let requests = 0;
+    const client = makeR2Client(async () => {
+      requests += 1;
+      const body =
+        requests === 1
+          ? '<?xml version="1.0"?><ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>page-2</NextContinuationToken><Contents><Key>metric-stream/v1/a</Key></Contents><Contents><Key></Key></Contents></ListBucketResult>'
+          : '<?xml version="1.0"?><ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>metric-stream/v1/b</Key></Contents></ListBucketResult>';
+      return {
+        response: {
+          body: Readable.from(body),
+          headers: { "content-type": "application/xml" },
+          statusCode: 200,
+        },
+      };
+    });
+    const storage = new R2MetricStreamArchiveStorage(client, "metric-archive");
+    const keys: string[] = [];
+    for await (const key of storage.listObjectKeys("metric-stream/v1/previous")) {
+      keys.push(key);
+    }
+
+    expect(keys).toEqual(["metric-stream/v1/a", "metric-stream/v1/b"]);
+    expect(requests).toBe(2);
+  });
   it("fails closed when R2 repeats a continuation token", async () => {
     let requests = 0;
     const client = makeR2Client(async () => {

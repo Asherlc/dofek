@@ -1166,6 +1166,30 @@ describe("exchangeWithingsCode — scope handling", () => {
     );
   });
 
+  it("does not treat an empty Withings userid as a provider account", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({
+        status: 0,
+        body: {
+          access_token: "access",
+          refresh_token: "refresh",
+          userid: "",
+        },
+      });
+    const config = {
+      clientId: "test-id",
+      clientSecret: "test-secret",
+      authorizeUrl: "https://account.withings.com/authorize",
+      tokenUrl: "https://wbsapi.withings.net/v2/oauth2",
+      redirectUri: "",
+      scopes: [],
+    };
+
+    await expect(exchangeWithingsCode(config, "code", mockFetch)).resolves.not.toHaveProperty(
+      "providerAccountId",
+    );
+  });
+
   it("handles non-string scope in response", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({

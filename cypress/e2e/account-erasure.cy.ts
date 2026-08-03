@@ -24,7 +24,7 @@ describe("Account erasure", () => {
     cy.contains("button", "Permanently delete my account").click();
 
     cy.url().should("include", "/account-deletion");
-    cy.contains("Deletion request accepted").should("be.visible");
+    cy.contains("h1", "Account deletion status").should("be.visible");
 
     cy.request({
       failOnStatusCode: false,

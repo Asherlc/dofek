@@ -3,6 +3,7 @@ import {
   type BackupMultipartUploadPage,
   type BackupObjectPage,
   type DatabaseBackupStorage,
+  sweepExpiredDatabaseBackups,
   verifyAccountErasureBackupRetention,
 } from "./backup-retention.ts";
 
@@ -213,5 +214,231 @@ describe("verifyAccountErasureBackupRetention", () => {
         retentionDays: 22,
       }),
     ).rejects.toThrow("retentionDays");
+  });
+
+  it("accepts equal request, scrub, and verification timestamps", async () => {
+    await expect(
+      verifyAccountErasureBackupRetention(storage([]), {
+        maxSweepPasses: 1,
+        now: requestedAt,
+        piiScrubbedAt: requestedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).resolves.toEqual({ deletedObjects: 0 });
+  });
+
+  it("sweeps backups using the general retention options", async () => {
+    const backupStorage = storage([beforeScrub, afterScrub]);
+
+    await expect(
+      sweepExpiredDatabaseBackups(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        retentionDays: 21,
+      }),
+    ).resolves.toEqual({ deletedObjects: 1 });
+
+    expect(backupStorage.objects).toEqual(new Set([afterScrub]));
+  });
+
+  it("follows object-list continuation tokens", async () => {
+    const secondPage = `${beforeScrub}.metadata`;
+    const backupStorage = storage([beforeScrub, secondPage]);
+    backupStorage.listPage
+      .mockImplementationOnce(
+        async (): Promise<BackupObjectPage> => ({
+          nextContinuationToken: "page-2",
+          objects: [{ key: beforeScrub }],
+        }),
+      )
+      .mockImplementationOnce(
+        async (): Promise<BackupObjectPage> => ({
+          objects: [{ key: secondPage }],
+        }),
+      );
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).resolves.toEqual({ deletedObjects: 2 });
+
+    expect(backupStorage.listPage).toHaveBeenCalledWith(undefined);
+    expect(backupStorage.listPage).toHaveBeenCalledWith("page-2");
+  });
+
+  it.each([
+    ["empty continuation token", { nextContinuationToken: "" }],
+    ["repeated continuation token", { nextContinuationToken: "same-token" }],
+  ])("rejects an invalid object-list continuation (%s)", async (_name, page) => {
+    const backupStorage = storage([]);
+    if (page.nextContinuationToken === "same-token") {
+      backupStorage.listPage
+        .mockImplementationOnce(async () => ({ objects: [], ...page }))
+        .mockImplementationOnce(async () => ({ objects: [], ...page }));
+    } else {
+      backupStorage.listPage.mockImplementationOnce(async () => ({ objects: [], ...page }));
+    }
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).rejects.toThrow(
+      page.nextContinuationToken === ""
+        ? "truncated without a continuation token"
+        : "repeated a continuation token",
+    );
+  });
+
+  it("follows multipart continuation markers", async () => {
+    const upload = { key: beforeScrub, uploadId: "upload-1" };
+    const backupStorage = storage([], [upload], {
+      onAbortMultipartUpload: (key, _uploadId, objects) => {
+        objects.add(key);
+      },
+    });
+    backupStorage.listMultipartUploads
+      .mockImplementationOnce(
+        async (): Promise<BackupMultipartUploadPage> => ({
+          nextKeyMarker: "key-2",
+          nextUploadIdMarker: "upload-2",
+          uploads: [upload],
+        }),
+      )
+      .mockImplementationOnce(
+        async (): Promise<BackupMultipartUploadPage> => ({
+          uploads: [],
+        }),
+      );
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).resolves.toEqual({ deletedObjects: 1 });
+
+    expect(backupStorage.listMultipartUploads).toHaveBeenCalledWith(undefined, undefined);
+    expect(backupStorage.listMultipartUploads).toHaveBeenCalledWith("key-2", "upload-2");
+  });
+
+  it.each([
+    ["mismatched markers", { nextKeyMarker: "key-2" }],
+    ["empty key marker", { nextKeyMarker: "", nextUploadIdMarker: "upload-2" }],
+    ["empty upload marker", { nextKeyMarker: "key-2", nextUploadIdMarker: "" }],
+  ])("rejects invalid multipart continuation markers (%s)", async (_name, page) => {
+    const backupStorage = storage([]);
+    backupStorage.listMultipartUploads.mockImplementationOnce(async () => ({
+      uploads: [],
+      ...page,
+    }));
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).rejects.toThrow("truncated without continuation markers");
+  });
+
+  it("rejects repeated multipart continuation markers", async () => {
+    const backupStorage = storage([]);
+    backupStorage.listMultipartUploads
+      .mockImplementationOnce(async () => ({
+        nextKeyMarker: "key-2",
+        nextUploadIdMarker: "upload-2",
+        uploads: [],
+      }))
+      .mockImplementationOnce(async () => ({
+        nextKeyMarker: "key-2",
+        nextUploadIdMarker: "upload-2",
+        uploads: [],
+      }));
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).rejects.toThrow("repeated continuation markers");
+  });
+
+  it("deletes objects in bounded batches", async () => {
+    const objects = Array.from(
+      { length: 1_001 },
+      (_, index) =>
+        `Health-20260701-000000-10000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`,
+    );
+    const backupStorage = storage(objects);
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).resolves.toEqual({ deletedObjects: 1_001 });
+
+    expect(backupStorage.deleteObjects).toHaveBeenCalledTimes(2);
+    expect(backupStorage.deleteObjects.mock.calls[0]?.[0]).toHaveLength(1_000);
+    expect(backupStorage.deleteObjects.mock.calls[1]?.[0]).toHaveLength(1);
+  });
+
+  it("reports sorted object-deletion errors", async () => {
+    const backupStorage = storage([beforeScrub, atScrub]);
+    backupStorage.deleteObjects.mockResolvedValue({
+      errors: [
+        { code: "Z_ERROR", key: atScrub },
+        { code: "A_ERROR", key: beforeScrub },
+      ],
+    });
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 3,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).rejects.toThrow(
+      `R2 database backup deletion returned 2 object error(s): A_ERROR (${beforeScrub}), Z_ERROR (${atScrub})`,
+    );
+  });
+
+  it("fails when expired data remains after the configured sweep passes", async () => {
+    const backupStorage = storage([beforeScrub], [], { preserveDeletedObjects: true });
+
+    await expect(
+      verifyAccountErasureBackupRetention(backupStorage, {
+        maxSweepPasses: 2,
+        now: new Date("2026-07-29T00:00:01.000Z"),
+        piiScrubbedAt: scrubbedAt,
+        requestedAt,
+        retentionDays: 21,
+      }),
+    ).rejects.toThrow("after 2 pass(es)");
+    expect(backupStorage.deleteObjects).toHaveBeenCalledTimes(2);
   });
 });

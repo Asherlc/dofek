@@ -125,6 +125,55 @@ describe("processAccountErasureJob", () => {
     expect(deps.finalize).not.toHaveBeenCalled();
   });
 
+  it("does not start destructive phases when consumer drain is not quiescent", async () => {
+    const deps = dependencies();
+    deps.runPhase.mockImplementation(async (phase) => {
+      if (phase === "consumer_drain") {
+        throw new Error("active queue work remains");
+      }
+      return null;
+    });
+
+    await expect(
+      processAccountErasureJob(request, deps, new Date("2026-08-25T12:00:00.001Z")),
+    ).rejects.toThrow("initial account erasure");
+
+    expect(deps.runPhase).toHaveBeenCalledWith("work_purge", request);
+    expect(deps.runPhase).toHaveBeenCalledWith("consumer_drain", request);
+    expect(deps.runPhase).not.toHaveBeenCalledWith("remote_revocation", request);
+  });
+
+  it("finalizes at the exact retention verification boundary", async () => {
+    const deps = dependencies([
+      "ingest_fence",
+      "stripe_erasure",
+      "work_purge",
+      "consumer_drain",
+      "remote_revocation",
+      "processor_erasure",
+      "postgres_erasure",
+      "clickhouse_initial",
+      "archive_initial",
+      "work_verification",
+      "consumer_drain_verification",
+      "stripe_erasure_verification",
+      "remote_revocation_verification",
+      "processor_erasure_verification",
+      "postgres_profile_delete",
+      "peerdb_drain_verification",
+      "clickhouse_verification",
+      "archive_verification",
+      "request_pii_scrub",
+    ]);
+
+    await expect(
+      processAccountErasureJob(request, deps, request.retentionVerificationAt),
+    ).resolves.toEqual({ status: "completed" });
+
+    expect(deps.runPhase).toHaveBeenCalledWith("retention_verification", request);
+    expect(deps.finalize).toHaveBeenCalledWith(request, request.retentionVerificationAt);
+  });
+
   it("resumes from durable checkpoints without repeating completed external effects", async () => {
     const deps = dependencies([
       "ingest_fence",

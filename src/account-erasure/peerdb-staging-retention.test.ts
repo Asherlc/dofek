@@ -1,8 +1,10 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  capturePeerDbStagingInventory,
   createPeerDbStagingStorageFromEnv,
   type PeerDbStagingStorage,
+  peerDbStagingInventoriesEqual,
   S3PeerDbStagingStorage,
   verifyPeerDbStagingRetention,
 } from "./peerdb-staging-retention.ts";
@@ -495,5 +497,229 @@ describe("verifyPeerDbStagingRetention", () => {
         },
       ).createBoundaryMarker("account-erasure-boundaries/request"),
     ).rejects.toThrow("PeerDB staging boundary marker HEAD returned invalid object evidence");
+  });
+});
+
+describe("PeerDB staging inventory", () => {
+  it("captures and sorts object and multipart inventory while tracking the latest timestamp", async () => {
+    const objects = [
+      stagingObject(new Date("2026-08-02T10:00:00.000Z"), "object-b"),
+      stagingObject(new Date("2026-08-02T11:00:00.000Z"), "object-a"),
+    ];
+    const uploads = [
+      stagingUpload(new Date("2026-08-02T09:00:00.000Z"), "upload-b"),
+      stagingUpload(new Date("2026-08-02T12:00:00.000Z"), "upload-a"),
+    ];
+    const inventory = await capturePeerDbStagingInventory(
+      storage({
+        listMultipartUploads: vi.fn(async () => ({
+          isTruncated: false,
+          nextKeyMarker: null,
+          nextUploadIdMarker: null,
+          uploads,
+        })),
+        listObjects: vi.fn(async () => ({
+          isTruncated: false,
+          nextContinuationToken: null,
+          objects,
+        })),
+      }),
+    );
+
+    expect(inventory.objects.map((object) => object.key)).toEqual(["object-a", "object-b"]);
+    expect(inventory.multipartUploads.map((upload) => upload.key)).toEqual([
+      "upload-a",
+      "upload-b",
+    ]);
+    expect(inventory.latestStorageTimestamp).toEqual(new Date("2026-08-02T12:00:00.000Z"));
+  });
+
+  it("compares every inventory evidence field", () => {
+    const timestamp = new Date("2026-08-02T12:00:00.000Z");
+    const inventory = {
+      latestStorageTimestamp: timestamp,
+      multipartCursors: [
+        {
+          isTruncated: false,
+          keyMarker: null,
+          nextKeyMarker: null,
+          nextUploadIdMarker: null,
+          uploadIdMarker: null,
+        },
+      ],
+      multipartUploads: [
+        {
+          initiated: timestamp,
+          key: "upload",
+          uploadId: "upload-id",
+        },
+      ],
+      objectCursors: [
+        {
+          continuationToken: null,
+          isTruncated: false,
+          nextContinuationToken: null,
+        },
+      ],
+      objects: [{ eTag: "etag", key: "object", lastModified: timestamp }],
+    };
+
+    expect(peerDbStagingInventoriesEqual(inventory, inventory)).toBe(true);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        latestStorageTimestamp: new Date(timestamp.getTime() + 1),
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        objectCursors: [],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        multipartCursors: [],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        objects: [{ eTag: "other-etag", key: "object", lastModified: timestamp }],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        objects: [{ eTag: "etag", key: "other-object", lastModified: timestamp }],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        objects: [{ eTag: "etag", key: "object", lastModified: new Date(timestamp.getTime() + 1) }],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        multipartUploads: [{ initiated: timestamp, key: "other-upload", uploadId: "upload-id" }],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        multipartUploads: [{ initiated: timestamp, key: "upload", uploadId: "other-id" }],
+      }),
+    ).toBe(false);
+    expect(
+      peerDbStagingInventoriesEqual(inventory, {
+        ...inventory,
+        multipartUploads: [
+          { initiated: new Date(timestamp.getTime() + 1), key: "upload", uploadId: "upload-id" },
+        ],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("S3PeerDbStagingStorage", () => {
+  it("maps lifecycle, versioning, multipart, and object responses", async () => {
+    const lifecycle = s3StorageWithResponses({
+      Rules: [
+        {
+          Expiration: { Days: 1 },
+          Filter: {
+            And: { Prefix: "" },
+            ObjectSizeGreaterThan: 10,
+            ObjectSizeLessThan: 100,
+            Prefix: "objects/",
+            Tag: { Key: "kind", Value: "stage" },
+          },
+          ID: "rule",
+          Prefix: "legacy/",
+          Status: "Enabled",
+        },
+      ],
+    });
+    await expect(lifecycle.getLifecycleConfiguration()).resolves.toEqual({
+      rules: [
+        {
+          expirationDays: 1,
+          filter: {
+            hasAnd: true,
+            hasTag: true,
+            objectSizeGreaterThan: 10,
+            objectSizeLessThan: 100,
+            prefix: "objects/",
+          },
+          id: "rule",
+          legacyPrefix: "legacy/",
+          status: "Enabled",
+        },
+      ],
+    });
+
+    await expect(
+      s3StorageWithResponses({ Status: "Suspended" }).getVersioningStatus(),
+    ).resolves.toBe("Suspended");
+    await expect(s3StorageWithResponses({}).getVersioningStatus()).resolves.toBeNull();
+
+    const initiated = new Date("2026-08-02T11:00:00.000Z");
+    await expect(
+      s3StorageWithResponses({
+        IsTruncated: true,
+        NextKeyMarker: "next-key",
+        NextUploadIdMarker: "next-upload",
+        Uploads: [{ Initiated: initiated, Key: "stage-key", UploadId: "upload-id" }],
+      }).listMultipartUploads("key-marker", "upload-marker"),
+    ).resolves.toEqual({
+      isTruncated: true,
+      nextKeyMarker: "next-key",
+      nextUploadIdMarker: "next-upload",
+      uploads: [{ initiated, key: "stage-key", uploadId: "upload-id" }],
+    });
+    await expect(s3StorageWithResponses({}).listMultipartUploads(null, null)).resolves.toEqual({
+      isTruncated: false,
+      nextKeyMarker: null,
+      nextUploadIdMarker: null,
+      uploads: [],
+    });
+
+    const lastModified = new Date("2026-08-02T11:00:00.000Z");
+    await expect(
+      s3StorageWithResponses({
+        Contents: [{ ETag: '"etag"', Key: "stage-key", LastModified: lastModified }],
+        IsTruncated: true,
+        NextContinuationToken: "next-page",
+      }).listObjects("page-token"),
+    ).resolves.toEqual({
+      isTruncated: true,
+      nextContinuationToken: "next-page",
+      objects: [{ eTag: '"etag"', key: "stage-key", lastModified }],
+    });
+    await expect(s3StorageWithResponses({}).listObjects(null)).resolves.toEqual({
+      isTruncated: false,
+      nextContinuationToken: null,
+      objects: [],
+    });
+  });
+
+  it("accepts a valid boundary marker and environment configuration", async () => {
+    await expect(
+      s3StorageWithResponses(
+        { ETag: '"boundary-etag"' },
+        { ContentLength: 0, ETag: '"boundary-etag"', LastModified: cutoff },
+      ).createBoundaryMarker("account-erasure-boundaries/request"),
+    ).resolves.toEqual({ eTag: '"boundary-etag"', lastModified: cutoff });
+
+    vi.stubEnv("POSTGRES_PASSWORD", "password");
+    vi.stubEnv("PEERDB_STAGE_S3_ACCESS_KEY_ID", "access");
+    vi.stubEnv("PEERDB_STAGE_S3_ENDPOINT", "http://minio:9000");
+    vi.stubEnv("PEERDB_STAGE_S3_BUCKET", "bucket");
+    const configured = createPeerDbStagingStorageFromEnv();
+    expect(configured.storage).toBeInstanceOf(S3PeerDbStagingStorage);
+    configured.close();
   });
 });

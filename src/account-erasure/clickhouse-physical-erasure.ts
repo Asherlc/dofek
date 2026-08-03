@@ -36,6 +36,8 @@ export interface ClickHousePhysicalErasureClient {
 }
 
 export interface ClickHousePhysicalErasurePredicate {
+  mutationQueryParameters?: Record<string, unknown>;
+  mutationSql?: string;
   queryParameters: Record<string, unknown>;
   sql: string;
 }
@@ -220,12 +222,10 @@ export async function applyClickHousePhysicalErasureMutation(
   const mutationMarker = randomUUID();
   await client.command({
     query: `ALTER TABLE ${qualifiedTable(target.table)}
-      DELETE WHERE (${target.predicate.sql})
+      DELETE WHERE (${target.predicate.mutationSql ?? target.predicate.sql})
         AND ${clickHouseStringLiteral(mutationMarker)}
           = ${clickHouseStringLiteral(mutationMarker)}`,
-    query_params: {
-      ...target.predicate.queryParameters,
-    },
+    query_params: target.predicate.mutationQueryParameters ?? target.predicate.queryParameters,
     clickhouse_settings: {
       log_queries: 0,
       mutations_sync: 2,

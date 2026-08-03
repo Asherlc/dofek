@@ -68,4 +68,31 @@ describe("purgeAccountRedisStateForSnapshot", () => {
       mocks.redisClient,
     );
   });
+
+  it("passes provider identity pairs into Redis cleanup", async () => {
+    const snapshotWithIdentity: AccountErasureRemoteSnapshot = {
+      ...snapshot,
+      authIdentities: [
+        {
+          authProvider: "slack",
+          email: null,
+          providerAccountId: "slack-account-1994",
+        },
+      ],
+    };
+
+    await purgeAccountRedisStateForSnapshot(snapshotWithIdentity, []);
+
+    expect(mocks.purgeAccountRedisState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authIdentities: [
+          {
+            authProvider: "slack",
+            providerAccountId: "slack-account-1994",
+          },
+        ],
+      }),
+      mocks.redisClient,
+    );
+  });
 });

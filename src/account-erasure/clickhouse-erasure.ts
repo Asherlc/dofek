@@ -100,6 +100,8 @@ interface IdentifierState {
 }
 
 interface PersonalDataPredicate {
+  mutationQueryParameters: Record<string, unknown>;
+  mutationSql: string;
   queryParameters: Record<string, unknown>;
   sql: string;
 }
@@ -523,12 +525,29 @@ function setQueryParameter(
   queryParameters[parameterName] = [...identifiers];
 }
 
+function hashIdentifier(identifier: string): string {
+  return createHash("sha256").update(identifier).digest("hex");
+}
+
+function setHashQueryParameter(
+  queryParameters: Record<string, unknown>,
+  parameterName: string,
+  identifiers: Set<string>,
+): void {
+  queryParameters[parameterName] = [...identifiers].map(hashIdentifier);
+}
+
+function hashedColumnExpression(columnExpression: string): string {
+  return `lower(hex(SHA256(toString(${columnExpression}))))`;
+}
+
 function relationPredicate(
   columnName: string,
   definition: IdentifierColumnDefinition,
   state: IdentifierState,
   queryParameters: Record<string, unknown>,
-): string | null {
+  mutationQueryParameters: Record<string, unknown>,
+): { mutationSql: string; sql: string } | null {
   const values = state[definition.family];
   if (values.size === 0) return null;
   const parameterName =
@@ -542,10 +561,22 @@ function relationPredicate(
             ? "record_ids"
             : "sleep_ids";
   setQueryParameter(queryParameters, parameterName, values);
+  const mutationParameterName = `${parameterName}_hashes`;
+  setHashQueryParameter(mutationQueryParameters, mutationParameterName, values);
   const parameterType = definition.valueType === "string" ? "Array(String)" : "Array(UUID)";
-  return definition.cardinality === "array"
-    ? `hasAny(\`${columnName}\`, {${parameterName}:${parameterType}})`
-    : `\`${columnName}\` IN {${parameterName}:${parameterType}}`;
+  const sql =
+    definition.cardinality === "array"
+      ? `hasAny(\`${columnName}\`, {${parameterName}:${parameterType}})`
+      : `\`${columnName}\` IN {${parameterName}:${parameterType}}`;
+  const hashedColumn =
+    definition.cardinality === "array"
+      ? `arrayMap(identifier_value -> ${hashedColumnExpression("identifier_value")}, \`${columnName}\`)`
+      : hashedColumnExpression(`\`${columnName}\``);
+  const mutationSql =
+    definition.cardinality === "array"
+      ? `hasAny(${hashedColumn}, {${mutationParameterName}:Array(String)})`
+      : `${hashedColumn} IN {${mutationParameterName}:Array(String)}`;
+  return { mutationSql, sql };
 }
 
 function tableIdentityFamilies(table: PhysicalTable): UuidIdentifierFamily[] {
@@ -568,11 +599,12 @@ function personalDataPredicate(
   state: IdentifierState,
 ): PersonalDataPredicate | null {
   const queryParameters: Record<string, unknown> = {};
+  const mutationQueryParameters: Record<string, unknown> = {};
   const relationshipPredicates = identifierColumns(table)
     .map(([columnName, definition]) =>
-      relationPredicate(columnName, definition, state, queryParameters),
+      relationPredicate(columnName, definition, state, queryParameters, mutationQueryParameters),
     )
-    .filter((predicate): predicate is string => predicate !== null);
+    .filter((predicate): predicate is { mutationSql: string; sql: string } => predicate !== null);
   for (const family of tableIdentityFamilies(table)) {
     const values = state[family];
     if (values.size === 0) continue;
@@ -583,28 +615,56 @@ function personalDataPredicate(
           ? "sleep_ids"
           : "record_ids";
     setQueryParameter(queryParameters, parameterName, values);
-    relationshipPredicates.push(`id IN {${parameterName}:Array(UUID)}`);
+    const mutationParameterName = `${parameterName}_hashes`;
+    setHashQueryParameter(mutationQueryParameters, mutationParameterName, values);
+    relationshipPredicates.push({
+      mutationSql: `${hashedColumnExpression("id")} IN {${mutationParameterName}:Array(String)}`,
+      sql: `id IN {${parameterName}:Array(UUID)}`,
+    });
   }
   if (hasUuidScalarColumn(table, "user_id")) {
     queryParameters.user_id = state.userId;
+    mutationQueryParameters.user_hash = hashIdentifier(state.userId);
     const userPredicate = "user_id = {user_id:UUID}";
+    const mutationUserPredicate = `${hashedColumnExpression("user_id")} = {user_hash:String}`;
     const userIdType = columnTypes(table).get("user_id");
     if (userIdType === "Nullable(UUID)" && relationshipPredicates.length > 0) {
       return {
+        mutationQueryParameters,
+        mutationSql: `(${mutationUserPredicate}) OR (user_id IS NULL AND (${relationshipPredicates
+          .map((predicate) => predicate.mutationSql)
+          .join(" OR ")}))`,
         queryParameters,
-        sql: `(${userPredicate}) OR (user_id IS NULL AND (${relationshipPredicates.join(" OR ")}))`,
+        sql: `(${userPredicate}) OR (user_id IS NULL AND (${relationshipPredicates
+          .map((predicate) => predicate.sql)
+          .join(" OR ")}))`,
       };
     }
-    return { queryParameters, sql: userPredicate };
+    return {
+      mutationQueryParameters,
+      mutationSql: mutationUserPredicate,
+      queryParameters,
+      sql: userPredicate,
+    };
   }
   if (isUserProfileTable(table) && hasUuidScalarColumn(table, "id")) {
     queryParameters.user_id = state.userId;
-    return { queryParameters, sql: "id = {user_id:UUID}" };
+    mutationQueryParameters.user_hash = hashIdentifier(state.userId);
+    return {
+      mutationQueryParameters,
+      mutationSql: `${hashedColumnExpression("id")} = {user_hash:String}`,
+      queryParameters,
+      sql: "id = {user_id:UUID}",
+    };
   }
   if (relationshipPredicates.length === 0) return null;
   return {
+    mutationQueryParameters,
+    mutationSql: relationshipPredicates
+      .map((predicate) => `(${predicate.mutationSql})`)
+      .join(" OR "),
     queryParameters,
-    sql: relationshipPredicates.map((predicate) => `(${predicate})`).join(" OR "),
+    sql: relationshipPredicates.map((predicate) => `(${predicate.sql})`).join(" OR "),
   };
 }
 
@@ -721,20 +781,14 @@ export async function fenceClickHouseAccount(
 ): Promise<void> {
   const parsedUserId = identifierSchema.parse(userId);
   const parsedOperationIds = z.array(identifierSchema).parse(operationIds);
-  const userHash = createHash("sha256").update(parsedUserId).digest("hex");
+  const userHash = hashIdentifier(parsedUserId);
   await client.command({
     query: `INSERT INTO ${ACCOUNT_ERASURE_FENCE_TABLE} (user_hash, erased_at)
       VALUES ({user_hash:FixedString(64)}, now64(9))`,
     query_params: { user_hash: userHash },
     clickhouse_settings: { log_queries: 0 },
   });
-  const operationHashes = [
-    ...new Set(
-      parsedOperationIds.map((operationId) =>
-        createHash("sha256").update(operationId).digest("hex"),
-      ),
-    ),
-  ];
+  const operationHashes = [...new Set(parsedOperationIds.map(hashIdentifier))];
   if (operationHashes.length === 0) return;
   if (!client.insert) {
     throw new Error("ClickHouse account erasure requires insert support");
