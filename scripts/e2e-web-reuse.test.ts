@@ -101,8 +101,7 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
       expect(
         composeCommands.some(
           (command) =>
-            command.arguments.includes("up") &&
-            command.arguments.includes("account-erasure-minio"),
+            command.arguments.includes("up") && command.arguments.includes("account-erasure-minio"),
         ),
       ).toBe(true);
       const composeServices = composeCommands.map((command) => command.arguments.at(-1));
