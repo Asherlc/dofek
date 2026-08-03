@@ -26,42 +26,51 @@ const activityIds = {
   trailRunning: "00000000-0000-4000-8000-000000000102",
 } as const;
 
-interface ActivityTypeRow {
-  canonical_type: string;
-  modality: string | null;
-  provider_type: string;
-}
-
-interface CatalogObjectRow {
-  definition: string;
-  name: string;
-}
-
-interface ColumnRow {
-  column_name: string;
-  data_type: string;
-  is_generated: "ALWAYS" | "NEVER";
-  is_nullable: "NO" | "YES";
-  is_updatable: "NO" | "YES";
-  udt_name: string;
-}
-
-interface CountRow {
-  count: string;
-}
-
-interface NameRow {
-  name: string;
-}
-
 const identityRowSchema = z.object({
   provider_attnum: z.coerce.number().int(),
   relation_oid: z.coerce.number().int(),
 });
+const activityTypeRowSchema = z.object({
+  canonical_type: z.string(),
+  modality: z.string().nullable(),
+  provider_type: z.string(),
+});
+const catalogObjectRowSchema = z.object({
+  definition: z.string(),
+  name: z.string(),
+});
+const columnRowSchema = z.object({
+  column_name: z.string(),
+  data_type: z.string(),
+  is_generated: z.enum(["ALWAYS", "NEVER"]),
+  is_nullable: z.enum(["NO", "YES"]),
+  is_updatable: z.enum(["NO", "YES"]),
+  udt_name: z.string(),
+});
+const countRowSchema = z.object({ count: z.string() });
+const nameRowSchema = z.object({ name: z.string() });
 const objectIdentityRowSchema = z.object({
   kind: z.enum(["constraint", "index"]),
   name: z.string(),
   object_oid: z.coerce.number().int(),
+});
+const ownershipAndReplicaIdentityRowSchema = z.object({
+  owner_name: z.string(),
+  replica_identity: z.string(),
+});
+const grantRowSchema = z.object({
+  grantee: z.string(),
+  privilege_type: z.string(),
+});
+const commentRowSchema = z.object({
+  column_comment: z.string(),
+  table_comment: z.string(),
+});
+const unsupportedCatalogFeaturesRowSchema = z.object({
+  hypertables: z.string(),
+  policies: z.string(),
+  sequences: z.string(),
+  triggers: z.string(),
 });
 
 const pgDialect = new PgDialect();
@@ -75,8 +84,9 @@ function makeClientDatabase(client: Client): SchemaExecutionDatabase {
   };
 }
 
-async function createLegacySchema(client: Client): Promise<void> {
-  await client.query(`
+async function createLegacySchema(database: SchemaExecutionDatabase): Promise<void> {
+  await database.execute(
+    sql.raw(`
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
     CREATE SCHEMA fitness;
     CREATE SCHEMA clickhouse;
@@ -414,7 +424,8 @@ async function createLegacySchema(client: Client): Promise<void> {
 
     INSERT INTO fitness.climbing_entry (activity_id)
     VALUES ('${activityIds.roadCycling}');
-  `);
+  `),
+  );
 }
 
 describe("canonical activity types Postgres migration", () => {
@@ -447,7 +458,7 @@ describe("canonical activity types Postgres migration", () => {
     const database = makeClientDatabase(client);
 
     try {
-      await createLegacySchema(client);
+      await createLegacySchema(database);
 
       const identityBefore = await executeWithSchema(
         database,
@@ -488,13 +499,13 @@ describe("canonical activity types Postgres migration", () => {
 
       migrationDirectory = mkdtempSync(join(tmpdir(), "canonical-activity-types-"));
       const migrationContent = readFileSync(
-        join(import.meta.dirname, "../../drizzle/0065_canonical_activity_types.sql"),
+        join(import.meta.dirname, "../../drizzle/0068_canonical_activity_types.sql"),
         "utf8",
       );
       writeTestMigrationFiles(migrationDirectory, [
         {
           content: migrationContent,
-          file: "0065_canonical_activity_types.sql",
+          file: "0068_canonical_activity_types.sql",
           when: 2_100_000_000_000,
         },
       ]);
@@ -562,13 +573,17 @@ describe("canonical activity types Postgres migration", () => {
         catalogObjectsBefore.map(({ object_oid }) => object_oid),
       );
 
-      const normalizedRows = await client.query<ActivityTypeRow>(`
+      const normalizedRows = await executeWithSchema(
+        database,
+        activityTypeRowSchema,
+        sql`
         SELECT canonical_type::text, provider_type, modality::text
         FROM fitness.activity
         WHERE external_id NOT LIKE 'bulk-%'
         ORDER BY external_id
-      `);
-      expect(normalizedRows.rows).toEqual([
+      `,
+      );
+      expect(normalizedRows).toEqual([
         {
           canonical_type: "american_football",
           modality: null,
@@ -601,12 +616,16 @@ describe("canonical activity types Postgres migration", () => {
         },
       ]);
 
-      const everyLegacyType = await client.query<ActivityTypeRow>(`
+      const everyLegacyType = await executeWithSchema(
+        database,
+        activityTypeRowSchema,
+        sql`
         SELECT canonical_type::text, provider_type, modality::text
         FROM fitness.activity
         ORDER BY provider_type
-      `);
-      expect(everyLegacyType.rows).toEqual(
+      `,
+      );
+      expect(everyLegacyType).toEqual(
         [...LEGACY_ACTIVITY_TYPES].sort().map((providerType) => ({
           canonical_type: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].canonicalType,
           modality: LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS[providerType].modality,
@@ -614,17 +633,19 @@ describe("canonical activity types Postgres migration", () => {
         })),
       );
 
-      const preservedRow = await client.query<{
-        end_utc_offset_minutes: number;
-        local_time_source: string;
-        notes: string;
-        perceived_exertion: number;
-        raw: { source: string };
-        start_utc_offset_minutes: number;
-        strava_id: string;
-        timezone: string;
-      }>(
-        `SELECT
+      const preservedRow = await executeWithSchema(
+        database,
+        z.object({
+          end_utc_offset_minutes: z.number(),
+          local_time_source: z.string(),
+          notes: z.string(),
+          perceived_exertion: z.number(),
+          raw: z.object({ source: z.string() }),
+          start_utc_offset_minutes: z.number(),
+          strava_id: z.string(),
+          timezone: z.string(),
+        }),
+        sql`SELECT
            end_utc_offset_minutes,
            local_time_source,
            notes,
@@ -634,10 +655,9 @@ describe("canonical activity types Postgres migration", () => {
            strava_id,
            timezone
          FROM fitness.activity
-         WHERE id = $1`,
-        [activityIds.roadCycling],
+         WHERE id = ${activityIds.roadCycling}`,
       );
-      expect(preservedRow.rows).toEqual([
+      expect(preservedRow).toEqual([
         {
           end_utc_offset_minutes: -420,
           local_time_source: "provider_timezone",
@@ -650,7 +670,10 @@ describe("canonical activity types Postgres migration", () => {
         },
       ]);
 
-      const typeColumns = await client.query<ColumnRow>(`
+      const typeColumns = await executeWithSchema(
+        database,
+        columnRowSchema,
+        sql`
         SELECT
           column_name,
           data_type,
@@ -663,8 +686,9 @@ describe("canonical activity types Postgres migration", () => {
           AND table_name = 'activity'
           AND column_name IN ('activity_type', 'canonical_type', 'provider_type', 'modality')
         ORDER BY column_name
-      `);
-      expect(typeColumns.rows).toEqual([
+      `,
+      );
+      expect(typeColumns).toEqual([
         {
           column_name: "canonical_type",
           data_type: "USER-DEFINED",
@@ -691,7 +715,7 @@ describe("canonical activity types Postgres migration", () => {
         },
       ]);
 
-      await client.query(`
+      await database.execute(sql`
         INSERT INTO fitness.activity (
           provider_id,
           external_id,
@@ -711,7 +735,10 @@ describe("canonical activity types Postgres migration", () => {
           '00000000-0000-4000-8000-000000000001'
         )
       `);
-      const writableColumns = await client.query<ActivityTypeRow>(`
+      const writableColumns = await executeWithSchema(
+        database,
+        activityTypeRowSchema,
+        sql`
         UPDATE fitness.activity
         SET
           canonical_type = 'walking',
@@ -719,8 +746,9 @@ describe("canonical activity types Postgres migration", () => {
           modality = NULL
         WHERE external_id = 'writable-canonical-columns'
         RETURNING canonical_type::text, provider_type, modality::text
-      `);
-      expect(writableColumns.rows).toEqual([
+      `,
+      );
+      expect(writableColumns).toEqual([
         {
           canonical_type: "walking",
           modality: null,
@@ -728,7 +756,10 @@ describe("canonical activity types Postgres migration", () => {
         },
       ]);
 
-      const constraints = await client.query<CatalogObjectRow>(`
+      const constraints = await executeWithSchema(
+        database,
+        catalogObjectRowSchema,
+        sql`
         SELECT
           constraint_name AS name,
           pg_get_constraintdef(pg_constraint.oid, true) AS definition
@@ -738,8 +769,9 @@ describe("canonical activity types Postgres migration", () => {
         WHERE table_schema = 'fitness'
           AND table_name = 'activity'
         ORDER BY constraint_name
-      `);
-      expect(constraints.rows.map((row) => row.name)).toEqual(
+      `,
+      );
+      expect(constraints.map((row) => row.name)).toEqual(
         expect.arrayContaining([
           "activity_ended_after_started_chk",
           "activity_user_id_fkey",
@@ -748,14 +780,18 @@ describe("canonical activity types Postgres migration", () => {
         ]),
       );
 
-      const indexes = await client.query<CatalogObjectRow>(`
+      const indexes = await executeWithSchema(
+        database,
+        catalogObjectRowSchema,
+        sql`
         SELECT indexname AS name, indexdef AS definition
         FROM pg_indexes
         WHERE schemaname = 'fitness'
           AND tablename = 'activity'
         ORDER BY indexname
-      `);
-      expect(indexes.rows.map((row) => row.name)).toEqual([
+      `,
+      );
+      expect(indexes.map((row) => row.name)).toEqual([
         "activity_active_user_started_idx",
         "activity_provider_external_idx",
         "activity_started_at_idx",
@@ -763,37 +799,45 @@ describe("canonical activity types Postgres migration", () => {
         "cardio_activity_pkey",
       ]);
       expect(
-        indexes.rows.find((row) => row.name === "activity_active_user_started_idx")?.definition,
+        indexes.find((row) => row.name === "activity_active_user_started_idx")?.definition,
       ).toContain("WHERE ((deleted_at IS NULL) AND (provider_absent_at IS NULL))");
 
-      const defaults = await client.query<CatalogObjectRow>(`
+      const defaults = await executeWithSchema(
+        database,
+        catalogObjectRowSchema,
+        sql`
         SELECT column_name AS name, column_default AS definition
         FROM information_schema.columns
         WHERE table_schema = 'fitness'
           AND table_name = 'activity'
           AND column_name IN ('id', 'created_at')
         ORDER BY column_name
-      `);
-      expect(defaults.rows).toEqual([
+      `,
+      );
+      expect(defaults).toEqual([
         { definition: "now()", name: "created_at" },
         { definition: "gen_random_uuid()", name: "id" },
       ]);
 
-      const inboundForeignKeys = await client.query<NameRow>(`
+      const inboundForeignKeys = await executeWithSchema(
+        database,
+        nameRowSchema,
+        sql`
         SELECT conname AS name
         FROM pg_constraint
         WHERE contype = 'f'
           AND confrelid = 'fitness.activity'::regclass
         ORDER BY conname
-      `);
-      expect(inboundForeignKeys.rows).toEqual([
+      `,
+      );
+      expect(inboundForeignKeys).toEqual([
         { name: "activity_interval_activity_id_fkey" },
         { name: "climbing_entry_activity_id_activity_id_fk" },
         { name: "strength_set_activity_id_activity_id_fk" },
       ]);
 
       await expect(
-        client.query(`
+        database.execute(sql`
           INSERT INTO fitness.activity (
             provider_id,
             external_id,
@@ -813,13 +857,22 @@ describe("canonical activity types Postgres migration", () => {
         `),
       ).rejects.toThrow();
 
-      await client.query("DELETE FROM fitness.activity WHERE id = $1", [activityIds.roadCycling]);
+      await database.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ${activityIds.roadCycling}`,
+      );
       for (const tableName of ["activity_interval", "strength_set", "climbing_entry"]) {
-        const childRows = await client.query<CountRow>(`SELECT count(*) FROM fitness.${tableName}`);
-        expect(childRows.rows).toEqual([{ count: "0" }]);
+        const childRows = await executeWithSchema(
+          database,
+          countRowSchema,
+          sql.raw(`SELECT count(*)::text AS count FROM fitness.${tableName}`),
+        );
+        expect(childRows).toEqual([{ count: "0" }]);
       }
 
-      const dependentViews = await client.query<NameRow>(`
+      const dependentViews = await executeWithSchema(
+        database,
+        nameRowSchema,
+        sql`
         SELECT schemaname || '.' || viewname AS name
         FROM pg_views
         WHERE (schemaname, viewname) IN (
@@ -831,8 +884,9 @@ describe("canonical activity types Postgres migration", () => {
           ('clickhouse', 'v_activity_members')
         )
         ORDER BY name
-      `);
-      expect(dependentViews.rows).toEqual([
+      `,
+      );
+      expect(dependentViews).toEqual([
         { name: "clickhouse.activity" },
         { name: "clickhouse.v_activity" },
         { name: "clickhouse.v_activity_members" },
@@ -841,14 +895,18 @@ describe("canonical activity types Postgres migration", () => {
         { name: "fitness.v_activity_members" },
       ]);
 
-      const canonicalViewColumns = await client.query<NameRow>(`
+      const canonicalViewColumns = await executeWithSchema(
+        database,
+        nameRowSchema,
+        sql`
         SELECT column_name AS name
         FROM information_schema.columns
         WHERE table_schema = 'clickhouse'
           AND table_name = 'activity'
         ORDER BY ordinal_position
-      `);
-      expect(canonicalViewColumns.rows.map((row) => row.name)).toEqual([
+      `,
+      );
+      expect(canonicalViewColumns.map((row) => row.name)).toEqual([
         "id",
         "user_id",
         "provider_id",
@@ -861,66 +919,69 @@ describe("canonical activity types Postgres migration", () => {
         "source_name",
       ]);
 
-      const publicationRows = await client.query<NameRow>(`
+      const publicationRows = await executeWithSchema(
+        database,
+        nameRowSchema,
+        sql`
         SELECT pubname AS name
         FROM pg_publication_tables
         WHERE schemaname = 'fitness'
           AND tablename = 'activity'
         ORDER BY pubname
-      `);
-      expect(publicationRows.rows).toEqual([{ name: "peerdb_raw_analytics_publication" }]);
+      `,
+      );
+      expect(publicationRows).toEqual([{ name: "peerdb_raw_analytics_publication" }]);
 
-      const ownershipAndReplicaIdentity = await client.query<{
-        owner_name: string;
-        replica_identity: string;
-      }>(`
+      const ownershipAndReplicaIdentity = await executeWithSchema(
+        database,
+        ownershipAndReplicaIdentityRowSchema,
+        sql`
         SELECT
           pg_get_userbyid(class.relowner) AS owner_name,
           class.relreplident AS replica_identity
         FROM pg_class AS class
         WHERE class.oid = 'fitness.activity'::regclass
-      `);
-      expect(ownershipAndReplicaIdentity.rows).toEqual([
-        { owner_name: "test", replica_identity: "d" },
-      ]);
+      `,
+      );
+      expect(ownershipAndReplicaIdentity).toEqual([{ owner_name: "test", replica_identity: "d" }]);
 
-      const grants = await client.query<{
-        grantee: string;
-        privilege_type: string;
-      }>(`
+      const grants = await executeWithSchema(
+        database,
+        grantRowSchema,
+        sql`
         SELECT grantee, privilege_type
         FROM information_schema.role_table_grants
         WHERE table_schema = 'fitness'
           AND table_name = 'activity'
           AND grantee = 'activity_reader'
         ORDER BY privilege_type
-      `);
-      expect(grants.rows).toEqual([{ grantee: "activity_reader", privilege_type: "SELECT" }]);
+      `,
+      );
+      expect(grants).toEqual([{ grantee: "activity_reader", privilege_type: "SELECT" }]);
 
-      const comments = await client.query<{
-        column_comment: string;
-        table_comment: string;
-      }>(`
+      const comments = await executeWithSchema(
+        database,
+        commentRowSchema,
+        sql`
         SELECT
           obj_description('fitness.activity'::regclass, 'pg_class') AS table_comment,
           col_description('fitness.activity'::regclass, attribute.attnum) AS column_comment
         FROM pg_attribute AS attribute
         WHERE attribute.attrelid = 'fitness.activity'::regclass
           AND attribute.attname = 'external_id'
-      `);
-      expect(comments.rows).toEqual([
+      `,
+      );
+      expect(comments).toEqual([
         {
           column_comment: "Exact provider-side identifier",
           table_comment: "Raw provider activity rows",
         },
       ]);
 
-      const unsupportedCatalogFeatures = await client.query<{
-        hypertables: string;
-        policies: string;
-        sequences: string;
-        triggers: string;
-      }>(`
+      const unsupportedCatalogFeatures = await executeWithSchema(
+        database,
+        unsupportedCatalogFeaturesRowSchema,
+        sql`
         SELECT
           (
             SELECT count(*)::text
@@ -948,8 +1009,9 @@ describe("canonical activity types Postgres migration", () => {
               AND dependency.deptype = 'a'
               AND dependent_class.relkind = 'S'
           ) AS sequences
-      `);
-      expect(unsupportedCatalogFeatures.rows).toEqual([
+      `,
+      );
+      expect(unsupportedCatalogFeatures).toEqual([
         { hypertables: "0", policies: "0", sequences: "0", triggers: "0" },
       ]);
     } finally {
