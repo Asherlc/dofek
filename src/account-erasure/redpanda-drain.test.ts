@@ -1,3 +1,6 @@
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertAccountErasureConsumersDrained,
@@ -9,6 +12,23 @@ import {
 } from "./redpanda-drain.ts";
 
 describe("account erasure Redpanda drain", () => {
+  it("loads under Node's native ESM runtime", () => {
+    const moduleUrl = pathToFileURL(join(process.cwd(), "src/account-erasure/redpanda-drain.ts"));
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--disable-warning=ExperimentalWarning",
+        "--input-type=module",
+        "--eval",
+        `import(${JSON.stringify(moduleUrl.href)})`,
+      ],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("fails worker startup when the metric-stream topic is missing", () => {
     expect(() =>
       createAccountErasureRedpandaAdminFromEnv({
