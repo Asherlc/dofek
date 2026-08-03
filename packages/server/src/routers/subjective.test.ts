@@ -127,6 +127,30 @@ describe("subjectiveRouter", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("updates an injury and invalidates subjective caches", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand",
+      onset_date: "2026-08-02",
+      resolved_date: null,
+      severity: 3,
+      description: "Updated hand soreness",
+      created_at: "2026-08-02T08:00:00Z",
+      updated_at: "2026-08-02T08:00:00Z",
+    };
+    const { caller } = makeCaller([[injury]]);
+
+    await expect(
+      caller.updateInjury({
+        id: injury.id,
+        severity: 3,
+        description: "Updated hand soreness",
+      }),
+    ).resolves.toEqual(injury);
+    expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["subjective"]);
+  });
+
   it("accepts nullable injury severity", async () => {
     const injury = {
       id: "50000000-0000-4000-8000-000000002247",
@@ -151,5 +175,15 @@ describe("subjectiveRouter", () => {
         description: "Hand soreness",
       }),
     ).resolves.toEqual(injury);
+    expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["subjective"]);
+  });
+
+  it("allows a same-day timeline window", async () => {
+    const { caller, execute } = makeCaller([[], []]);
+
+    await expect(
+      caller.timeline({ startDate: "2026-08-02", endDate: "2026-08-02" }),
+    ).resolves.toEqual({ checkIns: [], injuries: [] });
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 });

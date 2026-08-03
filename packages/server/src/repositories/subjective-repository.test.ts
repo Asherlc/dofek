@@ -56,6 +56,14 @@ describe("SubjectiveRepository", () => {
     expect(database.transaction).toHaveBeenCalledOnce();
   });
 
+  it("throws when the check-in upsert returns no row", async () => {
+    const { repository } = makeRepository([[]]);
+
+    await expect(repository.saveCheckIn("2026-08-02", [])).rejects.toThrow(
+      "Subjective check-in upsert returned no row",
+    );
+  });
+
   it("inserts all symptoms in one statement", async () => {
     const { repository, database } = makeRepository([[checkInRow], [], [], [checkInRow], []]);
 
@@ -91,12 +99,17 @@ describe("SubjectiveRepository", () => {
       created_at: "2026-08-01T08:00:00.000Z",
       updated_at: "2026-08-01T08:00:00.000Z",
     };
-    const { repository } = makeRepository([[checkInRow], [injury], [symptom]]);
+    const { repository, execute } = makeRepository([[checkInRow], [injury], [symptom]]);
 
     await expect(repository.timeline("2026-08-02", "2026-08-03")).resolves.toEqual({
       checkIns: [{ date: "2026-08-02", logged: true, symptoms: [symptom] }],
       injuries: [injury],
     });
+
+    const symptomQuery = execute.mock.calls
+      .map(([query]) => new PgDialect().sqlToQuery(query))
+      .find((query) => query.sql.includes("fitness.subjective_symptom"));
+    expect(symptomQuery?.params).toContain(checkInRow.id);
   });
 
   it("scopes injury writes to the authenticated user", async () => {
@@ -156,6 +169,21 @@ describe("SubjectiveRepository", () => {
     ).resolves.toEqual(injury);
   });
 
+  it("throws when the injury insert returns no row", async () => {
+    const { repository } = makeRepository([[]]);
+
+    await expect(
+      repository.createInjury({
+        kind: "niggle",
+        bodyRegionId: "left_hand",
+        onsetDate: "2026-08-02",
+        resolvedDate: null,
+        severity: null,
+        description: "Hand soreness",
+      }),
+    ).rejects.toThrow("Injury insert returned no row");
+  });
+
   it("clears an injury resolution date with an explicit NULL assignment", async () => {
     const { repository, execute } = makeRepository([[]]);
 
@@ -171,11 +199,105 @@ describe("SubjectiveRepository", () => {
     expect(query.params).toContain(USER_ID);
   });
 
+  it("updates every supplied injury field", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "injury",
+      body_region_id: "right_knee",
+      onset_date: "2026-08-01",
+      resolved_date: "2026-08-10",
+      severity: 7,
+      description: "Updated knee pain",
+      created_at: "2026-08-01T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
+    };
+    const { repository, execute } = makeRepository([[injury]]);
+
+    await expect(
+      repository.updateInjury(injury.id, {
+        kind: "injury",
+        bodyRegionId: "right_knee",
+        onsetDate: "2026-08-01",
+        resolvedDate: "2026-08-10",
+        severity: 7,
+        description: "Updated knee pain",
+      }),
+    ).resolves.toEqual(injury);
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        "injury",
+        "right_knee",
+        "2026-08-01",
+        "2026-08-10",
+        7,
+        "Updated knee pain",
+      ]),
+    );
+  });
+
+  it("always updates the timestamp when no injury fields change", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand",
+      onset_date: "2026-08-02",
+      resolved_date: null,
+      severity: 2,
+      description: "Hand soreness",
+      created_at: "2026-08-02T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
+    };
+    const { repository, execute } = makeRepository([[injury]]);
+
+    await expect(repository.updateInjury(injury.id, {})).resolves.toEqual(injury);
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("updated_at = now()");
+    expect(query.params).not.toContain(undefined);
+  });
+
   it("reports false when deleting an injury that is not owned by the user", async () => {
     const { repository } = makeRepository([[]]);
 
     await expect(repository.deleteInjury("50000000-0000-4000-8000-000000002247")).resolves.toBe(
       false,
     );
+  });
+
+  it("reports true when deleting an owned injury", async () => {
+    const { repository } = makeRepository([[{ id: "50000000-0000-4000-8000-000000002247" }]]);
+
+    await expect(repository.deleteInjury("50000000-0000-4000-8000-000000002247")).resolves.toBe(
+      true,
+    );
+  });
+
+  it("rejects a malformed deleted injury row", async () => {
+    const { repository } = makeRepository([[{ unexpected: "value" }]]);
+
+    await expect(repository.deleteInjury("50000000-0000-4000-8000-000000002247")).rejects.toThrow();
+  });
+
+  it("does not query symptoms when the timeline has no check-ins", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand",
+      onset_date: "2026-08-02",
+      resolved_date: null,
+      severity: 2,
+      description: "Hand soreness",
+      created_at: "2026-08-02T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
+    };
+    const { repository, execute } = makeRepository([[], [injury]]);
+
+    await expect(repository.timeline("2026-08-02", "2026-08-03")).resolves.toEqual({
+      checkIns: [],
+      injuries: [injury],
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 });

@@ -912,6 +912,23 @@ describe("activityRouter", () => {
       );
       setPerceivedExertion.mockRestore();
     });
+
+    it("throws NOT_FOUND when the activity is missing", async () => {
+      mockInvalidateUserQueryDomains.mockClear();
+      const setPerceivedExertion = vi
+        .spyOn(ActivityRepository.prototype, "setPerceivedExertion")
+        .mockResolvedValue({ found: false, perceivedExertion: null });
+      const caller = makeCaller();
+
+      await expect(
+        caller.setPerceivedExertion({
+          id: "00000000-0000-0000-0000-000000000001",
+          value: 7,
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+      setPerceivedExertion.mockRestore();
+    });
   });
 
   describe("restoreProviderAbsent", () => {
