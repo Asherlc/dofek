@@ -8,7 +8,7 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
 
 const { mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
   mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
@@ -132,20 +132,11 @@ function makeCaller(
   rows: Record<string, unknown>[] = [],
   sensorStore: unknown = makeSensorStoreStub(),
 ) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
-    sensorStore,
-    userId: "user-1",
-    timezone: "UTC",
-  });
+  return makeTestCaller(activityRouter, [rows], { sensorStore }).caller;
 }
 
 function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
-    userId: "user-1",
-    timezone: "UTC",
-  });
+  return makeTestCaller(activityRouter, [rows]).caller;
 }
 
 function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {

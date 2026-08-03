@@ -156,13 +156,31 @@ export function SubjectiveTrackingPanel() {
       <Text style={styles.timelineTitle}>Injuries and niggles</Text>
       <View style={styles.injuryForm}>
         <View style={styles.row}>
-          <Pressable
-            style={styles.control}
-            onPress={() => setRegionPicker("injury")}
-            accessibilityLabel="Choose injury body region"
-          >
-            <Text style={styles.controlText}>{selectedInjuryLabel ?? "Choose region"}</Text>
-          </Pressable>
+          {regions.isLoading && regions.data === undefined ? (
+            <QueryStatePanel variant="loading" minHeight={56} style={styles.regionState} />
+          ) : regions.error && regions.data === undefined ? (
+            <QueryStatePanel
+              variant="error"
+              message={regions.error.message}
+              minHeight={80}
+              style={styles.regionState}
+            />
+          ) : regions.data?.length === 0 ? (
+            <QueryStatePanel
+              variant="empty"
+              message="No body regions are available."
+              minHeight={56}
+              style={styles.regionState}
+            />
+          ) : (
+            <Pressable
+              style={styles.control}
+              onPress={() => setRegionPicker("injury")}
+              accessibilityLabel="Choose injury body region"
+            >
+              <Text style={styles.controlText}>{selectedInjuryLabel ?? "Choose region"}</Text>
+            </Pressable>
+          )}
           <Pressable
             style={styles.control}
             onPress={() => setInjuryKind(injuryKind === "niggle" ? "injury" : "niggle")}
@@ -205,7 +223,7 @@ export function SubjectiveTrackingPanel() {
         <Pressable
           style={styles.secondaryButton}
           onPress={() => {
-            if (!injuryRegionId || !injuryDescription.trim()) return;
+            if (!injuryRegionId || !injuryDescription.trim() || !injuryOnsetDate.trim()) return;
             createInjury.mutate({
               bodyRegionId: injuryRegionId,
               description: injuryDescription.trim(),
@@ -215,7 +233,12 @@ export function SubjectiveTrackingPanel() {
               severity: injurySeverity,
             });
           }}
-          disabled={!injuryRegionId || !injuryDescription.trim() || createInjury.isPending}
+          disabled={
+            !injuryRegionId ||
+            !injuryDescription.trim() ||
+            !injuryOnsetDate.trim() ||
+            createInjury.isPending
+          }
           accessibilityRole="button"
           accessibilityLabel="Add injury"
         >
@@ -249,7 +272,7 @@ export function SubjectiveTrackingPanel() {
               Choose {regionPicker === "injury" ? "injury" : "symptom"} body region
             </Text>
             <ScrollView style={styles.regionOptions}>
-              {(regions.data ?? []).map((region) => (
+              {regions.data?.map((region) => (
                 <Pressable
                   key={region.id}
                   style={styles.regionOption}

@@ -45,6 +45,17 @@ const injuryRowSchema = z.object({
   updated_at: timestampStringSchema,
 });
 
+const injuryProjection = sql`
+  id::text AS id,
+  kind,
+  body_region_id,
+  onset_date::text AS onset_date,
+  resolved_date::text AS resolved_date,
+  severity,
+  description,
+  created_at::text AS created_at,
+  updated_at::text AS updated_at`;
+
 export type SubjectiveRegion = z.infer<typeof regionRowSchema>;
 export type SubjectiveSymptom = z.infer<typeof symptomRowSchema>;
 export type InjuryEvent = z.infer<typeof injuryRowSchema>;
@@ -118,9 +129,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
   async injuries(): Promise<InjuryEvent[]> {
     return this.query(
       injuryRowSchema,
-      sql`SELECT id::text AS id, kind, body_region_id, onset_date::text AS onset_date,
-                 resolved_date::text AS resolved_date, severity, description,
-                 created_at::text AS created_at, updated_at::text AS updated_at
+      sql`SELECT ${injuryProjection}
           FROM fitness.injury_event
           WHERE user_id = ${this.userId}::uuid
           ORDER BY onset_date DESC, created_at DESC`,
@@ -130,9 +139,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
   async getInjury(id: string): Promise<InjuryEvent | null> {
     const rows = await this.query(
       injuryRowSchema,
-      sql`SELECT id::text AS id, kind, body_region_id, onset_date::text AS onset_date,
-                 resolved_date::text AS resolved_date, severity, description,
-                 created_at::text AS created_at, updated_at::text AS updated_at
+      sql`SELECT ${injuryProjection}
           FROM fitness.injury_event
           WHERE id = ${id}::uuid AND user_id = ${this.userId}::uuid
           LIMIT 1`,
@@ -155,9 +162,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
           VALUES
             (${this.userId}::uuid, ${input.kind}, ${input.bodyRegionId}, ${input.onsetDate}::date,
              ${input.resolvedDate}::date, ${input.severity}, ${input.description})
-          RETURNING id::text AS id, kind, body_region_id, onset_date::text AS onset_date,
-                    resolved_date::text AS resolved_date, severity, description,
-                    created_at::text AS created_at, updated_at::text AS updated_at`,
+          RETURNING ${injuryProjection}`,
     );
     const row = rows[0];
     if (!row) throw new Error("Injury insert returned no row");
@@ -195,9 +200,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
       sql`UPDATE fitness.injury_event
           SET ${sql.join(setClauses, sql`, `)}
           WHERE id = ${id}::uuid AND user_id = ${this.userId}::uuid
-          RETURNING id::text AS id, kind, body_region_id, onset_date::text AS onset_date,
-                    resolved_date::text AS resolved_date, severity, description,
-                    created_at::text AS created_at, updated_at::text AS updated_at`,
+          RETURNING ${injuryProjection}`,
     );
     return rows[0] ?? null;
   }
@@ -225,9 +228,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
       ),
       this.query(
         injuryRowSchema,
-        sql`SELECT id::text AS id, kind, body_region_id, onset_date::text AS onset_date,
-                   resolved_date::text AS resolved_date, severity, description,
-                   created_at::text AS created_at, updated_at::text AS updated_at
+        sql`SELECT ${injuryProjection}
             FROM fitness.injury_event
             WHERE user_id = ${this.userId}::uuid
               AND onset_date <= ${endDate}::date

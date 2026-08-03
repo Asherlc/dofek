@@ -32,7 +32,9 @@ const mocks = vi.hoisted(() => {
     invokeMutationSuccess: false,
     invokeMutationError: false,
     injuriesResult: { data: [], error: null, isLoading: false },
-    invalidate: vi.fn(),
+    checkInInvalidate: vi.fn(),
+    injuriesInvalidate: vi.fn(),
+    timelineInvalidate: vi.fn(),
     regionsResult: {
       data: regionData,
       error: regionError,
@@ -47,9 +49,9 @@ vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       subjective: {
-        checkIn: { invalidate: mocks.invalidate },
-        injuries: { invalidate: mocks.invalidate },
-        timeline: { invalidate: mocks.invalidate },
+        checkIn: { invalidate: mocks.checkInInvalidate },
+        injuries: { invalidate: mocks.injuriesInvalidate },
+        timeline: { invalidate: mocks.timelineInvalidate },
       },
     }),
     subjective: {
@@ -103,7 +105,9 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.saveCheckIn.mockReset();
     mocks.invokeMutationSuccess = false;
     mocks.invokeMutationError = false;
-    mocks.invalidate.mockReset();
+    mocks.checkInInvalidate.mockReset();
+    mocks.injuriesInvalidate.mockReset();
+    mocks.timelineInvalidate.mockReset();
     mocks.regionsResult.data = [{ id: "left_hand", label: "Left hand" }];
     mocks.regionsResult.error = null;
     mocks.regionsResult.isLoading = false;
@@ -207,7 +211,9 @@ describe("SubjectiveTrackingPanel", () => {
       target: { value: "Morning pain" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
-    expect(mocks.invalidate).toHaveBeenCalled();
+    expect(mocks.injuriesInvalidate).toHaveBeenCalledTimes(1);
+    expect(mocks.timelineInvalidate).toHaveBeenCalledTimes(1);
+    expect(mocks.checkInInvalidate).not.toHaveBeenCalled();
 
     mocks.invokeMutationError = true;
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -216,14 +222,30 @@ describe("SubjectiveTrackingPanel", () => {
     });
   });
 
+  it("does not submit an injury without an onset date", () => {
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByLabelText("Choose injury body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
+    fireEvent.change(screen.getByLabelText("Injury onset date"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Injury description"), {
+      target: { value: "Missing onset" },
+    });
+
+    const addButton = screen.getByRole("button", { name: "Add injury" });
+    expect(addButton).toHaveProperty("disabled", true);
+    fireEvent.click(addButton);
+    expect(mocks.createInjury).not.toHaveBeenCalled();
+  });
+
   it("shows a region query error instead of enabling an empty selector", () => {
     mocks.regionsResult.data = undefined;
     mocks.regionsResult.error = new Error("Regions unavailable");
 
     render(<SubjectiveTrackingPanel />);
 
-    expect(screen.getByTestId("query-state-error")).toBeTruthy();
-    expect(screen.getByText("Regions unavailable")).toBeTruthy();
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(2);
+    expect(screen.getAllByText("Regions unavailable")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Add injury" })).toHaveProperty("disabled", true);
   });
 });

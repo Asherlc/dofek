@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { makeTestCaller } from "./test-helpers.ts";
 
 const { mockCachedProtectedQuery, mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
   mockCachedProtectedQuery: vi.fn(),
@@ -30,15 +30,8 @@ vi.mock("../trpc.ts", async () => {
 
 import { subjectiveRouter } from "./subjective.ts";
 
-const createCaller = createTestCallerFactory(subjectiveRouter);
-
 function makeCaller(responses: unknown[][] = []) {
-  const execute = vi.fn();
-  for (const response of responses) execute.mockResolvedValueOnce(response);
-  execute.mockResolvedValue([]);
-  const db = { execute, transaction: vi.fn() };
-  db.transaction.mockImplementation(async (callback) => callback(db));
-  return { caller: createCaller({ db, userId: "user-1", timezone: "UTC" }), execute };
+  return makeTestCaller(subjectiveRouter, responses);
 }
 
 const checkInRow = {

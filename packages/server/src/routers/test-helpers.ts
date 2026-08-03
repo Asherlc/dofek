@@ -40,6 +40,25 @@ export function createTestCallerFactory(router: AnyRouter) {
   return trpc.createCallerFactory(router);
 }
 
+export function makeTestCaller(
+  router: AnyRouter,
+  responses: unknown[][] = [],
+  context: Record<string, unknown> = {},
+) {
+  const execute = vi.fn();
+  for (const response of responses) execute.mockResolvedValueOnce(response);
+  execute.mockResolvedValue([]);
+  const db = { execute, transaction: vi.fn() };
+  db.transaction.mockImplementation(async (callback) => callback(db));
+  const caller = createTestCallerFactory(router)({
+    db,
+    userId: "user-1",
+    timezone: "UTC",
+    ...context,
+  });
+  return { caller, execute };
+}
+
 export function collectSqlText(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value !== "object" || value === null) return "";

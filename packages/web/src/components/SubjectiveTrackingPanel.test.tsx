@@ -3,13 +3,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type MutationOptions = { onSuccess?: () => void };
+
 const mocks = vi.hoisted(() => ({
   checkInQuery: vi.fn(),
   regionsQuery: vi.fn(),
   injuriesQuery: vi.fn(),
   saveCheckIn: vi.fn(),
   createInjury: vi.fn(),
-  invalidate: vi.fn(),
+  checkInInvalidate: vi.fn(),
+  injuriesInvalidate: vi.fn(),
+  timelineInvalidate: vi.fn(),
   captureException: vi.fn(),
 }));
 
@@ -21,9 +25,9 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
       subjective: {
-        checkIn: { invalidate: mocks.invalidate },
-        timeline: { invalidate: mocks.invalidate },
-        injuries: { invalidate: mocks.invalidate },
+        checkIn: { invalidate: mocks.checkInInvalidate },
+        timeline: { invalidate: mocks.timelineInvalidate },
+        injuries: { invalidate: mocks.injuriesInvalidate },
       },
     }),
     subjective: {
@@ -34,7 +38,14 @@ vi.mock("../lib/trpc.ts", () => ({
         useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }),
       },
       createInjury: {
-        useMutation: () => ({ error: null, isPending: false, mutate: mocks.createInjury }),
+        useMutation: (options: MutationOptions) => ({
+          error: null,
+          isPending: false,
+          mutate: (input: unknown) => {
+            mocks.createInjury(input);
+            options.onSuccess?.();
+          },
+        }),
       },
     },
   },
@@ -51,7 +62,9 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.injuriesQuery.mockReturnValue({ data: [] });
     mocks.saveCheckIn.mockReset();
     mocks.createInjury.mockReset();
-    mocks.invalidate.mockReset();
+    mocks.checkInInvalidate.mockReset();
+    mocks.injuriesInvalidate.mockReset();
+    mocks.timelineInvalidate.mockReset();
     mocks.captureException.mockReset();
   });
 
@@ -109,6 +122,9 @@ describe("SubjectiveTrackingPanel", () => {
         severity: 0,
       }),
     );
+    expect(mocks.injuriesInvalidate).toHaveBeenCalledTimes(1);
+    expect(mocks.timelineInvalidate).toHaveBeenCalledTimes(1);
+    expect(mocks.checkInInvalidate).not.toHaveBeenCalled();
   });
 
   it("creates an injury with its own kind and zero severity", () => {
@@ -145,6 +161,22 @@ describe("SubjectiveTrackingPanel", () => {
     expect(mocks.createInjury).toHaveBeenCalledWith(
       expect.objectContaining({ onsetDate: "2026-07-31" }),
     );
+  });
+
+  it("does not submit an injury without an onset date", () => {
+    render(<SubjectiveTrackingPanel />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Injury body region" }), {
+      target: { value: "left_hand" },
+    });
+    fireEvent.change(screen.getByLabelText("Injury onset date"), { target: { value: "" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Injury description" }), {
+      target: { value: "Missing onset" },
+    });
+
+    const addButton = screen.getByRole("button", { name: "Add niggle" });
+    expect(addButton).toHaveProperty("disabled", true);
+    fireEvent.click(addButton);
+    expect(mocks.createInjury).not.toHaveBeenCalled();
   });
 
   it("keeps symptom and injury region selections independent", () => {
@@ -214,7 +246,7 @@ describe("SubjectiveTrackingPanel", () => {
 
     render(<SubjectiveTrackingPanel />);
 
-    expect(screen.getByText("Regions unavailable")).toBeInTheDocument();
+    expect(screen.getAllByText("Regions unavailable")).toHaveLength(2);
     expect(screen.queryByRole("combobox", { name: "Body region" })).not.toBeInTheDocument();
   });
 });
