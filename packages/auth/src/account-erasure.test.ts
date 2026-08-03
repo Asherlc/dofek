@@ -1,12 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCOUNT_ERASURE_CLEANUP_OWNERSHIP_ERROR_MESSAGE,
   AccountErasureBearerCapabilitySchema,
   AccountErasurePreparationCapabilitySchema,
   AccountErasureStatusCapabilitySchema,
+  accountErasureCleanupWasBlocked,
   describeAccountErasureStatus,
 } from "./account-erasure";
 
 describe("account-erasure capabilities", () => {
+  it("recognizes cleanup failures caused by another active account", () => {
+    expect(
+      accountErasureCleanupWasBlocked([
+        new Error("unrelated cleanup error"),
+        new Error(ACCOUNT_ERASURE_CLEANUP_OWNERSHIP_ERROR_MESSAGE),
+      ]),
+    ).toBe(true);
+    expect(accountErasureCleanupWasBlocked([])).toBe(false);
+    expect(accountErasureCleanupWasBlocked([new Error("unrelated cleanup error")])).toBe(false);
+  });
+
   it("accepts only canonical 43-character bearer capabilities", () => {
     expect(AccountErasureBearerCapabilitySchema.safeParse("s".repeat(43)).success).toBe(true);
     expect(AccountErasureBearerCapabilitySchema.safeParse("s".repeat(42)).success).toBe(false);
@@ -60,6 +73,69 @@ describe("account-erasure capabilities", () => {
 });
 
 describe("describeAccountErasureStatus", () => {
+  it("describes a running deletion with its current message", () => {
+    const presentation = describeAccountErasureStatus({
+      completedAt: null,
+      currentPhase: "delete_profile",
+      deadlineMissed: false,
+      id: "11111111-1111-4111-8111-111111111111",
+      message: "Deleting profile data.",
+      replayRetainedUntil: "2026-08-02T12:00:00.000Z",
+      requestedAt: "2026-07-26T12:00:00.000Z",
+      retentionUntil: "2026-08-25T12:00:00.000Z",
+      status: "running",
+    });
+
+    expect(presentation).toEqual({
+      detail:
+        "Deleting profile data. If a target date is missed, deletion continues automatically.",
+      isComplete: false,
+      title: "Deletion in progress",
+      tone: "progress",
+    });
+  });
+
+  it("uses safe defaults when running or failing status messages are absent", () => {
+    const baseStatus = {
+      completedAt: null,
+      currentPhase: null,
+      deadlineMissed: false,
+      id: "11111111-1111-4111-8111-111111111111",
+      message: null,
+      replayRetainedUntil: "2026-08-02T12:00:00.000Z",
+      requestedAt: "2026-07-26T12:00:00.000Z",
+      retentionUntil: "2026-08-25T12:00:00.000Z",
+    } as const;
+
+    expect(describeAccountErasureStatus({ ...baseStatus, status: "running" }).detail).toContain(
+      "deleting active application data",
+    );
+    expect(describeAccountErasureStatus({ ...baseStatus, status: "failed" }).detail).toContain(
+      "could not finish the current deletion step",
+    );
+  });
+
+  it("describes a completed deletion without a completion timestamp", () => {
+    const presentation = describeAccountErasureStatus({
+      completedAt: null,
+      currentPhase: "completed",
+      deadlineMissed: false,
+      id: "11111111-1111-4111-8111-111111111111",
+      message: null,
+      replayRetainedUntil: "2026-08-02T12:00:00.000Z",
+      requestedAt: "2026-07-26T12:00:00.000Z",
+      retentionUntil: "2026-08-25T12:00:00.000Z",
+      status: "completed",
+    });
+
+    expect(presentation).toEqual({
+      detail: "Dofek completed final retained-data verification.",
+      isComplete: true,
+      title: "Deletion verified",
+      tone: "success",
+    });
+  });
+
   it("distinguishes active-store verification from final retained-data verification", () => {
     const presentation = describeAccountErasureStatus({
       completedAt: null,

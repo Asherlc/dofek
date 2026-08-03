@@ -135,6 +135,47 @@ describe("initProductionSentry", () => {
     ).toBeNull();
   });
 
+  it("does not classify malformed database-like errors as account-erasure fences", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    const initProductionSentry = await loadInitProductionSentry();
+    initProductionSentry("https://key@sentry.example/456");
+    const beforeSend = mocks.init.mock.calls[0]?.[0].beforeSend;
+    if (!beforeSend) throw new Error("Sentry beforeSend was not configured");
+
+    const event = { event_id: "unexpected-fence-shape", type: undefined } satisfies ErrorEvent;
+    expect(
+      beforeSend(event, {
+        originalException: Object.assign(new Error("Account erasure is active for user"), {
+          code: "55001",
+          name: 42,
+        }),
+      }),
+    ).toBe(event);
+    expect(
+      beforeSend(event, {
+        originalException: Object.assign(new Error("database unavailable"), {
+          code: "55000",
+        }),
+      }),
+    ).toBe(event);
+  });
+
+  it("stops traversing a cyclic error cause chain", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    const initProductionSentry = await loadInitProductionSentry();
+    initProductionSentry("https://key@sentry.example/456");
+    const beforeSend = mocks.init.mock.calls[0]?.[0].beforeSend;
+    if (!beforeSend) throw new Error("Sentry beforeSend was not configured");
+
+    const first = new Error("first");
+    const second = new Error("second");
+    Object.defineProperty(first, "cause", { value: second });
+    Object.defineProperty(second, "cause", { value: first });
+    const event = { event_id: "cyclic-cause", type: undefined } satisfies ErrorEvent;
+
+    expect(beforeSend(event, { originalException: first })).toBe(event);
+  });
+
   it("preserves unexpected errors", async () => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
     const initProductionSentry = await loadInitProductionSentry();
