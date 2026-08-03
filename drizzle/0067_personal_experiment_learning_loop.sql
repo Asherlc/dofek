@@ -1,6 +1,15 @@
 ALTER TABLE fitness.life_events
-ADD COLUMN personal_experiment_id uuid
-REFERENCES fitness.personal_experiment (id) ON DELETE SET NULL;
+ADD COLUMN personal_experiment_id uuid;
+
+ALTER TABLE fitness.life_events
+ADD CONSTRAINT life_events_personal_experiment_id_fkey
+FOREIGN KEY (personal_experiment_id)
+REFERENCES fitness.personal_experiment (id)
+ON DELETE SET NULL
+NOT VALID;
+
+ALTER TABLE fitness.life_events
+VALIDATE CONSTRAINT life_events_personal_experiment_id_fkey;
 
 CREATE INDEX life_events_personal_experiment_idx
 ON fitness.life_events (personal_experiment_id)
