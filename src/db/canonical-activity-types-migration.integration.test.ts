@@ -633,6 +633,28 @@ describe("canonical activity types Postgres migration", () => {
         })),
       );
 
+      const activityViewLocalTimeColumns = await executeWithSchema(
+        database,
+        nameRowSchema,
+        sql`
+        SELECT column_name AS name
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'v_activity'
+          AND column_name IN (
+            'start_utc_offset_minutes',
+            'end_utc_offset_minutes',
+            'local_time_source'
+          )
+        ORDER BY ordinal_position
+      `,
+      );
+      expect(activityViewLocalTimeColumns).toEqual([
+        { name: "start_utc_offset_minutes" },
+        { name: "end_utc_offset_minutes" },
+        { name: "local_time_source" },
+      ]);
+
       const preservedRow = await executeWithSchema(
         database,
         z.object({

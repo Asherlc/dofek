@@ -800,6 +800,24 @@ merged AS (
       ORDER BY r.prio ASC LIMIT 1
     ) AS timezone,
     (
+      SELECT r.start_utc_offset_minutes
+      FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
+      WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
+      ORDER BY r.prio ASC LIMIT 1
+    ) AS start_utc_offset_minutes,
+    (
+      SELECT r.end_utc_offset_minutes
+      FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
+      WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
+      ORDER BY r.prio ASC LIMIT 1
+    ) AS end_utc_offset_minutes,
+    (
+      SELECT r.local_time_source
+      FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
+      WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
+      ORDER BY r.prio ASC LIMIT 1
+    ) AS local_time_source,
+    (
       SELECT jsonb_object_agg(sub.key, sub.value)
       FROM (
         SELECT
@@ -872,7 +890,10 @@ SELECT
   m.source_providers,
   m.source_external_ids,
   m.member_activity_ids,
-  m.absent_source_external_ids
+  m.absent_source_external_ids,
+  m.start_utc_offset_minutes,
+  m.end_utc_offset_minutes,
+  coalesce(m.local_time_source, 'unknown') AS local_time_source
 FROM merged AS m
 ORDER BY m.started_at DESC;
 
