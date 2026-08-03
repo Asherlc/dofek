@@ -69,7 +69,8 @@ describe("exercise provenance backfill (integration)", () => {
             provider_id,
             user_id,
             external_id,
-            activity_type,
+            canonical_type,
+            provider_type,
             started_at
           )
           VALUES (
@@ -77,6 +78,7 @@ describe("exercise provenance backfill (integration)", () => {
             'historical-strength',
             ${userId}::uuid,
             'historical-activity-1996',
+            'strength',
             'strength',
             '2026-01-01T00:00:00.000Z'
           )`,
