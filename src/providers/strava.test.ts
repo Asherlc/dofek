@@ -202,6 +202,15 @@ describe("Strava Provider", () => {
       expect(mapStravaActivityType("Handcycle").canonicalType).toBe("other");
       expect(mapStravaActivityType("UnknownSport").canonicalType).toBe("other");
     });
+
+    it("uses indoor cycling for trainer rides only", () => {
+      expect(mapStravaActivityType("Ride", true)).toMatchObject({
+        canonicalType: "cycling",
+        modality: "indoor",
+        providerType: "Ride",
+      });
+      expect(mapStravaActivityType("Run", true).canonicalType).toBe("running");
+    });
   });
 
   describe("parseStravaActivity", () => {

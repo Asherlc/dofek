@@ -784,7 +784,6 @@ describe("Amazfit/Zepp provider", () => {
                     source: "watch",
                     end_time: String(thirdEndedAt.getTime() / 1000),
                     run_time: "3600",
-                    type: 999,
                     dis: "1000",
                     calorie: "120",
                     app_name: "Zepp",
@@ -874,7 +873,7 @@ describe("Amazfit/Zepp provider", () => {
     expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
-        activityType: expect.objectContaining({ canonicalType: "other" }),
+        activityType: expect.objectContaining({ canonicalType: "other", providerType: "unknown" }),
         externalId: String(thirdStartedAt.getTime() / 1000),
       }),
       expect.objectContaining({

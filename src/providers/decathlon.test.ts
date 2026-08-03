@@ -406,6 +406,11 @@ describe("mapDecathlonSport — all types", () => {
   it("returns other for unknown sport ID", () => {
     expect(mapDecathlonSport("/v2/sports/999").canonicalType).toBe("other");
     expect(mapDecathlonSport("").canonicalType).toBe("other");
+    expect(mapDecathlonSport("   ")).toEqual({
+      canonicalType: "other",
+      modality: null,
+      providerType: "other",
+    });
   });
 });
 

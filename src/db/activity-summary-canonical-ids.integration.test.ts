@@ -434,8 +434,8 @@ function insertStaleRawActivitySummarySql(targetSchema: string): string {
 
 function insertMetricPresenceActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.deduped_activities VALUES
-  ('${missingMetricActivityId}', 'garmin', '${testUserId}', '${missingMetricActivityId}', 'running', 'Missing route data', toDateTime64('2026-07-30 08:00:00', 6, 'UTC'), toDateTime64('2026-07-30 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-30 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
-  ('${zeroMetricActivityId}', 'garmin', '${testUserId}', '${zeroMetricActivityId}', 'running', 'Recorded zero data', toDateTime64('2026-07-31 08:00:00', 6, 'UTC'), toDateTime64('2026-07-31 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
+  ('${missingMetricActivityId}', 'garmin', '${testUserId}', '${missingMetricActivityId}', 'running', 'running', NULL, 'Missing route data', toDateTime64('2026-07-30 08:00:00', 6, 'UTC'), toDateTime64('2026-07-30 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-30 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', 'garmin', '${testUserId}', '${zeroMetricActivityId}', 'running', 'running', NULL, 'Recorded zero data', toDateTime64('2026-07-31 08:00:00', 6, 'UTC'), toDateTime64('2026-07-31 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
 }
 
 function insertMetricPresenceSensorSummarySql(targetSchema: string): string {

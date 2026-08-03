@@ -46,6 +46,11 @@ describe("mapGarminConnectSport", () => {
   it("defaults to other for unknown types", () => {
     expect(mapGarminConnectSport("totally_unknown_sport").canonicalType).toBe("other");
     expect(mapGarminConnectSport("").canonicalType).toBe("other");
+    expect(mapGarminConnectSport("   ")).toEqual({
+      canonicalType: "other",
+      modality: null,
+      providerType: "other",
+    });
   });
 
   it("has a comprehensive sport map", () => {

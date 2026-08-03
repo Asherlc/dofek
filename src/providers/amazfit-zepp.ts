@@ -207,7 +207,7 @@ const ZEPP_WORKOUT_TYPE_MAP: Record<number, LegacyActivityType> = {
 function mapZeppWorkoutType(type: number | undefined): ProviderActivityType {
   return resolveProviderActivityType(
     type ?? "unknown",
-    type === undefined ? "other" : (ZEPP_WORKOUT_TYPE_MAP[type] ?? "other"),
+    ZEPP_WORKOUT_TYPE_MAP[type ?? -1] ?? "other",
   );
 }
 
