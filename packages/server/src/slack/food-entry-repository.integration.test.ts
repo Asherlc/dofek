@@ -221,6 +221,9 @@ describe("FoodEntryRepository inbound account-erasure fence (integration)", () =
       },
       async () => undefined,
     );
+    const initiationResult = expect(initiation).resolves.toEqual(
+      expect.objectContaining({ requestId: expect.any(String) }),
+    );
     await snapshotStarted;
 
     const pendingStore = new InMemoryPendingEntryStore();
@@ -253,16 +256,17 @@ describe("FoodEntryRepository inbound account-erasure fence (integration)", () =
         });
       },
     );
+    const inboundWriteResult = expect(inboundWrite).rejects.toThrow(
+      "Account deletion is active for this user",
+    );
     try {
       await waitForAdvisoryLockWait(context.connectionString);
       expect(processorRan).toBe(false);
     } finally {
       releaseSnapshot();
     }
-    await expect(initiation).resolves.toEqual(
-      expect.objectContaining({ requestId: expect.any(String) }),
-    );
-    await expect(inboundWrite).rejects.toThrow("Account deletion is active for this user");
+    await initiationResult;
+    await inboundWriteResult;
     expect(processorRan).toBe(false);
     await expect(
       pendingStore.findIdsByMessage("C-FENCE-1994", "confirmation-fence-1994"),

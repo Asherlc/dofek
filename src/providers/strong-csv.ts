@@ -50,11 +50,13 @@ export function parseStrongExerciseName(rawName: string): {
   equipment: string | null;
 } {
   const trimmed = rawName.trim();
-  const match = trimmed.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-  if (match) {
-    const name = match[1];
-    const equip = match[2];
-    return { exerciseName: (name ?? trimmed).trim(), equipment: (equip ?? "").trim() || null };
+  if (trimmed.endsWith(")")) {
+    const openingParen = trimmed.lastIndexOf("(");
+    const exerciseName = trimmed.slice(0, openingParen).trim();
+    const equipment = trimmed.slice(openingParen + 1, -1).trim();
+    if (openingParen > 0 && exerciseName && equipment) {
+      return { exerciseName, equipment };
+    }
   }
   return { exerciseName: trimmed, equipment: null };
 }

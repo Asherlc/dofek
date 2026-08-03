@@ -45,7 +45,6 @@ public class CoreMotionModule: Module {
     private let activityManager = CMMotionActivityManager()
     private let accountStateStore = CoreMotionAccountStateStore(userDefaults: .standard)
 
-    // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
         Name("CoreMotion")
 
@@ -56,54 +55,17 @@ public class CoreMotionModule: Module {
         }
 
         Function("getMotionAuthorizationStatus") { () -> String in
-            let status = CMMotionActivityManager.authorizationStatus()
-            switch status {
-            case .authorized: return "authorized"
-            case .denied: return "denied"
-            case .restricted: return "restricted"
-            case .notDetermined: return "notDetermined"
-            @unknown default: return "notDetermined"
-            }
+            self.motionAuthorizationStatus()
         }
 
         AsyncFunction("requestMotionPermission") { (promise: Promise) in
-            // Querying activity data triggers the permission prompt
-            self.activityManager.queryActivityStarting(
-                from: Date().addingTimeInterval(-60),
-                to: Date(),
-                to: OperationQueue.main
-            ) { _, error in
-                if let error = error {
-                    let nsError = error as NSError
-                    if nsError.domain == CMErrorDomain && nsError.code == Int(CMErrorMotionActivityNotAuthorized.rawValue) {
-                        promise.resolve("denied")
-                    } else {
-                        promise.resolve("authorized")
-                    }
-                } else {
-                    promise.resolve("authorized")
-                }
-            }
+            self.requestMotionPermission(promise: promise)
         }
 
         // MARK: - Recording
 
         AsyncFunction("startRecording") { (durationSeconds: Double, promise: Promise) in
-            guard CMSensorRecorder.isAccelerometerRecordingAvailable() else {
-                promise.reject("COREMOTION_UNAVAILABLE", "Accelerometer recording is not available on this device")
-                return
-            }
-
-            // CMSensorRecorder.recordAccelerometer runs asynchronously and records
-            // even when the app is suspended. Max duration is 12 hours.
-            let clampedDuration = min(durationSeconds, 12 * 3600)
-            self.sensorRecorder.recordAccelerometer(forDuration: clampedDuration)
-
-            UserDefaults.standard.set(
-                true,
-                forKey: CoreMotionAccountStateStore.recordingActiveKey
-            )
-            promise.resolve(true)
+            self.startRecording(durationSeconds: durationSeconds, promise: promise)
         }
 
         Function("isRecordingActive") {
@@ -118,62 +80,11 @@ public class CoreMotionModule: Module {
         /// Returns an array of {timestamp, x, y, z} objects.
         /// CMSensorRecorder retains up to 3 days of data.
         AsyncFunction("queryRecordedData") { (fromDateString: String, toDateString: String, promise: Promise) in
-            guard CMSensorRecorder.isAccelerometerRecordingAvailable() else {
-                promise.resolve([])
-                return
-            }
-
-            guard let requestedFromDate = CoreMotionIsoDateParser.parse(fromDateString),
-                  let toDate = CoreMotionIsoDateParser.parse(toDateString) else {
-                promise.reject("COREMOTION_INVALID_DATE", "Invalid ISO 8601 date string")
-                return
-            }
-            let fromDate =
-                self.accountStateStore.effectiveSyncStart(requestedFromDate)
-                ?? requestedFromDate
-            guard fromDate < toDate else {
-                promise.resolve([])
-                return
-            }
-
-            // Query must happen on a background thread — iterating CMSensorDataList
-            // can take seconds for large time ranges
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let dataList = self.sensorRecorder.accelerometerData(from: fromDate, to: toDate) else {
-                    DispatchQueue.main.async {
-                        promise.resolve([])
-                    }
-                    return
-                }
-
-                var samples: [[String: Any]] = []
-                samples.reserveCapacity(50 * 60 * 10) // ~10 minutes at 50 Hz
-
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-                for dataPoint in dataList {
-                    guard let accelerometerData = dataPoint as? CMRecordedAccelerometerData else {
-                        continue
-                    }
-                    guard self.accountStateStore.shouldInclude(
-                        sampleDate: accelerometerData.startDate
-                    ) else {
-                        continue
-                    }
-
-                    samples.append([
-                        "timestamp": formatter.string(from: accelerometerData.startDate),
-                        "x": accelerometerData.acceleration.x,
-                        "y": accelerometerData.acceleration.y,
-                        "z": accelerometerData.acceleration.z,
-                    ])
-                }
-
-                DispatchQueue.main.async {
-                    promise.resolve(samples)
-                }
-            }
+            self.queryRecordedData(
+                fromDateString: fromDateString,
+                toDateString: toDateString,
+                promise: promise
+            )
         }
 
         // MARK: - Sync cursor persistence
@@ -187,28 +98,126 @@ public class CoreMotionModule: Module {
         }
 
         Function("setLastSyncTimestamp") { (timestamp: String) in
-            guard let candidate = CoreMotionIsoDateParser.parse(timestamp),
-                  let effective = self.accountStateStore.effectiveSyncStart(candidate) else {
-                return
-            }
-            UserDefaults.standard.set(
-                CoreMotionIsoDateParser.format(effective),
-                forKey: CoreMotionAccountStateStore.lastSyncKey
-            )
+            self.setLastSyncTimestamp(timestamp)
         }
 
-        AsyncFunction("purgeAccountState") {
-            (cutoffString: String, promise: Promise) in
-            guard let cutoff = CoreMotionIsoDateParser.parse(cutoffString) else {
-                promise.reject(
-                    "COREMOTION_INVALID_ERASURE_CUTOFF",
-                    "Invalid device erasure cutoff"
-                )
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
+            self.purgeAccountState(cutoffString: cutoffString, promise: promise)
+        }
+    }
+
+    private func motionAuthorizationStatus() -> String {
+        switch CMMotionActivityManager.authorizationStatus() {
+        case .authorized: return "authorized"
+        case .denied: return "denied"
+        case .restricted: return "restricted"
+        case .notDetermined: return "notDetermined"
+        @unknown default: return "notDetermined"
+        }
+    }
+
+    private func requestMotionPermission(promise: Promise) {
+        activityManager.queryActivityStarting(
+            from: Date().addingTimeInterval(-60),
+            to: Date(),
+            to: OperationQueue.main
+        ) { _, error in
+            guard let error else {
+                promise.resolve("authorized")
                 return
             }
-            self.accountStateStore.purge(at: cutoff)
-            promise.resolve(true)
+            let nsError = error as NSError
+            let denied = nsError.domain == CMErrorDomain &&
+                nsError.code == Int(CMErrorMotionActivityNotAuthorized.rawValue)
+            promise.resolve(denied ? "denied" : "authorized")
         }
+    }
+
+    private func startRecording(durationSeconds: Double, promise: Promise) {
+        guard CMSensorRecorder.isAccelerometerRecordingAvailable() else {
+            promise.reject(
+                "COREMOTION_UNAVAILABLE",
+                "Accelerometer recording is not available on this device"
+            )
+            return
+        }
+        sensorRecorder.recordAccelerometer(forDuration: min(durationSeconds, 12 * 3600))
+        UserDefaults.standard.set(true, forKey: CoreMotionAccountStateStore.recordingActiveKey)
+        promise.resolve(true)
+    }
+
+    private func queryRecordedData(
+        fromDateString: String,
+        toDateString: String,
+        promise: Promise
+    ) {
+        guard CMSensorRecorder.isAccelerometerRecordingAvailable() else {
+            promise.resolve([])
+            return
+        }
+        guard let requestedFromDate = CoreMotionIsoDateParser.parse(fromDateString),
+              let toDate = CoreMotionIsoDateParser.parse(toDateString) else {
+            promise.reject("COREMOTION_INVALID_DATE", "Invalid ISO 8601 date string")
+            return
+        }
+        let fromDate = accountStateStore.effectiveSyncStart(requestedFromDate) ?? requestedFromDate
+        guard fromDate < toDate else {
+            promise.resolve([])
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let samples = self.recordedSamples(from: fromDate, to: toDate)
+            DispatchQueue.main.async {
+                promise.resolve(samples)
+            }
+        }
+    }
+
+    private func recordedSamples(from fromDate: Date, to toDate: Date) -> [[String: Any]] {
+        guard let dataList = sensorRecorder.accelerometerData(from: fromDate, to: toDate) else {
+            return []
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var samples: [[String: Any]] = []
+        samples.reserveCapacity(50 * 60 * 10)
+        for dataPoint in dataList {
+            guard let accelerometerData = dataPoint as? CMRecordedAccelerometerData,
+                  accountStateStore.shouldInclude(sampleDate: accelerometerData.startDate) else {
+                continue
+            }
+            samples.append([
+                "timestamp": formatter.string(from: accelerometerData.startDate),
+                "x": accelerometerData.acceleration.x,
+                "y": accelerometerData.acceleration.y,
+                "z": accelerometerData.acceleration.z,
+            ])
+        }
+        return samples
+    }
+
+    private func setLastSyncTimestamp(_ timestamp: String) {
+        guard let candidate = CoreMotionIsoDateParser.parse(timestamp),
+              let effective = accountStateStore.effectiveSyncStart(candidate) else {
+            return
+        }
+        UserDefaults.standard.set(
+            CoreMotionIsoDateParser.format(effective),
+            forKey: CoreMotionAccountStateStore.lastSyncKey
+        )
+    }
+
+    private func purgeAccountState(cutoffString: String, promise: Promise) {
+        guard let cutoff = CoreMotionIsoDateParser.parse(cutoffString) else {
+            promise.reject(
+                "COREMOTION_INVALID_ERASURE_CUTOFF",
+                "Invalid device erasure cutoff"
+            )
+            return
+        }
+        accountStateStore.purge(at: cutoff)
+        promise.resolve(true)
     }
 }
 #endif

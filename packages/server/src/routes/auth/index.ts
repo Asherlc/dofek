@@ -97,6 +97,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // Complete signup (email collection for providers that don't provide email)
   router.post(
     "/auth/complete-signup",
+    authRateLimiter,
     express.urlencoded({ extended: false }),
     handleCompleteSignup,
   );

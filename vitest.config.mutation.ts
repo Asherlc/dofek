@@ -16,11 +16,25 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 120_000,
     fileParallelism: true,
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        execArgv: ["--no-experimental-webstorage"],
+      },
+    },
     env: {
+      ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: JSON.stringify({
+        activeKeyId: "test-v1",
+        keys: {
+          "test-v0": Buffer.from("b".repeat(32), "utf8").toString("base64"),
+          "test-v1": testCredentialEncryptionKey,
+        },
+      }),
       TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
       CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
       CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
       CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
+      DEPLOY_ENVIRONMENT: "test",
       PUBLIC_URL: "https://app.example.test",
     },
     include: [
@@ -56,7 +70,6 @@ export default defineConfig({
     ],
     exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
     setupFiles: ["packages/web/test-setup.ts", "packages/mobile/test-setup.ts"],
-    environmentMatchGlobs: [["packages/mobile/**", "jsdom"]],
   },
   resolve: {
     alias: {

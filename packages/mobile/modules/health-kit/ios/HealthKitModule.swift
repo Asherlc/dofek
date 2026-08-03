@@ -1078,8 +1078,7 @@ public class HealthKitModule: Module {
             return self.stopBackgroundObservers()
         }
 
-        AsyncFunction("purgeAccountState") {
-            (cutoffString: String, promise: Promise) in
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
             guard let cutoff = HealthKitQueries.parseDate(cutoffString) else {
                 self.rejectPromise(
                     promise,

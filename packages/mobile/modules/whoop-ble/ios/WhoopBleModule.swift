@@ -253,8 +253,7 @@ public class WhoopBleModule: Module {
             self.connectionManager.disconnect()
         }
 
-        AsyncFunction("purgeAccountState") {
-            (cutoffString: String, promise: Promise) in
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
             guard let cutoff = self.parseIsoDate(cutoffString) else {
                 promise.reject(
                     "WHOOP_BLE_INVALID_ERASURE_CUTOFF",

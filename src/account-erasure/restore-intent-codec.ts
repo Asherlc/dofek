@@ -5,6 +5,7 @@ import { deriveAccountErasureLedgerEncryptionKey } from "./identity.ts";
 const keyIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
 const statusTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const userHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const AUTH_TAG_LENGTH = 16;
 
 const restoreIntentSchema = z.strictObject({
   keyId: keyIdSchema,
@@ -51,6 +52,7 @@ export function sealAccountErasureRestoreIntent(
     "aes-256-gcm",
     deriveAccountErasureLedgerEncryptionKey(intent.keyId),
     initializationVector,
+    { authTagLength: AUTH_TAG_LENGTH },
   );
   cipher.setAAD(additionalData(intent));
   const encryptedStatusToken = Buffer.concat([
@@ -75,6 +77,7 @@ export function openAccountErasureRestoreIntent(value: unknown): AccountErasureR
     "aes-256-gcm",
     deriveAccountErasureLedgerEncryptionKey(sealed.keyId),
     Buffer.from(sealed.initializationVector, "base64"),
+    { authTagLength: AUTH_TAG_LENGTH },
   );
   decipher.setAAD(additionalData(sealed));
   decipher.setAuthTag(Buffer.from(sealed.statusTokenAuthTag, "base64"));

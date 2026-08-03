@@ -268,7 +268,14 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
           .send("Signup credential cleanup failed — please try again");
         return;
       }
-      res.status(409).type("text/plain").send(err.message);
+      res
+        .status(409)
+        .type("text/plain")
+        .send(
+          err instanceof AccountErasureIdentityFencedError
+            ? "This identity belongs to an account that is currently being deleted. Try again after deletion completes."
+            : "Account deletion is active for this user.",
+        );
       return;
     }
     if (pendingClaim) {

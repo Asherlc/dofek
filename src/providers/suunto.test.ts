@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
@@ -485,11 +486,10 @@ describe("SuuntoProvider — precise webhook assertions", () => {
   });
 
   it("verifyWebhookSignature with correct HMAC-SHA256 returns true", () => {
-    const { createHmac } = require("node:crypto");
     const provider = new SuuntoProvider(async () => new Response());
 
     const body = Buffer.from('{"type":"WORKOUT_CREATED","username":"test"}');
-    const secret = "my-signing-secret";
+    const secret = randomBytes(32).toString("hex");
     const hmac = createHmac("sha256", secret);
     hmac.update(body);
     const validSig = hmac.digest("hex");
@@ -500,16 +500,19 @@ describe("SuuntoProvider — precise webhook assertions", () => {
   });
 
   it("verifyWebhookSignature with wrong secret returns false", () => {
-    const { createHmac } = require("node:crypto");
     const provider = new SuuntoProvider(async () => new Response());
 
     const body = Buffer.from("test");
-    const hmac = createHmac("sha256", "correct-secret");
+    const hmac = createHmac("sha256", randomBytes(32));
     hmac.update(body);
     const sig = hmac.digest("hex");
 
     expect(
-      provider.verifyWebhookSignature(body, { "x-hmac-sha256-signature": sig }, "wrong-secret"),
+      provider.verifyWebhookSignature(
+        body,
+        { "x-hmac-sha256-signature": sig },
+        randomBytes(32).toString("hex"),
+      ),
     ).toBe(false);
   });
 

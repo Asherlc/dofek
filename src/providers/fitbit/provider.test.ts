@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
@@ -582,7 +582,7 @@ describe("FitbitProvider", () => {
   describe("verifyWebhookSignature()", () => {
     it("returns true for valid HMAC-SHA1 signature", () => {
       const provider = new FitbitProvider();
-      const signingSecret = "my-secret";
+      const signingSecret = randomBytes(32).toString("hex");
       const body = Buffer.from('{"test": true}');
 
       const hmac = createHmac("sha1", `${signingSecret}&`);

@@ -1,242 +1,245 @@
-ALTER TABLE "fitness"."oauth_token"
-  ADD COLUMN "provider_account_id" text,
-  ADD CONSTRAINT "oauth_token_provider_account_id_nonempty"
-    CHECK (
-      "provider_account_id" IS NULL
-      OR length("provider_account_id") > 0
-    );
+ALTER TABLE fitness.oauth_token
+ADD COLUMN provider_account_id text,
+ADD CONSTRAINT oauth_token_provider_account_id_nonempty
+CHECK (
+  provider_account_id IS NULL
+  OR length(provider_account_id) > 0
+) NOT VALID;
 --> statement-breakpoint
-CREATE TABLE "fitness"."account_erasure_preparation" (
-  "user_id" uuid PRIMARY KEY NOT NULL,
-  "request_id" uuid NOT NULL,
-  "preparation_token_hash" text NOT NULL,
-  "expires_at" timestamp with time zone NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+ALTER TABLE fitness.oauth_token
+VALIDATE CONSTRAINT oauth_token_provider_account_id_nonempty;
+--> statement-breakpoint
+CREATE TABLE fitness.account_erasure_preparation (
+  user_id uuid PRIMARY KEY NOT NULL,
+  request_id uuid NOT NULL,
+  preparation_token_hash text NOT NULL,
+  expires_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "account_erasure_preparation_request_idx"
-  ON "fitness"."account_erasure_preparation" USING btree ("request_id");
+CREATE UNIQUE INDEX account_erasure_preparation_request_idx
+ON fitness.account_erasure_preparation USING btree (request_id);
 --> statement-breakpoint
-CREATE UNIQUE INDEX "account_erasure_preparation_token_idx"
-  ON "fitness"."account_erasure_preparation" USING btree ("preparation_token_hash");
+CREATE UNIQUE INDEX account_erasure_preparation_token_idx
+ON fitness.account_erasure_preparation USING btree (preparation_token_hash);
 --> statement-breakpoint
-CREATE TABLE "fitness"."account_erasure_request" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "user_id" uuid,
-  "user_hash" text NOT NULL,
-  "user_hash_key_id" text NOT NULL,
-  "write_fence_hash" text NOT NULL,
-  "preparation_token_hash" text,
-  "status_token_hash" text NOT NULL,
-  "status" text DEFAULT 'pending' NOT NULL,
-  "current_phase" text,
-  "encrypted_remote_snapshot" text,
-  "requested_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "replay_retained_until" timestamp with time zone NOT NULL,
-  "completion_deadline" timestamp with time zone NOT NULL,
-  "retry_at" timestamp with time zone,
-  "lease_owner" text,
-  "lease_expires_at" timestamp with time zone,
-  "phase_progress" jsonb DEFAULT '{}'::jsonb NOT NULL,
-  "failure_count" bigint DEFAULT 0 NOT NULL,
-  "recovered_from_restore" timestamp with time zone,
-  "started_at" timestamp with time zone,
-  "pii_scrubbed_at" timestamp with time zone,
-  "completed_at" timestamp with time zone,
-  "last_error" text,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "account_erasure_request_status_valid"
-    CHECK ("status" IN ('pending', 'running', 'waiting_replay', 'waiting_retention', 'failed', 'completed'))
+CREATE TABLE fitness.account_erasure_request (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid,
+  user_hash text NOT NULL,
+  user_hash_key_id text NOT NULL,
+  write_fence_hash text NOT NULL,
+  preparation_token_hash text,
+  status_token_hash text NOT NULL,
+  status text DEFAULT 'pending' NOT NULL,
+  current_phase text,
+  encrypted_remote_snapshot text,
+  requested_at timestamp with time zone DEFAULT now() NOT NULL,
+  replay_retained_until timestamp with time zone NOT NULL,
+  completion_deadline timestamp with time zone NOT NULL,
+  retry_at timestamp with time zone,
+  lease_owner text,
+  lease_expires_at timestamp with time zone,
+  phase_progress jsonb DEFAULT '{}'::jsonb NOT NULL,
+  failure_count bigint DEFAULT 0 NOT NULL,
+  recovered_from_restore timestamp with time zone,
+  started_at timestamp with time zone,
+  pii_scrubbed_at timestamp with time zone,
+  completed_at timestamp with time zone,
+  last_error text,
+  updated_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT account_erasure_request_status_valid
+  CHECK (status IN ('pending', 'running', 'waiting_replay', 'waiting_retention', 'failed', 'completed'))
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "account_erasure_request_active_user_idx"
-  ON "fitness"."account_erasure_request" USING btree ("user_id");
+CREATE UNIQUE INDEX account_erasure_request_active_user_idx
+ON fitness.account_erasure_request USING btree (user_id);
 --> statement-breakpoint
-CREATE UNIQUE INDEX "account_erasure_request_write_fence_idx"
-  ON "fitness"."account_erasure_request" USING btree ("write_fence_hash");
+CREATE UNIQUE INDEX account_erasure_request_write_fence_idx
+ON fitness.account_erasure_request USING btree (write_fence_hash);
 --> statement-breakpoint
-CREATE UNIQUE INDEX "account_erasure_request_preparation_token_idx"
-  ON "fitness"."account_erasure_request" USING btree ("preparation_token_hash");
+CREATE UNIQUE INDEX account_erasure_request_preparation_token_idx
+ON fitness.account_erasure_request USING btree (preparation_token_hash);
 --> statement-breakpoint
-CREATE UNIQUE INDEX "account_erasure_request_status_token_idx"
-  ON "fitness"."account_erasure_request" USING btree ("status_token_hash");
+CREATE UNIQUE INDEX account_erasure_request_status_token_idx
+ON fitness.account_erasure_request USING btree (status_token_hash);
 --> statement-breakpoint
-CREATE INDEX "account_erasure_request_status_retry_idx"
-  ON "fitness"."account_erasure_request" USING btree ("status", "retry_at");
+CREATE INDEX account_erasure_request_status_retry_idx -- noqa: PG01
+ON fitness.account_erasure_request USING btree (status, retry_at);
 --> statement-breakpoint
-CREATE TABLE "fitness"."account_erasure_checkpoint" (
-  "request_id" uuid NOT NULL,
-  "phase" text NOT NULL,
-  "details" jsonb,
-  "completed_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "account_erasure_checkpoint_request_id_phase_pk"
-    PRIMARY KEY ("request_id", "phase"),
-  CONSTRAINT "account_erasure_checkpoint_request_id_fkey"
-    FOREIGN KEY ("request_id") REFERENCES "fitness"."account_erasure_request"("id")
-    ON DELETE CASCADE
+CREATE TABLE fitness.account_erasure_checkpoint (
+  request_id uuid NOT NULL,
+  phase text NOT NULL,
+  details jsonb,
+  completed_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT account_erasure_checkpoint_request_id_phase_pk
+  PRIMARY KEY (request_id, phase),
+  CONSTRAINT account_erasure_checkpoint_request_id_fkey
+  FOREIGN KEY (request_id) REFERENCES fitness.account_erasure_request (id)
+  ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE "fitness"."account_erasure_outbox" (
-  "request_id" uuid PRIMARY KEY NOT NULL,
-  "status" text DEFAULT 'pending' NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "dispatched_at" timestamp with time zone,
-  CONSTRAINT "account_erasure_outbox_status_valid"
-    CHECK ("status" IN ('pending', 'dispatched')),
-  CONSTRAINT "account_erasure_outbox_request_id_fkey"
-    FOREIGN KEY ("request_id") REFERENCES "fitness"."account_erasure_request"("id")
-    ON DELETE CASCADE
+CREATE TABLE fitness.account_erasure_outbox (
+  request_id uuid PRIMARY KEY NOT NULL,
+  status text DEFAULT 'pending' NOT NULL,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  dispatched_at timestamp with time zone,
+  CONSTRAINT account_erasure_outbox_status_valid
+  CHECK (status IN ('pending', 'dispatched')),
+  CONSTRAINT account_erasure_outbox_request_id_fkey
+  FOREIGN KEY (request_id) REFERENCES fitness.account_erasure_request (id)
+  ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE INDEX "account_erasure_outbox_pending_idx"
-  ON "fitness"."account_erasure_outbox" USING btree ("status", "created_at");
+CREATE INDEX account_erasure_outbox_pending_idx -- noqa: PG01
+ON fitness.account_erasure_outbox USING btree (status, created_at);
 --> statement-breakpoint
-CREATE TABLE "fitness"."account_erasure_identity_fence" (
-  "request_id" uuid NOT NULL,
-  "identity_kind" text NOT NULL,
-  "key_id" text NOT NULL,
-  "identity_hash" text NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "account_erasure_identity_fence_pk"
-    PRIMARY KEY ("identity_kind", "key_id", "identity_hash"),
-  CONSTRAINT "account_erasure_identity_fence_request_id_fkey"
-    FOREIGN KEY ("request_id") REFERENCES "fitness"."account_erasure_request"("id")
-    ON DELETE RESTRICT,
-  CONSTRAINT "account_erasure_identity_fence_kind_valid"
-    CHECK ("identity_kind" IN ('provider_account', 'email'))
+CREATE TABLE fitness.account_erasure_identity_fence (
+  request_id uuid NOT NULL,
+  identity_kind text NOT NULL,
+  key_id text NOT NULL,
+  identity_hash text NOT NULL,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT account_erasure_identity_fence_pk
+  PRIMARY KEY (identity_kind, key_id, identity_hash),
+  CONSTRAINT account_erasure_identity_fence_request_id_fkey
+  FOREIGN KEY (request_id) REFERENCES fitness.account_erasure_request (id)
+  ON DELETE RESTRICT,
+  CONSTRAINT account_erasure_identity_fence_kind_valid
+  CHECK (identity_kind IN ('provider_account', 'email'))
 );
 --> statement-breakpoint
-CREATE INDEX "account_erasure_identity_fence_request_idx"
-  ON "fitness"."account_erasure_identity_fence" USING btree ("request_id");
+CREATE INDEX account_erasure_identity_fence_request_idx -- noqa: PG01
+ON fitness.account_erasure_identity_fence USING btree (request_id);
 --> statement-breakpoint
-ALTER TABLE "fitness"."auth_account"
-  ADD COLUMN "revocation_access_token" text,
-  ADD COLUMN "revocation_refresh_token" text,
-  ADD COLUMN "revocation_client_id" text;
+ALTER TABLE fitness.auth_account
+ADD COLUMN revocation_access_token text,
+ADD COLUMN revocation_refresh_token text,
+ADD COLUMN revocation_client_id text;
 --> statement-breakpoint
-CREATE TABLE "fitness"."user_external_effect" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "user_id" uuid NOT NULL,
-  "system" text NOT NULL,
-  "resource_type" text NOT NULL,
-  "external_id" text NOT NULL,
-  "contact_email" text,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "user_external_effect_user_id_fkey"
-    FOREIGN KEY ("user_id") REFERENCES "fitness"."user_profile"("id")
-    ON DELETE CASCADE,
-  CONSTRAINT "user_external_effect_supported_resource"
-    CHECK (
-      ("system" = 'stripe' AND "resource_type" = 'customer')
-      OR ("system" = 'zoho_desk' AND "resource_type" = 'ticket')
-    )
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX "user_external_effect_resource_idx"
-  ON "fitness"."user_external_effect" USING btree (
-    "system", "resource_type", "external_id"
-  );
---> statement-breakpoint
-CREATE INDEX "user_external_effect_user_idx"
-  ON "fitness"."user_external_effect" USING btree ("user_id");
---> statement-breakpoint
-CREATE UNIQUE INDEX "exercise_alias_id_exercise_idx"
-  ON "fitness"."exercise_alias" USING btree ("id", "exercise_id");
---> statement-breakpoint
-CREATE TABLE "fitness"."exercise_source" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "exercise_id" uuid NOT NULL,
-  "source_kind" text NOT NULL,
-  "user_id" uuid,
-  "provider_id" text,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "exercise_source_exercise_id_fkey"
-    FOREIGN KEY ("exercise_id") REFERENCES "fitness"."exercise"("id")
-    ON DELETE CASCADE,
-  CONSTRAINT "exercise_source_user_id_fkey"
-    FOREIGN KEY ("user_id") REFERENCES "fitness"."user_profile"("id")
-    ON DELETE CASCADE,
-  CONSTRAINT "exercise_source_provider_id_fkey"
-    FOREIGN KEY ("provider_id") REFERENCES "fitness"."provider"("id"),
-  CONSTRAINT "exercise_source_shape_valid"
-    CHECK (
-      (
-        "source_kind" = 'system'
-        AND "user_id" IS NULL
-        AND "provider_id" IS NULL
-      )
-      OR (
-        "source_kind" = 'user'
-        AND "user_id" IS NOT NULL
-        AND "provider_id" IS NOT NULL
-      )
-    )
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX "exercise_source_id_exercise_idx"
-  ON "fitness"."exercise_source" USING btree ("id", "exercise_id");
---> statement-breakpoint
-CREATE UNIQUE INDEX "exercise_source_system_idx"
-  ON "fitness"."exercise_source" USING btree ("exercise_id")
-  WHERE "source_kind" = 'system';
---> statement-breakpoint
-CREATE UNIQUE INDEX "exercise_source_user_provider_idx"
-  ON "fitness"."exercise_source" USING btree (
-    "exercise_id", "user_id", "provider_id"
+CREATE TABLE fitness.user_external_effect (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL,
+  system text NOT NULL,
+  resource_type text NOT NULL,
+  external_id text NOT NULL,
+  contact_email text,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT user_external_effect_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id)
+  ON DELETE CASCADE,
+  CONSTRAINT user_external_effect_supported_resource
+  CHECK (
+    (system = 'stripe' AND resource_type = 'customer')
+    OR (system = 'zoho_desk' AND resource_type = 'ticket')
   )
-  WHERE "source_kind" = 'user';
---> statement-breakpoint
-CREATE INDEX "exercise_source_user_idx"
-  ON "fitness"."exercise_source" USING btree ("user_id");
---> statement-breakpoint
-CREATE TABLE "fitness"."exercise_alias_source" (
-  "alias_id" uuid NOT NULL,
-  "source_id" uuid NOT NULL,
-  "exercise_id" uuid NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "exercise_alias_source_pk"
-    PRIMARY KEY ("alias_id", "source_id"),
-  CONSTRAINT "exercise_alias_source_alias_fkey"
-    FOREIGN KEY ("alias_id", "exercise_id")
-    REFERENCES "fitness"."exercise_alias"("id", "exercise_id")
-    ON DELETE CASCADE,
-  CONSTRAINT "exercise_alias_source_source_fkey"
-    FOREIGN KEY ("source_id", "exercise_id")
-    REFERENCES "fitness"."exercise_source"("id", "exercise_id")
-    ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE INDEX "exercise_alias_source_exercise_idx"
-  ON "fitness"."exercise_alias_source" USING btree ("exercise_id");
---> statement-breakpoint
-CREATE INDEX "exercise_alias_source_source_idx"
-  ON "fitness"."exercise_alias_source" USING btree ("source_id");
---> statement-breakpoint
-CREATE TABLE "fitness"."slack_team_membership" (
-  "team_id" text NOT NULL,
-  "user_id" uuid NOT NULL,
-  "slack_user_id" text NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "slack_team_membership_pk"
-    PRIMARY KEY ("team_id", "user_id"),
-  CONSTRAINT "slack_team_membership_team_id_fkey"
-    FOREIGN KEY ("team_id") REFERENCES "fitness"."slack_installation"("team_id")
-    ON DELETE CASCADE,
-  CONSTRAINT "slack_team_membership_user_id_fkey"
-    FOREIGN KEY ("user_id") REFERENCES "fitness"."user_profile"("id")
-    ON DELETE CASCADE
+CREATE UNIQUE INDEX user_external_effect_resource_idx
+ON fitness.user_external_effect USING btree (
+  system, resource_type, external_id
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "slack_team_membership_identity_idx"
-  ON "fitness"."slack_team_membership" USING btree (
-    "team_id", "slack_user_id"
-  );
+CREATE INDEX user_external_effect_user_idx -- noqa: PG01
+ON fitness.user_external_effect USING btree (user_id);
 --> statement-breakpoint
-CREATE INDEX "slack_team_membership_user_idx"
-  ON "fitness"."slack_team_membership" USING btree ("user_id");
+CREATE UNIQUE INDEX exercise_alias_id_exercise_idx
+ON fitness.exercise_alias USING btree (id, exercise_id);
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."lock_and_reject_account_erasure_write"(
+CREATE TABLE fitness.exercise_source (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  exercise_id uuid NOT NULL,
+  source_kind text NOT NULL,
+  user_id uuid,
+  provider_id text,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT exercise_source_exercise_id_fkey
+  FOREIGN KEY (exercise_id) REFERENCES fitness.exercise (id)
+  ON DELETE CASCADE,
+  CONSTRAINT exercise_source_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id)
+  ON DELETE CASCADE,
+  CONSTRAINT exercise_source_provider_id_fkey
+  FOREIGN KEY (provider_id) REFERENCES fitness.provider (id),
+  CONSTRAINT exercise_source_shape_valid
+  CHECK (
+    (
+      source_kind = 'system'
+      AND user_id IS NULL
+      AND provider_id IS NULL
+    )
+    OR (
+      source_kind = 'user'
+      AND user_id IS NOT NULL
+      AND provider_id IS NOT NULL
+    )
+  )
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX exercise_source_id_exercise_idx
+ON fitness.exercise_source USING btree (id, exercise_id);
+--> statement-breakpoint
+CREATE UNIQUE INDEX exercise_source_system_idx
+ON fitness.exercise_source USING btree (exercise_id)
+WHERE source_kind = 'system';
+--> statement-breakpoint
+CREATE UNIQUE INDEX exercise_source_user_provider_idx
+ON fitness.exercise_source USING btree (
+  exercise_id, user_id, provider_id
+)
+WHERE source_kind = 'user';
+--> statement-breakpoint
+CREATE INDEX exercise_source_user_idx -- noqa: PG01
+ON fitness.exercise_source USING btree (user_id);
+--> statement-breakpoint
+CREATE TABLE fitness.exercise_alias_source (
+  alias_id uuid NOT NULL,
+  source_id uuid NOT NULL,
+  exercise_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT exercise_alias_source_pk
+  PRIMARY KEY (alias_id, source_id),
+  CONSTRAINT exercise_alias_source_alias_fkey
+  FOREIGN KEY (alias_id, exercise_id)
+  REFERENCES fitness.exercise_alias (id, exercise_id)
+  ON DELETE CASCADE,
+  CONSTRAINT exercise_alias_source_source_fkey
+  FOREIGN KEY (source_id, exercise_id)
+  REFERENCES fitness.exercise_source (id, exercise_id)
+  ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE INDEX exercise_alias_source_exercise_idx -- noqa: PG01
+ON fitness.exercise_alias_source USING btree (exercise_id);
+--> statement-breakpoint
+CREATE INDEX exercise_alias_source_source_idx -- noqa: PG01
+ON fitness.exercise_alias_source USING btree (source_id);
+--> statement-breakpoint
+CREATE TABLE fitness.slack_team_membership (
+  team_id text NOT NULL,
+  user_id uuid NOT NULL,
+  slack_user_id text NOT NULL,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  updated_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT slack_team_membership_pk
+  PRIMARY KEY (team_id, user_id),
+  CONSTRAINT slack_team_membership_team_id_fkey
+  FOREIGN KEY (team_id) REFERENCES fitness.slack_installation (team_id)
+  ON DELETE CASCADE,
+  CONSTRAINT slack_team_membership_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id)
+  ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX slack_team_membership_identity_idx
+ON fitness.slack_team_membership USING btree (
+  team_id, slack_user_id
+);
+--> statement-breakpoint
+CREATE INDEX slack_team_membership_user_idx -- noqa: PG01
+ON fitness.slack_team_membership USING btree (user_id);
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION fitness.lock_and_reject_account_erasure_write(
   target_user_id uuid
 )
 RETURNS void
@@ -282,7 +285,7 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."reject_account_erasure_write"()
+CREATE OR REPLACE FUNCTION fitness.reject_account_erasure_write()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -309,7 +312,7 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."account_erasure_relation_is_ownership_neutral"(
+CREATE OR REPLACE FUNCTION fitness.account_erasure_relation_is_ownership_neutral(
   target_table oid
 )
 RETURNS boolean
@@ -336,10 +339,10 @@ AS $$
   );
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."resolve_account_erasure_owner_ids"(
+CREATE OR REPLACE FUNCTION fitness.resolve_account_erasure_owner_ids(
   target_table oid,
   target_row jsonb,
-  visited_tables oid[] DEFAULT ARRAY[]::oid[]
+  visited_tables oid [] DEFAULT ARRAY[]::oid []
 )
 RETURNS SETOF uuid
 LANGUAGE plpgsql
@@ -481,7 +484,7 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."reject_transitive_account_erasure_write"()
+CREATE OR REPLACE FUNCTION fitness.reject_transitive_account_erasure_write()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -512,7 +515,7 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."reject_slack_team_erasure_write"()
+CREATE OR REPLACE FUNCTION fitness.reject_slack_team_erasure_write()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -603,7 +606,7 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "fitness"."refresh_account_erasure_write_fences"()
+CREATE OR REPLACE FUNCTION fitness.refresh_account_erasure_write_fences()
 RETURNS void
 LANGUAGE plpgsql
 AS $$

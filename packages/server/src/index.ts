@@ -251,7 +251,6 @@ function setupRoutes(
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);
   app.use("/api/companion-pairing", createCompanionPairingRouter({ db }));
-  app.use("/api/companion-token/password-login", authRateLimiter);
   app.use("/api/companion-token", createCompanionTokenHttpRouter({ db }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
@@ -412,7 +411,7 @@ if (isDirectRun) {
   process.on("unhandledRejection", onUnhandledRejection);
   main().catch((err: unknown) => {
     logger.error(`[web] Failed to start: ${err}`);
-    Sentry.captureException(err, {
+    captureException(err, {
       tags: { serverStartupStep: "main" },
     });
     process.exit(1);

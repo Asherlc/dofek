@@ -68,8 +68,7 @@ public class BleHeartRateModule: Module {
             self.connectionManager.disconnect()
         }
 
-        AsyncFunction("purgeAccountState") {
-            (cutoffString: String, promise: Promise) in
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
             guard let cutoff = self.parseIsoDate(cutoffString) else {
                 promise.reject(
                     "BLE_HEART_RATE_INVALID_ERASURE_CUTOFF",

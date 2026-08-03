@@ -53,6 +53,15 @@ describe("parseStrongExerciseName", () => {
     });
   });
 
+  it("handles long names without pathological parsing time", () => {
+    const longName = `${"a".repeat(10_000)}${" ".repeat(10_000)}b`;
+
+    expect(parseStrongExerciseName(longName)).toEqual({
+      exerciseName: longName,
+      equipment: null,
+    });
+  });
+
   it("trims whitespace", () => {
     expect(parseStrongExerciseName("  Squat (Barbell)  ")).toEqual({
       exerciseName: "Squat",

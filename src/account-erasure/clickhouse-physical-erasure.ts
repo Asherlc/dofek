@@ -154,9 +154,7 @@ async function listMutationPartLineage(
     format: "JSONEachRow",
     clickhouse_settings: { log_queries: 0 },
   });
-  return partLineageRowsSchema
-    .parse(await result.json())
-    .flatMap((row) => [row.part_name, ...row.merged_from]);
+  return partLineageRowsSchema.parse(await result.json()).flatMap((row) => row.merged_from);
 }
 
 async function assertNoDetachedParts(

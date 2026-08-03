@@ -107,6 +107,13 @@ final class TransferManager: ObservableObject {
         }
 
         let gyroSamples = gyroscopeRecorder.copyBufferedSamples()
+        processTransfer(result: result, gyroSamples: gyroSamples)
+    }
+
+    private func processTransfer(
+        result: (url: URL, count: Int, through: Date),
+        gyroSamples: [[String: Any]]
+    ) {
         var tempFilesToCleanup: [URL] = [result.url]
         var mergedURL: URL?
 
@@ -116,32 +123,28 @@ final class TransferManager: ObservableObject {
         }
 
         do {
-            // If we have gyroscope data, re-read the accel file, merge, and rewrite
             let fileToCompress: URL
             if !gyroSamples.isEmpty {
                 mergedURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent("imu-merged-\(ISO8601DateFormatter().string(from: Date())).json")
-                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL!)
+                try mergeGyroscopeIntoFile(
+                    accelFileURL: result.url,
+                    gyroSamples: gyroSamples,
+                    outputURL: mergedURL!
+                )
                 try? FileManager.default.removeItem(at: result.url)
                 fileToCompress = mergedURL!
             } else {
                 fileToCompress = result.url
             }
 
-            // Compress the JSON file using streaming compression (memory-mapped read)
             let compressedURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("imu-\(ISO8601DateFormatter().string(from: Date())).json.gz")
             let compressedSize = try Self.compressFile(from: fileToCompress, to: compressedURL)
             tempFilesToCleanup.append(compressedURL)
 
-            // Clean up the uncompressed temp file
-            if fileToCompress != result.url {
-                try? FileManager.default.removeItem(at: fileToCompress)
-            } else {
-                try? FileManager.default.removeItem(at: result.url)
-            }
+            try? FileManager.default.removeItem(at: fileToCompress)
 
-            // Transfer via WCSession
             var metadata = accelerometerRecorder.transferMetadata(through: result.through)
             metadata["type"] = "accelerometer_samples"
             metadata["sampleCount"] = result.count
@@ -164,7 +167,6 @@ final class TransferManager: ObservableObject {
                 self?.lastTransferStatus =
                     "Queued \(result.count) samples (\(compressedSize / 1024) KB)"
             }
-
             transferAltimeterSamples()
         } catch {
             handleTransferFailure(
@@ -481,23 +483,5 @@ final class TransferManager: ObservableObject {
         pendingAltitudeSampleCounts[url] = sampleCount
         pendingAltitudeLock.unlock()
         return true
-    }
-
-    /// Compress a file using zlib via Foundation's NSData.compressed(using:).
-    ///
-    /// Uses `Data(contentsOf:options:.mappedIfSafe)` to memory-map the source file
-    /// so the OS pages data in on demand rather than loading the entire file into RAM.
-    /// The compressed output is typically 10-15x smaller than the input, so holding
-    /// it in memory is fine even for large recordings.
-    ///
-    /// Uses Foundation (no `import Compression` needed) to avoid framework linking
-    /// issues when CocoaPods manages the DofekWatch target's build settings.
-    ///
-    /// - Returns: The size of the compressed file in bytes.
-    static func compressFile(from sourceURL: URL, to destURL: URL) throws -> Int {
-        let sourceData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
-        let compressedData = try (sourceData as NSData).compressed(using: .zlib) as Data
-        try compressedData.write(to: destURL)
-        return compressedData.count
     }
 }

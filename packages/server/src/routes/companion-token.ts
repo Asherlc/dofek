@@ -16,6 +16,7 @@ import {
 } from "../companion/token-repository.ts";
 import { companionConnectionOperationsTotal } from "../lib/metrics.ts";
 import { logger } from "../logger.ts";
+import { authRateLimiter } from "./auth/shared.ts";
 
 const companionPasswordLoginSchema = PasswordLoginRequestSchema.and(
   z.object({ connectionType: companionConnectionTypeSchema }),
@@ -35,7 +36,7 @@ function readBearerToken(req: import("express").Request): string | null {
 export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
   const router = Router();
 
-  router.post("/password-login", express.json(), async (req, res) => {
+  router.post("/password-login", authRateLimiter, express.json(), async (req, res) => {
     const parsed = companionPasswordLoginSchema.safeParse(req.body);
     if (!parsed.success) {
       const missingConnectionType =

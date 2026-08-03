@@ -169,8 +169,11 @@ export async function handleIdentityCallback(
     }
     const db = getDb();
     class IdentityTargetChangedError extends Error {
-      constructor(readonly resolvedUserId: string) {
+      readonly resolvedUserId: string;
+
+      constructor(resolvedUserId: string) {
         super("Identity target changed during callback resolution");
+        this.resolvedUserId = resolvedUserId;
       }
     }
     let result: {
@@ -262,7 +265,14 @@ export async function handleIdentityCallback(
       err instanceof AccountErasureIdentityFencedError ||
       err instanceof AccountErasureUserFencedError
     ) {
-      res.status(409).type("text/plain").send(err.message);
+      res
+        .status(409)
+        .type("text/plain")
+        .send(
+          err instanceof AccountErasureIdentityFencedError
+            ? "This identity belongs to an account that is currently being deleted. Try again after deletion completes."
+            : "Account deletion is active for this user.",
+        );
       return;
     }
     captureException(err);

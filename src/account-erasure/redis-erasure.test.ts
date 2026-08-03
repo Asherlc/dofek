@@ -24,9 +24,32 @@ const identifiers: AccountRedisIdentifiers = {
   userId,
 };
 
-function globPatternToRegExp(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^${escaped.replaceAll("*", ".*").replaceAll("?", ".")}$`);
+function globPatternMatches(value: string, pattern: string): boolean {
+  let valueIndex = 0;
+  let patternIndex = 0;
+  let lastStarIndex = -1;
+  let lastStarMatchIndex = 0;
+
+  while (valueIndex < value.length) {
+    const patternCharacter = pattern[patternIndex];
+    if (patternCharacter === "?" || patternCharacter === value[valueIndex]) {
+      valueIndex += 1;
+      patternIndex += 1;
+    } else if (patternCharacter === "*") {
+      lastStarIndex = patternIndex;
+      lastStarMatchIndex = valueIndex;
+      patternIndex += 1;
+    } else if (lastStarIndex !== -1) {
+      patternIndex = lastStarIndex + 1;
+      lastStarMatchIndex += 1;
+      valueIndex = lastStarMatchIndex;
+    } else {
+      return false;
+    }
+  }
+
+  while (pattern[patternIndex] === "*") patternIndex += 1;
+  return patternIndex === pattern.length;
 }
 
 class FakeRedis implements AccountRedisClient {
@@ -92,9 +115,8 @@ class FakeRedis implements AccountRedisClient {
     _count: string,
   ): Promise<[string, string[]]> {
     if (cursor !== "0") return ["0", []];
-    const matcher = globPatternToRegExp(pattern);
     const keys = [...new Set([...this.strings.keys(), ...this.sets.keys(), ...this.streams.keys()])]
-      .filter((key) => matcher.test(key))
+      .filter((key) => globPatternMatches(key, pattern))
       .sort();
     return ["0", keys];
   }

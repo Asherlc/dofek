@@ -44,11 +44,7 @@ interface ReconnectFailure {
 }
 
 type DeferredOAuthResponse =
-  | {
-      kind: "redirect";
-      location: string;
-      sessionCookie?: { expiresAt: Date; sessionId: string };
-    }
+  | { kind: "redirect"; location: string }
   | { body: string; kind: "send"; statusCode?: number };
 
 type DeferredOAuthCompletion =
@@ -98,9 +94,6 @@ async function revokeSupersededAuthorization(params: {
 
 function sendDeferredOAuthResponse(res: Response, response: DeferredOAuthResponse): void {
   if (response.kind === "redirect") {
-    if (response.sessionCookie) {
-      setSessionCookie(res, response.sessionCookie.sessionId, response.sessionCookie.expiresAt);
-    }
     res.redirect(response.location);
     return;
   }
@@ -402,16 +395,13 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             }
 
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
+            setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             revokedAuthorizationNeedsDurableRemoval = false;
             return {
               kind: "response",
               response: {
                 kind: "redirect",
                 location: getPostLoginRedirect(returnTo, isNewUser),
-                sessionCookie: {
-                  expiresAt: sessionInfo.expiresAt,
-                  sessionId: sessionInfo.sessionId,
-                },
               },
             };
           } catch (loginErr: unknown) {
@@ -614,7 +604,14 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       err instanceof AccountErasureIdentityFencedError ||
       err instanceof AccountErasureUserFencedError
     ) {
-      res.status(409).type("text/plain").send(err.message);
+      res
+        .status(409)
+        .type("text/plain")
+        .send(
+          err instanceof AccountErasureIdentityFencedError
+            ? "This identity belongs to an account that is currently being deleted. Try again after deletion completes."
+            : "Account deletion is active for this user.",
+        );
       return;
     }
     captureException(err);

@@ -237,7 +237,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateSessionOwnerNonce(sessionOwnerNonce);
       updateUser(currentUser);
       setBootstrapError(null);
-      identifyUser(currentUser);
+      if (currentUser) {
+        identifyUser(currentUser);
+      }
     },
     [updateSessionOwnerNonce, updateSessionToken, updateUser],
   );

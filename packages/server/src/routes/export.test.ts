@@ -23,7 +23,6 @@ vi.mock("dofek/db/account-erasure", () => ({
 const mockCreateSignedExportDownloadUrl = vi.fn();
 
 import type { AddressInfo } from "node:net";
-import cookieParser from "cookie-parser";
 import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
@@ -53,7 +52,6 @@ function mockExecute() {
 
 function createTestApp() {
   const app = express();
-  app.use(cookieParser());
   app.use(
     "/api/export",
     createExportRouter({
