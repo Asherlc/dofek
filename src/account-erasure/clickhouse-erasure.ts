@@ -58,6 +58,7 @@ interface AccountErasureClickHouseClient {
   insert?: NonNullable<ClickHouseCommandClient["insert"]>;
   query(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     clickhouse_settings?: Record<string, string | number | boolean>;

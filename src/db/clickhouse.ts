@@ -16,6 +16,7 @@ export interface ClickHouseCommandClient {
   }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     abort_signal?: AbortSignal;
@@ -27,6 +28,7 @@ export interface ClickHouseCommandClient {
 export interface ClickHouseClient extends ClickHouseCommandClient {
   query<TRow extends object>(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     abort_signal?: AbortSignal;

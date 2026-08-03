@@ -190,7 +190,7 @@ describe("FoodEntryRepository inbound account-erasure fence (integration)", () =
     ]);
   });
 
-  it("rechecks after concurrent erasure activation and prevents the pending write", async () => {
+  it("rechecks after concurrent erasure activation and prevents shared-team writes", async () => {
     let releaseSnapshot: () => void = () => {
       throw new Error("Snapshot release was not initialized");
     };
@@ -310,26 +310,28 @@ describe("FoodEntryRepository inbound account-erasure fence (integration)", () =
     ).resolves.toEqual([]);
 
     let sharedProcessorRan = false;
-    await repository.withInboundNutritionWriteFence(
-      {
-        slackClient: {
-          users: {
-            info: async () => ({
-              user: {
-                profile: { email: "slack-shared-1994@example.test" },
-                real_name: "Shared Slack user",
-                tz: "UTC",
-              },
-            }),
+    await expect(
+      repository.withInboundNutritionWriteFence(
+        {
+          slackClient: {
+            users: {
+              info: async () => ({
+                user: {
+                  profile: { email: "slack-shared-1994@example.test" },
+                  real_name: "Shared Slack user",
+                  tz: "UTC",
+                },
+              }),
+            },
           },
+          slackUserId: sharedSlackUserId,
+          teamId: slackTeamId,
         },
-        slackUserId: sharedSlackUserId,
-        teamId: slackTeamId,
-      },
-      async () => {
-        sharedProcessorRan = true;
-      },
-    );
-    expect(sharedProcessorRan).toBe(true);
+        async () => {
+          sharedProcessorRan = true;
+        },
+      ),
+    ).rejects.toThrow("Account deletion is active for this user");
+    expect(sharedProcessorRan).toBe(false);
   });
 });

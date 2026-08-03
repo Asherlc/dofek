@@ -17,6 +17,7 @@ describe("Account erasure", () => {
 
   it("accepts the irreversible request, revokes the session, and opens public status", () => {
     cy.visit("/settings");
+    cy.contains('[role="tab"]', "Privacy/Export").click();
     cy.contains("button", "Delete account").click();
     cy.contains("label", 'Type "DELETE" to continue').find("input").type("DELETE");
     cy.contains("button", "Prepare account deletion").click();

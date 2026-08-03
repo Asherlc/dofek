@@ -31,9 +31,12 @@ migrated template database and clones an isolated database for each test file.
 
 The Vitest projects remain separate in CI: unit, mobile, and four integration
 shards are invoked explicitly. Stryker uses the Docker-free mutation config and
-must not collect `*.integration.test.ts` files. Use `pnpm test:integration` for
-integration behavior and `pnpm test:mutation` for mutation quality; do not mix
-the two execution models.
+must not collect `*.integration.test.ts` files. CI mutation discovery therefore
+only sends changed TypeScript files with a colocated `.test.ts` or `.test.tsx`
+unit suite to Stryker; integration-only implementations are covered by the
+integration shards instead of being counted as uncovered Docker-free mutants.
+Use `pnpm test:integration` for integration behavior and `pnpm test:mutation`
+for mutation quality; do not mix the two execution models.
 
 Sources:
 

@@ -928,14 +928,23 @@ describe("ClickHouse account erasure (integration)", () => {
         clickhouse_settings: { log_queries: 0 },
       });
 
+      const queryLogQueryId = `account-erasure-query-log-check-${randomUUID()}`;
       const queryLogResult = await client.query({
         query: `SELECT query, formatted_query
           FROM system.query_log
-          WHERE position(query, {user_id:String}) > 0
-            OR position(query, {operation_id:String}) > 0
-            OR position(formatted_query, {user_id:String}) > 0
-            OR position(formatted_query, {operation_id:String}) > 0`,
-        query_params: { operation_id: operationId, user_id: userId },
+          WHERE query_id != {inspection_query_id:String}
+            AND (
+              position(query, {user_identifier:String}) > 0
+              OR position(query, {operation_identifier:String}) > 0
+              OR position(formatted_query, {user_identifier:String}) > 0
+              OR position(formatted_query, {operation_identifier:String}) > 0
+            )`,
+        query_id: queryLogQueryId,
+        query_params: {
+          inspection_query_id: queryLogQueryId,
+          operation_identifier: operationId,
+          user_identifier: userId,
+        },
         format: "JSONEachRow",
         clickhouse_settings: { log_queries: 0 },
       });

@@ -1100,6 +1100,12 @@ jobs:
           for f in $CANDIDATES; do
             [ ! -f "$f" ] && continue
 
+            UNIT_TEST_BASE="${f%.ts}"
+            if [ ! -f "${UNIT_TEST_BASE}.test.ts" ] && [ ! -f "${UNIT_TEST_BASE}.test.tsx" ]; then
+              echo "Skipping $f: no colocated Docker-free unit test"
+              continue
+            fi
+
             if ! awk '
               /^[[:space:]]*(\/\/|$)/ { next }
               /(^|[[:space:]])(export[[:space:]]+default|export[[:space:]]+(async[[:space:]]+)?function|export[[:space:]]+class|export[[:space:]]+(const|let|var|enum)|((async[[:space:]]+)?function|class|const|let|var|enum)[[:space:]])/ { found=1 }
