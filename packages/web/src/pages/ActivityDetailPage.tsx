@@ -209,7 +209,7 @@ export function ActivityDetailPage() {
         <ActivitySourceDecisionCard decision={activity.sourceDecision} />
       ) : null}
 
-      <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
+      <ActivityHeader activity={activity} units={units} />
       <ActivityPerceivedExertion activityId={id} value={activity.perceivedExertion} />
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
