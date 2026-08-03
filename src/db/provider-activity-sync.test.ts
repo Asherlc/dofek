@@ -168,7 +168,7 @@ describe("upsertProviderActivity", () => {
         {
           providerId: "peloton",
           externalId: "workout-1",
-          activityType: "indoor_cycling",
+          activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling"),
           startedAt: new Date("2026-06-20T21:49:00Z"),
           endedAt: new Date("2026-06-20T22:17:59Z"),
           timezone: "Not/A_Timezone",
@@ -176,7 +176,7 @@ describe("upsertProviderActivity", () => {
           endUtcOffsetMinutes: 124,
           localTimeSource: "unknown",
         },
-        { activityType: "indoor_cycling" },
+        { activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling") },
       ),
     ).resolves.toEqual({ id: "activity-id" });
 
@@ -192,7 +192,9 @@ describe("upsertProviderActivity", () => {
     expect(onConflictDoUpdate).toHaveBeenCalledWith({
       target: [activity.userId, activity.providerId, activity.externalId],
       set: {
-        activityType: "indoor_cycling",
+        canonicalType: "cycling",
+        providerType: "indoor_cycling",
+        modality: "indoor",
         timezone: null,
         startUtcOffsetMinutes: null,
         endUtcOffsetMinutes: null,
@@ -213,12 +215,12 @@ describe("upsertProviderActivity", () => {
       {
         providerId: "peloton",
         externalId: "workout-1",
-        activityType: "indoor_cycling",
+        activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling"),
         startedAt: new Date("2026-03-08T09:30:00.000Z"),
         endedAt: new Date("2026-03-08T10:30:00.000Z"),
         timezone: "  America/Los_Angeles  ",
       },
-      { activityType: "indoor_cycling" },
+      { activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling") },
     );
 
     const expectedContext = {
@@ -231,7 +233,12 @@ describe("upsertProviderActivity", () => {
     expect(values).toHaveBeenCalledWith(expect.objectContaining(expectedContext));
     expect(onConflictDoUpdate).toHaveBeenCalledWith({
       target: [activity.userId, activity.providerId, activity.externalId],
-      set: { activityType: "indoor_cycling", ...expectedContext },
+      set: {
+        canonicalType: "cycling",
+        providerType: "indoor_cycling",
+        modality: "indoor",
+        ...expectedContext,
+      },
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
@@ -245,20 +252,22 @@ describe("upsertProviderActivity", () => {
       {
         providerId: "whoop",
         externalId: "workout-1",
-        activityType: "running",
+        activityType: resolveProviderActivityType("running", "running"),
         startedAt: new Date("2026-06-20T21:49:00Z"),
         timezone: null,
         startUtcOffsetMinutes: -420,
         endUtcOffsetMinutes: -420,
         localTimeSource: "provider_offset",
       },
-      { activityType: "running" },
+      { activityType: resolveProviderActivityType("running", "running") },
     );
 
     expect(onConflictDoUpdate).toHaveBeenCalledWith({
       target: [activity.userId, activity.providerId, activity.externalId],
       set: {
-        activityType: "running",
+        canonicalType: "running",
+        providerType: "running",
+        modality: null,
         timezone: null,
         startUtcOffsetMinutes: -420,
         endUtcOffsetMinutes: -420,
@@ -277,14 +286,14 @@ describe("upsertProviderActivity", () => {
       {
         providerId: "peloton",
         externalId: "workout-1",
-        activityType: "indoor_cycling",
+        activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling"),
         startedAt: new Date("2026-06-20T21:49:00Z"),
         timezone: "   ",
         startUtcOffsetMinutes: 123,
         endUtcOffsetMinutes: 124,
         localTimeSource: "unknown",
       },
-      { activityType: "indoor_cycling" },
+      { activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling") },
     );
 
     const explicitUnknown = {
@@ -297,7 +306,12 @@ describe("upsertProviderActivity", () => {
     expect(values).toHaveBeenCalledWith(expect.objectContaining(explicitUnknown));
     expect(onConflictDoUpdate).toHaveBeenCalledWith({
       target: [activity.userId, activity.providerId, activity.externalId],
-      set: { activityType: "indoor_cycling", ...explicitUnknown },
+      set: {
+        canonicalType: "cycling",
+        providerType: "indoor_cycling",
+        modality: "indoor",
+        ...explicitUnknown,
+      },
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
   });

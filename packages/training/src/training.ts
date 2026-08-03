@@ -7,9 +7,6 @@ import {
 
 export const OTHER_ACTIVITY_TYPE = "__other__";
 
-export { CANONICAL_ACTIVITY_TYPES } from "./activity-types.js";
-export type { CanonicalActivityType } from "./activity-types.js";
-
 export const STRENGTH_ACTIVITY_TYPES = [
   "strength",
   "strength_training",
@@ -323,7 +320,7 @@ export const APPLE_HEALTH_WORKOUT_TYPE_MAP: Record<string, LegacyActivityType> =
 
 export interface WeeklyVolumeChartRow {
   week: string;
-  activity_type: string;
+  canonical_type: string;
   count: number;
   hours: number;
 }
@@ -428,16 +425,16 @@ export function collapseWeeklyVolumeActivityTypes(
 
   // Consolidate all cycling subtypes into generic "cycling" before grouping
   const normalizedRows = rows.map((row) => {
-    const normalized = normalizeActivityType(row.activity_type);
+    const normalized = normalizeActivityType(row.canonical_type);
     return {
       ...row,
-      activity_type: isCyclingActivity(normalized) ? "cycling" : normalized,
+      canonical_type: isCyclingActivity(normalized) ? "cycling" : normalized,
     };
   });
 
   const totalsByType = new Map<string, number>();
   for (const row of normalizedRows) {
-    totalsByType.set(row.activity_type, (totalsByType.get(row.activity_type) ?? 0) + row.hours);
+    totalsByType.set(row.canonical_type, (totalsByType.get(row.canonical_type) ?? 0) + row.hours);
   }
 
   const orderedTypes = [...totalsByType.entries()]
@@ -451,7 +448,9 @@ export function collapseWeeklyVolumeActivityTypes(
 
   const aggregated = new Map<string, WeeklyVolumeChartRow>();
   for (const row of normalizedRows) {
-    const groupedType = keepTypes.has(row.activity_type) ? row.activity_type : OTHER_ACTIVITY_TYPE;
+    const groupedType = keepTypes.has(row.canonical_type)
+      ? row.canonical_type
+      : OTHER_ACTIVITY_TYPE;
     const key = `${row.week}::${groupedType}`;
     const existing = aggregated.get(key);
     if (existing) {
@@ -461,7 +460,7 @@ export function collapseWeeklyVolumeActivityTypes(
     }
     aggregated.set(key, {
       week: row.week,
-      activity_type: groupedType,
+      canonical_type: groupedType,
       count: row.count,
       hours: row.hours,
     });
@@ -469,7 +468,7 @@ export function collapseWeeklyVolumeActivityTypes(
 
   return [...aggregated.values()].sort((a, b) => {
     if (a.week !== b.week) return a.week.localeCompare(b.week);
-    return a.activity_type.localeCompare(b.activity_type);
+    return a.canonical_type.localeCompare(b.canonical_type);
   });
 }
 

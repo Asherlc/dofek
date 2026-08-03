@@ -379,40 +379,40 @@ describe("formatVerticalAscentActivityTypeGroupLabel", () => {
 describe("collapseWeeklyVolumeActivityTypes", () => {
   it("keeps the largest activity types and groups the rest as Other", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 7 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 4 },
-      { week: "2026-03-01", activity_type: "functional_strength", count: 1, hours: 3 },
-      { week: "2026-03-01", activity_type: "hiking", count: 1, hours: 2 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 7 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "yoga", count: 1, hours: 4 },
+      { week: "2026-03-01", canonical_type: "functional_strength", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "hiking", count: 1, hours: 2 },
     ];
 
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    const types = new Set(result.map((row) => row.activity_type));
+    const types = new Set(result.map((row) => row.canonical_type));
 
     expect(types).toEqual(
       new Set(["cycling", "running", "swimming", "walking", "yoga", OTHER_ACTIVITY_TYPE]),
     );
 
-    const otherRow = result.find((row) => row.activity_type === OTHER_ACTIVITY_TYPE);
+    const otherRow = result.find((row) => row.canonical_type === OTHER_ACTIVITY_TYPE);
     expect(otherRow?.hours).toBe(5);
     expect(otherRow?.count).toBe(2);
   });
 
   it("merges explicit other rows into the grouped Other bucket", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 9 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 7 },
-      { week: "2026-03-01", activity_type: "other", count: 1, hours: 6 },
-      { week: "2026-03-01", activity_type: "hiking", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 4 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 9 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 7 },
+      { week: "2026-03-01", canonical_type: "other", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "hiking", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "yoga", count: 1, hours: 4 },
     ];
 
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    const otherRows = result.filter((row) => row.activity_type === OTHER_ACTIVITY_TYPE);
+    const otherRows = result.filter((row) => row.canonical_type === OTHER_ACTIVITY_TYPE);
 
     expect(otherRows).toHaveLength(1);
     expect(otherRows[0]?.hours).toBe(15);
@@ -420,15 +420,15 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
   });
 
   it("returns the same array reference for empty input (kills early-return guard removal)", () => {
-    const input: { week: string; activity_type: string; count: number; hours: number }[] = [];
+    const input: { week: string; canonical_type: string; count: number; hours: number }[] = [];
     const result = collapseWeeklyVolumeActivityTypes(input);
     expect(result).toBe(input);
   });
 
   it("accumulates hours for duplicate types (kills ?? vs && mutant)", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 3 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
     expect(result).toHaveLength(1);
@@ -437,12 +437,12 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("does not collapse when types count equals maxLegendItems (boundary)", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 6 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 3);
-    const types = result.map((r) => r.activity_type);
+    const types = result.map((r) => r.canonical_type);
     expect(types).not.toContain(OTHER_ACTIVITY_TYPE);
     expect(types).toContain("cycling");
     expect(types).toContain("running");
@@ -451,13 +451,13 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("collapses when types count exceeds maxLegendItems by one", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 2 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 2 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 3);
-    const types = result.map((r) => r.activity_type);
+    const types = result.map((r) => r.canonical_type);
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
     // Smallest type (walking) collapsed into Other
     expect(types).not.toContain("walking");
@@ -466,13 +466,13 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("sorts results by week ascending then activity_type ascending", () => {
     const rows = [
-      { week: "2026-03-08", activity_type: "running", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
-      { week: "2026-03-08", activity_type: "cycling", count: 1, hours: 3 },
+      { week: "2026-03-08", canonical_type: "running", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-08", canonical_type: "cycling", count: 1, hours: 3 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    expect(result.map((r) => `${r.week}:${r.activity_type}`)).toEqual([
+    expect(result.map((r) => `${r.week}:${r.canonical_type}`)).toEqual([
       "2026-03-01:cycling",
       "2026-03-01:running",
       "2026-03-08:cycling",
@@ -482,24 +482,24 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("sorts activity_types alphabetically within the same week", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 3 },
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 4 },
+      { week: "2026-03-01", canonical_type: "yoga", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 4 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    expect(result.map((r) => r.activity_type)).toEqual(["cycling", "running", "yoga"]);
+    expect(result.map((r) => r.canonical_type)).toEqual(["cycling", "running", "yoga"]);
   });
 
   it("keeps largest types by total hours across weeks (kills sort removal)", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 1 },
-      { week: "2026-03-08", activity_type: "cycling", count: 1, hours: 1 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 1 },
+      { week: "2026-03-08", canonical_type: "cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 3 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 3);
-    const types = new Set(result.map((r) => r.activity_type));
+    const types = new Set(result.map((r) => r.canonical_type));
     // running (10) and swimming (5) are largest; cycling (2) and walking (3) collapse
     expect(types).toContain("running");
     expect(types).toContain("swimming");

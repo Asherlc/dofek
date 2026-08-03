@@ -276,7 +276,7 @@ describe("ActivityList", () => {
         id: "zero-distance",
         started_at: "2026-03-18T08:00:00Z",
         ended_at: "2026-03-18T08:30:00Z",
-        activity_type: "walking",
+        canonical_type: "walking",
         name: "Stationary Walk",
         provider_id: "apple",
         source_providers: ["apple"],

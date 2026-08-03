@@ -3,6 +3,7 @@ import {
   resolveRecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
@@ -420,7 +421,10 @@ export async function processWorkouts(
   for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
     const batch = workouts.slice(i, i + BATCH_SIZE);
     for (const workout of batch) {
-      const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
+      const activityType = resolveProviderActivityType(
+        workout.workoutType,
+        workoutActivityTypeMap[workout.workoutType] ?? "other",
+      );
 
       const rawData = {
         duration: workout.duration,

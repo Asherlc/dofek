@@ -587,6 +587,7 @@ export class CyclingAnalyticsRepository {
           date: row.date,
           activityName: row.activity_name ?? row.canonical_type,
           activityType: row.canonical_type,
+          modality: row.modality ?? null,
           elevationGainMeters: row.elevation_gain_meters ?? 0,
           elapsedSeconds: row.elapsed_seconds,
         }).toDetail(),
