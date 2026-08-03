@@ -1,5 +1,5 @@
+import type { LegacyActivityType } from "@dofek/training/activity-types";
 import { z } from "zod";
-import type { activity } from "../../../../src/db/schema/activity.ts";
 import type { protectedProcedure } from "../trpc.ts";
 
 export const PROVIDER_ID = "apple_health";
@@ -152,8 +152,6 @@ export const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
 };
 
-type WorkoutActivityType = (typeof activity.$inferInsert)["canonicalType"];
-
 /**
  * HKWorkoutActivityType rawValue → canonical snake_case activity type.
  *
@@ -162,7 +160,7 @@ type WorkoutActivityType = (typeof activity.$inferInsert)["canonicalType"];
  *
  * Reference: https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype
  */
-export const workoutActivityTypeMap: Record<string, WorkoutActivityType> = {
+export const workoutActivityTypeMap: Record<string, LegacyActivityType> = {
   "1": "american_football",
   "2": "archery",
   "3": "australian_football",

@@ -1,3 +1,5 @@
+import type { ActivityModality } from "@dofek/training/activity-types";
+
 export interface RampRateWeekRow {
   week: string;
   ctlStart: number;
@@ -153,7 +155,7 @@ export interface VerticalAscentRowData {
   date: string;
   activityName: string;
   activityType: string;
-  modality: string | null;
+  modality: ActivityModality | null;
   elevationGainMeters: number;
   elapsedSeconds: number;
 }
@@ -178,7 +180,7 @@ export class VerticalAscentModel {
     return this.#row.activityType;
   }
 
-  get modality(): string | null {
+  get modality(): ActivityModality | null {
     return this.#row.modality;
   }
 

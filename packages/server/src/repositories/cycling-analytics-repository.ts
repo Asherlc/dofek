@@ -1,3 +1,4 @@
+import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
   type CriticalPowerModel,
@@ -49,7 +50,7 @@ const cyclingActivityRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   canonical_type: z.string(),
-  modality: z.string().nullable(),
+  modality: z.enum(ACTIVITY_MODALITIES).nullable(),
   activity_name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),
