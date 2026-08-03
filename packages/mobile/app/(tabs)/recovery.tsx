@@ -449,6 +449,7 @@ export default function RecoveryScreen() {
                   )
                 : undefined
             }
+            onViewData={() => router.push("/daily-heart-rate")}
           />
 
           {respiratoryRateContext ? (
@@ -476,6 +477,7 @@ export default function RecoveryScreen() {
               unit="%"
               color={colors.teal}
               subtitle={formatBaselineContext(sleepEfficiencyContext, { unit: "%" })}
+              onViewData={() => router.push("/sleep")}
             />
           ) : null}
 

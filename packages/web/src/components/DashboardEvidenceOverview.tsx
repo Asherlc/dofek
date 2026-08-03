@@ -1,5 +1,6 @@
 import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { Link } from "@tanstack/react-router";
 import type { BaselineProgress } from "dofek-server/mobile-dashboard-contracts";
 import type { ReactNode } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -239,6 +240,13 @@ export function DashboardEvidenceOverview({
               />
             </MiniChartFrame>
           </div>
+          <Link
+            aria-label="View resting heart rate data"
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+            to="/body/heart-rate"
+          >
+            View data <span aria-hidden>→</span>
+          </Link>
           {trend.restingHeartRateBaselineProgress &&
           trend.restingHeartRateBaselineProgress.blocker !== null ? (
             <section

@@ -135,6 +135,8 @@ describe("SleepScreen", () => {
     expect(screen.getByText("91%")).toBeTruthy();
     expect(screen.queryByText("5h 0m")).toBeNull();
     expect(screen.queryByText("50%")).toBeNull();
+    expect(screen.getByRole("button", { name: "View data for Average Duration" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View data for Average Efficiency" })).toBeTruthy();
   });
 
   it("keeps missing sleep nights as gaps in the sleep trend", async () => {

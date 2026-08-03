@@ -12,6 +12,7 @@ import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
+import { useRef } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
@@ -113,6 +114,8 @@ function renderStageContent(night: SleepNightlyRow, compact = false) {
 }
 
 export default function SleepScreen() {
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sleepSourcesYRef = useRef(0);
   const { days, description, setDays } = useTimeRangePreference("sleep");
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const latestStagesQuery = trpc.sleep.latestStages.useQuery();
@@ -152,9 +155,16 @@ export default function SleepScreen() {
     isFetching: sleepQuery.isFetching,
   });
   const { refreshing, onRefresh } = useRefresh();
+  const scrollToSleepSources = () => {
+    scrollViewRef.current?.scrollTo({
+      animated: true,
+      y: Math.max(sleepSourcesYRef.current - 16, 0),
+    });
+  };
 
   return (
     <ScrollView
+      ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
@@ -245,6 +255,7 @@ export default function SleepScreen() {
                   trend={durationTrend}
                   color={colors.blue}
                   subtitle={`Last ${days} nights`}
+                  onViewData={scrollToSleepSources}
                 />
               )}
               {averageEfficiencyPercent != null && (
@@ -254,6 +265,7 @@ export default function SleepScreen() {
                   trend={efficiencyTrend}
                   color={colors.purple}
                   subtitle={`Last ${days} nights`}
+                  onViewData={scrollToSleepSources}
                 />
               )}
             </View>
@@ -356,7 +368,13 @@ export default function SleepScreen() {
             </View>
           )}
 
-          <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
+          <View
+            onLayout={(event) => {
+              sleepSourcesYRef.current = event.nativeEvent.layout.y;
+            }}
+          >
+            <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
+          </View>
         </>
       )}
     </ScrollView>
