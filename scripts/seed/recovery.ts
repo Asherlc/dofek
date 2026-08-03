@@ -82,13 +82,13 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
       INSERT INTO fitness.sleep_session (
         provider_id, user_id, external_id, started_at, ended_at, duration_minutes,
         deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct,
-        sleep_type, sleep_need_baseline_minutes, sleep_need_from_debt_minutes,
+        staging_available, sleep_type, sleep_need_baseline_minutes, sleep_need_from_debt_minutes,
         sleep_need_from_strain_minutes, sleep_need_from_nap_minutes, source_name
       ) VALUES (
         'whoop', ${USER_ID}, ${`seed-whoop-sleep-${daysAgo}`}, ${startedAt}, ${endedAt},
         ${durationMinutes}, ${deepMinutes}, ${remMinutes}, ${lightMinutes}, ${awakeMinutes},
         ${Math.round(((durationMinutes - awakeMinutes) / durationMinutes) * 1000) / 10},
-        'sleep', 480, ${badSleepWeek ? 45 : 10}, ${daysAgo % 5 === 0 ? 35 : 12}, 0,
+        true, 'sleep', 480, ${badSleepWeek ? 45 : 10}, ${daysAgo % 5 === 0 ? 35 : 12}, 0,
         'WHOOP Review Seed'
       ) RETURNING id
     `;
@@ -113,12 +113,12 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
         INSERT INTO fitness.sleep_session (
           provider_id, user_id, external_id, started_at, ended_at, duration_minutes,
           deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct,
-          sleep_type, source_name
+          staging_available, sleep_type, source_name
         ) VALUES (
           'apple_health', ${USER_ID}, ${`seed-apple-sleep-${daysAgo}`}, ${appleStart}, ${appleEnd},
           ${appleDuration}, ${Math.max(25, deepMinutes - 20)}, ${Math.max(40, remMinutes - 24)},
           ${Math.max(90, lightMinutes - 70)}, ${Math.max(15, awakeMinutes - 8)}, NULL,
-          'sleep', 'Apple Watch Review Seed'
+          true, 'sleep', 'Apple Watch Review Seed'
         )
       `;
     }

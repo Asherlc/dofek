@@ -6,7 +6,7 @@
  * feature importances, and model diagnostics.
  */
 
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { predictorLinearFitFallbacksTotal } from "../lib/metrics.ts";
 import { logger } from "../logger.ts";
 import type { DailyFeatureRow, ExtractedDataset, PredictionTarget } from "./features.ts";
@@ -290,7 +290,7 @@ function fitLinearSafely(
             errorMessage: String(error),
             errorName: "UnknownError",
           };
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: {
         component: "predictor",
         operation: "linear-fit",

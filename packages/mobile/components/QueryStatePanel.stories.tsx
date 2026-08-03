@@ -24,6 +24,8 @@ export const Loading: Story = {
 };
 
 export const Empty: Story = {
+  name: "Empty data",
+  tags: ["review-scenario", "review-scenario-empty-data"],
   args: {
     variant: "empty",
     message: "No data is available for this time range yet.",
@@ -31,6 +33,8 @@ export const Empty: Story = {
 };
 
 export const ErrorState: Story = {
+  name: "Error",
+  tags: ["review-scenario", "review-scenario-error"],
   args: {
     variant: "error",
     message: "The API returned a provider timeout.",

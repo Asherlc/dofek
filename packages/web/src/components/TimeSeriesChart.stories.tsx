@@ -75,6 +75,30 @@ export const DualAxis: Story = {
   },
 };
 
+export const BooleanObservations: Story = {
+  args: {
+    series: [
+      {
+        name: "Alcohol",
+        data: generateDailyData(30, (index) =>
+          index % 3 === 0 ? (index % 2 === 0 ? 1 : 0) : null,
+        ),
+        color: chartColors.pink,
+        visualization: "point",
+        accessibilityDescription: "Alcohol is shown as separate Yes/No points.",
+        formatValue: (value) => (value === 1 ? "Yes" : value === 0 ? "No" : String(value)),
+      },
+      {
+        name: "Energy",
+        data: generateDailyData(30, (index) => 5 + Math.round(Math.sin(index * 0.4) * 3)),
+        color: chartColors.amber,
+        visualization: "line",
+      },
+    ],
+    yAxis: [{ name: "response" }],
+  },
+};
+
 export const WithNullGaps: Story = {
   args: {
     series: [

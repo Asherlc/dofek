@@ -1,8 +1,8 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
-import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runWithTokenUser } from "../db/token-user-context.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   AmazfitZeppClient,
@@ -32,7 +32,7 @@ vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
 }));
 
@@ -408,6 +408,7 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+      stagingAvailable: true,
     });
     expect(parsed.heartRateSamples).toHaveLength(2);
   });
@@ -437,6 +438,7 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+      stagingAvailable: true,
     });
   });
 
@@ -479,6 +481,34 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: undefined,
       remMinutes: undefined,
       awakeMinutes: undefined,
+      stagingAvailable: false,
+    });
+  });
+
+  it.each([
+    "dp",
+    "lt",
+    "dt",
+    "wk",
+  ] as const)("marks staging unavailable when %s is omitted", (omittedField) => {
+    const stages = { dp: 85, lt: 280, dt: 45, wk: 20 };
+    delete stages[omittedField];
+
+    const parsed = parseZeppBandDay({
+      date_time: "2026-02-06",
+      summary: encodeBase64(
+        JSON.stringify({
+          slp: { st: 1320, ed: 1800, ...stages },
+        }),
+      ),
+    });
+
+    expect(parsed.sleep).toMatchObject({
+      stagingAvailable: false,
+      deepMinutes: omittedField === "dp" ? undefined : 85,
+      lightMinutes: omittedField === "lt" ? undefined : 280,
+      remMinutes: omittedField === "dt" ? undefined : 45,
+      awakeMinutes: omittedField === "wk" ? undefined : 20,
     });
   });
 

@@ -1,3 +1,7 @@
+import {
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -369,6 +373,34 @@ export interface ProcessWorkoutsOptions {
   windowEnd: string;
 }
 
+function appleHealthLocalTimeContext(startTimestamp: string, endTimestamp: string) {
+  const startedAt = new Date(startTimestamp);
+  const endedAt = new Date(endTimestamp);
+  const startUtcOffsetMinutes = offsetMinutesFromTimestamp(startTimestamp);
+  const endUtcOffsetMinutes = offsetMinutesFromTimestamp(endTimestamp);
+  if (startUtcOffsetMinutes == null || endUtcOffsetMinutes == null) {
+    return {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown" as const,
+    };
+  }
+  const context = resolveRecordLocalTimeContext({
+    startedAt,
+    endedAt,
+    startUtcOffsetMinutes,
+    endUtcOffsetMinutes,
+    source: "device_offset",
+  });
+  return {
+    timezone: context.timezone,
+    startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+    endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+    localTimeSource: context.source,
+  };
+}
+
 /** Process workout samples */
 export async function processWorkouts(
   db: SyncDatabase,
@@ -407,12 +439,14 @@ export async function processWorkouts(
           activityType,
           startedAt: new Date(workout.startDate),
           endedAt: new Date(workout.endDate),
+          ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
           raw: rawData,
         },
         {
           activityType,
           startedAt: new Date(workout.startDate),
           endedAt: new Date(workout.endDate),
+          ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
           raw: rawData,
         },
       );

@@ -10,8 +10,11 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
 - `seed-review-clickhouse.ts`: Refreshes review-user relational tables in
-  ClickHouse without replacing canonical `ingest.metric_stream` rows. Postgres
-  is no longer a metric-stream source; see the
+  ClickHouse and inserts 90 deterministic review body-weight samples directly
+  into canonical `ingest.metric_stream`. It tombstones only its own prior
+  `review-seed-body-weight-*` rows and never truncates or replaces unrelated
+  sensor rows; see the [seed implementation](./seed-review-clickhouse.ts).
+  Postgres is no longer a metric-stream source; see the
   [metric-stream retirement record](../docs/metric-stream-postgres-retirement.md).
   - Usage: `pnpm review:seed-clickhouse`
 - `migrate-raw.mjs`: Utility for running raw SQL migrations or manual data fixes.
@@ -85,6 +88,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   [`workspace:` protocol](https://pnpm.io/workspaces#workspace-protocol-workspace).
   The root `pnpm lint` command and required CI lint job run this check.
 - `workflow-download-policy.ts`: Rejects GitHub workflow and action source downloads unless they use a full commit SHA; versioned release artifacts must instead be protected by a reviewed checksum. This follows GitHub's guidance that only full commit SHAs are immutable unless immutable releases are enabled: https://docs.github.com/en/actions/how-tos/create-and-publish-actions/using-immutable-releases-and-tags-to-manage-your-actions-releases
+- `review-scenario-coverage-policy.ts`: Verifies that web and mobile Storybook
+  each export tagged fixtures for the six required review scenarios. Run it
+  with `pnpm lint:review-scenarios`; see the
+  [review fixture matrix](../docs/review-fixture-scenarios.md).
 - `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.
 - `generate-icons.mjs`: Script to generate app icons for web and mobile.
 - `check-clickhouse-cdc.ts`: Fails loudly when required PeerDB replication slots

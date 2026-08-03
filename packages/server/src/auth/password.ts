@@ -1,7 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { getNewPasswordValidationError } from "@dofek/auth/auth";
 
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 128;
 const SCRYPT_N = 16384;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
@@ -19,11 +18,9 @@ export function normalizeEmail(email: string): string {
 }
 
 export function validatePassword(password: string): void {
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    throw new InvalidPasswordError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  }
-  if (password.length > MAX_PASSWORD_LENGTH) {
-    throw new InvalidPasswordError(`Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
+  const validationError = getNewPasswordValidationError(password);
+  if (validationError) {
+    throw new InvalidPasswordError(validationError);
   }
 }
 

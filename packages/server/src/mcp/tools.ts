@@ -1,3 +1,4 @@
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Database } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
@@ -11,12 +12,17 @@ import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { BodyRepository } from "../repositories/body-repository.ts";
+import { readFingerLoadingRange } from "../repositories/climbing-training-log-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import {
+  type DailyRecoveryBaseline,
+  latestRecoveryBaselineMetrics,
+  RecoveryBaselineRepository,
+} from "../repositories/recovery-baseline-repository.ts";
+import {
   fetchRestingHeartRateValuesCte,
   localDateString,
-  restingHeartRateValuesCte,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
@@ -51,6 +57,7 @@ const healthMetricSchema = z.enum([
   "resting_hr",
   "spo2",
   "respiratory_rate",
+  "sleep_efficiency",
   "skin_temp",
   "steps",
   "distance_km",
@@ -60,16 +67,26 @@ const healthMetricSchema = z.enum([
 
 type HealthMetric = z.infer<typeof healthMetricSchema>;
 
-const healthMetricColumns: Record<HealthMetric, string> = {
+const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
   hrv: "hrv",
   resting_hr: "resting_hr",
   spo2: "spo2_avg",
   respiratory_rate: "respiratory_rate_avg",
+  sleep_efficiency: undefined,
   skin_temp: "skin_temp_c",
   steps: "steps",
   distance_km: "distance_km",
   exercise_minutes: "exercise_minutes",
   flights_climbed: "flights_climbed",
+};
+
+const recoveryMetricKeys: Partial<
+  Record<HealthMetric, DailyRecoveryBaseline["metrics"][number]["metric"]>
+> = {
+  hrv: "hrv",
+  resting_hr: "resting_heart_rate",
+  respiratory_rate: "respiratory_rate",
+  sleep_efficiency: "sleep_efficiency",
 };
 
 const activityMcpRowSchema = z.object({
@@ -123,6 +140,7 @@ function aggregateNumbers(values: Array<number | null | undefined>) {
 
 function healthTrends(
   rows: Array<Record<string, unknown>>,
+  baselineRows: DailyRecoveryBaseline[],
   metrics: HealthMetric[],
   granularity: "daily" | "weekly",
 ) {
@@ -132,35 +150,60 @@ function healthTrends(
     const key = granularity === "weekly" ? isoWeek(date) : date;
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
-  return [...grouped.entries()].map(([key, groupRows]) => {
-    const metricValues = Object.fromEntries(
-      metrics.flatMap((metric) => {
-        const column = healthMetricColumns[metric];
-        const aggregate = aggregateNumbers(
-          groupRows.map((row) =>
-            z.coerce
-              .number()
-              .nullable()
-              .parse(row[column] ?? null),
-          ),
-        );
-        return aggregate ? [[metric, aggregate]] : [];
-      }),
-    );
-    return granularity === "weekly"
-      ? { week: key, metrics: metricValues }
-      : { date: key, metrics: metricValues };
-  });
-}
+  const groupedBaselines = new Map<string, DailyRecoveryBaseline[]>();
+  for (const baselineRow of baselineRows) {
+    const key = granularity === "weekly" ? isoWeek(baselineRow.date) : baselineRow.date;
+    groupedBaselines.set(key, [...(groupedBaselines.get(key) ?? []), baselineRow]);
+    if (!grouped.has(key)) grouped.set(key, [{ date: baselineRow.date }]);
+  }
 
-function localTime(timestamp: string | null, timezone: string): string | null {
-  if (!timestamp) return null;
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone: timezone,
-  }).format(new Date(timestamp));
+  return [...grouped.entries()]
+    .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey))
+    .map(([key, groupRows]) => {
+      const baselineGroup = groupedBaselines.get(key) ?? [];
+      const latestBaselines = latestRecoveryBaselineMetrics(baselineGroup);
+      const metricValues = Object.fromEntries(
+        metrics.flatMap((metric) => {
+          const column = healthMetricColumns[metric];
+          const recoveryMetricKey = recoveryMetricKeys[metric];
+          const baselineMetric = recoveryMetricKey
+            ? latestBaselines.find((candidate) => candidate.metric === recoveryMetricKey)
+            : undefined;
+          const baselineValues = recoveryMetricKey
+            ? baselineGroup.flatMap((row) => {
+                const matchingMetric = row.metrics.find(
+                  (candidate) => candidate.metric === recoveryMetricKey,
+                );
+                return matchingMetric?.value == null ? [] : [matchingMetric.value];
+              })
+            : [];
+          const aggregate = aggregateNumbers(
+            baselineValues.length > 0
+              ? baselineValues
+              : groupRows.map((row) =>
+                  z.coerce
+                    .number()
+                    .nullable()
+                    .parse(column ? (row[column] ?? null) : null),
+                ),
+          );
+          return aggregate
+            ? [
+                [
+                  metric,
+                  {
+                    ...aggregate,
+                    ...(baselineMetric ? { baseline_relative: baselineMetric } : {}),
+                  },
+                ],
+              ]
+            : [];
+        }),
+      );
+      return granularity === "weekly"
+        ? { week: key, metrics: metricValues }
+        : { date: key, metrics: metricValues };
+    });
 }
 
 function average(values: Array<number | null | undefined>): number | null {
@@ -254,7 +297,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "get_health_trends",
     {
       title: "Get Health Trends",
-      description: "Return daily or weekly health metric aggregates for an exact date range.",
+      description:
+        "Return daily or weekly health metric aggregates with baseline-relative recovery context for an exact date range.",
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -268,18 +312,30 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       assertDateRange(start_date, end_date);
       const requestedTimezone = timezone ?? context.timezone;
       const repository = new DailyMetricsRepository(context.db, context.userId, requestedTimezone);
-      const restingHeartRateCte = context.sensorStore
-        ? await fetchRestingHeartRateValuesCte({
-            sensorStore: context.sensorStore,
-            userId: context.userId,
-            timezone: requestedTimezone,
-            endDate: end_date,
-            days: daysBetween(start_date, end_date) + 1,
-          })
-        : restingHeartRateValuesCte([]);
+      if (!context.sensorStore) {
+        throw new Error("get_health_trends requires the ClickHouse analytics store");
+      }
+      const [restingHeartRateCte, baselineRows] = await Promise.all([
+        fetchRestingHeartRateValuesCte({
+          sensorStore: context.sensorStore,
+          userId: context.userId,
+          timezone: requestedTimezone,
+          endDate: end_date,
+          days: daysBetween(start_date, end_date) + 1,
+        }),
+        new RecoveryBaselineRepository(context.userId, context.sensorStore).listRange(
+          start_date,
+          end_date,
+        ),
+      ]);
       const rows = await repository.listRange(start_date, end_date, restingHeartRateCte);
       return jsonContent(
-        healthTrends(rows, metrics ?? healthMetricSchema.options, granularity ?? "daily"),
+        healthTrends(
+          rows,
+          baselineRows,
+          metrics ?? healthMetricSchema.options,
+          granularity ?? "daily",
+        ),
       );
     },
   );
@@ -320,24 +376,41 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         dailyMetrics.map((row) => [row.date, row.respiratory_rate_avg]),
       );
       return jsonContent(
-        rows.map((row) => ({
-          date: row.date,
-          total_duration_minutes: row.duration_minutes,
-          sleep_efficiency_pct: row.efficiency_pct,
-          time_in_bed_minutes:
-            row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
-          onset_time: localTime(row.started_at, requestedTimezone),
-          wake_time: localTime(row.ended_at, requestedTimezone),
-          stages: {
-            rem_minutes: row.rem_minutes,
-            sws_minutes: row.deep_minutes,
-            light_minutes: row.light_minutes,
-            awake_minutes: row.awake_minutes,
-          },
-          sleep_consistency_pct: null,
-          respiratory_rate_avg: respiratoryRateByDate.get(row.date) ?? null,
-          source_provider: row.provider_id,
-        })),
+        rows.map((row) => {
+          const localTimeContext = {
+            timezone: row.timezone,
+            startUtcOffsetMinutes: row.start_utc_offset_minutes,
+            endUtcOffsetMinutes: row.end_utc_offset_minutes,
+            source: row.local_time_source,
+          };
+          return {
+            date: row.date,
+            staging_available: row.staging_available,
+            total_duration_minutes: row.duration_minutes,
+            sleep_efficiency_pct: row.efficiency_pct,
+            time_in_bed_minutes:
+              row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
+            onset_time:
+              formatRecordLocalTime(row.started_at, localTimeContext, "start") === "--"
+                ? null
+                : formatRecordLocalTime(row.started_at, localTimeContext, "start"),
+            wake_time:
+              row.ended_at == null ||
+              formatRecordLocalTime(row.ended_at, localTimeContext, "end") === "--"
+                ? null
+                : formatRecordLocalTime(row.ended_at, localTimeContext, "end"),
+            local_time_context: localTimeContext,
+            stages: {
+              rem_minutes: row.rem_minutes,
+              sws_minutes: row.deep_minutes,
+              light_minutes: row.light_minutes,
+              awake_minutes: row.awake_minutes,
+            },
+            sleep_consistency_pct: null,
+            respiratory_rate_avg: respiratoryRateByDate.get(row.date) ?? null,
+            source_provider: row.provider_id,
+          };
+        }),
       );
     },
   );
@@ -411,6 +484,49 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           group_by ?? "activity_type",
           context.timezone,
         ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_finger_loading",
+    {
+      title: "Get Finger Loading",
+      description:
+        "Return structured finger-loading protocols and server-computed effective load for an exact date range.",
+      inputSchema: {
+        start_date: dateSchema,
+        end_date: dateSchema,
+        timezone: z.string().optional(),
+      },
+    },
+    async ({ start_date, end_date, timezone }) => {
+      requireMcpScope(context.scopes, "activity:read");
+      assertDateRange(start_date, end_date);
+      const rows = await readFingerLoadingRange({
+        database: context.db,
+        endDate: end_date,
+        startDate: start_date,
+        timezone: timezone ?? context.timezone,
+        userId: context.userId,
+      });
+      return jsonContent(
+        rows.map((row) => ({
+          activity_id: row.activityId,
+          bodyweight_kg: row.bodyweightKg,
+          edge_size_mm: row.edgeSizeMm,
+          effective_load_kg: row.effectiveLoadKg,
+          exercise: row.exercise,
+          external_load_kg: row.externalLoadKg,
+          grip_position: row.gripPosition,
+          hold_duration_seconds: row.holdDurationSeconds,
+          laterality: row.laterality,
+          notes: row.notes,
+          rest_interval_seconds: row.restIntervalSeconds,
+          rpe: row.rpe,
+          set_count: row.setCount,
+          started_at: row.startedAt,
+        })),
       );
     },
   );

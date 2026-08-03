@@ -42,6 +42,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "cronometer-csv": "Cronometer",
   bodyspec: "BodySpec",
   dofek: "Dofek",
+  manual_review: "Manual review",
   whoop_ble: "WHOOP (Bluetooth)",
   ble_heart_rate: "Heart Rate Monitor (Bluetooth)",
   "zos-app": "Zepp OS App",
@@ -52,12 +53,38 @@ export function providerLabel(id: string): string {
   return PROVIDER_LABELS[id] ?? id;
 }
 
+/** Provider identity resolved for user-facing provenance and technical diagnostics. */
+export interface ProviderProvenance {
+  providerId: string;
+  label: string;
+}
+
+/** Resolve one provider ID through the canonical shared display-name map. */
+export function resolveProviderProvenance(providerId: string): ProviderProvenance {
+  return {
+    providerId,
+    label: providerLabel(providerId),
+  };
+}
+
 /** Human-readable label for a provider/source combination. */
 export function providerSourceLabel(id: string, subsource?: string | null): string {
   if (id === "apple_health" && subsource) {
     return `${subsource} (via Apple Health)`;
   }
   return providerLabel(id);
+}
+
+/** Human-readable label for a provider record and its reporting device or app. */
+export function providerRecordLabel(id: string, sourceName?: string | null): string {
+  const label = providerLabel(id);
+  const source = sourceName?.trim();
+  if (!source) return label;
+  const normalizedSource = source.toLowerCase();
+  if (normalizedSource === id.toLowerCase() || normalizedSource === label.toLowerCase()) {
+    return label;
+  }
+  return `${label} · ${source}`;
 }
 
 export interface ProviderAbsentSource {

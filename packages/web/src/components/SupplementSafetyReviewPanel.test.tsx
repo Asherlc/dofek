@@ -14,9 +14,11 @@ const review: MicronutrientSafetyReviewResult = {
       intake: {
         totalDailyAverage: 120,
         foodDailyAverage: 20,
+        providerDailyTotalAverage: 0,
         supplementDailyAverage: 100,
         daysTracked: 10,
       },
+      sourceBreakdown: [],
       adequacy: {
         status: "at_or_above_daily_value",
         percentDailyValue: 600,
@@ -55,6 +57,17 @@ const review: MicronutrientSafetyReviewResult = {
       safetyStatus: "at_or_above_upper_limit",
     },
   ],
+  dataQuality: {
+    selectedWindowDays: 30,
+    daysWithData: 10,
+    usableDays: 10,
+    overlapDays: 0,
+    conflictDays: 0,
+    completenessPercent: 33.3,
+    sourceLabels: ["Dofek supplements"],
+    contributingSourceLabels: ["Dofek supplements"],
+    excludedSourceLabels: [],
+  },
   professionalReview: {
     status: "professional_review_recommended",
     message:

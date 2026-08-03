@@ -280,13 +280,13 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-              efficiency_pct, sleep_type
+              efficiency_pct, staging_available, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${duration}, ${deep}, ${rem}, ${light}, ${awake},
-	              ${efficiency}, 'sleep'
+	              ${efficiency}, true, 'sleep'
 	            )`,
       );
       const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
@@ -1468,11 +1468,12 @@ describe("Router data coverage", () => {
         nightly: {
           date: string;
           durationMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
-          efficiency: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          efficiency: number | null;
+          stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
         sleepDebt: number;

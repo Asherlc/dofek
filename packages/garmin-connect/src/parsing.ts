@@ -73,11 +73,12 @@ export interface ParsedConnectSleep {
   externalId: string;
   startedAt: Date;
   endedAt: Date;
-  durationMinutes: number;
-  deepMinutes: number;
-  lightMinutes: number;
-  remMinutes: number;
-  awakeMinutes: number;
+  durationMinutes: number | undefined;
+  deepMinutes: number | undefined;
+  lightMinutes: number | undefined;
+  remMinutes: number | undefined;
+  awakeMinutes: number | undefined;
+  stagingAvailable: boolean;
   sleepScore: number | undefined;
   awakeningCount: number | undefined;
   averageSpO2: number | undefined;
@@ -191,15 +192,25 @@ export function parseConnectSleep(data: ConnectSleepData): ParsedConnectSleep | 
     return null;
   }
 
+  const stagingAvailable =
+    dto.deepSleepSeconds != null &&
+    dto.lightSleepSeconds != null &&
+    dto.remSleepSeconds != null &&
+    dto.awakeSleepSeconds != null;
+
   return {
     externalId: String(dto.id),
     startedAt: new Date(dto.sleepStartTimestampGMT),
     endedAt: new Date(dto.sleepEndTimestampGMT),
-    durationMinutes: Math.round((dto.sleepTimeSeconds ?? 0) / 60),
-    deepMinutes: Math.round((dto.deepSleepSeconds ?? 0) / 60),
-    lightMinutes: Math.round((dto.lightSleepSeconds ?? 0) / 60),
-    remMinutes: Math.round((dto.remSleepSeconds ?? 0) / 60),
-    awakeMinutes: Math.round((dto.awakeSleepSeconds ?? 0) / 60),
+    durationMinutes:
+      dto.sleepTimeSeconds == null ? undefined : Math.round(dto.sleepTimeSeconds / 60),
+    deepMinutes: dto.deepSleepSeconds == null ? undefined : Math.round(dto.deepSleepSeconds / 60),
+    lightMinutes:
+      dto.lightSleepSeconds == null ? undefined : Math.round(dto.lightSleepSeconds / 60),
+    remMinutes: dto.remSleepSeconds == null ? undefined : Math.round(dto.remSleepSeconds / 60),
+    awakeMinutes:
+      dto.awakeSleepSeconds == null ? undefined : Math.round(dto.awakeSleepSeconds / 60),
+    stagingAvailable,
     sleepScore: dto.sleepScores?.overall?.value,
     awakeningCount: dto.awakeningCount,
     averageSpO2: dto.averageSpO2Value,

@@ -4,7 +4,7 @@ import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import * as Notifications from "expo-notifications";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AccountDeletionStatusScreen } from "../components/AccountDeletionStatusScreen";
@@ -35,7 +35,13 @@ import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence"
 import { createAppQueryClient } from "../lib/query-client";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
-import { captureException, initTelemetry, logger } from "../lib/telemetry";
+import {
+  finishStartupPhase,
+  markAppInteractive,
+  startStartupPhase,
+  startStartupTelemetry,
+} from "../lib/startup-telemetry";
+import { captureException, initTelemetry, logger, setTelemetryRoute } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
@@ -61,11 +67,17 @@ import LoginScreen from "./login";
 try {
   initTelemetry();
 } catch (error: unknown) {
-  captureException(error, { source: "bootstrap-telemetry-init" });
+  captureException(error, { source: "bootstrap-telemetry-init", route: "/bootstrap" });
+}
+
+try {
+  startStartupTelemetry();
+} catch (error: unknown) {
+  captureException(error, { source: "startup-telemetry-init", route: "/bootstrap" });
 }
 
 SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
-  captureException(error, { source: "splash-screen-prevent-auto-hide" });
+  captureException(error, { source: "splash-screen-prevent-auto-hide", route: "/splash" });
 });
 
 /**
@@ -155,6 +167,23 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
   return null;
 }
 
+function TelemetryRouteSync({
+  isAuthenticated,
+  isLoading,
+}: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}) {
+  const pathname = usePathname();
+  const telemetryRoute = isLoading || isAuthenticated ? pathname : "/login";
+
+  useEffect(() => {
+    setTelemetryRoute(telemetryRoute);
+  }, [telemetryRoute]);
+
+  return null;
+}
+
 function AuthGate() {
   const {
     accountErasureCleanupInProgress,
@@ -174,8 +203,13 @@ function AuthGate() {
   const [hasSavedDeletionRecovery, setHasSavedDeletionRecovery] = useState(false);
   const [localCleanupPending, setLocalCleanupPending] = useState(false);
   const [localCleanupOwnerNonce, setLocalCleanupOwnerNonce] = useState<string | null>(null);
+  const startupInteractiveMarkedRef = useRef(false);
 
   const [queryClient] = useState(createAppQueryClient);
+
+  useEffect(() => {
+    finishStartupPhase("javascript", "ready");
+  }, []);
 
   const trpcClient = useMemo(() => {
     const url = getTrpcUrl(serverUrl);
@@ -205,6 +239,7 @@ function AuthGate() {
             condition: (operation) =>
               operation.type === "query" &&
               (operation.path === "mobileDashboard.dashboard" ||
+                operation.path === "mobileDashboard.dashboardV2" ||
                 operation.path === "mobileDashboard.recovery" ||
                 operation.path === "mobileDashboard.training"),
             true: dashboardQueryLink,
@@ -266,12 +301,22 @@ function AuthGate() {
   }, [queryClient, user]);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || startupInteractiveMarkedRef.current) return;
 
-    SplashScreen.hideAsync().catch((error: unknown) => {
-      captureException(error, { source: "splash-screen-hide" });
-    });
-  }, [isLoading]);
+    startupInteractiveMarkedRef.current = true;
+    startStartupPhase("splash-hide");
+    SplashScreen.hideAsync()
+      .then(() => {
+        markAppInteractive({ serviceBootstrapExpected: Boolean(user) });
+      })
+      .catch((error: unknown) => {
+        captureException(error, { source: "splash-screen-hide" });
+        markAppInteractive({
+          serviceBootstrapExpected: Boolean(user),
+          outcome: "error",
+        });
+      });
+  }, [isLoading, user]);
 
   useEffect(() => {
     const localCleanupBlocksSession =
@@ -315,6 +360,8 @@ function AuthGate() {
       (localCleanupPending && localCleanupOwnerNonce === accountSessionOwnerNonce)
     )
       return;
+    startStartupPhase("service-bootstrap");
+    let serviceBootstrapFailed = false;
     const syncClient: SyncTrpcClient = {
       healthKitSync: {
         deleteQuantitySamples: {
@@ -334,9 +381,10 @@ function AuthGate() {
         },
       },
     };
-    initBackgroundHealthKitSync(syncClient, () => {
+    const healthKitBootstrap = initBackgroundHealthKitSync(syncClient, () => {
       return invalidateSyncedHealthData(queryClient);
     }).catch((error: unknown) => {
+      serviceBootstrapFailed = true;
       logger.warn(
         "bg-healthkit-sync",
         `Init failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -346,16 +394,31 @@ function AuthGate() {
 
     // Start continuous accelerometer recording and background sync
     const imuSyncClient = createWatchSyncClient(trpcClient);
-    initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
-      // Best-effort — accelerometer sync is non-critical
-      captureException(error, { source: "bg-accelerometer-sync" });
-    });
+    const accelerometerBootstrap = initBackgroundAccelerometerSync(imuSyncClient).catch(
+      (error: unknown) => {
+        serviceBootstrapFailed = true;
+        // Best-effort — accelerometer sync is non-critical
+        captureException(error, { source: "bg-accelerometer-sync" });
+      },
+    );
 
     // Start Apple Watch IMU sync (if Watch is paired)
-    initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
-      // Best-effort — Watch sync is non-critical
-      captureException(error, { source: "bg-watch-sync" });
-    });
+    const watchBootstrap = initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch(
+      (error: unknown) => {
+        serviceBootstrapFailed = true;
+        // Best-effort — Watch sync is non-critical
+        captureException(error, { source: "bg-watch-sync" });
+      },
+    );
+
+    void Promise.all([healthKitBootstrap, accelerometerBootstrap, watchBootstrap])
+      .then(() => {
+        finishStartupPhase("service-bootstrap", serviceBootstrapFailed ? "error" : "ready");
+      })
+      .catch((error: unknown) => {
+        captureException(error, { source: "startup-service-bootstrap-telemetry" });
+        finishStartupPhase("service-bootstrap", "error");
+      });
 
     // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook
     // inside the tRPC provider tree (see WhoopBleSyncManager below).
@@ -436,9 +499,12 @@ function AuthGate() {
 
   if (isLoading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </View>
+      <>
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} isLoading />
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      </>
     );
   }
 
@@ -453,30 +519,33 @@ function AuthGate() {
 
   if (bootstrapError) {
     return (
-      <View style={styles.authError}>
-        <Text style={styles.authErrorTitle}>Could not verify your session</Text>
-        <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
-        <View style={styles.authErrorActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try again"
-            style={styles.authErrorButton}
-            onPress={retryBootstrap}
-          >
-            <Text style={styles.authErrorButtonText}>Try again</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Sign out"
-            style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
-            onPress={logout}
-          >
-            <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
-              Sign out
-            </Text>
-          </Pressable>
+      <>
+        <TelemetryRouteSync isAuthenticated={Boolean(user)} isLoading={false} />
+        <View style={styles.authError}>
+          <Text style={styles.authErrorTitle}>Could not verify your session</Text>
+          <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
+          <View style={styles.authErrorActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Try again"
+              style={styles.authErrorButton}
+              onPress={retryBootstrap}
+            >
+              <Text style={styles.authErrorButtonText}>Try again</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+              style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
+              onPress={logout}
+            >
+              <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
+                Sign out
+              </Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      </>
     );
   }
 
@@ -517,12 +586,18 @@ function AuthGate() {
 
   // No user or recoverable deletion request — show login
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <>
+        <TelemetryRouteSync isAuthenticated={false} isLoading={false} />
+        <LoginScreen />
+      </>
+    );
   }
 
   // Step 3: Authenticated — show the app
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <TelemetryRouteSync isAuthenticated isLoading={false} />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
         <MedicationReminderNotificationListener />
@@ -571,9 +646,21 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="data-quality"
+            options={{
+              title: "Data Quality",
+            }}
+          />
+          <Stack.Screen
             name="reports"
             options={{
               title: "Health Reports",
+            }}
+          />
+          <Stack.Screen
+            name="more"
+            options={{
+              title: "More",
             }}
           />
           <Stack.Screen
@@ -624,6 +711,18 @@ function AuthGate() {
             name="correlation"
             options={{
               title: "Correlation Explorer",
+            }}
+          />
+          <Stack.Screen
+            name="behavior-associations"
+            options={{
+              title: "Behavior Associations",
+            }}
+          />
+          <Stack.Screen
+            name="tracking"
+            options={{
+              title: "Journal Trends",
             }}
           />
           <Stack.Screen
@@ -705,7 +804,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   authErrorButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: "700",
   },

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
 const mockCompleteObserverUpdates = vi.fn().mockReturnValue(0);
+const mockSetObserverSyncInProgress = vi.fn();
 const mockTeardownBackgroundObservers = vi.fn().mockReturnValue(0);
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockIsAvailable = vi.fn().mockReturnValue(true);
@@ -30,6 +31,7 @@ vi.mock("../modules/health-kit", () => ({
   setupBackgroundObservers: (...args: unknown[]) => mockSetupBackgroundObservers(...args),
   addSampleUpdateListener: (...args: unknown[]) => mockAddSampleUpdateListener(...args),
   completeObserverUpdates: (...args: unknown[]) => mockCompleteObserverUpdates(...args),
+  setObserverSyncInProgress: (...args: unknown[]) => mockSetObserverSyncInProgress(...args),
   teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
@@ -335,6 +337,116 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
+  it("does not report background fetch timeouts to Sentry (DOFEK-MOBILE-19)", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1_000 }]);
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(
+      new Error("fetch failed: UnexpectedException: The request timed out."),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Background HealthKit upload timed out; retrying on next delivery",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("does not report TRPCClientError background fetch timeouts to Sentry (DOFEK-MOBILE-19)", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1_000 }]);
+    const timeoutError = new Error("fetch failed: UnexpectedException: The request timed out.");
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(
+      new Error("TRPCClientError", { cause: timeoutError }),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Background HealthKit upload timed out; retrying on next delivery",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("does not report observer sync result errors that are only transient timeouts", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        uuid: "workout-1",
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+      },
+    ]);
+    vi.mocked(queryWorkoutRoutes).mockResolvedValueOnce([
+      { latitude: 37.77, longitude: -122.42, timestamp: "2026-03-22T10:00:00Z" },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValueOnce(
+      new Error("fetch failed: UnexpectedException: The request timed out."),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKWorkoutTypeIdentifier",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Background HealthKit upload timed out; retrying on next delivery",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("marks native observer sync lifecycle while draining deliveries (DOFEK-MOBILE-1C)", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.waitFor(() => {
+      expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
+      expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(false);
+    });
+  });
+
   it("does not report locked-device route errors and marks the observer sync unsuccessful", async () => {
     vi.useFakeTimers();
     const client = createMockClient();
@@ -632,6 +744,7 @@ describe("initBackgroundHealthKitSync", () => {
     const startingSyncCount = mockLoggerInfo.mock.calls.filter(
       ([, message]) => message === "Starting sync",
     ).length;
+    mockSetObserverSyncInProgress.mockClear();
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
@@ -639,12 +752,43 @@ describe("initBackgroundHealthKitSync", () => {
       updateId: "update-1",
     });
 
+    expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
     expect(
       mockLoggerInfo.mock.calls.filter(([, message]) => message === "Starting sync"),
     ).toHaveLength(startingSyncCount + 1);
     await vi.waitFor(() => {
       expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
     });
+  });
+
+  it("keeps observer sync in progress while catch-up is pending", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    const workoutSync = createDeferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(workoutSync.promise);
+    mockSetupBackgroundObservers.mockImplementationOnce(async () => {
+      const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+      listener({
+        typeIdentifier: "HKWorkoutTypeIdentifier",
+        updateId: "update-during-setup",
+      });
+      return true;
+    });
+    mockSetObserverSyncInProgress.mockClear();
+
+    const initPromise = initBackgroundHealthKitSync(client);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockSetObserverSyncInProgress).toHaveBeenCalledWith(true);
+    expect(mockSetObserverSyncInProgress).not.toHaveBeenCalledWith(false);
+
+    await initPromise;
+    expect(mockSetObserverSyncInProgress).not.toHaveBeenCalledWith(false);
+
+    workoutSync.resolve({ inserted: 0 });
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-during-setup"], true);
+    });
+    vi.useRealTimers();
   });
 
   it("serializes observer updates and completes every callback once", async () => {

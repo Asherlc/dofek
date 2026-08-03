@@ -16,6 +16,7 @@ const sentinelRowsSchema = z.array(
     scalar: z.coerce.number(),
   }),
 );
+const bodyWeightCountSchema = z.array(z.object({ count: z.coerce.number() }));
 const reviewRawTableNames = [
   "activity",
   "device_priority",
@@ -124,12 +125,14 @@ describe("review ClickHouse seed maintenance", () => {
 
     let maintenanceFailure: unknown;
     try {
-      for (const statement of buildReviewClickHouseCopyStatements(
-        activeTestContext.connectionString,
-      )) {
-        await activeClickHouseClient.command({
-          query: rewriteReviewDatabases(statement, ingestDatabase, postgresFitnessDatabase),
-        });
+      for (let run = 0; run < 2; run++) {
+        for (const statement of buildReviewClickHouseCopyStatements(
+          activeTestContext.connectionString,
+        )) {
+          await activeClickHouseClient.command({
+            query: rewriteReviewDatabases(statement, ingestDatabase, postgresFitnessDatabase),
+          });
+        }
       }
     } catch (error) {
       maintenanceFailure = error;
@@ -149,6 +152,19 @@ describe("review ClickHouse seed maintenance", () => {
         scalar: 123,
       },
     ]);
+
+    const bodyWeightResult = await activeClickHouseClient.query({
+      query: `SELECT count() AS count
+        FROM ${ingestDatabase}.metric_stream FINAL
+        WHERE user_id = {user_id:UUID}
+          AND channel = 'body_weight'
+          AND provider_id = 'manual_review'
+          AND startsWith(ifNull(external_id, ''), 'review-seed-body-weight-')
+          AND is_deleted = 0`,
+      query_params: { user_id: "00000000-0000-4000-8000-000000000001" },
+      format: "JSONEachRow",
+    });
+    expect(bodyWeightCountSchema.parse(await bodyWeightResult.json())).toEqual([{ count: 90 }]);
 
     if (maintenanceFailure) {
       throw maintenanceFailure;

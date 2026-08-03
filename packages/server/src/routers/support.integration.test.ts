@@ -1,4 +1,4 @@
-import { listUserExternalEffects } from "dofek/db/user-external-effect";
+import { POSTHOG_API_KEY, POSTHOG_HOST } from "dofek/lib/posthog-config";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -13,10 +13,14 @@ const USER_WITH_EMAIL = "00000000-0000-4000-8000-0000000000e1";
 const USER_WITHOUT_EMAIL = "00000000-0000-4000-8000-0000000000e2";
 
 const mswServer = setupServer();
+const postHogConfigUrl = `${POSTHOG_HOST}/array/${POSTHOG_API_KEY}/config`;
+const postHogMessageUrl = `${POSTHOG_HOST}/api/conversations/v1/widget/message`;
 
-function tokenHandler() {
-  return http.post("https://accounts.zoho.com/oauth/v2/token", () =>
-    HttpResponse.json({ access_token: "access-token", expires_in: 3600 }),
+function conversationsConfigHandler() {
+  return http.get(postHogConfigUrl, () =>
+    HttpResponse.json({
+      conversations: { enabled: true, token: "conversation-token" },
+    }),
   );
 }
 
@@ -28,13 +32,14 @@ describe("support router", () => {
   const sessionCookies: Record<string, string> = {};
 
   beforeAll(async () => {
-    process.env.ZOHO_DESK_CLIENT_ID = "client-id";
-    process.env.ZOHO_DESK_CLIENT_SECRET = "client-secret";
-    process.env.ZOHO_DESK_REFRESH_TOKEN = "refresh-token";
-    process.env.ZOHO_DESK_ORG_ID = "929149487";
-    process.env.ZOHO_DESK_DEPARTMENT_ID = "dept-id";
-
-    mswServer.listen({ onUnhandledRequest: "bypass" });
+    mswServer.listen({
+      onUnhandledRequest(request) {
+        if (new URL(request.url).hostname === "localhost") {
+          return;
+        }
+        throw new Error(`[MSW] Unhandled external request: ${request.method} ${request.url}`);
+      },
+    });
     testCtx = await setupTestDatabase();
 
     for (const [id, email] of [
@@ -86,13 +91,22 @@ describe("support router", () => {
     return { status: res.status, body: await res.json() };
   }
 
-  it("creates a Zoho ticket using the profile email and returns the ticket number", async () => {
-    let received: { orgId: string | null; body: unknown } | null = null;
+  it("creates a PostHog ticket using the profile email and returns the ticket ID", async () => {
+    let received: { token: string | null; body: unknown } | null = null;
     mswServer.use(
-      tokenHandler(),
-      http.post("https://desk.zoho.com/api/v1/tickets", async ({ request }) => {
-        received = { orgId: request.headers.get("orgId"), body: await request.json() };
-        return HttpResponse.json({ id: "555", ticketNumber: "777" });
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, async ({ request }) => {
+        received = {
+          token: request.headers.get("X-Conversations-Token"),
+          body: await request.json(),
+        };
+        return HttpResponse.json({
+          ticket_id: "ticket-777",
+          message_id: "message-777",
+          ticket_status: "new",
+          created_at: "2026-08-01T12:00:00.000Z",
+          unread_count: 0,
+        });
       }),
     );
 
@@ -101,31 +115,36 @@ describe("support router", () => {
       message: "Activities stopped importing yesterday.",
     });
 
-    expect(body.result.data).toEqual({ ticketNumber: "777" });
-    expect(received?.orgId).toBe("929149487");
+    expect(body.result.data).toEqual({ ticketId: "ticket-777" });
+    expect(received?.token).toBe("conversation-token");
     expect(received?.body).toMatchObject({
-      subject: "Garmin sync broken",
-      departmentId: "dept-id",
-      contact: { email: "support-user@example.com", lastName: "Support Tester" },
+      message: expect.stringContaining("Activities stopped importing yesterday."),
+      traits: { email: "support-user@example.com", name: "Support Tester" },
+      ticket_id: null,
+      distinct_id: USER_WITH_EMAIL,
     });
-    await expect(listUserExternalEffects(testCtx.db, USER_WITH_EMAIL)).resolves.toContainEqual({
-      system: "zoho_desk",
-      resourceType: "ticket",
-      externalId: "555",
-      contactEmail: "support-user@example.com",
+    expect(received?.body).toMatchObject({
+      message: expect.stringContaining("Subject: Garmin sync broken"),
     });
+    expect(received?.body).toMatchObject({ widget_session_id: expect.any(String) });
   });
 
   it("prefers an explicitly provided reply email over the profile email", async () => {
     let contactEmail: string | undefined;
     mswServer.use(
-      tokenHandler(),
-      http.post("https://desk.zoho.com/api/v1/tickets", async ({ request }) => {
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, async ({ request }) => {
         const json = z
-          .object({ contact: z.object({ email: z.string().optional() }).optional() })
+          .object({ traits: z.object({ email: z.string().nullable().optional() }).optional() })
           .parse(await request.json());
-        contactEmail = json.contact?.email;
-        return HttpResponse.json({ id: "1", ticketNumber: "2" });
+        contactEmail = json.traits?.email ?? undefined;
+        return HttpResponse.json({
+          ticket_id: "ticket-2",
+          message_id: "message-2",
+          ticket_status: "new",
+          created_at: "2026-08-01T12:00:00.000Z",
+          unread_count: 0,
+        });
       }),
     );
 
@@ -147,29 +166,30 @@ describe("support router", () => {
     expect(body.error?.data?.code).toBe("PRECONDITION_FAILED");
   });
 
-  it("maps Zoho failures to BAD_GATEWAY", async () => {
+  it("maps PostHog failures to BAD_GATEWAY", async () => {
     mswServer.use(
-      tokenHandler(),
-      http.post("https://desk.zoho.com/api/v1/tickets", () =>
-        HttpResponse.json({ message: "boom" }, { status: 500 }),
-      ),
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, () => HttpResponse.json({ message: "boom" }, { status: 500 })),
     );
 
     const { body } = await createTicket(USER_WITH_EMAIL, {
       subject: "Will fail",
-      message: "Zoho is down.",
+      message: "PostHog is down.",
     });
 
     expect(body.error?.data?.code).toBe("BAD_GATEWAY");
+    expect(body.error?.message).toBe(
+      "PostHog Support Tickets is unavailable. Please try again shortly.",
+    );
   });
 
-  it("does not create a Zoho ticket after account erasure is activated", async () => {
+  it("does not create a PostHog ticket after account erasure is activated", async () => {
     let ticketRequests = 0;
     mswServer.use(
-      tokenHandler(),
-      http.post("https://desk.zoho.com/api/v1/tickets", () => {
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, () => {
         ticketRequests += 1;
-        return HttpResponse.json({ id: "1", ticketNumber: "2" });
+        return HttpResponse.json({ ticket_id: "unexpected" });
       }),
     );
     await testCtx.db.execute(
@@ -196,7 +216,7 @@ describe("support router", () => {
     try {
       const { body } = await createTicket(USER_WITH_EMAIL, {
         subject: "Must be rejected",
-        message: "This must never reach Zoho.",
+        message: "This must never reach PostHog.",
       });
 
       expect(body.error).toBeDefined();
@@ -209,13 +229,13 @@ describe("support router", () => {
     }
   });
 
-  it("does not recreate Zoho data after account erasure has completed", async () => {
+  it("does not recreate PostHog data after account erasure has completed", async () => {
     let ticketRequests = 0;
     mswServer.use(
-      tokenHandler(),
-      http.post("https://desk.zoho.com/api/v1/tickets", () => {
+      conversationsConfigHandler(),
+      http.post(postHogMessageUrl, () => {
         ticketRequests += 1;
-        return HttpResponse.json({ id: "1", ticketNumber: "2" });
+        return HttpResponse.json({ ticket_id: "unexpected" });
       }),
     );
     await testCtx.db.execute(

@@ -1,8 +1,8 @@
-import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sleepSession, sleepStage } from "dofek/db/schema/activity";
 import { ensureProvider } from "dofek/db/tokens";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import { z } from "zod";
@@ -211,7 +211,7 @@ export function createIngestZosHealthRouter(deps: {
       }
       userId = validatedUserId;
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[ingest-zos] Token validation failed: ${error}`);
       sendJson(res, 500, { error: "Failed to validate Dofek connection." });
       return;
@@ -343,6 +343,11 @@ export function createIngestZosHealthRouter(deps: {
               lightMinutes: session.lightMinutes ?? null,
               awakeMinutes: session.awakeMinutes ?? null,
               efficiencyPct: session.efficiencyPct ?? null,
+              stagingAvailable:
+                session.deepMinutes != null &&
+                session.remMinutes != null &&
+                session.lightMinutes != null &&
+                session.awakeMinutes != null,
               sourceName: "zepp-companion",
             })
             .onConflictDoNothing({
@@ -483,7 +488,7 @@ export function createIngestZosHealthRouter(deps: {
       await invalidateAllUserQueries(userId);
       sendJson(res, 200, { status: "ok" });
     } catch (error) {
-      Sentry.captureException(error);
+      captureException(error);
       logger.error(`[ingest-zos] Failed to ingest health data: ${error}`);
       sendJson(res, 500, { error: "Failed to ingest health data." });
     }

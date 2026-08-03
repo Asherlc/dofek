@@ -8,6 +8,8 @@ export const STORAGE_KEYS = {
   TRANSFER_PROGRESS: "transfer_progress",
   CMD_SYNC_HEALTH: "cmd_sync_health",
   CMD_START_PAIRING: "cmd_start_pairing",
+  CMD_CHECK_CONNECTION: "cmd_check_connection",
+  CMD_DISCONNECT: "cmd_disconnect",
   DOFEK_SERVER_URL: "dofek_server_url",
   DOFEK_EMAIL: "dofek_email",
   DOFEK_API_TOKEN: "dofek_api_token",
@@ -20,6 +22,8 @@ export const STORAGE_KEYS = {
   PAIRING_EXPIRES_AT: "pairing_expires_at",
   HEALTH_SYNC_STATUS: "health_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
+  TELEMETRY_BUFFER: "telemetry_buffer",
+  TELEMETRY_INSTALL_ID: "telemetry_install_id",
 } as const;
 
 export const DEFAULT_DOFEK_SERVER_URL = "https://dofek.asherlc.com";

@@ -84,6 +84,8 @@ const availableResolutionRow = {
   source_labels: ["dofek"],
   contributing_source_labels: ["dofek"],
   excluded_source_labels: [],
+  contribution_grain: "itemized",
+  contribution_source_label: "dofek",
 };
 
 function makeDailyTotalsRow(overrides: Record<string, unknown> = {}) {
@@ -430,9 +432,9 @@ describe("FoodRepository", () => {
             progressPercentage: 0,
           },
           macros: {
-            protein: { grams: 0, calories: 0, percentage: 0 },
-            carbs: { grams: 0, calories: 0, percentage: 0 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+            carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
         resolution: {
@@ -444,6 +446,8 @@ describe("FoodRepository", () => {
           sourceLabels: [],
           contributingSourceLabels: [],
           excludedSourceLabels: [],
+          contributionGrain: null,
+          contributionLabel: null,
         },
       });
     });
@@ -482,10 +486,84 @@ describe("FoodRepository", () => {
           progressPercentage: 62.5,
         },
         macros: {
-          protein: { grams: 55, calories: 220, percentage: 22 },
-          carbs: { grams: 105, calories: 420, percentage: 42 },
-          fat: { grams: 40, calories: 360, percentage: 36 },
+          protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+          carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+          fat: { grams: 40, calories: 360, energySharePercentage: 36 },
         },
+      });
+    });
+
+    it("labels a provider daily aggregate from server-owned provenance", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1800,
+          protein_g: 90,
+          carbs_g: 220,
+          fat_g: 60,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 1800,
+          source_providers: ["apple_health"],
+          contributing_providers: ["apple_health"],
+          source_labels: ["Cronometer (via Apple Health)"],
+          contributing_source_labels: ["Cronometer (via Apple Health)"],
+          contribution_grain: "daily_aggregate",
+          contribution_source_label: "Cronometer (via Apple Health)",
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.resolution).toMatchObject({
+        contributionGrain: "daily_aggregate",
+        contributionLabel: "Cronometer (via Apple Health) daily total",
+      });
+    });
+
+    it.each([
+      {
+        contributionGrain: "itemized",
+        contributionLabel: "Cronometer (via Apple Health) itemized entries",
+      },
+      {
+        contributionGrain: "ambiguous",
+        contributionLabel: "Cronometer (via Apple Health) nutrition data",
+      },
+      {
+        contributionGrain: null,
+        contributionLabel: null,
+      },
+    ])("labels $contributionGrain contribution provenance without changing its grain", async ({
+      contributionGrain,
+      contributionLabel,
+    }) => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1800,
+          protein_g: 90,
+          carbs_g: 220,
+          fat_g: 60,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 1800,
+          source_labels: ["Cronometer (via Apple Health)"],
+          contributing_source_labels: ["Cronometer (via Apple Health)"],
+          contribution_grain: contributionGrain,
+          contribution_source_label: "Cronometer (via Apple Health)",
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.resolution).toMatchObject({
+        contributionGrain,
+        contributionLabel,
       });
     });
 
@@ -525,6 +603,8 @@ describe("FoodRepository", () => {
         source_labels: ["Apple Health", "Cronometer"],
         contributing_source_labels: [],
         excluded_source_labels: ["Apple Health", "Cronometer"],
+        contribution_grain: null,
+        contribution_source_label: null,
       };
       const { repo } = makeRepository([
         {
@@ -553,6 +633,8 @@ describe("FoodRepository", () => {
         sourceLabels: conflictResolution.source_labels,
         contributingSourceLabels: [],
         excludedSourceLabels: conflictResolution.excluded_source_labels,
+        contributionGrain: null,
+        contributionLabel: null,
       });
     });
   });

@@ -11,7 +11,24 @@ import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-req
 export type EnqueueSyncJobOptions = {
   /** When active, skip enqueue instead of scheduling a duplicate delayed job. */
   skipWhenRateLimited?: boolean;
+  /** Coalesce a user-triggered initial full sync until that job completes or fails. */
+  singleFlightFullSync?: boolean;
 };
+
+function initialFullSyncDeduplicationId(
+  providerId: string,
+  jobData: SyncJobData,
+  options?: EnqueueSyncJobOptions,
+): string | undefined {
+  if (
+    !options?.singleFlightFullSync ||
+    jobData.targetRefreshWindow?.type !== "full" ||
+    jobData.checkpoint !== undefined
+  ) {
+    return undefined;
+  }
+  return `sync:full:${providerId}:${jobData.userId}`;
+}
 
 export async function syncJobOptionsWithRateLimitCooldown(
   providerId: string,
@@ -36,11 +53,12 @@ export async function enqueueSyncJob(
     return null;
   }
   const jobOptions = await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId);
+  const deduplicationId = initialFullSyncDeduplicationId(providerId, jobData, options);
   const queue = getProviderSyncQueue(providerId);
   return enqueueSyncJobWithRequestDedup(
     providerId,
     jobData,
-    jobOptions,
+    deduplicationId ? { ...jobOptions, deduplication: { id: deduplicationId } } : jobOptions,
     (name, data, opts) => queue.add(name, data, opts),
     (jobId) => queue.getJob(jobId),
   );

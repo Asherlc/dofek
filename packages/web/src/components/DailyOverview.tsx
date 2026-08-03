@@ -4,6 +4,10 @@ import {
   formatIntensity,
   formatTrainingLoad,
 } from "@dofek/format/format";
+import {
+  formatSummaryDateContext,
+  type SummaryDateContext,
+} from "@dofek/format/summary-date-context";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
@@ -27,6 +31,7 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface DailyOverviewProps {
   endDate?: string;
+  summaryDateContext?: SummaryDateContext;
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
   sleepPerformance: SleepPerformanceInfo | null | undefined;
@@ -328,8 +333,17 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
         </span>
       </div>
       <p className="text-dim text-[11px]">
-        Need: {formatDurationMinutes(neededMinutes)} &middot; Bedtime:{" "}
-        {performance.recommendedBedtime}
+        <span className="block">
+          Night of{" "}
+          {formatSummaryDateContext({
+            ...performance.summaryDateContext,
+            effectiveDate: performance.sleepDate,
+          })}
+        </span>
+        <span>
+          Need: {formatDurationMinutes(neededMinutes)} &middot; Bedtime:{" "}
+          {performance.recommendedBedtime}
+        </span>
       </p>
     </div>
   );
@@ -527,6 +541,7 @@ function isRecentForAnchor(dateString: string, anchorDateString: string): boolea
 
 export function DailyOverview({
   endDate = formatDateYmd(),
+  summaryDateContext,
   readiness,
   workloadRatio,
   sleepPerformance,
@@ -586,7 +601,7 @@ export function DailyOverview({
       aria-label="Daily health summary"
       className={
         embedded
-          ? "rounded-lg border border-border bg-white/62 p-4 sm:p-5"
+          ? "rounded-lg border border-border bg-surface p-4 sm:p-5"
           : "dashboard-hero card p-5 sm:p-6"
       }
     >
@@ -599,7 +614,9 @@ export function DailyOverview({
             Today&apos;s recovery picture
           </h2>
         </div>
-        <p className="text-xs text-subtle">{endDate}</p>
+        <p className="text-xs text-subtle">
+          {summaryDateContext ? formatSummaryDateContext(summaryDateContext) : endDate}
+        </p>
       </div>
 
       <div className="flex items-center justify-center gap-6 sm:gap-10 lg:gap-14 flex-wrap">

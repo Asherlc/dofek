@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
-import { statusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
-import type { SleepNeedResult } from "dofek-server/types";
+import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { chartThemeColors } from "../lib/chartTheme.ts";
 import { SleepNeedCard } from "./SleepNeedCard.tsx";
 
 let capturedOption: Record<string, unknown> | null = null;
@@ -16,7 +16,7 @@ vi.mock("echarts-for-react", () => ({
 }));
 
 const emptyProvenance: Pick<
-  SleepNeedResult["recentNights"][number],
+  Extract<SleepNeedV2, { availability: "available" }>["recentNights"][number],
   "providerId" | "sourceName" | "sourceProviders"
 > = {
   providerId: null,
@@ -25,11 +25,34 @@ const emptyProvenance: Pick<
 };
 
 const mockData = {
+  availability: "available",
+  epistemicStatus: { kind: "estimated", label: "Estimated" },
   baselineMinutes: 480,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 90,
+  debtRecoveryMinutes: 23,
   totalNeedMinutes: 515,
-  canRecommend: true,
+  estimateMetadata: {
+    basis: "personalized_high_hrv_average",
+    baselineQualifyingNightCount: 7,
+    debtObservedNightCount: 1,
+    methodVersion: "sleep-need-heuristic-v1",
+    uncertainty: "not_established",
+    valueQualifier: "About",
+    summaryLabel: "Heuristic estimate",
+    componentLabels: {
+      baseline: "Baseline estimate",
+      strainDebt: "Previous-day load adjustment",
+      debtRecovery: "Debt recovery",
+    },
+    basisLabel:
+      "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
+    coverageLabel: "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+    methodLabel: "Method: sleep-need-heuristic-v1",
+    uncertaintyLabel: "Uncertainty: not established",
+    limitationLabel:
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+  },
   recentNights: [
     {
       date: "2026-03-14",
@@ -53,12 +76,23 @@ const mockData = {
       ...emptyProvenance,
     },
   ],
-};
+} satisfies SleepNeedV2;
 
 const barItemSchema = z.object({
-  value: z.number(),
+  value: z.number().nullable(),
   itemStyle: z.object({ color: z.string() }),
 });
+
+const tooltipFormatterSchema = z.custom<
+  (
+    params: {
+      dataIndex: number;
+      marker: string;
+      seriesName: string;
+      value: [string, number];
+    }[],
+  ) => string
+>((value) => typeof value === "function");
 
 function getBarSeriesData(): Array<z.infer<typeof barItemSchema>> {
   const series = capturedOption?.series;
@@ -66,6 +100,12 @@ function getBarSeriesData(): Array<z.infer<typeof barItemSchema>> {
     return z.array(barItemSchema).parse(series[0].data);
   }
   return [];
+}
+
+function getTooltipFormatter() {
+  return z
+    .object({ tooltip: z.object({ formatter: tooltipFormatterSchema }) })
+    .parse(capturedOption).tooltip.formatter;
 }
 
 function getLineSeriesData(): unknown[] {
@@ -87,10 +127,20 @@ describe("SleepNeedCard", () => {
     expect(screen.queryByText("No sleep data")).toBeNull();
   });
 
-  it("renders recommendation header", () => {
+  it("presents the available value as an uncalibrated heuristic estimate", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
-    expect(screen.getByText(/recommended/)).toBeDefined();
+    expect(screen.getByText("Estimated sleep need tonight")).toBeDefined();
+    expect(screen.getByText("About 8h 35m")).toBeDefined();
+    expect(screen.getByText("Heuristic estimate")).toBeDefined();
+    expect(screen.getByText("Previous-day load adjustment")).toBeDefined();
+    expect(screen.getByText("Uncertainty: not established")).toBeDefined();
+    expect(
+      screen.getByText(
+        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/recommended/)).toBeNull();
   });
 
   it("passes plain numeric values to bar series (not date tuples)", () => {
@@ -121,19 +171,28 @@ describe("SleepNeedCard", () => {
     expect(line[2]).toBe(480);
   });
 
-  it("colors bars green when actual >= needed, red when below", () => {
+  it("uses a neutral palette instead of grading sleep against the heuristic baseline", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
     const bars = getBarSeriesData();
-    // Night 0: 420 < 480 → red
-    expect(bars[0]?.itemStyle.color).toBe(statusColors.danger);
-    // Night 1: 500 >= 480 → green
-    expect(bars[1]?.itemStyle.color).toBe(statusColors.positive);
-    // Night 2: 390 < 480 → red
-    expect(bars[2]?.itemStyle.color).toBe(statusColors.danger);
+    expect(bars[0]?.itemStyle.color).toBe(chartThemeColors.axisLabel);
+    expect(bars[1]?.itemStyle.color).toBe(chartThemeColors.axisLabel);
+    expect(bars[2]?.itemStyle.color).toBe(chartThemeColors.axisLabel);
+
+    const tooltipHtml = getTooltipFormatter()([
+      {
+        dataIndex: 0,
+        marker: "",
+        seriesName: "Actual",
+        value: ["2026-03-14", 420],
+      },
+    ]);
+    expect(tooltipHtml).toContain("Difference from baseline estimate: 1h");
+    expect(tooltipHtml).not.toContain("color:#dc2626");
+    expect(tooltipHtml).not.toContain("Debt:");
   });
 
-  it("renders placeholder bars for null nights (missing data)", () => {
+  it("preserves null nights instead of rendering measured zero bars", () => {
     capturedOption = null;
     const dataWithGaps = {
       ...mockData,
@@ -164,25 +223,57 @@ describe("SleepNeedCard", () => {
     render(<SleepNeedCard data={dataWithGaps} />);
     const bars = getBarSeriesData();
     expect(bars).toHaveLength(3);
-    // Null night should have value 0 and muted color
-    expect(bars[1]?.value).toBe(0);
-    expect(bars[1]?.itemStyle.color).toBe("#3a3a3e");
+    // Null night should remain absent from the measured series.
+    expect(bars[1]?.value).toBeNull();
   });
 
-  it("shows missing data message when canRecommend is false", () => {
+  it("shows only the server message when previous-night sleep is missing", () => {
     capturedOption = null;
-    const noRecommendData = {
-      ...mockData,
-      canRecommend: false,
+    const unavailableData: SleepNeedV2 = {
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     };
-    render(<SleepNeedCard data={noRecommendData} />);
-    expect(screen.getByText(/last night/i)).toBeDefined();
+    render(<SleepNeedCard data={unavailableData} />);
+    expect(screen.getByText(MISSING_PREVIOUS_NIGHT_MESSAGE)).toBeDefined();
     expect(screen.queryByText(/recommended/)).toBeNull();
+    expect(screen.queryByText("Baseline")).toBeNull();
+    expect(screen.queryByText("Strain Debt")).toBeNull();
+    expect(screen.queryByText("Sleep Debt")).toBeNull();
+    expect(screen.queryByTestId("echarts")).toBeNull();
   });
 
-  it("shows recommendation when canRecommend is true", () => {
+  it("shows the server-authored next action for insufficient data", () => {
+    capturedOption = null;
+    const insufficientData: SleepNeedV2 = {
+      availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    };
+
+    render(<SleepNeedCard data={insufficientData} />);
+
+    expect(screen.getByText("Unavailable")).toBeDefined();
+    expect(screen.getByText(insufficientData.message)).toBeDefined();
+    expect(screen.getByText(insufficientData.nextAction)).toBeDefined();
+    expect(screen.queryByTestId("echarts")).toBeNull();
+  });
+
+  it("shows the available estimate basis and coverage", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
-    expect(screen.getByText(/recommended/)).toBeDefined();
+    expect(
+      screen.getByText(
+        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("Method: sleep-need-heuristic-v1")).toBeDefined();
   });
 });

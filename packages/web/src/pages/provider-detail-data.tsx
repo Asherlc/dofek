@@ -1,13 +1,12 @@
-import { formatDurationSeconds, formatTime } from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import { useCallback, useMemo, useState } from "react";
+import { ProviderSyncHistoryEntry } from "../components/ProviderSyncHistoryEntry.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
 import { trpc } from "../lib/trpc.ts";
 import {
   pruneEmptyFilters,
   RecordFiltersGrid,
-  TableFilterRow,
   useDebouncedFilters,
 } from "./ProviderDetailFilters.tsx";
 import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
@@ -26,7 +25,13 @@ const SYNC_HISTORY_FILTER_COLUMNS = [
   { key: "id", label: "Id" },
 ] as const;
 
-export function SyncHistory({ providerId }: { providerId: string }) {
+export function SyncHistory({
+  providerId,
+  providerName,
+}: {
+  providerId: string;
+  providerName: string;
+}) {
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const debouncedFilters = useDebouncedFilters(filters);
@@ -66,96 +71,28 @@ export function SyncHistory({ providerId }: { providerId: string }) {
         <div className="text-xs text-subtle">No sync history yet.</div>
       ) : (
         <>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-subtle">
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Time
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Type
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="text-right px-4 py-2 font-medium">
-                    Records
-                  </th>
-                  <th scope="col" className="text-right px-4 py-2 font-medium">
-                    Duration
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Error
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Auth Failure
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Id
-                  </th>
-                </tr>
-                <TableFilterRow
-                  columns={SYNC_HISTORY_FILTER_COLUMNS}
-                  filters={filters}
-                  onFilterChange={handleFilterChange}
-                  getOptions={getFilterOptions}
-                />
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={SYNC_HISTORY_FILTER_COLUMNS.length}
-                      className="px-4 py-6 text-subtle"
-                    >
-                      No sync history matches the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-b border-border/50 hover:bg-surface-hover transition-colors"
-                    >
-                      <td className="px-4 py-2 text-muted whitespace-nowrap">
-                        {formatTime(row.syncedAt)}
-                      </td>
-                      <td className="px-4 py-2 text-muted">{row.dataType}</td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 ${
-                            row.status === "success" ? "text-emerald-400" : "text-red-400"
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              row.status === "success" ? "bg-emerald-400" : "bg-red-400"
-                            }`}
-                          />
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-right text-foreground tabular-nums">
-                        {row.recordCount ?? "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right text-muted tabular-nums">
-                        {row.durationMs != null
-                          ? formatDurationSeconds(row.durationMs / 1000)
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                        {row.errorMessage ?? ""}
-                      </td>
-                      <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                        {row.authFailureReason ?? ""}
-                      </td>
-                      <td className="px-4 py-2 text-muted max-w-xs truncate">{row.id}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <details className="mb-3 rounded border border-border bg-surface px-3 py-2 text-xs">
+            <summary className="w-fit cursor-pointer text-foreground">Filter history</summary>
+            <div className="mt-3">
+              <RecordFiltersGrid
+                columns={SYNC_HISTORY_FILTER_COLUMNS}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+                getOptions={getFilterOptions}
+              />
+            </div>
+          </details>
+
+          <div className="space-y-2">
+            {rows.length === 0 ? (
+              <div className="rounded border border-border bg-surface px-4 py-6 text-xs text-subtle">
+                No sync history matches the current filters.
+              </div>
+            ) : (
+              rows.map((row) => (
+                <ProviderSyncHistoryEntry key={row.id} providerName={providerName} entry={row} />
+              ))
+            )}
           </div>
 
           <div className="flex items-center justify-between mt-2">
@@ -234,37 +171,52 @@ export function RecordsBrowser({
     );
   }
 
+  const recordPanelId = `provider-records-panel-${providerId}`;
+
   return (
     <section>
       <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
 
-      <div className="flex flex-wrap gap-1 mb-3">
-        {availableTypes.map((dataType) => (
-          <button
-            key={dataType.key}
-            type="button"
-            onClick={() => setSelectedTab(dataType.key)}
-            className={`px-3 py-1.5 text-xs rounded transition-colors ${
-              activeTab === dataType.key
-                ? "bg-accent/15 text-foreground"
-                : "bg-accent/10 text-subtle hover:text-foreground"
-            }`}
-          >
-            {dataType.label}
-            {stats && getStatCount(stats, dataType.key) > 0 && (
-              <span className="ml-1 text-dim">
-                ({getStatCount(stats, dataType.key).toLocaleString()})
-              </span>
-            )}
-          </button>
-        ))}
+      <div role="tablist" aria-label="Record types" className="flex flex-wrap gap-1 mb-3">
+        {availableTypes.map((dataType) => {
+          const tabId = `provider-records-tab-${providerId}-${dataType.key}`;
+          return (
+            <button
+              key={dataType.key}
+              id={tabId}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === dataType.key}
+              aria-controls={recordPanelId}
+              onClick={() => setSelectedTab(dataType.key)}
+              className={`px-3 py-1.5 text-xs rounded transition-colors ${
+                activeTab === dataType.key
+                  ? "bg-accent/15 text-foreground"
+                  : "bg-accent/10 text-subtle hover:text-foreground"
+              }`}
+            >
+              {dataType.label}
+              {stats && getStatCount(stats, dataType.key) > 0 && (
+                <span className="ml-1 text-dim">
+                  ({getStatCount(stats, dataType.key).toLocaleString()})
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      <RecordsTable
-        key={`${providerId}:${activeTab}`}
-        providerId={providerId}
-        dataType={activeTab}
-      />
+      <div
+        id={recordPanelId}
+        role="tabpanel"
+        aria-labelledby={`provider-records-tab-${providerId}-${activeTab}`}
+      >
+        <RecordsTable
+          key={`${providerId}:${activeTab}`}
+          providerId={providerId}
+          dataType={activeTab}
+        />
+      </div>
     </section>
   );
 }

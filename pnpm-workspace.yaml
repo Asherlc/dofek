@@ -74,6 +74,8 @@ packageExtensions:
 patchedDependencies:
   "@expo/plist@0.0.18": patches/@expo__plist@0.0.18.patch
   "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
+  "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
+  "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
 
 allowBuilds:
   "@sentry/cli": true
@@ -87,3 +89,34 @@ allowBuilds:
   protobufjs: false
   sharp: true
   ssh2: false
+
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@4.0.36'
+  - '@ai-sdk/otel@1.0.47'
+  - '@ai-sdk/provider-utils@5.0.18'
+  - ai@7.0.47
+  - '@expo/cli@57.0.11'
+  - '@expo/inline-modules@0.1.4'
+  - '@expo/local-build-cache-provider@57.0.5'
+  - '@expo/log-box@57.0.2'
+  - '@expo/metro-runtime@57.0.8'
+  - '@expo/prebuild-config@57.0.10'
+  - '@expo/ui@57.0.8'
+  - babel-preset-expo@57.0.5
+  - expo@57.0.9
+  - expo-asset@57.0.8
+  - expo-build-properties@57.0.8
+  - expo-constants@57.0.8
+  - expo-dev-client@57.0.10
+  - expo-dev-launcher@57.0.10
+  - expo-dev-menu@57.0.10
+  - expo-location@57.0.7
+  - expo-modules-core@57.0.8
+  - expo-notifications@57.0.8
+  - expo-router@57.0.9
+  - expo-sharing@57.0.8
+  - expo-task-manager@57.0.7
+  - expo-updates@57.0.11
+  - '@posthog/core@1.46.1'
+  - posthog-node@5.47.3
+  - posthog-react-native@4.61.2

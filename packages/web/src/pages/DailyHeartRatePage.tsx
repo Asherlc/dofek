@@ -1,8 +1,9 @@
-import { formatDateYmd, formatTimeOnly } from "@dofek/format/format";
+import { formatDateYmd, formatTimeOnly, shiftDateYmd } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import {
   dofekAxis,
   dofekGrid,
@@ -16,6 +17,10 @@ import { trpc } from "../lib/trpc.ts";
 
 export function DailyHeartRatePage() {
   const [date, setDate] = useState(() => formatDateYmd());
+  const today = useTodayQueryDate();
+  const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const isToday = date === today;
+  const canGoForward = date < today;
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });
   const sources = query.data;
@@ -26,17 +31,56 @@ export function DailyHeartRatePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Daily Heart Rate by Source</h1>
+          <h2 className="text-lg font-semibold">Daily Heart Rate by Source</h2>
           <p className="text-xs text-dim">Compare heart rate readings across providers</p>
+          <p className="text-xs text-dim">Local day in {localTimezone}</p>
         </div>
-        <input
-          type="date"
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-          className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground"
-        />
+        <fieldset className="m-0 flex flex-wrap items-center gap-2 border-0 p-0">
+          <legend className="sr-only">Day navigation</legend>
+          <button
+            type="button"
+            onClick={() => setDate(shiftDateYmd(date, -1))}
+            aria-label="Previous day"
+            className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary"
+          >
+            Previous
+          </button>
+          <label>
+            <span className="sr-only">Date</span>
+            <input
+              type="date"
+              value={date}
+              max={today}
+              onChange={(event) => {
+                if (event.target.value && event.target.value <= today) setDate(event.target.value);
+              }}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              const nextDate = shiftDateYmd(date, 1);
+              if (nextDate <= today) setDate(nextDate);
+            }}
+            disabled={!canGoForward}
+            aria-label="Next day"
+            className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Next
+          </button>
+          <button
+            type="button"
+            onClick={() => setDate(today)}
+            disabled={isToday}
+            aria-label="Today"
+            className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Today
+          </button>
+        </fieldset>
       </div>
 
       <div className="card p-4">

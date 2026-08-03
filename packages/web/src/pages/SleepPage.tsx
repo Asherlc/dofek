@@ -1,5 +1,6 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import { useMemo, useState } from "react";
+import { localTimeSourceSchema } from "@dofek/format/record-local-time";
+import { useMemo } from "react";
 import { z } from "zod";
 import {
   CorrelationCard,
@@ -14,22 +15,23 @@ import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
-import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
-import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
+import { SleepOverviewCards } from "../components/SleepOverviewCards.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
-import {
-  minimumSelectedRangeQueryInput,
-  selectedRangeQueryInput,
-  type TimeRangeDays,
-} from "../lib/timeRange.ts";
+import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 
 const sleepRowSchema = z.object({
   date: z.string().optional(),
   started_at: z.string(),
+  ended_at: z.string().nullable(),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.number().nullable(),
+  end_utc_offset_minutes: z.number().nullable(),
+  local_time_source: localTimeSourceSchema,
   duration_minutes: z.number().nullable(),
   deep_minutes: z.number().nullable(),
   rem_minutes: z.number().nullable(),
@@ -39,6 +41,26 @@ const sleepRowSchema = z.object({
   provider_id: z.string().nullable().optional(),
   source_name: z.string().nullable().optional(),
   source_providers: z.array(z.string()).optional().default([]),
+  selected_session_id: z.string().nullable().optional().default(null),
+  overlapping_sessions: z
+    .array(
+      z.object({
+        session_id: z.string(),
+        provider_id: z.string(),
+        source_name: z.string().nullable(),
+        source_providers: z.array(z.string()),
+        timezone: z.string().nullable(),
+        start_utc_offset_minutes: z.number().nullable(),
+        end_utc_offset_minutes: z.number().nullable(),
+        local_time_source: localTimeSourceSchema,
+        started_at: z.string(),
+        ended_at: z.string().nullable(),
+        duration_minutes: z.number().nullable(),
+      }),
+    )
+    .optional()
+    .default([]),
+  staging_available: z.boolean(),
 });
 
 function isSleepInsight(metric: string): boolean {
@@ -46,12 +68,12 @@ function isSleepInsight(metric: string): boolean {
 }
 
 export function SleepPage() {
-  const [days, setDays] = useState<TimeRangeDays>(30);
+  const { days, description, setDays } = useTimeRangePreference("sleep");
   const endDate = useTodayQueryDate();
 
   const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const latestStages = trpc.sleep.latestStages.useQuery();
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery({ endDate });
+  const sleepNeed = trpc.sleepNeed.calculateV2.useQuery({ endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
@@ -75,6 +97,31 @@ export function SleepPage() {
         providerId: row.provider_id ?? null,
         sourceName: row.source_name ?? null,
         sourceProviders: row.source_providers ?? [],
+        selectedSessionId: row.selected_session_id,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        localTimeContext: {
+          timezone: row.timezone,
+          startUtcOffsetMinutes: row.start_utc_offset_minutes,
+          endUtcOffsetMinutes: row.end_utc_offset_minutes,
+          source: row.local_time_source,
+        },
+        overlappingSessions: row.overlapping_sessions.map((session) => ({
+          sessionId: session.session_id,
+          providerId: session.provider_id,
+          sourceName: session.source_name,
+          sourceProviders: session.source_providers,
+          localTimeContext: {
+            timezone: session.timezone,
+            startUtcOffsetMinutes: session.start_utc_offset_minutes,
+            endUtcOffsetMinutes: session.end_utc_offset_minutes,
+            source: session.local_time_source,
+          },
+          startedAt: session.started_at,
+          endedAt: session.ended_at,
+          durationMinutes: session.duration_minutes,
+        })),
+        stagingAvailable: row.staging_available,
       })),
     [sleepRows],
   );
@@ -82,7 +129,9 @@ export function SleepPage() {
   return (
     <ChartRangeProvider days={days}>
       <PageLayout
-        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+        headerChildren={
+          <TimeRangeSelector days={days} description={description} onChange={setDays} />
+        }
         title="Sleep"
         subtitle="Sleep stages, debt, and patterns over time"
       >
@@ -103,10 +152,12 @@ export function SleepPage() {
             )}
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
-          <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
-        </div>
+        <SleepOverviewCards
+          sleepNeed={sleepNeed.data}
+          sleepNeedLoading={sleepNeed.isLoading}
+          sleepPerformance={sleepPerformance.data}
+          sleepPerformanceLoading={sleepPerformance.isLoading}
+        />
 
         {/* Sleep Stage Chart */}
         <PageSection title="Sleep Stages">
@@ -119,7 +170,7 @@ export function SleepPage() {
         {/* Data Sources */}
         <PageSection
           title="Data Sources"
-          subtitle="Which provider and device supplied each night's sleep data"
+          subtitle="Which canonical session was selected and which overlapping sessions disagreed"
         >
           <SleepDataSourcesTable
             key={days ?? "all"}

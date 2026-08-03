@@ -204,6 +204,24 @@ describe("AuthGate", () => {
     expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: "/login" }));
   });
 
+  it.each([
+    "/privacy",
+    "/terms",
+  ])("allows an unauthenticated user to read the legal route %s", (pathname) => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname });
+
+    const { getByTestId } = renderAuthGate();
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(getByTestId("outlet")).toBeTruthy();
+  });
+
   it("allows an unauthenticated tokenized health report link", () => {
     mockUseAuth.mockReturnValue({
       user: null,

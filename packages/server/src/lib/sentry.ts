@@ -1,4 +1,5 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
+import { initProductionPostHog } from "dofek/lib/posthog";
 import { initProductionSentry } from "dofek/lib/sentry";
 import type express from "express";
 
@@ -20,16 +21,17 @@ export function initSentry() {
   }
   initialized = true;
 
+  initProductionPostHog("dofek-web-server");
   initProductionSentry(process.env.SENTRY_DSN);
 }
 
 /**
  * Express error-handling middleware that reports errors to Sentry
- * and returns a generic 500 response.
+ * and PostHog and returns a generic 500 response.
  */
 export function sentryErrorHandler(): express.ErrorRequestHandler {
   return (err: unknown, _req, res, next) => {
-    Sentry.captureException(err);
+    captureException(err);
     if (res.headersSent) {
       next(err);
       return;

@@ -2,10 +2,13 @@ import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { backfillClimbingAttemptCount } from "../src/db/climbing-attempt-count-backfill.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { main } from "./backfill-climbing-attempt-count.ts";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../src/lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
+}));
+vi.mock("@sentry/node", () => ({
   close: vi.fn(async () => true),
   init: vi.fn(),
 }));
@@ -52,7 +55,7 @@ describe("main", () => {
 
     await expect(main([])).rejects.toThrow("backfill failed");
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(captureException).toHaveBeenCalledWith(error);
     expect(end).toHaveBeenCalledOnce();
     expect(Sentry.close).toHaveBeenCalledWith(2_000);
   });

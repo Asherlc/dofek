@@ -2,12 +2,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AlertsScreen from "./alerts";
 
-const { mockAlertsQuery, mockInvalidateAlerts, mockPush, mockRetrySync } = vi.hoisted(() => ({
-  mockAlertsQuery: vi.fn(),
-  mockInvalidateAlerts: vi.fn(),
-  mockPush: vi.fn(),
-  mockRetrySync: vi.fn(),
-}));
+const { mockAlertsQuery, mockInvalidateAlerts, mockPush, mockRefetchAlerts, mockRetrySync } =
+  vi.hoisted(() => ({
+    mockAlertsQuery: vi.fn(),
+    mockInvalidateAlerts: vi.fn(),
+    mockPush: vi.fn(),
+    mockRefetchAlerts: vi.fn(),
+    mockRetrySync: vi.fn(),
+  }));
 
 vi.mock("../lib/useProcessingAlerts", () => ({
   useProcessingAlerts: () => mockAlertsQuery(),
@@ -69,7 +71,9 @@ describe("AlertsScreen", () => {
         ],
       },
       error: null,
+      isFetching: false,
       isLoading: false,
+      refetch: mockRefetchAlerts,
     });
   });
 
@@ -96,12 +100,21 @@ describe("AlertsScreen", () => {
     mockAlertsQuery.mockReturnValue({
       data: { generatedAt: "2026-07-24T12:00:00.000Z", alerts: [] },
       error: null,
+      isFetching: false,
       isLoading: false,
+      refetch: mockRefetchAlerts,
     });
 
     render(<AlertsScreen />);
 
     expect(screen.getByText("Nothing needs your attention")).toBeTruthy();
+    expect(screen.getByText("When an alert appears, it will show")).toBeTruthy();
+    expect(screen.getByText("What happened")).toBeTruthy();
+    expect(screen.getByText("When it happened")).toBeTruthy();
+    expect(screen.getByText("What to do next")).toBeTruthy();
+    expect(
+      screen.getByText("Only real problems detected for your account are shown."),
+    ).toBeTruthy();
   });
 
   it("paginates active alerts", () => {
@@ -116,7 +129,9 @@ describe("AlertsScreen", () => {
         })),
       },
       error: null,
+      isFetching: false,
       isLoading: false,
+      refetch: mockRefetchAlerts,
     });
 
     render(<AlertsScreen />);
@@ -128,5 +143,46 @@ describe("AlertsScreen", () => {
 
     expect(screen.queryByText("Alert 1")).toBeNull();
     expect(screen.getByText("Alert 21")).toBeTruthy();
+  });
+
+  it("explains an unavailable alert-status check and offers one retry", () => {
+    mockAlertsQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Status service timed out."),
+      isFetching: false,
+      isLoading: false,
+      refetch: mockRefetchAlerts,
+    });
+
+    render(<AlertsScreen />);
+
+    expect(screen.getByText("Alert status is unavailable")).toBeTruthy();
+    expect(screen.getByText(/Your synced health data is still available/)).toBeTruthy();
+    expect(screen.getByText(/this status check did not pause syncs or imports/)).toBeTruthy();
+    expect(screen.getByText(/Details: Status service timed out\./)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry alert status" }));
+
+    expect(mockRefetchAlerts).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("button", { name: "Retry alert status" })).toHaveLength(1);
+  });
+
+  it("keeps cached alerts visible when their check timestamp is invalid", () => {
+    const currentQuery = mockAlertsQuery();
+    mockAlertsQuery.mockReturnValue({
+      ...currentQuery,
+      data: {
+        ...currentQuery.data,
+        generatedAt: "invalid-timestamp",
+      },
+      error: new Error("Status service timed out."),
+    });
+
+    render(<AlertsScreen />);
+
+    expect(screen.getByText("Alert status may be out of date")).toBeTruthy();
+    expect(screen.getByText("Garmin summary wasn’t updated")).toBeTruthy();
+    expect(screen.getByText(/Showing cached alerts from a previous check/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry alert status" })).toBeTruthy();
   });
 });

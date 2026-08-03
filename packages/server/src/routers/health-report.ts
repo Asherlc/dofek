@@ -21,6 +21,7 @@ const generateHealthReportInputSchema = z.discriminatedUnion("reportType", [
     .object({
       reportType: z.literal("monthly"),
       months: z.number().int().min(1).max(24).default(6),
+      endDate: endDateSchema,
       expiresInDays: expiresInDaysSchema,
     })
     .strict(),
@@ -50,7 +51,10 @@ export const healthReportRouter = router({
               input.weeks,
               input.endDate,
             )
-          : await new MonthlyReportRepository(ctx.userId, ctx.sensorStore).getReport(input.months);
+          : await new MonthlyReportRepository(ctx.userId, ctx.sensorStore).getReport(
+              input.months,
+              input.endDate,
+            );
 
       if (!reportData.current) {
         throw new TRPCError({

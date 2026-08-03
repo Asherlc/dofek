@@ -141,8 +141,8 @@ describe("processWorkouts", () => {
         {
           uuid: "workout-1",
           workoutType: "13",
-          startDate: "2026-06-20T21:49:00.000Z",
-          endDate: "2026-06-20T22:17:59.000Z",
+          startDate: "2026-06-20T21:49:00.000-07:00",
+          endDate: "2026-06-20T22:17:59.000-07:00",
           duration: 1738,
           totalDistance: null,
           sourceName: "WHOOP",
@@ -158,8 +158,17 @@ describe("processWorkouts", () => {
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         externalId: appleHealthWorkoutExternalId("workout-1"),
+        timezone: null,
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "device_offset",
       }),
-      expect.any(Object),
+      expect.objectContaining({
+        timezone: null,
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "device_offset",
+      }),
     );
     expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
     expect(providerActivitySyncMocks.scope?.windowStart.toISOString()).toBe(
@@ -167,6 +176,43 @@ describe("processWorkouts", () => {
     );
     expect(providerActivitySyncMocks.scope?.windowEnd.toISOString()).toBe(
       "2026-06-21T00:00:00.000Z",
+    );
+  });
+
+  it("persists unknown local-time context when a workout boundary lacks an offset", async () => {
+    providerActivitySyncMocks.upsert.mockClear();
+    const execute = vi.fn(async () => []);
+
+    await processWorkouts(
+      { execute },
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "workout-without-end-offset",
+          workoutType: "13",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    const unknownContext = {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown",
+    };
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining(unknownContext),
+      expect.objectContaining(unknownContext),
     );
   });
 });

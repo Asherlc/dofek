@@ -56,7 +56,7 @@ export function PageLayout({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               {title ? (
                 <div>
-                  <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+                  <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
                   {subtitle && <p className="text-sm text-muted mt-1">{subtitle}</p>}
                 </div>
               ) : (

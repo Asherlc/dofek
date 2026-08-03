@@ -19,8 +19,6 @@ export interface ActivityMapPreview {
 
 export interface ActivityMapLocation {
   mapPreview: ActivityMapPreview;
-  distanceMeters: number | null;
-  elevationGainM: number | null;
 }
 
 interface ActivityMapTileProps {

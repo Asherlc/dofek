@@ -163,7 +163,13 @@ vi.mock("./routes/companion-pairing.ts", () => ({
   createCompanionPairingRouter: vi.fn(() => express.Router()),
 }));
 vi.mock("./routes/companion-token.ts", () => ({
-  createCompanionTokenHttpRouter: vi.fn(() => express.Router()),
+  createCompanionTokenHttpRouter: vi.fn(() => {
+    const router = express.Router();
+    router.get("/current", (_req, res) => {
+      res.status(200).json({ state: "connected" });
+    });
+    return router;
+  }),
 }));
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
@@ -365,6 +371,17 @@ describe("createApp", () => {
 
     expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("does not apply the password-login rate limit to companion status checks", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const app = createApp(createDatabaseFromEnv(), makeMockSensorStore());
+
+    const responses = await Promise.all(
+      Array.from({ length: 31 }, () => request(app, "GET", "/api/companion-token/current")),
+    );
+
+    expect(responses.every((response) => response.status === 200)).toBe(true);
   });
 
   it("reports the original cause of unexpected tRPC failures", async () => {

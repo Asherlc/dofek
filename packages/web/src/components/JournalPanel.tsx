@@ -1,7 +1,8 @@
-import { formatDateLong } from "@dofek/format/format";
+import { formatDateLong, formatDateYmd } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
@@ -51,7 +52,7 @@ function JournalQueryError({
 
 export function JournalPanel() {
   const [tab, setTab] = useState<Tab>("log");
-  const [days, setDays] = useState<TimeRangeDays>(30);
+  const { days, description, setDays } = useTimeRangePreference("behavior");
 
   return (
     <ChartRangeProvider days={days}>
@@ -73,7 +74,7 @@ export function JournalPanel() {
               Trends
             </button>
           </div>
-          <TimeRangeSelector days={days} onChange={setDays} />
+          <TimeRangeSelector days={days} description={description} onChange={setDays} />
         </div>
 
         {tab === "log" ? (
@@ -91,7 +92,10 @@ export function JournalPanel() {
 const entrySchema = z.object({
   id: z.string(),
   date: z.string(),
-  provider_id: z.string(),
+  source: z.object({
+    providerId: z.string(),
+    label: z.string(),
+  }),
   question_slug: z.string(),
   display_name: z.string(),
   category: z.string(),
@@ -273,7 +277,7 @@ function JournalEntryRow({
   entry: JournalEntry;
   onDelete: (id: string) => void;
 }) {
-  const isManual = entry.provider_id === "dofek";
+  const isManual = entry.source.providerId === "dofek";
 
   return (
     <div className="flex items-center justify-between py-1">
@@ -282,7 +286,7 @@ function JournalEntryRow({
         <AnswerDisplay entry={entry} />
       </div>
       <div className="flex items-center gap-2">
-        {!isManual && <span className="text-xs text-dim">{entry.provider_id}</span>}
+        {!isManual && <JournalSourceDetails source={entry.source} />}
         {isManual && (
           <button
             type="button"
@@ -293,6 +297,27 @@ function JournalEntryRow({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function JournalSourceDetails({ source }: { source: JournalEntry["source"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const action = expanded ? "Hide" : "Show";
+
+  return (
+    <div className="text-right text-xs text-dim">
+      <span>{source.label}</span>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${action} technical source details for ${source.label}`}
+        className="ml-1 text-[10px] text-subtle underline decoration-dotted underline-offset-2 hover:text-muted"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        Technical details
+      </button>
+      {expanded && <span className="block text-[10px]">Provider ID: {source.providerId}</span>}
     </div>
   );
 }
@@ -335,67 +360,54 @@ const TREND_COLORS = [
 ];
 
 function JournalTrends({ days }: { days: TimeRangeDays }) {
-  const questionsQuery = trpc.journal.questions.useQuery();
-  const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
-
-  const questions = useMemo(() => {
-    if (!questionsQuery.data) return [];
-    return z
-      .array(
-        z.object({
-          slug: z.string(),
-          display_name: z.string(),
-          category: z.string(),
-          data_type: z.string(),
-          unit: z.string().nullable(),
-          sort_order: z.coerce.number(),
-        }),
-      )
-      .parse(questionsQuery.data);
-  }, [questionsQuery.data]);
-
-  // Only chart numeric questions that have data
-  const entries = useMemo(() => {
-    if (!entriesQuery.data) return [];
-    return z.array(entrySchema).parse(entriesQuery.data);
-  }, [entriesQuery.data]);
-
-  const numericQuestionSlugs = useMemo(() => {
-    const slugs = new Set<string>();
-    for (const entry of entries) {
-      if (entry.answer_numeric !== null) {
-        slugs.add(entry.question_slug);
-      }
-    }
-    return slugs;
-  }, [entries]);
-
-  const chartableQuestions = useMemo(
-    () => questions.filter((q) => numericQuestionSlugs.has(q.slug)),
-    [questions, numericQuestionSlugs],
-  );
+  const trendsQuery = trpc.journal.trends.useQuery({
+    days,
+    endDate: formatDateYmd(),
+  });
+  const evidence = trendsQuery.data;
 
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
 
   // Auto-select first 3 chartable questions if none selected
   const effectiveSlugs = useMemo(() => {
     if (selectedSlugs.size > 0) return selectedSlugs;
-    return new Set(chartableQuestions.slice(0, 3).map((question) => question.slug));
-  }, [selectedSlugs, chartableQuestions]);
+    return new Set(evidence?.series.slice(0, 3).map((series) => series.questionSlug) ?? []);
+  }, [selectedSlugs, evidence?.series]);
 
   const series = useMemo(() => {
     return [...effectiveSlugs].map((slug, index) => {
-      const question = questions.find((candidate) => candidate.slug === slug);
-      const data: [string, number | null][] = entries
-        .filter((entry) => entry.question_slug === slug && entry.answer_numeric !== null)
-        .map((entry) => [entry.date, entry.answer_numeric]);
+      const trend = evidence?.series.find((candidate) => candidate.questionSlug === slug);
+      const data: [string, number | null][] =
+        trend?.points.map((point) => [point.date, point.value]) ?? [];
+      const observedDates =
+        trend?.points.flatMap((point) => (point.value === null ? [] : [point.date])) ?? [];
+      const hasSameDayObservations = new Set(observedDates).size !== observedDates.length;
+      const showAsPoints = trend?.dataType === "boolean" || hasSameDayObservations;
       return {
-        name: question?.display_name ?? slug,
+        name: trend?.displayName ?? slug,
         data,
         color: TREND_COLORS[index % TREND_COLORS.length],
+        missingDates:
+          trend?.points.filter((point) => point.value === null).map((point) => point.date) ?? [],
+        accessibilityDescription:
+          trend?.dataType === "boolean"
+            ? `${trend.displayName} is shown as separate Yes/No points.`
+            : hasSameDayObservations
+              ? `${trend?.displayName ?? slug} is shown as separate points because multiple sources recorded the same date.`
+              : undefined,
+        visualization: showAsPoints ? ("point" as const) : ("line" as const),
+        formatValue:
+          trend?.dataType === "boolean"
+            ? (value: number) => formatJournalTrendValue(value, "boolean", trend.unit)
+            : undefined,
       };
     });
-  }, [effectiveSlugs, entries, questions]);
+  }, [effectiveSlugs, evidence?.series]);
+
+  const selectedEvidence = useMemo(
+    () => evidence?.series.filter((trend) => effectiveSlugs.has(trend.questionSlug)) ?? [],
+    [effectiveSlugs, evidence?.series],
+  );
 
   function toggleSlug(slug: string) {
     setSelectedSlugs((prev) => {
@@ -409,90 +421,150 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
     });
   }
 
-  if (
-    (questionsQuery.isLoading && questionsQuery.data === undefined) ||
-    (entriesQuery.isLoading && entriesQuery.data === undefined)
-  ) {
+  if (trendsQuery.isLoading && evidence === undefined) {
     return <QueryStatePanel variant="loading" height={96} />;
   }
 
-  if (
-    (questionsQuery.error && questionsQuery.data === undefined) ||
-    (entriesQuery.error && entriesQuery.data === undefined)
-  ) {
+  if (trendsQuery.error && evidence === undefined) {
     return (
-      <div className="space-y-3">
-        {questionsQuery.error && questionsQuery.data === undefined ? (
-          <JournalQueryError
-            error={questionsQuery.error}
-            height={96}
-            label="Retry journal questions"
-            refetch={questionsQuery.refetch}
-            retrying={questionsQuery.isFetching}
-          />
-        ) : null}
-        {entriesQuery.error && entriesQuery.data === undefined ? (
-          <JournalQueryError
-            error={entriesQuery.error}
-            height={96}
-            label="Retry journal entries"
-            refetch={entriesQuery.refetch}
-            retrying={entriesQuery.isFetching}
-          />
-        ) : null}
-      </div>
+      <JournalQueryError
+        error={trendsQuery.error}
+        height={96}
+        label="Retry journal trends"
+        refetch={trendsQuery.refetch}
+        retrying={trendsQuery.isFetching}
+      />
     );
   }
 
-  const backgroundErrors = (
-    <>
-      {questionsQuery.error ? (
-        <JournalQueryError
-          error={questionsQuery.error}
-          height={72}
-          label="Retry journal questions"
-          refetch={questionsQuery.refetch}
-          retrying={questionsQuery.isFetching}
-        />
-      ) : null}
-      {entriesQuery.error ? (
-        <JournalQueryError
-          error={entriesQuery.error}
-          height={72}
-          label="Retry journal entries"
-          refetch={entriesQuery.refetch}
-          retrying={entriesQuery.isFetching}
-        />
-      ) : null}
-    </>
-  );
+  if (!evidence) {
+    return (
+      <QueryStatePanel
+        variant="empty"
+        height={96}
+        message="Journal trend evidence is unavailable."
+      />
+    );
+  }
 
-  if (chartableQuestions.length === 0) {
+  if (evidence.series.length === 0) {
     return (
       <div className="space-y-3">
-        {backgroundErrors}
+        {trendsQuery.error ? (
+          <JournalQueryError
+            error={trendsQuery.error}
+            height={72}
+            label="Retry journal trends"
+            refetch={trendsQuery.refetch}
+            retrying={trendsQuery.isFetching}
+          />
+        ) : null}
         <p className="text-dim text-sm text-center py-8">No numeric journal data to chart.</p>
       </div>
     );
   }
 
+  const dateRange = `${formatDateLong(evidence.window.startDate)} – ${formatDateLong(evidence.window.endDate)}`;
+  const chartDescription =
+    evidence.window.gapRepresentation === "explicit_daily"
+      ? `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are gaps in numeric lines and are listed below with exact observations.`
+      : `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are summarized by count for All history; choose a finite range to inspect exact missing dates.`;
+
   return (
-    <div>
-      {backgroundErrors}
+    <div className="space-y-4">
+      {trendsQuery.error ? (
+        <JournalQueryError
+          error={trendsQuery.error}
+          height={72}
+          label="Retry journal trends"
+          refetch={trendsQuery.refetch}
+          retrying={trendsQuery.isFetching}
+        />
+      ) : null}
+      <div className="rounded-lg border border-border bg-surface-hover/40 p-3 space-y-1">
+        <p className="text-sm font-medium text-foreground">{dateRange}</p>
+        <p className="text-xs text-muted">{evidence.statement}</p>
+        <p className="text-xs text-muted">{evidence.uncertainty.statement}</p>
+      </div>
       <div className="flex flex-wrap gap-1.5 mb-4">
-        {chartableQuestions.map((q) => (
+        {evidence.series.map((trend) => (
           <button
-            key={q.slug}
+            key={trend.questionSlug}
             type="button"
-            className={`px-2.5 py-1 rounded-full text-xs font-medium ${effectiveSlugs.has(q.slug) ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted hover:text-foreground"}`}
-            onClick={() => toggleSlug(q.slug)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium ${effectiveSlugs.has(trend.questionSlug) ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted hover:text-foreground"}`}
+            onClick={() => toggleSlug(trend.questionSlug)}
           >
-            {q.display_name}
+            {trend.displayName}
           </button>
         ))}
       </div>
 
-      <TimeSeriesChart series={series} height={280} loading={false} />
+      <TimeSeriesChart
+        series={series}
+        height={280}
+        loading={false}
+        accessibilityDescription={chartDescription}
+      />
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {selectedEvidence.map((trend) => {
+          const observations = trend.points.filter(
+            (
+              point,
+            ): point is typeof point & {
+              value: number;
+              source: NonNullable<typeof point.source>;
+            } => point.value !== null && point.source !== null,
+          );
+          const missingDates = trend.points
+            .filter((point) => point.value === null)
+            .map((point) => formatDateLong(point.date));
+          return (
+            <section
+              key={trend.questionSlug}
+              className="rounded-lg border border-border bg-surface p-3 space-y-2"
+            >
+              <h4 className="text-sm font-medium text-foreground">{trend.displayName}</h4>
+              <p className="text-xs text-muted">{trend.statement}</p>
+              <details className="text-xs text-muted">
+                <summary className="cursor-pointer font-medium text-foreground">
+                  Exact values ({observations.length})
+                </summary>
+                <ul className="mt-2 space-y-1">
+                  {observations.map((point) => (
+                    <li key={`${point.date}-${point.source.providerId}`}>
+                      <span className="font-medium">{formatDateLong(point.date)}:</span>{" "}
+                      {formatJournalTrendValue(point.value, trend.dataType, trend.unit)} ·{" "}
+                      {point.source.label}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+              <details className="text-xs text-muted">
+                <summary className="cursor-pointer font-medium text-foreground">
+                  Missing days ({trend.missingDayCount})
+                </summary>
+                <p className="mt-2">
+                  {evidence.window.gapRepresentation === "explicit_daily"
+                    ? `Missing: ${missingDates.join(", ") || "None"}`
+                    : `Missing-day dates are summarized by count for All history: ${trend.missingDayCount} days. Choose a finite range to inspect exact missing dates.`}
+                </p>
+              </details>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function formatJournalTrendValue(
+  value: number,
+  dataType: "boolean" | "numeric",
+  unit: string | null,
+): string {
+  if (dataType === "boolean") {
+    return value === 1 ? "Yes" : value === 0 ? "No" : String(value);
+  }
+  return `${value}${unit ? ` ${unit}` : ""}`;
 }

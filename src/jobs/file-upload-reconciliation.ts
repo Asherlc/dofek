@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node";
 import {
   expireFileUpload,
   fileUploadObjectKeyExists,
@@ -10,6 +9,7 @@ import {
 import type { Database } from "../db/typed-sql.ts";
 import { fileUploadLifecycleTotal, fileUploadReconciliationTotal } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 
 const RECONCILIATION_INTERVAL_MS = 15 * 60 * 1_000;
@@ -20,7 +20,7 @@ function reportReconciliationItemFailure(
   repairKind: "upload" | "orphan",
   extra: { uploadId: string } | { objectKey: string },
 ): void {
-  Sentry.captureException(error, {
+  captureException(error, {
     tags: { source: "file-upload-reconciliation", repairKind },
     extra,
   });
@@ -44,7 +44,7 @@ export async function reconcileFileUploads(
           try {
             await storage.abortMultipartUpload(upload.objectKey, upload.r2MultipartUploadId);
           } catch (abortError: unknown) {
-            Sentry.captureException(abortError, {
+            captureException(abortError, {
               tags: {
                 source: "file-upload-reconciliation",
                 repairKind: "completed_multipart",
@@ -116,7 +116,7 @@ export function startFileUploadReconciler(
     if (closed || running) return;
     running = reconcileFileUploads(database, storage)
       .catch((error: unknown) => {
-        Sentry.captureException(error, { tags: { source: "file-upload-reconciliation" } });
+        captureException(error, { tags: { source: "file-upload-reconciliation" } });
         logger.error(`[file-upload-reconciliation] Failed: ${String(error)}`);
       })
       .finally(() => {

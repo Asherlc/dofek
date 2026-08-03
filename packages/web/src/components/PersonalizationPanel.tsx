@@ -4,30 +4,10 @@ import {
   formatIntensity,
   formatStandardDeviation,
 } from "@dofek/format/format";
+import type { PersonalizationModelCard } from "dofek-server/types";
+import { useEffect } from "react";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-
-const PARAM_LABELS: Record<string, { label: string; description: string }> = {
-  exponentialMovingAverage: {
-    label: "Training Load Windows",
-    description: "How many days of training history are used to compute fitness and fatigue",
-  },
-  readinessWeights: {
-    label: "Readiness Score Weights",
-    description: "How much each factor contributes to your daily readiness score",
-  },
-  sleepTarget: {
-    label: "Sleep Target",
-    description: "The amount of sleep associated with your best recovery",
-  },
-  stressThresholds: {
-    label: "Stress Sensitivity",
-    description: "How far each threshold is from your usual baseline (in standard deviations)",
-  },
-  trainingImpulseConstants: {
-    label: "Heart Rate Effort Model",
-    description: "How heart rate intensity translates to training load",
-  },
-};
 
 export function PersonalizationPanel() {
   const status = trpc.personalization.status.useQuery();
@@ -53,11 +33,16 @@ export function PersonalizationPanel() {
   }
 
   if (status.error) {
-    return <p className="text-sm text-red-400">Failed to load personalization status</p>;
+    return <p className="text-sm text-red-400">{status.error.message}</p>;
   }
 
   const data = status.data;
   if (!data) return null;
+  const resolvedModelCards = resolveModelCards(data.modelCards);
+  if ("missingKey" in resolvedModelCards) {
+    return <IncompleteModelCardsError missingKey={resolvedModelCards.missingKey} />;
+  }
+  const modelCards = resolvedModelCards.cards;
 
   return (
     <div className="space-y-4">
@@ -71,7 +56,7 @@ export function PersonalizationPanel() {
         </div>
         {data.fittedAt && (
           <span className="text-xs text-subtle">
-            Last updated {formatDateMedium(data.fittedAt)}
+            Last refit attempt {formatDateMedium(data.fittedAt)}
           </span>
         )}
       </div>
@@ -79,23 +64,16 @@ export function PersonalizationPanel() {
       {/* Parameter cards */}
       <div className="space-y-3">
         <ParamCard
-          paramKey="exponentialMovingAverage"
-          personalized={data.parameters.exponentialMovingAverage}
+          modelCard={modelCards.exponentialMovingAverage}
           effective={data.effective.exponentialMovingAverage}
           defaults={data.defaults.exponentialMovingAverage}
           renderValue={(v: { chronicTrainingLoadDays: number; acuteTrainingLoadDays: number }) =>
             `Fitness: ${v.chronicTrainingLoadDays} days, Fatigue: ${v.acuteTrainingLoadDays} days`
           }
-          renderQuality={
-            data.parameters.exponentialMovingAverage
-              ? `${data.parameters.exponentialMovingAverage.sampleCount} days, r=${data.parameters.exponentialMovingAverage.correlation}`
-              : undefined
-          }
         />
 
         <ParamCard
-          paramKey="readinessWeights"
-          personalized={data.parameters.readinessWeights}
+          modelCard={modelCards.readinessWeights}
           effective={data.effective.readinessWeights}
           defaults={data.defaults.readinessWeights}
           renderValue={(v: {
@@ -106,29 +84,17 @@ export function PersonalizationPanel() {
           }) =>
             `Heart Rate Variability ${formatIntensity(v.hrv * 100)}, Resting Heart Rate ${formatIntensity(v.restingHr * 100)}, Sleep ${formatIntensity(v.sleep * 100)}, Respiratory Rate ${formatIntensity(v.respiratoryRate * 100)}`
           }
-          renderQuality={
-            data.parameters.readinessWeights
-              ? `${data.parameters.readinessWeights.sampleCount} days, r=${data.parameters.readinessWeights.correlation}`
-              : undefined
-          }
         />
 
         <ParamCard
-          paramKey="sleepTarget"
-          personalized={data.parameters.sleepTarget}
+          modelCard={modelCards.sleepTarget}
           effective={data.effective.sleepTarget}
           defaults={data.defaults.sleepTarget}
           renderValue={(v: { minutes: number }) => formatDurationMinutes(v.minutes)}
-          renderQuality={
-            data.parameters.sleepTarget
-              ? `${data.parameters.sleepTarget.sampleCount} qualifying nights`
-              : undefined
-          }
         />
 
         <ParamCard
-          paramKey="stressThresholds"
-          personalized={data.parameters.stressThresholds}
+          modelCard={modelCards.stressThresholds}
           effective={data.effective.stressThresholds}
           defaults={data.defaults.stressThresholds}
           renderValue={(v: {
@@ -137,25 +103,14 @@ export function PersonalizationPanel() {
           }) =>
             `Heart Rate Variability: ${v.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map(formatStandardDeviation).join(", ")}`
           }
-          renderQuality={
-            data.parameters.stressThresholds
-              ? `${data.parameters.stressThresholds.sampleCount} days`
-              : undefined
-          }
         />
 
         <ParamCard
-          paramKey="trainingImpulseConstants"
-          personalized={data.parameters.trainingImpulseConstants}
+          modelCard={modelCards.trainingImpulseConstants}
           effective={data.effective.trainingImpulseConstants}
           defaults={data.defaults.trainingImpulseConstants}
           renderValue={(v: { genderFactor: number; exponent: number }) =>
             `Factor: ${v.genderFactor}, Exponent: ${v.exponent}`
-          }
-          renderQuality={
-            data.parameters.trainingImpulseConstants
-              ? `${data.parameters.trainingImpulseConstants.sampleCount} activities, R²=${data.parameters.trainingImpulseConstants.r2}`
-              : undefined
           }
         />
       </div>
@@ -186,39 +141,112 @@ export function PersonalizationPanel() {
 }
 
 function ParamCard<T>({
-  paramKey,
-  personalized,
+  modelCard,
   effective,
   defaults,
   renderValue,
-  renderQuality,
 }: {
-  paramKey: string;
-  personalized: unknown;
+  modelCard: PersonalizationModelCard;
   effective: T;
   defaults: T;
   renderValue: (v: T) => string;
-  renderQuality?: string;
 }) {
-  const meta = PARAM_LABELS[paramKey];
-  const isPersonalized = personalized !== null;
+  const isPersonalized = modelCard.status === "personalized";
+  const lastFit = modelCard.lastSuccessfulFitAt
+    ? formatDateMedium(modelCard.lastSuccessfulFitAt)
+    : modelCard.lastFitSummary;
 
   return (
-    <div className="rounded-md bg-accent/10 px-3 py-2.5 space-y-1">
+    <article
+      aria-label={`${modelCard.title} model evidence`}
+      className="rounded-md bg-accent/10 px-3 py-2.5 space-y-1"
+    >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-foreground">{meta?.label ?? paramKey}</span>
+        <span className="text-sm font-medium text-foreground">{modelCard.title}</span>
         <span
           className={`text-[10px] font-medium uppercase tracking-wider ${isPersonalized ? "text-accent" : "text-dim"}`}
         >
           {isPersonalized ? "Learned" : "Default"}
         </span>
       </div>
-      <p className="text-xs text-subtle">{meta?.description}</p>
+      <p className="text-xs text-subtle">{modelCard.description}</p>
       <p className="text-sm text-foreground font-mono">{renderValue(effective)}</p>
-      {isPersonalized && renderQuality && (
-        <p className="text-[11px] text-subtle">Quality: {renderQuality}</p>
-      )}
       {isPersonalized && <p className="text-[11px] text-dim">Default: {renderValue(defaults)}</p>}
+      <dl className="pt-2 space-y-1 text-[11px] text-subtle">
+        <EvidenceRow label="Last successful fit" value={lastFit} />
+        <EvidenceRow label="Data window" value={modelCard.dataWindow} />
+        <EvidenceRow label="Data sufficiency" value={modelCard.dataSufficiency} />
+        <EvidenceRow label="Fit evidence" value={modelCard.fitEvidence} />
+        <EvidenceRow label="Uncertainty" value={modelCard.uncertainty} />
+      </dl>
+      <div className="pt-1 text-[11px] text-subtle">
+        <p className="font-medium">Excluded data</p>
+        <ul className="list-disc pl-4">
+          {modelCard.excludedData.map((exclusion) => (
+            <li key={exclusion}>{exclusion}</li>
+          ))}
+        </ul>
+      </div>
+    </article>
+  );
+}
+
+function EvidenceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="inline font-medium">{label}: </dt>
+      <dd className="inline">{value}</dd>
     </div>
+  );
+}
+
+type ModelCardsByKey = Record<PersonalizationModelCard["key"], PersonalizationModelCard>;
+
+function resolveModelCards(
+  modelCards: PersonalizationModelCard[],
+): { cards: ModelCardsByKey } | { missingKey: PersonalizationModelCard["key"] } {
+  const exponentialMovingAverage = modelCards.find(
+    (card) => card.key === "exponentialMovingAverage",
+  );
+  if (!exponentialMovingAverage) return { missingKey: "exponentialMovingAverage" };
+  const readinessWeights = modelCards.find((card) => card.key === "readinessWeights");
+  if (!readinessWeights) return { missingKey: "readinessWeights" };
+  const sleepTarget = modelCards.find((card) => card.key === "sleepTarget");
+  if (!sleepTarget) return { missingKey: "sleepTarget" };
+  const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
+  if (!stressThresholds) return { missingKey: "stressThresholds" };
+  const trainingImpulseConstants = modelCards.find(
+    (card) => card.key === "trainingImpulseConstants",
+  );
+  if (!trainingImpulseConstants) return { missingKey: "trainingImpulseConstants" };
+
+  return {
+    cards: {
+      exponentialMovingAverage,
+      readinessWeights,
+      sleepTarget,
+      stressThresholds,
+      trainingImpulseConstants,
+    },
+  };
+}
+
+function IncompleteModelCardsError({
+  missingKey,
+}: {
+  missingKey: PersonalizationModelCard["key"];
+}) {
+  useEffect(() => {
+    captureException(new Error(`Missing personalization model card: ${missingKey}`), {
+      context: "personalization-model-cards",
+      missingModelCard: missingKey,
+    });
+  }, [missingKey]);
+
+  return (
+    <p className="text-sm text-red-400">
+      Personalization model details are incomplete. Refresh and try again; contact support if this
+      continues.
+    </p>
   );
 }

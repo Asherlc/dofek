@@ -26,9 +26,33 @@ describe("QueryStatePanel", () => {
     expect(screen.getByTestId("query-state-loading").className).not.toContain("query-error-panel");
   });
 
+  it("announces a named busy loading status", () => {
+    render(<QueryStatePanel variant="loading" message="Loading behavior associations." />);
+
+    const status = screen.getByRole("status", { name: "Loading behavior associations." });
+    expect(status).toHaveAttribute("aria-busy", "true");
+  });
+
   it("renders the error message", () => {
     render(<QueryStatePanel error={new Error("Provider query failed")} />);
     expect(screen.getByText("Provider query failed")).toBeDefined();
+  });
+
+  it("renders structured empty-state guidance", () => {
+    render(
+      <QueryStatePanel
+        variant="empty"
+        message={
+          <span>
+            <span>2 of 3 metrics are available.</span>
+            <span>Sync one more metric.</span>
+          </span>
+        }
+      />,
+    );
+
+    expect(screen.getByText("2 of 3 metrics are available.")).toBeDefined();
+    expect(screen.getByText("Sync one more metric.")).toBeDefined();
   });
 
   it("renders an announced, visibly identified error with AA contrast", () => {
@@ -68,6 +92,17 @@ describe("QueryStatePanel", () => {
     expect(alert).not.toBeNull();
     expect(alert).toHaveTextContent("Sleep: Could not load this section");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("uses a domain-specific error title when provided", () => {
+    render(
+      <QueryStatePanel
+        error={new Error("Status service timed out")}
+        title="Alert status is unavailable"
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Alert status is unavailable" })).toBeDefined();
   });
 
   it("falls back when the error has no usable message", () => {

@@ -502,6 +502,27 @@ describe("syncHealthKitToServer", () => {
     expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
   });
 
+  it("does not report transient TRPC timeout wrappers during route push", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006 },
+    ]);
+    const timeoutCause = new Error("fetch failed: UnexpectedException: The request timed out.");
+    const trpcTimeoutError = new Error("TRPCClientError", { cause: timeoutCause });
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(trpcTimeoutError);
+    vi.mocked(captureException).mockClear();
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(result.errors.some((error) => error.includes("Push workout routes"))).toBe(true);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("records route push errors as non-fatal", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

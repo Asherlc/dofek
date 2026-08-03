@@ -1,8 +1,13 @@
 import { randomBytes, randomInt } from "node:crypto";
-import * as Sentry from "@sentry/node";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
+import {
+  type CompanionConnectionType,
+  companionConnectionTypeSchema,
+  DEFAULT_COMPANION_CONNECTION_TYPE,
+} from "../companion/connection-type.ts";
 
 export const COMPANION_PAIRING_TTL_MS = 10 * 60 * 1000;
 
@@ -173,6 +178,7 @@ return count
 const companionPairingChallengeSchema = z.object({
   id: z.string(),
   shortCode: z.string(),
+  connectionType: companionConnectionTypeSchema.default(DEFAULT_COMPANION_CONNECTION_TYPE),
   createdAt: z.string(),
   expiresAt: z.string(),
   claimedAt: z.string().optional(),
@@ -205,7 +211,10 @@ function isRedisClient(client: unknown): client is RedisClient {
 }
 
 export interface CompanionPairingStore {
-  createChallenge(now?: Date): Promise<CompanionPairingChallenge>;
+  createChallenge(
+    now?: Date,
+    connectionType?: CompanionConnectionType,
+  ): Promise<CompanionPairingChallenge>;
   getById(id: string, now?: Date): Promise<CompanionPairingChallenge | null>;
   getByShortCode(shortCode: string, now?: Date): Promise<CompanionPairingChallenge | null>;
   consumeClaimAttempt(userId: string, now?: Date): Promise<boolean>;
@@ -270,10 +279,14 @@ export function parsePairingCodeInput(code: string): string | null {
   return PAIRING_SHORT_CODE_PATTERN.test(normalizedCode) ? normalizedCode : null;
 }
 
-function newChallenge(now = new Date()): CompanionPairingChallenge {
+function newChallenge(
+  now = new Date(),
+  connectionType: CompanionConnectionType = DEFAULT_COMPANION_CONNECTION_TYPE,
+): CompanionPairingChallenge {
   return {
     id: generatePairingId(),
     shortCode: generateShortCode(),
+    connectionType,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + COMPANION_PAIRING_TTL_MS).toISOString(),
   };
@@ -284,8 +297,11 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
   #idByShortCode = new Map<string, string>();
   #claimAttemptsByUser = new Map<string, { count: number; resetsAt: number }>();
 
-  async createChallenge(now = new Date()): Promise<CompanionPairingChallenge> {
-    const challenge = newChallenge(now);
+  async createChallenge(
+    now = new Date(),
+    connectionType: CompanionConnectionType = DEFAULT_COMPANION_CONNECTION_TYPE,
+  ): Promise<CompanionPairingChallenge> {
+    const challenge = newChallenge(now, connectionType);
     if (this.#idByShortCode.has(challenge.shortCode)) {
       throw new Error("Failed to allocate unique companion pairing code");
     }
@@ -455,8 +471,11 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
     this.#getRedisClient = getRedisClient;
   }
 
-  async createChallenge(now = new Date()): Promise<CompanionPairingChallenge> {
-    let challenge = newChallenge(now);
+  async createChallenge(
+    now = new Date(),
+    connectionType: CompanionConnectionType = DEFAULT_COMPANION_CONNECTION_TYPE,
+  ): Promise<CompanionPairingChallenge> {
+    let challenge = newChallenge(now, connectionType);
     const client = await this.#getRedisClient();
     for (let attempt = 0; attempt < 5; attempt++) {
       const remainingTtlMs = Math.max(1, ttlMs(challenge, now));
@@ -472,7 +491,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       if (created === 1) {
         return challenge;
       }
-      challenge = newChallenge(now);
+      challenge = newChallenge(now, connectionType);
     }
     throw new Error("Failed to allocate unique companion pairing code");
   }
@@ -490,7 +509,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       }
       return parsed.data;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingId: id } });
+      captureException(error, { extra: { companionPairingId: id } });
       await client.del(pairingKey(id));
       return null;
     }
@@ -553,7 +572,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
   }
@@ -587,7 +606,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
   }
@@ -643,7 +662,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
     } catch (error) {
-      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
   }

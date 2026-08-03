@@ -25,6 +25,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "calendar.calendarData": { defaultDays: 365, routerFile: "calendar.ts", input: "days" },
   "correlation.compute": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "correlation.computeV2": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
+  "correlation.observations": { defaultDays: 365, routerFile: "correlation.ts", input: "custom" },
   "cyclingAdvanced.activityVariability": {
     defaultDays: 90,
     routerFile: "cycling-advanced.ts",
@@ -90,6 +91,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "hiking.walkingBiomechanics": { defaultDays: 90, routerFile: "hiking.ts", input: "days" },
   "insights.compute": { defaultDays: 90, routerFile: "insights.ts", input: "dateRange" },
   "journal.entries": { defaultDays: 30, routerFile: "journal.ts", input: "days" },
+  "journal.trends": { defaultDays: 30, routerFile: "journal.ts", input: "dateRange" },
   "nutritionAnalytics.adaptiveTdee": {
     defaultDays: 90,
     routerFile: "nutrition-analytics.ts",
@@ -118,7 +120,9 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "recovery.sleepAnalytics": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
   "recovery.workloadRatio": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
   "running.dynamics": { defaultDays: 90, routerFile: "running.ts", input: "days" },
+  "running.dynamicsV2": { defaultDays: 90, routerFile: "running.ts", input: "days" },
   "running.paceTrend": { defaultDays: 90, routerFile: "running.ts", input: "days" },
+  "running.paceTrendV2": { defaultDays: 90, routerFile: "running.ts", input: "days" },
   "sleep.list": { defaultDays: 30, routerFile: "sleep.ts", input: "dateRange" },
   "strength.estimatedOneRepMax": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.muscleGroupVolume": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
@@ -186,9 +190,8 @@ export function selectedChartDateRangeInput(
  * Optional — falls back to server's current date if omitted.
  * Dashboard clients SHOULD always pass this to ensure cache invalidation.
  */
-export const endDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date")
+export const endDateSchema = z.iso
+  .date()
   .optional()
   .transform((d) => d ?? formatDateYmd());
 
@@ -274,6 +277,10 @@ export function dateWindowStartString(endDate: string, days: number): string {
   const windowStart = new Date(`${endDate}T00:00:00Z`);
   windowStart.setUTCDate(windowStart.getUTCDate() - days);
   return formatDateYmdInTimeZone(windowStart, "UTC");
+}
+
+export function dateWindowEndExclusiveString(endDate: string): string {
+  return dateWindowStartString(endDate, -1);
 }
 
 /**

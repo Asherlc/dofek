@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 interface Technique {
   id: string;
   name: string;
+  purpose?: string;
   description: string;
+  difficulty?: string;
+  durationSeconds?: number;
   possibleBenefit?: string;
   safety: {
     position: string;
@@ -23,9 +26,31 @@ interface Technique {
 interface Session {
   id: string;
   techniqueId: string;
+  techniqueLabel?: string;
   rounds: number;
   durationSeconds: number;
   startedAt: string;
+  stressBefore?: number | null;
+  stressAfter?: number | null;
+  dizzinessAfter?: boolean | null;
+  perceivedEffect?: "better" | "same" | "worse" | null;
+}
+
+interface OutcomeSummary {
+  windowDays: number;
+  windowKind: "rolling-instant";
+  techniques: {
+    techniqueId: string;
+    sessionCount: number;
+    stress: { reportCount: number; lowerCount: number; sameCount: number; higherCount: number };
+    perceivedEffect: {
+      reportCount: number;
+      betterCount: number;
+      sameCount: number;
+      worseCount: number;
+    };
+    dizziness: { reportCount: number; yesCount: number };
+  }[];
 }
 
 interface QueryState<T> {
@@ -39,30 +64,42 @@ interface LogSessionInput {
   rounds: number;
   durationSeconds: number;
   startedAt: string;
+  stressBefore: number | null;
+  stressAfter: number | null;
+  dizzinessAfter: boolean | null;
+  perceivedEffect: "better" | "same" | "worse" | null;
 }
 
 interface TestState {
   capturedComponent: ComponentType | null;
   techniques: QueryState<Technique[]>;
   history: QueryState<Session[]>;
+  outcomes: QueryState<OutcomeSummary>;
   mutationError: Error | null;
   mutationFailure: Error | null;
   mutationPending: boolean;
   mutationInput: LogSessionInput | null;
   captureException: ReturnType<typeof vi.fn>;
   invalidateHistory: ReturnType<typeof vi.fn>;
+  invalidateOutcomes: ReturnType<typeof vi.fn>;
 }
 
 const state = vi.hoisted<TestState>(() => ({
   capturedComponent: null,
   techniques: { data: [], isLoading: false, error: null },
   history: { data: [], isLoading: false, error: null },
+  outcomes: {
+    data: { windowDays: 30, windowKind: "rolling-instant", techniques: [] },
+    isLoading: false,
+    error: null,
+  },
   mutationError: null,
   mutationFailure: null,
   mutationPending: false,
   mutationInput: null,
   captureException: vi.fn(),
   invalidateHistory: vi.fn(),
+  invalidateOutcomes: vi.fn(),
 }));
 
 const standardSafety = {
@@ -93,6 +130,7 @@ vi.mock("../lib/trpc.ts", () => ({
     breathwork: {
       techniques: { useQuery: () => state.techniques },
       history: { useQuery: () => state.history },
+      outcomes: { useQuery: () => state.outcomes },
       logSession: {
         useMutation: (options: { onSuccess?: () => void; onError?: (error: Error) => void }) => ({
           mutate: (input: LogSessionInput) => {
@@ -111,7 +149,10 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
     useUtils: () => ({
-      breathwork: { history: { invalidate: state.invalidateHistory } },
+      breathwork: {
+        history: { invalidate: state.invalidateHistory },
+        outcomes: { invalidate: state.invalidateOutcomes },
+      },
     }),
   },
 }));
@@ -128,6 +169,11 @@ describe("BreathworkPage", () => {
   beforeEach(() => {
     state.techniques = { data: [], isLoading: false, error: null };
     state.history = { data: [], isLoading: false, error: null };
+    state.outcomes = {
+      data: { windowDays: 30, windowKind: "rolling-instant", techniques: [] },
+      isLoading: false,
+      error: null,
+    };
     state.mutationError = null;
     state.mutationFailure = null;
     state.mutationPending = false;
@@ -194,6 +240,7 @@ describe("BreathworkPage", () => {
           inhaleSeconds: 1,
           exhaleSeconds: 1,
           defaultRounds: 1,
+          durationSeconds: 2,
         },
       ],
       isLoading: false,
@@ -216,6 +263,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     state.history = {
@@ -257,13 +305,14 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 2,
         exhaleSeconds: 2,
         defaultRounds: 30,
+        durationSeconds: 120,
       },
     ];
 
     renderBreathworkPage();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Power Breathing 30 rounds of 2-second inhales followed by 2-second exhales. 30 rounds",
+        name: /Power Breathing/,
       }),
     );
 
@@ -307,12 +356,57 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 4,
         exhaleSeconds: 4,
         defaultRounds: 4,
+        durationSeconds: 32,
       },
     ];
 
     renderBreathworkPage();
 
     expect(screen.getByText("Regular practice may support a more positive mood.")).toBeTruthy();
+  });
+
+  it("shows decision-ready technique details and never exposes raw history IDs", () => {
+    const fullDescription =
+      "Breathe in for 4 seconds, hold for 4 seconds, breathe out for 4 seconds, then hold for 4 seconds.";
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        purpose: "Calm focus",
+        description: fullDescription,
+        difficulty: "Beginner",
+        durationSeconds: 64,
+        safety: standardSafety,
+        inhaleSeconds: 4,
+        exhaleSeconds: 4,
+        defaultRounds: 4,
+      },
+    ];
+    state.history.data = [
+      {
+        id: "session-legacy",
+        techniqueId: "resonance",
+        techniqueLabel: "Resonant Breathing",
+        rounds: 4,
+        durationSeconds: 240,
+        startedAt: "2026-07-24T12:00:00.000Z",
+      },
+    ];
+
+    renderBreathworkPage();
+
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(
+          `Box Breathing.*Calm focus.*${fullDescription}.*Duration: 1m.*Difficulty: Beginner`,
+        ),
+      }),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Calm focus")).toHaveLength(2);
+    expect(screen.getByText(/Duration: 1m/)).toBeTruthy();
+    expect(screen.getByText(/Difficulty: Beginner/)).toBeTruthy();
+    expect(screen.getByText("Resonant Breathing")).toBeTruthy();
+    expect(screen.queryByText("resonance")).toBeNull();
   });
 
   it("paginates recent sessions", () => {
@@ -325,6 +419,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
     state.history.data = Array.from({ length: 21 }, (_, index) => ({
@@ -346,6 +441,170 @@ describe("BreathworkPage", () => {
     expect(screen.getByText("21 rounds / 1m")).toBeTruthy();
   });
 
+  it("collects optional before-and-after reports and saves them with the session", () => {
+    vi.useFakeTimers();
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+        durationSeconds: 2,
+      },
+    ];
+
+    renderBreathworkPage();
+    fireEvent.click(screen.getByRole("button", { name: "Before-session stress 8" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+
+    expect(state.mutationInput).toBeNull();
+    expect(screen.getByRole("heading", { name: "How do you feel now?" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: /Box Breathing/,
+      }),
+    ).toHaveProperty("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: "After-session stress 3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Felt better" }));
+    fireEvent.click(screen.getByRole("button", { name: "No dizziness" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save session" }));
+
+    expect(state.mutationInput).toMatchObject({
+      techniqueId: "box-breathing",
+      stressBefore: 8,
+      stressAfter: 3,
+      dizzinessAfter: false,
+      perceivedEffect: "better",
+    });
+    expect(state.invalidateHistory).toHaveBeenCalledOnce();
+    expect(state.invalidateOutcomes).toHaveBeenCalledOnce();
+  });
+
+  it("saves explicit nulls when the optional check-in is skipped", () => {
+    vi.useFakeTimers();
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+        durationSeconds: 2,
+      },
+    ];
+
+    renderBreathworkPage();
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
+
+    expect(state.mutationInput).toMatchObject({
+      stressBefore: null,
+      stressAfter: null,
+      dizzinessAfter: null,
+      perceivedEffect: null,
+    });
+  });
+
+  it("preserves a pre-session stress report when the post-session check-in is skipped", () => {
+    vi.useFakeTimers();
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+        durationSeconds: 2,
+      },
+    ];
+
+    renderBreathworkPage();
+    fireEvent.click(screen.getByRole("button", { name: "Before-session stress 7" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
+
+    expect(state.mutationInput).toMatchObject({
+      stressBefore: 7,
+      stressAfter: null,
+      dizzinessAfter: null,
+      perceivedEffect: null,
+    });
+  });
+
+  it("shows server-computed personal patterns and raw reports without causal claims", () => {
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+        durationSeconds: 2,
+      },
+    ];
+    state.outcomes.data = {
+      windowDays: 30,
+      windowKind: "rolling-instant",
+      techniques: [
+        {
+          techniqueId: "box-breathing",
+          sessionCount: 5,
+          stress: { reportCount: 4, lowerCount: 3, sameCount: 1, higherCount: 0 },
+          perceivedEffect: { reportCount: 5, betterCount: 4, sameCount: 1, worseCount: 0 },
+          dizziness: { reportCount: 5, yesCount: 1 },
+        },
+      ],
+    };
+    state.history.data = [
+      {
+        id: "session-1",
+        techniqueId: "box-breathing",
+        rounds: 4,
+        durationSeconds: 64,
+        startedAt: "2026-07-24T12:00:00.000Z",
+        stressBefore: 8,
+        stressAfter: 3,
+        dizzinessAfter: false,
+        perceivedEffect: "better",
+      },
+    ];
+
+    renderBreathworkPage();
+
+    expect(
+      screen.getByText("Stress after session: 3 lower, 1 same, 0 higher (4 paired check-ins)"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Overall feeling: 4 better, 1 same, 0 worse (5 responses)"),
+    ).toBeTruthy();
+    expect(screen.getByText("Dizziness: 1 of 5 responses")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Patterns in your reports do not prove the breathing technique caused the change.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Stress 8 → 3 · Felt better · No dizziness")).toBeTruthy();
+  });
+
   it("reports a completed-session save failure and keeps a retry action", () => {
     vi.useFakeTimers();
     const saveError = new Error("Session could not be saved. Please retry.");
@@ -359,6 +618,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -367,10 +627,12 @@ describe("BreathworkPage", () => {
     act(() => {
       vi.advanceTimersByTime(2_100);
     });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
 
     expect(screen.getByText(saveError.message)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry Save" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start Session" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("heading", { name: "How do you feel now?" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start Session" })).toBeNull();
     expect(state.mutationInput).toMatchObject({
       techniqueId: "box-breathing",
       rounds: 1,
@@ -396,6 +658,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
+        durationSeconds: 2,
       },
     ];
 
@@ -404,6 +667,7 @@ describe("BreathworkPage", () => {
     act(() => {
       vi.advanceTimersByTime(2_100);
     });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
 
     state.mutationFailure = null;
     fireEvent.click(screen.getByRole("button", { name: "Retry Save" }));
@@ -424,6 +688,7 @@ describe("BreathworkPage", () => {
         inhaleSeconds: 4,
         exhaleSeconds: 4,
         defaultRounds: 1,
+        durationSeconds: 8,
       },
     ];
 
@@ -432,11 +697,38 @@ describe("BreathworkPage", () => {
     act(() => {
       vi.advanceTimersByTime(8_000);
     });
+    fireEvent.click(screen.getByRole("button", { name: "Skip check-in and save" }));
 
     expect(state.mutationInput).toMatchObject({
       techniqueId: "box-breathing",
       rounds: 1,
       durationSeconds: 8,
     });
+  });
+
+  it("starts only one timer for rapid duplicate Start presses", () => {
+    vi.useFakeTimers();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        safety: standardSafety,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+        durationSeconds: 2,
+      },
+    ];
+
+    renderBreathworkPage();
+    const startButton = screen.getByRole("button", { name: "Start Session" });
+    act(() => {
+      startButton.click();
+      startButton.click();
+    });
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
   });
 });

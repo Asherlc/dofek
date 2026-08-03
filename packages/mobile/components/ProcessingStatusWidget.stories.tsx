@@ -56,7 +56,10 @@ const meta = {
 } satisfies Meta<typeof ProcessingStatusWidget>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const Active: Story = {};
+export const Active: Story = {
+  name: "Processing",
+  tags: ["review-scenario", "review-scenario-processing"],
+};
 export const SleepUpdate: Story = {
   name: "Sleep update",
   args: {
@@ -90,7 +93,11 @@ export const TrainingUpdate: Story = {
   },
 };
 export const Delayed: Story = { args: { data: { ...activeSnapshot, overallStatus: "delayed" } } };
-export const Partial: Story = { args: { data: { ...activeSnapshot, overallStatus: "partial" } } };
+export const Partial: Story = {
+  name: "Partial data",
+  tags: ["review-scenario", "review-scenario-partial-data"],
+  args: { data: { ...activeSnapshot, overallStatus: "partial" } },
+};
 export const Failed: Story = {
   args: {
     data: {

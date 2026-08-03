@@ -1,4 +1,5 @@
-import { totalSessionSeconds } from "@dofek/scoring/breathwork";
+import { formatDurationSeconds } from "@dofek/format/format";
+import type { BreathworkOutcomeReport, PerceivedBreathworkEffect } from "@dofek/scoring/breathwork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
@@ -8,13 +9,14 @@ import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 
 type SessionPhase = "inhale" | "hold-in" | "exhale" | "hold-out";
 
-interface CompletedSessionInput {
+interface CompletedSessionInput extends BreathworkOutcomeReport {
   techniqueId: string;
   rounds: number;
   durationSeconds: number;
   startedAt: string;
 }
 
+const STRESS_RATINGS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 const PHASE_LABELS: Record<SessionPhase, string> = {
   inhale: "Breathe In",
   "hold-in": "Hold",
@@ -22,13 +24,64 @@ const PHASE_LABELS: Record<SessionPhase, string> = {
   "hold-out": "Hold",
 };
 
+function techniqueAccessibilityLabel(technique: {
+  name: string;
+  purpose: string;
+  description: string;
+  durationSeconds: number;
+  difficulty: string;
+}): string {
+  return `${technique.name}. ${technique.purpose}. ${technique.description} Duration: ${formatDurationSeconds(technique.durationSeconds)}. Difficulty: ${technique.difficulty}.`;
+}
+
+function StressScale({
+  accessibilityPrefix,
+  value,
+  onChange,
+}: {
+  accessibilityPrefix: string;
+  value: number | null;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <View>
+      <View style={styles.ratingRow}>
+        {STRESS_RATINGS.map((rating) => (
+          <Pressable
+            key={rating}
+            accessibilityLabel={`${accessibilityPrefix} ${rating}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: value === rating }}
+            onPress={() => onChange(rating)}
+            style={[styles.ratingButton, value === rating && styles.choiceSelected]}
+          >
+            <Text style={[styles.ratingText, value === rating && styles.choiceSelectedText]}>
+              {rating}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.ratingLabels}>
+        <Text style={styles.helperText}>Not stressed</Text>
+        <Text style={styles.helperText}>Very stressed</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function BreathworkScreen() {
   const techniquesQuery = trpc.breathwork.techniques.useQuery();
+  const outcomesQuery = trpc.breathwork.outcomes.useQuery();
+  const utils = trpc.useUtils();
   const [selectedTechniqueId, setSelectedTechniqueId] = useState("box-breathing");
   const [isRunning, setIsRunning] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("inhale");
   const [pendingSession, setPendingSession] = useState<CompletedSessionInput | null>(null);
+  const [stressBefore, setStressBefore] = useState<number | null>(null);
+  const [stressAfter, setStressAfter] = useState<number | null>(null);
+  const [dizzinessAfter, setDizzinessAfter] = useState<boolean | null>(null);
+  const [perceivedEffect, setPerceivedEffect] = useState<PerceivedBreathworkEffect | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRunningRef = useRef(false);
   const startTimeRef = useRef<string | null>(null);
@@ -36,11 +89,20 @@ export default function BreathworkScreen() {
   const techniques = techniquesQuery.data;
   const selectedTechnique =
     techniques?.find((technique) => technique.id === selectedTechniqueId) ?? techniques?.[0];
+  const selectedOutcome = outcomesQuery.data?.techniques.find(
+    (summary) => summary.techniqueId === selectedTechnique?.id,
+  );
 
   const logMutation = trpc.breathwork.logSession.useMutation({
     meta: { errorReportedLocally: true },
     onSuccess: () => {
       setPendingSession(null);
+      setStressBefore(null);
+      setStressAfter(null);
+      setDizzinessAfter(null);
+      setPerceivedEffect(null);
+      utils.breathwork.history.invalidate();
+      utils.breathwork.outcomes.invalidate();
     },
     onError: (error) => {
       captureException(error, { context: "breathwork-log-session" });
@@ -101,11 +163,14 @@ export default function BreathworkScreen() {
             const completedSession = {
               techniqueId: technique.id,
               rounds: technique.defaultRounds,
-              durationSeconds: totalSessionSeconds(technique, technique.defaultRounds),
+              durationSeconds: technique.durationSeconds,
               startedAt: startTimeRef.current ?? new Date().toISOString(),
+              stressBefore,
+              stressAfter: null,
+              dizzinessAfter: null,
+              perceivedEffect: null,
             };
             setPendingSession(completedSession);
-            logMutation.mutate(completedSession);
             return;
           }
           setCurrentRound(round);
@@ -119,7 +184,17 @@ export default function BreathworkScreen() {
     }
 
     scheduleCurrentPhase();
-  }, [logMutation, selectedTechnique]);
+  }, [selectedTechnique, stressBefore]);
+
+  const saveSession = useCallback(
+    (reports: BreathworkOutcomeReport) => {
+      if (!pendingSession) return;
+      const input = { ...pendingSession, ...reports };
+      setPendingSession(input);
+      logMutation.mutate(input);
+    },
+    [logMutation, pendingSession],
+  );
 
   useEffect(
     () => () => {
@@ -161,15 +236,26 @@ export default function BreathworkScreen() {
             return (
               <Pressable
                 key={technique.id}
-                accessibilityLabel={technique.name}
+                accessibilityLabel={techniqueAccessibilityLabel(technique)}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isSelected, disabled: isRunning }}
-                disabled={isRunning}
-                onPress={() => setSelectedTechniqueId(technique.id)}
+                accessibilityState={{
+                  selected: isSelected,
+                  disabled: isRunning || pendingSession !== null,
+                }}
+                disabled={isRunning || pendingSession !== null}
+                onPress={() => {
+                  setSelectedTechniqueId(technique.id);
+                  setStressBefore(null);
+                }}
                 style={[styles.techniqueButton, isSelected && styles.techniqueButtonSelected]}
               >
                 <Text style={styles.techniqueName}>{technique.name}</Text>
+                <Text style={styles.techniquePurpose}>{technique.purpose}</Text>
                 <Text style={styles.techniqueDescription}>{technique.description}</Text>
+                <Text style={styles.techniqueMeta}>
+                  Duration: {formatDurationSeconds(technique.durationSeconds)} · Difficulty:{" "}
+                  {technique.difficulty}
+                </Text>
               </Pressable>
             );
           })}
@@ -213,21 +299,207 @@ export default function BreathworkScreen() {
                   <Text style={styles.stopButtonText}>Stop</Text>
                 </Pressable>
               </>
+            ) : pendingSession ? (
+              <View style={styles.checkIn}>
+                <Text style={styles.checkInTitle}>How do you feel now?</Text>
+                <Text style={styles.helperText}>This check-in is optional.</Text>
+
+                <Text style={styles.question}>Stress right now</Text>
+                <StressScale
+                  accessibilityPrefix="After-session stress"
+                  value={stressAfter}
+                  onChange={setStressAfter}
+                />
+
+                <Text style={styles.question}>Compared with before the session</Text>
+                <View style={styles.choiceRow}>
+                  {(
+                    [
+                      ["better", "Felt better"],
+                      ["same", "Felt the same"],
+                      ["worse", "Felt worse"],
+                    ] as const
+                  ).map(([effect, label]) => (
+                    <Pressable
+                      key={effect}
+                      accessibilityLabel={label}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: perceivedEffect === effect }}
+                      onPress={() => setPerceivedEffect(effect)}
+                      style={[
+                        styles.choiceButton,
+                        perceivedEffect === effect && styles.choiceSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.choiceText,
+                          perceivedEffect === effect && styles.choiceSelectedText,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={styles.question}>Did you feel dizzy?</Text>
+                <View style={styles.choiceRow}>
+                  <Pressable
+                    accessibilityLabel="Dizziness"
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: dizzinessAfter === true }}
+                    onPress={() => setDizzinessAfter(true)}
+                    style={[styles.choiceButton, dizzinessAfter === true && styles.choiceSelected]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceText,
+                        dizzinessAfter === true && styles.choiceSelectedText,
+                      ]}
+                    >
+                      Dizziness
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel="No dizziness"
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: dizzinessAfter === false }}
+                    onPress={() => setDizzinessAfter(false)}
+                    style={[styles.choiceButton, dizzinessAfter === false && styles.choiceSelected]}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceText,
+                        dizzinessAfter === false && styles.choiceSelectedText,
+                      ]}
+                    >
+                      No dizziness
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Pressable
+                  accessibilityLabel="Save session"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: logMutation.isPending }}
+                  disabled={logMutation.isPending}
+                  onPress={() =>
+                    saveSession({
+                      stressBefore,
+                      stressAfter,
+                      dizzinessAfter,
+                      perceivedEffect,
+                    })
+                  }
+                  style={styles.startButton}
+                >
+                  <Text style={styles.startButtonText}>
+                    {logMutation.isPending ? "Saving..." : "Save session"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Skip check-in and save"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: logMutation.isPending }}
+                  disabled={logMutation.isPending}
+                  onPress={() =>
+                    saveSession({
+                      stressBefore: pendingSession.stressBefore,
+                      stressAfter: null,
+                      dizzinessAfter: null,
+                      perceivedEffect: null,
+                    })
+                  }
+                  style={styles.skipButton}
+                >
+                  <Text style={styles.skipButtonText}>Skip check-in and save</Text>
+                </Pressable>
+              </View>
             ) : (
-              <Pressable
-                accessibilityLabel="Start Session"
-                accessibilityRole="button"
-                accessibilityState={{ disabled: pendingSession !== null }}
-                disabled={pendingSession !== null}
-                onPress={startSession}
-                style={styles.startButton}
-              >
-                <Text style={styles.startButtonText}>Start Session</Text>
-              </Pressable>
+              <View style={styles.checkIn}>
+                <Text style={styles.checkInTitle}>Optional check-in</Text>
+                <Text style={styles.helperText}>
+                  Record how you feel before and after to notice your own patterns.
+                </Text>
+                <Text style={styles.question}>Stress right now</Text>
+                <StressScale
+                  accessibilityPrefix="Before-session stress"
+                  value={stressBefore}
+                  onChange={setStressBefore}
+                />
+                <Pressable
+                  accessibilityLabel="Start Session"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: pendingSession !== null }}
+                  disabled={pendingSession !== null}
+                  onPress={startSession}
+                  style={styles.startButton}
+                >
+                  <Text style={styles.startButtonText}>Start Session</Text>
+                </Pressable>
+              </View>
             )}
           </View>
         </>
       ) : null}
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Your check-ins</Text>
+        <Text style={styles.helperText}>Rolling {outcomesQuery.data?.windowDays ?? 30} days</Text>
+        {outcomesQuery.data !== undefined ? (
+          selectedOutcome &&
+          (selectedOutcome.stress.reportCount > 0 ||
+            selectedOutcome.perceivedEffect.reportCount > 0 ||
+            selectedOutcome.dizziness.reportCount > 0) ? (
+            <View style={styles.summaryList}>
+              {selectedOutcome.stress.reportCount > 0 ? (
+                <Text style={styles.summaryText}>
+                  Stress after session: {selectedOutcome.stress.lowerCount} lower,{" "}
+                  {selectedOutcome.stress.sameCount} same, {selectedOutcome.stress.higherCount}{" "}
+                  higher ({selectedOutcome.stress.reportCount} paired check-ins)
+                </Text>
+              ) : null}
+              {selectedOutcome.perceivedEffect.reportCount > 0 ? (
+                <Text style={styles.summaryText}>
+                  Overall feeling: {selectedOutcome.perceivedEffect.betterCount} better,{" "}
+                  {selectedOutcome.perceivedEffect.sameCount} same,{" "}
+                  {selectedOutcome.perceivedEffect.worseCount} worse (
+                  {selectedOutcome.perceivedEffect.reportCount} responses)
+                </Text>
+              ) : null}
+              {selectedOutcome.dizziness.reportCount > 0 ? (
+                <Text style={styles.summaryText}>
+                  Dizziness: {selectedOutcome.dizziness.yesCount} of{" "}
+                  {selectedOutcome.dizziness.reportCount} responses
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={styles.helperText}>
+              Complete optional check-ins to see your personal pattern.
+            </Text>
+          )
+        ) : outcomesQuery.isLoading ? (
+          <QueryStatePanel variant="loading" minHeight={72} />
+        ) : outcomesQuery.error ? (
+          <QueryStatePanel
+            variant="error"
+            message={getQueryErrorMessage(outcomesQuery.error)}
+            minHeight={72}
+          />
+        ) : null}
+        <Text style={styles.disclaimer}>
+          Patterns in your reports do not prove the breathing technique caused the change.
+        </Text>
+        {outcomesQuery.data !== undefined && outcomesQuery.error ? (
+          <QueryStatePanel
+            variant="error"
+            message={getQueryErrorMessage(outcomesQuery.error)}
+            minHeight={72}
+          />
+        ) : null}
+      </View>
 
       {logMutation.error ? (
         <View style={styles.saveError}>
@@ -305,6 +577,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
   },
+  techniquePurpose: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  techniqueMeta: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+  },
   possibleBenefit: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
@@ -342,11 +623,75 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
   sessionCard: {
-    alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.md,
+  },
+  checkIn: {
+    gap: spacing.md,
+    width: "100%",
+  },
+  checkInTitle: {
+    color: colors.text,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.bold,
+    textAlign: "center",
+  },
+  helperText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+  },
+  question: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  ratingRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  ratingButton: {
+    alignItems: "center",
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
+  },
+  ratingText: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+  },
+  ratingLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.xs,
+  },
+  choiceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  choiceButton: {
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  choiceSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  choiceText: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+  },
+  choiceSelectedText: {
+    color: colors.textInverse,
   },
   round: {
     color: colors.textSecondary,
@@ -358,13 +703,27 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
   },
   startButton: {
+    alignItems: "center",
     backgroundColor: colors.accent,
     borderRadius: radius.lg,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
   },
+  skipButton: {
+    alignItems: "center",
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  skipButtonText: {
+    color: colors.text,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.bold,
+  },
   startButtonText: {
-    color: colors.surface,
+    color: colors.textInverse,
     fontSize: fontSize.base,
     fontWeight: fontWeight.bold,
   },
@@ -375,7 +734,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   stopButtonText: {
-    color: colors.surface,
+    color: colors.textInverse,
     fontSize: fontSize.base,
     fontWeight: fontWeight.bold,
   },
@@ -387,5 +746,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderRadius: radius.lg,
     padding: spacing.md,
+  },
+  summaryList: {
+    gap: spacing.xs,
+  },
+  summaryText: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+  },
+  disclaimer: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
 });

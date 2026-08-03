@@ -54,6 +54,31 @@ final class HealthKitObserverUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(completionCount, 1)
     }
 
+    func testHasPendingUpdatesReflectsRegistrationAndCompletion() {
+        let coordinator = HealthKitObserverUpdateCoordinator(timeout: 60)
+        XCTAssertFalse(coordinator.hasPendingUpdates)
+
+        let updateId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierStepCount") {}
+        XCTAssertTrue(coordinator.hasPendingUpdates)
+
+        XCTAssertEqual(coordinator.complete(updateIds: [updateId]), 1)
+        XCTAssertFalse(coordinator.hasPendingUpdates)
+    }
+
+    func testHasPendingUpdatesStaysTrueUntilLastUpdateCompletes() {
+        let coordinator = HealthKitObserverUpdateCoordinator(timeout: 60)
+        let firstId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierStepCount") {}
+        let secondId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierHeartRate") {}
+
+        XCTAssertTrue(coordinator.hasPendingUpdates)
+
+        XCTAssertEqual(coordinator.complete(updateIds: [firstId]), 1)
+        XCTAssertTrue(coordinator.hasPendingUpdates)
+
+        XCTAssertEqual(coordinator.complete(updateIds: [secondId]), 1)
+        XCTAssertFalse(coordinator.hasPendingUpdates)
+    }
+
     func testTeardownCompletesEveryPendingUpdateExactlyOnce() {
         var completionCount = 0
         let coordinator = HealthKitObserverUpdateCoordinator(timeout: 60)

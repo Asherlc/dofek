@@ -29,8 +29,6 @@ const mapPreview = {
 function location(overrides: Partial<ActivityMapLocation> = {}): ActivityMapLocation {
   return {
     mapPreview,
-    distanceMeters: 5000,
-    elevationGainM: 120,
     ...overrides,
   };
 }

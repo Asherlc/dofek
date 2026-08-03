@@ -5,7 +5,6 @@ import { constants as zlibConstants } from "node:zlib";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
@@ -23,6 +22,7 @@ import {
   createZipEntryExtractQueue,
   getImportQueue,
 } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import express from "express";
@@ -74,7 +74,7 @@ export function onUnhandledRejection(reason: unknown): void {
   }
 
   logger.error(`[web] Unhandled rejection: ${error.message}`);
-  Sentry.captureException(error);
+  captureException(error);
 
   setImmediate(() => {
     process.exit(1);
@@ -177,7 +177,7 @@ function setupRoutes(
       }
       logPathSearch = `${logUrl.pathname}${logUrl.search}`;
     } catch (error: unknown) {
-      Sentry.captureException(error, { tags: { context: "request-url-logging" } });
+      captureException(error, { tags: { context: "request-url-logging" } });
     }
     res.on("finish", () => {
       const durationMs = Date.now() - start;
@@ -244,14 +244,15 @@ function setupRoutes(
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
-  app.use("/api/export", createExportRouter({ db }));
+  app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);
   app.use("/api/companion-pairing", createCompanionPairingRouter({ db }));
-  app.use("/api/companion-token", authRateLimiter, createCompanionTokenHttpRouter({ db }));
+  app.use("/api/companion-token/password-login", authRateLimiter);
+  app.use("/api/companion-token", createCompanionTokenHttpRouter({ db }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
     app.get("/auth/dev-login", async (_req, res) => {
@@ -307,7 +308,7 @@ function setupRoutes(
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);
         if (error.code === "INTERNAL_SERVER_ERROR") {
-          Sentry.captureException(error.cause ?? error, { tags: { trpcPath: path } });
+          captureException(error.cause ?? error, { tags: { trpcPath: path } });
         }
       },
       allowMethodOverride: true,
@@ -362,7 +363,7 @@ export function runStartupTasks(
 ) {
   startSlackBot(db, app).catch((err) => {
     logger.error(`[slack] Slack bot error: ${err}`);
-    Sentry.captureException(err);
+    captureException(err);
   });
 }
 

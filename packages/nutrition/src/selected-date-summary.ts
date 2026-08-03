@@ -11,24 +11,42 @@ export const nutritionMealCaloriesSchema = z.object({
 export const macroNutritionSummarySchema = z.object({
   grams: z.number().nonnegative(),
   calories: z.number().nonnegative(),
-  percentage: z.number().nonnegative(),
+  energySharePercentage: z.number().int().min(0).max(100),
 });
 
-export const selectedDateNutritionSummarySchema = z.object({
-  calories: z.number().nonnegative(),
-  mealCalories: nutritionMealCaloriesSchema,
-  calorieGoal: z.object({
-    target: z.number().positive(),
-    remaining: z.number().nonnegative(),
-    over: z.number().nonnegative(),
-    progressPercentage: z.number().min(0).max(100),
-  }),
-  macros: z.object({
-    protein: macroNutritionSummarySchema,
-    carbs: macroNutritionSummarySchema,
-    fat: macroNutritionSummarySchema,
-  }),
-});
+export const selectedDateNutritionSummarySchema = z
+  .object({
+    calories: z.number().nonnegative(),
+    mealCalories: nutritionMealCaloriesSchema,
+    calorieGoal: z.object({
+      target: z.number().positive(),
+      remaining: z.number().nonnegative(),
+      over: z.number().nonnegative(),
+      progressPercentage: z.number().min(0).max(100),
+    }),
+    macros: z.object({
+      protein: macroNutritionSummarySchema,
+      carbs: macroNutritionSummarySchema,
+      fat: macroNutritionSummarySchema,
+    }),
+  })
+  .superRefine(({ macros }, context) => {
+    const totalMacroCalories =
+      macros.protein.calories + macros.carbs.calories + macros.fat.calories;
+    const totalEnergySharePercentage =
+      macros.protein.energySharePercentage +
+      macros.carbs.energySharePercentage +
+      macros.fat.energySharePercentage;
+    const expectedEnergySharePercentage = totalMacroCalories > 0 ? 100 : 0;
+
+    if (totalEnergySharePercentage !== expectedEnergySharePercentage) {
+      context.addIssue({
+        code: "custom",
+        message: `Macro energy shares must total ${expectedEnergySharePercentage} percent`,
+        path: ["macros"],
+      });
+    }
+  });
 
 export const nutritionSourceResolutionSchema = z.object({
   status: z.enum(["available", "source_conflict"]),
@@ -39,8 +57,42 @@ export const nutritionSourceResolutionSchema = z.object({
   sourceLabels: z.array(z.string()),
   contributingSourceLabels: z.array(z.string()),
   excludedSourceLabels: z.array(z.string()),
+  contributionGrain: z.enum(["itemized", "daily_aggregate", "ambiguous"]).nullable(),
+  contributionLabel: z.string().min(1).nullable(),
 });
 
 export type MacroNutritionSummary = z.infer<typeof macroNutritionSummarySchema>;
 export type SelectedDateNutritionSummary = z.infer<typeof selectedDateNutritionSummarySchema>;
+
+export const nutritionCalorieTargetTypeSchema = z.enum(["configured", "default"]);
+
+/** Keep server-provided scale values intact while constraining visual geometry. */
+export function clampNutritionScalePercentage(value: number): number {
+  return Math.min(Math.max(value, 0), 100);
+}
+
+export const selectedDateNutritionIntakeContextSchema = z.object({
+  observedCalories: z.number().nonnegative(),
+  target: z.object({
+    calories: z.number().positive(),
+    type: nutritionCalorieTargetTypeSchema,
+    label: z.string().min(1),
+  }),
+  scale: z.object({
+    maximumCalories: z.number().positive(),
+    observedPercentage: z.number().nonnegative(),
+    targetPercentage: z.number().nonnegative(),
+  }),
+  comparison: z.object({
+    status: z.enum(["below_target", "at_target", "above_target"]),
+    differenceCalories: z.number().nonnegative(),
+    message: z.string().min(1),
+  }),
+  limitation: z.string().min(1),
+});
+
+export type NutritionCalorieTargetType = z.infer<typeof nutritionCalorieTargetTypeSchema>;
+export type SelectedDateNutritionIntakeContext = z.infer<
+  typeof selectedDateNutritionIntakeContextSchema
+>;
 export type NutritionSourceResolution = z.infer<typeof nutritionSourceResolutionSchema>;

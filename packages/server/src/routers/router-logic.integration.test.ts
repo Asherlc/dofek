@@ -385,7 +385,7 @@ describe("Router transformation logic", () => {
       ).toBe(true);
 
       await query("journal.entries", { days: 30 });
-      await query("journal.trends", { questionSlug, days: 30 });
+      await query("journal.trends", { days: 3, endDate: today });
 
       const { status: createStatus, result: createdResult } = await mutate("journal.create", {
         date: today,
@@ -401,10 +401,21 @@ describe("Router transformation logic", () => {
           ?.answer_numeric,
       ).toBe(4);
       const { result: trendsAfterCreate } = await query("journal.trends", {
-        questionSlug,
-        days: 30,
+        days: 3,
+        endDate: today,
       });
-      expect(trendsAfterCreate.result.data).toContainEqual({ date: today, value: 4 });
+      const trendAfterCreate = trendsAfterCreate.result.data.series.find(
+        (series: { questionSlug: string }) => series.questionSlug === questionSlug,
+      );
+      expect(trendsAfterCreate.result.data.window.dayCount).toBe(3);
+      expect(trendAfterCreate.points.at(-1)).toMatchObject({
+        date: today,
+        value: 4,
+        source: { providerId: "dofek", label: "Dofek" },
+      });
+      expect(
+        trendAfterCreate.points.filter((point: { value: number | null }) => point.value === null),
+      ).toHaveLength(2);
 
       const { status: updateStatus } = await mutate("journal.update", {
         id: entryId,
@@ -418,10 +429,14 @@ describe("Router transformation logic", () => {
           ?.answer_numeric,
       ).toBe(8);
       const { result: trendsAfterUpdate } = await query("journal.trends", {
-        questionSlug,
-        days: 30,
+        days: 3,
+        endDate: today,
       });
-      expect(trendsAfterUpdate.result.data).toContainEqual({ date: today, value: 8 });
+      expect(
+        trendsAfterUpdate.result.data.series
+          .find((series: { questionSlug: string }) => series.questionSlug === questionSlug)
+          ?.points.at(-1),
+      ).toMatchObject({ date: today, value: 8 });
 
       const { status: deleteStatus } = await mutate("journal.delete", { id: entryId });
       expect(deleteStatus).toBe(200);
@@ -431,10 +446,14 @@ describe("Router transformation logic", () => {
         entriesAfterDelete.result.data.find((entry: { id: string }) => entry.id === entryId),
       ).toBeUndefined();
       const { result: trendsAfterDelete } = await query("journal.trends", {
-        questionSlug,
-        days: 30,
+        days: 3,
+        endDate: today,
       });
-      expect(trendsAfterDelete.result.data).not.toContainEqual({ date: today, value: 8 });
+      expect(
+        trendsAfterDelete.result.data.series.find(
+          (series: { questionSlug: string }) => series.questionSlug === questionSlug,
+        ),
+      ).toBeUndefined();
     });
 
     it("refreshes menstrual cycle queries after logging a period", async () => {
@@ -459,14 +478,14 @@ describe("Router transformation logic", () => {
       const { result: historyAfter } = await query("menstrualCycle.history", { months: 1 });
       expect(historyAfter.result.data).toHaveLength(1);
       const { result: phaseAfter } = await query("menstrualCycle.currentPhase");
-      expect(phaseAfter.result.data.phase).not.toBeNull();
-      expect(phaseAfter.result.data.estimate).toMatchObject({
-        basis: "generic-28-day-default",
-        completedCycleCount: 0,
-        observedCycleLengthRange: null,
-        methodLabel:
-          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
-        uncertaintyLabel: "No personal cycle-length range is available yet.",
+      expect(phaseAfter.result.data).toMatchObject({
+        phase: null,
+        estimate: null,
+        availability: {
+          status: "sparse-history",
+          label:
+            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
+        },
       });
     });
 
@@ -519,7 +538,7 @@ describe("Router transformation logic", () => {
       expect(statusAfter.result.data.isPersonalized).toBe(false);
     });
 
-    it("refreshes provider and downstream queries after disconnect", async () => {
+    it("disconnects the provider while retaining downstream sync logs", async () => {
       const providerId = "cache-invalidation-provider";
       await queryCache.invalidateAll();
       await testCtx.db.execute(sql`DELETE FROM fitness.sync_log WHERE provider_id = ${providerId}`);
@@ -544,8 +563,15 @@ describe("Router transformation logic", () => {
       const { status } = await mutate("providerDetail.disconnect", { providerId });
       expect(status).toBe(200);
 
+      const connectionsAfter = await testCtx.db.execute(
+        sql`SELECT provider_id
+            FROM fitness.provider_connection
+            WHERE user_id = ${TEST_USER_ID} AND provider_id = ${providerId}`,
+      );
+      expect(connectionsAfter).toHaveLength(0);
+
       const { result: logsAfter } = await query("providerDetail.logs", logsInput);
-      expect(logsAfter.result.data).toHaveLength(0);
+      expect(logsAfter.result.data).toHaveLength(1);
     });
 
     it("refreshes provider and downstream queries after queuing data deletion", async () => {
@@ -669,6 +695,8 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const data = result.result.data;
 
+      expect(data).not.toBeNull();
+
       // With 30 nights of data and varied HRV, we should get a calculated baseline
       expect(data.baselineMinutes).toBeGreaterThan(0);
       expect(data.totalNeedMinutes).toBeGreaterThan(0);
@@ -696,6 +724,8 @@ describe("Router transformation logic", () => {
       });
       expect(status).toBe(200);
       const data = result.result.data;
+
+      expect(data).not.toBeNull();
 
       // If baseline > some nights' durations, there should be accumulated debt
       // (our test data varies 400-500 min, so if baseline is ~450, some nights are below)

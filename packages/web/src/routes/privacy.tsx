@@ -5,7 +5,7 @@ function PrivacyPage() {
     <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-foreground mb-2">Privacy Policy</h1>
-        <p className="text-subtle text-sm mb-10">Last updated: July 27, 2026</p>
+        <p className="text-subtle text-sm mb-10">Last updated: July 29, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
@@ -206,7 +206,7 @@ function PrivacyPage() {
               <li>Request correction of inaccurate data</li>
               <li>Request deletion of your data</li>
               <li>Export your data in a portable format</li>
-              <li>Disconnect any third-party provider at any time</li>
+              <li>Disconnect any third-party provider without deleting its imported data</li>
             </ul>
           </section>
 

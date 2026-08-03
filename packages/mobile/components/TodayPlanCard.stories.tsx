@@ -4,6 +4,7 @@ import { TodayPlanCard } from "./TodayPlanCard";
 
 const readyPlan: TodayPlanResult = {
   status: "ready",
+  epistemicStatus: { kind: "suggested", label: "Suggested" },
   date: "2026-07-26",
   action: {
     id: "strain_target",
@@ -15,6 +16,7 @@ const readyPlan: TodayPlanResult = {
     { label: "Recovery", value: "82/100" },
     { label: "Sleep performance", value: "88 (Good)" },
   ],
+  caveats: [],
   confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",
@@ -25,6 +27,7 @@ const readyPlan: TodayPlanResult = {
 
 const insufficientPlan: TodayPlanResult = {
   status: "insufficient_data",
+  epistemicStatus: { kind: "unavailable", label: "Unavailable" },
   date: "2026-07-26",
   action: null,
   supportingFacts: [],
@@ -36,6 +39,21 @@ const insufficientPlan: TodayPlanResult = {
   missingInputs: ["recovery"],
   message:
     "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
+};
+
+const noChangePlan: TodayPlanResult = {
+  ...readyPlan,
+  action: {
+    id: "strain_target",
+    title: "No change needs attention — aim for 12 strain",
+    summary: "Moderate recovery (60). Aim for a steady training day.",
+    zone: "Maintain",
+  },
+  supportingFacts: [
+    { label: "Recovery", value: "60/100" },
+    { label: "Sleep performance", value: "82 (Good)" },
+  ],
+  confidence: "moderate",
 };
 
 const meta = {
@@ -51,6 +69,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Ready: Story = {};
+
+export const NoChangeNeedsAttention: Story = {
+  args: {
+    plan: noChangePlan,
+  },
+};
 
 export const InsufficientData: Story = {
   args: {

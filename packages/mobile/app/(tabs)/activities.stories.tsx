@@ -5,6 +5,7 @@ import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
+import { within } from "storybook/test";
 import { trpc } from "../../lib/trpc";
 import ActivitiesScreen from "./activities";
 
@@ -140,16 +141,30 @@ function createStoryData() {
           activityType: "road_cycling",
           startedAt: `${today}T07:30:00Z`,
           endedAt: `${today}T09:00:00Z`,
+          localTimeContext: {
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "device_timezone",
+          },
           durationMin: 90,
+          source: {
+            primarySourceLabel: "Garmin Connect",
+            sourceCount: 2,
+            overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+          },
+          lastProcessedAt: `${today}T09:05:00Z`,
+          distanceMeters: 32400,
+          distanceState: { status: "available" },
+          elevationGainM: 412,
+          elevationState: { status: "available" },
           location: {
             centroidLat: 37.7749,
             centroidLng: -122.4194,
             mapPreview,
-            distanceMeters: 32400,
-            elevationGainM: 412,
           },
           tss: 78.4,
-          stats: [{ label: "Training Stress Score", value: "78.4" }],
+          stats: [{ status: "available", label: "Training Stress Score", value: "78.4" }],
         },
       ],
     },
@@ -162,10 +177,33 @@ function createStoryData() {
           activityType: "strength",
           startedAt: `${yesterday}T17:00:00Z`,
           endedAt: `${yesterday}T17:45:00Z`,
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: null,
+            endUtcOffsetMinutes: null,
+            source: "unknown",
+          },
           durationMin: 45,
+          source: {
+            primarySourceLabel: "Strong (via Apple Health)",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
+          lastProcessedAt: `${yesterday}T17:48:00Z`,
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
           location: null,
-          tss: 42.1,
-          stats: [{ label: "Training Stress Score", value: "42.1" }],
+          tss: null,
+          stats: [
+            {
+              status: "missing",
+              label: "Training Stress Score",
+              reason:
+                "Record average power, or record average heart rate and set maximum heart rate.",
+            },
+          ],
         },
       ],
     },
@@ -175,9 +213,31 @@ function createStoryData() {
     activityCount: 2,
     totalMinutes: 135,
     totalDistanceMeters: 32400,
+    totalDistanceState: { status: "available" },
     totalElevationGainM: 412,
+    totalElevationState: { status: "available" },
     activityTypes: ["road_cycling", "strength"],
   };
+
+  const calendarData = [
+    {
+      date: yesterday,
+      activityCount: 1,
+      totalMinutes: 45,
+      activityTypes: ["strength"],
+      trainingTimeBand: "moderate" as const,
+      trainingTimeMeaning: "Moderate recorded training volume.",
+    },
+    {
+      date: today,
+      activityCount: 1,
+      totalMinutes: 90,
+      activityTypes: ["road_cycling"],
+      trainingTimeBand: "high" as const,
+      trainingTimeMeaning:
+        "High training volume; compare with recovery before stacking another hard day.",
+    },
+  ];
 
   const processingStatus = {
     generatedAt: `${today}T12:00:00.000Z`,
@@ -197,7 +257,7 @@ function createStoryData() {
     operations: [],
   };
 
-  return { today, queryInput, weekList, activityOverview, processingStatus };
+  return { today, queryInput, weekList, activityOverview, calendarData, processingStatus };
 }
 
 function createMockLink(storyData: ReturnType<typeof createStoryData>): TRPCLink<AppRouter> {
@@ -216,6 +276,8 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.weekList } });
       } else if (path === "calendar.activityOverview") {
         observer.next?.({ result: { data: storyData.activityOverview } });
+      } else if (path === "calendar.calendarData") {
+        observer.next?.({ result: { data: storyData.calendarData } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
       } else {
@@ -244,6 +306,10 @@ function MockProviders({ children }: { children: React.ReactNode }) {
     client.setQueryData(
       [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
       storyData.activityOverview,
+    );
+    client.setQueryData(
+      [["calendar", "calendarData"], { input: { days: 28 }, type: "query" }],
+      storyData.calendarData,
     );
     client.setQueryData(
       [["processing", "status"], { input: { datasets: ["activity"] }, type: "query" }],
@@ -285,3 +351,11 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const SelectionMode: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", { name: "Select activities" }),
+    );
+  },
+};

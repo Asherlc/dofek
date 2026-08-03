@@ -58,7 +58,14 @@ import { createMigration as createMigration0058 } from "./0058_migrate_body_meas
 import { createMigration as createMigration0059 } from "./0059_provider_change_state.ts";
 import { createMigration as createMigration0060 } from "./0060_heart_rate_day_change.ts";
 import { createMigration as createMigration0061 } from "./0061_provider_current_state_projection.ts";
-import { createMigration as createMigration0062 } from "./0062_account_erasure_fence.ts";
+import { createMigration as createMigration0062 } from "./0062_daily_recovery_baseline_context.ts";
+import { createMigration as createMigration0063 } from "./0063_record_local_time_context.ts";
+import { createMigration as createMigration0064 } from "./0064_activity_summary_freshness.ts";
+import { createMigration as createMigration0065 } from "./0065_sleep_staging_available.ts";
+import { createMigration as createMigration0066 } from "./0066_daily_sleep_overlap_evidence.ts";
+import { createMigration as createMigration0067 } from "./0067_repair_local_time_column_order.ts";
+import { createMigration as createMigration0068 } from "./0068_provider_metric_stream_daily_counts.ts";
+import { createMigration as createMigration0069 } from "./0069_account_erasure_fence.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -123,6 +130,13 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0060,
   createMigration0061,
   createMigration0062,
+  createMigration0063,
+  createMigration0064,
+  createMigration0065,
+  createMigration0066,
+  createMigration0067,
+  createMigration0068,
+  createMigration0069,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

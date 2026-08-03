@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  formatAssociationEstimateLabel,
   formatBodyCompositionNumber,
   formatBodyCompositionPercent,
   formatCalories,
@@ -26,6 +27,7 @@ import {
   formatNutritionNumber,
   formatPace,
   formatPercent,
+  formatReadinessDifference,
   formatRelativeTime,
   formatSigned,
   formatSleepDebt,
@@ -33,6 +35,7 @@ import {
   formatSpO2,
   formatSpO2Measurement,
   formatStandardDeviation,
+  formatSteps,
   formatTableCellValue,
   formatTime,
   formatTimeOnly,
@@ -42,6 +45,7 @@ import {
   isToday,
   isYesterday,
   parseValidDate,
+  shiftDateYmd,
 } from "./format.ts";
 
 describe("formatDateYmd", () => {
@@ -61,6 +65,79 @@ describe("formatDateYmd", () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatDateYmd()).toBe(expected);
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("shiftDateYmd", () => {
+  it("shifts a date-only value by calendar days", () => {
+    expect(shiftDateYmd("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftDateYmd("2026-12-31", 1)).toBe("2027-01-01");
+  });
+
+  it("preserves the four-digit date contract across the year 100 boundary", () => {
+    expect(shiftDateYmd("0100-01-01", -1)).toBe("0099-12-31");
+  });
+
+  it("rejects malformed dates, invalid calendar dates, and non-integer offsets", () => {
+    expect(() => shiftDateYmd("not-a-date", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("prefix-2026-03-01", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-03-01-suffix", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-02-30", 1)).toThrow("Expected a valid YYYY-MM-DD date");
+    expect(() => shiftDateYmd("2026-03-01", 0.5)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("normalizes the parsed date clock to local midnight before shifting", () => {
+    const setHours = vi.spyOn(Date.prototype, "setHours");
+
+    expect(shiftDateYmd("2026-03-01", 0)).toBe("2026-03-01");
+    expect(setHours).toHaveBeenCalledWith(0, 0, 0, 0);
+  });
+
+  it("rejects a parsed date with a mismatched year", () => {
+    vi.spyOn(Date.prototype, "getFullYear").mockReturnValueOnce(2025);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects a parsed date with a mismatched month", () => {
+    vi.spyOn(Date.prototype, "getMonth").mockReturnValueOnce(1);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects a parsed date with a mismatched day", () => {
+    vi.spyOn(Date.prototype, "getDate").mockReturnValueOnce(2);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects offsets that produce an invalid date", () => {
+    expect(() => shiftDateYmd("2026-01-01", Number.MAX_SAFE_INTEGER)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("accepts years 0000 and 9999 but rejects shifts outside the YYYY range", () => {
+    expect(shiftDateYmd("0000-01-01", 0)).toBe("0000-01-01");
+    expect(shiftDateYmd("9999-12-31", 0)).toBe("9999-12-31");
+    expect(() => shiftDateYmd("0000-01-01", -1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("9999-12-31", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
   });
 });
 
@@ -184,6 +261,43 @@ describe("formatClimbingAttemptResult", () => {
     expect(formatClimbingAttemptResult(true, 7)).toBe("Sent in 7 attempts");
     expect(formatClimbingAttemptResult(false, 1)).toBe("Attempted 1 time");
     expect(formatClimbingAttemptResult(false, 3)).toBe("Attempted 3 times");
+  });
+});
+
+describe("formatReadinessDifference", () => {
+  it("uses neutral direction labels for positive, negative, and zero differences", () => {
+    expect(formatReadinessDifference(18.6)).toBe("18.6% higher");
+    expect(formatReadinessDifference(-12.4)).toBe("12.4% lower");
+    expect(formatReadinessDifference(0)).toBe("0.0% difference");
+  });
+
+  it("returns a placeholder for a non-finite difference", () => {
+    expect(formatReadinessDifference(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatAssociationEstimateLabel", () => {
+  it("keeps the server-authored unavailable label intact", () => {
+    expect(formatAssociationEstimateLabel("Estimate unavailable")).toBe("Estimate unavailable");
+  });
+
+  it("keeps a bare Estimate label from gaining a duplicate prefix", () => {
+    expect(formatAssociationEstimateLabel("Estimate")).toBe("Estimate");
+  });
+
+  it("adds the estimate prefix to numeric server labels", () => {
+    expect(formatAssociationEstimateLabel("18.6% higher")).toBe("Estimate: 18.6% higher");
+  });
+
+  it("normalizes surrounding whitespace without duplicating a server prefix", () => {
+    expect(formatAssociationEstimateLabel("  Estimate unavailable  ")).toBe("Estimate unavailable");
+    expect(formatAssociationEstimateLabel(" 18.6% higher ")).toBe("Estimate: 18.6% higher");
+  });
+
+  it("prefixes labels that mention Estimate away from the start", () => {
+    expect(formatAssociationEstimateLabel("relative Estimate effect")).toBe(
+      "Estimate: relative Estimate effect",
+    );
   });
 });
 
@@ -648,6 +762,10 @@ describe("domain metric formatters", () => {
         { type: "unit", value: "ms" },
       ],
     });
+  });
+
+  it("formats steps as a grouped integer", () => {
+    expect(formatSteps(7639.6)).toBe("7,640");
   });
 
   it("formats standard deviations with up to 2 decimals and no unit", () => {

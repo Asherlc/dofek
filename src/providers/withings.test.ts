@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderRequestTimeoutError,
+} from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -1280,6 +1283,6 @@ describe("Withings — rate-limit aware fetch wiring", () => {
       provider.sync(
         new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
       ),
-    ).rejects.toThrow("fetch failed");
+    ).rejects.toBeInstanceOf(ProviderRequestTimeoutError);
   });
 });

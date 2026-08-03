@@ -5,6 +5,7 @@ import {
   assertClickHouseCdcHealth,
   checkClickHouseCdcHealth,
 } from "../src/db/clickhouse-cdc-health.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import {
   createProcessingReconciliationDatabaseFromEnv,
   reconcilePendingProcessingOperations,
@@ -129,7 +130,7 @@ export async function main(): Promise<void> {
     await Sentry.close(2_000);
   } catch (error: unknown) {
     exitCode = 1;
-    Sentry.captureException(error);
+    captureException(error);
     console.error(`[clickhouse-cdc-health] ${error}`);
     await Sentry.close(2_000);
   } finally {

@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import * as Sentry from "@sentry/node";
 import { UnrecoverableError } from "bullmq";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -26,6 +25,7 @@ import {
   type ParsedFitWeight,
   streamFitFile,
 } from "../fit/stream-decoder.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import {
@@ -127,7 +127,7 @@ async function updateFitFileImportProgress(
 ): Promise<void> {
   await job.updateProgress(info).catch((error: unknown) => {
     logger.warn("Failed to update FIT import progress: %s", error);
-    Sentry.captureException(error, { tags: { fitImportStep: "updateProgress" } });
+    captureException(error, { tags: { fitImportStep: "updateProgress" } });
   });
 }
 

@@ -10,6 +10,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
+import { AccessibleChart } from "../../components/AccessibleChart";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { colors } from "../../theme";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
@@ -49,6 +50,13 @@ interface ChartProps {
   onHoverIndex?: (index: number | null) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
+}
+
+function accessibleRows(data: ChartProps["data"], unit: string) {
+  return data.map((datum, index) => ({
+    label: `Sample ${index + 1}`,
+    value: datum.value === null ? "No value" : `${datum.value} ${unit}`,
+  }));
 }
 
 export function LineChart({
@@ -98,78 +106,84 @@ export function LineChart({
   const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
 
   return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={label}
-        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
-        textStyle={chartStyles.title}
-      />
-      <View {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          {yTicks.map((tick) => (
-            <Line
-              key={tick.value}
-              x1={CHART_PADDING.left}
-              y1={tick.y}
-              x2={CHART_WIDTH - CHART_PADDING.right}
-              y2={tick.y}
-              stroke={colors.surfaceSecondary}
-              strokeWidth={0.5}
-            />
-          ))}
-          {yTicks.map((tick) => (
+    <AccessibleChart
+      title={label}
+      summary={`${label} over the activity sample sequence.`}
+      rows={accessibleRows(data, unit)}
+    >
+      <View style={chartStyles.container}>
+        <ChartTitleWithTooltip
+          title={label}
+          description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
+          textStyle={chartStyles.title}
+        />
+        <View {...panResponder.panHandlers}>
+          <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+            {yTicks.map((tick) => (
+              <Line
+                key={tick.value}
+                x1={CHART_PADDING.left}
+                y1={tick.y}
+                x2={CHART_WIDTH - CHART_PADDING.right}
+                y2={tick.y}
+                stroke={colors.surfaceSecondary}
+                strokeWidth={0.5}
+              />
+            ))}
+            {yTicks.map((tick) => (
+              <SvgText
+                key={`label-${tick.value}`}
+                x={CHART_PADDING.left - 6}
+                y={tick.y + 4}
+                fill={colors.textTertiary}
+                fontSize={10}
+                textAnchor="end"
+              >
+                {Math.round(tick.value)}
+              </SvgText>
+            ))}
             <SvgText
-              key={`label-${tick.value}`}
               x={CHART_PADDING.left - 6}
-              y={tick.y + 4}
+              y={CHART_PADDING.top - 8}
               fill={colors.textTertiary}
-              fontSize={10}
+              fontSize={9}
               textAnchor="end"
             >
-              {Math.round(tick.value)}
+              {unit}
             </SvgText>
-          ))}
-          <SvgText
-            x={CHART_PADDING.left - 6}
-            y={CHART_PADDING.top - 8}
-            fill={colors.textTertiary}
-            fontSize={9}
-            textAnchor="end"
-          >
-            {unit}
-          </SvgText>
-          <Polyline
-            points={chartPoints}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {touchIndex != null && (
-            <Line
-              x1={toX(touchIndex)}
-              y1={CHART_PADDING.top}
-              x2={toX(touchIndex)}
-              y2={CHART_PADDING.top + plotHeight}
-              stroke={colors.textTertiary}
-              strokeWidth={1}
-              strokeDasharray="4,4"
+            <Polyline
+              points={chartPoints}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-          )}
-          {touchedValue != null && (
-            <Circle
-              cx={toX(touchedValue.index)}
-              cy={toY(touchedValue.value)}
-              r={4}
-              fill={color}
-              stroke="#ffffff"
-              strokeWidth={2}
-            />
-          )}
-        </Svg>
+            {touchIndex != null && (
+              <Line
+                x1={toX(touchIndex)}
+                y1={CHART_PADDING.top}
+                x2={toX(touchIndex)}
+                y2={CHART_PADDING.top + plotHeight}
+                stroke={colors.textTertiary}
+                strokeWidth={1}
+                strokeDasharray="4,4"
+              />
+            )}
+            {touchedValue != null && (
+              <Circle
+                cx={toX(touchedValue.index)}
+                cy={toY(touchedValue.value)}
+                r={4}
+                fill={color}
+                stroke="#ffffff"
+                strokeWidth={2}
+              />
+            )}
+          </Svg>
+        </View>
       </View>
-    </View>
+    </AccessibleChart>
   );
 }
 
@@ -233,84 +247,90 @@ export function AreaChart({
   const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
 
   return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={label}
-        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
-        textStyle={chartStyles.title}
-      />
-      <View {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          <Defs>
-            <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={color} stopOpacity={0.3} />
-              <Stop offset="1" stopColor={color} stopOpacity={0.05} />
-            </LinearGradient>
-          </Defs>
-          {yTicks.map((tick) => (
-            <Line
-              key={tick.value}
-              x1={CHART_PADDING.left}
-              y1={tick.y}
-              x2={CHART_WIDTH - CHART_PADDING.right}
-              y2={tick.y}
-              stroke={colors.surfaceSecondary}
-              strokeWidth={0.5}
-            />
-          ))}
-          {yTicks.map((tick) => (
+    <AccessibleChart
+      title={label}
+      summary={`${label} over the activity sample sequence.`}
+      rows={accessibleRows(data, unit)}
+    >
+      <View style={chartStyles.container}>
+        <ChartTitleWithTooltip
+          title={label}
+          description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
+          textStyle={chartStyles.title}
+        />
+        <View {...panResponder.panHandlers}>
+          <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+            <Defs>
+              <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor={color} stopOpacity={0.3} />
+                <Stop offset="1" stopColor={color} stopOpacity={0.05} />
+              </LinearGradient>
+            </Defs>
+            {yTicks.map((tick) => (
+              <Line
+                key={tick.value}
+                x1={CHART_PADDING.left}
+                y1={tick.y}
+                x2={CHART_WIDTH - CHART_PADDING.right}
+                y2={tick.y}
+                stroke={colors.surfaceSecondary}
+                strokeWidth={0.5}
+              />
+            ))}
+            {yTicks.map((tick) => (
+              <SvgText
+                key={`label-${tick.value}`}
+                x={CHART_PADDING.left - 6}
+                y={tick.y + 4}
+                fill={colors.textTertiary}
+                fontSize={10}
+                textAnchor="end"
+              >
+                {Math.round(tick.value)}
+              </SvgText>
+            ))}
             <SvgText
-              key={`label-${tick.value}`}
               x={CHART_PADDING.left - 6}
-              y={tick.y + 4}
+              y={CHART_PADDING.top - 8}
               fill={colors.textTertiary}
-              fontSize={10}
+              fontSize={9}
               textAnchor="end"
             >
-              {Math.round(tick.value)}
+              {unit}
             </SvgText>
-          ))}
-          <SvgText
-            x={CHART_PADDING.left - 6}
-            y={CHART_PADDING.top - 8}
-            fill={colors.textTertiary}
-            fontSize={9}
-            textAnchor="end"
-          >
-            {unit}
-          </SvgText>
-          <Path d={areaPath} fill="url(#areaGrad)" />
-          <Path
-            d={linePath}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {touchIndex != null && (
-            <Line
-              x1={toX(touchIndex)}
-              y1={CHART_PADDING.top}
-              x2={toX(touchIndex)}
-              y2={CHART_PADDING.top + plotHeight}
-              stroke={colors.textTertiary}
-              strokeWidth={1}
-              strokeDasharray="4,4"
+            <Path d={areaPath} fill="url(#areaGrad)" />
+            <Path
+              d={linePath}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-          )}
-          {touchedValue != null && (
-            <Circle
-              cx={toX(touchedValue.index)}
-              cy={toY(touchedValue.value)}
-              r={4}
-              fill={color}
-              stroke="#ffffff"
-              strokeWidth={2}
-            />
-          )}
-        </Svg>
+            {touchIndex != null && (
+              <Line
+                x1={toX(touchIndex)}
+                y1={CHART_PADDING.top}
+                x2={toX(touchIndex)}
+                y2={CHART_PADDING.top + plotHeight}
+                stroke={colors.textTertiary}
+                strokeWidth={1}
+                strokeDasharray="4,4"
+              />
+            )}
+            {touchedValue != null && (
+              <Circle
+                cx={toX(touchedValue.index)}
+                cy={toY(touchedValue.value)}
+                r={4}
+                fill={color}
+                stroke="#ffffff"
+                strokeWidth={2}
+              />
+            )}
+          </Svg>
+        </View>
       </View>
-    </View>
+    </AccessibleChart>
   );
 }

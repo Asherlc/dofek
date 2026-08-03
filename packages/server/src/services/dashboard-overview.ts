@@ -1,11 +1,19 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import type { SummaryDateContext } from "@dofek/format/summary-date-context";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { z } from "zod";
+import {
+  buildSleepNeedComputation,
+  type SleepNeedResult,
+  type SleepNeedV2,
+  type SleepNight,
+  toSleepNeedV1,
+  toSleepNeedV2,
+} from "../contracts/sleep-need-contract.ts";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
-import type { SleepNeedResult, SleepNight } from "../routers/sleep-need.ts";
 
 type DashboardAccessWindow =
   | { kind: "full" }
@@ -16,10 +24,12 @@ interface LoadDashboardOverviewInput {
   endDate: string;
   readinessWeights?: ReturnType<typeof getEffectiveParams>["readinessWeights"];
   sensorStore: ActivitySensorStore;
+  timezone?: string;
   userId: string;
 }
 
 export interface DashboardOverviewResult {
+  summaryDateContext: SummaryDateContext;
   readiness: {
     score: number;
     date: string;
@@ -35,10 +45,11 @@ export interface DashboardOverviewResult {
     lastNight: {
       date: string;
       durationMinutes: number;
-      deepPct: number;
-      remPct: number;
-      lightPct: number;
-      awakePct: number;
+      deepPct: number | null;
+      remPct: number | null;
+      lightPct: number | null;
+      awakePct: number | null;
+      stagingAvailable: boolean;
     } | null;
     sleepDebt: number;
   } | null;
@@ -50,6 +61,7 @@ export interface DashboardOverviewResult {
     date: string | null;
   };
   sleepNeed: SleepNeedResult | null;
+  sleepNeedV2: SleepNeedV2;
   anomalies: null;
   latestDate: string | null;
 }
@@ -70,6 +82,7 @@ const sleepSummaryRowSchema = z.object({
   rem_minutes: z.coerce.number().nullable(),
   light_minutes: z.coerce.number().nullable(),
   awake_minutes: z.coerce.number().nullable(),
+  staging_available: z.boolean(),
 });
 
 export function isRecent(dateString: string, anchorDateString: string): boolean {
@@ -117,6 +130,7 @@ export async function loadDashboardOverview({
   endDate,
   readinessWeights,
   sensorStore,
+  timezone = "UTC",
   userId,
 }: LoadDashboardOverviewInput): Promise<DashboardOverviewResult> {
   const dashboardDays = 90;
@@ -142,8 +156,8 @@ export async function loadDashboardOverview({
       { priority: "dashboard" },
     ),
     sensorStore.query(
-      z.object({ load: z.coerce.number() }),
-      `SELECT coalesce(strain.daily_load, 0) AS load
+      z.object({ load: z.coerce.number().nullable() }),
+      `SELECT sumOrNull(strain.daily_load) AS load
           FROM analytics.daily_strain AS strain FINAL
           WHERE strain.user_id = {userId:UUID}
             AND strain.is_deleted = 0
@@ -155,7 +169,7 @@ export async function loadDashboardOverview({
   ]);
 
   const dailyLoadByDate = new Map(dailyLoadRows.map((row) => [row.metric_date, row.daily_load]));
-  const yesterdayLoadFromClickHouse = yesterdayLoadRows[0]?.load ?? 0;
+  const yesterdayLoadFromClickHouse = yesterdayLoadRows[0]?.load ?? null;
 
   const readinessRows = await sensorStore.query(
     recoveryServingRowSchema,
@@ -184,7 +198,8 @@ export async function loadDashboardOverview({
             deep_minutes,
             rem_minutes,
             light_minutes,
-            awake_minutes
+            awake_minutes,
+            staging_available
           FROM analytics.daily_sleep AS sleep FINAL
           WHERE sleep.user_id = {userId:UUID}
             AND sleep.is_deleted = 0
@@ -225,23 +240,38 @@ export async function loadDashboardOverview({
   const sleepRows = [...dashboardSleepRows]
     .filter((sleepNight) => isWithinLookbackDays(sleepNight.date, endDate, 14))
     .reverse()
-    .map((row) => {
-      const durationMinutes = row.duration_minutes ?? 0;
-      return {
-        date: row.date,
-        duration_minutes: durationMinutes,
-        deep_pct: durationMinutes > 0 ? ((row.deep_minutes ?? 0) / durationMinutes) * 100 : 0,
-        rem_pct: durationMinutes > 0 ? ((row.rem_minutes ?? 0) / durationMinutes) * 100 : 0,
-        light_pct: durationMinutes > 0 ? ((row.light_minutes ?? 0) / durationMinutes) * 100 : 0,
-        awake_pct: durationMinutes > 0 ? ((row.awake_minutes ?? 0) / durationMinutes) * 100 : 0,
-      };
+    .flatMap((row) => {
+      if (row.duration_minutes == null) return [];
+      return [
+        {
+          date: row.date,
+          duration_minutes: row.duration_minutes,
+          deep_pct:
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.deep_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
+          rem_pct:
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.rem_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
+          light_pct:
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.light_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
+          awake_pct:
+            row.staging_available && row.duration_minutes > 0
+              ? ((row.awake_minutes ?? 0) / row.duration_minutes) * 100
+              : null,
+          staging_available: row.staging_available,
+        },
+      ];
     });
 
   const lastNightRow = sleepRows.find((row) => isRecent(row.date, endDate));
   const hrvByDate = new Map(readinessRows.map((row) => [row.date, row.hrv]));
   const sleepBaselineRows = dashboardSleepRows.map((row) => ({
     date: row.date,
-    duration_minutes: row.duration_minutes ?? 0,
+    duration_minutes: row.duration_minutes,
     hrv: hrvByDate.get(addDays(row.date, 1)) ?? null,
     yesterday_load: yesterdayLoadFromClickHouse,
   }));
@@ -258,24 +288,33 @@ export async function loadDashboardOverview({
       : ((values[midpoint - 1] ?? 50) + (values[midpoint] ?? 50)) / 2;
   })();
 
-  const goodNights = sleepBaselineRows.filter(
-    (row) => row.hrv != null && row.hrv >= hrvMedian && row.duration_minutes > 0,
-  );
+  const goodNightDurations = sleepBaselineRows
+    .filter((row) => row.hrv != null && row.hrv >= hrvMedian)
+    .map((row) => row.duration_minutes)
+    .filter((duration): duration is number => duration != null && duration > 0);
   const baselineMinutes =
-    goodNights.length >= 7
+    goodNightDurations.length >= 7
       ? Math.round(
-          goodNights.reduce((totalMinutes, row) => totalMinutes + row.duration_minutes, 0) /
-            goodNights.length,
+          goodNightDurations.reduce(
+            (totalMinutes, durationMinutes) => totalMinutes + durationMinutes,
+            0,
+          ) / goodNightDurations.length,
         )
       : 480;
 
-  const yesterdayLoad = Number(sleepBaselineRows[0]?.yesterday_load ?? 0);
+  const yesterdayLoad = yesterdayLoadFromClickHouse ?? 0;
   const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
-  const accumulatedDebt = sleepBaselineRows
-    .slice(-14)
-    .reduce((totalDebt, row) => totalDebt + Math.max(0, baselineMinutes - row.duration_minutes), 0);
-  const totalNeedMinutes = baselineMinutes + strainDebtMinutes + Math.round(accumulatedDebt * 0.25);
-
+  const recentDebtRows = sleepBaselineRows.slice(-14);
+  const debtObservedNightCount = recentDebtRows.filter(
+    (row) => row.duration_minutes != null,
+  ).length;
+  const accumulatedDebt = recentDebtRows.reduce(
+    (totalDebt, row) =>
+      row.duration_minutes == null
+        ? totalDebt
+        : totalDebt + Math.max(0, baselineMinutes - row.duration_minutes),
+    0,
+  );
   const nightsByDate = new Map(sleepBaselineRows.map((row) => [row.date, row]));
   const recentNights: SleepNight[] = [];
   const anchorDate = new Date(`${endDate}T12:00:00Z`);
@@ -286,9 +325,12 @@ export async function loadDashboardOverview({
     const night = nightsByDate.get(dateString);
     recentNights.push({
       date: dateString,
-      actualMinutes: night ? Math.round(night.duration_minutes) : null,
+      actualMinutes: night?.duration_minutes != null ? Math.round(night.duration_minutes) : null,
       neededMinutes: baselineMinutes,
-      debtMinutes: night ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes)) : null,
+      debtMinutes:
+        night?.duration_minutes != null
+          ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes))
+          : null,
       providerId: null,
       sourceName: null,
       sourceProviders: [],
@@ -300,17 +342,19 @@ export async function loadDashboardOverview({
     "UTC",
   );
 
-  const sleepNeedResult: SleepNeedResult | null =
-    sleepBaselineRows.length > 0
-      ? {
-          baselineMinutes,
-          strainDebtMinutes,
-          accumulatedDebtMinutes: Math.round(accumulatedDebt),
-          totalNeedMinutes,
-          recentNights,
-          canRecommend: nightsByDate.has(yesterdayDateString),
-        }
-      : null;
+  const sleepNeedComputation = buildSleepNeedComputation({
+    baselineMinutes,
+    strainDebtMinutes,
+    accumulatedDebtMinutes: Math.round(accumulatedDebt),
+    baselineQualifyingNightCount: goodNightDurations.length,
+    debtObservedNightCount,
+    recentNights,
+    hasPreviousNight: dashboardSleepRows.some(
+      (sleepRow) => sleepRow.date === yesterdayDateString && sleepRow.duration_minutes != null,
+    ),
+    hasYesterdayLoad: yesterdayLoadFromClickHouse != null,
+  });
+  const sleepNeedResult = toSleepNeedV1(sleepNeedComputation);
 
   const acuteLoad = dailyLoadRows.reduce((totalLoad, row) => {
     const daysAgo = Math.floor(
@@ -338,6 +382,10 @@ export async function loadDashboardOverview({
   };
 
   return {
+    summaryDateContext: {
+      effectiveDate: endDate,
+      timezone,
+    },
     readiness: readinessResult,
     sleep: {
       lastNight: lastNightRow
@@ -348,12 +396,14 @@ export async function loadDashboardOverview({
             remPct: lastNightRow.rem_pct,
             lightPct: lastNightRow.light_pct,
             awakePct: lastNightRow.awake_pct,
+            stagingAvailable: lastNightRow.staging_available,
           }
         : null,
       sleepDebt: Math.round(accumulatedDebt),
     },
     strain: strainResult,
     sleepNeed: sleepNeedResult,
+    sleepNeedV2: toSleepNeedV2(sleepNeedComputation),
     anomalies: null,
     latestDate:
       latestMetric?.date ??

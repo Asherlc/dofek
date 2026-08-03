@@ -1,7 +1,12 @@
 import { formatRelativeTime } from "@dofek/format/format";
-import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
+import {
+  PROCESSING_ALERTS_EMPTY_PREVIEW,
+  type ProcessingAlert,
+  processingAlertsFailurePresentation,
+} from "@dofek/providers/processing-alerts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { EmptyStatePreview } from "../components/EmptyStatePreview.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -30,6 +35,25 @@ export function AlertsPage() {
   const totalPages = Math.ceil(alerts.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
   const visibleAlerts = alerts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const failurePresentation = alertsQuery.error
+    ? processingAlertsFailurePresentation({
+        errorMessage: alertsQuery.error.message,
+        hasSnapshot: alertsQuery.data !== undefined,
+        lastCheckedLabel: alertsQuery.data
+          ? formatRelativeTime(alertsQuery.data.generatedAt)
+          : null,
+      })
+    : null;
+  const failurePanel = failurePresentation ? (
+    <QueryStatePanel
+      error={alertsQuery.error}
+      title={failurePresentation.title}
+      message={failurePresentation.message}
+      onRetry={() => void alertsQuery.refetch()}
+      retryLabel={failurePresentation.retryLabel}
+      retrying={alertsQuery.isFetching}
+    />
+  ) : null;
 
   return (
     <PageLayout
@@ -38,20 +62,13 @@ export function AlertsPage() {
     >
       {alertsQuery.isLoading && !alertsQuery.data ? (
         <QueryStatePanel variant="loading" />
-      ) : alertsQuery.error && !alertsQuery.data ? (
-        <QueryStatePanel
-          error={alertsQuery.error}
-          message="Alerts could not be loaded. Refresh the page to try again."
-        />
+      ) : failurePresentation && (!alertsQuery.data || alerts.length === 0) ? (
+        failurePanel
       ) : alertsQuery.data?.alerts.length === 0 ? (
-        <section className="rounded-lg border border-border bg-surface px-5 py-8 text-center">
-          <h3 className="text-sm font-semibold text-foreground">Nothing needs your attention</h3>
-          <p className="mt-1 text-sm text-muted">
-            New sync, connection, and import problems will appear here.
-          </p>
-        </section>
+        <EmptyStatePreview content={PROCESSING_ALERTS_EMPTY_PREVIEW} />
       ) : (
         <div className="space-y-3">
+          {failurePanel}
           {visibleAlerts.map((alert) => (
             <article
               key={alert.id}
@@ -104,7 +121,7 @@ function AlertAction({
   onRetrySync: () => void;
 }) {
   const actionClass =
-    "inline-flex shrink-0 items-center justify-center rounded-md bg-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent/90 disabled:opacity-50";
+    "inline-flex shrink-0 items-center justify-center rounded-md bg-accent px-3 py-2 text-xs font-semibold text-on-accent transition-colors hover:bg-accent/90 disabled:opacity-50";
   if (alert.action === "retry_sync") {
     return (
       <button type="button" className={actionClass} disabled={disabled} onClick={onRetrySync}>

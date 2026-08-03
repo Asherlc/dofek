@@ -36,5 +36,10 @@ export async function enqueueSyncJobWithRequestDedup(
   }
 
   const job = await addJob("sync", jobData, nextOptions);
-  return withAlreadyQueuedState(job, false);
+  const wasLifecycleDeduplicated =
+    nextOptions.deduplication != null &&
+    nextOptions.jobId != null &&
+    job.id != null &&
+    String(job.id) !== nextOptions.jobId;
+  return withAlreadyQueuedState(job, wasLifecycleDeduplicated);
 }

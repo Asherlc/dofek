@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node";
 import {
   AccountErasureUserFencedError,
   withAccountErasureUserWriteFence,
@@ -8,6 +7,7 @@ import {
   markFileUploadOutboxDispatched,
 } from "../db/file-upload.ts";
 import type { Database } from "../db/index.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { enqueueFileUploadImport, type FileUploadImportQueue } from "./queues.ts";
 
@@ -53,7 +53,7 @@ export function startFileUploadOutboxDispatcher(
         if (count > 0) logger.info(`[file-upload-outbox] Dispatched ${count} upload(s)`);
       })
       .catch((error: unknown) => {
-        Sentry.captureException(error, { tags: { source: "file-upload-outbox" } });
+        captureException(error, { tags: { source: "file-upload-outbox" } });
         logger.error(`[file-upload-outbox] Dispatch failed: ${String(error)}`);
       })
       .finally(() => {

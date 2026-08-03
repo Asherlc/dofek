@@ -191,9 +191,10 @@ golden-path queries.
   field names from `daily_metrics`. They should change to read from the view
   type, not the table type. The view shape stays stable, so no domain logic
   change.
-- **DISCONNECT_CHILD_TABLES**: when a provider is disconnected, deleting from
-  `daily_metrics` already cascades to `daily_metric_value` via the FK
-  (`onDelete: "cascade"` in schema). No change needed.
+- **Provider data deletion**: Disconnect retains `daily_metrics`. **Delete All
+  Data** and account deletion remove `daily_metrics`, which cascades to
+  `daily_metric_value` through the FK (`onDelete: "cascade"` in
+  [`schema.ts`](../src/db/schema.ts)). No change needed.
 - **Mobile app**: HealthKit sync writes via the tRPC routers — server-side
   change only. Mobile code unaffected.
 - **ClickHouse mirror**: `analytics.daily_metrics` proxies the Postgres table.

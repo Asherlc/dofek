@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Database, TransactionDatabase } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
@@ -27,6 +26,7 @@ import {
   createImportUploadStorageFromEnv,
   type ImportUploadStorage,
 } from "dofek/file-upload-storage";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -376,7 +376,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
                   );
                   remoteSideEffect.createdMultipart = null;
                 } catch (abortError) {
-                  Sentry.captureException(abortError, {
+                  captureException(abortError, {
                     tags: {
                       source: "file-upload-initiate",
                       operation: "abortMultipartUpload",
@@ -410,7 +410,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
                 createdMultipart.multipartUploadId,
               );
             } catch (abortError: unknown) {
-              Sentry.captureException(abortError, {
+              captureException(abortError, {
                 tags: {
                   source: "file-upload-initiate",
                   operation: "abortMultipartUpload",
@@ -575,7 +575,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
         } catch (error: unknown) {
           if (remoteSideEffect.completedObject) {
             const completedObject = remoteSideEffect.completedObject;
-            Sentry.captureException(error, {
+            captureException(error, {
               tags: {
                 source: "file-upload-complete",
                 operation: "persistCompletedObject",
@@ -585,7 +585,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
             try {
               await storageFor(dependencies).deleteObject(completedObject.objectKey);
             } catch (cleanupError: unknown) {
-              Sentry.captureException(cleanupError, {
+              captureException(cleanupError, {
                 tags: {
                   source: "file-upload-complete",
                   operation: "deleteCompletedObject",

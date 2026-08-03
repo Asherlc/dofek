@@ -27,7 +27,9 @@ vi.mock("../file-upload-metrics.ts", () => ({
   fileUploadLifecycleTotal: { add: repository.lifecycle },
   fileUploadReconciliationTotal: { add: repository.reconciliation },
 }));
-vi.mock("@sentry/node", () => ({ captureException: repository.captureException }));
+vi.mock("../lib/error-reporting.ts", () => ({
+  captureException: repository.captureException,
+}));
 vi.mock("../logger.ts", () => ({ logger: { error: repository.logError } }));
 
 const { reconcileFileUploads, startFileUploadReconciler } = await import(

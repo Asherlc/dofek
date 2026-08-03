@@ -171,10 +171,34 @@ describe("Food router", () => {
           progressPercentage: 62.5,
         },
         macros: {
-          protein: { grams: 55, calories: 220, percentage: 22 },
-          carbs: { grams: 105, calories: 420, percentage: 42 },
-          fat: { grams: 40, calories: 360, percentage: 36 },
+          protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+          carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+          fat: { grams: 40, calories: 360, energySharePercentage: 36 },
         },
+      });
+
+      const v2Result = await query("food.byDateV2", { date });
+
+      expect(v2Result.result.data.intakeContext).toEqual({
+        observedCalories: 1000,
+        target: {
+          calories: 1600,
+          type: "configured",
+          label: "Configured daily logged-intake target",
+        },
+        scale: {
+          maximumCalories: 1600,
+          observedPercentage: 62.5,
+          targetPercentage: 100,
+        },
+        comparison: {
+          status: "below_target",
+          differenceCalories: 600,
+          message:
+            "Observed logged intake is 600 kcal below the configured daily logged-intake target.",
+        },
+        limitation:
+          "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
       });
     });
   });

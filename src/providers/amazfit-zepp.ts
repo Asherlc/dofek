@@ -1,7 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { signInToZepp, ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
-import { captureException } from "@sentry/node";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -14,6 +13,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { deleteTokens, ensureProvider, loadTokens } from "../db/tokens.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
@@ -134,6 +134,7 @@ export interface ParsedZeppSleep {
   lightMinutes?: number;
   remMinutes?: number;
   awakeMinutes?: number;
+  stagingAvailable: boolean;
 }
 
 export interface ParsedZeppHeartRateSample {
@@ -307,6 +308,11 @@ function parseSleep(date: string, summary: ZeppSummary): ParsedZeppSleep | undef
   const lightMinutes = sleep.lt;
   const remMinutes = sleep.dt;
   const awakeMinutes = sleep.wk;
+  const stagingAvailable =
+    deepMinutes !== undefined &&
+    lightMinutes !== undefined &&
+    remMinutes !== undefined &&
+    awakeMinutes !== undefined;
   const durationMinutes = Math.round((deepMinutes ?? 0) + (lightMinutes ?? 0) + (remMinutes ?? 0));
   if (durationMinutes <= 0 || sleep.st === undefined || sleep.ed === undefined) return undefined;
 
@@ -322,6 +328,7 @@ function parseSleep(date: string, summary: ZeppSummary): ParsedZeppSleep | undef
     lightMinutes: lightMinutes === undefined ? undefined : Math.round(lightMinutes),
     remMinutes: remMinutes === undefined ? undefined : Math.round(remMinutes),
     awakeMinutes: awakeMinutes === undefined ? undefined : Math.round(awakeMinutes),
+    stagingAvailable,
   };
 }
 
@@ -590,6 +597,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                     lightMinutes: parsed.sleep.lightMinutes,
                     remMinutes: parsed.sleep.remMinutes,
                     awakeMinutes: parsed.sleep.awakeMinutes,
+                    stagingAvailable: parsed.sleep.stagingAvailable,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                   })
                   .onConflictDoUpdate({
@@ -602,6 +610,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                       lightMinutes: parsed.sleep.lightMinutes,
                       remMinutes: parsed.sleep.remMinutes,
                       awakeMinutes: parsed.sleep.awakeMinutes,
+                      stagingAvailable: parsed.sleep.stagingAvailable,
                       sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     },
                   });

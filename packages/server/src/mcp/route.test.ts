@@ -16,6 +16,7 @@ const toolTestMocks = vi.hoisted(() => {
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
+    fingerLoadingRange: vi.fn(),
     foodCreate: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
     getAllProviders: vi.fn(),
@@ -70,6 +71,10 @@ vi.mock("../repositories/sleep-repository.ts", () => ({
 
 vi.mock("../repositories/body-repository.ts", () => ({
   BodyRepository: vi.fn(() => ({ listRange: toolTestMocks.bodyListRange })),
+}));
+
+vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
+  readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
 }));
 
 vi.mock("../repositories/sync-repository.ts", () => ({
@@ -291,6 +296,7 @@ describe("createMcpRouter", () => {
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodCreate.mockResolvedValue(null);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
+    toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
@@ -492,6 +498,15 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_finger_loading").inputSchema).toMatchObject({
+      properties: {
+        end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        timezone: { type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -549,6 +564,52 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.dailyMetricsList).toHaveBeenCalledWith(1, "2026-05-20");
   });
 
+  it("returns structured finger loading with server-computed effective load", async () => {
+    authorizeMcpToken();
+    toolTestMocks.fingerLoadingRange.mockResolvedValue([
+      {
+        activityId: "activity-1",
+        bodyweightKg: 72,
+        edgeSizeMm: 20,
+        effectiveLoadKg: 90,
+        exercise: "max_hang",
+        externalLoadKg: 18,
+        gripPosition: "half_crimp",
+        holdDurationSeconds: 10,
+        laterality: "both",
+        notes: null,
+        restIntervalSeconds: 180,
+        rpe: 8,
+        setCount: 5,
+        startedAt: "2026-07-29T18:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_finger_loading", {
+        end_date: "2026-07-29",
+        start_date: "2026-07-29",
+        timezone: "America/Los_Angeles",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        activity_id: "activity-1",
+        effective_load_kg: 90,
+        exercise: "max_hang",
+      }),
+    ]);
+    expect(toolTestMocks.fingerLoadingRange).toHaveBeenCalledWith({
+      database: expect.anything(),
+      endDate: "2026-07-29",
+      startDate: "2026-07-29",
+      timezone: "America/Los_Angeles",
+      userId: "user-id",
+    });
+  });
+
   it("searches activities and applies the query filter", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
@@ -593,7 +654,7 @@ describe("createMcpRouter", () => {
       { date: "2026-05-19", hrv: 60, resting_hr: 53, steps: 10_000 },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_health_trends", {
         end_date: "2026-05-19",
@@ -656,6 +717,101 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it("returns server-computed baseline context for recovery health trends", async () => {
+    authorizeMcpToken();
+    const recoveryRow = {
+      date: "2026-05-19",
+      hrv: 72,
+      resting_hr: 48,
+      respiratory_rate: 14,
+      efficiency_pct: 90,
+      hrv_mean_30d: 60,
+      hrv_sd_30d: 6,
+      hrv_z_score: 2,
+      hrv_baseline_sample_count: 24,
+      hrv_baseline_coverage: 0.8,
+      hrv_mean_7d: 66,
+      hrv_mean_previous_28d: 61,
+      rhr_mean_30d: 52,
+      rhr_sd_30d: 2,
+      resting_hr_z_score: -2,
+      rhr_baseline_sample_count: 30,
+      rhr_baseline_coverage: 1,
+      rhr_mean_7d: 49,
+      rhr_mean_previous_28d: 53,
+      rr_mean_30d: 15,
+      rr_sd_30d: 0.5,
+      respiratory_rate_z_score: -2,
+      rr_baseline_sample_count: 15,
+      rr_baseline_coverage: 0.5,
+      rr_mean_7d: 14.5,
+      rr_mean_previous_28d: 15.2,
+      efficiency_mean_30d: 85,
+      efficiency_sd_30d: 2.5,
+      efficiency_z_score: 2,
+      efficiency_baseline_sample_count: 28,
+      efficiency_baseline_coverage: 28 / 30,
+      efficiency_mean_7d: 88,
+      efficiency_mean_previous_28d: 84,
+    };
+    const sensorStore = makeMockSensorStore([[], [recoveryRow]]);
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-19", hrv: 72, resting_hr: 48 },
+    ]);
+
+    const response = await request(createTestApp(sensorStore), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        end_date: "2026-05-19",
+        metrics: ["hrv", "resting_hr", "sleep_efficiency"],
+        start_date: "2026-05-19",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      {
+        date: "2026-05-19",
+        metrics: {
+          hrv: {
+            avg: 72,
+            max: 72,
+            min: 72,
+            baseline_relative: expect.objectContaining({
+              baseline: {
+                coverage: 0.8,
+                mean: 60,
+                sampleCount: 24,
+                standardDeviation: 6,
+                windowDays: 30,
+                zScore: 2,
+              },
+              comparison: expect.objectContaining({
+                delta: 5,
+                direction: "increasing",
+              }),
+            }),
+          },
+          resting_hr: {
+            avg: 48,
+            max: 48,
+            min: 48,
+            baseline_relative: expect.objectContaining({
+              baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
+            }),
+          },
+          sleep_efficiency: {
+            avg: 90,
+            max: 90,
+            min: 90,
+            baseline_relative: expect.objectContaining({
+              baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
+            }),
+          },
+        },
+      },
+    ]);
+  });
+
   it("rejects reversed longitudinal date ranges", async () => {
     authorizeMcpToken();
 
@@ -672,6 +828,24 @@ describe("createMcpRouter", () => {
     expect(parsedResponse.result.content[0]?.text).toBe("start_date must be on or before end_date");
   });
 
+  it("fails health trends explicitly when the analytics store is unavailable", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        end_date: "2026-05-19",
+        start_date: "2026-05-18",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "get_health_trends requires the ClickHouse analytics store",
+    );
+  });
+
   it("returns sleep summaries with stages and local sleep times", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([
@@ -685,9 +859,14 @@ describe("createMcpRouter", () => {
         duration_minutes: 420,
         efficiency_pct: 90,
         ended_at: "2026-05-19T14:00:00.000Z",
+        timezone: null,
+        start_utc_offset_minutes: -420,
+        end_utc_offset_minutes: -420,
+        local_time_source: "provider_offset",
         light_minutes: 240,
         provider_id: "whoop",
         rem_minutes: 100,
+        staging_available: true,
         started_at: "2026-05-19T06:00:00.000Z",
       },
     ]);
@@ -704,16 +883,64 @@ describe("createMcpRouter", () => {
     expect(parseToolCallText(response.text)).toEqual([
       {
         date: "2026-05-18",
-        onset_time: "23:00",
+        onset_time: "11:00 PM",
         respiratory_rate_avg: 14.2,
         sleep_consistency_pct: null,
+        staging_available: true,
         source_provider: "whoop",
         stages: { awake_minutes: 30, light_minutes: 240, rem_minutes: 100, sws_minutes: 80 },
         sleep_efficiency_pct: 90,
         time_in_bed_minutes: 450,
         total_duration_minutes: 420,
-        wake_time: "07:00",
+        wake_time: "7:00 AM",
+        local_time_context: {
+          timezone: null,
+          startUtcOffsetMinutes: -420,
+          endUtcOffsetMinutes: -420,
+          source: "provider_offset",
+        },
       },
+    ]);
+  });
+
+  it("returns null clock and duration fields when sleep local-time data is unavailable", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
+    toolTestMocks.sleepListRange.mockResolvedValue([
+      {
+        awake_minutes: null,
+        date: "2026-05-18",
+        deep_minutes: null,
+        duration_minutes: null,
+        efficiency_pct: null,
+        ended_at: null,
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+        light_minutes: null,
+        provider_id: "apple_health",
+        rem_minutes: null,
+        started_at: "2026-05-19T06:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_sleep_summary", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-18",
+        timezone: "America/Los_Angeles",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        onset_time: null,
+        time_in_bed_minutes: null,
+        total_duration_minutes: null,
+        wake_time: null,
+      }),
     ]);
   });
 

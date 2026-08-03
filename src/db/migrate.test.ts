@@ -12,7 +12,7 @@ vi.mock("./postgres-migrator.ts", () => migratorMocks);
 
 const accountErasureCoverageMocks = vi.hoisted(() => ({
   assert: vi.fn().mockResolvedValue(undefined),
-  database: { execute: vi.fn() },
+  database: { execute: vi.fn().mockResolvedValue([{ installed: false }]) },
   refresh: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -78,6 +78,7 @@ describe("runMigrations", () => {
       folderMillis: 1_773_118_304_010,
       hash: "baseline-content-hash",
     });
+    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: false }]);
     mockDatabaseState();
   });
 
@@ -190,6 +191,7 @@ describe("runMigrations", () => {
       }
       return Promise.resolve({ rows: [] });
     });
+    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: true }]);
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 

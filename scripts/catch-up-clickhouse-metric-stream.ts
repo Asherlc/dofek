@@ -10,6 +10,7 @@ import {
   clickHouseStringLiteral,
   parsePostgresTimestamp,
 } from "../src/db/clickhouse-migrations/sql.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { INGEST_DATABASE, METRIC_STREAM_TABLE } from "../src/metric-stream/clickhouse-table.ts";
 
 export interface MetricStreamCatchUpOptions {
@@ -319,7 +320,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     console.log("[metric-stream-catch-up] complete");
     await Sentry.close(2_000);
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     await Sentry.close(2_000);
     throw error;
   } finally {
@@ -333,7 +334,7 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   main().catch(async (error: unknown) => {
-    Sentry.captureException(error);
+    captureException(error);
     await Sentry.close(2_000);
     console.error(`[metric-stream-catch-up] ${error}`);
     process.exit(1);

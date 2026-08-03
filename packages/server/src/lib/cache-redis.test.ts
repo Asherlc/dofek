@@ -1,5 +1,11 @@
 import { RedisCacheStore } from "dofek/lib/cache";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const captureExceptionMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@sentry/node", () => ({
+  captureException: captureExceptionMock,
+}));
 
 function createFakeRedisClient() {
   const values = new Map<string, string>();
@@ -54,6 +60,7 @@ describe("RedisCacheStore", () => {
   const store = new RedisCacheStore(async () => fakeRedis.client);
 
   beforeEach(async () => {
+    captureExceptionMock.mockReset();
     fakeRedis.values.clear();
     fakeRedis.sets.clear();
     await store.invalidateAll();
@@ -78,6 +85,9 @@ describe("RedisCacheStore", () => {
     await fakeRedis.client.sadd("query-cache:keys", "query-cache:data:user-1:processing.status:{}");
 
     expect(await store.get("user-1:processing.status:{}")).toBeUndefined();
+    expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { cacheStore: "redis", cacheOperation: "get" },
+    });
     expect(fakeRedis.values.has("query-cache:data:user-1:processing.status:{}")).toBe(false);
     expect(
       fakeRedis.sets.get("query-cache:keys")?.has("query-cache:data:user-1:processing.status:{}"),

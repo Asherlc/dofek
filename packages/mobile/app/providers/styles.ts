@@ -18,6 +18,11 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  fullSyncLink: {
+    fontSize: 13,
+    color: colors.accent,
+    marginTop: 4,
+  },
   // Sync All buttons
   syncAllRow: {
     flexDirection: "row",
@@ -53,11 +58,6 @@ export const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 16,
     fontWeight: "600",
-  },
-  fullSyncLink: {
-    fontSize: 13,
-    color: colors.accent,
-    marginTop: 4,
   },
   shareInfoCard: {
     backgroundColor: colors.surface,
@@ -284,12 +284,20 @@ export const styles = StyleSheet.create({
     marginTop: 4,
   },
   signInButtonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surfaceSecondary,
   },
   signInButtonText: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "600",
+  },
+  signInButtonTextDisabled: {
+    color: colors.textSecondary,
+  },
+  disabledHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
   },
 
   // WHOOP verify step

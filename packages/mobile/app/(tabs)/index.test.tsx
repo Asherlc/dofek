@@ -8,6 +8,7 @@ const mockDashboardRefetch = vi.fn(() => Promise.resolve());
 const mockTodayPlanRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockDashboardUseQuery = vi.fn();
+const mockDashboardV2UseQuery = vi.fn();
 const mockTodayPlanUseQuery = vi.fn();
 const mockAnomalyUseQuery = vi.fn();
 const mockDataHealthUseQuery = vi.fn();
@@ -38,6 +39,19 @@ vi.mock("../../lib/trpc", () => ({
       dashboard: {
         useQuery: (...parameters: unknown[]) => {
           mockDashboardUseQuery(...parameters);
+          return {
+            data: mockDashboardData,
+            isLoading: mockDashboardLoading,
+            isFetching: mockDashboardFetching,
+            isError: !!mockDashboardError,
+            error: mockDashboardError,
+            refetch: mockDashboardRefetch,
+          };
+        },
+      },
+      dashboardV2: {
+        useQuery: (...parameters: unknown[]) => {
+          mockDashboardV2UseQuery(...parameters);
           return {
             data: mockDashboardData,
             isLoading: mockDashboardLoading,
@@ -161,16 +175,18 @@ describe("TodayScreen independent loading states", () => {
     mockTodayPlanRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
     mockDashboardUseQuery.mockClear();
+    mockDashboardV2UseQuery.mockClear();
     mockTodayPlanUseQuery.mockClear();
     mockAnomalyUseQuery.mockClear();
     mockTodayPlanLoading = false;
     mockTodayPlanError = null;
     mockTodayPlanData = {
       status: "ready",
+      epistemicStatus: { kind: "suggested", label: "Suggested" },
       date: "2026-03-21",
       action: {
         id: "strain_target",
-        title: "Keep a steady training day — aim for 12 strain",
+        title: "No change needs attention — aim for 12 strain",
         summary: "Moderate recovery (60). Aim for a steady training day.",
         zone: "Maintain",
       },
@@ -178,6 +194,7 @@ describe("TodayScreen independent loading states", () => {
         { label: "Recovery", value: "85/100" },
         { label: "Sleep performance", value: "88 (Good)" },
       ],
+      caveats: [],
       confidence: "high",
       freshness: { recoveryDate: "2026-03-21", sleepDate: "2026-03-20" },
       missingInputs: [],
@@ -197,6 +214,7 @@ describe("TodayScreen independent loading states", () => {
           remPct: 20,
           lightPct: 50,
           awakePct: 10,
+          stagingAvailable: true,
         },
         sleepDebt: 0,
       },
@@ -208,15 +226,43 @@ describe("TodayScreen independent loading states", () => {
         date: "2026-03-21",
       },
       sleepNeed: {
+        availability: "available",
+        epistemicStatus: { kind: "estimated", label: "Estimated" },
         baselineMinutes: 480,
         strainDebtMinutes: 20,
         accumulatedDebtMinutes: 10,
-        totalNeedMinutes: 510,
+        debtRecoveryMinutes: 17,
+        totalNeedMinutes: 517,
+        estimateMetadata: {
+          basis: "personalized_high_hrv_average",
+          baselineQualifyingNightCount: 7,
+          debtObservedNightCount: 1,
+          methodVersion: "sleep-need-heuristic-v1",
+          uncertainty: "not_established",
+          valueQualifier: "About",
+          summaryLabel: "Heuristic estimate",
+          componentLabels: {
+            baseline: "Baseline estimate",
+            strainDebt: "Previous-day load adjustment",
+            debtRecovery: "Debt recovery",
+          },
+          basisLabel:
+            "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
+          coverageLabel:
+            "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+          methodLabel: "Method: sleep-need-heuristic-v1",
+          uncertaintyLabel: "Uncertainty: not established",
+          limitationLabel:
+            "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+        },
         recentNights: [],
-        canRecommend: true,
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: "2026-03-21",
+      summaryDateContext: {
+        effectiveDate: "2026-03-21",
+        timezone: "America/Los_Angeles",
+      },
     };
     mockAnomalyData = undefined;
     mockDataHealthData = undefined;
@@ -345,6 +391,7 @@ describe("TodayScreen independent loading states", () => {
       remPct: 25,
       lightPct: 45,
       awakePct: 10,
+      stagingAvailable: true,
     };
 
     const { default: TodayScreen } = await import("./index");
@@ -353,21 +400,162 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
-  it("shows sleep no-data states without default numbers when previous night sleep is missing", async () => {
+  it("renders server-authored dashboard and sleep dates with the effective timezone", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-01T12:00:00Z"));
+    mockDashboardData = {
+      ...mockDashboardData,
+      summaryDateContext: {
+        effectiveDate: "2026-08-02",
+        timezone: "America/Los_Angeles",
+      },
+      sleep: {
+        ...mockDashboardData.sleep,
+        lastNight: {
+          ...mockDashboardData.sleep.lastNight,
+          date: "2026-08-01",
+        },
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Sun, Aug 2, 2026 · America/Los_Angeles")).toBeTruthy();
+    expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
+  });
+
+  it("keeps reported duration visible when last night's stages are unavailable", async () => {
+    mockDashboardData.sleep.lastNight = {
+      date: "2026-03-20",
+      durationMinutes: 480,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stagingAvailable: false,
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("8h 0m recorded. Sleep stages were not reported.")).toBeTruthy();
+  });
+
+  it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {
     mockDashboardData = {
       ...mockDashboardData,
       sleep: {
         lastNight: null,
         sleepDebt: 0,
       },
-      sleepNeed: null,
+      sleepNeed: {
+        availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
     };
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
+    expect(screen.getByText("SLEEP DATA NEEDED")).toBeTruthy();
+    expect(screen.queryByText("LAST NIGHT")).toBeNull();
+    expect(screen.queryByText("SLEEP COACH")).toBeNull();
+    expect(screen.queryByText("No sleep data")).toBeNull();
+    expect(
+      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Baseline need")).toBeNull();
+    expect(screen.queryByText("Strain debt")).toBeNull();
+    expect(screen.queryByText("Debt recovery")).toBeNull();
+    expect(screen.queryByText("8h 37m")).toBeNull();
+  });
+
+  it("keeps a legacy cached sleep prerequisite visible without a status", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: { lastNight: null, sleepDebt: 0 },
+      sleepNeed: {
+        availability: "missing_previous_night",
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
+  it("renders the server-authored next action for insufficient sleep need data", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: {
+        lastNight: {
+          date: "2026-03-20",
+          durationMinutes: 480,
+          deepPct: 20,
+          remPct: 25,
+          lightPct: 45,
+          awakePct: 10,
+          stagingAvailable: true,
+        },
+        sleepDebt: 0,
+      },
+      sleepNeed: {
+        availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        reason: "insufficient_baseline_history",
+        message: "Sync at least 7 qualifying nights to estimate sleep need.",
+        nextAction: "Sync more sleep and recovery data.",
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getByText("Sync at least 7 qualifying nights to estimate sleep need."),
+    ).toBeTruthy();
+    expect(screen.getByText("Sync more sleep and recovery data.")).toBeTruthy();
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getAllByText("No sleep data")).toHaveLength(2);
+    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
+    expect(screen.queryByText("SLEEP DATA NEEDED")).toBeNull();
+  });
+
+  it("renders the V2 sleep value as an uncalibrated heuristic estimate", async () => {
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(mockDashboardV2UseQuery).toHaveBeenCalled();
+    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
+    expect(screen.queryByText("SLEEP COACH")).toBeNull();
+    expect(screen.getByText("About 8h 37m")).toBeTruthy();
+    expect(screen.getByText("+17m")).toBeTruthy();
+    expect(screen.getByText("Heuristic estimate")).toBeTruthy();
+    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sleep-debt input uses 1 observed night from the model's recent-night window.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Method: sleep-need-heuristic-v1")).toBeTruthy();
+    expect(screen.getByText("Uncertainty: not established")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("recommended tonight")).toBeNull();
   });
 
   it("renders all rings when no queries are loading", async () => {

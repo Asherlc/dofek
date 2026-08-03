@@ -33,7 +33,7 @@ export function SupportPanel() {
         <p className="text-sm text-foreground">
           Thanks — your request was submitted. Our team will reply by email.
         </p>
-        <p className="text-xs text-subtle">Reference number: #{createTicket.data.ticketNumber}</p>
+        <p className="text-xs text-subtle">Ticket ID: {createTicket.data.ticketId}</p>
         <button
           type="button"
           onClick={() => createTicket.reset()}
@@ -73,7 +73,7 @@ export function SupportPanel() {
         <textarea
           id="support-message"
           required
-          maxLength={10_000}
+          maxLength={4_000}
           rows={6}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
@@ -100,7 +100,7 @@ export function SupportPanel() {
       <button
         type="submit"
         disabled={createTicket.isPending}
-        className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm text-on-accent transition-colors hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {createTicket.isPending ? "Sending..." : "Send Message"}
       </button>

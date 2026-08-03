@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/node";
 import { getSharedRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "./error-reporting.ts";
 
 export interface CacheStore {
   get(key: string): Promise<unknown | undefined>;
@@ -90,12 +90,12 @@ export class RedisCacheStore implements CacheStore {
     try {
       return JSON.parse(payload);
     } catch (error) {
-      Sentry.captureException(error, { tags: { cacheStore: "redis", cacheOperation: "get" } });
+      captureException(error, { tags: { cacheStore: "redis", cacheOperation: "get" } });
       try {
         await client.del(cacheKey);
         await client.srem(CACHE_KEY_REGISTRY, cacheKey);
       } catch (cleanupError) {
-        Sentry.captureException(cleanupError, {
+        captureException(cleanupError, {
           tags: { cacheStore: "redis", cacheOperation: "evictInvalidPayload" },
         });
       }

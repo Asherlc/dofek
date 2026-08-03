@@ -1,6 +1,5 @@
 import { formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
-import { captureException } from "@sentry/react";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -11,6 +10,7 @@ import {
   runResumableFileUpload,
   type UploadImportType,
 } from "../lib/resumable-file-upload.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
 import { FileImportButton } from "./FileImportButton.tsx";

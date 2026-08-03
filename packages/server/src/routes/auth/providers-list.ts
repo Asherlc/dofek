@@ -1,5 +1,5 @@
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import {
   getConfiguredProviders,

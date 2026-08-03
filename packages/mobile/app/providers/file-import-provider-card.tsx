@@ -10,7 +10,6 @@ export function FileImportProviderCard({
   importing,
   syncProgress,
   onSync,
-  onFullSync,
   onConnect,
   onImportProvider,
   onPress,
@@ -21,7 +20,6 @@ export function FileImportProviderCard({
   importing?: boolean;
   syncProgress: { percentage?: number; message?: string; failedCount?: number } | undefined;
   onSync: () => void;
-  onFullSync: () => void;
   onConnect: () => void;
   onImportProvider: (providerId: ImportProviderId) => void;
   onPress: () => void;
@@ -35,7 +33,6 @@ export function FileImportProviderCard({
       importing={importing}
       syncProgress={syncProgress}
       onSync={onSync}
-      onFullSync={onFullSync}
       onConnect={onConnect}
       onImport={providerConfig ? () => onImportProvider(providerConfig.providerId) : undefined}
       onPress={onPress}

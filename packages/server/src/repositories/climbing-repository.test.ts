@@ -97,10 +97,13 @@ describe("ClimbingActivityEntry", () => {
       grade: "V4",
       sent: true,
       attemptCount: 7,
+      attempts: [],
       ascentType: "Redpoint",
+      holdType: null,
       routeName: "Blue Arete",
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
+      wallAngleDegrees: null,
     });
 
     expect(row.toDetail()).toEqual({
@@ -110,10 +113,13 @@ describe("ClimbingActivityEntry", () => {
       grade: "V4",
       sent: true,
       attemptCount: 7,
+      attempts: [],
       ascentType: "Redpoint",
+      holdType: null,
       routeName: "Blue Arete",
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
+      wallAngleDegrees: null,
     });
   });
 });
@@ -186,7 +192,9 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("a.user_id = ");
       expect(text).toContain("AT TIME ZONE");
-      expect(text).toContain("ce.sent = true");
+      expect(text).toContain("detail.attempt_count > 0");
+      expect(text).toContain("BOOL_OR(attempt.outcome = 'sent')");
+      expect(text).toContain("ELSE ce.sent");
       expect(text).toContain("IS NOT NULL");
       expect(text).toContain("NOW() - ");
     });
@@ -265,9 +273,10 @@ describe("ClimbingRepository", () => {
       await repo.getVolumeByGrade(30);
 
       const text = queryText(execute.mock.calls[0]?.[0]);
-      expect(text).toContain("SUM(ce.attempt_count) AS attempts");
-      expect(text).not.toContain("SUM(ce.attempt_count)::int AS attempts");
-      expect(text).toContain("COUNT(*) FILTER (WHERE ce.sent)::int AS sends");
+      expect(text).toContain("WHEN detail.attempt_count > 0 THEN detail.attempt_count");
+      expect(text).toContain("ELSE ce.attempt_count");
+      expect(text).toContain("WHEN detail.attempt_count > 0 THEN detail.sent");
+      expect(text).toContain("ELSE ce.sent");
       expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value");
       expect(text).toContain("ORDER BY grade_sort_value");
     });
@@ -365,10 +374,13 @@ describe("ClimbingRepository", () => {
           grade: "v4",
           sent: true,
           attempt_count: 7,
+          attempts: [],
           ascent_type: "Redpoint",
+          hold_type: null,
           route_name: "Blue Arete",
           location_name: "Pacific Pipe",
           source_name: "Kaya",
+          wall_angle_degrees: null,
         },
       ]);
 
@@ -383,10 +395,13 @@ describe("ClimbingRepository", () => {
         grade: "V4",
         sent: true,
         attemptCount: 7,
+        attempts: [],
         ascentType: "Redpoint",
+        holdType: null,
         routeName: "Blue Arete",
         locationName: "Pacific Pipe",
         sourceName: "Kaya",
+        wallAngleDegrees: null,
       });
     });
 
@@ -399,6 +414,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("fitness.v_activity");
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("ce.attempt_count");
+      expect(text).toContain("jsonb_agg");
       expect(text).toContain("ce.raw->>'ascentType'");
       expect(text).toContain("ANY(a.member_activity_ids)");
       expect(text).toContain("a.user_id = ");

@@ -1,3 +1,4 @@
+import { formatActivityTypeLabel, STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { createLazyFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
@@ -15,15 +16,24 @@ export const Route = createLazyFileRoute("/training/strength")({
   component: StrengthTab,
 });
 
-const STRENGTH_ACTIVITY_TYPES = [
-  "strength",
-  "strength_training",
-  "functional_strength",
-  "functional_fitness",
-] as const;
+const strengthScopeLabel = new Intl.ListFormat("en", {
+  style: "long",
+  type: "conjunction",
+}).format(
+  STRENGTH_ACTIVITY_TYPES.map((activityType) =>
+    formatActivityTypeLabel(activityType).toLowerCase(),
+  ),
+);
+const STRENGTH_SCOPE_LABEL =
+  strengthScopeLabel.charAt(0).toUpperCase() + strengthScopeLabel.slice(1);
 
 function StrengthTab() {
   const { days } = useTrainingDays();
+  const rangeLabel = strengthRangeLabel(days);
+  const emptyMessage =
+    days === null
+      ? `No strength workouts across all recorded time. Included types: ${STRENGTH_SCOPE_LABEL.toLowerCase()}.`
+      : `No strength workouts in the selected ${strengthFiniteRangeLabel(days)}. Included types: ${STRENGTH_SCOPE_LABEL.toLowerCase()}.`;
 
   const strengthVolume = trpc.strength.volumeOverTime.useQuery(
     selectedRangeQueryInput(days),
@@ -57,8 +67,8 @@ function StrengthTab() {
         </Section>
 
         <Section
-          title="Estimated 1-Rep Max"
-          subtitle="Estimated max single-rep strength per exercise over time"
+          title="Estimated single-rep strength"
+          subtitle="Estimated maximum weight for one repetition per exercise over time"
         >
           {estimatedMax.error && !estimatedMax.data ? (
             <QueryStatePanel error={estimatedMax.error} />
@@ -83,7 +93,7 @@ function StrengthTab() {
           )}
         </Section>
 
-        <Section title="Progressive Overload" subtitle="Exercise-level overload trends">
+        <Section title="Exercise Volume Trends" subtitle="Weekly volume direction by exercise">
           {overload.error && !overload.data ? (
             <QueryStatePanel error={overload.error} />
           ) : (
@@ -95,11 +105,22 @@ function StrengthTab() {
         </Section>
       </div>
 
-      <Section title="Recent Strength Workouts" subtitle="Recent strength training sessions">
-        <RecentActivitiesSection activityTypes={STRENGTH_ACTIVITY_TYPES} />
+      <Section title="Strength Workouts" subtitle={`${rangeLabel} · ${STRENGTH_SCOPE_LABEL}`}>
+        <RecentActivitiesSection
+          activityTypes={STRENGTH_ACTIVITY_TYPES}
+          emptyMessage={emptyMessage}
+        />
       </Section>
     </>
   );
+}
+
+function strengthRangeLabel(days: number | null): string {
+  return days === null ? "All recorded time" : `Selected ${strengthFiniteRangeLabel(days)}`;
+}
+
+function strengthFiniteRangeLabel(days: number): string {
+  return days === 365 ? "1-year range" : `${days}-day range`;
 }
 
 function Section({

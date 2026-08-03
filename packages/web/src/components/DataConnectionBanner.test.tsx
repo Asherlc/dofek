@@ -34,7 +34,9 @@ describe("DataConnectionBanner", () => {
       "Offline — showing last available data where available. It may be stale until you reconnect.",
     );
     expect(banner).toHaveClass("fixed", "inset-x-0", "bottom-0", "z-50");
-    expect(screen.getByRole("button", { name: "Retry unavailable offline" })).toBeDisabled();
+    const retryButton = screen.getByRole("button", { name: "Retry unavailable offline" });
+    expect(retryButton).toHaveClass("bg-amber-50", "text-amber-950");
+    expect(retryButton).toBeDisabled();
   });
 
   it("offers one manual retry for active failed queries", async () => {

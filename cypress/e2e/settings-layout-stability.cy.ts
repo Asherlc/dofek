@@ -126,6 +126,20 @@ function waitForPaint(win: Window): Promise<void> {
   });
 }
 
+function waitForFiniteAnimations(win: Window): Promise<void> {
+  const animations = win.document.getAnimations().filter((animation) => {
+    return animation.effect?.getComputedTiming().iterations !== Infinity;
+  });
+  return Promise.all(
+    animations.map((animation) =>
+      animation.finished.then(
+        () => undefined,
+        () => undefined,
+      ),
+    ),
+  ).then(() => undefined);
+}
+
 function waitForPendingPageResources(win: Window): Promise<void> {
   const imageLoads = Array.from(win.document.images)
     .filter((image) => !image.complete)
@@ -186,6 +200,7 @@ function waitForLayoutShiftQuietWindow(win: Window, disconnectObserver: boolean)
 async function waitForStableLayout(win: Window, disconnectObserver: boolean): Promise<void> {
   await waitForPendingPageResources(win);
   await waitForPaint(win);
+  await waitForFiniteAnimations(win);
   await waitForLayoutShiftQuietWindow(win, disconnectObserver);
 }
 
@@ -198,7 +213,7 @@ describe("Settings layout stability", () => {
     cy.cleanTestData();
   });
 
-  for (const path of ["/settings?tab=connections", "/providers"]) {
+  for (const path of ["/settings?tab=data-sources", "/providers"]) {
     it(`keeps connection settings stable on a direct ${path} load`, () => {
       cy.intercept("POST", /\/api\/trpc\/.*sync\.providers/, (request) => {
         request.on("response", (response) => {
@@ -217,7 +232,7 @@ describe("Settings layout stability", () => {
         onBeforeLoad: installLayoutShiftObserver,
       });
       cy.location("pathname").should("eq", "/settings");
-      cy.location("search").should("contain", "tab=connections");
+      cy.location("search").should("contain", "tab=data-sources");
       cy.window().then((win) => waitForStableLayout(win, false));
       cy.get('section[aria-label="Available data sources"]').should(
         "have.attr",
@@ -279,30 +294,23 @@ describe("Settings layout stability", () => {
     });
   }
 
-  it("keeps account settings stable while Billing resolves", () => {
+  it("keeps billing settings stable while Billing resolves", () => {
     cy.intercept("POST", /\/api\/trpc\/.*billing\.status/, (request) => {
       request.on("response", (response) => {
         response.setDelay(TARGET_RESPONSE_DELAY_MS);
       });
     }).as("billingStatus");
 
-    let initialLinkedAccountsTop = 0;
-    let finalLinkedAccountsTop = 0;
     let initialBillingTop = 0;
     let finalBillingTop = 0;
     let initialBillingHeight = 0;
     let billingHeightDelta = 0;
 
-    cy.visit("/settings?tab=account", {
+    cy.visit("/settings?tab=billing", {
       onBeforeLoad: installLayoutShiftObserver,
     });
     cy.window().then((win) => waitForStableLayout(win, false));
     cy.contains("main", "Loading subscription status...").should("exist");
-    cy.contains("main section h3", "Linked Accounts").then(($heading) => {
-      const heading = $heading.get(0);
-      if (!heading) throw new Error("Linked Accounts heading was not rendered");
-      initialLinkedAccountsTop = documentTop(heading);
-    });
     cy.contains("main section h3", "Billing").then(($heading) => {
       const heading = $heading.get(0);
       if (!heading) throw new Error("Billing heading was not rendered");
@@ -314,11 +322,6 @@ describe("Settings layout stability", () => {
     cy.contains("main", /full access|signup week/i).should("exist");
     cy.window().then((win) => waitForStableLayout(win, true));
 
-    cy.contains("main section h3", "Linked Accounts").then(($heading) => {
-      const heading = $heading.get(0);
-      if (!heading) throw new Error("Linked Accounts heading was not rendered");
-      finalLinkedAccountsTop = documentTop(heading);
-    });
     cy.contains("main section h3", "Billing").then(($heading) => {
       const heading = $heading.get(0);
       if (!heading) throw new Error("Billing heading was not rendered");
@@ -332,16 +335,14 @@ describe("Settings layout stability", () => {
 
       const cls = maximumLayoutShiftSession(measurement.entries);
       const sources = measurement.entries.flatMap((entry) => entry.sourceLabels);
-      const downstreamDelta = Math.abs(
-        finalLinkedAccountsTop - finalBillingTop - (initialLinkedAccountsTop - initialBillingTop),
-      );
       const evidence =
         `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
         `Billing height delta ${billingHeightDelta}px; ` +
-        `normalized Linked Accounts delta ${downstreamDelta}px`;
+        `Billing top ${initialBillingTop}px → ${finalBillingTop}px; ` +
+        `Billing top delta ${Math.abs(finalBillingTop - initialBillingTop)}px`;
       cy.log(evidence);
       expect(Math.abs(billingHeightDelta), evidence).to.be.lessThan(1);
-      expect(downstreamDelta, evidence).to.be.lessThan(1);
+      expect(Math.abs(finalBillingTop - initialBillingTop), evidence).to.be.lessThan(1);
       expect(cls, evidence).to.be.at.most(0.001);
     });
   });

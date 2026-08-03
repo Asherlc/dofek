@@ -142,6 +142,21 @@ export const CANONICAL_ACTIVITY_TYPES = [
 export type CanonicalActivityType = (typeof CANONICAL_ACTIVITY_TYPES)[number];
 
 // ============================================================
+// Strength activity types
+// ============================================================
+
+/**
+ * Provider-neutral activity types that can contain structured strength sets.
+ * Strength analytics and workout lists use this same scope.
+ */
+export const STRENGTH_ACTIVITY_TYPES = [
+  "strength",
+  "strength_training",
+  "functional_strength",
+  "functional_fitness",
+] as const;
+
+// ============================================================
 // Cycling activity types
 // ============================================================
 

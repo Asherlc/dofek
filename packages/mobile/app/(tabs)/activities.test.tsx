@@ -2,8 +2,8 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { Alert } from "react-native";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AccessibilityInfo, Alert, Platform } from "react-native";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
   data: unknown[];
@@ -13,14 +13,32 @@ interface MockQuery {
 }
 
 let mockQuery: MockQuery;
+let mockCalendarQuery: MockQuery;
 let mockOverviewQuery: {
   data:
     | {
         activityCount: number;
         totalMinutes: number;
-        totalDistanceMeters: number;
-        totalElevationGainM: number;
+        totalDistanceMeters: number | null;
+        totalDistanceState: { status: "available" } | { status: "missing"; reason: string };
+        totalElevationGainM: number | null;
+        totalElevationState: { status: "available" } | { status: "missing"; reason: string };
         activityTypes: string[];
+        comparison?: {
+          periodLabel: string;
+          activityCount: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalMinutes: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalDistanceMeters: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+          totalElevationGainM: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+        };
       }
     | undefined;
   isLoading: boolean;
@@ -29,11 +47,14 @@ let mockOverviewQuery: {
 };
 let weekListInput: unknown;
 let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let calendarDataInput: unknown;
+let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
 let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
+let invalidateCalendarData: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
 let invalidateDataHealth: ReturnType<typeof vi.fn>;
 let mockDataHealthQuery: {
@@ -71,6 +92,16 @@ vi.mock("../../lib/trpc", () => ({
           return mockOverviewQuery;
         },
       },
+      calendarData: {
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
+          calendarDataInput = input;
+          calendarDataOptions = options;
+          return mockCalendarQuery;
+        },
+      },
     },
     activity: {
       bulkDelete: {
@@ -96,6 +127,7 @@ vi.mock("../../lib/trpc", () => ({
       calendar: {
         weekList: { invalidate: invalidateWeekList },
         activityOverview: { invalidate: invalidateActivityOverview },
+        calendarData: { invalidate: invalidateCalendarData },
       },
       activity: {
         list: { invalidate: invalidateActivityList },
@@ -130,6 +162,8 @@ vi.mock("react-native-svg", () => ({
 
 import ActivitiesScreen from "./activities";
 
+afterEach(() => vi.useRealTimers());
+
 function activity(overrides: Record<string, unknown> = {}) {
   return {
     id: "activity-1",
@@ -137,10 +171,26 @@ function activity(overrides: Record<string, unknown> = {}) {
     activityType: "indoor_cycling",
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
+    localTimeContext: {
+      timezone: null,
+      startUtcOffsetMinutes: 60,
+      endUtcOffsetMinutes: 60,
+      source: "provider_offset",
+    },
     durationMin: 60,
+    source: {
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: "2026-03-18T08:05:00.000Z",
+    distanceMeters: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
+    elevationGainM: null,
+    elevationState: { status: "missing", reason: "Elevation not recorded" },
     location: null,
     tss: 100,
-    stats: [{ label: "Training Stress Score", value: "100" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }
@@ -148,12 +198,15 @@ function activity(overrides: Record<string, unknown> = {}) {
 describe("ActivitiesScreen", () => {
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
+    mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
     mockOverviewQuery = {
       data: {
         activityCount: 0,
         totalMinutes: 0,
         totalDistanceMeters: 0,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 0,
+        totalElevationState: { status: "available" },
         activityTypes: [],
       },
       isLoading: false,
@@ -161,11 +214,14 @@ describe("ActivitiesScreen", () => {
       error: null,
     };
     weekListInput = undefined;
+    calendarDataInput = undefined;
+    calendarDataOptions = undefined;
     overviewInput = undefined;
     overviewOptions = undefined;
     bulkDeleteMutateAsync = vi.fn();
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
+    invalidateCalendarData = vi.fn();
     invalidateActivityList = vi.fn();
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
@@ -206,6 +262,34 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Recomputing activities")).toBeDefined();
   });
 
+  it("loads a server-owned, labeled activity heatmap for the selected weeks", () => {
+    mockCalendarQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activityCount: 1,
+          totalMinutes: 72,
+          activityTypes: ["running"],
+          trainingTimeBand: "high",
+          trainingTimeMeaning: "High training volume; compare with recovery.",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(calendarDataInput).toEqual({ days: 28 });
+    expect(calendarDataOptions?.placeholderData?.([])).toBeUndefined();
+    const previousCalendarData = [{ date: "2026-03-10" }];
+    expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
+    expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
+    expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /72 minutes of training time/ })).toBeTruthy();
+  });
+
   it("uses QueryStatePanel for overview loading state", () => {
     mockOverviewQuery = { data: undefined, isLoading: true, isError: false, error: null };
 
@@ -229,6 +313,40 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
+  it("renders server-authored source overlap and processing freshness", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-18T08:08:00.000Z"));
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              source: {
+                primarySourceLabel: "Wahoo",
+                sourceCount: 2,
+                overlapSummary: "2 matched source records · Wahoo selected by source priority",
+              },
+              lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Wahoo")).toBeDefined();
+    expect(
+      screen.getByText("2 matched source records · Wahoo selected by source priority"),
+    ).toBeDefined();
+    expect(screen.getByText("Source overlap")).toBeDefined();
+    expect(screen.getByText("Processed 1m ago")).toBeDefined();
+  });
+
   it("keeps placeholder activity data visible during background refetch errors", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity({ name: "Cached Ride" })] }],
@@ -249,7 +367,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 12,
         totalMinutes: 615,
         totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
         activityTypes: ["running", "cycling"],
       },
       isLoading: false,
@@ -265,13 +385,96 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("520 m")).toBeDefined();
   });
 
+  it("renders server-computed changes from the previous comparable period", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 12,
+        totalMinutes: 615,
+        totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
+        totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
+        activityTypes: ["running", "cycling"],
+        comparison: {
+          periodLabel: "previous 4 weeks",
+          activityCount: { magnitude: 1, trend: "higher" },
+          totalMinutes: { magnitude: 90, trend: "lower" },
+          totalDistanceMeters: {
+            magnitude: 0,
+            trend: "unchanged",
+            state: { status: "available" },
+          },
+          totalElevationGainM: {
+            magnitude: null,
+            trend: "unavailable",
+            state: { status: "missing", reason: "Previous period: Elevation gain not recorded" },
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
+    expect(
+      screen.getByText("Comparison unavailable: Previous period: Elevation gain not recorded"),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Activities 12. 1 more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByLabelText("Time 10h 15m. 1h 30m less vs previous 4 weeks")).toBeDefined();
+  });
+
+  it("distinguishes unavailable overview measurements from measured zero", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 2,
+        totalMinutes: 90,
+        totalDistanceMeters: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+        totalElevationGainM: null,
+        totalElevationState: { status: "missing", reason: "Elevation not recorded" },
+        activityTypes: ["running"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    const { rerender } = render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.queryByText("0.0 km")).toBeNull();
+    expect(screen.queryByText("0 m")).toBeNull();
+
+    mockOverviewQuery.data = {
+      activityCount: 2,
+      totalMinutes: 90,
+      totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
+      activityTypes: ["running"],
+    };
+    rerender(<ActivitiesScreen />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.getByText("0 m")).toBeDefined();
+  });
+
   it("passes selected activity type to the activity list query", () => {
     mockOverviewQuery = {
       data: {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -328,6 +531,34 @@ describe("ActivitiesScreen", () => {
     expect(activityButton?.getAttribute("aria-label")).toContain("Indoor Cycling");
   });
 
+  it("includes available route measurements in each accessible action name", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              distanceMeters: 5000,
+              distanceState: { status: "available" },
+              elevationGainM: 120,
+              elevationState: { status: "available" },
+              location: null,
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Distance 5.0 km");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Elevation 120 m");
+  });
+
   it("does not repeat the activity type when an activity has no custom name", () => {
     mockQuery = {
       data: [
@@ -360,11 +591,41 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
+      "polite",
+    );
     fireEvent.click(screen.getByText("Trainer Ride"));
 
     expect(routerPush).not.toHaveBeenCalled();
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByText("1 activity selected").getAttribute("accessibilityliveregion")).toBe(
+      "polite",
+    );
+  });
+
+  it("announces selected activity count changes on iOS", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
+    const announceForAccessibility = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => undefined);
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    await waitFor(() =>
+      expect(announceForAccessibility).toHaveBeenLastCalledWith("0 activities selected"),
+    );
+    fireEvent.click(screen.getByText("Trainer Ride"));
+
+    await waitFor(() =>
+      expect(announceForAccessibility).toHaveBeenLastCalledWith("1 activity selected"),
+    );
   });
 
   it("bulk deletes selected activities after confirmation", async () => {
@@ -379,7 +640,7 @@ describe("ActivitiesScreen", () => {
     });
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
 
@@ -387,6 +648,7 @@ describe("ActivitiesScreen", () => {
       expect(bulkDeleteMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1"] });
       expect(invalidateWeekList).toHaveBeenCalled();
       expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateCalendarData).toHaveBeenCalled();
       expect(invalidateActivityList).toHaveBeenCalled();
     });
   });
@@ -403,7 +665,9 @@ describe("ActivitiesScreen", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -412,12 +676,12 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Running"));
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("clears selected activities when the date range changes", () => {
@@ -429,12 +693,12 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("8 weeks"));
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("paginates the activity card history", () => {
@@ -490,9 +754,11 @@ describe("ActivitiesScreen", () => {
                   ],
                   routePath: null,
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -544,9 +810,11 @@ describe("ActivitiesScreen", () => {
                     { x: 305.85, y: 359.36 },
                   ],
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -588,9 +856,11 @@ describe("ActivitiesScreen", () => {
                   ],
                   routePath: null,
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -633,9 +903,11 @@ describe("ActivitiesScreen", () => {
                     { x: 350, y: 400 },
                   ],
                 },
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },

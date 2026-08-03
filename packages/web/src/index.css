@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Sage/Mint palette ── */
+  /* ── Semantic light palette ── */
   --color-page: #eef3ed;
   --color-surface: rgba(255, 255, 255, 0.65);
   --color-surface-hover: rgba(255, 255, 255, 0.8);
@@ -9,12 +9,13 @@
   --color-border: rgba(74, 158, 122, 0.18);
   --color-border-strong: rgba(74, 158, 122, 0.3);
   --color-accent: #2d7a56;
-  --color-accent-secondary: #4a9e7a;
+  --color-accent-secondary: #246a4b;
+  --color-on-accent: #ffffff;
   --color-danger: #d7332f;
   --color-foreground: #1a2e1a;
   --color-muted: #4a6a4a;
-  --color-subtle: #6b8a6b;
-  --color-dim: #8aaa8a;
+  --color-subtle: #577458;
+  --color-dim: #6a6f68;
   --color-skeleton: rgba(74, 158, 122, 0.1);
 
   /* ── Fonts ── */
@@ -22,29 +23,67 @@
   --font-mono: "DM Mono", ui-monospace, monospace;
 }
 
+html {
+  color-scheme: light dark;
+  background-color: var(--color-page);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-page: #0c1410;
+    --color-surface: rgba(25, 38, 30, 0.72);
+    --color-surface-hover: rgba(38, 55, 44, 0.9);
+    --color-surface-solid: #19261e;
+    --color-border: rgba(130, 190, 151, 0.24);
+    --color-border-strong: rgba(130, 190, 151, 0.42);
+    --color-accent: #74c69d;
+    --color-accent-secondary: #5eb78b;
+    --color-on-accent: #0c1410;
+    --color-danger: #ff8a80;
+    --color-foreground: #e8f0ea;
+    --color-muted: #b4c9b9;
+    --color-subtle: #92ad98;
+    --color-dim: #78917d;
+    --color-skeleton: rgba(130, 190, 151, 0.14);
+  }
+}
+
 /* ── Page background with subtle radial texture ── */
 body {
-  background: #eef3ed;
+  background-color: var(--color-page);
   background-image:
-    radial-gradient(ellipse at 30% 20%, rgba(74, 158, 122, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse at 70% 80%, rgba(45, 122, 86, 0.04) 0%, transparent 50%);
+    radial-gradient(
+      ellipse at 30% 20%,
+      color-mix(in srgb, var(--color-accent-secondary) 7%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 70% 80%,
+      color-mix(in srgb, var(--color-accent) 5%, transparent) 0%,
+      transparent 50%
+    );
+  color: var(--color-foreground);
   min-height: 100vh;
 }
 
 /* ── Card utility: frosted glass ── */
 @utility card {
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid rgba(74, 158, 122, 0.18);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   backdrop-filter: blur(12px);
 }
 
 .dashboard-hero {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(245, 249, 245, 0.72)),
-    radial-gradient(ellipse at 20% 0%, rgba(74, 158, 122, 0.08), transparent 48%);
-  border-color: rgba(74, 158, 122, 0.28);
-  box-shadow: 0 18px 50px rgba(26, 46, 26, 0.06);
+    linear-gradient(135deg, var(--color-surface-hover), var(--color-surface)),
+    radial-gradient(
+      ellipse at 20% 0%,
+      color-mix(in srgb, var(--color-accent-secondary) 9%, transparent),
+      transparent 48%
+    );
+  border-color: var(--color-border-strong);
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--color-foreground) 7%, transparent);
 }
 
 /* ── Scroll reveal animation ── */
@@ -70,7 +109,7 @@ body {
 
 .card-hover:hover {
   transform: scale(1.003);
-  box-shadow: 0 4px 20px rgba(74, 158, 122, 0.08);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--color-accent-secondary) 10%, transparent);
 }
 
 /* ── Button press feedback ── */
@@ -101,11 +140,9 @@ body {
 @keyframes pageIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -141,9 +178,9 @@ body {
 .shimmer {
   background: linear-gradient(
     90deg,
-    rgba(74, 158, 122, 0.06) 25%,
-    rgba(74, 158, 122, 0.15) 50%,
-    rgba(74, 158, 122, 0.06) 75%
+    color-mix(in srgb, var(--color-skeleton) 60%, transparent) 25%,
+    color-mix(in srgb, var(--color-skeleton) 100%, transparent) 50%,
+    color-mix(in srgb, var(--color-skeleton) 60%, transparent) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.8s ease-in-out infinite;

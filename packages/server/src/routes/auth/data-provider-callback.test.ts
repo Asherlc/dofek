@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { Request, Response } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,6 +56,10 @@ vi.mock("dofek/db/account-erasure", () => ({
   lockAndAssertAccountErasureIdentityWriteFence: mockLockIdentityFence,
   withAccountErasureUserAndIdentityWriteFence: mockIdentityWriteFence,
   withAccountErasureUserWriteFence: mockWithUserWriteFence,
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -126,7 +131,7 @@ vi.mock("./shared.ts", () => ({
   })),
 }));
 
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
@@ -372,7 +377,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Wahoo deauthorization unavailable" }),
     );
     expect(res.status).toHaveBeenCalledWith(400);
@@ -846,7 +851,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
         userId: "user-1",
       }),
     );
-    expect(Sentry.captureException).toHaveBeenCalledWith(
+    expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.stringContaining("stale revoked credential remains stored"),
         cause: expect.objectContaining({ message: "database unavailable" }),

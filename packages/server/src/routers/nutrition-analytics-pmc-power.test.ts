@@ -2,6 +2,8 @@ import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -16,7 +18,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -199,30 +204,43 @@ describe("nutritionAnalyticsRouter", () => {
 
   describe("adaptiveTdee", () => {
     it("returns null TDEE when insufficient data", async () => {
-      const rows = [{ date: "2024-01-15", calories_in: 2200, weight_kg: 75 }];
+      const rows = [
+        {
+          date: new Date().toISOString().slice(0, 10),
+          calories_in: 2200,
+          resolution_status: "available",
+          excluded_source_labels: [],
+          weight_kg: 75,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
       expect(result.estimatedTdee).toBeNull();
-      expect(result.confidence).toBe(0);
+      expect(result.status).toBe("unavailable");
+      expect(result.evidence.acceptedWindows).toBe(0);
     });
 
     it("estimates TDEE from calorie and weight data", async () => {
       // Create 35 days of data (enough for 28-day window)
       const rows = [];
       for (let i = 0; i < 35; i++) {
-        const date = new Date("2024-01-01");
-        date.setDate(date.getDate() + i);
+        const date = new Date();
+        date.setDate(date.getDate() - (34 - i));
         rows.push({
           date: date.toISOString().slice(0, 10),
           calories_in: 2200,
+          resolution_status: "available",
+          excluded_source_labels: [],
           weight_kg: i < 10 || i > 25 ? 75 - i * 0.01 : null,
         });
       }
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
-      expect(result.dailyData).toHaveLength(35);
+      expect(result.dailyData).toHaveLength(90);
+      expect(result.status).toBe("available");
+      expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
     });
   });
 
@@ -271,6 +289,13 @@ describe("pmcRouter", () => {
   const createCaller = createTestCallerFactory(pmcRouter);
 
   describe("chart", () => {
+    it("versions the availability response cache contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "pmc-chart-availability-v1",
+      });
+    });
+
     it("returns empty when no globalMaxHr", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -282,6 +307,14 @@ describe("pmcRouter", () => {
 
       expect(result.data).toEqual([]);
       expect(result.model.type).toBe("generic");
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        sourceLabel: "Training load read model",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
+      });
     });
 
     it("computes PMC data from activities", async () => {
@@ -313,6 +346,13 @@ describe("pmcRouter", () => {
 
       expect(result.data.length).toBeGreaterThan(0);
       expect(result.model).toBeDefined();
+      expect(result.availability).toMatchObject({
+        status: "available",
+        sourceLabel: "Training load read model",
+        observedCount: result.data.length,
+        minimumCount: 1,
+        message: "Training load data is available from the training load read model.",
+      });
     });
 
     it("uses power TSS when power data available", async () => {

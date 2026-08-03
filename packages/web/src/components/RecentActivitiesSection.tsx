@@ -1,3 +1,4 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { formatDateYmd } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -15,7 +16,10 @@ const activityRowSchema = z.object({
   name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()).nullable(),
-  distance_meters: z.number().nullable().optional(),
+  distance_meters: z.number().nullable(),
+  distance_state: activityDataStateSchema,
+  elevation_gain_m: z.number().nullable(),
+  elevation_state: activityDataStateSchema,
   location: z
     .object({
       centroidLat: z.number(),
@@ -34,8 +38,6 @@ const activityRowSchema = z.object({
         ),
         routePath: z.array(z.object({ x: z.number(), y: z.number() })).nullable(),
       }),
-      distanceMeters: z.number().nullable(),
-      elevationGainM: z.number().nullable(),
     })
     .nullable()
     .optional(),
@@ -47,12 +49,14 @@ interface RecentActivitiesSectionProps {
   activityTypes?: readonly string[];
   additionalColumns?: Array<ActivityTableColumn<Activity>>;
   additionalDataLoading?: boolean;
+  emptyMessage?: string;
 }
 
 export function RecentActivitiesSection({
   activityTypes,
   additionalColumns,
   additionalDataLoading = false,
+  emptyMessage,
 }: RecentActivitiesSectionProps) {
   const { days } = useTrainingDays();
   const [page, setPage] = useState(0);
@@ -82,6 +86,7 @@ export function RecentActivitiesSection({
       additionalColumns={additionalColumns}
       loading={activities.isLoading || additionalDataLoading}
       error={activities.error?.message}
+      emptyMessage={emptyMessage}
       totalCount={activities.data?.totalCount}
       page={page}
       pageSize={PAGE_SIZE}

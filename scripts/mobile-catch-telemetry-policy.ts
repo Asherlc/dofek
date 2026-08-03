@@ -10,11 +10,13 @@ export interface HandledMobileErrorViolation {
   line: number;
 }
 
+const CANONICAL_ERROR_REPORTERS = new Set(["captureException", "handleWorkoutRouteError"]);
+
 function isCanonicalCaptureCall(node: ts.Node): boolean {
   return (
     ts.isCallExpression(node) &&
     ts.isIdentifier(node.expression) &&
-    node.expression.text === "captureException"
+    CANONICAL_ERROR_REPORTERS.has(node.expression.text)
   );
 }
 
@@ -84,7 +86,7 @@ function containsCanonicalCaptureOrThrow(node: ts.Node, caughtIdentifier?: strin
   if (isCanonicalCaptureCall(node)) {
     return true;
   }
-  if (ts.isIdentifier(node) && node.text === "captureException") {
+  if (ts.isIdentifier(node) && CANONICAL_ERROR_REPORTERS.has(node.text)) {
     return true;
   }
   if (ts.isBlock(node)) {

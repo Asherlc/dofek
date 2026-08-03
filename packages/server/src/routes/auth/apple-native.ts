@@ -6,6 +6,7 @@ import {
   AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { findExistingUserId, resolveOrCreateUser } from "../../auth/account-linking.ts";
 import { isNativeAppleConfigured, validateNativeAppleCallback } from "../../auth/providers.ts";
@@ -118,7 +119,7 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
       res.status(409).type("text/plain").send(err.message);
       return;
     }
-    Sentry.captureException(err);
+    captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`[auth] Native Apple Sign In failed: ${message}`);
     res.status(500).send("Apple Sign In failed — please try again");

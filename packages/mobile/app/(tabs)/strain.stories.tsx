@@ -1,11 +1,72 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import type { AppRouter } from "dofek-server/router";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
-import { createFixtureDates, type FixtureDates } from "./fixture-dates";
+import { createFixtureDates, type FixtureDates } from "./_fixture-dates";
+import {
+  createProcessingStatusStoryLink,
+  seedReadyProcessingStatus,
+} from "./_processing-status-story-fixture";
 import StrainScreen from "./strain";
+
+const STRAIN_COMPANION_RESPONSES = {
+  "training.hrZones": {
+    maxHr: 190,
+    weeks: [],
+    intensityDistribution: {
+      model: "karvonen-five-zone",
+      activityScope: "endurance",
+      totalSeconds: 0,
+      zones: [],
+      explanation: "No intensity samples in this fixture.",
+    },
+  },
+  "efficiency.polarizationTrend": {
+    model: "treff-three-zone",
+    activityScope: "cycling",
+    threshold: 2,
+    maxHr: 190,
+    weeks: [],
+    explanation: "No cycling polarization samples in this fixture.",
+    method: {
+      formula: "Fixture formula.",
+      zoneBasis: "Fixture zones.",
+      calculationChoice: "Fixture calculation.",
+      interpretation: "Fixture interpretation.",
+      source: {
+        title: "Treff source",
+        url: "https://doi.org/10.3389/fphys.2019.00707",
+      },
+    },
+  },
+  "cyclingAdvanced.trainingMonotony": [],
+} satisfies Parameters<typeof createProcessingStatusStoryLink>[1];
+
+function createTrainingFailureStoryLink(): TRPCLink<AppRouter> {
+  return () =>
+    ({ op, next }) => {
+      if (op.path !== "mobileDashboard.training") {
+        return next(op);
+      }
+
+      const result: OperationResultObservable<AppRouter, unknown> = {
+        subscribe(observer) {
+          observer.error?.(
+            TRPCClientError.from<AppRouter>(new Error("Training analytics are unavailable.")),
+          );
+          return { unsubscribe: () => {} };
+        },
+        pipe() {
+          return result;
+        },
+      };
+      return result;
+    };
+}
 
 function createMockWorkloadData(dates: FixtureDates) {
   const timeSeries = Array.from({ length: 7 }, (_, index) => {
@@ -69,7 +130,7 @@ function createMockActivities(dates: FixtureDates) {
   ];
 }
 
-function createSeededProviders(hasActivities: boolean) {
+function createSeededProviders(hasActivities: boolean, trainingUnavailable: boolean) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -126,25 +187,46 @@ function createSeededProviders(hasActivities: boolean) {
     },
   });
 
-  queryClient.setQueryData(
-    [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
-    fixture.data,
-  );
+  if (!trainingUnavailable) {
+    queryClient.setQueryData(
+      [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
+      fixture.data,
+    );
+  }
 
-  return { queryClient };
+  const processingStatus = seedReadyProcessingStatus(queryClient, [
+    "activity",
+    "recovery",
+    "training",
+  ]);
+
+  return { processingStatus, queryClient };
 }
 
 function MockProviders({
   children,
+  trainingUnavailable = false,
   withActivities = false,
 }: {
   children: React.ReactNode;
+  trainingUnavailable?: boolean;
   withActivities?: boolean;
 }) {
-  const { queryClient } = createSeededProviders(withActivities);
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
-  });
+  const { queryClient, trpcClient } = useMemo(() => {
+    const seededProviders = createSeededProviders(withActivities, trainingUnavailable);
+    return {
+      queryClient: seededProviders.queryClient,
+      trpcClient: trpc.createClient({
+        links: [
+          ...(trainingUnavailable ? [createTrainingFailureStoryLink()] : []),
+          createProcessingStatusStoryLink(
+            seededProviders.processingStatus,
+            STRAIN_COMPANION_RESPONSES,
+          ),
+        ],
+      }),
+    };
+  }, [trainingUnavailable, withActivities]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -180,6 +262,18 @@ export const WithActivities: Story = {
   decorators: [
     (Story) => (
       <MockProviders withActivities>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </MockProviders>
+    ),
+  ],
+};
+
+export const TrainingUnavailable: Story = {
+  decorators: [
+    (Story) => (
+      <MockProviders trainingUnavailable>
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
         </View>

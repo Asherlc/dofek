@@ -131,6 +131,7 @@ export class EightSleepProvider implements SyncProvider {
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
+                  stagingAvailable: parsed.stagingAvailable,
                   sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
@@ -143,6 +144,7 @@ export class EightSleepProvider implements SyncProvider {
                     remMinutes: parsed.remMinutes,
                     lightMinutes: parsed.lightMinutes,
                     awakeMinutes: parsed.awakeMinutes,
+                    stagingAvailable: parsed.stagingAvailable,
                     sleepType: parsed.sleepType,
                   },
                 });

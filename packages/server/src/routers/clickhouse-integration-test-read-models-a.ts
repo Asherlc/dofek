@@ -18,6 +18,9 @@ export function buildTestDedupedActivitiesSelectSql(
   name,
   notes,
   timezone,
+  start_utc_offset_minutes,
+  end_utc_offset_minutes,
+  coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
   raw,
   now64(9, 'UTC') AS source_synced_at,
   source_providers,
@@ -74,6 +77,159 @@ export function buildTestActivityLocationSampleSelectSql(
   toUInt8(0) AS is_deleted,
   now64(6, 'UTC') AS refreshed_at
 FROM ${databases.analytics}.deduped_location`;
+}
+
+export function buildTestActivityLocationSummarySelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH location_deltas AS (
+  SELECT
+    activity_id,
+    user_id,
+    lat,
+    lng,
+    lagInFrame(lat) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_lat,
+    lagInFrame(lng) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_lng
+  FROM ${databases.analytics}.activity_location_sample FINAL
+  WHERE is_deleted = 0
+),
+distance_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(sum(
+      2 * 6371000 * asin(sqrt(
+        pow(sin(radians(lat - previous_lat) / 2), 2)
+        + cos(radians(previous_lat)) * cos(radians(lat))
+        * pow(sin(radians(lng - previous_lng) / 2), 2)
+      ))
+    ), 'Nullable(Float64)') AS total_distance
+  FROM location_deltas
+  WHERE previous_lat IS NOT NULL
+    AND previous_lng IS NOT NULL
+  GROUP BY activity_id, user_id
+),
+centroid_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(avg(lat), 'Nullable(Float64)') AS centroid_lat,
+    CAST(avg(lng), 'Nullable(Float64)') AS centroid_lng
+  FROM ${databases.analytics}.activity_location_sample FINAL
+  WHERE is_deleted = 0
+    AND lat IS NOT NULL
+    AND lng IS NOT NULL
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  distance_per_activity.total_distance AS total_distance,
+  centroid_per_activity.centroid_lat AS centroid_lat,
+  centroid_per_activity.centroid_lng AS centroid_lng,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN distance_per_activity
+  ON distance_per_activity.activity_id = activity.activity_id
+ AND distance_per_activity.user_id = activity.user_id
+LEFT JOIN centroid_per_activity
+  ON centroid_per_activity.activity_id = activity.activity_id
+ AND centroid_per_activity.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
+}
+
+export function buildTestActivitySensorSummarySelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH altitude_deltas AS (
+  SELECT
+    activity_id,
+    user_id,
+    scalar AS altitude,
+    lagInFrame(scalar) OVER (
+      PARTITION BY user_id, activity_id
+      ORDER BY recorded_at
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_altitude
+  FROM ${databases.analytics}.activity_sensor_sample FINAL
+  WHERE is_deleted = 0
+    AND channel = 'altitude'
+    AND scalar IS NOT NULL
+),
+elevation_per_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(
+      sum(if(
+        isNotNull(previous_altitude) AND altitude - previous_altitude > 0,
+        altitude - previous_altitude,
+        0
+      )),
+      'Nullable(Float64)'
+    ) AS elevation_gain_m,
+    CAST(
+      sum(if(
+        isNotNull(previous_altitude) AND altitude - previous_altitude < 0,
+        abs(altitude - previous_altitude),
+        0
+      )),
+      'Nullable(Float64)'
+    ) AS elevation_loss_m
+  FROM altitude_deltas
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  CAST(NULL, 'Nullable(Float64)') AS avg_hr,
+  CAST(NULL, 'Nullable(Int16)') AS max_hr,
+  CAST(NULL, 'Nullable(Int16)') AS min_hr,
+  CAST(NULL, 'Nullable(Float64)') AS avg_power,
+  CAST(NULL, 'Nullable(Int16)') AS max_power,
+  CAST(NULL, 'Nullable(Float64)') AS avg_speed,
+  CAST(NULL, 'Nullable(Float64)') AS max_speed,
+  CAST(NULL, 'Nullable(Float64)') AS avg_cadence,
+  CAST(NULL, 'Nullable(Float64)') AS elevation_gain_legacy,
+  CAST(NULL, 'Nullable(Float64)') AS avg_left_balance,
+  CAST(NULL, 'Nullable(Float64)') AS avg_left_torque_eff,
+  CAST(NULL, 'Nullable(Float64)') AS avg_right_torque_eff,
+  CAST(NULL, 'Nullable(Float64)') AS avg_left_pedal_smooth,
+  CAST(NULL, 'Nullable(Float64)') AS avg_right_pedal_smooth,
+  elevation_per_activity.elevation_gain_m AS elevation_gain_m,
+  elevation_per_activity.elevation_loss_m AS elevation_loss_m,
+  CAST(NULL, 'Nullable(Float64)') AS avg_stance_time,
+  CAST(NULL, 'Nullable(Float64)') AS avg_vertical_osc,
+  CAST(NULL, 'Nullable(Float64)') AS avg_ground_contact_time,
+  CAST(NULL, 'Nullable(Float64)') AS avg_stride_length,
+  CAST(NULL, 'Nullable(UInt64)') AS sample_count,
+  CAST(NULL, 'Nullable(UInt64)') AS hr_sample_count,
+  CAST(NULL, 'Nullable(UInt64)') AS power_sample_count,
+  CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS first_sample_at,
+  CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS last_sample_at,
+  CAST(NULL, 'Nullable(Float64)') AS best_twenty_minute_power,
+  CAST(NULL, 'Nullable(Float64)') AS normalized_power,
+  CAST(NULL, 'Nullable(Float64)') AS smoothed_avg_power,
+  CAST(NULL, 'Nullable(Float64)') AS climbing_elevation_gain_m,
+  CAST(NULL, 'Nullable(Int32)') AS climbing_seconds,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN elevation_per_activity
+  ON elevation_per_activity.activity_id = activity.activity_id
+ AND elevation_per_activity.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
 }
 
 export function buildTestProviderStatsSelectSql(selectSql: string): string {
@@ -627,7 +783,7 @@ daily_inputs AS (
     ON sleep_by_date.user_id = input_dates.user_id
    AND sleep_by_date.date = input_dates.date
 ),
-inputs_with_baselines AS (
+window_statistics AS (
   SELECT
     user_id,
     date,
@@ -635,24 +791,86 @@ inputs_with_baselines AS (
     resting_hr,
     respiratory_rate,
     efficiency_pct,
-    avg(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    avgOrNull(hrv) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
     ) AS hrv_mean_30d,
     stddevPop(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS hrv_sd_30d,
-    avg(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS hrv_sd_30d_raw,
+    countIf(hrv IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS hrv_baseline_sample_count,
+    avgOrNull(hrv) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS hrv_mean_7d,
+    avgOrNull(hrv) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS hrv_mean_previous_28d,
+    avgOrNull(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
     ) AS rhr_mean_30d,
     stddevPop(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rhr_sd_30d,
-    avg(respiratory_rate) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rhr_sd_30d_raw,
+    countIf(resting_hr IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rhr_baseline_sample_count,
+    avgOrNull(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS rhr_mean_7d,
+    avgOrNull(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS rhr_mean_previous_28d,
+    avgOrNull(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
     ) AS rr_mean_30d,
     stddevPop(respiratory_rate) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rr_sd_30d,
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rr_sd_30d_raw,
+    countIf(respiratory_rate IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS rr_baseline_sample_count,
+    avgOrNull(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS rr_mean_7d,
+    avgOrNull(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS rr_mean_previous_28d,
+    avgOrNull(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS efficiency_mean_30d,
+    stddevPop(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS efficiency_sd_30d_raw,
+    countIf(efficiency_pct IS NOT NULL) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS efficiency_baseline_sample_count,
+    avgOrNull(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS efficiency_mean_7d,
+    avgOrNull(efficiency_pct) OVER (
+      PARTITION BY user_id ORDER BY toUInt32(date)
+      RANGE BETWEEN 34 PRECEDING AND 7 PRECEDING
+    ) AS efficiency_mean_previous_28d,
     avg(hrv) OVER (
       PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
     ) AS hrv_mean_60d,
@@ -666,6 +884,40 @@ inputs_with_baselines AS (
       PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
     ) AS rhr_sd_60d
   FROM daily_inputs
+),
+inputs_with_baselines AS (
+  SELECT
+    * EXCEPT (
+      hrv_sd_30d_raw,
+      rhr_sd_30d_raw,
+      rr_sd_30d_raw,
+      efficiency_sd_30d_raw
+    ),
+    if(
+      hrv_baseline_sample_count >= 2,
+      hrv_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS hrv_sd_30d,
+    hrv_baseline_sample_count / 30.0 AS hrv_baseline_coverage,
+    if(
+      rhr_baseline_sample_count >= 2,
+      rhr_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS rhr_sd_30d,
+    rhr_baseline_sample_count / 30.0 AS rhr_baseline_coverage,
+    if(
+      rr_baseline_sample_count >= 2,
+      rr_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS rr_sd_30d,
+    rr_baseline_sample_count / 30.0 AS rr_baseline_coverage,
+    if(
+      efficiency_baseline_sample_count >= 2,
+      efficiency_sd_30d_raw,
+      CAST(NULL, 'Nullable(Float64)')
+    ) AS efficiency_sd_30d,
+    efficiency_baseline_sample_count / 30.0 AS efficiency_baseline_coverage
+  FROM window_statistics
 ),
 refresh_clock AS (
   SELECT
@@ -681,10 +933,28 @@ SELECT
   inputs_with_baselines.efficiency_pct AS efficiency_pct,
   inputs_with_baselines.hrv_mean_30d AS hrv_mean_30d,
   inputs_with_baselines.hrv_sd_30d AS hrv_sd_30d,
+  inputs_with_baselines.hrv_baseline_sample_count AS hrv_baseline_sample_count,
+  inputs_with_baselines.hrv_baseline_coverage AS hrv_baseline_coverage,
+  inputs_with_baselines.hrv_mean_7d AS hrv_mean_7d,
+  inputs_with_baselines.hrv_mean_previous_28d AS hrv_mean_previous_28d,
   inputs_with_baselines.rhr_mean_30d AS rhr_mean_30d,
   inputs_with_baselines.rhr_sd_30d AS rhr_sd_30d,
+  inputs_with_baselines.rhr_baseline_sample_count AS rhr_baseline_sample_count,
+  inputs_with_baselines.rhr_baseline_coverage AS rhr_baseline_coverage,
+  inputs_with_baselines.rhr_mean_7d AS rhr_mean_7d,
+  inputs_with_baselines.rhr_mean_previous_28d AS rhr_mean_previous_28d,
   inputs_with_baselines.rr_mean_30d AS rr_mean_30d,
   inputs_with_baselines.rr_sd_30d AS rr_sd_30d,
+  inputs_with_baselines.rr_baseline_sample_count AS rr_baseline_sample_count,
+  inputs_with_baselines.rr_baseline_coverage AS rr_baseline_coverage,
+  inputs_with_baselines.rr_mean_7d AS rr_mean_7d,
+  inputs_with_baselines.rr_mean_previous_28d AS rr_mean_previous_28d,
+  inputs_with_baselines.efficiency_mean_30d AS efficiency_mean_30d,
+  inputs_with_baselines.efficiency_sd_30d AS efficiency_sd_30d,
+  inputs_with_baselines.efficiency_baseline_sample_count AS efficiency_baseline_sample_count,
+  inputs_with_baselines.efficiency_baseline_coverage AS efficiency_baseline_coverage,
+  inputs_with_baselines.efficiency_mean_7d AS efficiency_mean_7d,
+  inputs_with_baselines.efficiency_mean_previous_28d AS efficiency_mean_previous_28d,
   inputs_with_baselines.hrv_mean_60d AS hrv_mean_60d,
   inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
   inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,

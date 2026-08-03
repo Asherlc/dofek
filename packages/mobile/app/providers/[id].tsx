@@ -1,13 +1,11 @@
-import { formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
+import { formatRelativeTime } from "@dofek/format/format";
 import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
-import { statusColors } from "@dofek/scoring/colors";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,15 +16,15 @@ import {
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
+import { ProviderSyncHistoryEntry } from "../../components/ProviderSyncHistoryEntry";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
-import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { ProviderDetailAuthModals } from "./auth-modals";
-import { ProviderDataDeleteControl } from "./provider-data-delete-control";
+import { ProviderDangerZone } from "./provider-danger-zone";
 import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
 import { ProviderDetailExtras } from "./provider-detail-extras";
 import {
@@ -252,7 +250,7 @@ const recordStyles = StyleSheet.create({
 
 // ── Sync History ──
 
-function SyncHistory({ providerId }: { providerId: string }) {
+function SyncHistory({ providerId, providerName }: { providerId: string; providerName: string }) {
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
@@ -283,43 +281,9 @@ function SyncHistory({ providerId }: { providerId: string }) {
   return (
     <View>
       <View style={syncStyles.table}>
-        {rows.map((row, idx) => {
-          const isError = row.status === "error";
-          return (
-            <View
-              key={row.id}
-              style={[syncStyles.row, idx < rows.length - 1 && syncStyles.rowBorder]}
-            >
-              <View style={syncStyles.rowTop}>
-                <View style={syncStyles.statusRow}>
-                  <View
-                    style={[
-                      syncStyles.statusDot,
-                      {
-                        backgroundColor: isError ? colors.danger : colors.positive,
-                      },
-                    ]}
-                  />
-                  <Text style={syncStyles.dataType}>{row.dataType}</Text>
-                </View>
-                <Text style={syncStyles.recordCount}>{row.recordCount ?? "\u2014"} records</Text>
-              </View>
-              <View style={syncStyles.rowBottom}>
-                <Text style={syncStyles.metaText}>{formatTime(row.syncedAt)}</Text>
-                {row.durationMs != null && (
-                  <Text style={syncStyles.metaText}>
-                    {formatDurationSeconds(row.durationMs / 1000)}
-                  </Text>
-                )}
-              </View>
-              {isError && row.errorMessage ? (
-                <Text style={syncStyles.errorText} numberOfLines={2}>
-                  {row.errorMessage}
-                </Text>
-              ) : null}
-            </View>
-          );
-        })}
+        {rows.map((row) => (
+          <ProviderSyncHistoryEntry key={row.id} providerName={providerName} entry={row} />
+        ))}
       </View>
 
       {/* Pagination */}
@@ -369,56 +333,7 @@ const syncStyles = StyleSheet.create({
     color: colors.textTertiary,
   },
   table: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-  },
-  row: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 4,
-  },
-  rowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  rowTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  dataType: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  recordCount: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontVariant: ["tabular-nums"],
-  },
-  rowBottom: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 2,
-  },
-  metaText: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-  errorText: {
-    fontSize: 12,
-    color: colors.danger,
-    marginTop: 4,
+    gap: 8,
   },
 });
 
@@ -488,6 +403,8 @@ function RecordsBrowser({
         showsHorizontalScrollIndicator={false}
         style={tabStyles.scrollView}
         contentContainerStyle={tabStyles.container}
+        accessibilityRole="tablist"
+        accessibilityLabel="Record types"
       >
         {availableTypes.map((dt) => (
           <TouchableOpacity
@@ -495,7 +412,7 @@ function RecordsBrowser({
             onPress={() => setActiveTab(dt.key)}
             style={[tabStyles.tab, activeTab === dt.key && tabStyles.activeTab]}
             activeOpacity={0.7}
-            accessibilityRole="button"
+            accessibilityRole="tab"
             accessibilityLabel={dt.label}
             accessibilityState={{ selected: activeTab === dt.key }}
           >
@@ -619,12 +536,10 @@ function ProviderDetailContent({
   displayProvider: NonNullable<ProviderDetailActionsResult["displayProvider"]>;
 }) {
   const { serverUrl } = useAuth();
-  const router = useRouter();
   const trpcUtils = trpc.useUtils();
 
   const stats = trpc.sync.providerStats.useQuery();
   const processingStatus = useProcessingStatus({ providerId });
-  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
@@ -635,6 +550,7 @@ function ProviderDetailContent({
     isSyncing,
     syncMessage,
     syncProgress,
+    syncDateRange,
     shouldShowActions,
     shouldShowFullSync,
     shouldShowAppleHealthPermissionBanner,
@@ -647,32 +563,6 @@ function ProviderDetailContent({
     needsReauth: Boolean(provider?.needsReauth),
     requiresAuthorization: displayProvider.authType !== "none",
   });
-
-  const handleDisconnect = useCallback(() => {
-    if (!providerId) return;
-    Alert.alert(
-      "Disconnect Provider",
-      "This will permanently delete all synced data from this provider. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await disconnectMutation.mutateAsync({ providerId });
-              trpcUtils.sync.providers.invalidate();
-              trpcUtils.sync.providerStats.invalidate();
-              router.back();
-            } catch (error: unknown) {
-              captureException(error, { context: "provider-disconnect" });
-              Alert.alert("Error", "Failed to disconnect provider");
-            }
-          },
-        },
-      ],
-    );
-  }, [providerId, disconnectMutation, trpcUtils, router]);
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -796,6 +686,7 @@ function ProviderDetailContent({
           isSyncing={isSyncing}
           syncMessage={syncMessage}
           syncProgress={syncProgress}
+          syncDateRange={syncDateRange}
           shouldShowFullSync={shouldShowFullSync}
           shouldShowAppleHealthPermissionBanner={shouldShowAppleHealthPermissionBanner}
           onPrimaryAction={() => void handlePrimaryAction()}
@@ -811,14 +702,16 @@ function ProviderDetailContent({
 
       {/* Sync history */}
       <Text style={styles.sectionTitle}>Sync History</Text>
-      <SyncHistory providerId={providerId} />
+      <SyncHistory providerId={providerId} providerName={displayProvider.name} />
 
       {/* Records browser */}
       <RecordsBrowser providerId={providerId} stats={providerStats} />
 
       {/* Disconnect */}
-      <ProviderDataDeleteControl
+      <ProviderDangerZone
+        canDisconnect={Boolean(provider?.authorized)}
         providerId={providerId}
+        providerName={displayProvider.name}
         additionalOperations={
           isSyncing
             ? [
@@ -832,17 +725,6 @@ function ProviderDetailContent({
             : []
         }
       />
-      {provider?.authorized && (
-        <TouchableOpacity
-          style={styles.disconnectButton}
-          onPress={handleDisconnect}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Disconnect Provider"
-        >
-          <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
-        </TouchableOpacity>
-      )}
       <ProviderDetailAuthModals modals={modals} />
     </ScrollView>
   );
@@ -879,7 +761,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   backToProvidersButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -944,19 +826,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-
-  // Disconnect
-  disconnectButton: {
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  disconnectButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: statusColors.danger,
   },
 });

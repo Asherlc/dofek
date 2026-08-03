@@ -2,9 +2,9 @@ import { ACCOUNT_ERASURE_CLEANUP_OWNERSHIP_ERROR_MESSAGE } from "@dofek/auth/acc
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { clearAccountErasurePreparation } from "./account-erasure-storage.ts";
 import type { AuthUser } from "./auth.ts";
-import { logout as doLogout, fetchCurrentUser } from "./auth.ts";
+import { logout as doLogout, fetchCurrentUser, redirectToLogin } from "./auth.ts";
 import { identifyPostHogUser, resetPostHogUser } from "./posthog.ts";
-import { captureException } from "./telemetry.ts";
+import { captureException, identifyUser, resetUser } from "./telemetry.ts";
 import {
   acquireWebAccountStateLock,
   type WebAccountStateLockLease,
@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sessionGenerationRef = useRef(0);
   const sessionOwnerNonceRef = useRef<string | null>(null);
   const userRef = useRef<AuthUser | null>(null);
+  const identifiedUserId = useRef<string | null>(null);
 
   const updateUser = useCallback((nextUser: AuthUser | null) => {
     userRef.current = nextUser;
@@ -120,6 +121,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUser !== null && previousUserId !== undefined && currentUser.id !== previousUserId;
       synchronizeAuthoritativeSession(currentUser, accountTransition);
       setBootstrapError(null);
+      if (currentUser) {
+        if (identifiedUserId.current && identifiedUserId.current !== currentUser.id) {
+          resetUser();
+        }
+        identifyUser(currentUser);
+        identifiedUserId.current = currentUser.id;
+      } else if (identifiedUserId.current) {
+        resetUser();
+        identifiedUserId.current = null;
+      }
     } catch (error: unknown) {
       captureException(error, { source: "auth-bootstrap" });
       setBootstrapError(error instanceof Error ? error.message : String(error));
@@ -300,6 +311,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       captureException(error, { source: "logout" });
       throw error;
     }
+    resetUser();
+    identifiedUserId.current = null;
+    redirectToLogin();
   }, [updateSessionOwnerNonce, updateUser]);
 
   return (

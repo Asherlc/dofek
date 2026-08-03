@@ -6,7 +6,7 @@ describe("invalidateSyncedHealthData", () => {
   it("invalidates only query families derived from synchronized health data", async () => {
     const queryClient = new QueryClient();
     const syncedKeys = [
-      [["mobileDashboard", "dashboard"], { type: "query" }],
+      [["mobileDashboard", "dashboardV2"], { type: "query" }],
       [["mobileDashboard", "recovery"], { type: "query" }],
       [["mobileDashboard", "training"], { type: "query" }],
       [["calendar", "weekList"], { type: "query" }],

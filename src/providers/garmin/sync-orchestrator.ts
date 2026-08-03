@@ -15,7 +15,6 @@ import {
 } from "@dofek/garmin-connect/parsing";
 import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
-import { captureException } from "@sentry/node";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
@@ -27,6 +26,7 @@ import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schem
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { saveTokens } from "../../db/tokens.ts";
+import { captureException } from "../../lib/error-reporting.ts";
 import { isRetryableInfraError } from "../../lib/retryable-infra-error.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
@@ -389,6 +389,7 @@ async function runSleepStep(
         lightMinutes: parsed.lightMinutes,
         remMinutes: parsed.remMinutes,
         awakeMinutes: parsed.awakeMinutes,
+        stagingAvailable: parsed.stagingAvailable,
       })
       .onConflictDoUpdate({
         target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -400,6 +401,7 @@ async function runSleepStep(
           lightMinutes: parsed.lightMinutes,
           remMinutes: parsed.remMinutes,
           awakeMinutes: parsed.awakeMinutes,
+          stagingAvailable: parsed.stagingAvailable,
         },
       })
       .returning({ id: sleepSession.id });

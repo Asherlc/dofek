@@ -185,7 +185,7 @@ services:
         condition: service_started
 
   peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.1
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.3
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"

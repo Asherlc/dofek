@@ -80,4 +80,16 @@ describe("RecentActivitiesSection", () => {
       }),
     );
   });
+
+  it("forwards a scoped empty-state message", () => {
+    render(
+      <RecentActivitiesSection emptyMessage="No strength workouts in the selected 30-day range." />,
+    );
+
+    expect(activityList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        emptyMessage: "No strength workouts in the selected 30-day range.",
+      }),
+    );
+  });
 });

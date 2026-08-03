@@ -8,13 +8,14 @@ import {
   readBackgroundHealthBuffer,
   writeBackgroundHealthBuffer,
 } from "../src/background-health-storage.ts";
-import { captureException } from "./telemetry.ts";
+import { captureException, loadWatchTelemetryBuffer } from "./telemetry.ts";
 
 const logger = Logger.getLogger("imu-service");
 
 AppService({
   onInit(this: AppServiceContext) {
     logger.log("imu_service onInit");
+    loadWatchTelemetryBuffer();
     const time = new Time();
     time.onPerMinute(() => {
       try {

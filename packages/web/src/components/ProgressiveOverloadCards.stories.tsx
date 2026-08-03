@@ -2,34 +2,42 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards.tsx";
 
-const exercises: ProgressiveOverloadRow[] = [
-  {
-    exerciseName: "Back Squat",
-    weeklyVolumes: [4800, 5100, 5450, 5800, 6150],
-    slopeKgPerWeek: 327.5,
-    isProgressing: true,
+const exercise: ProgressiveOverloadRow = {
+  exerciseName: "Back Squat",
+  observations: [
+    { week: "2026-01-05", totalVolumeKg: 4_800 },
+    { week: "2026-01-19", totalVolumeKg: 5_100 },
+    { week: "2026-02-02", totalVolumeKg: 5_450 },
+    { week: "2026-02-09", totalVolumeKg: 5_250 },
+  ],
+  period: {
+    startWeek: "2026-01-05",
+    endWeek: "2026-02-09",
+    observationCount: 4,
+    elapsedWeekCount: 6,
   },
-  {
-    exerciseName: "Bench Press",
-    weeklyVolumes: [3200, 3310, 3380, 3420, 3490],
-    slopeKgPerWeek: 68.5,
-    isProgressing: true,
+  slopeKgPerWeek: 100,
+  trend: "increasing",
+  uncertainty: {
+    availability: "available",
+    level: 0.95,
+    method: "residual_circular_moving_block_bootstrap",
+    methodLabel: "95% moving-block interval",
+    lowerKgPerWeek: -25,
+    upperKgPerWeek: 240,
+    statement: "The interval reflects variation and short-range dependence among recorded weeks.",
   },
-  {
-    exerciseName: "Deadlift",
-    weeklyVolumes: [4200, 4100, 4050, 3980, 3900],
-    slopeKgPerWeek: -73,
-    isProgressing: false,
-  },
-];
+  interpretation:
+    "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+  deloadContext:
+    "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
+};
 
 const meta = {
   title: "Strength/ProgressiveOverloadCards",
   component: ProgressiveOverloadCards,
   tags: ["autodocs"],
-  args: {
-    exercises,
-  },
+  args: { exercises: [exercise] },
   decorators: [
     (Story) => (
       <div className="w-[900px] bg-page p-6">
@@ -40,20 +48,25 @@ const meta = {
 } satisfies Meta<typeof ProgressiveOverloadCards>;
 
 export default meta;
-
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-
-export const Loading: Story = {
+export const UnavailableUncertainty: Story = {
   args: {
-    exercises: [],
-    loading: true,
+    exercises: [
+      {
+        ...exercise,
+        uncertainty: {
+          availability: "unavailable",
+          level: 0.95,
+          method: "residual_circular_moving_block_bootstrap",
+          methodLabel: "95% moving-block interval",
+          reason: "insufficient_observations",
+          statement: "Uncertainty needs at least 4 recorded weeks; this estimate has 3.",
+        },
+      },
+    ],
   },
 };
-
-export const Empty: Story = {
-  args: {
-    exercises: [],
-  },
-};
+export const Loading: Story = { args: { exercises: [], loading: true } };
+export const Empty: Story = { args: { exercises: [] } };

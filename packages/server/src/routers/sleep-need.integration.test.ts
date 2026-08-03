@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -5,8 +6,13 @@ import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
-import type { SleepNeedResult, SleepPerformanceInfo } from "./sleep-need.ts";
+import { CacheTTL, requestCacheKey } from "../trpc.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
+import type { SleepNeedResult, SleepNeedV2, SleepPerformanceInfo } from "./sleep-need.ts";
 import type { WeeklyReportResult } from "./weekly-report.ts";
 
 /**
@@ -40,13 +46,13 @@ describe("sleep-need router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
             provider_id, user_id, started_at, ended_at,
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-            efficiency_pct, sleep_type
+            efficiency_pct, staging_available, sleep_type
           ) VALUES (
             'apple_health', ${TEST_USER_ID},
             NOW() - INTERVAL '8 hours',
             NOW(),
             480, 60, 120, 240, 60,
-            NULL, 'sleep'
+            NULL, true, 'sleep'
           )`,
     );
 
@@ -122,6 +128,223 @@ describe("sleep-need router integration", () => {
     }
   });
 
+  it("calculateV2 returns no recommendation fields when the real read model has no prior night", async () => {
+    await queryCache.invalidateAll();
+    const endDate = new Date();
+    endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result).not.toHaveProperty("totalNeedMinutes");
+    expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 bypasses the legacy contract cache key and hits the versioned key", async () => {
+    await queryCache.invalidateAll();
+    const input = { endDate: "2026-03-15" };
+    const legacyKey = requestCacheKey(TEST_USER_ID, "sleepNeed.calculateV2", input, "UTC");
+    const versionedKey = requestCacheKey(
+      TEST_USER_ID,
+      "sleepNeed.calculateV2",
+      input,
+      "UTC",
+      "sleep-need-metadata-v2",
+    );
+    await queryCache.set(legacyKey, { availability: "legacy-contract" }, CacheTTL.SHORT);
+    await queryCache.set(
+      versionedKey,
+      {
+        availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      },
+      CacheTTL.SHORT,
+    );
+
+    const result = await query<SleepNeedV2>("sleepNeed.calculateV2", input);
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+  });
+
+  it("calculateV2 returns no recommendation fields when prior-night duration is null", async () => {
+    const endDate = new Date();
+    endDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 10);
+    const startedAt = new Date(endDate);
+    startedAt.setUTCDate(startedAt.getUTCDate() - 1);
+    startedAt.setUTCHours(22);
+    const endedAt = new Date(endDate);
+    endedAt.setUTCHours(6);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, external_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, sleep_type
+          ) VALUES (
+            'apple_health', ${TEST_USER_ID}, 'null-duration-prior-night',
+            ${startedAt}, ${endedAt},
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          )`,
+    );
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
+    const result = await query<Record<string, unknown>>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result).not.toHaveProperty("totalNeedMinutes");
+    expect(result).not.toHaveProperty("recentNights");
+  });
+
+  it("calculateV2 excludes an older null duration when the prior night is available", async () => {
+    const fixtureId = randomUUID();
+    const fixtureProviderId = `sleep_need_${fixtureId.replaceAll("-", "")}`;
+    const fixtureProviderName = `Sleep Need Fixture ${fixtureId}`;
+    const loadActivityId = randomUUID();
+    const endDate = new Date();
+    endDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 30);
+    const missingNightDate = new Date(endDate);
+    missingNightDate.setUTCDate(missingNightDate.getUTCDate() - 2);
+    const missingNightStartedAt = new Date(missingNightDate);
+    missingNightStartedAt.setUTCHours(22);
+    const missingNightEndedAt = new Date(missingNightDate);
+    missingNightEndedAt.setUTCDate(missingNightEndedAt.getUTCDate() + 1);
+    missingNightEndedAt.setUTCHours(6);
+    const priorNightStartedAt = new Date(endDate);
+    priorNightStartedAt.setUTCDate(priorNightStartedAt.getUTCDate() - 1);
+    priorNightStartedAt.setUTCHours(22);
+    const priorNightEndedAt = new Date(endDate);
+    priorNightEndedAt.setUTCHours(6);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${fixtureProviderId}, ${fixtureProviderName}, ${TEST_USER_ID})`,
+    );
+    const loadActivityStartedAt = new Date(priorNightStartedAt);
+    loadActivityStartedAt.setUTCHours(10);
+    const loadActivityEndedAt = new Date(loadActivityStartedAt);
+    loadActivityEndedAt.setUTCMinutes(loadActivityEndedAt.getUTCMinutes() + 30);
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+          ) VALUES (
+            ${loadActivityId}::uuid, ${fixtureProviderId}, ${TEST_USER_ID},
+            ${`sleep-need-load-${fixtureId}`}, 'running',
+            ${loadActivityStartedAt}, ${loadActivityEndedAt}, 'Sleep need load fixture'
+          )`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, external_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, sleep_type
+          ) VALUES
+          (
+            ${fixtureProviderId}, ${TEST_USER_ID}, ${`older-null-duration-with-available-prior-${fixtureId}`},
+            ${missingNightStartedAt}, ${missingNightEndedAt},
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          ),
+          (
+            ${fixtureProviderId}, ${TEST_USER_ID}, ${`available-prior-night-${fixtureId}`},
+            ${priorNightStartedAt}, ${priorNightEndedAt},
+            480, NULL, NULL, NULL, NULL,
+            NULL, 'sleep'
+          )`,
+    );
+
+    for (let nightOffset = 9; nightOffset >= 3; nightOffset -= 1) {
+      const baselineNightDate = new Date(endDate);
+      baselineNightDate.setUTCDate(baselineNightDate.getUTCDate() - nightOffset);
+      const baselineStartedAt = new Date(baselineNightDate);
+      baselineStartedAt.setUTCHours(22);
+      const baselineEndedAt = new Date(baselineNightDate);
+      baselineEndedAt.setUTCDate(baselineEndedAt.getUTCDate() + 1);
+      baselineEndedAt.setUTCHours(6);
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sleep_session (
+              provider_id, user_id, external_id, started_at, ended_at,
+              duration_minutes, sleep_type
+            ) VALUES (
+              ${fixtureProviderId}, ${TEST_USER_ID}, ${`qualifying-night-${nightOffset}-${fixtureId}`},
+              ${baselineStartedAt}, ${baselineEndedAt}, 480, 'sleep'
+            )`,
+      );
+
+      const nextDay = new Date(baselineNightDate);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, hrv)
+            VALUES (${nextDay.toISOString().slice(0, 10)}::date, ${fixtureProviderId}, ${TEST_USER_ID}, 60)`,
+      );
+    }
+
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, [
+      {
+        activityId: loadActivityId,
+        userId: TEST_USER_ID,
+        recordedAt: new Date(loadActivityStartedAt.getTime() + 60_000).toISOString(),
+        channel: "heart_rate",
+        providerId: fixtureProviderId,
+        sourceType: "api",
+        scalar: 0,
+      },
+      {
+        activityId: loadActivityId,
+        userId: TEST_USER_ID,
+        recordedAt: new Date(loadActivityStartedAt.getTime() + 120_000).toISOString(),
+        channel: "heart_rate",
+        providerId: fixtureProviderId,
+        sourceType: "api",
+        scalar: 0,
+      },
+    ]);
+    await queryCache.invalidateAll();
+
+    const result = await query<SleepNeedV2>("sleepNeed.calculateV2", {
+      endDate: endDate.toISOString().slice(0, 10),
+    });
+
+    expect(result).toMatchObject({
+      availability: "available",
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 480,
+    });
+    if (result.availability !== "available") {
+      throw new Error("Expected available sleep need");
+    }
+    expect(
+      result.recentNights.find(
+        (night) => night.date === missingNightDate.toISOString().slice(0, 10),
+      ),
+    ).toMatchObject({
+      actualMinutes: null,
+      debtMinutes: null,
+    });
+  });
+
   it("performance returns deduped sleep data from v_sleep", async () => {
     // Insert a second provider with lower priority and different duration
     await testCtx.db.execute(
@@ -147,13 +370,13 @@ describe("sleep-need router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
             provider_id, user_id, started_at, ended_at,
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-            efficiency_pct, sleep_type
+            efficiency_pct, staging_available, sleep_type
           ) VALUES (
             'test_low_prio', ${TEST_USER_ID},
             NOW() - INTERVAL '7.5 hours',
             NOW() - INTERVAL '30 minutes',
             120, 20, 30, 50, 20,
-            30, 'sleep'
+            30, true, 'sleep'
           )`,
     );
     await queryCache.invalidateAll();
@@ -307,6 +530,7 @@ describe("sleep data consistency: multiple sessions per date", () => {
     await queryCache.invalidateAll();
     const endDate = new Date().toISOString().slice(0, 10);
     const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
+    expect(result).not.toBeNull();
 
     // Each recent night should show the WHOOP session's 480 min (the longest),
     // not Apple Health's 330 min.
@@ -428,6 +652,7 @@ describe("after-midnight sleep attribution", () => {
     await queryCache.invalidateAll();
     const endDate = new Date().toISOString().slice(0, 10);
     const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
+    expect(result).not.toBeNull();
 
     // All 7 nights should have data — none should be missing because the
     // 1am start time was attributed to the next calendar day instead of the

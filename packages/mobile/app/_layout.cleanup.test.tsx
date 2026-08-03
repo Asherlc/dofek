@@ -24,6 +24,19 @@ const { mockPathname, mockRouterReplace } = vi.hoisted(() => ({
   mockPathname: { value: "/" },
   mockRouterReplace: vi.fn(),
 }));
+const {
+  mockFinishStartupPhase,
+  mockMarkAppInteractive,
+  mockStartStartupPhase,
+  mockStartStartupTelemetry,
+  mockSetTelemetryRoute,
+} = vi.hoisted(() => ({
+  mockFinishStartupPhase: vi.fn(),
+  mockMarkAppInteractive: vi.fn(),
+  mockStartStartupPhase: vi.fn(),
+  mockStartStartupTelemetry: vi.fn(),
+  mockSetTelemetryRoute: vi.fn(),
+}));
 interface MockAuthStateValue {
   accountErasureCleanupInProgress?: boolean;
   accountSessionOwnerNonce?: string | null;
@@ -149,7 +162,15 @@ vi.mock("../lib/server", () => ({
 vi.mock("../lib/telemetry", () => ({
   initTelemetry: vi.fn(),
   captureException: vi.fn(),
+  setTelemetryRoute: mockSetTelemetryRoute,
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("../lib/startup-telemetry", () => ({
+  finishStartupPhase: mockFinishStartupPhase,
+  markAppInteractive: mockMarkAppInteractive,
+  startStartupPhase: mockStartStartupPhase,
+  startStartupTelemetry: mockStartStartupTelemetry,
 }));
 
 vi.mock("../lib/trpc", () => ({
@@ -256,7 +277,7 @@ describe("RootLayout background cleanup", () => {
       logout: mockLogout,
       retryBootstrap: mockRetryBootstrap,
     };
-    mockPathname.value = "/";
+    mockPathname.value = "/settings";
     mockLoadStatusCapability.mockResolvedValue(null);
     mockLoadPreparation.mockResolvedValue(null);
     rootAppStateCallback = null;
@@ -279,6 +300,51 @@ describe("RootLayout background cleanup", () => {
 
     await waitFor(() => {
       expect(mockHideAsync).toHaveBeenCalledOnce();
+      expect(mockStartStartupTelemetry).toHaveBeenCalledOnce();
+      expect(mockFinishStartupPhase).toHaveBeenCalledWith("javascript", "ready");
+      expect(mockStartStartupPhase).toHaveBeenCalledWith("splash-hide");
+      expect(mockMarkAppInteractive).toHaveBeenCalledWith({
+        serviceBootstrapExpected: true,
+      });
+      expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/settings");
+    });
+  });
+
+  it("uses the login route while the authenticated shell is unauthenticated", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/login");
+    });
+  });
+
+  it("keeps the active pathname while auth is still restoring", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: true,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/settings");
     });
   });
 
@@ -499,6 +565,8 @@ describe("RootLayout background cleanup", () => {
       expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalledOnce();
       expect(mockInitBackgroundWatchSync).toHaveBeenCalledOnce();
       expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
+      expect(mockStartStartupPhase).toHaveBeenCalledWith("service-bootstrap");
+      expect(mockFinishStartupPhase).toHaveBeenCalledWith("service-bootstrap", "ready");
     });
   });
 
@@ -582,6 +650,7 @@ describe("RootLayout background cleanup", () => {
     expect(mutationCondition({ type: "mutation" })).toBe(true);
     expect(mutationCondition({ type: "query" })).toBe(false);
     expect(queryCondition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
     expect(queryCondition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
     expect(queryCondition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
     expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);

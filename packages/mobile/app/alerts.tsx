@@ -1,8 +1,13 @@
 import { formatRelativeTime } from "@dofek/format/format";
-import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
+import {
+  PROCESSING_ALERTS_EMPTY_PREVIEW,
+  type ProcessingAlert,
+  processingAlertsFailurePresentation,
+} from "@dofek/providers/processing-alerts";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { PaginationControls } from "../components/PaginationControls";
 import { QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -44,6 +49,25 @@ export default function AlertsScreen() {
   const totalPages = Math.ceil(alerts.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
   const visibleAlerts = alerts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const failurePresentation = alertsQuery.error
+    ? processingAlertsFailurePresentation({
+        errorMessage: alertsQuery.error.message,
+        hasSnapshot: alertsQuery.data !== undefined,
+        lastCheckedLabel: alertsQuery.data
+          ? formatRelativeTime(alertsQuery.data.generatedAt)
+          : null,
+      })
+    : null;
+  const failurePanel = failurePresentation ? (
+    <QueryStatePanel
+      variant="error"
+      title={failurePresentation.title}
+      message={failurePresentation.message}
+      onRetry={() => void alertsQuery.refetch()}
+      retryLabel={failurePresentation.retryLabel}
+      retrying={alertsQuery.isFetching}
+    />
+  ) : null;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -52,20 +76,13 @@ export default function AlertsScreen() {
       </Text>
       {alertsQuery.isLoading && !alertsQuery.data ? (
         <QueryStatePanel variant="loading" />
-      ) : alertsQuery.error && !alertsQuery.data ? (
-        <QueryStatePanel
-          variant="error"
-          title="Alerts could not be loaded"
-          message="Pull down or reopen this screen to try again."
-        />
+      ) : failurePresentation && (!alertsQuery.data || alerts.length === 0) ? (
+        failurePanel
       ) : alertsQuery.data?.alerts.length === 0 ? (
-        <QueryStatePanel
-          variant="empty"
-          title="Nothing needs your attention"
-          message="New sync, connection, and import problems will appear here."
-        />
+        <EmptyStatePreview content={PROCESSING_ALERTS_EMPTY_PREVIEW} />
       ) : (
         <View style={styles.list}>
+          {failurePanel}
           {visibleAlerts.map((alert) => (
             <View key={alert.id} style={styles.card}>
               <Text style={styles.title}>{alert.title}</Text>

@@ -217,4 +217,120 @@ describe("Settings router", () => {
       expect(dismissedStatus.result.data).toEqual({ dismissed: true });
     });
   });
+
+  describe("deleteAllUserData", () => {
+    it("wipes provider and user-scoped data for the current user", async () => {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('settings-wipe-provider', 'Settings Wipe Provider', ${SETTINGS_TEST_USER_ID})
+            ON CONFLICT DO NOTHING`,
+      );
+      await Promise.all([
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.activity (id, provider_id, user_id, external_id, activity_type, started_at, name)
+              VALUES (
+                '22222222-2222-2222-2222-222222222222',
+                'settings-wipe-provider',
+                ${SETTINGS_TEST_USER_ID},
+                'settings-delete-me',
+                'running',
+                '2024-01-15T10:00:00Z',
+                'Delete Me'
+              )
+              ON CONFLICT (id) DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
+              VALUES ('settings-wipe-provider', ${SETTINGS_TEST_USER_ID}, 'activities', 'success')`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.oauth_token (user_id, provider_id, access_token, expires_at)
+              VALUES (${SETTINGS_TEST_USER_ID}, 'settings-wipe-provider', 'token-to-delete', '2099-01-01T00:00:00Z')
+              ON CONFLICT DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.life_events (user_id, label, started_at)
+              VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.menstrual_period (user_id, start_date, notes)
+              VALUES (${SETTINGS_TEST_USER_ID}, '2024-01-15', 'Delete cycle note')
+              ON CONFLICT DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)
+              VALUES (${SETTINGS_TEST_USER_ID}, 'running', '2024-01-15', 260)
+              ON CONFLICT DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`WITH schedule AS (
+                INSERT INTO fitness.supplement (user_id)
+                VALUES (${SETTINGS_TEST_USER_ID})
+                RETURNING id
+              )
+              INSERT INTO fitness.supplement_definition (supplement_id, name)
+              SELECT id, 'Delete supplement'
+              FROM schedule`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.user_settings (user_id, key, value)
+              VALUES (${SETTINGS_TEST_USER_ID}, 'deleteMe', 'true'::jsonb)
+              ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
+        ),
+      ]);
+
+      const mutationResult = await mutate("settings.deleteAllUserData");
+      expect(mutationResult.result.data).toEqual({ success: true });
+
+      const [
+        activitiesAfter,
+        logsAfter,
+        tokensAfter,
+        eventsAfter,
+        menstrualPeriodsAfter,
+        sportSettingsAfter,
+        supplementsAfter,
+        userSettingsAfter,
+      ] = await Promise.all([
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.oauth_token WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.menstrual_period WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+      ]);
+
+      expect(activitiesAfter[0]?.count).toBe(0);
+      expect(logsAfter[0]?.count).toBe(0);
+      expect(tokensAfter[0]?.count).toBe(0);
+      expect(eventsAfter[0]?.count).toBe(0);
+      expect(menstrualPeriodsAfter[0]?.count).toBe(0);
+      expect(sportSettingsAfter[0]?.count).toBe(0);
+      expect(supplementsAfter[0]?.count).toBe(0);
+      expect(userSettingsAfter[0]?.count).toBe(0);
+
+      // Session should remain usable after data deletion.
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      const settingResult = await query("settings.get", { key: "unitSystem" });
+      expect(settingResult.result.data.value).toBe("metric");
+    });
+  });
 });

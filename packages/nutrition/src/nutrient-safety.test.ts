@@ -3,6 +3,8 @@ import {
   evaluateNutrientUpperLimit,
   getNutrientDailyValue,
   NUTRIENT_SAFETY_RULESET_REVIEWED_ON,
+  upperLimitIntakeScopeLabel,
+  upperLimitStatusLabel,
 } from "./nutrient-safety.ts";
 
 describe("getNutrientDailyValue", () => {
@@ -126,5 +128,27 @@ describe("evaluateNutrientUpperLimit", () => {
       status: "not_in_ruleset",
       limitation: "No upper-limit rule is included in this bounded ruleset.",
     });
+  });
+});
+
+describe("upper-limit display labels", () => {
+  it("uses plain-language labels for each upper-limit status", () => {
+    expect(upperLimitStatusLabel("at_or_above_limit")).toBe(
+      "At or above the Tolerable Upper Intake Level (UL)",
+    );
+    expect(upperLimitStatusLabel("within_limit")).toBe(
+      "Below the Tolerable Upper Intake Level (UL)",
+    );
+    expect(upperLimitStatusLabel("not_evaluable")).toBe(
+      "Tolerable Upper Intake Level (UL) not evaluable",
+    );
+    expect(upperLimitStatusLabel("not_in_ruleset")).toBe(
+      "No Tolerable Upper Intake Level (UL) in this ruleset",
+    );
+  });
+
+  it("describes whether a limit covers total or supplemental intake", () => {
+    expect(upperLimitIntakeScopeLabel("total")).toBe("total daily intake");
+    expect(upperLimitIntakeScopeLabel("supplemental_only")).toBe("supplemental intake only");
   });
 });

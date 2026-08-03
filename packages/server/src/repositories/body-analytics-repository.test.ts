@@ -411,6 +411,11 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[1]?.interpolated).toBe(false);
       expect(result[0]?.rawWeight).not.toBeNull();
       expect(result[1]?.rawWeight).not.toBeNull();
+      expect(result[0]?.rawWeightStatus).toEqual({ kind: "observed", label: "Observed" });
+      expect(result[0]?.smoothedWeightStatus).toEqual({
+        kind: "estimated",
+        label: "Estimated",
+      });
     });
 
     it("fills missing days with interpolation and marks them", async () => {
@@ -425,6 +430,11 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.rawWeight).toBe(80);
       expect(result[1]?.interpolated).toBe(true);
       expect(result[1]?.rawWeight).toBeNull();
+      expect(result[1]?.rawWeightStatus).toBeNull();
+      expect(result[1]?.smoothedWeightStatus).toEqual({
+        kind: "estimated",
+        label: "Estimated",
+      });
       expect(result[2]?.interpolated).toBe(false);
       expect(result[2]?.rawWeight).toBe(82);
     });

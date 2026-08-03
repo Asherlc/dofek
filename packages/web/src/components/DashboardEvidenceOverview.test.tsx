@@ -2,7 +2,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  correlationStrengthLabel,
   DashboardEvidenceOverview,
   formatDashboardRange,
   trendPositionLabel,
@@ -13,19 +12,73 @@ describe("DashboardEvidenceOverview helpers", () => {
     expect(formatDashboardRange("2026-05-27", 30)).toBe("Apr 28 - May 27");
   });
 
-  it("labels correlation strength without exposing statistical jargon", () => {
-    expect(correlationStrengthLabel(0.72)).toBe("Strong positive");
-    expect(correlationStrengthLabel(-0.42)).toBe("Emerging negative");
-    expect(correlationStrengthLabel(undefined)).toBe("Collecting signal");
+  it("labels resting heart rate position against baseline", () => {
+    expect(
+      trendPositionLabel({
+        latestRestingHeartRate: 52,
+        averageRestingHeartRate: 56,
+        restingHeartRateTrendLabel: "below average",
+      }),
+    ).toBe("below average");
+    expect(
+      trendPositionLabel({
+        latestRestingHeartRate: null,
+        averageRestingHeartRate: 56,
+        restingHeartRateTrendLabel: "Waiting for baseline",
+      }),
+    ).toBe("Waiting for baseline");
   });
 
-  it("labels resting heart rate position against baseline", () => {
-    expect(trendPositionLabel({ latestRestingHeartRate: 52, averageRestingHeartRate: 56 })).toBe(
-      "below average",
+  it.each([null, undefined])("falls back when the server trend label is %s", (label) => {
+    expect(
+      trendPositionLabel({
+        latestRestingHeartRate: 52,
+        averageRestingHeartRate: 56,
+        restingHeartRateTrendLabel: label,
+      }),
+    ).toBe("Waiting for baseline");
+  });
+
+  it("renders the server-authored baseline requirement, progress, and action", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: null,
+          averageRestingHeartRate: null,
+          restingHeartRateTrendLabel: "Waiting for baseline",
+          restingHeartRateBaselineProgress: {
+            requiredObservationDays: 3,
+            observedObservationDays: 1,
+            hasMeasurableVariation: false,
+            blocker: "collecting",
+            requirement:
+              "A current value plus at least 2 more recorded days with measurable variation.",
+            summary:
+              "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+            action: "Keep syncing resting heart rate data for at least 2 more days.",
+          },
+        }}
+        healthMonitor={<div>Health monitor</div>}
+      />,
     );
-    expect(trendPositionLabel({ latestRestingHeartRate: null, averageRestingHeartRate: 56 })).toBe(
-      "Waiting for baseline",
-    );
+
+    expect(screen.getByText("Waiting for baseline")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "A current value plus at least 2 more recorded days with measurable variation.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
+    ).toBeTruthy();
   });
 });
 
@@ -42,6 +95,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 52,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "below average",
           restingHeartRatePoints: [
             { date: "2026-05-26", value: 56 },
             { date: "2026-05-27", value: 52 },
@@ -59,6 +113,16 @@ describe("DashboardEvidenceOverview", () => {
           whenFalse: { mean: 0, n: 30 },
           effectSize: 0.72,
           pValue: 0.01,
+          evidence: {
+            relationship: "correlation",
+            label: "Server-authored descriptive correlation",
+            method: "Server correlation method.",
+            interpretation: "Server interpretation: association does not establish causation.",
+            limitations:
+              "Server limitations: missing observations and confounding remain possible.",
+            recommendation: "Server recommendation: this is not a prescription.",
+            observationWindow: "Daily observations",
+          },
           dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],
         }}
         healthMonitor={<div>Latest values vs. rolling average</div>}
@@ -69,6 +133,14 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Overview")).toBeTruthy();
     expect(screen.getByText("Apr 28 - May 27")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(screen.getByText("Server-authored descriptive correlation")).toBeTruthy();
+    expect(
+      screen.getByText("Server interpretation: association does not establish causation."),
+    ).toBeTruthy();
+    const observationWindow = screen.getByText("Daily observations");
+    expect(observationWindow.parentElement?.textContent).toContain(
+      "Observation window: Daily observations",
+    );
     expect(screen.getByText("Recent trend")).toBeTruthy();
     expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();
@@ -76,6 +148,126 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
     expect(screen.queryByText("Export confidence")).toBeNull();
+  });
+
+  it("derives the dashboard relationship heading and value from conditional evidence", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "conditional-insight",
+          type: "conditional",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Meditation",
+          message: "Observed association: Meditation was 12.4% higher.",
+          detail: "Observed groups",
+          whenTrue: { mean: 62, n: 18 },
+          whenFalse: { mean: 55, n: 24 },
+          effectSize: 0.42,
+          pValue: 0.12,
+          evidence: {
+            relationship: "descriptive_association",
+            label: "Descriptive association",
+            method: "Server comparison method.",
+            interpretation: "Server interpretation: association does not establish causation.",
+            limitations: "Server limitations.",
+            recommendation: "Server recommendation.",
+            estimateLabel: "12.4% higher",
+          },
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Key association")).toBeTruthy();
+    expect(screen.getByText("Association", { exact: true })).toBeTruthy();
+    expect(screen.getByText("12.4% higher")).toBeTruthy();
+    expect(screen.queryByText("Correlation", { exact: true })).toBeNull();
+    expect(screen.queryByText("0.42", { exact: true })).toBeNull();
+  });
+
+  it("keeps the correlation fallback when evidence is unavailable", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "correlation-without-evidence",
+          type: "correlation",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Sleep duration",
+          message: "Sleep duration is associated with next-day HRV.",
+          detail: "Spearman rho=0.42",
+          whenTrue: { mean: 60, n: 20 },
+          whenFalse: { mean: 55, n: 20 },
+          effectSize: 0.42,
+          pValue: 0.02,
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(screen.getByText("Correlation", { exact: true })).toBeTruthy();
+    expect(screen.getByText("0.42", { exact: true })).toBeTruthy();
+  });
+
+  it("preserves the sign of a negative correlation effect size", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "negative-correlation-without-evidence",
+          type: "correlation",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Sleep duration",
+          message: "Sleep duration is associated with next-day HRV.",
+          detail: "Spearman rho=-0.42",
+          whenTrue: { mean: 60, n: 20 },
+          whenFalse: { mean: 55, n: 20 },
+          effectSize: -0.42,
+          pValue: 0.02,
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("-0.42", { exact: true })).toBeTruthy();
+  });
+
+  it("normalizes a negative correlation that rounds to zero", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "rounded-negative-correlation",
+          type: "correlation",
+          confidence: "emerging",
+          metric: "Next-day HRV",
+          action: "Sleep duration",
+          message: "Sleep duration is associated with next-day HRV.",
+          detail: "Spearman rho=-0.004",
+          whenTrue: { mean: 60, n: 20 },
+          whenFalse: { mean: 55, n: 20 },
+          effectSize: -0.004,
+          pValue: 0.9,
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("0.00", { exact: true })).toBeTruthy();
+    expect(screen.queryByText("-0.00", { exact: true })).toBeNull();
   });
 
   it("renders axes and hover details from API-backed chart points", () => {
@@ -86,6 +278,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 52,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "below average",
           restingHeartRatePoints: [
             { date: "2026-05-25", value: 57 },
             { date: "2026-05-26", value: 55 },
@@ -215,6 +408,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 52,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "below average",
           restingHeartRatePoints: [
             { date: "2026-05-26", value: 56 },
             { date: "2026-05-27", value: 52 },
@@ -236,6 +430,7 @@ describe("DashboardEvidenceOverview", () => {
         trend={{
           latestRestingHeartRate: 60,
           averageRestingHeartRate: 56,
+          restingHeartRateTrendLabel: "above average",
           restingHeartRatePoints: [
             { date: "2026-05-26", value: 56 },
             { date: "2026-05-27", value: 60 },

@@ -1,10 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { DEFAULT_POLARIZATION_THRESHOLD } from "@dofek/training/training-distribution";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./DofekChart.tsx", () => ({
-  DofekChart: () => <div data-testid="polarization-chart" />,
+  DofekChart: ({ option }: { option: { yAxis?: { max?: number } } }) => (
+    <div data-testid="polarization-chart" data-y-max={option.yAxis?.max} />
+  ),
 }));
 
 import { PolarizationTrendChart } from "./PolarizationTrendChart.tsx";
@@ -28,13 +31,44 @@ describe("PolarizationTrendChart", () => {
 
     render(<PolarizationTrendChart weeks={[]} maxHr={190} method={method} />);
 
-    expect(screen.getByText(method.formula)).toBeTruthy();
-    expect(screen.getByText(method.zoneBasis)).toBeTruthy();
-    expect(screen.getByText(method.calculationChoice)).toBeTruthy();
-    expect(screen.getByText(method.interpretation)).toBeTruthy();
+    expect(screen.getByText("How this is calculated")).toBeTruthy();
+    fireEvent.click(screen.getByText("How this is calculated"));
+    expect(screen.getByText(method.formula)).toBeVisible();
+    expect(screen.getByText(method.zoneBasis)).toBeVisible();
+    expect(screen.getByText(method.calculationChoice)).toBeVisible();
+    expect(screen.getByText(method.interpretation)).toBeVisible();
     expect(screen.getByRole("link", { name: method.source.title })).toHaveAttribute(
       "href",
       method.source.url,
+    );
+  });
+
+  it("uses the shared threshold when the server omits one", () => {
+    render(
+      <PolarizationTrendChart
+        weeks={[
+          {
+            week: "2026-07-06",
+            z1Seconds: 3600,
+            z2Seconds: 600,
+            z3Seconds: 1200,
+            totalSeconds: 5400,
+            zonePercentages: { z1: 66.7, z2: 11.1, z3: 22.2 },
+            polarizationIndex: 1.5,
+            status: "not_polarized",
+            statusLabel: "Does not match polarized-pattern heuristic",
+            explanation: "Server-authored explanation.",
+          },
+        ]}
+        maxHr={190}
+        threshold={undefined}
+        method={null}
+      />,
+    );
+
+    expect(screen.getByTestId("polarization-chart")).toHaveAttribute(
+      "data-y-max",
+      String(DEFAULT_POLARIZATION_THRESHOLD),
     );
   });
 });

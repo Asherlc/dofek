@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { SleepNeedResult } from "dofek-server/types";
+import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { SleepNeedCard } from "./SleepNeedCard";
 
 const emptyProvenance: Pick<
-  SleepNeedResult["recentNights"][number],
+  Extract<SleepNeedV2, { availability: "available" }>["recentNights"][number],
   "providerId" | "sourceName" | "sourceProviders"
 > = {
   providerId: null,
@@ -12,11 +12,34 @@ const emptyProvenance: Pick<
 };
 
 const sampleData = {
+  availability: "available",
+  epistemicStatus: { kind: "estimated", label: "Estimated" },
   baselineMinutes: 462,
   strainDebtMinutes: 12,
   accumulatedDebtMinutes: 85,
+  debtRecoveryMinutes: 21,
   totalNeedMinutes: 483,
-  canRecommend: true,
+  estimateMetadata: {
+    basis: "personalized_high_hrv_average",
+    baselineQualifyingNightCount: 12,
+    debtObservedNightCount: 11,
+    methodVersion: "sleep-need-heuristic-v1",
+    uncertainty: "not_established",
+    valueQualifier: "About",
+    summaryLabel: "Heuristic estimate",
+    componentLabels: {
+      baseline: "Baseline estimate",
+      strainDebt: "Previous-day load adjustment",
+      debtRecovery: "Debt recovery",
+    },
+    basisLabel:
+      "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
+    coverageLabel: "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
+    methodLabel: "Method: sleep-need-heuristic-v1",
+    uncertaintyLabel: "Uncertainty: not established",
+    limitationLabel:
+      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+  },
   recentNights: [
     {
       date: "2026-03-27",
@@ -68,7 +91,7 @@ const sampleData = {
       ...emptyProvenance,
     },
   ],
-};
+} satisfies SleepNeedV2;
 
 const meta = {
   title: "Sleep/SleepNeedCard",
@@ -108,8 +131,9 @@ export const HighDebt: Story = {
 export const CannotRecommend: Story = {
   args: {
     data: {
-      ...sampleData,
-      canRecommend: false,
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: MISSING_PREVIOUS_NIGHT_MESSAGE,
     },
   },
 };

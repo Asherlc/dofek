@@ -17,6 +17,7 @@ const meta = {
     maxHr: 172,
     avgPower: null,
     distanceKm: 8.5,
+    distanceState: { status: "available" },
     units: metricUnits,
   },
 } satisfies Meta<typeof ActivityCard>;
@@ -56,7 +57,8 @@ export const Strength: Story = {
     avgHr: 115,
     maxHr: 140,
     avgPower: null,
-    distanceKm: undefined,
+    distanceKm: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
     units: metricUnits,
   },
 };
@@ -70,7 +72,8 @@ export const Minimal: Story = {
     avgHr: null,
     maxHr: null,
     avgPower: null,
-    distanceKm: undefined,
+    distanceKm: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
     units: metricUnits,
   },
 };

@@ -159,6 +159,9 @@ entity "activity" {
   perceived_exertion : real
   source_name : text
   timezone : text
+  start_utc_offset_minutes : smallint
+  end_utc_offset_minutes : smallint
+  local_time_source : text
   strava_id : text
   raw : jsonb
   provider_absent_at : timestamp
@@ -178,6 +181,17 @@ entity "activity_interval" {
   created_at : timestamp
 }
 
+entity "climbing_attempt" {
+  * id : uuid <<PK>>
+  --
+  climbing_entry_id : uuid <<FK>>
+  attempt_index : integer
+  outcome : climbing_attempt_outcome
+  failure_reason : climbing_failure_reason
+  notes : text
+  created_at : timestamp
+}
+
 entity "climbing_entry" {
   * id : uuid <<PK>>
   --
@@ -188,6 +202,8 @@ entity "climbing_entry" {
   grade : text
   sent : boolean
   attempt_count : integer
+  wall_angle_degrees : real
+  hold_type : climbing_hold_type
   route_name : text
   location_name : text
   source_name : text
@@ -244,6 +260,24 @@ entity "daily_metrics" {
   created_at : timestamp
 }
 
+entity "finger_loading_entry" {
+  * id : uuid <<PK>>
+  --
+  activity_id : uuid <<FK>>
+  exercise : finger_loading_exercise
+  edge_size_mm : real
+  grip_position : finger_loading_grip_position
+  external_load_kg : real
+  bodyweight_kg : real
+  laterality : finger_loading_laterality
+  set_count : integer
+  hold_duration_seconds : real
+  rest_interval_seconds : integer
+  rpe : real
+  notes : text
+  created_at : timestamp
+}
+
 entity "sleep_session" {
   * id : uuid <<PK>>
   --
@@ -258,6 +292,7 @@ entity "sleep_session" {
   light_minutes : integer
   awake_minutes : integer
   efficiency_pct : real
+  staging_available : boolean
   sleep_type : text
   is_nap : boolean
   sleep_need_baseline_minutes : integer
@@ -265,6 +300,10 @@ entity "sleep_session" {
   sleep_need_from_strain_minutes : integer
   sleep_need_from_nap_minutes : integer
   source_name : text
+  timezone : text
+  start_utc_offset_minutes : smallint
+  end_utc_offset_minutes : smallint
+  local_time_source : text
   created_at : timestamp
 }
 
@@ -613,6 +652,16 @@ entity "auth_account" {
   created_at : timestamp
 }
 
+entity "companion_token" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  connection_type : text
+  token_hash : text
+  created_at : timestamp
+  revoked_at : timestamp
+}
+
 entity "data_export" {
   * id : uuid <<PK>>
   --
@@ -771,6 +820,10 @@ entity "breathwork_session" {
   duration_seconds : integer
   started_at : timestamp
   notes : text
+  stress_before : bigint
+  stress_after : bigint
+  dizziness_after : boolean
+  perceived_effect : text
   created_at : timestamp
 }
 
@@ -1075,11 +1128,13 @@ provider ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
 activity ||--o{ activity_interval
+climbing_entry ||--o{ climbing_attempt
 activity ||--o{ climbing_entry
 daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
+activity ||--o{ finger_loading_entry
 provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session
 sleep_session ||--o{ sleep_stage
@@ -1115,6 +1170,7 @@ account_erasure_request ||--o{ account_erasure_checkpoint
 account_erasure_request ||--o{ account_erasure_identity_fence
 account_erasure_request ||--o{ account_erasure_outbox
 user_profile ||--o{ auth_account
+user_profile ||--o{ companion_token
 user_profile ||--o{ data_export
 user_profile ||--o{ mcp_access_token
 user_profile ||--o{ mcp_oauth_authorization_code

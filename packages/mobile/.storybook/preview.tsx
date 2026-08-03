@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/react-native-web-vite";
 import { View } from "react-native";
+import { colors } from "../theme";
 
 const preview: Preview = {
   decorators: [
@@ -9,7 +10,7 @@ const preview: Preview = {
         <View
           style={{
             flex: 1,
-            backgroundColor: "#eef3ed",
+            backgroundColor: colors.background,
             ...(isFullscreen ? {} : { padding: 16 }),
           }}
         >

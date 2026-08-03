@@ -1,4 +1,5 @@
 import type { UnitSystem } from "@dofek/format/units";
+import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -33,6 +34,9 @@ const activities = [
     provider_id: "garmin",
     source_providers: ["garmin"],
     distance_meters: 9200,
+    distance_state: { status: "available" },
+    elevation_gain_m: 120,
+    elevation_state: { status: "available" },
     location: null,
   },
   {
@@ -44,6 +48,9 @@ const activities = [
     provider_id: "apple_health",
     source_providers: ["apple_health"],
     distance_meters: null,
+    distance_state: { status: "missing", reason: "Distance not recorded" },
+    elevation_gain_m: null,
+    elevation_state: { status: "missing", reason: "Elevation not recorded" },
     location: null,
   },
 ];
@@ -97,7 +104,15 @@ function createErrorObservable(): OperationResultObservable<AppRouter, unknown> 
   return result;
 }
 
-function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
+function ActivitiesStory({
+  scenario,
+  activityTypes,
+  emptyMessage,
+}: {
+  scenario: ActivitiesScenario;
+  activityTypes?: readonly string[];
+  emptyMessage?: string;
+}) {
   const queryClient = useMemo(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     [],
@@ -111,7 +126,9 @@ function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
     const homeRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: "/",
-      component: RecentActivitiesSection,
+      component: () => (
+        <RecentActivitiesSection activityTypes={activityTypes} emptyMessage={emptyMessage} />
+      ),
     });
     const activityRoute = createRoute({
       getParentRoute: () => rootRoute,
@@ -122,7 +139,7 @@ function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
       routeTree: rootRoute.addChildren([homeRoute, activityRoute]),
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
-  }, []);
+  }, [activityTypes, emptyMessage]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -167,6 +184,16 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <ActivitiesStory scenario={{ items: [], totalCount: 0 }} />,
+};
+
+export const ScopedStrengthEmpty: Story = {
+  render: () => (
+    <ActivitiesStory
+      scenario={{ items: [], totalCount: 0 }}
+      activityTypes={STRENGTH_ACTIVITY_TYPES}
+      emptyMessage="No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness."
+    />
+  ),
 };
 
 export const ErrorState: Story = {

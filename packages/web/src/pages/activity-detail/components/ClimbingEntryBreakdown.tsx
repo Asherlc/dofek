@@ -20,6 +20,30 @@ export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityE
               {entry.locationName && (
                 <p className="truncate text-xs text-subtle">{entry.locationName}</p>
               )}
+              {(entry.wallAngleDegrees !== null || entry.holdType !== null) && (
+                <p className="text-xs text-subtle">
+                  {[
+                    entry.wallAngleDegrees === null ? null : `${entry.wallAngleDegrees}°`,
+                    entry.holdType === null
+                      ? null
+                      : `${entry.holdType[0]?.toUpperCase()}${entry.holdType.slice(1)}`,
+                  ]
+                    .filter((value) => value !== null)
+                    .join(" · ")}
+                </p>
+              )}
+              {entry.attempts.length > 0 && (
+                <ul className="mt-1 flex flex-wrap gap-1 text-xs text-subtle">
+                  {entry.attempts.map((attempt) => (
+                    <li className="rounded bg-surface px-2 py-0.5" key={attempt.attemptIndex}>
+                      {attempt.attemptIndex}:{" "}
+                      {attempt.outcome === "sent"
+                        ? "Sent"
+                        : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
           <div className="shrink-0 text-right">

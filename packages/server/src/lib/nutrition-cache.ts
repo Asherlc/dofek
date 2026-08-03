@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { logger } from "../logger.ts";
 
 export async function invalidateNutritionCaches(userId: string): Promise<void> {
@@ -14,7 +14,7 @@ export async function invalidateNutritionCaches(userId: string): Promise<void> {
       logger.warn(
         `[nutrition] Failed to invalidate nutrition cache for userId=${userId}: ${result.reason}`,
       );
-      Sentry.captureException(result.reason);
+      captureException(result.reason);
     }
   }
 }

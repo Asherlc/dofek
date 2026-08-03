@@ -1,11 +1,11 @@
+import { STRENGTH_ACTIVITY_TYPES } from "@dofek/training/training";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { ProgressiveOverload } from "./progressive-overload.ts";
 import {
   EstimatedOneRepMax,
   ExerciseWithSets,
-  linearRegressionSlope,
   MuscleGroupVolume,
-  ProgressiveOverload,
   StrengthRepository,
   VolumeWeek,
   WorkoutSummary,
@@ -33,22 +33,62 @@ describe("VolumeWeek", () => {
 });
 
 describe("EstimatedOneRepMax", () => {
-  it("groups history under exercise name", () => {
+  it("describes an increasing first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax("Bench Press", [
       { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
-      { date: "2024-01-15", estimatedMax: 105, actualWeight: 85, actualReps: 7 },
+      { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
     ]);
     const detail = entry.toDetail();
-    expect(detail.exerciseName).toBe("Bench Press");
-    expect(detail.history).toHaveLength(2);
-    expect(detail.history[0]?.estimatedMax).toBe(100);
+    expect(detail).toEqual({
+      exerciseName: "Bench Press",
+      history: [
+        { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
+        { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
+      ],
+      trend: {
+        direction: "increasing",
+        summary: "Estimated max increased from first to latest estimate.",
+        changeMagnitudeKg: 5.2,
+        firstDate: "2024-01-01",
+        latestDate: "2024-01-15",
+      },
+    });
   });
 
-  it("handles single entry", () => {
+  it("describes a decreasing first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax("Squat", [
       { date: "2024-01-01", estimatedMax: 150, actualWeight: 120, actualReps: 5 },
+      { date: "2024-02-01", estimatedMax: 142.4, actualWeight: 115, actualReps: 5 },
     ]);
-    expect(entry.toDetail().history).toHaveLength(1);
+
+    expect(entry.toDetail().trend).toEqual({
+      direction: "decreasing",
+      summary: "Estimated max decreased from first to latest estimate.",
+      changeMagnitudeKg: 7.6,
+      firstDate: "2024-01-01",
+      latestDate: "2024-02-01",
+    });
+  });
+
+  it("describes an unchanged first-to-latest estimated max", () => {
+    const entry = new EstimatedOneRepMax("Row", [
+      { date: "2024-01-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
+      { date: "2024-02-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
+    ]);
+
+    expect(entry.toDetail().trend).toEqual({
+      direction: "stable",
+      summary: "Estimated max did not change from first to latest estimate.",
+      changeMagnitudeKg: 0,
+      firstDate: "2024-01-01",
+      latestDate: "2024-02-01",
+    });
+  });
+
+  it("rejects an empty history because trend evidence needs date bounds", () => {
+    expect(() => new EstimatedOneRepMax("Row", []).toDetail()).toThrow(
+      "Estimated max history must contain at least one observation.",
+    );
   });
 });
 
@@ -62,35 +102,6 @@ describe("MuscleGroupVolume", () => {
     expect(detail.muscleGroup).toBe("chest");
     expect(detail.weeklyData).toHaveLength(2);
     expect(detail.weeklyData[0]?.sets).toBe(12);
-  });
-});
-
-describe("ProgressiveOverload", () => {
-  it("computes positive slope for increasing volumes", () => {
-    const overload = new ProgressiveOverload("Deadlift", [1000, 1100, 1200, 1300]);
-    const detail = overload.toDetail();
-    expect(detail.exerciseName).toBe("Deadlift");
-    expect(detail.slopeKgPerWeek).toBeGreaterThan(0);
-    expect(detail.isProgressing).toBe(true);
-  });
-
-  it("computes negative slope for decreasing volumes", () => {
-    const overload = new ProgressiveOverload("Curls", [500, 400, 300, 200]);
-    const detail = overload.toDetail();
-    expect(detail.slopeKgPerWeek).toBeLessThan(0);
-    expect(detail.isProgressing).toBe(false);
-  });
-
-  it("returns zero slope for flat volumes", () => {
-    const overload = new ProgressiveOverload("Rows", [500, 500, 500]);
-    expect(overload.slopeKgPerWeek).toBe(0);
-    expect(overload.isProgressing).toBe(false);
-  });
-
-  it("includes weekly volumes in detail", () => {
-    const volumes = [1000, 1100, 1200];
-    const overload = new ProgressiveOverload("Squat", volumes);
-    expect(overload.toDetail().weeklyVolumes).toEqual(volumes);
   });
 });
 
@@ -186,29 +197,6 @@ describe("ExerciseWithSets", () => {
     expect(detail.muscleGroups).toBeNull();
     expect(detail.exerciseType).toBeNull();
     expect(detail.sets).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// linearRegressionSlope
-// ---------------------------------------------------------------------------
-
-describe("linearRegressionSlope", () => {
-  it("returns 0 for fewer than 2 values", () => {
-    expect(linearRegressionSlope([])).toBe(0);
-    expect(linearRegressionSlope([100])).toBe(0);
-  });
-
-  it("computes positive slope for increasing series", () => {
-    expect(linearRegressionSlope([100, 200, 300])).toBeCloseTo(100, 5);
-  });
-
-  it("computes negative slope for decreasing series", () => {
-    expect(linearRegressionSlope([300, 200, 100])).toBeCloseTo(-100, 5);
-  });
-
-  it("returns 0 for constant series", () => {
-    expect(linearRegressionSlope([50, 50, 50, 50])).toBeCloseTo(0, 5);
   });
 });
 
@@ -386,7 +374,7 @@ describe("StrengthRepository", () => {
       const result = await repo.getProgressiveOverload(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(ProgressiveOverload);
-      expect(result[0]?.toDetail().isProgressing).toBe(true);
+      expect(result[0]?.toDetail().trend).toBe("increasing");
     });
 
     it("applies finite selected-range lower-bound filters", async () => {
@@ -588,7 +576,7 @@ describe("StrengthRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
-      expect(compiledQuery.params).toEqual(["UTC", "user-1"]);
+      expect(compiledQuery.params).toEqual(["UTC", "user-1", ...STRENGTH_ACTIVITY_TYPES]);
     });
   });
 });

@@ -10,9 +10,26 @@ const data: MicronutrientSafetyReviewRow[] = [
     intake: {
       totalDailyAverage: 120,
       foodDailyAverage: 20,
+      providerDailyTotalAverage: 0,
       supplementDailyAverage: 100,
       daysTracked: 28,
     },
+    sourceBreakdown: [
+      {
+        providerId: "manual",
+        sourceLabel: "Manual",
+        intakeType: "itemized_food",
+        dailyAverageContribution: 20,
+        daysTracked: 28,
+      },
+      {
+        providerId: "dofek",
+        sourceLabel: "Dofek supplements",
+        intakeType: "supplement",
+        dailyAverageContribution: 100,
+        daysTracked: 28,
+      },
+    ],
     adequacy: {
       status: "at_or_above_daily_value",
       percentDailyValue: 600,
@@ -55,7 +72,7 @@ const data: MicronutrientSafetyReviewRow[] = [
 const meta = {
   title: "Nutrition/MicronutrientChart",
   component: MicronutrientChart,
-  args: { data },
+  args: { data, selectedWindowDays: 30 },
   decorators: [
     (Story) => (
       <div className="w-[760px] p-4">

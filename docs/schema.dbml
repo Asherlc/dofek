@@ -127,14 +127,58 @@ enum activity_type {
   other
 }
 
+enum climbing_attempt_outcome {
+  sent
+  failed
+}
+
 enum climbing_climb_type {
   boulder
   route
 }
 
+enum climbing_failure_reason {
+  fell
+  pumped
+  skin
+  technique
+  fear
+}
+
 enum climbing_grade_system {
   v_scale
   yds
+}
+
+enum climbing_hold_type {
+  crimp
+  sloper
+  pinch
+  pocket
+  jug
+}
+
+enum finger_loading_exercise {
+  max_hang
+  repeater
+  min_edge
+  one_arm
+  campus
+  no_hang
+}
+
+enum finger_loading_grip_position {
+  half_crimp
+  full_crimp
+  open_hand
+  three_finger_drag
+  two_finger_pocket
+}
+
+enum finger_loading_laterality {
+  both
+  left
+  right
 }
 
 enum food_category {
@@ -414,6 +458,9 @@ table fitness.activity {
   perceived_exertion real
   source_name text
   timezone text
+  start_utc_offset_minutes smallint
+  end_utc_offset_minutes smallint
+  local_time_source text [not null, default: 'unknown']
   strava_id text
   raw jsonb
   provider_absent_at "timestamp with time zone"
@@ -423,6 +470,7 @@ table fitness.activity {
   indexes {
     (user_id, provider_id, external_id) [name: 'activity_provider_external_idx', unique]
     (user_id, provider_id) [name: 'activity_user_provider_idx']
+
   }
 }
 
@@ -441,6 +489,24 @@ table fitness.activity_interval {
   }
 }
 
+table fitness.climbing_attempt {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  climbing_entry_id uuid [not null]
+  attempt_index integer [not null]
+  outcome climbing_attempt_outcome [not null]
+  failure_reason climbing_failure_reason
+  notes text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    climbing_entry_id [name: 'climbing_attempt_entry_idx']
+    (climbing_entry_id, attempt_index) [name: 'climbing_attempt_entry_index_idx', unique]
+
+
+
+  }
+}
+
 table fitness.climbing_entry {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   activity_id uuid [not null]
@@ -448,8 +514,10 @@ table fitness.climbing_entry {
   climb_type climbing_climb_type [not null]
   grade_system climbing_grade_system [not null]
   grade text [not null]
-  sent boolean [not null]
-  attempt_count integer [not null, default: 1]
+  sent boolean
+  attempt_count integer [default: 1]
+  wall_angle_degrees real
+  hold_type climbing_hold_type
   route_name text
   location_name text
   source_name text
@@ -526,6 +594,34 @@ table fitness.daily_metrics {
   }
 }
 
+table fitness.finger_loading_entry {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  activity_id uuid [not null]
+  exercise finger_loading_exercise [not null]
+  edge_size_mm real
+  grip_position finger_loading_grip_position
+  external_load_kg real [not null]
+  bodyweight_kg real [not null]
+  laterality finger_loading_laterality [not null]
+  set_count integer [not null]
+  hold_duration_seconds real [not null]
+  rest_interval_seconds integer [not null]
+  rpe real
+  notes text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    activity_id [name: 'finger_loading_entry_activity_idx']
+
+
+
+
+
+
+
+  }
+}
+
 table fitness.sleep_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -539,6 +635,7 @@ table fitness.sleep_session {
   light_minutes integer
   awake_minutes integer
   efficiency_pct real
+  staging_available boolean [not null, default: false]
   sleep_type text
   is_nap boolean [not null, default: false]
   sleep_need_baseline_minutes integer
@@ -546,11 +643,16 @@ table fitness.sleep_session {
   sleep_need_from_strain_minutes integer
   sleep_need_from_nap_minutes integer
   source_name text
+  timezone text
+  start_utc_offset_minutes smallint
+  end_utc_offset_minutes smallint
+  local_time_source text [not null, default: 'unknown']
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     (user_id, provider_id, external_id) [name: 'sleep_session_provider_external_idx', unique]
     (user_id, provider_id) [name: 'sleep_session_user_provider_idx']
+
   }
 }
 
@@ -1014,6 +1116,20 @@ table fitness.auth_account {
   }
 }
 
+table fitness.companion_token {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  connection_type text [not null, default: 'zepp-main']
+  token_hash text [not null, unique]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  revoked_at "timestamp with time zone"
+
+  indexes {
+
+    (user_id, connection_type) [name: 'companion_token_user_connection_type_idx', unique]
+  }
+}
+
 table fitness.data_export {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -1212,11 +1328,18 @@ table fitness.breathwork_session {
   duration_seconds integer [not null]
   started_at "timestamp with time zone" [not null]
   notes text
+  stress_before bigint
+  stress_after bigint
+  dizziness_after boolean
+  perceived_effect text
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     user_id [name: 'breathwork_session_user_idx']
     started_at [name: 'breathwork_session_started_at_idx']
+
+
+
   }
 }
 
@@ -1659,6 +1782,8 @@ ref activity_user_id_user_profile_id_fk: fitness.activity.user_id > fitness.user
 
 ref activity_interval_activity_id_activity_id_fk: fitness.activity_interval.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
+ref climbing_attempt_climbing_entry_id_climbing_entry_id_fk: fitness.climbing_attempt.climbing_entry_id > fitness.climbing_entry.id [delete: cascade, update: no action]
+
 ref climbing_entry_activity_id_activity_id_fk: fitness.climbing_entry.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref daily_metric_value_daily_metrics_id_daily_metrics_id_fk: fitness.daily_metric_value.daily_metrics_id > fitness.daily_metrics.id [delete: cascade, update: no action]
@@ -1668,6 +1793,8 @@ ref daily_metric_value_metric_type_id_daily_metric_type_id_fk: fitness.daily_met
 ref daily_metrics_provider_id_provider_id_fk: fitness.daily_metrics.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref daily_metrics_user_id_user_profile_id_fk: fitness.daily_metrics.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref finger_loading_entry_activity_id_activity_id_fk: fitness.finger_loading_entry.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref sleep_session_provider_id_provider_id_fk: fitness.sleep_session.provider_id > fitness.provider.id [delete: no action, update: no action]
 
@@ -1746,6 +1873,8 @@ ref account_erasure_identity_fence_request_id_account_erasure_request_id_fk: fit
 ref account_erasure_outbox_request_id_account_erasure_request_id_fk: fitness.account_erasure_outbox.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
 
 ref auth_account_user_id_user_profile_id_fk: fitness.auth_account.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref companion_token_user_id_user_profile_id_fk: fitness.companion_token.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref data_export_user_id_user_profile_id_fk: fitness.data_export.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

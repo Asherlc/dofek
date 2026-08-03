@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,7 +33,25 @@ const availableResolution = {
   sourceLabels: ["dofek"],
   contributingSourceLabels: ["dofek"],
   excludedSourceLabels: [],
+  contributionGrain: "itemized",
+  contributionLabel: "Dofek itemized entries",
 };
+const defaultIntakeContext = {
+  observedCalories: 0,
+  target: {
+    calories: 2000,
+    type: "default",
+    label: "Default daily logged-intake target",
+  },
+  scale: { maximumCalories: 2000, observedPercentage: 0, targetPercentage: 100 },
+  comparison: {
+    status: "below_target",
+    differenceCalories: 2000,
+    message: "Observed logged intake is 2,000 kcal below the default daily logged-intake target.",
+  },
+  limitation:
+    "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+} satisfies SelectedDateNutritionIntakeContext;
 
 vi.mock("../../lib/open-external-url", () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
@@ -87,14 +106,15 @@ describe("FoodScreen AI meal confirmation", () => {
       data: {
         entries: [],
         resolution: availableResolution,
+        intakeContext: defaultIntakeContext,
         summary: {
           calories: 0,
           mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 0 },
           calorieGoal: { target: 2000, remaining: 2000, over: 0, progressPercentage: 0 },
           macros: {
-            protein: { grams: 0, calories: 0, percentage: 0 },
-            carbs: { grams: 0, calories: 0, percentage: 0 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+            carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
       },
@@ -171,6 +191,23 @@ describe("FoodScreen AI meal confirmation", () => {
     });
   });
 
+  it("puts the server-authored daily nutrition decision context before AI meal input", async () => {
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    const intakeMessage = screen.getByText(defaultIntakeContext.comparison.message);
+    const resolutionMessage = screen.getByText(availableResolution.message);
+    const aiInputHeading = screen.getByText("AI meal input");
+
+    expect(
+      intakeMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      resolutionMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("opens every food input mode from the nutrition screen", async () => {
     const { default: FoodScreen } = await import("./food");
 
@@ -237,14 +274,30 @@ describe("FoodScreen AI meal confirmation", () => {
           },
         ],
         resolution: availableResolution,
+        intakeContext: {
+          observedCalories: 120,
+          target: {
+            calories: 2000,
+            type: "default",
+            label: "Default daily logged-intake target",
+          },
+          scale: { maximumCalories: 2000, observedPercentage: 6, targetPercentage: 100 },
+          comparison: {
+            status: "below_target",
+            differenceCalories: 1880,
+            message:
+              "Observed logged intake is 1,880 kcal below the default daily logged-intake target.",
+          },
+          limitation: defaultIntakeContext.limitation,
+        },
         summary: {
           calories: 120,
           mealCalories: { breakfast: 120, lunch: 0, dinner: 0, snack: 0, other: 0 },
           calorieGoal: { target: 2000, remaining: 1880, over: 0, progressPercentage: 6 },
           macros: {
-            protein: { grams: 18, calories: 72, percentage: 60 },
-            carbs: { grams: 7, calories: 28, percentage: 23 },
-            fat: { grams: 0, calories: 0, percentage: 0 },
+            protein: { grams: 18, calories: 72, energySharePercentage: 72 },
+            carbs: { grams: 7, calories: 28, energySharePercentage: 28 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
           },
         },
       },
@@ -275,15 +328,35 @@ describe("FoodScreen AI meal confirmation", () => {
             food_description: null,
           },
         ],
+        intakeContext: {
+          observedCalories: 999,
+          target: {
+            calories: 2200,
+            type: "configured",
+            label: "Configured daily logged-intake target",
+          },
+          scale: {
+            maximumCalories: 2200,
+            observedPercentage: (999 / 2200) * 100,
+            targetPercentage: 100,
+          },
+          comparison: {
+            status: "below_target",
+            differenceCalories: 1201,
+            message:
+              "Observed logged intake is 1,201 kcal below the configured daily logged-intake target.",
+          },
+          limitation: defaultIntakeContext.limitation,
+        },
         resolution: availableResolution,
         summary: {
           calories: 999,
           mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
           calorieGoal: { target: 2200, remaining: 1201, over: 0, progressPercentage: 45.4 },
           macros: {
-            protein: { grams: 88, calories: 352, percentage: 35 },
-            carbs: { grams: 111, calories: 444, percentage: 44 },
-            fat: { grams: 22, calories: 198, percentage: 20 },
+            protein: { grams: 88, calories: 352, energySharePercentage: 35 },
+            carbs: { grams: 111, calories: 444, energySharePercentage: 45 },
+            fat: { grams: 22, calories: 198, energySharePercentage: 20 },
           },
         },
       },
@@ -296,8 +369,15 @@ describe("FoodScreen AI meal confirmation", () => {
 
     expect(screen.getByText("999 kcal")).toBeTruthy();
     expect(screen.getByText("777 kcal")).toBeTruthy();
-    expect(screen.getByText("1,201 kcal remaining")).toBeTruthy();
-    expect(screen.getByText("88 g")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Observed logged intake is 1,201 kcal below the configured daily logged-intake target.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Share of energy")).toBeTruthy();
+    expect(screen.getByText("35%")).toBeTruthy();
+    expect(screen.getByText("88 g logged")).toBeTruthy();
+    expect(screen.getByLabelText("Protein: 35% share of energy; 88 grams logged")).toBeTruthy();
   });
 
   it("renders an accessible source conflict and leaves totals unavailable", async () => {
@@ -316,6 +396,7 @@ describe("FoodScreen AI meal confirmation", () => {
           },
         ],
         summary: null,
+        intakeContext: null,
         resolution: {
           status: "source_conflict",
           message:
@@ -326,6 +407,8 @@ describe("FoodScreen AI meal confirmation", () => {
           sourceLabels: ["Apple Health", "Cronometer"],
           contributingSourceLabels: [],
           excludedSourceLabels: ["Apple Health", "Cronometer"],
+          contributionGrain: null,
+          contributionLabel: null,
         },
       },
       isError: false,
@@ -339,6 +422,61 @@ describe("FoodScreen AI meal confirmation", () => {
     expect(screen.getByRole("alert").textContent).toContain("Apple Health, Cronometer");
     expect(screen.queryByText(/kcal remaining/)).toBeNull();
     expect(screen.getByText("Named itemized meal")).toBeTruthy();
+  });
+
+  it("explains an aggregate-only contribution without rendering an unnamed meal", async () => {
+    foodByDateQuery = {
+      data: {
+        entries: [],
+        intakeContext: {
+          observedCalories: 1800,
+          target: {
+            calories: 2000,
+            type: "default",
+            label: "Default daily logged-intake target",
+          },
+          scale: { maximumCalories: 2000, observedPercentage: 90, targetPercentage: 100 },
+          comparison: {
+            status: "below_target",
+            differenceCalories: 200,
+            message:
+              "Observed logged intake is 200 kcal below the default daily logged-intake target.",
+          },
+          limitation: defaultIntakeContext.limitation,
+        },
+        summary: {
+          calories: 1800,
+          mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 1800 },
+          calorieGoal: { target: 2000, remaining: 200, over: 0, progressPercentage: 90 },
+          macros: {
+            protein: { grams: 90, calories: 360, energySharePercentage: 20 },
+            carbs: { grams: 220, calories: 880, energySharePercentage: 50 },
+            fat: { grams: 60, calories: 540, energySharePercentage: 30 },
+          },
+        },
+        resolution: {
+          status: "available",
+          message: "Totals use the only available nutrition source.",
+          sourceProviders: ["apple_health"],
+          contributingProviders: ["apple_health"],
+          excludedProviders: [],
+          sourceLabels: ["Cronometer (via Apple Health)"],
+          contributingSourceLabels: ["Cronometer (via Apple Health)"],
+          excludedSourceLabels: [],
+          contributionGrain: "daily_aggregate",
+          contributionLabel: "Cronometer (via Apple Health) daily total",
+        },
+      },
+      isError: false,
+      isLoading: false,
+    };
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(screen.getByText("Cronometer (via Apple Health) daily total")).toBeTruthy();
+    expect(screen.getByText("Totals use the only available nutrition source.")).toBeTruthy();
+    expect(screen.queryByText("Unnamed nutrition entry")).toBeNull();
   });
 
   it("does not report missing food data while the first request is loading", async () => {

@@ -287,6 +287,7 @@ export class PolarSyncService {
                   deepMinutes: parsedSleep.deepMinutes,
                   remMinutes: parsedSleep.remMinutes,
                   awakeMinutes: parsedSleep.awakeMinutes,
+                  stagingAvailable: parsedSleep.stagingAvailable,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -298,6 +299,7 @@ export class PolarSyncService {
                     deepMinutes: parsedSleep.deepMinutes,
                     remMinutes: parsedSleep.remMinutes,
                     awakeMinutes: parsedSleep.awakeMinutes,
+                    stagingAvailable: parsedSleep.stagingAvailable,
                   },
                 })
                 .returning({ id: sleepSession.id });

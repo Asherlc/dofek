@@ -1,38 +1,66 @@
+import {
+  formatHealthspanTrendContext,
+  type HealthspanTrend,
+} from "@dofek/format/healthspan-context";
 import { statusColors } from "@dofek/scoring/colors";
 import { formatYearsDelta } from "@dofek/scoring/healthspan-years";
 import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scoring";
 import type { HealthspanResult } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface HealthspanScoreCardProps {
   data: HealthspanResult | undefined;
   loading?: boolean;
 }
 
-function TrendBadge({ trend }: { trend: "improving" | "declining" | "stable" }) {
+function TrendBadge({ trend }: { trend: HealthspanTrend }) {
   const color = trendColor(trend);
   return (
     <div
       className="inline-block px-2 py-1 rounded text-xs font-medium"
       style={{ color: color, backgroundColor: `${color}15` }}
     >
-      {trend.charAt(0).toUpperCase() + trend.slice(1)}
+      {formatHealthspanTrendContext(trend)}
     </div>
   );
 }
 
 export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps) {
   if (loading) {
-    return <ChartLoadingSkeleton height={400} />;
+    return <QueryStatePanel variant="loading" height={400} />;
   }
 
-  if (!data || data.healthspanScore == null || data.metrics.length === 0) {
+  if (!data) {
     return (
-      <div className="bg-page border border-border rounded-xl p-6 flex items-center justify-center h-[400px]">
-        <span className="text-dim text-sm">Insufficient data for healthspan analysis</span>
-      </div>
+      <QueryStatePanel
+        variant="empty"
+        message="Healthspan availability is unavailable."
+        height={400}
+      />
+    );
+  }
+
+  if (data.healthspanScore == null || data.metrics.length === 0) {
+    return (
+      <QueryStatePanel
+        variant="empty"
+        height={400}
+        message={
+          <span className="flex flex-col items-center gap-2 text-center">
+            <span className="text-muted text-sm font-medium">{data.availability.summary}</span>
+            {data.availability.nextCondition != null ? (
+              <span className="text-dim text-sm">{data.availability.nextCondition}</span>
+            ) : null}
+            {data.availability.missingMetricLabels.length > 0 ? (
+              <span className="text-subtle text-xs">
+                Missing supported metrics: {data.availability.missingMetricLabels.join(", ")}
+              </span>
+            ) : null}
+          </span>
+        }
+      />
     );
   }
 

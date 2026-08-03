@@ -63,6 +63,37 @@ export function isServiceUnavailableStatus(statusCode: number): boolean {
   return statusCode === 502 || statusCode === 503 || statusCode === 504;
 }
 
+const PROVIDER_CONNECT_FAILURE_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "ENETUNREACH"]);
+
+function errorCause(error: unknown): unknown {
+  if (typeof error !== "object" || error === null || !("cause" in error)) {
+    return undefined;
+  }
+  return error.cause;
+}
+
+export function isProviderConnectFailure(error: unknown): boolean {
+  const visited = new Set<unknown>();
+  let current: unknown = error;
+
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if (current.name === "ConnectTimeoutError") {
+      return true;
+    }
+
+    const code =
+      typeof current === "object" && current !== null && "code" in current ? current.code : null;
+    if (typeof code === "string" && PROVIDER_CONNECT_FAILURE_CODES.has(code)) {
+      return true;
+    }
+
+    current = errorCause(current);
+  }
+
+  return false;
+}
+
 export async function fetchWithRateLimitHandling(
   fetchFn: typeof globalThis.fetch,
   input: RequestInfo | URL,
@@ -187,6 +218,15 @@ export function createRateLimitAwareFetch(
       return response;
     } catch (err) {
       if (timeoutSignal.aborted && signal.reason === timeoutSignal.reason) {
+        throw new ProviderRequestTimeoutError({
+          cause: err,
+          providerId: options.providerId,
+          scope,
+          timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
+          userId,
+        });
+      }
+      if (isProviderConnectFailure(err)) {
         throw new ProviderRequestTimeoutError({
           cause: err,
           providerId: options.providerId,

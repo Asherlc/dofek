@@ -8,11 +8,13 @@ import {
   type MobileTrainingTabResult,
   mobileTrainingTabOutputSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
+import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
 import {
   buildStrainTargetResult,
@@ -77,6 +79,7 @@ export async function loadMobileTrainingTab(
     ctx.accessWindow,
   );
   const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+  const strengthRepo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
 
   const windowStart = dateWindowStartString(endDate, days);
   const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
@@ -149,6 +152,7 @@ export async function loadMobileTrainingTab(
     gradeProgressionModels,
     volumeByGradeModels,
     sessionSummaryModels,
+    progressiveOverloadModels,
   ] = await Promise.all([
     trainingRepo.getActivityStatsAndWeeklyVolume(days),
     cyclingRepo.getActivities(ChartRange.fromDays(days), {
@@ -160,6 +164,7 @@ export async function loadMobileTrainingTab(
     climbingRepo.getGradeProgression(days),
     climbingRepo.getVolumeByGrade(days),
     climbingRepo.getSessionSummaries(days),
+    strengthRepo.getProgressiveOverload(days),
   ]);
 
   return {
@@ -167,7 +172,31 @@ export async function loadMobileTrainingTab(
     strainTarget,
     activities,
     weeklyVolume,
+    progressiveOverload: progressiveOverloadModels.map((model) => model.toDetail()),
     verticalAscent: cyclingAnalytics.verticalAscent,
+    chartAvailability: {
+      strainTrend: makeTrainingChartAvailability({
+        sourceLabel: "Daily strain model",
+        observedCount: strainRows.length,
+        minimumCount: 2,
+        messages: {
+          available: "Daily strain trend is available from the daily strain model.",
+          insufficientData:
+            "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
+        },
+      }),
+      verticalAscent: makeTrainingChartAvailability({
+        sourceLabel: "Cycling activity altitude sensor summaries",
+        observedCount: cyclingAnalytics.verticalAscent.length,
+        minimumCount: 1,
+        messages: {
+          available:
+            "Vertical ascent data is available from cycling activity altitude sensor summaries.",
+          insufficientData:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart.",
+        },
+      }),
+    },
     climbing: {
       gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),
       volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),

@@ -1,9 +1,13 @@
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { describe, expect, it, vi } from "vitest";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
-vi.mock("@sentry/node", () => ({ captureException: vi.fn() }));
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
@@ -23,7 +27,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -72,6 +79,12 @@ beforeEach(() => {
 });
 
 describe("bodyAnalyticsRouter", () => {
+  it("versions both weight response cache contracts", () => {
+    expect(
+      cachedQueryOptions.filter((options) => options.keyVersion === "health-status-evidence-v4"),
+    ).toHaveLength(2);
+  });
+
   describe("smoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);

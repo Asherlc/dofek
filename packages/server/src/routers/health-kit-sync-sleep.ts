@@ -1,3 +1,7 @@
+import {
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -155,6 +159,29 @@ export async function processSleepSamples(
       stagesBySource.size > 0 ? [...stagesBySource.entries()] : [[session.sourceName, []]];
 
     for (const [sourceName, stages] of sources) {
+      const stagingAvailable = stages.some(
+        (stage) =>
+          stage.value === "asleepCore" ||
+          stage.value === "asleepDeep" ||
+          stage.value === "asleepREM",
+      );
+      const startUtcOffsetMinutes = offsetMinutesFromTimestamp(session.startDate);
+      const endUtcOffsetMinutes = offsetMinutesFromTimestamp(session.endDate);
+      const localTimeContext =
+        startUtcOffsetMinutes == null || endUtcOffsetMinutes == null
+          ? {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown" as const,
+            }
+          : resolveRecordLocalTimeContext({
+              startedAt: new Date(session.startDate),
+              endedAt: new Date(session.endDate),
+              startUtcOffsetMinutes,
+              endUtcOffsetMinutes,
+              source: "device_offset",
+            });
       let deepMinutes = 0;
       let remMinutes = 0;
       let lightMinutes = 0;
@@ -185,32 +212,47 @@ export async function processSleepSamples(
       }
 
       const externalId = `hk:sleep:${session.uuid}:${sourceName}`;
+      const storedDeepMinutes = stagingAvailable ? deepMinutes : null;
+      const storedRemMinutes = stagingAvailable ? remMinutes : null;
+      const storedLightMinutes = stagingAvailable ? lightMinutes : null;
+      const storedAwakeMinutes =
+        stagingAvailable || stages.some((stage) => stage.value === "awake") ? awakeMinutes : null;
       const sessionResult = await executeWithSchema(
         db,
         z.object({ id: z.guid() }),
-        sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
+        sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, timezone, start_utc_offset_minutes, end_utc_offset_minutes, local_time_source, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, staging_available, sleep_type, source_name)
             VALUES (
               ${userId},
               ${PROVIDER_ID},
               ${externalId},
               ${session.startDate}::timestamptz,
               ${session.endDate}::timestamptz,
+              ${localTimeContext.timezone},
+              ${localTimeContext.startUtcOffsetMinutes},
+              ${localTimeContext.endUtcOffsetMinutes},
+              ${localTimeContext.source},
               ${durationMinutes},
-              ${deepMinutes},
-              ${remMinutes},
-              ${lightMinutes},
-              ${awakeMinutes},
+              ${storedDeepMinutes},
+              ${storedRemMinutes},
+              ${storedLightMinutes},
+              ${storedAwakeMinutes},
+              ${stagingAvailable},
               ${null},
               ${sourceName}
             )
             ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
               started_at = ${session.startDate}::timestamptz,
               ended_at = ${session.endDate}::timestamptz,
+              timezone = ${localTimeContext.timezone},
+              start_utc_offset_minutes = ${localTimeContext.startUtcOffsetMinutes},
+              end_utc_offset_minutes = ${localTimeContext.endUtcOffsetMinutes},
+              local_time_source = ${localTimeContext.source},
               duration_minutes = ${durationMinutes},
-              deep_minutes = ${deepMinutes},
-              rem_minutes = ${remMinutes},
-              light_minutes = ${lightMinutes},
-              awake_minutes = ${awakeMinutes},
+              deep_minutes = ${storedDeepMinutes},
+              rem_minutes = ${storedRemMinutes},
+              light_minutes = ${storedLightMinutes},
+              awake_minutes = ${storedAwakeMinutes},
+              staging_available = ${stagingAvailable},
               sleep_type = ${null},
               source_name = ${sourceName}
             RETURNING id`,

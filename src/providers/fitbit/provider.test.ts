@@ -1628,6 +1628,7 @@ describe("FitbitProvider", () => {
         (v) => v.externalId === "87654321" && v.providerId === "fitbit",
       );
       expect(sleepValues.durationMinutes).toBe(465);
+      expect(sleepValues.stagingAvailable).toBe(true);
       expect(sleepValues.efficiencyPct).toBe(92);
       expect(sleepValues.sleepType).toBe("main");
       expectConflictTarget(db, [

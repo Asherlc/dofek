@@ -17,9 +17,26 @@ let mockOverviewQuery: {
     | {
         activityCount: number;
         totalMinutes: number;
-        totalDistanceMeters: number;
-        totalElevationGainM: number;
+        totalDistanceMeters: number | null;
+        totalDistanceState: { status: "available" } | { status: "missing"; reason: string };
+        totalElevationGainM: number | null;
+        totalElevationState: { status: "available" } | { status: "missing"; reason: string };
         activityTypes: string[];
+        comparison?: {
+          periodLabel: string;
+          activityCount: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalMinutes: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
+          totalDistanceMeters: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+          totalElevationGainM: {
+            magnitude: number | null;
+            trend: "higher" | "lower" | "unchanged" | "unavailable";
+            state: { status: "available" } | { status: "missing"; reason: string };
+          };
+        };
       }
     | undefined;
   isLoading: boolean;
@@ -148,10 +165,26 @@ function activity(overrides: Record<string, unknown> = {}) {
     activityType: "indoor_cycling",
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
+    localTimeContext: {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
+    },
     durationMin: 60,
+    source: {
+      primarySourceLabel: "Wahoo",
+      sourceCount: 1,
+      overlapSummary: null,
+    },
+    lastProcessedAt: "2026-03-18T08:05:00.000Z",
+    distanceMeters: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
+    elevationGainM: null,
+    elevationState: { status: "missing", reason: "Elevation not recorded" },
     location: null,
     tss: 100,
-    stats: [{ label: "Training Stress Score", value: "100" }],
+    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }
@@ -182,7 +215,9 @@ describe("ActivitiesPage", () => {
         activityCount: 0,
         totalMinutes: 0,
         totalDistanceMeters: 0,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 0,
+        totalElevationState: { status: "available" },
         activityTypes: [],
       },
       isLoading: false,
@@ -307,7 +342,9 @@ describe("ActivitiesPage", () => {
         activityCount: 12,
         totalMinutes: 615,
         totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
         activityTypes: ["running", "cycling"],
       },
       isLoading: false,
@@ -321,6 +358,86 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("10h 15m")).toBeDefined();
     expect(screen.getByText("42.3 km")).toBeDefined();
     expect(screen.getByText("520 m")).toBeDefined();
+    expect(screen.queryByText(/vs previous/)).toBeNull();
+  });
+
+  it("renders server-computed changes from the previous comparable period", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 12,
+        totalMinutes: 615,
+        totalDistanceMeters: 42300,
+        totalDistanceState: { status: "available" },
+        totalElevationGainM: 520,
+        totalElevationState: { status: "available" },
+        activityTypes: ["running", "cycling"],
+        comparison: {
+          periodLabel: "previous 4 weeks",
+          activityCount: { magnitude: 1, trend: "higher" },
+          totalMinutes: { magnitude: 90, trend: "lower" },
+          totalDistanceMeters: {
+            magnitude: 0,
+            trend: "unchanged",
+            state: { status: "available" },
+          },
+          totalElevationGainM: {
+            magnitude: null,
+            trend: "unavailable",
+            state: { status: "missing", reason: "Previous period: Elevation gain not recorded" },
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
+    expect(
+      screen.getByText("Comparison unavailable: Previous period: Elevation gain not recorded"),
+    ).toBeDefined();
+  });
+
+  it("distinguishes unavailable overview measurements from measured zero", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 2,
+        totalMinutes: 90,
+        totalDistanceMeters: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+        totalElevationGainM: null,
+        totalElevationState: { status: "missing", reason: "Elevation not recorded" },
+        activityTypes: ["running"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    const { rerender } = render(<ActivitiesPage />);
+
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByText("Elevation unavailable")).toBeDefined();
+    expect(screen.queryByText("0.0 km")).toBeNull();
+    expect(screen.queryByText("0 m")).toBeNull();
+
+    mockOverviewQuery.data = {
+      activityCount: 2,
+      totalMinutes: 90,
+      totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
+      activityTypes: ["running"],
+    };
+    rerender(<ActivitiesPage />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.getByText("0 m")).toBeDefined();
   });
 
   it("passes selected filters to the activity list query", () => {
@@ -329,7 +446,9 @@ describe("ActivitiesPage", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -393,9 +512,11 @@ describe("ActivitiesPage", () => {
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
                 mapPreview,
-                distanceMeters: 5000,
-                elevationGainM: 120,
               },
+              distanceMeters: 5000,
+              elevationGainM: 120,
+              distanceState: { status: "available" },
+              elevationState: { status: "available" },
             }),
           ],
         },
@@ -410,7 +531,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
   });
 
-  it("shows a Select button when activities are present", () => {
+  it("explains the activity selection action before entering select mode", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],
       isLoading: false,
@@ -420,10 +541,39 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
-    expect(screen.getByText("Select")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
   });
 
-  it("toggles selected activities instead of navigating in select mode", () => {
+  it("associates each selection control with its own guidance", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(
+      <>
+        <ActivitiesPage />
+        <ActivitiesPage />
+      </>,
+    );
+
+    const selectionButtons = screen.getAllByRole("button", { name: "Select activities" });
+    const guidanceIds = selectionButtons.map((button) => button.getAttribute("aria-describedby"));
+
+    expect(guidanceIds[0]).toBeTruthy();
+    expect(guidanceIds[1]).toBeTruthy();
+    expect(guidanceIds[0]).not.toBe(guidanceIds[1]);
+    for (const guidanceId of guidanceIds) {
+      expect(document.getElementById(guidanceId ?? "")).toHaveTextContent(
+        "Choose one or more activities to delete.",
+      );
+    }
+  });
+
+  it("exposes the selected activity count as an accessible status", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],
       isLoading: false,
@@ -432,10 +582,13 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("status")).toHaveTextContent("0 activities selected");
     fireEvent.click(screen.getByText("Trainer Ride"));
 
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByRole("status")).toHaveTextContent("1 activity selected");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status").getAttribute("aria-atomic")).toBe("true");
     expect(screen.queryByRole("link", { name: /Trainer Ride/i })).toBeNull();
   });
 
@@ -448,7 +601,7 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -470,7 +623,7 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -491,7 +644,7 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -514,7 +667,9 @@ describe("ActivitiesPage", () => {
         activityCount: 1,
         totalMinutes: 60,
         totalDistanceMeters: 5000,
+        totalDistanceState: { status: "available" },
         totalElevationGainM: 120,
+        totalElevationState: { status: "available" },
         activityTypes: ["running"],
       },
       isLoading: false,
@@ -523,12 +678,12 @@ describe("ActivitiesPage", () => {
     };
 
     render(<ActivitiesPage />);
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "running" } });
 
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.queryByText("Select")).not.toBeNull();
+    expect(screen.queryByText("1 activity selected")).toBeNull();
+    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
   it("paginates the activity card history", () => {
@@ -582,9 +737,12 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
     fireEvent.click(screen.getByLabelText("Show hidden activities"));
+    expect(
+      screen.getByText("Choose visible activities to delete or hidden activities to restore."),
+    ).toBeDefined();
     expect(screen.getByText("Removed")).toBeDefined();
     expect(screen.getByText(/Removed from Strava/)).toBeDefined();
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Trainer Ride"));
     fireEvent.click(screen.getByText("Restore"));
     fireEvent.click(screen.getByText("Confirm Restore"));

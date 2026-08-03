@@ -19,11 +19,15 @@ describe("validatePassword", () => {
   });
 
   it("rejects short passwords", () => {
-    expect(() => validatePassword("short")).toThrow(InvalidPasswordError);
+    expect(() => validatePassword("1234567")).toThrow(
+      new InvalidPasswordError("Use at least 8 characters."),
+    );
   });
 
   it("rejects passwords longer than the maximum", () => {
-    expect(() => validatePassword("a".repeat(129))).toThrow(InvalidPasswordError);
+    expect(() => validatePassword("a".repeat(129))).toThrow(
+      new InvalidPasswordError("Use no more than 128 characters."),
+    );
   });
 });
 

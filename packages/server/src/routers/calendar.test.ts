@@ -4,6 +4,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 const repositoryResultMock = vi.hoisted(() => vi.fn());
 const repositoryInputMock = vi.hoisted(() => vi.fn());
+const cachedQueryOptions = vi.hoisted(() => vi.fn());
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -19,7 +20,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: unknown) => {
+      cachedQueryOptions(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -46,6 +50,18 @@ describe("calendarRouter", () => {
   beforeEach(() => {
     repositoryResultMock.mockReset();
     repositoryInputMock.mockReset();
+  });
+
+  it("versions the activity state cache contract", () => {
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 600_000,
+      keyVersion: "activity-calendar-states-v2",
+    });
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 3_600_000,
+      keyVersion: "calendar-calendarData-v2",
+    });
+    expect(cachedQueryOptions).toHaveBeenCalledTimes(3);
   });
 
   it("surfaces missing ClickHouse analytics store as a precondition error", async () => {
@@ -83,10 +99,33 @@ describe("calendarRouter", () => {
             activityType: "indoor_cycling",
             startedAt: new Date("2026-03-18T07:00:00.000Z"),
             endedAt: "2026-03-18 08:00:00+00",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
             durationMin: 60,
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 2,
+              overlapSummary: "2 matched source records · Wahoo selected by source priority",
+            },
+            lastProcessedAt: "2026-03-18 08:07:00+00",
+            distanceMeters: 0,
+            distanceState: { status: "available" },
+            elevationGainM: 0,
+            elevationState: { status: "available" },
             location: null,
             tss: null,
-            stats: [{ label: "Training Stress Score", value: "—" }],
+            stats: [
+              {
+                status: "missing",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
           },
         ],
       },
@@ -105,6 +144,80 @@ describe("calendarRouter", () => {
           expect.objectContaining({
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 2,
+              overlapSummary: "2 matched source records · Wahoo selected by source priority",
+            },
+            lastProcessedAt: "2026-03-18T08:07:00.000Z",
+          }),
+        ],
+      },
+    ]);
+  });
+
+  it("accepts a server-authored unavailable activity stat at the API boundary", async () => {
+    repositoryResultMock.mockResolvedValueOnce([
+      {
+        date: "2026-03-18",
+        activities: [
+          {
+            id: "activity-1",
+            name: "Trainer Ride",
+            activityType: "indoor_cycling",
+            startedAt: "2026-03-18T07:00:00.000Z",
+            endedAt: "2026-03-18T08:00:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
+            durationMin: 60,
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 1,
+              overlapSummary: null,
+            },
+            lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            distanceMeters: null,
+            distanceState: { status: "missing", reason: "Distance not recorded" },
+            elevationGainM: null,
+            elevationState: { status: "missing", reason: "Elevation gain not recorded" },
+            location: null,
+            tss: null,
+            stats: [
+              {
+                status: "missing",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+      {
+        date: "2026-03-18",
+        activities: [
+          expect.objectContaining({
+            stats: [
+              {
+                status: "missing",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
           }),
         ],
       },
@@ -122,7 +235,23 @@ describe("calendarRouter", () => {
             activityType: "running",
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            },
             durationMin: 60,
+            source: {
+              primarySourceLabel: "Wahoo",
+              sourceCount: 1,
+              overlapSummary: null,
+            },
+            lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            distanceMeters: 5000,
+            distanceState: { status: "available" },
+            elevationGainM: 120,
+            elevationState: { status: "available" },
             location: {
               centroidLat: 37.7749,
               centroidLng: -122.4194,
@@ -143,11 +272,16 @@ describe("calendarRouter", () => {
                   { x: 480, y: 220 },
                 ],
               },
-              distanceMeters: 5000,
-              elevationGainM: 120,
             },
             tss: null,
-            stats: [{ label: "Training Stress Score", value: "—" }],
+            stats: [
+              {
+                status: "missing",
+                label: "Training Stress Score",
+                reason:
+                  "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+              },
+            ],
           },
         ],
       },
@@ -184,8 +318,6 @@ describe("calendarRouter", () => {
                   { x: 480, y: 220 },
                 ],
               },
-              distanceMeters: 5000,
-              elevationGainM: 120,
             },
           }),
         ],
@@ -216,9 +348,26 @@ describe("calendarRouter", () => {
     repositoryResultMock.mockResolvedValueOnce({
       activityCount: 2,
       totalMinutes: 150,
-      totalDistanceMeters: 30000,
-      totalElevationGainM: 420,
+      totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+      totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["cycling", "running"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 2, trend: "higher" },
+        totalMinutes: { magnitude: 150, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Elevation gain not recorded" },
+        },
+      },
     });
     const caller = createCaller({
       db: {},
@@ -230,9 +379,26 @@ describe("calendarRouter", () => {
     await expect(caller.activityOverview({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual({
       activityCount: 2,
       totalMinutes: 150,
-      totalDistanceMeters: 30000,
-      totalElevationGainM: 420,
+      totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+      totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
       activityTypes: ["cycling", "running"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 2, trend: "higher" },
+        totalMinutes: { magnitude: 150, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Distance not recorded" },
+        },
+        totalElevationGainM: {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Elevation gain not recorded" },
+        },
+      },
     });
   });
 
@@ -241,8 +407,25 @@ describe("calendarRouter", () => {
       activityCount: 1,
       totalMinutes: 60,
       totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 120,
+      totalElevationState: { status: "available" },
       activityTypes: ["cycling", "running"],
+      comparison: {
+        periodLabel: "previous 4 weeks",
+        activityCount: { magnitude: 1, trend: "higher" },
+        totalMinutes: { magnitude: 60, trend: "higher" },
+        totalDistanceMeters: {
+          magnitude: 5000,
+          trend: "higher",
+          state: { status: "available" },
+        },
+        totalElevationGainM: {
+          magnitude: 120,
+          trend: "higher",
+          state: { status: "available" },
+        },
+      },
     });
     const caller = createCaller({
       db: {},

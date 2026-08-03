@@ -1,10 +1,16 @@
 import {
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateLong,
   formatDateTime,
   formatDurationSeconds,
   formatNumber,
   formatTimeOnly,
 } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -204,7 +210,7 @@ export function ActivityDetailPage() {
         <ActivitySourceDecisionCard decision={activity.sourceDecision} />
       ) : null}
 
-      <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
+      <ActivityHeader activity={activity} units={units} />
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
@@ -338,11 +344,9 @@ export function ActivityDetailPage() {
 export function ActivityHeader({
   activity,
   units,
-  hasGps,
 }: {
   activity: ActivityDetail;
   units: UnitConverter;
-  hasGps: boolean;
 }) {
   const durationMin =
     activity.startedAt && activity.endedAt
@@ -357,37 +361,61 @@ export function ActivityHeader({
     return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
   };
 
-  const stats: Array<{ label: string; value: string }> = [];
+  const stats: Array<ActivityMetric | { label: string; value: string }> = [];
 
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
-  if (hasGps && activity.totalDistance != null)
-    stats.push({
-      label: "Distance",
-      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
-    });
-  if (hasGps && activity.elevationGain != null)
-    stats.push({
-      label: "Elevation Gain",
-      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
-    });
-  if (activity.avgHr != null)
-    stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
-  if (activity.maxHr != null)
-    stats.push({ label: "Max Heart Rate", value: `${Math.round(activity.maxHr)} bpm` });
-  if (activity.avgPower != null)
-    stats.push({ label: "Avg Power", value: `${Math.round(activity.avgPower)} W` });
-  if (activity.maxPower != null)
-    stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
-  if (hasGps && activity.avgSpeed != null)
-    stats.push({
-      label: "Avg Speed",
-      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
-    });
-  if (activity.avgCadence != null)
-    stats.push({
-      label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
-    });
+  stats.push(
+    formatActivityMetric(
+      "Distance",
+      activity.totalDistance,
+      activity.totalDistanceState,
+      (distanceMeters) =>
+        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+    ),
+    formatActivityMetric(
+      "Elevation Gain",
+      activity.elevationGain,
+      activity.elevationGainState,
+      (elevationMeters) =>
+        `${Math.round(units.convertElevation(elevationMeters))} ${units.elevationLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Heart Rate",
+      activity.avgHr,
+      activity.avgHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Max Heart Rate",
+      activity.maxHr,
+      activity.maxHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Avg Power",
+      activity.avgPower,
+      activity.avgPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Max Power",
+      activity.maxPower,
+      activity.maxPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Avg Speed",
+      activity.avgSpeed,
+      activity.avgSpeedState,
+      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Cadence",
+      activity.avgCadence,
+      activity.avgCadenceState,
+      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+    ),
+  );
 
   return (
     <div>
@@ -400,7 +428,10 @@ export function ActivityHeader({
         </span>
       </div>
       <p className="text-sm text-subtle">
-        {formatDateLong(activity.startedAt)} at {formatTimeOnly(activity.startedAt)}
+        {formatDateLong(activity.startedAt)} at{" "}
+        {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
+          ? "Local time unavailable"
+          : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">
@@ -410,12 +441,31 @@ export function ActivityHeader({
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {stats.map((s) => (
-            <div key={s.label} className="card px-4 py-3">
-              <div className="text-xs text-subtle mb-0.5">{s.label}</div>
-              <div className="text-lg font-medium tabular-nums">{s.value}</div>
-            </div>
-          ))}
+          {stats.map((s) => {
+            const metric = "status" in s ? s : null;
+            const unavailableMetric = metric?.status !== "available" ? metric : null;
+            const displayedValue =
+              "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+            return (
+              <section
+                key={s.label}
+                className="card px-4 py-3"
+                data-state={metric?.status}
+                aria-label={
+                  unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                    : undefined
+                }
+              >
+                <div className="text-xs text-subtle mb-0.5">
+                  {unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                    : s.label}
+                </div>
+                <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

@@ -23,7 +23,7 @@ describe("Dashboard", () => {
     });
     cy.url().should("include", "/dashboard");
     // The dashboard should render without redirecting to login
-    cy.contains("Sign in to view your health data").should("not.exist");
+    cy.contains("Sign in to Dofek").should("not.exist");
   });
 
   it("shows the user identity via /api/auth/me", () => {

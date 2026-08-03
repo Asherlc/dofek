@@ -30,6 +30,34 @@ const currentPhase = {
     uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 29 days.",
     limitationLabel: "No calibrated confidence score or next-period forecast is available.",
   },
+  availability: {
+    status: "estimated",
+    label: "Phase estimate available from recorded cycle history.",
+  },
+} satisfies CurrentPhaseOutput;
+
+const sparseCurrentPhase = {
+  phase: null,
+  dayOfCycle: null,
+  cycleLength: null,
+  estimate: null,
+  availability: {
+    status: "sparse-history",
+    label:
+      "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
+  },
+} satisfies CurrentPhaseOutput;
+
+const irregularCurrentPhase = {
+  phase: null,
+  dayOfCycle: null,
+  cycleLength: null,
+  estimate: null,
+  availability: {
+    status: "irregular-history",
+    label:
+      "No phase estimate is shown because recorded cycle lengths do not support a regular-cycle model (observed range: 22 to 34 days).",
+  },
 } satisfies CurrentPhaseOutput;
 
 const periodHistory = [
@@ -51,19 +79,26 @@ const periodHistory = [
   },
 ];
 
-function createMockLink(): TRPCLink<AppRouter> {
+function createMockLink(
+  phaseFixture: CurrentPhaseOutput,
+  historyFixture: typeof periodHistory,
+): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
-      createMockObservable(op.path);
+      createMockObservable(op.path, phaseFixture, historyFixture);
 }
 
-function createMockObservable(path: string): OperationResultObservable<AppRouter, unknown> {
+function createMockObservable(
+  path: string,
+  phaseFixture: CurrentPhaseOutput,
+  historyFixture: typeof periodHistory,
+): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
       if (path === "menstrualCycle.currentPhase") {
-        observer.next?.({ result: { data: currentPhase } });
+        observer.next?.({ result: { data: phaseFixture } });
       } else if (path === "menstrualCycle.history") {
-        observer.next?.({ result: { data: periodHistory } });
+        observer.next?.({ result: { data: historyFixture } });
       } else if (path === "menstrualCycle.logPeriod") {
         observer.next?.({
           result: {
@@ -77,6 +112,10 @@ function createMockObservable(path: string): OperationResultObservable<AppRouter
             },
           },
         });
+      } else if (path === "menstrualCycle.updatePeriod") {
+        observer.next?.({ result: { data: historyFixture[0] } });
+      } else if (path === "menstrualCycle.deletePeriod") {
+        observer.next?.({ result: { data: { deleted: true } } });
       } else {
         throw new Error(`Unhandled cycle story tRPC operation: ${path}`);
       }
@@ -90,7 +129,13 @@ function createMockObservable(path: string): OperationResultObservable<AppRouter
   return result;
 }
 
-function CycleStoryFrame() {
+function CycleStoryFrame({
+  phaseFixture = currentPhase,
+  historyFixture = periodHistory,
+}: {
+  phaseFixture?: CurrentPhaseOutput;
+  historyFixture?: typeof periodHistory;
+}) {
   const queryClient = useMemo(
     () =>
       new QueryClient({
@@ -102,7 +147,10 @@ function CycleStoryFrame() {
       }),
     [],
   );
-  const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink()] }), []);
+  const trpcClient = useMemo(
+    () => trpc.createClient({ links: [createMockLink(phaseFixture, historyFixture)] }),
+    [historyFixture, phaseFixture],
+  );
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -129,4 +177,16 @@ type Story = StoryObj<typeof meta>;
 
 export const CurrentPhase: Story = {
   render: () => <CycleStoryFrame />,
+};
+
+export const SparseHistory: Story = {
+  render: () => <CycleStoryFrame phaseFixture={sparseCurrentPhase} />,
+};
+
+export const IrregularHistory: Story = {
+  render: () => <CycleStoryFrame phaseFixture={irregularCurrentPhase} />,
+};
+
+export const EmptyHistory: Story = {
+  render: () => <CycleStoryFrame historyFixture={[]} phaseFixture={sparseCurrentPhase} />,
 };

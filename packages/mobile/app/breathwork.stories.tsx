@@ -1,4 +1,4 @@
-import { TECHNIQUES } from "@dofek/scoring/breathwork";
+import { TECHNIQUES, toBreathworkTechniqueDetails } from "@dofek/scoring/breathwork";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
@@ -29,7 +29,22 @@ function createMockLink(): TRPCLink<AppRouter> {
 }
 
 function resolveOperation(path: string): unknown {
-  if (path === "breathwork.techniques") return TECHNIQUES;
+  if (path === "breathwork.techniques") return TECHNIQUES.map(toBreathworkTechniqueDetails);
+  if (path === "breathwork.outcomes") {
+    return {
+      windowDays: 30,
+      windowKind: "rolling-instant",
+      techniques: [
+        {
+          techniqueId: "box-breathing",
+          sessionCount: 5,
+          stress: { reportCount: 4, lowerCount: 3, sameCount: 1, higherCount: 0 },
+          perceivedEffect: { reportCount: 5, betterCount: 4, sameCount: 1, worseCount: 0 },
+          dizziness: { reportCount: 5, yesCount: 1 },
+        },
+      ],
+    };
+  }
   if (path === "breathwork.logSession") {
     return {
       id: "story-breathwork-session",
@@ -38,6 +53,10 @@ function resolveOperation(path: string): unknown {
       durationSeconds: 64,
       startedAt: "2026-07-27T12:00:00.000Z",
       notes: null,
+      stressBefore: 7,
+      stressAfter: 3,
+      dizzinessAfter: false,
+      perceivedEffect: "better",
     };
   }
   throw new Error(`Unhandled breathwork story tRPC operation: ${path}`);

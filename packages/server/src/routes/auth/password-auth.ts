@@ -5,13 +5,13 @@ import {
   PasswordResetConfirmSchema,
   PasswordResetRequestSchema,
 } from "@dofek/auth/auth";
-import * as Sentry from "@sentry/node";
 import {
   AccountErasureIdentityFencedError,
   AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
   withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { setSessionCookie } from "../../auth/cookies.ts";
 import { InvalidPasswordError } from "../../auth/password.ts";
@@ -104,7 +104,7 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
       sendAuthError(res, 400, error.message);
       return;
     }
-    Sentry.captureException(error);
+    captureException(error);
     logger.error(`[auth] Password registration failed: ${error}`);
     sendAuthError(res, 500, "Registration failed — please try again");
   }
@@ -149,7 +149,7 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
       sendAuthError(res, 409, error.message);
       return;
     }
-    Sentry.captureException(error);
+    captureException(error);
     logger.error(`[auth] Password login failed: ${error}`);
     sendAuthError(res, 500, "Login failed — please try again");
   }
@@ -168,7 +168,7 @@ export async function handlePasswordResetRequest(req: Request, res: Response): P
     await createPasswordResetToken(getDb(), parsed.data.email);
     res.json({ message: PASSWORD_RESET_REQUEST_MESSAGE });
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     logger.error(`[auth] Password reset request failed: ${error}`);
     sendAuthError(res, 500, "Password reset request failed — please try again");
   }
@@ -188,7 +188,7 @@ export async function handlePasswordResetConfirm(req: Request, res: Response): P
       sendAuthError(res, 400, error.message);
       return;
     }
-    Sentry.captureException(error);
+    captureException(error);
     logger.error(`[auth] Password reset confirmation failed: ${error}`);
     sendAuthError(res, 500, "Password reset failed — please try again");
   }

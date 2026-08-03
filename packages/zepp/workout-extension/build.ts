@@ -39,6 +39,9 @@ await build({
   platform: "neutral",
   target: "es2022",
   format: "esm",
+  define: {
+    DOFEK_COMPANION_CONNECTION_TYPE: JSON.stringify("zepp-workout"),
+  },
   external: ["@zos/*", "@zeppos/*"],
   outdir: "workout-extension",
   allowOverwrite: true,

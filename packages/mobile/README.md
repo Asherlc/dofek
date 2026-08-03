@@ -9,6 +9,7 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Bluetooth Heart-Rate Monitors**: Live heart rate + R-R intervals from any standard Bluetooth heart-rate strap via `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/) (`0x180D`) / Heart Rate Measurement (`0x2A37`) GATT profile. See `../../docs/ble-heart-rate.md`.
 - **Activity Recording**: Real-time GPS and sensor recording for workouts, utilizing native `CoreMotion` and `WatchMotion` modules.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
+- **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
 - **Nutrition Logging**: Rapid meal entry, barcode scanning, and natural-language AI meal input that splits a single message into multiple food items.
 
 See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
@@ -120,10 +121,99 @@ background modes.
 
 Install and launch the resulting
 `.context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app`,
-then verify visible UI, native accessibility targets, app logs, and server logs.
+then complete the SecureStore acceptance check below before inspecting any
+other UI. A successful build or process launch is not an audit-ready result.
 Expo's local production-build guide is the upstream reference for using
 Release configuration locally:
 <https://docs.expo.dev/guides/local-app-production/>.
+
+#### Required SecureStore acceptance check
+
+Use an isolated local API stack with password authentication enabled and a
+simulator reserved for this audit. Start with a simulator whose contents have
+been erased; deleting and reinstalling the app is not sufficient because
+SecureStore uses the iOS keychain, whose values can persist across an app
+uninstall for the same bundle identifier:
+<https://docs.expo.dev/versions/latest/sdk/securestore/#data-persistence>.
+Only erase a simulator after confirming that no other workspace uses its UDID.
+
+Use XcodeBuildMCP for the simulator lifecycle and native accessibility
+snapshots. The repository pins its setup in
+[`docs/mcp.md`](../../docs/mcp.md#local-xcodebuildmcp). Before the first build,
+run, or test action, inspect and set the session defaults to the generated
+workspace, `Dofek` scheme, `Release` configuration, reserved simulator UDID,
+`com.dofek.app` bundle identifier, and `.context/ReleaseAuditDerivedData`.
+Then:
+
+1. Install the exact `Dofek.app` produced by the command above and launch it
+   with XcodeBuildMCP. Retain the launch log path returned by the tool.
+2. Capture a native accessibility snapshot showing the signed Release app's
+   login screen.
+3. Through the production password UI, create a fresh, uniquely named audit
+   account. Do not inject a session token or seed client storage. Account
+   creation calls the production session-save path that writes the returned
+   token to SecureStore.
+4. Wait for the UI to settle, then capture a native accessibility snapshot of
+   the authenticated onboarding screen.
+5. Hard-stop `com.dofek.app` with XcodeBuildMCP. This must terminate the app
+   process, not merely background it, so the in-memory token cache cannot
+   satisfy the next launch.
+6. Launch the same installed artifact again, wait for the UI to settle, and
+   capture a new native accessibility snapshot. It must show an authenticated
+   screen such as onboarding or the `Today` tab, not the login screen.
+7. Inspect both XcodeBuildMCP launch logs and the isolated server logs. There
+   must be no SecureStore, keychain, missing-entitlement, or session-bootstrap
+   error.
+
+The post-termination authenticated screen is the required read proof:
+`AuthProvider` can render it only after the new process restores the session
+token through SecureStore and verifies it with the server. Static signature
+inspection can support the evidence:
+
+```bash
+APP=.context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app
+SIMULATED_ENTITLEMENTS=.context/ReleaseAuditDerivedData/Build/Intermediates.noindex/Dofek.build/Release-iphonesimulator/Dofek.build/Dofek.app-Simulated.xcent
+
+codesign --verify --deep --strict --verbose=2 "$APP"
+plutil -extract application-identifier raw "$SIMULATED_ENTITLEMENTS"
+otool -l "$APP/Dofek" | grep -A3 'sectname __entitlements'
+```
+
+For this ad-hoc Simulator destination, Xcode reports
+`ENTITLEMENTS_DESTINATION=__entitlements` and embeds the generated simulated
+entitlements in the Mach-O `__TEXT,__entitlements` section. Consequently,
+`codesign -d --entitlements :- "$APP"` can display an empty dictionary even
+when the installed Simulator executable contains the application identifier;
+do not use that output alone to diagnose a missing entitlement. Apple's Mach-O
+overview documents the segment and section structure:
+<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/CodeFootprint/Articles/MachOOverview.html>.
+Apple also documents that an app identifier supplies the default keychain
+access group:
+<https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps>.
+
+Static inspection cannot replace the write, hard-stop, relaunch, and read
+sequence. Treat the artifact as **not audit-ready** if registration reports a
+keychain error, the relaunched app returns to login, either native snapshot is
+missing, or the logs contain a SecureStore/keychain failure. Record the
+simulator UDID, artifact path, simulated-entitlement output, both authenticated
+snapshot results, and app/server log paths with the audit evidence.
+
+### Physical-device release gate
+
+The signed Simulator audit validates production-like UI and software-only
+flows, but it does not exercise Dofek's physical-device acceptance scenarios.
+Apple explicitly requires a device for
+[HealthKit observer background delivery](https://developer.apple.com/documentation/healthkit/executing-observer-queries)
+and a physical iPhone and Watch for its
+[Watch Connectivity transfer sample](https://developer.apple.com/documentation/watchconnectivity/transferring-data-with-watch-connectivity);
+the remaining matrix exercises the real hardware boundaries documented by
+[Core Bluetooth](https://developer.apple.com/documentation/corebluetooth),
+[Core Motion](https://developer.apple.com/documentation/coremotion), and
+[AVFoundation camera authorization](https://developer.apple.com/documentation/avfoundation/requesting-authorization-to-capture-and-save-media).
+Before App Store submission or production approval, run the
+[iOS physical-device release audit](../../docs/ios-physical-device-release-audit.md)
+against the exact TestFlight build using the dedicated synthetic-only account
+and hardware described there.
 
 ## Dependency pins
 
@@ -137,6 +227,51 @@ Release configuration locally:
 ## Mobile Telemetry
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
+Exceptions also include the current Expo Router pathname in Sentry, PostHog, and
+OTLP context. UUID and numeric path segments are normalized to `:id`, so route
+context identifies the screen without copying record identifiers into telemetry.
+Production PostHog error autocapture is limited to uncaught exceptions and
+unhandled rejections; handled application failures go through the shared
+`captureException` path so they retain the same route and source context.
+
+Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
+native `App Start` span. The lifecycle attributes time to the Expo
+Updates launch, JavaScript bootstrap, authentication restore, splash dismissal,
+and deferred native-service bootstrap. It also emits the same phase durations
+as structured `app-startup` logs for local Release audits and OTLP correlation.
+Call `Sentry.appLoaded()` only after the splash is dismissed so the native app
+start measurement ends at the first interactive screen, as described by
+[Sentry's React Native custom instrumentation guidance](https://docs.sentry.io/platforms/react-native/tracing/instrumentation/custom-instrumentation/).
+The native OTA duration comes from
+[`Updates.launchDuration`](https://docs.expo.dev/versions/latest/sdk/updates/#updateslaunchduration).
+
+The 2026-07-29 signed Release audit kept the production `ON_LOAD` and 5,000 ms
+fallback policy. Three force-stop launches reached the interactive login screen
+in 713, 968, and 660 ms; a clean reinstall took 864 ms. OTA launch was the
+largest phase at 632–942 ms, while JavaScript, authentication, and splash
+dismissal were each at most 11 ms. Because no controlled launch approached the
+configured fallback, that audit made no launch-policy change. See the
+[incident baseline](../../docs/production-incident-baseline.md#2026-07-29-ios-cold-start-delay-could-not-be-reproduced-with-phase-telemetry)
+for that historical evidence.
+
+A follow-up signed Release audit on 2026-08-02 reproduced the delayed path on a
+dedicated iOS 26.5 Simulator: three force-stop launches took 7.13, 7.12, and
+6.98 seconds to reach JavaScript. The instrumented third launch attributed
+5,015.36 ms to Expo OTA launch, versus 9 ms for JavaScript bootstrap, 6 ms for
+authentication restore, 4 ms for splash dismissal, and 0 ms for deferred
+services. Native/Sentry breadcrumbs showed a successful `/manifest` response
+followed by 43 assets, including a 9,429,201-byte Hermes bundle, while the
+generated `Expo.plist` still set `EXUpdatesLaunchWaitMs` to 5,000 ms.
+
+The production policy now keeps signed OTA checks and `ON_LOAD`, but sets
+`updates.fallbackToCacheTimeout` to `0`. Expo defines this value as the launch
+wait before falling back to the cached update and documents that an update
+downloaded after the wait is applied on the next launch:
+[Expo Updates configuration](https://docs.expo.dev/versions/latest/sdk/updates/).
+This keeps network update delivery off the current launch's critical path while
+preserving code-signature verification. See the
+[follow-up incident baseline](../../docs/production-incident-baseline.md#2026-08-02-ios-cold-start-blocked-by-expo-ota-launch-wait)
+for the evidence and validation.
 
 To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 
@@ -147,6 +282,8 @@ If the collector requires headers, set `EXPO_PUBLIC_OTEL_HEADERS` (for example, 
 Mobile workflows load secrets from Infisical via GitHub OIDC ([`load-infisical-secrets`](../../.github/actions/load-infisical-secrets/action.yml)). Runtime env vars loaded into the app bundle:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
+- `EXPO_PUBLIC_SENTRY_RELEASE` (native release metadata, set by the iOS archive workflow)
+- `EXPO_PUBLIC_SENTRY_DIST` (native distribution metadata, set by the iOS archive workflow)
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS` (optional)
 
@@ -165,3 +302,19 @@ Workflow key requirements:
 - `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+
+Source-map and release correlation:
+
+- The signed iOS archive sets both the Sentry upload variables and the
+  `EXPO_PUBLIC_*` runtime variables from the same deployed commit and generated
+  build number. The Sentry Expo integration uploads the map from that exact
+  native archive during the Xcode build; EAS Build likewise uploads source maps
+  automatically ([Expo's Sentry guide](https://docs.expo.dev/guides/using-sentry/)).
+- The production OTA workflow pins EOAS 2.3.22 and passes its `--dumpSourcemap`
+  option, passes the same commit release into the published JavaScript runtime,
+  and makes the export emit the Hermes source maps; that final `dist` directory
+  is uploaded with
+  `sentry-expo-upload-sourcemaps`. See [EOAS's publishing implementation](https://github.com/axelmarciano/expo-open-ota/tree/main/eoas), [Expo OTA Sentry guidance](https://docs.expo.dev/guides/using-sentry/), and [Expo Hermes source maps](https://docs.expo.dev/guides/using-hermes/).
+- Keep native archive uploads and OTA uploads separate: an OTA map must be
+  uploaded from the export that produced the published update, while native
+  symbols belong to the archive build.

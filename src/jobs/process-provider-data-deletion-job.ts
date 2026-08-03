@@ -1,7 +1,7 @@
 import { TupleParam } from "@clickhouse/client";
-import * as Sentry from "@sentry/node";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   INGEST_DATABASE,
@@ -98,7 +98,7 @@ async function updateProgress(
   await job
     .updateProgress({ ...(percentage === undefined ? {} : { percentage }), message, checkpoint })
     .catch((error: unknown) => {
-      Sentry.captureException(error, { tags: { providerDataDeletionStep: "updateProgress" } });
+      captureException(error, { tags: { providerDataDeletionStep: "updateProgress" } });
       logger.warn(`[provider-data-deletion] Failed to update progress: ${String(error)}`);
     });
 }

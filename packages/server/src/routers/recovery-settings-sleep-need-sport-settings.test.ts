@@ -41,7 +41,8 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
+import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
 import { sleepNeedRouter } from "./sleep-need.ts";
@@ -83,6 +84,10 @@ describe("recoveryRouter", () => {
         return {
           date: rowDate,
           provider_id: String(row.provider_id ?? "apple_health"),
+          timezone: null,
+          start_utc_offset_minutes: 0,
+          end_utc_offset_minutes: 0,
+          local_time_source: "device_offset",
           started_at: hourTimestamp(rowDate, bedtimeHour),
           ended_at: hourTimestamp(rowDate, waketimeHour),
           duration_minutes: durationMinutes,
@@ -91,6 +96,7 @@ describe("recoveryRouter", () => {
           light_minutes: durationMinutes,
           awake_minutes: 0,
           efficiency_pct: null,
+          staging_available: Boolean(row.staging_available ?? true),
         };
       }
 
@@ -106,6 +112,10 @@ describe("recoveryRouter", () => {
       return {
         date: String(row.date ?? today),
         provider_id: String(row.provider_id ?? "apple_health"),
+        timezone: null,
+        start_utc_offset_minutes: 0,
+        end_utc_offset_minutes: 0,
+        local_time_source: "device_offset",
         started_at: `${String(row.date ?? today)}T04:00:00Z`,
         ended_at: `${String(row.date ?? today)}T12:00:00Z`,
         duration_minutes: durationMinutes,
@@ -114,6 +124,7 @@ describe("recoveryRouter", () => {
         light_minutes: lightMinutes,
         awake_minutes: awakeMinutes,
         efficiency_pct: row.efficiency ?? row.efficiency_pct ?? null,
+        staging_available: Boolean(row.staging_available ?? true),
       };
     });
   }
@@ -454,6 +465,7 @@ describe("recoveryRouter", () => {
           rhr_sd_30d: null,
           rr_mean_30d: 15,
           rr_sd_30d: 1,
+          respiratory_rate_z_score: -1,
           efficiency_pct: null,
         },
       ];
@@ -623,6 +635,33 @@ describe("settingsRouter", () => {
     });
   });
 
+  describe("deleteAllUserData", () => {
+    it("deletes provider and user-scoped data in one transaction", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+
+      const caller = createCaller({
+        db: { execute: vi.fn(), transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteAllUserData();
+      expect(result).toEqual({ success: true });
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      const deleteQueries = txExecute.mock.calls.filter(([query]) =>
+        JSON.stringify(Reflect.get(query, "queryChunks") ?? []).includes("DELETE FROM"),
+      );
+      expect(deleteQueries).toHaveLength(PROVIDER_ACCOUNT_TABLES.length + 6);
+      expectCallsUseNonEmptySql(txExecute);
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    });
+  });
+
   describe("slackStatus", () => {
     const slackEnvKeys = [
       "SLACK_CLIENT_ID",
@@ -759,7 +798,7 @@ describe("sleepNeedRouter", () => {
   const createCaller = createTestCallerFactory(sleepNeedRouter);
 
   describe("calculate", () => {
-    it("returns default baseline when insufficient data", async () => {
+    it("returns an unavailable legacy recommendation when insufficient data", async () => {
       const rows = [
         {
           date: "2024-01-15",
@@ -768,6 +807,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -776,10 +816,14 @@ describe("sleepNeedRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore(rows),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480); // default 8hr
-      expect(result.totalNeedMinutes).toBeGreaterThanOrEqual(480);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
     it("computes personalized baseline from good nights", async () => {
@@ -792,6 +836,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: 60,
           good_recovery: true,
           yesterday_load: 50,
+          staging_available: false,
         });
       }
       const hrvRows = rows.map((row) => {
@@ -818,36 +863,36 @@ describe("sleepNeedRouter", () => {
             light_minutes: row.duration_minutes,
             awake_minutes: 0,
             efficiency_pct: null,
+            staging_available: false,
           })),
         ]),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2024-01-21" });
 
+      expect(result).not.toBeNull();
+      if (result === null) throw new Error("Expected personalized sleep need");
       expect(result.baselineMinutes).toBe(460);
       expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
       expect(result.recentNights).toHaveLength(7);
     });
 
-    it("handles empty data", async () => {
+    it("handles empty data with an unavailable legacy recommendation", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480);
-      expect(result.recentNights).toHaveLength(7);
-      // All 7 nights should be null (calendar-based)
-      for (const night of result.recentNights) {
-        expect(night.actualMinutes).toBeNull();
-        expect(night.debtMinutes).toBeNull();
-      }
-      expect(result.canRecommend).toBe(false);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("always returns exactly 7 recent nights even with sparse data", async () => {
+    it("returns an unavailable legacy recommendation for sparse data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -857,6 +902,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: 55,
           good_recovery: true,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -867,15 +913,33 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
       expect(result.recentNights).toHaveLength(7);
-      // 6 nights should have null actualMinutes, 1 should have data
-      const withData = result.recentNights.filter((n) => n.actualMinutes !== null);
-      const withoutData = result.recentNights.filter((n) => n.actualMinutes === null);
-      expect(withData).toHaveLength(1);
+      const withData = result.recentNights.filter((night) => night.actualMinutes !== null);
+      const withoutData = result.recentNights.filter((night) => night.actualMinutes === null);
+      expect(withData).toEqual([
+        expect.objectContaining({
+          date: "2026-03-14",
+          actualMinutes: 420,
+          neededMinutes: 480,
+          debtMinutes: 60,
+        }),
+      ]);
       expect(withoutData).toHaveLength(6);
+      for (const night of withoutData) {
+        expect(night).toMatchObject({
+          actualMinutes: null,
+          neededMinutes: 480,
+          debtMinutes: null,
+        });
+      }
     });
 
-    it("sets canRecommend=true when yesterday has sleep data", async () => {
+    it("keeps the legacy recommendation unavailable when the baseline is insufficient", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -885,6 +949,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -895,10 +960,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.canRecommend).toBe(true);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("sets canRecommend=false when yesterday has no sleep data", async () => {
+    it("keeps the legacy recommendation unavailable when yesterday has no sleep data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
       const rows = [
         {
@@ -908,6 +977,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -918,10 +988,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.canRecommend).toBe(false);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("shows null nights with neededMinutes still set", async () => {
+    it("returns the legacy fallback shape without sleep data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -930,7 +1004,12 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Even null nights should have neededMinutes (the baseline)
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        totalNeedMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
       for (const night of result.recentNights) {
         expect(night.neededMinutes).toBe(480);
       }

@@ -159,6 +159,14 @@ export async function confirmPasswordReset(token: string, password: string): Pro
 
 /** Log the user out. */
 export async function logout(): Promise<void> {
-  await fetch("/auth/logout", { method: "POST", credentials: "include" });
+  const response = await fetch("/auth/logout", { method: "POST", credentials: "include" });
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(response, `Logout failed: ${response.status} ${response.statusText}`),
+    );
+  }
+}
+
+export function redirectToLogin(): void {
   window.location.href = "/login";
 }

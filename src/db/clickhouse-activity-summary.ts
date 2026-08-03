@@ -90,7 +90,8 @@ SELECT
   normalized_power,
   smoothed_avg_power,
   climbing_elevation_gain_m,
-  climbing_seconds
+  climbing_seconds,
+  refreshed_at
 FROM analytics.activity_summary_rows FINAL
 WHERE is_deleted = 0`;
 }

@@ -14,13 +14,13 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { captureException } from "@sentry/node";
 import {
   AccountErasureUserFencedError,
   withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
 import { runWithTokenUser } from "dofek/db/token-user-context";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
+import { captureException } from "dofek/lib/error-reporting";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { Router, raw } from "express";

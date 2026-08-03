@@ -1,3 +1,6 @@
+import type { ActivityDataState } from "@dofek/format/activity-data-state";
+import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import type { ActivitySource } from "./activity-source.ts";
 import {
   ActivitySourceAttribution,
@@ -26,21 +29,33 @@ export interface ActivityDetail {
   name: string | null;
   notes: string | null;
   providerId: string;
+  localTimeContext: RecordLocalTimeContext;
   subsource: string | null;
   sourceProviders: string[];
   sourceLinks: SourceLink[];
   sourceDecision: ActivitySourceDecisionDetail | null;
   avgHr: number | null;
+  avgHrState: ActivityDataState;
   maxHr: number | null;
+  maxHrState: ActivityDataState;
   avgPower: number | null;
+  avgPowerState: ActivityDataState;
   maxPower: number | null;
+  maxPowerState: ActivityDataState;
   avgSpeed: number | null;
+  avgSpeedState: ActivityDataState;
   maxSpeed: number | null;
+  maxSpeedState: ActivityDataState;
   avgCadence: number | null;
+  avgCadenceState: ActivityDataState;
   totalDistance: number | null;
+  totalDistanceState: ActivityDataState;
   elevationGain: number | null;
+  elevationGainState: ActivityDataState;
   elevationLoss: number | null;
+  elevationLossState: ActivityDataState;
   sampleCount: number | null;
+  sampleCountState: ActivityDataState;
   providerAbsentAt: string | null;
 }
 
@@ -52,6 +67,10 @@ export interface ActivityRow {
   name: string | null;
   notes: string | null;
   provider_id: string;
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source: RecordLocalTimeContext["source"];
   subsource: string | null;
   source_providers: string[] | null;
   source_external_ids: Array<SourceExternalIdEntry> | null;
@@ -111,6 +130,15 @@ export class Activity {
 
   get providerId(): string {
     return String(this.#row.provider_id);
+  }
+
+  get localTimeContext(): RecordLocalTimeContext {
+    return {
+      timezone: this.#row.timezone,
+      startUtcOffsetMinutes: this.#row.start_utc_offset_minutes,
+      endUtcOffsetMinutes: this.#row.end_utc_offset_minutes,
+      source: this.#row.local_time_source,
+    };
   }
 
   get subsource(): string | null {
@@ -188,6 +216,7 @@ export class Activity {
       name: this.name,
       notes: this.notes,
       providerId: this.providerId,
+      localTimeContext: this.localTimeContext,
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks,
@@ -198,16 +227,27 @@ export class Activity {
         this.#lookupProvider,
       ),
       avgHr: this.avgHr,
+      avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,
+      maxHrState: activityMeasurementState("Maximum heart rate", this.maxHr),
       avgPower: this.avgPower,
+      avgPowerState: activityMeasurementState("Average power", this.avgPower),
       maxPower: this.maxPower,
+      maxPowerState: activityMeasurementState("Maximum power", this.maxPower),
       avgSpeed: this.avgSpeed,
+      avgSpeedState: activityMeasurementState("Average speed", this.avgSpeed),
       maxSpeed: this.maxSpeed,
+      maxSpeedState: activityMeasurementState("Maximum speed", this.maxSpeed),
       avgCadence: this.avgCadence,
+      avgCadenceState: activityMeasurementState("Average cadence", this.avgCadence),
       totalDistance: this.totalDistance,
+      totalDistanceState: activityMeasurementState("Distance", this.totalDistance),
       elevationGain: this.elevationGain,
+      elevationGainState: activityMeasurementState("Elevation gain", this.elevationGain),
       elevationLoss: this.elevationLoss,
+      elevationLossState: activityMeasurementState("Elevation loss", this.elevationLoss),
       sampleCount: this.sampleCount,
+      sampleCountState: activityMeasurementState("Sample count", this.sampleCount),
       providerAbsentAt: this.providerAbsentAt,
     };
   }

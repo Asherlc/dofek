@@ -18,7 +18,7 @@ describe("formatSleepProvenance", () => {
       }),
     ).toEqual({
       primary: "Apple Health · Apple Watch",
-      alsoFrom: "Whoop",
+      alsoFrom: "WHOOP (Cloud)",
     });
   });
 
@@ -30,7 +30,7 @@ describe("formatSleepProvenance", () => {
         source_providers: ["whoop"],
       }),
     ).toEqual({
-      primary: "Whoop",
+      primary: "WHOOP (Cloud)",
       alsoFrom: null,
     });
   });

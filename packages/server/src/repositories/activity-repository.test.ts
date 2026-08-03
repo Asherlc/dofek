@@ -79,15 +79,29 @@ describe("StreamPoint", () => {
 describe("ActivityRepository", () => {
   const dialect = new PgDialect();
 
+  function withUnknownLocalTimeContext(rows: Record<string, unknown>[]) {
+    return rows.map((row) =>
+      "activity_type" in row
+        ? {
+            timezone: null,
+            start_utc_offset_minutes: null,
+            end_utc_offset_minutes: null,
+            local_time_source: "unknown",
+            ...row,
+          }
+        : row,
+    );
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(rows));
     const database = { execute };
     const repo = new ActivityRepository(database, "user-1", "UTC");
     return { repo, execute };
   }
 
   function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(postgresRows);
+    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(postgresRows));
     const database = { execute };
     const sensorStore = {
       query: vi.fn().mockResolvedValue([]),
@@ -180,6 +194,26 @@ describe("ActivityRepository", () => {
         "2026-03-10",
         "America/Los_Angeles",
         "2026-03-17",
+        "America/Los_Angeles",
+      ]);
+    });
+
+    it("listVisibleActivityIdsInRange applies an exclusive local-date end", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles");
+
+      await expect(repo.listVisibleActivityIdsInRange("2026-02-01", "2026-03-01")).resolves.toEqual(
+        ["activity-1"],
+      );
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
+      expect(compiledQuery.sql).toContain("started_at < ($4::date AT TIME ZONE $5)");
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "2026-02-01",
+        "America/Los_Angeles",
+        "2026-03-01",
         "America/Los_Angeles",
       ]);
     });
@@ -293,6 +327,10 @@ describe("ActivityRepository", () => {
       expect(result.totalCount).toBe(1);
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty("id", "abc-123");
+      expect(result.items[0]).toHaveProperty("distance_state", {
+        status: "missing",
+        reason: "Distance not recorded",
+      });
     });
 
     it("returns items and totalCount", async () => {
@@ -366,6 +404,8 @@ describe("ActivityRepository", () => {
         max_hr: 171,
         avg_power: 220,
         distance_meters: 42000,
+        elevation_gain_m: 610,
+        elevation_state: { status: "available" },
       });
       expect(result.items[0]).not.toHaveProperty("member_activity_ids");
     });
@@ -414,9 +454,59 @@ describe("ActivityRepository", () => {
           centroidLat: 37.7749,
           centroidLng: -122.4194,
           mapPreview: osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]),
-          distanceMeters: 5000,
-          elevationGainM: 120,
         },
+        distance_meters: 5000,
+        distance_state: { status: "available" },
+        elevation_gain_m: 120,
+        elevation_state: { status: "available" },
+      });
+    });
+
+    it("keeps elevation value and state when a summary has no centroid", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "route-less-activity",
+          activity_type: "strength",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Strength Session",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          member_activity_ids: [],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "route-less-activity",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: 0,
+          elevation_gain_m: 0,
+          elevation_loss_m: null,
+          sample_count: 0,
+          centroid_lat: null,
+          centroid_lng: null,
+        },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(result.items[0]).toMatchObject({
+        location: null,
+        distance_meters: 0,
+        distance_state: { status: "available" },
+        elevation_gain_m: 0,
+        elevation_state: { status: "available" },
       });
     });
 
@@ -592,6 +682,79 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("search and listRange", () => {
+    it("search returns the public distance state for a missing measurement", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "search-activity",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Morning Run",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.search({
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+        query: "Morning",
+        limit: 20,
+      });
+
+      expect(result).toEqual({
+        totalCount: 1,
+        items: [
+          expect.objectContaining({
+            id: "search-activity",
+            distance_meters: null,
+            distance_state: {
+              status: "missing",
+              reason: "Distance not recorded",
+            },
+          }),
+        ],
+      });
+      expect(result.items[0]).not.toHaveProperty("total_count");
+    });
+
+    it("listRange preserves a recorded zero and emits an available distance state", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "zero-distance-activity",
+          activity_type: "strength",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Strength Session",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: 0,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.listRange("2024-01-01", "2024-01-31", ["strength"]);
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: "zero-distance-activity",
+          distance_meters: 0,
+          distance_state: { status: "available" },
+        }),
+      ]);
+      expect(result[0]).not.toHaveProperty("total_count");
+    });
+  });
+
   describe("findById", () => {
     it("returns null when not found", async () => {
       const { repo } = makeRepositoryWithSensorStore([]);
@@ -609,6 +772,10 @@ describe("ActivityRepository", () => {
             activity_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
             ended_at: "2024-01-15T10:45:00.000Z",
+            timezone: null,
+            start_utc_offset_minutes: null,
+            end_utc_offset_minutes: null,
+            local_time_source: "unknown",
             name: "Deleted Run",
             notes: null,
             provider_id: "strava",

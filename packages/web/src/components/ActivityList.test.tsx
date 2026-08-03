@@ -56,12 +56,13 @@ describe("ActivityList", () => {
       provider_id: "strava",
       source_providers: ["strava"],
       distance_meters: 5000,
+      distance_state: { status: "available" },
+      elevation_gain_m: 120,
+      elevation_state: { status: "available" },
       location: {
         centroidLat: 37.7749,
         centroidLng: -122.4194,
         mapPreview,
-        distanceMeters: 5000,
-        elevationGainM: 120,
       },
     },
   ];
@@ -127,8 +128,6 @@ describe("ActivityList", () => {
                   { x: 305.85, y: 359.36 },
                 ],
               },
-              distanceMeters: 5000,
-              elevationGainM: 120,
             },
           },
         ]}
@@ -151,6 +150,9 @@ describe("ActivityList", () => {
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 
@@ -178,24 +180,28 @@ describe("ActivityList", () => {
     });
   });
 
-  it("toggles selected activities instead of navigating in select mode", () => {
+  it("explains bulk deletion and exposes the selected count as a status", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
 
-    fireEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("status")).toHaveTextContent("0 activities selected");
     const row = screen.getByText("Morning Run").closest("tr");
     if (!row) throw new Error("Row not found");
     fireEvent.click(row);
 
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByRole("status")).toHaveTextContent("1 activity selected");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status").getAttribute("aria-atomic")).toBe("true");
   });
 
   it("confirms bulk delete with selected ids", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
 
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Morning Run"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -218,6 +224,17 @@ describe("ActivityList", () => {
   it("shows empty state when no activities", () => {
     renderWithUnits(<ActivityList activities={[]} />);
     expect(screen.getByText("No recent activities")).toBeDefined();
+  });
+
+  it("shows a scoped empty-state message when provided", () => {
+    renderWithUnits(
+      <ActivityList
+        activities={[]}
+        emptyMessage="No strength workouts in the selected 30-day range."
+      />,
+    );
+    expect(screen.getByText("No strength workouts in the selected 30-day range.")).toBeDefined();
+    expect(screen.queryByText("No recent activities")).toBeNull();
   });
 
   it("shows error message when error prop is set", () => {
@@ -244,12 +261,36 @@ describe("ActivityList", () => {
         provider_id: "apple",
         source_providers: ["apple"],
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
     renderWithUnits(<ActivityList activities={activityWithoutStats} />);
-    // Should show the dash/placeholder
-    const cells = screen.getAllByText("—");
-    expect(cells.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Distance unavailable: Distance not recorded")).toBeDefined();
+  });
+
+  it("keeps a recorded zero distance distinct from a missing distance", () => {
+    const zeroDistanceActivity: Activity[] = [
+      {
+        id: "zero-distance",
+        started_at: "2026-03-18T08:00:00Z",
+        ended_at: "2026-03-18T08:30:00Z",
+        activity_type: "walking",
+        name: "Stationary Walk",
+        provider_id: "apple",
+        source_providers: ["apple"],
+        distance_meters: 0,
+        distance_state: { status: "available" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
+      },
+    ];
+
+    renderWithUnits(<ActivityList activities={zeroDistanceActivity} />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
   });
 
   it("uses placeholders when timestamps are invalid", () => {
@@ -263,6 +304,9 @@ describe("ActivityList", () => {
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 

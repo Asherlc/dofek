@@ -168,10 +168,23 @@ altitude_deltas AS (
 elevation_per_activity AS (
   SELECT
     activity_id,
-    CAST(sum(if(altitude - prev_altitude > 0, altitude - prev_altitude, 0)), 'Nullable(Float64)') AS elevation_gain_m,
-    CAST(sum(if(altitude - prev_altitude < 0, abs(altitude - prev_altitude), 0)), 'Nullable(Float64)') AS elevation_loss_m
+    CAST(
+      sum(if(
+        isNotNull(prev_altitude) AND altitude - prev_altitude > 0,
+        altitude - prev_altitude,
+        0
+      )),
+      'Nullable(Float64)'
+    ) AS elevation_gain_m,
+    CAST(
+      sum(if(
+        isNotNull(prev_altitude) AND altitude - prev_altitude < 0,
+        abs(altitude - prev_altitude),
+        0
+      )),
+      'Nullable(Float64)'
+    ) AS elevation_loss_m
   FROM altitude_deltas
-  WHERE prev_altitude IS NOT NULL
   GROUP BY activity_id
 ),
 gps_points AS (
@@ -397,7 +410,7 @@ SELECT
      NULL) AS elevation_gain_legacy,
   if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'),
      CAST(0, 'Nullable(Float64)'),
-     coalesce(distance_per_activity.total_distance, CAST(0, 'Nullable(Float64)'))) AS total_distance,
+     distance_per_activity.total_distance) AS total_distance,
   location_centroids.centroid_lat AS centroid_lat,
   location_centroids.centroid_lng AS centroid_lng,
   channel_aggs.avg_left_balance AS avg_left_balance,
@@ -405,8 +418,8 @@ SELECT
   channel_aggs.avg_right_torque_eff AS avg_right_torque_eff,
   channel_aggs.avg_left_pedal_smooth AS avg_left_pedal_smooth,
   channel_aggs.avg_right_pedal_smooth AS avg_right_pedal_smooth,
-  coalesce(elevation_per_activity.elevation_gain_m, CAST(0, 'Nullable(Float64)')) AS elevation_gain_m,
-  coalesce(elevation_per_activity.elevation_loss_m, CAST(0, 'Nullable(Float64)')) AS elevation_loss_m,
+  elevation_per_activity.elevation_gain_m AS elevation_gain_m,
+  elevation_per_activity.elevation_loss_m AS elevation_loss_m,
   channel_aggs.avg_stance_time AS avg_stance_time,
   channel_aggs.avg_vertical_osc AS avg_vertical_osc,
   channel_aggs.avg_ground_contact_time AS avg_ground_contact_time,
@@ -420,7 +433,8 @@ SELECT
   power_variability_per_activity.normalized_power AS normalized_power,
   power_variability_per_activity.smoothed_avg_power AS smoothed_avg_power,
   climbing_per_activity.climbing_elevation_gain_m AS climbing_elevation_gain_m,
-  climbing_per_activity.climbing_seconds AS climbing_seconds
+  climbing_per_activity.climbing_seconds AS climbing_seconds,
+  now64(9) AS refreshed_at
 FROM activity_bounds
 LEFT JOIN channel_aggs
   ON channel_aggs.activity_id = activity_bounds.activity_id

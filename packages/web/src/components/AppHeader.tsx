@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../lib/auth-context.tsx";
+import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
 const navItems = [
   { to: "/dashboard", label: "Overview" },
+  { to: "/data-quality", label: "Data quality" },
   { to: "/training", label: "Training" },
   { to: "/activities", label: "Activities" },
   { to: "/sleep", label: "Sleep" },
@@ -14,6 +16,7 @@ const navItems = [
   { to: "/experiments", label: "Experiments" },
   { to: "/tracking", label: "Tracking" },
   { to: "/health-report", label: "Reports" },
+  { to: "/more", label: "More" },
 ] as const;
 
 const adminNavItems = [...navItems, { to: "/admin", label: "Admin" }] as const;
@@ -25,10 +28,10 @@ const desktopActiveLinkClass =
   "block rounded-md px-3 py-2 text-sm font-semibold bg-accent/10 text-foreground";
 
 const mobileLinkClass =
-  "rounded-md px-3 py-2 text-xs font-medium text-muted transition-colors hover:bg-accent/10 hover:text-foreground whitespace-nowrap";
+  "block rounded-md px-3 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent/10 hover:text-foreground";
 
 const mobileActiveLinkClass =
-  "rounded-md px-3 py-2 text-xs font-semibold bg-accent/10 text-foreground whitespace-nowrap";
+  "block rounded-md px-3 py-2.5 text-sm font-semibold bg-accent/10 text-foreground";
 
 export function AppHeader({
   children,
@@ -39,9 +42,25 @@ export function AppHeader({
 }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const firstDesktopLinkRef = useRef<HTMLAnchorElement | null>(null);
+  const firstMobileLinkRef = useRef<HTMLAnchorElement | null>(null);
   const mobileNavigationId = "app-mobile-navigation";
 
   const items = user?.isAdmin ? adminNavItems : navItems;
+
+  useEffect(() => {
+    const desktopMediaQuery = window.matchMedia("(min-width: 64rem)");
+    const closeAtDesktopBreakpoint = () => {
+      if (!desktopMediaQuery.matches) return;
+      setMenuOpen(false);
+      window.requestAnimationFrame(() => firstDesktopLinkRef.current?.focus());
+    };
+
+    desktopMediaQuery.addEventListener("change", closeAtDesktopBreakpoint);
+    return () => {
+      desktopMediaQuery.removeEventListener("change", closeAtDesktopBreakpoint);
+    };
+  }, []);
 
   return (
     <>
@@ -72,7 +91,7 @@ export function AppHeader({
               </svg>
             </button>
             <DofekLogo />
-            <h1 className="text-lg font-semibold tracking-tight shrink-0">Dofek</h1>
+            <span className="text-lg font-semibold tracking-tight shrink-0">Dofek</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <AlertLink activeCount={activeAlertCount} compact />
@@ -88,27 +107,45 @@ export function AppHeader({
             )}
           </div>
         </div>
-        {menuOpen && (
-          <nav
-            id={mobileNavigationId}
-            className="px-3 pb-3 flex flex-wrap gap-1 nav-slide-enter"
-            aria-label="Mobile"
-          >
-            {items.map(({ to, label }) => (
-              <Link
-                key={to}
-                to={to}
-                onClick={() => setMenuOpen(false)}
-                className={mobileLinkClass}
-                activeProps={{ className: mobileActiveLinkClass }}
-                activeOptions={{ exact: to === "/dashboard" }}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-        )}
       </header>
+
+      <ModalDialog
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        closeOnInteractOutside
+        initialFocusRef={firstMobileLinkRef}
+        overlayClassName="bg-black/45 backdrop-blur-sm lg:hidden"
+        contentClassName="!left-0 !right-0 !top-0 !translate-x-0 !translate-y-0 w-full max-h-dvh overflow-y-auto overscroll-contain border-b border-border-strong bg-surface-solid p-3 shadow-2xl lg:hidden"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+          <ModalDialogTitle className="text-base font-semibold text-foreground">
+            Navigation
+          </ModalDialogTitle>
+          <button
+            type="button"
+            onClick={() => setMenuOpen(false)}
+            className="rounded-md border border-border px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/10"
+            aria-label="Close navigation menu"
+          >
+            Close
+          </button>
+        </div>
+        <nav id={mobileNavigationId} className="mt-3 flex flex-col gap-1" aria-label="Mobile">
+          {items.map(({ to, label }, index) => (
+            <Link
+              key={to}
+              ref={index === 0 ? firstMobileLinkRef : undefined}
+              to={to}
+              onClick={() => setMenuOpen(false)}
+              className={mobileLinkClass}
+              activeProps={{ className: mobileActiveLinkClass }}
+              activeOptions={{ exact: to === "/dashboard" }}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+      </ModalDialog>
 
       <aside
         aria-label="Primary navigation"
@@ -116,13 +153,14 @@ export function AppHeader({
       >
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <DofekLogo />
-          <h1 className="text-lg font-semibold tracking-tight shrink-0">Dofek</h1>
+          <span className="text-lg font-semibold tracking-tight shrink-0">Dofek</span>
         </div>
 
         <nav className="mt-8 flex flex-col gap-1" aria-label="Sections">
-          {items.map(({ to, label }) => (
+          {items.map(({ to, label }, index) => (
             <Link
               key={to}
+              ref={index === 0 ? firstDesktopLinkRef : undefined}
               to={to}
               className={desktopLinkClass}
               activeProps={{ className: desktopActiveLinkClass }}

@@ -1,5 +1,11 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
+import {
+  monthlyReportEmptyState,
+  monthlyReportEmptyStateSchema,
+  weeklyReportEmptyState,
+  weeklyReportEmptyStateSchema,
+} from "dofek-server/report-empty-state";
 import { useState } from "react";
 import { z } from "zod";
 import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
@@ -47,9 +53,32 @@ const weekSummarySchema = z.object({
   avgHrv: z.number().nullable(),
 });
 
+const decisionSupportItemSchema = z.string().trim().min(1);
+const reportDecisionSynthesisSchema = z.object({
+  whatChanged: z.array(decisionSupportItemSchema),
+  likelyAssociations: z.array(decisionSupportItemSchema),
+  whatWorked: z.array(decisionSupportItemSchema),
+  whatToTryNext: z.array(decisionSupportItemSchema),
+  confidenceAndMissingData: z.array(decisionSupportItemSchema),
+});
+
+const reportRecoverySchema = z.object({
+  range: z.object({
+    startDate: z.string(),
+    endDate: z.string(),
+  }),
+  emptyMessage: z.string(),
+});
+
+const weeklyReportRecoverySchema = reportRecoverySchema;
+const monthlyReportRecoverySchema = reportRecoverySchema;
+
 const weeklyReportSchema = z.object({
   current: weekSummarySchema.nullable(),
   history: z.array(weekSummarySchema),
+  decisionSupport: reportDecisionSynthesisSchema.nullable(),
+  emptyState: weeklyReportEmptyStateSchema.optional(),
+  recovery: weeklyReportRecoverySchema.optional(),
 });
 
 const monthSummarySchema = z.object({
@@ -67,6 +96,9 @@ const monthSummarySchema = z.object({
 const monthlyReportSchema = z.object({
   current: monthSummarySchema.nullable(),
   history: z.array(monthSummarySchema),
+  decisionSupport: reportDecisionSynthesisSchema.nullable(),
+  emptyState: monthlyReportEmptyStateSchema.optional(),
+  recovery: monthlyReportRecoverySchema.optional(),
 });
 const REPORT_PAGE_SIZE = 20;
 
@@ -121,9 +153,16 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "weekly") {
     const parsedReport = weeklyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
-          <WeeklyReportCard data={parsedReport.data} />
+          <WeeklyReportCard
+            data={{
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
+              emptyState: reportData.emptyState ?? weeklyReportEmptyState,
+            }}
+          />
         </SharedReportShell>
       );
     }
@@ -132,9 +171,16 @@ function SharedHealthReport({ token }: { token: string }) {
   if (report.data.reportType === "monthly") {
     const parsedReport = monthlyReportSchema.safeParse(report.data.reportData);
     if (parsedReport.success) {
+      const { recovery: _recovery, ...reportData } = parsedReport.data;
       return (
         <SharedReportShell>
-          <MonthlyReportContent data={parsedReport.data} />
+          <MonthlyReportContent
+            data={{
+              ...reportData,
+              decisionSupport: reportData.decisionSupport ?? null,
+              emptyState: reportData.emptyState ?? monthlyReportEmptyState,
+            }}
+          />
         </SharedReportShell>
       );
     }

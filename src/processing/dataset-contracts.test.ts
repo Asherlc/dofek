@@ -12,11 +12,27 @@ import {
 
 describe("dataset contracts", () => {
   it("assigns every production dbt model exactly once", () => {
-    expect(PRODUCTION_DBT_MODELS).toHaveLength(38);
+    expect(PRODUCTION_DBT_MODELS).toHaveLength(39);
     expect(() => validateDatasetContracts(DATASET_CONTRACTS, PRODUCTION_DBT_MODELS)).not.toThrow();
 
     const assignedModels = DATASET_CONTRACTS.flatMap((contract) => contract.analyticsModels);
     expect(assignedModels.sort()).toEqual([...PRODUCTION_DBT_MODELS].sort());
+  });
+
+  it("runs daily provider metric counts before provider stats", () => {
+    const dailyIndex = PRODUCTION_DBT_MODELS.indexOf("provider_metric_stream_daily");
+    const watermarkIndex = PRODUCTION_DBT_MODELS.indexOf("provider_change_watermark");
+    const providerStatsIndex = PRODUCTION_DBT_MODELS.indexOf("provider_stats");
+
+    expect(dailyIndex).toBe(watermarkIndex - 1);
+    expect(providerStatsIndex).toBe(watermarkIndex + 1);
+
+    const providers = DATASET_CONTRACTS.find((contract) => contract.key === "providers");
+    expect(providers?.analyticsModels).toEqual([
+      "provider_metric_stream_daily",
+      "provider_change_watermark",
+      "provider_stats",
+    ]);
   });
 
   it("rejects a duplicate output path", () => {

@@ -114,6 +114,17 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.activity` | Any timed activity (type, times, raw JSONB summary from provider) |
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
+| `fitness.finger_loading_entry` | Manual finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values |
+| `fitness.climbing_entry` | Imported aggregate climbs or manual climb definitions, including grade, wall angle, hold type, route, and location |
+| `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a manual climb |
+
+Manual climbing entries leave the legacy aggregate `sent` and `attempt_count`
+columns null. Serving queries derive those values from `climbing_attempt`; imported
+provider rows retain their provider-supplied aggregates. Finger-loading effective
+load is likewise derived as bodyweight plus signed external load and is never
+stored separately. Database constraints keep each outcome/failure-reason pair
+consistent using PostgreSQL check constraints
+([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
 
 ### Daily Metrics
 
@@ -150,7 +161,7 @@ tables through ClickHouse replication.
 |-------|---------|
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
-| `fitness.sleep_session` | Sleep sessions with stage breakdown |
+| `fitness.sleep_session` | Sleep sessions with nullable provider-reported measurements and an explicit `staging_available` quality flag; see the [historical repair runbook](sleep-quality-backfill-runbook.md) |
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
 | `fitness.supplement` | Stable per-user supplement schedule identity, ownership, and display order |

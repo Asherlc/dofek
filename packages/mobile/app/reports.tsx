@@ -4,10 +4,14 @@ import {
   formatHRV,
   formatMonthYear,
 } from "@dofek/format/format";
+import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../components/Card";
+import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { HealthReportShareButton } from "../components/HealthReportShareButton";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { ReportDecisionSynthesis } from "../components/ReportDecisionSynthesis";
+import { ReportRecoveryPanel } from "../components/ReportRecoveryPanel";
 import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors, spacing } from "../theme";
@@ -17,6 +21,7 @@ const REPORT_MONTHS = 6;
 
 export default function ReportsScreen() {
   const endDate = useTodayQueryDate();
+  const router = useRouter();
   const weeklyReport = trpc.weeklyReport.report.useQuery(
     {
       weeks: REPORT_WEEKS,
@@ -25,16 +30,19 @@ export default function ReportsScreen() {
     { retry: false },
   );
   const monthlyReport = trpc.monthlyReport.report.useQuery(
-    { months: REPORT_MONTHS },
+    { months: REPORT_MONTHS, endDate },
     { retry: false },
   );
+  const reviewData = () => {
+    router.push("/alerts");
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.intro}>
         <Text style={styles.title}>Health Reports</Text>
         <Text style={styles.subtitle}>
-          Create shareable snapshots from the health data calculated by Dofek.
+          See what changed, what the data suggests, and what to compare next.
         </Text>
       </View>
 
@@ -48,37 +56,73 @@ export default function ReportsScreen() {
           ) : null}
         </View>
         {weeklyReport.error && !weeklyReport.data ? (
-          <QueryStatePanel variant="error" message={getQueryErrorMessage(weeklyReport.error)} />
-        ) : weeklyReport.isLoading ? (
+          <ReportRecoveryPanel
+            message={getQueryErrorMessage(weeklyReport.error)}
+            onRetry={() => {
+              void weeklyReport.refetch();
+            }}
+            onReviewData={reviewData}
+            retrying={weeklyReport.isFetching}
+          />
+        ) : weeklyReport.isLoading && !weeklyReport.data ? (
           <QueryStatePanel variant="loading" />
+        ) : weeklyReport.data?.recovery &&
+          !weeklyReport.data.current &&
+          weeklyReport.data.history.length === 0 ? (
+          <ReportRecoveryPanel
+            message={weeklyReport.data.recovery.emptyMessage}
+            onRetry={() => {
+              void weeklyReport.refetch();
+            }}
+            onReviewData={reviewData}
+            retrying={weeklyReport.isFetching}
+          />
         ) : weeklyReport.data?.current ? (
-          <Card>
-            <Text style={styles.periodLabel}>
-              Week of {formatDateShort(weeklyReport.data.current.weekStart)}
-            </Text>
-            <View style={styles.metricGrid}>
-              <ReportMetric
-                label="Training"
-                value={formatDurationMinutes(weeklyReport.data.current.trainingHours * 60)}
+          <View style={styles.reportContent}>
+            {weeklyReport.error ? (
+              <ReportRecoveryPanel
+                message={getQueryErrorMessage(weeklyReport.error)}
+                onRetry={() => {
+                  void weeklyReport.refetch();
+                }}
+                onReviewData={reviewData}
+                preserved
+                retrying={weeklyReport.isFetching}
               />
-              <ReportMetric
-                label="Activities"
-                value={`${weeklyReport.data.current.activityCount}`}
-              />
-              <ReportMetric
-                label="Avg nightly sleep"
-                value={
-                  weeklyReport.data.current.avgSleepMinutes > 0
-                    ? formatDurationMinutes(weeklyReport.data.current.avgSleepMinutes)
-                    : "Not tracked"
-                }
-              />
-              <ReportMetric
-                label="Average Heart Rate Variability (HRV)"
-                value={formatHRV(weeklyReport.data.current.avgHrv)}
-              />
-            </View>
-          </Card>
+            ) : null}
+            {weeklyReport.data.decisionSupport ? (
+              <ReportDecisionSynthesis synthesis={weeklyReport.data.decisionSupport} />
+            ) : null}
+            <Card>
+              <Text style={styles.periodLabel}>
+                Week of {formatDateShort(weeklyReport.data.current.weekStart)}
+              </Text>
+              <View style={styles.metricGrid}>
+                <ReportMetric
+                  label="Training"
+                  value={formatDurationMinutes(weeklyReport.data.current.trainingHours * 60)}
+                />
+                <ReportMetric
+                  label="Activities"
+                  value={`${weeklyReport.data.current.activityCount}`}
+                />
+                <ReportMetric
+                  label="Avg nightly sleep"
+                  value={
+                    weeklyReport.data.current.avgSleepMinutes > 0
+                      ? formatDurationMinutes(weeklyReport.data.current.avgSleepMinutes)
+                      : "Not tracked"
+                  }
+                />
+                <ReportMetric
+                  label="Average Heart Rate Variability (HRV)"
+                  value={formatHRV(weeklyReport.data.current.avgHrv)}
+                />
+              </View>
+            </Card>
+          </View>
+        ) : weeklyReport.data?.emptyState && !weeklyReport.data.current ? (
+          <EmptyStatePreview content={weeklyReport.data.emptyState} />
         ) : (
           <QueryStatePanel variant="empty" message="Not enough weekly data to create a report." />
         )}
@@ -88,37 +132,75 @@ export default function ReportsScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Monthly Report</Text>
           {monthlyReport.data?.current ? (
-            <HealthReportShareButton input={{ reportType: "monthly", months: REPORT_MONTHS }} />
+            <HealthReportShareButton
+              input={{ reportType: "monthly", months: REPORT_MONTHS, endDate }}
+            />
           ) : null}
         </View>
         {monthlyReport.error && !monthlyReport.data ? (
-          <QueryStatePanel variant="error" message={getQueryErrorMessage(monthlyReport.error)} />
-        ) : monthlyReport.isLoading ? (
+          <ReportRecoveryPanel
+            message={getQueryErrorMessage(monthlyReport.error)}
+            onRetry={() => {
+              void monthlyReport.refetch();
+            }}
+            onReviewData={reviewData}
+            retrying={monthlyReport.isFetching}
+          />
+        ) : monthlyReport.isLoading && !monthlyReport.data ? (
           <QueryStatePanel variant="loading" />
+        ) : monthlyReport.data?.recovery &&
+          !monthlyReport.data.current &&
+          monthlyReport.data.history.length === 0 ? (
+          <ReportRecoveryPanel
+            message={monthlyReport.data.recovery.emptyMessage}
+            onRetry={() => {
+              void monthlyReport.refetch();
+            }}
+            onReviewData={reviewData}
+            retrying={monthlyReport.isFetching}
+          />
         ) : monthlyReport.data?.current ? (
-          <Card>
-            <Text style={styles.periodLabel}>
-              {formatMonthYear(monthlyReport.data.current.monthStart)}
-            </Text>
-            <View style={styles.metricGrid}>
-              <ReportMetric
-                label="Training"
-                value={formatDurationMinutes(monthlyReport.data.current.trainingHours * 60)}
+          <View style={styles.reportContent}>
+            {monthlyReport.error ? (
+              <ReportRecoveryPanel
+                message={getQueryErrorMessage(monthlyReport.error)}
+                onRetry={() => {
+                  void monthlyReport.refetch();
+                }}
+                onReviewData={reviewData}
+                preserved
+                retrying={monthlyReport.isFetching}
               />
-              <ReportMetric
-                label="Activities"
-                value={`${monthlyReport.data.current.activityCount}`}
-              />
-              <ReportMetric
-                label="Avg sleep"
-                value={formatDurationMinutes(monthlyReport.data.current.avgSleepMinutes)}
-              />
-              <ReportMetric
-                label="Average Heart Rate Variability (HRV)"
-                value={formatHRV(monthlyReport.data.current.avgHrv)}
-              />
-            </View>
-          </Card>
+            ) : null}
+            {monthlyReport.data.decisionSupport ? (
+              <ReportDecisionSynthesis synthesis={monthlyReport.data.decisionSupport} />
+            ) : null}
+            <Card>
+              <Text style={styles.periodLabel}>
+                {formatMonthYear(monthlyReport.data.current.monthStart)}
+              </Text>
+              <View style={styles.metricGrid}>
+                <ReportMetric
+                  label="Training"
+                  value={formatDurationMinutes(monthlyReport.data.current.trainingHours * 60)}
+                />
+                <ReportMetric
+                  label="Activities"
+                  value={`${monthlyReport.data.current.activityCount}`}
+                />
+                <ReportMetric
+                  label="Avg sleep"
+                  value={formatDurationMinutes(monthlyReport.data.current.avgSleepMinutes)}
+                />
+                <ReportMetric
+                  label="Average Heart Rate Variability (HRV)"
+                  value={formatHRV(monthlyReport.data.current.avgHrv)}
+                />
+              </View>
+            </Card>
+          </View>
+        ) : monthlyReport.data?.emptyState && !monthlyReport.data.current ? (
+          <EmptyStatePreview content={monthlyReport.data.emptyState} />
         ) : (
           <QueryStatePanel variant="empty" message="Not enough monthly data to create a report." />
         )}
@@ -180,6 +262,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: spacing.md,
+  },
+  reportContent: {
+    gap: spacing.sm,
   },
   metric: {
     width: "50%",

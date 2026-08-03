@@ -1,7 +1,14 @@
 import { z } from "zod";
+import {
+  type ProgressiveOverloadRow,
+  progressiveOverloadRowSchema,
+} from "../contracts/progressive-overload.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
+import {
+  type EstimatedMaxTrendEvidence,
+  StrengthRepository,
+} from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +32,7 @@ export interface EstimatedOneRepMaxEntry {
 export interface EstimatedOneRepMaxRow {
   exerciseName: string;
   history: EstimatedOneRepMaxEntry[];
+  trend: EstimatedMaxTrendEvidence;
 }
 
 export interface MuscleGroupWeek {
@@ -37,12 +45,7 @@ export interface MuscleGroupVolumeRow {
   weeklyData: MuscleGroupWeek[];
 }
 
-export interface ProgressiveOverloadRow {
-  exerciseName: string;
-  weeklyVolumes: number[];
-  slopeKgPerWeek: number;
-  isProgressing: boolean;
-}
+export type { ProgressiveOverloadRow };
 
 export interface WorkoutSummaryRow {
   date: string;
@@ -72,6 +75,7 @@ export const strengthRouter = router({
       const exercises = await repo.getEstimatedOneRepMax(range.days);
       return exercises.map((exercise) => exercise.toDetail());
     },
+    { keyVersion: "estimated-max-trend-v1" },
   ),
 
   muscleGroupVolume: selectedChartRangeQuery(
@@ -91,6 +95,10 @@ export const strengthRouter = router({
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const overloads = await repo.getProgressiveOverload(range.days);
       return overloads.map((overload) => overload.toDetail());
+    },
+    {
+      outputSchema: z.array(progressiveOverloadRowSchema),
+      keyVersion: "progressive-overload-evidence-v1",
     },
   ),
 

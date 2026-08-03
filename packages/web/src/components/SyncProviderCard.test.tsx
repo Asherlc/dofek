@@ -28,7 +28,6 @@ afterEach(cleanup);
 
 function renderProvider({
   onSync = vi.fn(),
-  onFullSync = vi.fn(),
   provider = {
     id: "strava",
     name: "Strava",
@@ -42,7 +41,6 @@ function renderProvider({
   recentLogs = [],
 }: {
   onSync?: () => void;
-  onFullSync?: () => void;
   provider?: SyncProviderCardProps["provider"];
   state?: SyncProviderCardProps["state"];
   needsAuth?: boolean;
@@ -58,7 +56,6 @@ function renderProvider({
       stats={undefined}
       recentLogs={recentLogs}
       onSync={onSync}
-      onFullSync={onFullSync}
     />,
   );
 }
@@ -75,15 +72,18 @@ describe("SyncProviderCard", () => {
     expect(onSync).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Full sync as a separate action", () => {
+  it("exposes one primary action and one details link", () => {
     const onSync = vi.fn();
-    const onFullSync = vi.fn();
-    renderProvider({ onSync, onFullSync });
+    renderProvider({ onSync });
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync all available Strava data" }));
+    const primaryAction = screen.getByRole("button", {
+      name: "Sync Strava from the last 7 days",
+    });
+    const detailsLink = screen.getByRole("link", { name: "View Strava details" });
 
-    expect(onFullSync).toHaveBeenCalledTimes(1);
-    expect(onSync).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button")).toEqual([primaryAction]);
+    expect(screen.getAllByRole("link")).toEqual([detailsLink]);
+    expect(detailsLink.getAttribute("href")).toBe("/providers/strava");
   });
 
   it("hides sync actions while syncing", () => {
@@ -101,12 +101,8 @@ describe("SyncProviderCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Strava" }));
 
     expect(onSync).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Sync all available Strava data" })).toBeNull();
-    const connectStatus = screen
-      .getAllByText("Connect")
-      .find((element) => element.tagName === "SPAN");
-    expect(connectStatus).toBeDefined();
-    expect(connectStatus).toHaveStyle({
+    expect(screen.getAllByText("Connect")).toHaveLength(1);
+    expect(screen.getByText("Not connected")).toHaveStyle({
       color: operationalStatusColors.info.foreground,
     });
   });
@@ -118,12 +114,8 @@ describe("SyncProviderCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reconnect Strava" }));
 
     expect(onSync).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Sync all available Strava data" })).toBeNull();
-    const reconnectStatus = screen
-      .getAllByText("Reconnect")
-      .find((element) => element.tagName === "SPAN");
-    expect(reconnectStatus).toBeDefined();
-    expect(reconnectStatus).toHaveStyle({
+    expect(screen.getAllByText("Reconnect")).toHaveLength(1);
+    expect(screen.getByText("Authorization expired")).toHaveStyle({
       color: operationalStatusColors.warning.foreground,
     });
   });
@@ -177,7 +169,6 @@ describe("SyncProviderCard", () => {
         stats={undefined}
         recentLogs={[]}
         onSync={vi.fn()}
-        onFullSync={vi.fn()}
       />,
     );
 

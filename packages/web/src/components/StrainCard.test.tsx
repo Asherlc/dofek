@@ -56,7 +56,11 @@ describe("StrainCard", () => {
       screen.getByText(
         "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
       ),
-    ).toBeTruthy();
+    ).not.toBeVisible();
+    expect(
+      screen.getByText("Technical name: Acute-to-chronic workload ratio (ACWR)"),
+    ).not.toBeVisible();
+    expect(screen.getByText("How this is calculated")).toBeVisible();
   });
 
   it("uses the standard count-up duration for the visible strain value", () => {

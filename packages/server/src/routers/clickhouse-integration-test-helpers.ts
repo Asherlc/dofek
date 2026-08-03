@@ -26,7 +26,9 @@ import {
 import {
   buildTestActivityHeartRateZonesSelectSql,
   buildTestActivityLocationSampleSelectSql,
+  buildTestActivityLocationSummarySelectSql,
   buildTestActivitySensorSampleSelectSql,
+  buildTestActivitySensorSummarySelectSql,
   buildTestActivityStreamPointsSelectSql,
   buildTestActivitySummarySelectSql,
   buildTestDailyRecoveryInputsSelectSql,
@@ -115,6 +117,9 @@ const rawTableSyncs: RawTableSync[] = [
       "perceived_exertion",
       "source_name",
       "timezone",
+      "start_utc_offset_minutes",
+      "end_utc_offset_minutes",
+      "local_time_source",
       "strava_id",
       "raw",
       "created_at",
@@ -135,12 +140,17 @@ const rawTableSyncs: RawTableSync[] = [
       "light_minutes",
       "awake_minutes",
       "efficiency_pct",
+      "staging_available",
       "sleep_type",
       "sleep_need_baseline_minutes",
       "sleep_need_from_debt_minutes",
       "sleep_need_from_strain_minutes",
       "sleep_need_from_nap_minutes",
       "source_name",
+      "timezone",
+      "start_utc_offset_minutes",
+      "end_utc_offset_minutes",
+      "local_time_source",
       "created_at",
     ],
   },
@@ -629,6 +639,16 @@ ${buildTestActivitySensorSampleSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_sample
 AS
 ${buildTestActivityLocationSampleSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_summary_rows
+AS
+${buildTestActivityLocationSummarySelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_summary_rows
+AS
+${buildTestActivitySensorSummarySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_stream_points

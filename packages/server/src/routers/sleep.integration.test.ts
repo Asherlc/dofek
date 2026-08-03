@@ -12,6 +12,9 @@ import {
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
 
+const selectedSessionId = "00000000-0000-4000-8000-000000001774";
+const overlappingSessionId = "00000000-0000-4000-8000-000000001775";
+
 /**
  * Integration tests for sleep router endpoints.
  * Verifies that sleep timestamps are returned as ISO 8601 strings parseable by
@@ -32,22 +35,39 @@ describe("sleep router integration", () => {
     // Insert provider (foreign key for sleep_session)
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
+          VALUES
+            ('test_provider', 'Test Provider', ${TEST_USER_ID}),
+            ('partial_provider', 'Partial Provider', ${TEST_USER_ID}),
+            ('overlap_provider', 'Overlap Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
     // Insert a sleep session
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_session (
-            provider_id, user_id, started_at, ended_at,
+            id, provider_id, user_id, started_at, ended_at,
             duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-            efficiency_pct, sleep_type
+            efficiency_pct, staging_available, sleep_type
           ) VALUES (
-            'test_provider', ${TEST_USER_ID},
-            NOW() - INTERVAL '6 hours',
-            NOW(),
+            ${selectedSessionId}::uuid, 'test_provider', ${TEST_USER_ID},
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '05:00:00',
             360, 54, 79, 200, 27,
-            92.5, 'sleep'
+            92.5, true, 'sleep'
+          )`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            id, provider_id, user_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            efficiency_pct, staging_available, sleep_type, source_name
+          ) VALUES (
+            ${overlappingSessionId}::uuid, 'overlap_provider', ${TEST_USER_ID},
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:30:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '03:30:00',
+            240, 40, 50, 130, 20,
+            91, true, 'sleep', 'Overlap Device'
           )`,
     );
 
@@ -93,7 +113,20 @@ describe("sleep router integration", () => {
   it("sleep.list returns started_at in UTC ISO 8601 format", async () => {
     await queryCache.invalidateAll();
     const rows = await query<
-      { started_at: string; source_name: string | null; source_providers: string[] }[]
+      {
+        started_at: string;
+        source_name: string | null;
+        source_providers: string[];
+        selected_session_id: string | null;
+        overlapping_sessions: Array<{
+          session_id: string;
+          provider_id: string;
+          source_name: string | null;
+          started_at: string;
+          ended_at: string | null;
+          duration_minutes: number | null;
+        }>;
+      }[]
     >("sleep.list", { days: 30 });
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -102,6 +135,17 @@ describe("sleep router integration", () => {
       expect(row.source_name).toBeNull();
       expect(row.source_providers).toContain("test_provider");
     }
+    const selectedRow = rows.find((row) => row.selected_session_id === selectedSessionId);
+    expect(selectedRow?.overlapping_sessions).toEqual([
+      expect.objectContaining({
+        session_id: overlappingSessionId,
+        provider_id: "overlap_provider",
+        source_name: "Overlap Device",
+        duration_minutes: 240,
+        started_at: expect.stringMatching(UTC_ISO_REGEX),
+        ended_at: expect.stringMatching(UTC_ISO_REGEX),
+      }),
+    ]);
   });
 
   it("sleep.latest returns started_at in UTC ISO 8601 format", async () => {
@@ -131,6 +175,79 @@ describe("sleep router integration", () => {
     }
   });
 
+  it("recovery.sleepAnalytics excludes unreported efficiency from mixed-provider averages", async () => {
+    await testCtx.db.execute(sql`
+      INSERT INTO fitness.sleep_session (
+        provider_id,
+        user_id,
+        started_at,
+        ended_at,
+        duration_minutes,
+        deep_minutes,
+        rem_minutes,
+        light_minutes,
+        awake_minutes,
+        efficiency_pct,
+        staging_available,
+        sleep_type
+      )
+      VALUES
+        (
+          'test_provider',
+          ${TEST_USER_ID},
+          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '06:00:00',
+          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '14:00:00',
+          480,
+          90,
+          100,
+          250,
+          40,
+          80,
+          true,
+          'sleep'
+        ),
+        (
+          'partial_provider',
+          ${TEST_USER_ID},
+          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '06:00:00',
+          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '14:00:00',
+          480,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          false,
+          'sleep'
+        )
+    `);
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await queryCache.invalidateAll();
+
+    const result = await query<{
+      nightly: Array<{
+        stagingAvailable: boolean;
+        deepPct: number | null;
+        efficiency: number | null;
+      }>;
+      averageEfficiencyPercent: number | null;
+    }>("recovery.sleepAnalytics", {
+      days: 30,
+      endDate: new Date().toISOString().slice(0, 10),
+    });
+
+    expect(result.averageEfficiencyPercent).toBe(86.3);
+    expect(result.nightly).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stagingAvailable: false,
+          deepPct: null,
+          efficiency: null,
+        }),
+      ]),
+    );
+  });
+
   it("sleep.latestStages falls back to overlapping session when winning provider has no stages", async () => {
     await queryCache.invalidateAll();
 
@@ -154,8 +271,8 @@ describe("sleep router integration", () => {
             sleep_type
           ) VALUES (
             'whoop', ${TEST_USER_ID},
-            NOW() - INTERVAL '7 hours',
-            NOW() - INTERVAL '30 minutes',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '22:30:00',
+            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '04:30:00',
             390, 60, 90, 200, 40,
             'sleep'
           )`,
@@ -175,9 +292,9 @@ describe("sleep router integration", () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
           VALUES
-            (${sessionId}::uuid, 'light', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '5 hours'),
-            (${sessionId}::uuid, 'deep', NOW() - INTERVAL '5 hours', NOW() - INTERVAL '4 hours'),
-            (${sessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours')`,
+            (${sessionId}::uuid, 'light', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00'),
+            (${sessionId}::uuid, 'deep', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00'),
+            (${sessionId}::uuid, 'rem', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '01:45:00')`,
     );
     await syncClickHouseTestActivitySensorStore(testCtx);
 

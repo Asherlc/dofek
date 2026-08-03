@@ -26,7 +26,6 @@ const providerCardMeta = {
     syncing: false,
     syncProgress: undefined,
     onSync: () => {},
-    onFullSync: () => {},
     onConnect: () => {},
     onPress: () => {},
   },
@@ -192,6 +191,23 @@ export const NeverSynced: ProviderCardStory = {
       authStatus: "connected",
       authType: "custom:whoop",
       lastSyncAt: null,
+      importOnly: false,
+      pushOnly: false,
+    },
+  },
+};
+
+export const StaleProvider: ProviderCardStory = {
+  name: "Stale provider",
+  tags: ["review-scenario", "review-scenario-stale-provider"],
+  args: {
+    provider: {
+      id: "whoop",
+      label: "WHOOP",
+      enabled: true,
+      authStatus: "connected",
+      authType: "custom:whoop",
+      lastSyncAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
       importOnly: false,
       pushOnly: false,
     },

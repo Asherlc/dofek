@@ -1,7 +1,15 @@
 import { z } from "zod";
+import {
+  createReportEmptyState,
+  type WeeklyReportEmptyState,
+} from "../contracts/report-empty-state.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildWeeklyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +41,10 @@ export interface WeeklyReportResult {
   current: WeekSummary | null;
   /** Previous weeks for comparison */
   history: WeekSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
+  /** Canonical readiness and value-free preview when no report exists. */
+  emptyState: WeeklyReportEmptyState;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +255,8 @@ export class WeeklyReportRepository {
     const current = cutoffWeeks.length > 0 ? (cutoffWeeks[cutoffWeeks.length - 1] ?? null) : null;
     const history = cutoffWeeks.slice(0, -1);
 
-    return { current, history };
+    const emptyState = createReportEmptyState("weekly");
+    const decisionSupport = current ? buildWeeklyDecisionSynthesis(current, history) : null;
+    return { current, history, decisionSupport, emptyState };
   }
 }

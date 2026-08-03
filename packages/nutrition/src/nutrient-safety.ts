@@ -1,4 +1,5 @@
 export const NUTRIENT_SAFETY_RULESET_REVIEWED_ON = "2026-07-27";
+export const DAILY_VALUE_TARGET_LABEL = "U.S. Food and Drug Administration (FDA) Daily Value";
 
 export interface NutrientSafetySource {
   readonly agency: "FDA" | "NIH ODS";
@@ -16,6 +17,10 @@ export interface DailyValueReference {
 }
 
 export type UpperLimitIntakeScope = "total" | "supplemental_only";
+
+export function upperLimitIntakeScopeLabel(scope: UpperLimitIntakeScope): string {
+  return scope === "total" ? "total daily intake" : "supplemental intake only";
+}
 
 interface ComparableUpperLimitRule {
   readonly amount: number;
@@ -238,4 +243,17 @@ export function evaluateNutrientUpperLimit(input: NutrientUpperLimitInput): Uppe
     status: intakeAmount >= rule.amount ? "at_or_above_limit" : "within_limit",
     intakeAmount,
   };
+}
+
+export function upperLimitStatusLabel(status: UpperLimitEvaluation["status"]): string {
+  switch (status) {
+    case "at_or_above_limit":
+      return "At or above the Tolerable Upper Intake Level (UL)";
+    case "within_limit":
+      return "Below the Tolerable Upper Intake Level (UL)";
+    case "not_evaluable":
+      return "Tolerable Upper Intake Level (UL) not evaluable";
+    case "not_in_ruleset":
+      return "No Tolerable Upper Intake Level (UL) in this ruleset";
+  }
 }

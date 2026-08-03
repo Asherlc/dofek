@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node";
 import {
   runActivityReadModelBuild,
   runProviderDeleteReadModelBuild,
@@ -9,6 +8,7 @@ import {
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import type { ActivityAnalyticsJobData } from "./queues.ts";
@@ -25,7 +25,7 @@ async function updateActivityAnalyticsProgress(
 ): Promise<void> {
   await job.updateProgress({ percentage, message }).catch((error: unknown) => {
     logger.warn("Failed to update activity analytics progress: %s", error);
-    Sentry.captureException(error, { tags: { activityAnalyticsStep: "updateProgress" } });
+    captureException(error, { tags: { activityAnalyticsStep: "updateProgress" } });
   });
 }
 

@@ -7,7 +7,11 @@ import type {
   HrvBaselineRow,
 } from "../repositories/daily-metrics-repository.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
-import { buildHealthStatusFromValues, buildWeightHealthStatus } from "./health-status.ts";
+import {
+  buildHealthStatusFromBaselineMetric,
+  buildHealthStatusFromValues,
+  buildWeightHealthStatus,
+} from "./health-status.ts";
 import { loadMobileRecoveryTab } from "./mobile-recovery-tab.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
@@ -26,6 +30,7 @@ vi.mock("./health-status.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./health-status.ts")>();
   return {
     ...actual,
+    buildHealthStatusFromBaselineMetric: vi.fn(actual.buildHealthStatusFromBaselineMetric),
     buildHealthStatusFromValues: vi.fn(actual.buildHealthStatusFromValues),
     buildWeightHealthStatus: vi.fn(actual.buildWeightHealthStatus),
   };
@@ -62,15 +67,33 @@ function recoveryRow(overrides: Record<string, unknown> = {}) {
     respiratory_rate: 14,
     hrv_mean_30d: 50,
     hrv_sd_30d: 5,
+    hrv_z_score: 1,
+    hrv_baseline_sample_count: 30,
+    hrv_baseline_coverage: 1,
+    hrv_mean_7d: 55,
+    hrv_mean_previous_28d: 50,
     rhr_mean_30d: 54,
     rhr_sd_30d: 2,
+    resting_hr_z_score: -1,
+    rhr_baseline_sample_count: 30,
+    rhr_baseline_coverage: 1,
+    rhr_mean_7d: 52,
+    rhr_mean_previous_28d: 54,
     rr_mean_30d: 14,
     rr_sd_30d: 1,
-    hrv_mean_60d: 50,
-    hrv_sd_60d: 5,
-    rhr_mean_60d: 54,
-    rhr_sd_60d: 2,
+    respiratory_rate_z_score: -1,
+    rr_baseline_sample_count: 30,
+    rr_baseline_coverage: 1,
+    rr_mean_7d: 13.5,
+    rr_mean_previous_28d: 14,
     efficiency_pct: 90,
+    efficiency_mean_30d: 85,
+    efficiency_sd_30d: 5,
+    efficiency_z_score: 1,
+    efficiency_baseline_sample_count: 30,
+    efficiency_baseline_coverage: 1,
+    efficiency_mean_7d: 90,
+    efficiency_mean_previous_28d: 85,
     ...overrides,
   };
 }
@@ -84,6 +107,7 @@ async function runRecoveryTab(
     goalWeight?: string | null;
     days?: number;
     endDate?: string;
+    processingStatus?: "syncing" | "sync_error" | null;
   } = {},
 ) {
   const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
@@ -98,6 +122,7 @@ async function runRecoveryTab(
     timezone: "UTC",
     accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
     sensorStore: { query },
+    processingStatus: options.processingStatus ?? null,
   };
 
   vi.spyOn(
@@ -198,7 +223,7 @@ describe("loadMobileRecoveryTab", () => {
       String(call[1]).includes("analytics.daily_recovery"),
     );
     expect(recoveryQueries).toHaveLength(1);
-    expect(String(recoveryQueries[0]?.[1])).toContain("recovery_inputs.is_deleted = 0");
+    expect(String(recoveryQueries[0]?.[1])).toContain("recovery.is_deleted = 0");
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
 
@@ -268,10 +293,10 @@ describe("loadMobileRecoveryTab", () => {
       String(call[1]).includes("analytics.daily_recovery"),
     );
     expect(String(recoveryQuery?.[1])).toContain(
-      "recovery_inputs.date >= toDate({accessStartDate:String})",
+      "recovery.date >= toDate({accessStartDate:String})",
     );
     expect(String(recoveryQuery?.[1])).toContain(
-      "recovery_inputs.date < toDate({accessEndDateExclusive:String})",
+      "recovery.date < toDate({accessEndDateExclusive:String})",
     );
     expect(recoveryQuery?.[2]).toMatchObject({
       accessStartDate: "2026-03-10",
@@ -341,9 +366,7 @@ describe("loadMobileRecoveryTab", () => {
         return [
           recoveryRow({
             date: "2026-03-28",
-            resting_hr: 50,
-            rhr_mean_60d: 54,
-            rhr_sd_60d: 2,
+            resting_hr_z_score: -2,
             efficiency_pct: 92.34,
           }),
         ];
@@ -516,56 +539,37 @@ describe("loadMobileRecoveryTab", () => {
 
   describe("mutation killers", () => {
     it("passes each recovery metric's non-null history to its server-side classifier", async () => {
+      vi.mocked(buildHealthStatusFromBaselineMetric).mockClear();
       vi.mocked(buildHealthStatusFromValues).mockClear();
       vi.mocked(buildWeightHealthStatus).mockClear();
 
-      await runRecoveryTab([], {
-        hrvBaseline: [
-          {
-            date: "2026-03-26",
-            hrv: 48,
-            resting_hr: null,
-            mean_60d: 50,
-            sd_60d: 2,
-            mean_7d: 49,
-            resting_hr_mean_7d: null,
-          },
-          {
-            date: "2026-03-27",
-            hrv: null,
-            resting_hr: 54,
-            mean_60d: 50,
-            sd_60d: 2,
-            mean_7d: 49,
-            resting_hr_mean_7d: 54,
-          },
-          {
-            date: "2026-03-28",
-            hrv: 52,
-            resting_hr: 50,
-            mean_60d: 50,
-            sd_60d: 2,
-            mean_7d: 50,
-            resting_hr_mean_7d: 52,
-          },
-        ],
+      const result = await runRecoveryTab([recoveryRow()], {
         weight: [
           {
             date: "2026-03-27",
             rawWeight: 80,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 80,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: null,
             interpolated: false,
           },
           {
             date: "2026-03-28",
             rawWeight: 79,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
             smoothedWeight: 79,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
             weeklyChange: -1,
             interpolated: false,
           },
         ],
         metrics: [
+          metricRow("2026-02-25", 49, {
+            spo2_avg: 96,
+            steps: 7_000,
+            skin_temp_c: 32.9,
+          }),
           metricRow("2026-03-26", 50, {
             spo2_avg: 97,
             steps: null,
@@ -585,59 +589,168 @@ describe("loadMobileRecoveryTab", () => {
         goalWeight: "75",
       });
 
+      expect(vi.mocked(buildHealthStatusFromBaselineMetric)).toHaveBeenCalledTimes(4);
       expect(vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input)).toEqual([
         {
-          metric: "hrv",
-          label: "Heart Rate Variability (HRV)",
-          values: [48, 52],
-          intent: "higher",
-        },
-        {
-          metric: "resting_heart_rate",
-          label: "Resting Heart Rate",
-          values: [54, 50],
-          intent: "lower",
-        },
-        {
           metric: "spo2",
-          label: "SpO2",
+          label: "Blood Oxygen Saturation (SpO2)",
           values: [97, 99],
           intent: "neutral",
+          observations: [
+            { date: "2026-02-25", value: 96, sourceProviders: ["apple_health"] },
+            { date: "2026-03-26", value: 97, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 99, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
         {
           metric: "steps",
           label: "Steps",
           values: [8_000, 10_000],
           intent: "neutral",
+          observations: [
+            { date: "2026-02-25", value: 7_000, sourceProviders: ["apple_health"] },
+            { date: "2026-03-26", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: 8_000, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 10_000, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
         {
           metric: "skin_temperature",
           label: "Skin Temperature",
           values: [33.1, 33.5],
           intent: "neutral",
+          observations: [
+            { date: "2026-02-25", value: 32.9, sourceProviders: ["apple_health"] },
+            { date: "2026-03-26", value: 33.1, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 33.5, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
       ]);
-      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75);
+      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75, null);
+      expect(result.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "spo2",
+            provenance: expect.objectContaining({
+              latestDate: "2026-03-28",
+              sourceProviders: ["apple_health"],
+            }),
+            comparison: expect.objectContaining({
+              recentDays: 7,
+              baselineDays: 28,
+            }),
+          }),
+          expect.objectContaining({
+            metric: "steps",
+            provenance: expect.objectContaining({ observedDays: 3, windowDays: 35 }),
+          }),
+          expect.objectContaining({
+            metric: "skin_temperature",
+            provenance: expect.objectContaining({ observedDays: 3, windowDays: 35 }),
+          }),
+        ]),
+      );
+      const baselineCalls = vi.mocked(buildHealthStatusFromBaselineMetric).mock.calls;
+      const hrvCall = baselineCalls.find(([metric]) => metric.metric === "hrv");
+      expect(hrvCall?.[2]).toEqual(
+        expect.objectContaining({
+          latestDate: "2026-03-28",
+          observedDays: 4,
+          windowDays: 35,
+        }),
+      );
+      expect(
+        baselineCalls
+          .filter(([metric]) => metric.metric !== "hrv")
+          .map(([, , provenance]) => provenance),
+      ).toEqual([undefined, null, null]);
+      expect(
+        result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({ value: 52, baseline: 54, sampleDeviation: 2 });
+    });
+
+    it.each([
+      "syncing",
+      "sync_error",
+    ] as const)("passes %s to every health status builder", async (processingStatus) => {
+      vi.mocked(buildHealthStatusFromBaselineMetric).mockClear();
+      vi.mocked(buildHealthStatusFromValues).mockClear();
+      vi.mocked(buildWeightHealthStatus).mockClear();
+
+      await runRecoveryTab([recoveryRow()], { processingStatus });
+
+      expect(
+        vi.mocked(buildHealthStatusFromBaselineMetric).mock.calls.map(([, status]) => status),
+      ).toEqual([processingStatus, processingStatus, processingStatus, processingStatus]);
+      expect(
+        vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input.processingStatus),
+      ).toEqual([processingStatus, processingStatus, processingStatus]);
+      expect(vi.mocked(buildWeightHealthStatus)).toHaveBeenCalledWith([], null, processingStatus);
+    });
+
+    it("builds the resting heart rate status from HRV baseline rows when recovery data is absent", async () => {
+      const result = await runRecoveryTab([], {
+        hrvBaseline: [
+          {
+            date: "2026-03-26",
+            hrv: 50,
+            resting_hr: 50,
+            mean_60d: 50,
+            sd_60d: 2,
+            mean_7d: 50,
+            resting_hr_mean_7d: 50,
+          },
+          {
+            date: "2026-03-27",
+            hrv: 52,
+            resting_hr: 52,
+            mean_60d: 51,
+            sd_60d: 2,
+            mean_7d: 51,
+            resting_hr_mean_7d: 51,
+          },
+          {
+            date: "2026-03-28",
+            hrv: 54,
+            resting_hr: 54,
+            mean_60d: 52,
+            sd_60d: 2,
+            mean_7d: 52,
+            resting_hr_mean_7d: 52,
+          },
+        ],
+      });
+
+      expect(
+        result.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+      ).toMatchObject({
+        value: 54,
+        baseline: 52,
+        sampleDeviation: 2,
+        baselineProgress: { observedObservationDays: 3 },
+      });
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {
-      const result = await runRecoveryTab([
-        recoveryRow({ hrv: 45, hrv_mean_60d: 60, hrv_sd_60d: 7 }),
-      ]);
+      const result = await runRecoveryTab([recoveryRow({ hrv_z_score: -2.142_857 })]);
       expect(result.stress.daily[0]?.hrvDeviation).toBe(-2.14);
     });
 
-    it("returns null HRV deviation when hrv_sd_60d is zero", async () => {
-      const result = await runRecoveryTab([
-        recoveryRow({ hrv: 45, hrv_mean_60d: 60, hrv_sd_60d: 0 }),
-      ]);
+    it("returns null HRV deviation when its canonical z-score is unavailable", async () => {
+      const result = await runRecoveryTab([recoveryRow({ hrv_z_score: null })]);
       expect(result.stress.daily[0]?.hrvDeviation).toBeNull();
     });
 
-    it("returns null resting HR deviation when rhr_sd_60d is zero", async () => {
-      const result = await runRecoveryTab([
-        recoveryRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 0 }),
-      ]);
+    it("returns null resting HR deviation when its canonical z-score is unavailable", async () => {
+      const result = await runRecoveryTab([recoveryRow({ resting_hr_z_score: null })]);
       expect(result.stress.daily[0]?.restingHrDeviation).toBeNull();
     });
 
@@ -648,8 +761,8 @@ describe("loadMobileRecoveryTab", () => {
 
     it("returns latest stress score from the last daily entry", async () => {
       const result = await runRecoveryTab([
-        recoveryRow({ date: "2026-03-27", hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
-        recoveryRow({ date: "2026-03-28", hrv: 55, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+        recoveryRow({ date: "2026-03-27", hrv_z_score: -2 }),
+        recoveryRow({ date: "2026-03-28", hrv_z_score: -0.5 }),
       ]);
       expect(result.stress.latestScore).toBe(result.stress.daily.at(-1)?.stressScore ?? null);
       expect(result.stress.latestScore).not.toBeNull();
@@ -742,15 +855,13 @@ describe("loadMobileRecoveryTab", () => {
     });
 
     it("returns null HRV deviation when hrv is null", async () => {
-      const result = await runRecoveryTab([
-        recoveryRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
-      ]);
+      const result = await runRecoveryTab([recoveryRow({ hrv: null, hrv_z_score: null })]);
       expect(result.stress.daily[0]?.hrvDeviation).toBeNull();
     });
 
     it("returns null resting HR deviation when resting_hr is null", async () => {
       const result = await runRecoveryTab([
-        recoveryRow({ resting_hr: null, rhr_mean_60d: 60, rhr_sd_60d: 2 }),
+        recoveryRow({ resting_hr: null, resting_hr_z_score: null }),
       ]);
       expect(result.stress.daily[0]?.restingHrDeviation).toBeNull();
     });
@@ -759,8 +870,7 @@ describe("loadMobileRecoveryTab", () => {
       const result = await runRecoveryTab([
         recoveryRow({
           hrv: 30,
-          hrv_mean_30d: 50,
-          hrv_sd_30d: 10,
+          hrv_z_score: -2,
         }),
       ]);
       expect(result.readinessScore[0]?.components.hrvScore).toBeLessThan(50);
@@ -770,8 +880,7 @@ describe("loadMobileRecoveryTab", () => {
       const result = await runRecoveryTab([
         recoveryRow({
           resting_hr: 70,
-          rhr_mean_30d: 60,
-          rhr_sd_30d: 5,
+          resting_hr_z_score: 2,
         }),
       ]);
       expect(result.readinessScore[0]?.components.restingHrScore).toBeLessThan(50);
@@ -781,8 +890,11 @@ describe("loadMobileRecoveryTab", () => {
       const result = await runRecoveryTab([
         recoveryRow({
           hrv: null,
+          hrv_z_score: null,
           resting_hr: null,
+          resting_hr_z_score: null,
           respiratory_rate: null,
+          respiratory_rate_z_score: null,
           efficiency_pct: 85,
         }),
       ]);
@@ -849,8 +961,8 @@ describe("loadMobileRecoveryTab", () => {
 
     it("aggregates weekly stress from daily stress rows", async () => {
       const result = await runRecoveryTab([
-        recoveryRow({ date: "2026-03-27", hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
-        recoveryRow({ date: "2026-03-28", hrv: 55, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+        recoveryRow({ date: "2026-03-27", hrv_z_score: -2 }),
+        recoveryRow({ date: "2026-03-28", hrv_z_score: -0.5 }),
       ]);
       expect(result.stress.weekly.length).toBeGreaterThan(0);
     });
@@ -875,8 +987,7 @@ describe("loadMobileRecoveryTab", () => {
       const result = await runRecoveryTab([
         recoveryRow({
           respiratory_rate: 17,
-          rr_mean_30d: 15,
-          rr_sd_30d: 1,
+          respiratory_rate_z_score: 2,
         }),
       ]);
       expect(result.readinessScore[0]?.components.respiratoryRateScore).toBeLessThan(50);
@@ -886,19 +997,17 @@ describe("loadMobileRecoveryTab", () => {
       const result = await runRecoveryTab([
         recoveryRow({
           respiratory_rate: 13,
-          rr_mean_30d: 15,
-          rr_sd_30d: 1,
+          respiratory_rate_z_score: -2,
         }),
       ]);
       expect(result.readinessScore[0]?.components.respiratoryRateScore).toBeGreaterThan(80);
     });
 
-    it("returns default respiratory rate score when baseline stats are missing", async () => {
+    it("returns default respiratory rate score when its canonical z-score is missing", async () => {
       const result = await runRecoveryTab([
         recoveryRow({
           respiratory_rate: 13,
-          rr_mean_30d: null,
-          rr_sd_30d: 1,
+          respiratory_rate_z_score: null,
         }),
       ]);
       expect(result.readinessScore[0]?.components.respiratoryRateScore).toBe(62);
@@ -908,15 +1017,11 @@ describe("loadMobileRecoveryTab", () => {
       const result = await runRecoveryTab([
         recoveryRow({
           date: "2026-02-20",
-          hrv: 40,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 10,
+          hrv_z_score: -2,
         }),
         recoveryRow({
           date: "2026-03-28",
-          hrv: 55,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 10,
+          hrv_z_score: -0.5,
         }),
       ]);
       expect(result.stress.daily).toHaveLength(1);
@@ -932,12 +1037,8 @@ describe("loadMobileRecoveryTab", () => {
     });
 
     it("changes stress score when HRV deviation inputs change", async () => {
-      const lowHrv = await runRecoveryTab([
-        recoveryRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
-      ]);
-      const highHrv = await runRecoveryTab([
-        recoveryRow({ hrv: 70, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
-      ]);
+      const lowHrv = await runRecoveryTab([recoveryRow({ hrv_z_score: -2 })]);
+      const highHrv = await runRecoveryTab([recoveryRow({ hrv_z_score: 1 })]);
       expect(lowHrv.stress.daily[0]?.stressScore).not.toBe(highHrv.stress.daily[0]?.stressScore);
     });
 
@@ -988,7 +1089,7 @@ describe("loadMobileRecoveryTab", () => {
       expect(result.dailyMetrics.map((row) => row.date)).toEqual(["2026-03-28"]);
     });
 
-    it("queries recovery rows with an extended lookback window", async () => {
+    it("queries canonical recovery baselines for the exact requested window", async () => {
       const query = vi.fn(async (_schema: unknown, sqlText: unknown, _params?: unknown) => {
         if (String(sqlText).includes("analytics.daily_recovery")) {
           return [recoveryRow()];
@@ -1041,7 +1142,8 @@ describe("loadMobileRecoveryTab", () => {
         String(call[1]).includes("analytics.daily_recovery"),
       );
       expect(recoveryQuery?.[2]).toMatchObject({
-        windowStart: dateWindowStartString("2026-03-28", 90),
+        startDate: dateWindowStartString("2026-03-28", 29),
+        endDate: "2026-03-28",
       });
     });
 

@@ -111,6 +111,10 @@ vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
@@ -173,6 +177,7 @@ import {
 } from "dofek/db/account-erasure";
 import { loadTokens } from "dofek/db/tokens";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
@@ -968,7 +973,7 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/settings");
-      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(captureException).toHaveBeenCalledWith(cacheError);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining("Failed to invalidate linked-accounts cache"),
       );
@@ -1883,7 +1888,7 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/api/auth/providers");
       expect(res.status).toBe(500);
       expect(res.body).toContain("Failed to initialize auth provider broken");
-      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalled();
     });
 
     it("returns 500 when provider listing throws", async () => {
@@ -1894,7 +1899,7 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/api/auth/providers");
       expect(res.status).toBe(500);
       expect(res.body).toContain("Registry error");
-      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalled();
     });
   });
 
@@ -2266,7 +2271,11 @@ describe("createAuthRouter", () => {
       expect(callbackRes.status).toBe(200);
       expect(callbackRes.body).toContain("Authorized!");
       expect(callbackRes.body).toContain("Wahoo connected successfully.");
-      expect(mockExchangeCode).toHaveBeenCalledWith("wahoo-auth-code", undefined);
+      expect(mockExchangeCode).toHaveBeenCalledWith(
+        "wahoo-auth-code",
+        undefined,
+        expect.any(Function),
+      );
     });
 
     it("handles login intent: creates session and redirects to /", async () => {
@@ -2868,7 +2877,7 @@ describe("createAuthRouter", () => {
         expect(createSession).not.toHaveBeenCalled();
         await expect(pendingStore.get(token)).resolves.not.toBeNull();
         expect(vi.getTimerCount()).toBe(0);
-        expect(Sentry.captureException).toHaveBeenCalledWith(
+        expect(captureException).toHaveBeenCalledWith(
           expect.objectContaining({
             name: "PendingEmailSignupClaimRenewalError",
             message: "Pending email signup claim renewal failed",
@@ -2881,7 +2890,7 @@ describe("createAuthRouter", () => {
           "[auth] Pending signup claim renewal failed",
         );
         expect(vi.mocked(logger.error)).toHaveBeenCalledOnce();
-        expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(
+        expect(JSON.stringify(vi.mocked(captureException).mock.calls)).not.toContain(
           "sensitive Redis command failure",
         );
         expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(
@@ -3346,7 +3355,7 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(500);
       expect(releaseSpy).not.toHaveBeenCalled();
-      expect(Sentry.captureException).toHaveBeenCalledWith(loadError);
+      expect(captureException).toHaveBeenCalledWith(loadError);
     });
 
     it("reports a claim release failure without hiding the completion error", async () => {
@@ -3371,10 +3380,10 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(500);
       expect(releaseSpy).toHaveBeenCalledOnce();
-      expect(Sentry.captureException).toHaveBeenCalledWith(releaseError, {
+      expect(captureException).toHaveBeenCalledWith(releaseError, {
         tags: { context: "pending-email-signup-release" },
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(completionError);
+      expect(captureException).toHaveBeenCalledWith(completionError);
       expect(logger.error).toHaveBeenCalledWith(
         "[auth] Releasing pending signup claim failed: Error: claim release unavailable",
       );
@@ -4319,7 +4328,11 @@ describe("createAuthRouter", () => {
       const callbackRes = await request(app, "get", `/callback?code=withings-code&state=${state}`);
       expect(callbackRes.status).toBe(200);
       // "pkce-verifier" is what the mocked generateCodeVerifier from dofek/auth/oauth returns
-      expect(mockExchangeCode).toHaveBeenCalledWith("withings-code", "pkce-verifier");
+      expect(mockExchangeCode).toHaveBeenCalledWith(
+        "withings-code",
+        "pkce-verifier",
+        expect.any(Function),
+      );
     });
   });
 
@@ -4761,7 +4774,7 @@ describe("createAuthRouter", () => {
         scopes: "read",
       });
       expect(revokeToken).not.toHaveBeenCalled();
-      expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+      expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined, expect.any(Function));
       expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(
         mockRevokeExistingTokens.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
       );
@@ -4822,7 +4835,7 @@ describe("createAuthRouter", () => {
       );
 
       // Safe reconnect exchanges the replacement before revoking old tokens.
-      expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+      expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined, expect.any(Function));
       expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(revokeToken).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
       );
@@ -4906,7 +4919,7 @@ describe("createAuthRouter", () => {
         expect.stringContaining("DB connection lost"),
         expect.objectContaining({ err: expect.any(Error) }),
       );
-      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+      expect(captureException).toHaveBeenCalledWith(expect.any(Error));
       expect(mockExchangeCode).not.toHaveBeenCalled();
     });
   });

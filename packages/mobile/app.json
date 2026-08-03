@@ -9,7 +9,7 @@
       "url": "https://ota.dofek.asherlc.com/manifest",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 5000,
+      "fallbackToCacheTimeout": 0,
       "codeSigningCertificate": "./certs/certificate.pem",
       "codeSigningMetadata": {
         "keyid": "main",
@@ -136,7 +136,7 @@
       "expo-sharing",
       "expo-web-browser",
       "@bacons/apple-targets",
-      "./plugins/with-podfile-post-install"
+      "./plugins/with-ios-pod-settings"
     ]
   }
 }

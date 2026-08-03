@@ -14,7 +14,7 @@ describe("PrivacyPage", () => {
 
     render(<PrivacyPage />);
 
-    expect(screen.getByText("Last updated: July 27, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Last updated: July 29, 2026")).toBeInTheDocument();
     expect(screen.getByText(/PostgreSQL \(TimescaleDB\)/)).toBeInTheDocument();
     expect(screen.getByText(/ClickHouse/)).toBeInTheDocument();
     expect(screen.getByText(/Redpanda/)).toBeInTheDocument();

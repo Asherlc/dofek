@@ -1,8 +1,11 @@
 import { invalidateAllQueries, invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
-import { selectedChartRangeQuery } from "../lib/chart-range.ts";
-import { rangeDaysSchema } from "../lib/date-window.ts";
+import { selectedChartDateRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { JournalRepository } from "../repositories/journal-repository.ts";
+import {
+  buildJournalTrendEvidence,
+  journalTrendEvidenceSchema,
+} from "../services/journal-trend-evidence.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const journalRouter = router({
@@ -18,18 +21,21 @@ export const journalRouter = router({
     return repository.listEntries(range.days);
   }),
 
-  /** Time-series trend data for a specific question */
-  trends: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
-    .input(
-      z.object({
-        questionSlug: z.string(),
-        days: rangeDaysSchema(90),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
+  /** Server-authored evidence for all chartable journal trends in the selected window. */
+  trends: selectedChartDateRangeQuery(
+    "journal.trends",
+    CacheTTL.SHORT,
+    async ({ ctx, input, range }) => {
       const repository = new JournalRepository(ctx.db, ctx.userId);
-      return repository.listTrends(input.questionSlug, input.days);
-    }),
+      const entries = await repository.listTrendEntries(range.days, input.endDate);
+      return buildJournalTrendEvidence({
+        days: range.days,
+        endDate: input.endDate,
+        entries,
+      });
+    },
+    { outputSchema: journalTrendEvidenceSchema },
+  ),
 
   /** Create a manual journal entry */
   create: protectedProcedure

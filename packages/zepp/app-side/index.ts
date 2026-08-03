@@ -1,6 +1,13 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
+import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
+import {
+  clearBufferedTelemetryEvents,
+  flushTelemetryEvents,
+  captureException as reportPostHogException,
+  restoreBufferedTelemetryEvents,
+} from "../src/posthog-client.ts";
 import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
@@ -8,6 +15,7 @@ import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-
 BaseSideService.use(messagingPlugin);
 
 const logger = Logger.getLogger("imu-side");
+const connectionOperations = new LatestOperation();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -35,6 +43,50 @@ function getRawString(value: Record<string, unknown>, key: string): string {
   return typeof raw === "string" ? raw : "";
 }
 
+function ensureTelemetryInstallId(): string {
+  const existing = settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID)?.trim();
+  if (existing) {
+    return existing;
+  }
+  const installId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  settings.settingsStorage.setItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID, installId);
+  return installId;
+}
+
+function getTelemetryDistinctId(): string {
+  const pairingId = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim();
+  if (pairingId) {
+    return `zepp-pairing:${pairingId}`;
+  }
+  const installId = settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID)?.trim();
+  if (installId) {
+    return `zepp-install:${installId}`;
+  }
+  return "zepp-side-unidentified";
+}
+
+function flushBufferedTelemetryFromWatch(): void {
+  restoreBufferedTelemetryEvents(settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_BUFFER));
+  flushTelemetryEvents()
+    .then(() => {
+      settings.settingsStorage.removeItem(STORAGE_KEYS.TELEMETRY_BUFFER);
+      clearBufferedTelemetryEvents();
+    })
+    .catch((error: unknown) => {
+      logger.error("telemetry flush failed %j", error);
+    });
+}
+
+function reportSideException(error: unknown, context: Record<string, unknown> = {}): void {
+  logger.error("captured exception %j", error);
+  void reportPostHogException(error, {
+    ...context,
+    distinctId: getTelemetryDistinctId(),
+    source: "zepp-side",
+    connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+  });
+}
+
 function getStoredServerUrl(): string {
   const storedServerUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
   return storedServerUrl || DEFAULT_DOFEK_SERVER_URL;
@@ -43,13 +95,22 @@ function getStoredServerUrl(): string {
 AppSideService(
   BaseSideService({
     onInit() {
+      ensureTelemetryInstallId();
+      flushBufferedTelemetryFromWatch();
       settings.settingsStorage.addListener("change", ({ key, newValue }) => {
         this.handleSettingsChange(key, newValue);
       });
       const pairingId = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (pairingId && !apiToken) {
-        this.schedulePairingPoll(pairingId, getStoredServerUrl());
+        this.schedulePairingPoll(pairingId, getStoredServerUrl(), connectionOperations.begin());
+      }
+      if (apiToken) {
+        this.verifyConnection().catch((error: unknown) => {
+          reportSideException(error, { category: "connection-verification" });
+        });
+      } else if (!pairingId) {
+        this.setConnectionStatus({ state: "not connected" });
       }
     },
 
@@ -120,13 +181,25 @@ AppSideService(
 
       if (key === STORAGE_KEYS.CMD_START_PAIRING) {
         this.startPairing().catch((error: unknown) => {
-          logger.error("pairing start failed %j", error);
+          reportSideException(error, { category: "pairing-start" });
+        });
+      }
+
+      if (key === STORAGE_KEYS.CMD_CHECK_CONNECTION) {
+        this.verifyConnection().catch((error: unknown) => {
+          reportSideException(error, { category: "connection-verification" });
+        });
+      }
+
+      if (key === STORAGE_KEYS.CMD_DISCONNECT) {
+        this.disconnect().catch((error: unknown) => {
+          reportSideException(error, { category: "disconnect" });
         });
       }
 
       if (key === STORAGE_KEYS.CMD_LOGIN_PASSWORD && typeof newValue === "string" && newValue) {
         this.loginWithPassword(newValue).catch((error: unknown) => {
-          logger.error("password login failed %j", error);
+          reportSideException(error, { category: "password-login" });
         });
       }
     },
@@ -172,6 +245,7 @@ AppSideService(
     },
 
     async startPairing() {
+      const operation = connectionOperations.begin();
       const serverUrl = getStoredServerUrl();
       try {
         this.setConnectionStatus({ state: "pairing" });
@@ -179,7 +253,7 @@ AppSideService(
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-pairing/start`,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ connectionType: DOFEK_COMPANION_CONNECTION_TYPE }),
         });
         const summary = summarizeZeppFetchResponse(response);
         if (!summary.ok) {
@@ -188,26 +262,31 @@ AppSideService(
         if (!isRecord(summary.body)) {
           throw new Error("Dofek pairing response was invalid.");
         }
+        if (!connectionOperations.isCurrent(operation)) {
+          return null;
+        }
         const pairingInfo = this.savePairingInfo(summary.body);
-        this.schedulePairingPoll(pairingInfo.pairingId, serverUrl);
+        this.schedulePairingPoll(pairingInfo.pairingId, serverUrl, operation);
         return pairingInfo;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek pairing failed.";
-        this.setConnectionStatus({ state: "error", reason: message });
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
         throw error;
       }
     },
 
-    schedulePairingPoll(pairingId: string, serverUrl: string) {
+    schedulePairingPoll(pairingId: string, serverUrl: string, operation: number) {
       setTimeout(() => {
-        this.pollPairing(pairingId, serverUrl).catch((error: unknown) => {
-          logger.error("pairing poll failed %j", error);
+        this.pollPairing(pairingId, serverUrl, operation).catch((error: unknown) => {
+          reportSideException(error, { category: "pairing-poll" });
         });
       }, 3000);
     },
 
-    async pollPairing(pairingId: string, serverUrl: string) {
-      if (!this.isCurrentPairing(pairingId)) {
+    async pollPairing(pairingId: string, serverUrl: string, operation: number) {
+      if (!connectionOperations.isCurrent(operation) || !this.isCurrentPairing(pairingId)) {
         return;
       }
       const expiresAt = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT);
@@ -224,15 +303,19 @@ AppSideService(
           )}`,
         });
       } catch (error) {
-        logger.error("pairing poll request failed %j", error);
-        this.schedulePairingPoll(pairingId, serverUrl);
+        reportSideException(error, { category: "pairing-poll-request" });
+        if (connectionOperations.isCurrent(operation)) {
+          this.schedulePairingPoll(pairingId, serverUrl, operation);
+        }
         return;
       }
       const summary = summarizeZeppFetchResponse(response);
       if (!summary.ok) {
         if (shouldRetryPairingPollFailure(summary)) {
-          logger.error("pairing poll transient response failed %j", summary.errorMessage);
-          this.schedulePairingPoll(pairingId, serverUrl);
+          reportSideException(new Error(summary.errorMessage ?? "pairing poll transient failure"), {
+            category: "pairing-poll-transient",
+          });
+          this.schedulePairingPoll(pairingId, serverUrl, operation);
           return;
         }
         this.setConnectionStatus({
@@ -248,7 +331,7 @@ AppSideService(
         });
         return;
       }
-      if (!this.isCurrentPairing(pairingId)) {
+      if (!connectionOperations.isCurrent(operation) || !this.isCurrentPairing(pairingId)) {
         return;
       }
 
@@ -260,7 +343,10 @@ AppSideService(
         }
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, companionToken);
         this.clearPairingInfo();
-        this.setConnectionStatus({ state: "connected" });
+        this.setConnectionStatus({
+          state: "connected",
+          connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+        });
         return;
       }
 
@@ -269,7 +355,7 @@ AppSideService(
           state: "pairing",
           shortCode: settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_SHORT_CODE),
         });
-        this.schedulePairingPoll(pairingId, serverUrl);
+        this.schedulePairingPoll(pairingId, serverUrl, operation);
         return;
       }
 
@@ -277,6 +363,7 @@ AppSideService(
     },
 
     async loginWithPassword(rawPayload: string) {
+      const operation = connectionOperations.begin();
       const payload = readJson(rawPayload, {});
       const serverUrl = getStoredServerUrl();
       const email = getString(payload, "email");
@@ -293,7 +380,11 @@ AppSideService(
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/password-login`,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({
+            email,
+            password,
+            connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+          }),
         });
         const summary = summarizeZeppFetchResponse(response);
         if (!summary.ok) {
@@ -303,14 +394,104 @@ AppSideService(
         if (!isRecord(summary.body) || typeof summary.body.token !== "string") {
           throw new Error("Dofek login did not return connection credentials.");
         }
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
 
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, email);
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, summary.body.token);
         this.clearPairingInfo();
-        this.setConnectionStatus({ state: "connected" });
+        this.setConnectionStatus({
+          state: "connected",
+          connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
-        this.setConnectionStatus({ state: "error", reason: message });
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
+        throw error;
+      }
+    },
+
+    async verifyConnection() {
+      const operation = connectionOperations.begin();
+      const serverUrl = getStoredServerUrl();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+      if (!apiToken) {
+        this.setConnectionStatus({ state: "not connected" });
+        return;
+      }
+
+      this.setConnectionStatus({ state: "checking" });
+      try {
+        const response = await fetch({
+          url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/current`,
+          method: "GET",
+          headers: { Authorization: `Bearer ${apiToken}` },
+        });
+        const summary = summarizeZeppFetchResponse(response);
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
+        if (!summary.ok) {
+          if (summary.status === 401) {
+            settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          }
+          throw new Error(summary.errorMessage ?? "Dofek connection check failed.");
+        }
+        if (!isRecord(summary.body) || getString(summary.body, "state") !== "connected") {
+          throw new Error("Dofek returned an invalid connection status.");
+        }
+        if (getString(summary.body, "connectionType") !== DOFEK_COMPANION_CONNECTION_TYPE) {
+          settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          throw new Error("Saved credentials belong to a different Zepp app. Connect again.");
+        }
+        this.setConnectionStatus({
+          state: "connected",
+          connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Dofek connection check failed.";
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
+        throw error;
+      }
+    },
+
+    async disconnect() {
+      const operation = connectionOperations.begin();
+      const serverUrl = getStoredServerUrl();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+      if (!apiToken) {
+        this.clearPairingInfo();
+        this.setConnectionStatus({ state: "not connected" });
+        return;
+      }
+
+      this.setConnectionStatus({ state: "disconnecting" });
+      try {
+        const response = await fetch({
+          url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/current`,
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${apiToken}` },
+        });
+        const summary = summarizeZeppFetchResponse(response);
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
+        if (!summary.ok && summary.status !== 401) {
+          throw new Error(summary.errorMessage ?? "Failed to disconnect Dofek.");
+        }
+        settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+        this.clearPairingInfo();
+        this.setConnectionStatus({ state: "not connected" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to disconnect Dofek.";
+        if (connectionOperations.isCurrent(operation)) {
+          this.setConnectionStatus({ state: "error", reason: message });
+        }
         throw error;
       }
     },
@@ -345,7 +526,7 @@ AppSideService(
 
         if (!summary.ok) {
           const message = summary.errorMessage ?? "health data upload failed";
-          logger.error("health data upload failed: %s", message);
+          reportSideException(new Error(message), { category: "health-upload" });
           settings.settingsStorage.setItem(
             STORAGE_KEYS.HEALTH_SYNC_STATUS,
             JSON.stringify({ state: "error", reason: message }),
@@ -361,7 +542,7 @@ AppSideService(
         logger.log("health data uploaded successfully");
       } catch (error) {
         const message = error instanceof Error ? error.message : "health data upload failed";
-        logger.error("health data upload fetch failed: %j", error);
+        reportSideException(error, { category: "health-upload-fetch" });
         settings.settingsStorage.setItem(
           STORAGE_KEYS.HEALTH_SYNC_STATUS,
           JSON.stringify({ state: "error", reason: message }),
@@ -463,7 +644,7 @@ AppSideService(
 
       if (method === "dofek.startPairing") {
         this.startPairing()
-          .then((pairingInfo: Record<string, unknown>) => res(null, pairingInfo))
+          .then((pairingInfo) => res(null, pairingInfo))
           .catch((error: unknown) => res(error, null));
         return;
       }
@@ -475,6 +656,13 @@ AppSideService(
             password: params.password,
           }),
         )
+          .then(() => res(null, { ok: true }))
+          .catch((error: unknown) => res(error, null));
+        return;
+      }
+
+      if (method === "dofek.disconnect") {
+        this.disconnect()
           .then(() => res(null, { ok: true }))
           .catch((error: unknown) => res(error, null));
         return;
@@ -498,6 +686,22 @@ AppSideService(
           transferState: "sent",
           sampleCount: params.sampleCount ?? status.sampleCount,
           updatedAt: Date.now(),
+        });
+        res(null, { ok: true });
+        return;
+      }
+
+      if (method === "telemetry.report") {
+        const errorMessage = typeof params.message === "string" ? params.message : "unknown error";
+        const errorName = typeof params.name === "string" ? params.name : "Error";
+        const stack = typeof params.stack === "string" ? params.stack : undefined;
+        const error = new Error(errorMessage);
+        error.name = errorName;
+        if (stack) {
+          error.stack = stack;
+        }
+        reportSideException(error, {
+          category: typeof params.category === "string" ? params.category : "zepp-watch",
         });
         res(null, { ok: true });
         return;

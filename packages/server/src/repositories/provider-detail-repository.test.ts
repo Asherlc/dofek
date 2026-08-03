@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
-  DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
   getRecordSelectFilterColumns,
   isJournalQuestionSlugFilterColumn,
+  PROVIDER_ACCOUNT_TABLES,
   PROVIDER_DATA_TABLES,
   ProviderDetailRepository,
   SYNC_LOG_FILTER_OPTION_FIELDS,
@@ -76,47 +76,47 @@ describe("dataTypeEnum", () => {
 });
 
 // ---------------------------------------------------------------------------
-// DISCONNECT_CHILD_TABLES
+// PROVIDER_ACCOUNT_TABLES
 // ---------------------------------------------------------------------------
 
-describe("DISCONNECT_CHILD_TABLES", () => {
+describe("PROVIDER_ACCOUNT_TABLES", () => {
   it("contains 18 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(18);
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(18);
   });
 
   it("includes all required child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.metric_stream");
-    expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
-    expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
-    expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.nutrition_daily");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sleep_session");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.food_entry");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.supplement_dose_event");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.medication_dose_event");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.dexa_scan");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sync_log");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.activity");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.provider_connection");
+    expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.metric_stream");
+    expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.strength_workout");
+    expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.body_measurement");
+    expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.nutrition_daily");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_result");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_panel");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.supplement_dose_event");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.journal_entry");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.dexa_scan");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sync_log");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.activity");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.oauth_token");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.provider_connection");
   });
 
   it("starts with daily_metrics after Postgres metric_stream retirement", () => {
-    expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
+    expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
   });
 
   it("ends with OAuth token then provider connection (FK order)", () => {
-    const lastTwo = DISCONNECT_CHILD_TABLES.slice(-2);
+    const lastTwo = PROVIDER_ACCOUNT_TABLES.slice(-2);
     expect(lastTwo).toEqual(["fitness.oauth_token", "fitness.provider_connection"]);
   });
 
   it("deletes lab_result before lab_panel (FK order)", () => {
-    const resultIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.lab_result");
-    const panelIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.lab_panel");
+    const resultIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_result");
+    const panelIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_panel");
     expect(resultIndex).toBeLessThan(panelIndex);
   });
 });
@@ -402,24 +402,66 @@ describe("ProviderDetailRepository", () => {
     });
   });
 
-  // ── deleteProviderData ──
-
-  describe("deleteProviderData", () => {
-    it("deletes all user-scoped provider rows in a transaction", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
+  describe("canDeleteProviderData", () => {
+    it("allows a disconnected user with retained PostgreSQL records", async () => {
+      const { bodyStore, query } = makeBodyStore([{ has_data: 0 }]);
+      const execute = vi
         .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const { repo } = makeRepository([], mockTransaction);
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: true }]);
+      const transaction = vi.fn();
+      const repository = new ProviderDetailRepository(
+        { execute, transaction },
+        "user-1",
+        bodyStore,
+      );
 
-      await repo.deleteProviderData("strava");
-
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      await expect(repository.canDeleteProviderData("strava")).resolves.toBe(true);
+      expect(stringifyQuery(execute.mock.calls[1]?.[0])).toContain("fitness.activity");
+      expect(query).not.toHaveBeenCalled();
     });
 
+    it("allows a disconnected user with active retained metric-stream records", async () => {
+      const { bodyStore, query } = makeBodyStore([{ has_data: 1 }]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: false }]);
+      const transaction = vi.fn();
+      const repository = new ProviderDetailRepository(
+        { execute, transaction },
+        "user-1",
+        bodyStore,
+      );
+
+      await expect(repository.canDeleteProviderData("whoop")).resolves.toBe(true);
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "argMax(is_deleted, tuple(version, ingested_at)) = 0",
+      );
+      expect(query.mock.calls[0]?.[2]).toEqual({
+        userId: "user-1",
+        providerId: "whoop",
+      });
+    });
+
+    it("rejects a user with no connection or retained records", async () => {
+      const { bodyStore } = makeBodyStore([{ has_data: 0 }]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: false }]);
+      const transaction = vi.fn();
+      const repository = new ProviderDetailRepository(
+        { execute, transaction },
+        "user-2",
+        bodyStore,
+      );
+
+      await expect(repository.canDeleteProviderData("strava")).resolves.toBe(false);
+    });
+  });
+
+  describe("requestProviderDataDeletion", () => {
     it("atomically deletes provider records and writes the deletion request to the outbox", async () => {
       const deletionEventId = "10000000-0000-4000-8000-000000000001";
       const userId = "00000000-0000-4000-8000-000000000001";
@@ -464,51 +506,6 @@ describe("ProviderDetailRepository", () => {
       expect(deleteSql).toContain("fitness.provider_data_deletion_outbox");
       expect(txExecute).toHaveBeenCalledTimes(PROVIDER_DATA_TABLES.length + 1);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-    });
-
-    it("deletes from each child table in order", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const { repo } = makeRepository([], mockTransaction);
-
-      await repo.deleteProviderData("strava");
-
-      // Each child table delete should be issued in DISCONNECT_CHILD_TABLES order
-      for (let index = 0; index < DISCONNECT_CHILD_TABLES.length; index++) {
-        expect(txExecute.mock.calls[index]).toBeDefined();
-      }
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-    });
-
-    it("fails immediately when a provider child table does not exist", async () => {
-      const missingTableError = { code: "42P01" };
-      const txExecute = vi.fn().mockRejectedValueOnce(missingTableError);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const { repo } = makeRepository([], mockTransaction);
-
-      await expect(repo.deleteProviderData("strava")).rejects.toBe(missingTableError);
-      expect(txExecute).toHaveBeenCalledTimes(1);
-    });
-
-    it("rethrows delete failures that are not missing-table errors", async () => {
-      const txExecute = vi.fn().mockRejectedValueOnce(new Error("permission denied"));
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const { repo } = makeRepository([], mockTransaction);
-
-      await expect(repo.deleteProviderData("strava")).rejects.toThrow("permission denied");
-      expect(txExecute).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -680,38 +677,10 @@ describe("ProviderDetailRepository", () => {
       expect(result === null).toBe(true);
     });
 
-    it("deleteProviderData calls transaction (BlockStatement mutation would skip it)", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const { repo } = makeRepository([], mockTransaction);
-
-      await repo.deleteProviderData("test-provider");
-      // If the await this.#db.transaction() block was removed, transaction would not be called
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-    });
-
-    it("deleteProviderData deletes from exactly DISCONNECT_CHILD_TABLES.length tables", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const { repo } = makeRepository([], mockTransaction);
-
-      await repo.deleteProviderData("test-provider");
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(18);
-    });
-
-    it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(18);
-      expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(DISCONNECT_CHILD_TABLES[17]).toBe("fitness.provider_connection");
+    it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(18);
+      expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
+      expect(PROVIDER_ACCOUNT_TABLES[17]).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
@@ -761,9 +730,9 @@ describe("ProviderDetailRepository", () => {
       expect(dataTypeEnum.options[10]).toBe("journalEntries");
     });
 
-    it("DISCONNECT_CHILD_TABLES ordering: activity comes before oauth_token", () => {
-      const activityIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.activity");
-      const oauthIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.oauth_token");
+    it("PROVIDER_ACCOUNT_TABLES ordering: activity comes before oauth_token", () => {
+      const activityIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.activity");
+      const oauthIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.oauth_token");
       expect(activityIndex).toBeGreaterThanOrEqual(0);
       expect(oauthIndex).toBeGreaterThanOrEqual(0);
       expect(activityIndex).toBeLessThan(oauthIndex);

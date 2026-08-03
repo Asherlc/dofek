@@ -1,3 +1,4 @@
+import { formatBaselineContext } from "@dofek/format/baseline-context";
 import {
   formatBodyCompositionNumber,
   formatDateShort,
@@ -6,6 +7,7 @@ import {
   formatNumber,
   formatSpO2,
 } from "@dofek/format/format";
+import { formatHealthspanTrendContext } from "@dofek/format/healthspan-context";
 import { formatMeasurementText } from "@dofek/format/units";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
@@ -16,7 +18,7 @@ import {
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -34,11 +36,13 @@ import { DaySelector } from "../../components/DaySelector";
 import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
@@ -58,13 +62,6 @@ const RECOVERY_SCORE_BANDS = SCORE_ZONES.map((zone) => {
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function trendArrow(trend: string | null): string {
-  if (trend === "improving") return "\u2191";
-  if (trend === "declining") return "\u2193";
-  if (trend === "stable") return "\u2192";
-  return "";
 }
 
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
@@ -175,26 +172,45 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, description, isHydrated, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
+  const hasCommittedHydratedRange = useRef(false);
+  const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
+  useEffect(() => {
+    hasCommittedHydratedRange.current = isHydrated;
+  }, [isHydrated]);
 
   const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
     { days, endDate },
-    { placeholderData: (previousData) => previousData },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const todayPlanQuery = trpc.todayPlan.get.useQuery(
+    { days: 30, endDate },
+    { enabled: isHydrated },
   );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
-  const recoveryData = recoveryQuery.data;
+  const recoveryData = isHydrated ? recoveryQuery.data : undefined;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
   const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
-  const latestHrv = hrvData[hrvData.length - 1];
-  const latestRestingHeartRate = hrvBaselineData[hrvBaselineData.length - 1];
+  const baselineRelative = recoveryData?.baselineRelative ?? [];
+  const hrvContext = baselineRelative.find((metric) => metric.metric === "hrv");
+  const restingHeartRateContext = baselineRelative.find(
+    (metric) => metric.metric === "resting_heart_rate",
+  );
+  const respiratoryRateContext = baselineRelative.find(
+    (metric) => metric.metric === "respiratory_rate",
+  );
+  const sleepEfficiencyContext = baselineRelative.find(
+    (metric) => metric.metric === "sleep_efficiency",
+  );
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
   const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
     d.resting_hr != null ? [d.resting_hr] : [],
   );
-  const hrvBaseline = latestHrv?.rollingMean;
-  const restingHeartRateBaseline = latestRestingHeartRate?.resting_hr_mean_7d;
 
   const readinessData = recoveryData?.readinessScore ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
@@ -244,9 +260,14 @@ export default function RecoveryScreen() {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.recovery.invalidate(),
+        utils.todayPlan.get.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
+
+  if (!isHydrated) {
+    return <QueryStatePanel variant="loading" minHeight={200} />;
+  }
 
   return (
     <ScrollView
@@ -260,13 +281,37 @@ export default function RecoveryScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}
         error={processingStatus.error}
         loading={processingStatus.isLoading}
       />
+
+      <TodayPlanCard
+        plan={todayPlanQuery.data}
+        loading={todayPlanQuery.isLoading}
+        error={todayPlanQuery.error}
+      />
+
+      {recoveryQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={
+            recoveryData == null
+              ? "Recovery data is unavailable"
+              : "Recovery data could not refresh"
+          }
+          message={getQueryErrorMessage(recoveryQuery.error)}
+          minHeight={96}
+          onRetry={() => {
+            void recoveryQuery.refetch();
+          }}
+          retryLabel="Retry recovery data"
+          retrying={recoveryQuery.isFetching}
+        />
+      ) : null}
 
       {recoveryData != null && (
         <HealthStatusCards
@@ -278,21 +323,34 @@ export default function RecoveryScreen() {
             if (metric.metric === "skin_temperature") {
               return formatMeasurementText(units.formatTemperature(metric.value));
             }
-            if (metric.metric === "hrv") return formatHRV(metric.value);
             if (metric.metric === "spo2") return formatSpO2(metric.value);
+            if (metric.metric === "respiratory_rate") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)} breaths/min`;
+            }
+            if (metric.metric === "sleep_efficiency") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)}%`;
+            }
             if (metric.value == null) return "—";
-            if (metric.metric === "steps") return Math.round(metric.value).toLocaleString();
             if (metric.metric === "body_fat_percentage") {
               return `${formatBodyCompositionNumber(metric.value)}%`;
             }
             return `${formatNumber(metric.value, 0)} bpm`;
+          }}
+          formatComparisonValue={(metric, value) => {
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperatureDelta(value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(value);
+            if (metric.metric === "hrv") return formatHRV(value);
+            if (metric.metric === "steps") return formatNumber(value, 0);
+            return formatNumber(value);
           }}
         />
       )}
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : (
+      ) : recoveryData != null ? (
         <>
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
@@ -354,10 +412,10 @@ export default function RecoveryScreen() {
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
-            value={formatHRV(latestHrv?.hrv)}
+            value={formatHRV(hrvContext?.value)}
             trend={hrvValues.slice(-14)}
             color={colors.positive}
-            subtitle={hrvBaseline != null ? `7-day baseline: ${formatHRV(hrvBaseline)}` : undefined}
+            subtitle={hrvContext ? formatBaselineContext(hrvContext, { unit: "ms" }) : undefined}
             trendDirection={
               hrvValues.length >= 2
                 ? computeTrend(
@@ -371,16 +429,16 @@ export default function RecoveryScreen() {
           <MetricCard
             title="Resting Heart Rate"
             value={
-              latestRestingHeartRate?.resting_hr != null
-                ? formatNumber(latestRestingHeartRate.resting_hr, 0)
+              restingHeartRateContext?.value != null
+                ? formatNumber(restingHeartRateContext.value, 0)
                 : "--"
             }
             unit="bpm"
             trend={restingHeartRateValues.slice(-14)}
             color={colors.warning}
             subtitle={
-              restingHeartRateBaseline != null
-                ? `7-day baseline: ${formatNumber(restingHeartRateBaseline, 0)} bpm`
+              restingHeartRateContext
+                ? formatBaselineContext(restingHeartRateContext, { unit: "bpm" })
                 : undefined
             }
             trendDirection={
@@ -392,6 +450,34 @@ export default function RecoveryScreen() {
                 : undefined
             }
           />
+
+          {respiratoryRateContext ? (
+            <MetricCard
+              title="Respiratory Rate"
+              value={
+                respiratoryRateContext.value != null
+                  ? formatNumber(respiratoryRateContext.value)
+                  : "--"
+              }
+              unit="breaths/min"
+              color={colors.blue}
+              subtitle={formatBaselineContext(respiratoryRateContext, { unit: "breaths/min" })}
+            />
+          ) : null}
+
+          {sleepEfficiencyContext ? (
+            <MetricCard
+              title="Sleep Efficiency"
+              value={
+                sleepEfficiencyContext.value != null
+                  ? formatNumber(sleepEfficiencyContext.value)
+                  : "--"
+              }
+              unit="%"
+              color={colors.teal}
+              subtitle={formatBaselineContext(sleepEfficiencyContext, { unit: "%" })}
+            />
+          ) : null}
 
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (
@@ -483,39 +569,54 @@ export default function RecoveryScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null &&
+          {healthspan != null && healthspan.availability.status === "insufficient_data" ? (
+            <Card title="Healthspan Score">
+              <Text style={styles.healthspanAvailabilitySummary}>
+                {healthspan.availability.summary}
+              </Text>
+              {healthspan.availability.nextCondition != null ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  {healthspan.availability.nextCondition}
+                </Text>
+              ) : null}
+              {healthspan.availability.missingMetricLabels.length > 0 ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  Missing supported metrics:{" "}
+                  {healthspan.availability.missingMetricLabels.join(", ")}
+                </Text>
+              ) : null}
+            </Card>
+          ) : healthspan != null &&
             healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 && (
-              <Card title="Healthspan Score">
-                <View style={styles.healthspanRow}>
+            healthspan.metrics.length > 0 ? (
+            <Card title="Healthspan Score">
+              <View style={styles.healthspanRow}>
+                <Text
+                  style={[
+                    styles.healthspanScore,
+                    { color: scoreColor(healthspan.healthspanScore) },
+                  ]}
+                >
+                  {healthspan.healthspanScore}
+                </Text>
+                <View style={styles.healthspanMeta}>
                   <Text
                     style={[
-                      styles.healthspanScore,
+                      styles.healthspanStatus,
                       { color: scoreColor(healthspan.healthspanScore) },
                     ]}
                   >
-                    {healthspan.healthspanScore}
+                    {scoreLabel(healthspan.healthspanScore)}
                   </Text>
-                  <View style={styles.healthspanMeta}>
-                    <Text
-                      style={[
-                        styles.healthspanStatus,
-                        { color: scoreColor(healthspan.healthspanScore) },
-                      ]}
-                    >
-                      {scoreLabel(healthspan.healthspanScore)}
+                  {healthspan.trend != null && (
+                    <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
+                      {formatHealthspanTrendContext(healthspan.trend)}
                     </Text>
-                    {healthspan.trend != null && (
-                      <Text
-                        style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}
-                      >
-                        {trendArrow(healthspan.trend)} {healthspan.trend}
-                      </Text>
-                    )}
-                  </View>
+                  )}
                 </View>
-              </Card>
-            )}
+              </View>
+            </Card>
+          ) : null}
 
           {/* Trend Weight */}
           {latestWeight != null && (
@@ -525,9 +626,11 @@ export default function RecoveryScreen() {
                   <Text style={styles.weightValue}>
                     {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  {latestWeight.rawWeight != null && (
+                  <Text style={styles.weightScale}>{latestWeight.smoothedWeightStatus?.label}</Text>
+                  {latestWeight.rawWeight != null && latestWeight.rawWeightStatus != null && (
                     <Text style={styles.weightScale}>
-                      Scale: {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                      {latestWeight.rawWeightStatus.label}:{" "}
+                      {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
                     </Text>
                   )}
                   <Text style={styles.weightExplanation}>
@@ -612,6 +715,16 @@ export default function RecoveryScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navLink}
+            onPress={() => router.push("/behavior-associations")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Behavior Associations"
+          >
+            <Text style={styles.navLinkText}>Behavior Associations</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navLink}
             onPress={() => router.push("/experiments")}
             activeOpacity={0.7}
             accessibilityRole="button"
@@ -631,7 +744,7 @@ export default function RecoveryScreen() {
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
         </>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
@@ -715,7 +828,17 @@ const styles = StyleSheet.create({
   healthspanTrend: {
     fontSize: 13,
     fontWeight: "500",
-    textTransform: "capitalize",
+  },
+  healthspanAvailabilitySummary: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  healthspanAvailabilityDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   weightRow: {
     flexDirection: "row",

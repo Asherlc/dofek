@@ -20,9 +20,20 @@ vi.mock("./account-erasure-storage", () => ({
 }));
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
+const { mockStartStartupPhase, mockFinishStartupPhase } = vi.hoisted(() => ({
+  mockStartStartupPhase: vi.fn(),
+  mockFinishStartupPhase: vi.fn(),
+}));
 
 vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
+  identifyUser: vi.fn(),
+  resetUser: vi.fn(),
+}));
+
+vi.mock("./startup-telemetry", () => ({
+  startStartupPhase: mockStartStartupPhase,
+  finishStartupPhase: mockFinishStartupPhase,
 }));
 
 vi.mock("./auth", async (importOriginal) => {
@@ -76,6 +87,8 @@ describe("auth-context", () => {
       });
 
       expect(saveSessionToken).toHaveBeenCalledWith("existing-token");
+      expect(mockStartStartupPhase).toHaveBeenCalledWith("authentication");
+      expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "authenticated");
     });
 
     it("does not re-save when no token exists", async () => {
@@ -90,6 +103,7 @@ describe("auth-context", () => {
       });
 
       expect(saveSessionToken).not.toHaveBeenCalled();
+      expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "unauthenticated");
     });
 
     it("finishes bootstrap on a fresh inactive launch with no token", async () => {
@@ -134,6 +148,7 @@ describe("auth-context", () => {
       expect(saveSessionToken).not.toHaveBeenCalled();
       expect(result.current.user).toBeNull();
       expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "deferred");
 
       AppState.currentState = "active";
       vi.mocked(getSessionToken).mockResolvedValue("existing-token");
@@ -172,6 +187,7 @@ describe("auth-context", () => {
       });
 
       expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "auth-state-restore" });
+      expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "error");
     });
 
     it("keeps bootstrap failure separate from unauthenticated state", async () => {

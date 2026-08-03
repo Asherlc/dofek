@@ -246,7 +246,7 @@ location_centroids AS (
 SELECT
     assumeNotNull(dirty_keys.activity_id) AS activity_id,
     assumeNotNull(dirty_keys.user_id) AS user_id,
-    coalesce(distance_per_activity.total_distance, CAST(0, 'Nullable(Float64)')) AS total_distance,
+    distance_per_activity.total_distance AS total_distance,
     location_centroids.centroid_lat AS centroid_lat,
     location_centroids.centroid_lng AS centroid_lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,

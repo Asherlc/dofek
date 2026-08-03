@@ -1,4 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { PolarizationTrendChart } from "../../components/PolarizationTrendChart.tsx";
@@ -28,8 +29,8 @@ function EnduranceTab() {
   return (
     <>
       <Section
-        title="Polarization Index"
-        subtitle="Weekly cycling distribution using the Treff three-zone model"
+        title={TRAINING_TERMINOLOGY.polarization.plainLabel}
+        subtitle="Weekly balance of easy, threshold, and high-intensity cycling"
       >
         {polarization.error ? (
           <QueryStatePanel error={polarization.error} />
@@ -37,6 +38,7 @@ function EnduranceTab() {
           <PolarizationTrendChart
             weeks={polarization.data?.weeks ?? []}
             maxHr={polarization.data?.maxHr ?? null}
+            threshold={polarization.data?.threshold}
             method={polarization.data?.method ?? null}
             loading={polarization.isLoading}
           />
@@ -59,7 +61,10 @@ function EnduranceTab() {
         )}
       </Section>
 
-      <Section title="Training Monotony & Strain" subtitle="Weekly training load variability">
+      <Section
+        title={TRAINING_TERMINOLOGY.monotony.plainLabel}
+        subtitle="Weekly training variety and total load"
+      >
         {monotony.error ? (
           <QueryStatePanel error={monotony.error} />
         ) : (

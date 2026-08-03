@@ -15,6 +15,11 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const ErrorState: Story = {
+  name: "Error",
+  tags: ["review-scenario", "review-scenario-error"],
+};
+
 export const Retryable: Story = {
   args: {
     onRetry: () => {},
@@ -26,6 +31,13 @@ export const Contextual: Story = {
   args: {
     contextLabel: "Sleep",
     error: new Error("Sleep performance is unavailable."),
+  },
+};
+
+export const DomainTitle: Story = {
+  args: {
+    title: "Alert status is unavailable",
+    error: new Error("The status service timed out."),
   },
 };
 

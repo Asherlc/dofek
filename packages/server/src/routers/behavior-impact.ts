@@ -1,15 +1,33 @@
+import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
-import { BehaviorImpactRepository } from "../repositories/behavior-impact-repository.ts";
+import {
+  type BehaviorAssociation,
+  type BehaviorImpactDetail,
+  BehaviorImpactRepository,
+  behaviorAssociationSchema,
+} from "../repositories/behavior-impact-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
-export interface BehaviorImpact {
-  questionSlug: string;
-  displayName: string;
-  category: string;
-  impactPercent: number;
-  yesCount: number;
-  noCount: number;
+export type BehaviorImpact = Omit<BehaviorImpactDetail, "association"> & {
+  association: BehaviorAssociation;
+};
+
+function observationWindow(days: number | null): string {
+  return days === null ? "all available history" : `${days} days`;
 }
+
+const behaviorImpactOutputSchema = z.array(
+  z.object({
+    questionSlug: z.string(),
+    displayName: z.string(),
+    category: z.string(),
+    impactPercent: z.number().nullable(),
+    yesCount: z.number().int().nonnegative(),
+    noCount: z.number().int().nonnegative(),
+    sources: z.array(z.object({ providerId: z.string(), label: z.string() })),
+    association: behaviorAssociationSchema,
+  }),
+);
 
 export const behaviorImpactRouter = router({
   impactSummary: selectedChartRangeQuery(
@@ -18,8 +36,20 @@ export const behaviorImpactRouter = router({
     async ({ ctx, range }): Promise<BehaviorImpact[]> => {
       const repo = new BehaviorImpactRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       const impacts = await repo.getImpactSummary(range.days);
-      return impacts.map((impact) => impact.toDetail());
+      const windowLabel = observationWindow(range.days);
+      return impacts.map((impact) => {
+        const detail = impact.toDetail();
+        return {
+          ...detail,
+          association: { ...detail.association, observationWindow: windowLabel },
+        };
+      });
     },
-    { min: 7, max: 365 },
+    {
+      min: 7,
+      max: 365,
+      keyVersion: "association-semantics-v2",
+      outputSchema: behaviorImpactOutputSchema,
+    },
   ),
 });

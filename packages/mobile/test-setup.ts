@@ -4,6 +4,12 @@ import { beforeEach, vi } from "vitest";
 const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
 const secureStoreValues = vi.hoisted(() => new Map<string, string>());
 
+// __DEV__ is a Metro compile-time global in React Native. Vitest cannot
+// statically define it per-test, so expose it as a runtime global instead.
+// Default to true (matching the React Native dev environment); tests that
+// need to exercise production-only branches override it with vi.stubGlobal.
+vi.stubGlobal("__DEV__", true);
+
 // Suppress React DOM warnings about unknown elements (View, Text, etc.)
 // since we render RN component names as HTML tags in the mock.
 const originalError = console.error;
@@ -35,6 +41,15 @@ vi.mock("@sentry/react-native", () => ({
 
 vi.mock("expo-crypto", () => ({
   randomUUID: vi.fn(() => crypto.randomUUID()),
+}));
+
+vi.mock("posthog-react-native", () => ({
+  __esModule: true,
+  default: vi.fn().mockImplementation(() => ({
+    captureException: vi.fn(),
+    flush: vi.fn(() => Promise.resolve()),
+    register: vi.fn(),
+  })),
 }));
 
 // Shared in-memory AsyncStorage mock for all mobile tests. Do not redeclare this
@@ -139,18 +154,42 @@ vi.mock("react-native", () => {
     accessibilityState,
     children,
     onPress,
+    onPressIn,
+    onPressOut,
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
     style,
     ...props
-  }: Record<string, unknown>) =>
-    React.createElement(
+  }: Record<string, unknown>) => {
+    const pressActiveRef = React.useRef(false);
+
+    const beginPress = (event: unknown) => {
+      pressActiveRef.current = true;
+      if (typeof onPressIn === "function") {
+        onPressIn(event);
+      }
+    };
+    const endPress = (event: unknown) => {
+      if (!pressActiveRef.current) {
+        return;
+      }
+
+      pressActiveRef.current = false;
+      if (typeof onPressOut === "function") {
+        onPressOut(event);
+      }
+    };
+
+    return React.createElement(
       "button",
       {
         ...props,
         ...ariaPropsFromAccessibilityState(accessibilityState),
         onClick: onPress,
+        onMouseDown: beginPress,
+        onMouseLeave: endPress,
+        onMouseUp: endPress,
         role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
         "aria-description": accessibilityHint,
@@ -159,12 +198,16 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   Pressable.displayName = "Pressable";
   const TextInput = ({
+    accessibilityLabel,
+    "aria-label": ariaLabel,
     multiline,
     numberOfLines: _numberOfLines,
     onChangeText,
     placeholderTextColor: _placeholderTextColor,
+    secureTextEntry,
     style,
     textAlignVertical: _textAlignVertical,
     testID,
@@ -174,11 +217,13 @@ vi.mock("react-native", () => {
     const tagName = multiline === true ? "textarea" : "input";
     return React.createElement(tagName, {
       ...props,
+      "aria-label": accessibilityLabel ?? ariaLabel,
       "data-testid": testID,
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (typeof onChangeText === "function") onChangeText(event.target.value);
       },
       style: flattenStyle(style),
+      ...(multiline === true ? {} : { type: secureTextEntry === true ? "password" : "text" }),
       value,
     });
   };
@@ -275,6 +320,7 @@ vi.mock("react-native", () => {
   };
 
   const Alert = { alert: vi.fn() };
+  const AccessibilityInfo = { announceForAccessibility: vi.fn() };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
   const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
@@ -311,6 +357,8 @@ vi.mock("react-native", () => {
     setLayoutAnimationEnabledExperimental: vi.fn(),
   };
 
+  const DynamicColorIOS = vi.fn((variants: { light: string; dark: string }) => variants);
+
   return {
     __esModule: true,
     View,
@@ -328,11 +376,13 @@ vi.mock("react-native", () => {
     StyleSheet,
     Platform,
     Alert,
+    AccessibilityInfo,
     Linking,
     Share,
     AppState,
     LayoutAnimation,
     UIManager,
+    DynamicColorIOS,
     useWindowDimensions: vi.fn(() => ({
       width: 390,
       height: 844,

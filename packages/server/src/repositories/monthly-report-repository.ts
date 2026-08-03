@@ -1,6 +1,15 @@
 import { z } from "zod";
+import {
+  createReportEmptyState,
+  type MonthlyReportEmptyState,
+} from "../contracts/report-empty-state.ts";
+import { monthlyReportRecovery } from "../contracts/report-recovery.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildMonthlyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -22,6 +31,10 @@ export interface MonthSummary {
 export interface MonthlyReportResult {
   current: MonthSummary | null;
   history: MonthSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
+  /** Canonical readiness and value-free preview when no report exists. */
+  emptyState: MonthlyReportEmptyState;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +133,9 @@ export class MonthlyReportRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getReport(months: number): Promise<MonthlyReportResult> {
+  async getReport(months: number, endDate: string): Promise<MonthlyReportResult> {
+    const recovery = monthlyReportRecovery(months, endDate);
+    const { startDate } = recovery.range;
     const rows = await this.#sensorStore.query(
       monthRowSchema,
       `WITH per_activity AS (
@@ -131,8 +146,8 @@ export class MonthlyReportRepository {
             * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
           FROM analytics.activity_summary asum
           WHERE asum.user_id = {userId:UUID}
-            AND asum.started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-            AND asum.started_at < today() + INTERVAL 1 DAY
+            AND asum.started_at >= toDate({startDate:String})
+            AND asum.started_at < toDate({endDate:String}) + INTERVAL 1 DAY
             AND asum.ended_at IS NOT NULL
             AND asum.avg_hr IS NOT NULL
       ),
@@ -146,8 +161,8 @@ export class MonthlyReportRepository {
         FROM analytics.daily_sleep FINAL
         WHERE user_id = {userId:UUID}
           AND is_deleted = 0
-          AND date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-          AND date <= today()
+          AND date >= toDate({startDate:String})
+          AND date <= toDate({endDate:String})
       ),
       sleep_daily AS (
         SELECT date, max(duration_minutes) AS duration_minutes
@@ -162,12 +177,12 @@ export class MonthlyReportRepository {
         FROM analytics.daily_recovery AS recovery FINAL
         WHERE recovery.user_id = {userId:UUID}
           AND recovery.is_deleted = 0
-          AND recovery.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-          AND recovery.date <= today()
+          AND recovery.date >= toDate({startDate:String})
+          AND recovery.date <= toDate({endDate:String})
       ),
       date_series AS (
-        SELECT toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH + INTERVAL number DAY AS date
-        FROM numbers(toUInt64(dateDiff('day', toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH, today()) + 1))
+        SELECT toDate({startDate:String}) + INTERVAL number DAY AS date
+        FROM numbers(toUInt64(dateDiff('day', toDate({startDate:String}), toDate({endDate:String})) + 1))
       ),
       monthly AS (
         SELECT
@@ -202,7 +217,7 @@ export class MonthlyReportRepository {
       FROM monthly_with_report_presence
       WHERE report_has_data
       ORDER BY month_start ASC`,
-      { userId: this.#userId, months },
+      { userId: this.#userId, startDate, endDate },
     );
 
     const monthRows = rows.map((row) => new MonthRow(row));
@@ -214,6 +229,8 @@ export class MonthlyReportRepository {
     const current = summaries.length > 0 ? (summaries[summaries.length - 1] ?? null) : null;
     const history = summaries.slice(0, -1);
 
-    return { current, history };
+    const emptyState = createReportEmptyState("monthly");
+    const decisionSupport = current ? buildMonthlyDecisionSynthesis(current, history) : null;
+    return { current, history, decisionSupport, emptyState };
   }
 }

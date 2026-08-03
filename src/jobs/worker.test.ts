@@ -1,12 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 // All mock dependencies live inside vi.hoisted() so they are guaranteed to exist
 // before vi.mock() factories resolve and before the static import of worker.ts.
 // This satisfies vitest's "related" mode used by Stryker in CI, which requires a
 // static import dependency between the test and the source module.
 const hoisted = vi.hoisted(() => {
-  process.env.DEPLOY_ENVIRONMENT = "prod";
-  process.env.SENTRY_DSN = "https://test@sentry.io/123";
+  // Classify this fork as a production deployment so worker.ts initializes the
+  // production Sentry client on import. Use vi.stubEnv (not a raw process.env
+  // assignment) so the change is tracked and torn down after this file runs —
+  // otherwise the "prod" classification leaks into every other test module in
+  // the same vitest fork and defeats the production-only guard in
+  // initProductionSentry(), which is how local test-fixture errors previously
+  // reached production error tracking.
+  vi.stubEnv("DEPLOY_ENVIRONMENT", "prod");
+  vi.stubEnv("SENTRY_DSN", "https://test@sentry.io/123");
 
   function noOpExit(): never {
     throw new Error("process.exit called unexpectedly in test");
@@ -355,6 +362,11 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock("../lib/posthog.ts", () => ({
+  initProductionPostHog: vi.fn(),
+  capturePostHogException: vi.fn(),
+}));
+
 vi.mock("../logger.ts", () => ({
   jobContext: { run: vi.fn((_store: unknown, fn: () => unknown) => fn()) },
   logger: {
@@ -392,6 +404,15 @@ const {
 // Static import ensures vitest `related` mode (used by Stryker in CI) detects this
 // test file as related to worker.ts, so mutations in worker.ts are covered.
 import "./worker.ts";
+
+// Restore only the deployment-environment/DSN stubs so the "prod"
+// classification does not outlive this file within a reused vitest fork.
+// Use targeted vi.stubEnv calls (not vi.unstubAllEnvs) so future tests in this
+// file can safely stub other env vars without having them implicitly cleared.
+afterAll(() => {
+  vi.stubEnv("DEPLOY_ENVIRONMENT", "test");
+  vi.stubEnv("SENTRY_DSN", undefined);
+});
 
 describe("worker module", () => {
   // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
@@ -563,14 +584,16 @@ describe("worker module", () => {
     expect(lastWorkerRun).toBeLessThan(readinessListen);
   });
 
-  it("initializes Sentry when DSN is set", async () => {
+  it("initializes Sentry and PostHog when DSN is set", async () => {
     const Sentry = await import("@sentry/node");
+    const { initProductionPostHog } = await import("../lib/posthog.ts");
     expect(Sentry.init).toHaveBeenCalledWith({
       beforeSend: expect.any(Function),
       dsn: "https://test@sentry.io/123",
       environment: "production",
       skipOpenTelemetrySetup: true,
     });
+    expect(initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
   });
 
   it("registers standard handlers plus FIT progress observers", () => {

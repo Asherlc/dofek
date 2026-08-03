@@ -6,6 +6,7 @@ import {
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { findExistingUserId, resolveOrCreateUser } from "../../auth/account-linking.ts";
@@ -231,7 +232,7 @@ export async function handleIdentityCallback(
       try {
         await queryCache.invalidateByPrefix(`${userId}:auth.linkedAccounts`);
       } catch (cacheError: unknown) {
-        Sentry.captureException(cacheError);
+        captureException(cacheError);
         logger.warn(
           `[auth] Failed to invalidate linked-accounts cache for user ${userId}: ${cacheError}`,
         );
@@ -264,7 +265,7 @@ export async function handleIdentityCallback(
       res.status(409).type("text/plain").send(err.message);
       return;
     }
-    Sentry.captureException(err);
+    captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     const oauthCode =
       err instanceof Error && "code" in err && typeof err.code === "string" ? err.code : undefined;

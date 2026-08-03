@@ -22,11 +22,13 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NutritionRouteImport } from './routes/nutrition'
+import { Route as MoreRouteImport } from './routes/more'
 import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as ExperimentsRouteImport } from './routes/experiments'
+import { Route as DataQualityRouteImport } from './routes/data-quality'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CycleRouteImport } from './routes/cycle'
 import { Route as CorrelationRouteImport } from './routes/correlation'
@@ -61,241 +63,255 @@ const WeeklyReportRoute = WeeklyReportRouteImport.update({
   id: '/weekly-report',
   path: '/weekly-report',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof WeeklyReportRouteImport.update>[0])
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
   path: '/training',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof TrainingRouteImport.update>[0])
 const TrackingRoute = TrackingRouteImport.update({
   id: '/tracking',
   path: '/tracking',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof TrackingRouteImport.update>[0])
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof TermsRouteImport.update>[0])
 const SupportRoute = SupportRouteImport.update({
   id: '/support',
   path: '/support',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof SupportRouteImport.update>[0])
 const SleepRoute = SleepRouteImport.update({
   id: '/sleep',
   path: '/sleep',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof SleepRouteImport.update>[0])
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof SettingsRouteImport.update>[0])
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof ResetPasswordRouteImport.update>[0])
 const ProvidersRoute = ProvidersRouteImport.update({
   id: '/providers',
   path: '/providers',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof ProvidersRouteImport.update>[0])
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof PrivacyRouteImport.update>[0])
 const PredictionsRoute = PredictionsRouteImport.update({
   id: '/predictions',
   path: '/predictions',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof PredictionsRouteImport.update>[0])
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof OnboardingRouteImport.update>[0])
 const NutritionRoute = NutritionRouteImport.update({
   id: '/nutrition',
   path: '/nutrition',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof NutritionRouteImport.update>[0])
+const MoreRoute = MoreRouteImport.update({
+  id: '/more',
+  path: '/more',
+  getParentRoute: () => rootRouteImport,
+} as Parameters<typeof MoreRouteImport.update>[0])
 const MonthlyReportRoute = MonthlyReportRouteImport.update({
   id: '/monthly-report',
   path: '/monthly-report',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof MonthlyReportRouteImport.update>[0])
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof LoginRouteImport.update>[0])
 const InsightsRoute = InsightsRouteImport.update({
   id: '/insights',
   path: '/insights',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof InsightsRouteImport.update>[0])
 const HealthReportRoute = HealthReportRouteImport.update({
   id: '/health-report',
   path: '/health-report',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof HealthReportRouteImport.update>[0])
 const ExperimentsRoute = ExperimentsRouteImport.update({
   id: '/experiments',
   path: '/experiments',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof ExperimentsRouteImport.update>[0])
+const DataQualityRoute = DataQualityRouteImport.update({
+  id: '/data-quality',
+  path: '/data-quality',
+  getParentRoute: () => rootRouteImport,
+} as Parameters<typeof DataQualityRouteImport.update>[0])
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof DashboardRouteImport.update>[0])
 const CycleRoute = CycleRouteImport.update({
   id: '/cycle',
   path: '/cycle',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof CycleRouteImport.update>[0])
 const CorrelationRoute = CorrelationRouteImport.update({
   id: '/correlation',
   path: '/correlation',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof CorrelationRouteImport.update>[0])
 const BreathworkRoute = BreathworkRouteImport.update({
   id: '/breathwork',
   path: '/breathwork',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof BreathworkRouteImport.update>[0])
 const BodyRoute = BodyRouteImport.update({
   id: '/body',
   path: '/body',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof BodyRouteImport.update>[0])
 const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
   id: '/behavior-impact',
   path: '/behavior-impact',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof BehaviorImpactRouteImport.update>[0])
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof AlertsRouteImport.update>[0])
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof AdminRouteImport.update>[0])
 const ActivitiesRoute = ActivitiesRouteImport.update({
   id: '/activities',
   path: '/activities',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof ActivitiesRouteImport.update>[0])
 const AccountDeletionRoute = AccountDeletionRouteImport.update({
   id: '/account-deletion',
   path: '/account-deletion',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof AccountDeletionRouteImport.update>[0])
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as Parameters<typeof IndexRouteImport.update>[0])
 const TrainingIndexRoute = TrainingIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingIndexRouteImport.update>[0])
 const ProvidersIndexRoute = ProvidersIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ProvidersRoute,
-} as any)
+} as Parameters<typeof ProvidersIndexRouteImport.update>[0])
 const NutritionIndexRoute = NutritionIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => NutritionRoute,
-} as any).lazy(() =>
+} as Parameters<typeof NutritionIndexRouteImport.update>[0]).lazy(() =>
   import('./routes/nutrition/index.lazy').then((d) => d.Route),
 )
 const BodyIndexRoute = BodyIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => BodyRoute,
-} as any)
+} as Parameters<typeof BodyIndexRouteImport.update>[0])
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
-} as any).lazy(() => import('./routes/admin/index.lazy').then((d) => d.Route))
+} as Parameters<typeof AdminIndexRouteImport.update>[0]).lazy(() =>
+  import('./routes/admin/index.lazy').then((d) => d.Route),
+)
 const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
   id: '/strength',
   path: '/strength',
   getParentRoute: () => TrainingRoute,
-} as any).lazy(() =>
+} as Parameters<typeof TrainingStrengthRouteImport.update>[0]).lazy(() =>
   import('./routes/training/strength.lazy').then((d) => d.Route),
 )
 const TrainingRunningRoute = TrainingRunningRouteImport.update({
   id: '/running',
   path: '/running',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingRunningRouteImport.update>[0])
 const TrainingRecoveryRoute = TrainingRecoveryRouteImport.update({
   id: '/recovery',
   path: '/recovery',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingRecoveryRouteImport.update>[0])
 const TrainingHikingRoute = TrainingHikingRouteImport.update({
   id: '/hiking',
   path: '/hiking',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingHikingRouteImport.update>[0])
 const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
   id: '/endurance',
   path: '/endurance',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingEnduranceRouteImport.update>[0])
 const TrainingCyclingRoute = TrainingCyclingRouteImport.update({
   id: '/cycling',
   path: '/cycling',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingCyclingRouteImport.update>[0])
 const TrainingClimbingRoute = TrainingClimbingRouteImport.update({
   id: '/climbing',
   path: '/climbing',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as Parameters<typeof TrainingClimbingRouteImport.update>[0])
 const ProvidersIdRoute = ProvidersIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ProvidersRoute,
-} as any)
+} as Parameters<typeof ProvidersIdRouteImport.update>[0])
 const NutritionSupplementsRoute = NutritionSupplementsRouteImport.update({
   id: '/supplements',
   path: '/supplements',
   getParentRoute: () => NutritionRoute,
-} as any)
+} as Parameters<typeof NutritionSupplementsRouteImport.update>[0])
 const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
   getParentRoute: () => NutritionRoute,
-} as any)
+} as Parameters<typeof NutritionAnalyticsRouteImport.update>[0])
 const BodyHeartRateRoute = BodyHeartRateRouteImport.update({
   id: '/heart-rate',
   path: '/heart-rate',
   getParentRoute: () => BodyRoute,
-} as any)
+} as Parameters<typeof BodyHeartRateRouteImport.update>[0])
 const ActivityIdRoute = ActivityIdRouteImport.update({
   id: '/activity/$id',
   path: '/activity/$id',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/activity.$id.lazy').then((d) => d.Route))
+} as Parameters<typeof ActivityIdRouteImport.update>[0]).lazy(() =>
+  import('./routes/activity.$id.lazy').then((d) => d.Route),
+)
 const AdminUsersUserIdRoute = AdminUsersUserIdRouteImport.update({
   id: '/users/$userId',
   path: '/users/$userId',
   getParentRoute: () => AdminRoute,
-} as any)
+} as Parameters<typeof AdminUsersUserIdRouteImport.update>[0])
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -309,11 +325,13 @@ export interface FileRoutesByFullPath {
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
   '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
+  '/more': typeof MoreRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/predictions': typeof PredictionsRoute
@@ -356,11 +374,13 @@ export interface FileRoutesByTo {
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
   '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
+  '/more': typeof MoreRoute
   '/onboarding': typeof OnboardingRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
@@ -403,11 +423,13 @@ export interface FileRoutesById {
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
   '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
+  '/more': typeof MoreRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/predictions': typeof PredictionsRoute
@@ -454,11 +476,13 @@ export interface FileRouteTypes {
     | '/correlation'
     | '/cycle'
     | '/dashboard'
+    | '/data-quality'
     | '/experiments'
     | '/health-report'
     | '/insights'
     | '/login'
     | '/monthly-report'
+    | '/more'
     | '/nutrition'
     | '/onboarding'
     | '/predictions'
@@ -501,11 +525,13 @@ export interface FileRouteTypes {
     | '/correlation'
     | '/cycle'
     | '/dashboard'
+    | '/data-quality'
     | '/experiments'
     | '/health-report'
     | '/insights'
     | '/login'
     | '/monthly-report'
+    | '/more'
     | '/onboarding'
     | '/predictions'
     | '/privacy'
@@ -547,11 +573,13 @@ export interface FileRouteTypes {
     | '/correlation'
     | '/cycle'
     | '/dashboard'
+    | '/data-quality'
     | '/experiments'
     | '/health-report'
     | '/insights'
     | '/login'
     | '/monthly-report'
+    | '/more'
     | '/nutrition'
     | '/onboarding'
     | '/predictions'
@@ -597,11 +625,13 @@ export interface RootRouteChildren {
   CorrelationRoute: typeof CorrelationRoute
   CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
+  DataQualityRoute: typeof DataQualityRoute
   ExperimentsRoute: typeof ExperimentsRoute
   HealthReportRoute: typeof HealthReportRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
   MonthlyReportRoute: typeof MonthlyReportRoute
+  MoreRoute: typeof MoreRoute
   NutritionRoute: typeof NutritionRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   PredictionsRoute: typeof PredictionsRoute
@@ -711,6 +741,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NutritionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/more': {
+      id: '/more'
+      path: '/more'
+      fullPath: '/more'
+      preLoaderRoute: typeof MoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monthly-report': {
       id: '/monthly-report'
       path: '/monthly-report'
@@ -744,6 +781,13 @@ declare module '@tanstack/react-router' {
       path: '/experiments'
       fullPath: '/experiments'
       preLoaderRoute: typeof ExperimentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/data-quality': {
+      id: '/data-quality'
+      path: '/data-quality'
+      fullPath: '/data-quality'
+      preLoaderRoute: typeof DataQualityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -1044,11 +1088,13 @@ const rootRouteChildren: RootRouteChildren = {
   CorrelationRoute: CorrelationRoute,
   CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
+  DataQualityRoute: DataQualityRoute,
   ExperimentsRoute: ExperimentsRoute,
   HealthReportRoute: HealthReportRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
   MonthlyReportRoute: MonthlyReportRoute,
+  MoreRoute: MoreRoute,
   NutritionRoute: NutritionRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   PredictionsRoute: PredictionsRoute,

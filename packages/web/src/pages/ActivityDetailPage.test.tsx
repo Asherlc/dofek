@@ -31,23 +31,40 @@ const mockActivity: ActivityDetail = {
   id: "test-123",
   notes: null,
   maxSpeed: null,
+  maxSpeedState: { status: "missing", reason: "Max Speed not recorded" },
   elevationLoss: null,
+  elevationLossState: { status: "missing", reason: "Elevation Loss not recorded" },
   sampleCount: null,
+  sampleCountState: { status: "missing", reason: "Sample Count not recorded" },
   name: "Morning Run",
   activityType: "running",
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
+  localTimeContext: {
+    timezone: null,
+    startUtcOffsetMinutes: 60,
+    endUtcOffsetMinutes: 60,
+    source: "provider_offset",
+  },
   providerId: "whoop",
   subsource: null,
   providerAbsentAt: null,
   totalDistance: 10000,
+  totalDistanceState: { status: "available" },
   elevationGain: 200,
+  elevationGainState: { status: "available" },
   avgHr: 150,
+  avgHrState: { status: "available" },
   maxHr: 175,
+  maxHrState: { status: "available" },
   avgPower: null,
+  avgPowerState: { status: "missing", reason: "Avg Power not recorded" },
   maxPower: null,
+  maxPowerState: { status: "missing", reason: "Max Power not recorded" },
   avgSpeed: 3.0,
+  avgSpeedState: { status: "available" },
   avgCadence: null,
+  avgCadenceState: { status: "missing", reason: "Avg Cadence not recorded" },
   sourceProviders: ["whoop", "apple_health"],
   sourceLinks: [],
   sourceDecision: null,
@@ -467,6 +484,37 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Activity not found")).toBeDefined();
+  });
+
+  it("renders detail metric state and preserves a measured zero", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        totalDistance: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    const { rerender } = renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Distance unavailable")).toBeDefined();
+    expect(screen.getByText("Distance not recorded")).toBeDefined();
+    expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeDefined();
+
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, totalDistance: 0, totalDistanceState: { status: "available" } },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    rerender(<ActivityDetailPage />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
   });
 
   it("shows a sensor section error when the stream query fails without data", async () => {
@@ -939,7 +987,11 @@ describe("ActivityDetailPage", () => {
       const originalActivity = { ...mockActivity };
       const originalStream = mockStreamPoints.map((point) => ({ ...point }));
 
-      Object.assign(mockActivity, { activityType: "hiking", avgCadence: 85 });
+      Object.assign(mockActivity, {
+        activityType: "hiking",
+        avgCadence: 85,
+        avgCadenceState: { status: "available" },
+      });
       mockStreamPoints.splice(
         0,
         mockStreamPoints.length,
@@ -970,7 +1022,11 @@ describe("ActivityDetailPage", () => {
       const originalActivity = { ...mockActivity };
       const originalStream = mockStreamPoints.map((point) => ({ ...point }));
 
-      Object.assign(mockActivity, { activityType: "cycling", avgCadence: 90 });
+      Object.assign(mockActivity, {
+        activityType: "cycling",
+        avgCadence: 90,
+        avgCadenceState: { status: "available" },
+      });
       mockStreamPoints.splice(
         0,
         mockStreamPoints.length,
@@ -1042,10 +1098,13 @@ describe("ActivityDetailPage", () => {
             grade: "V4",
             sent: true,
             attemptCount: 7,
+            attempts: [],
             ascentType: "Redpoint",
+            holdType: null,
             routeName: "Blue Circuit",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            wallAngleDegrees: null,
           },
           {
             id: "climb-project",
@@ -1054,10 +1113,20 @@ describe("ActivityDetailPage", () => {
             grade: "V5",
             sent: false,
             attemptCount: 1,
+            attempts: [
+              {
+                attemptIndex: 1,
+                failureReason: "technique",
+                notes: null,
+                outcome: "failed",
+              },
+            ],
             ascentType: null,
+            holdType: "crimp",
             routeName: "Project",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            wallAngleDegrees: 35,
           },
         ],
         isLoading: false,
@@ -1074,6 +1143,8 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Sent in 7 attempts")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Attempted 1 time")).toBeDefined();
+      expect(screen.getByText("35° · Crimp")).toBeDefined();
+      expect(screen.getByText("1: Technique")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
 
       Object.assign(mockActivity, originalData);

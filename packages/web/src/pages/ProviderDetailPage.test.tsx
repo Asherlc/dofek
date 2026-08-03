@@ -407,8 +407,42 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Sync history refresh failed")).toBeTruthy();
-    expect(screen.getByText("activities")).toBeTruthy();
-    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Activities data synced" })).toBeTruthy();
+    expect(screen.getByText("12 records")).toBeTruthy();
+  });
+
+  it("explains an expired provider authorization before exposing diagnostics", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: false,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+    mockDetailLogs.data = [
+      {
+        id: "raw-log-123",
+        syncedAt: "2026-07-24T12:00:00.000Z",
+        dataType: "strength",
+        status: "error",
+        recordCount: null,
+        durationMs: 1250,
+        errorMessage: "OAuth token refresh returned invalid_grant",
+        authFailureReason: "refresh_token_revoked",
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Authorization expired" })).toBeTruthy();
+    expect(screen.getByText("Reconnect WHOOP to resume Strength data.")).toBeTruthy();
+    expect(screen.getByText("Diagnostics").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("shows 'Import only' instead of 'Connected' for import-only providers", async () => {
@@ -515,6 +549,76 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Sync Controls")).toBeTruthy();
     expect(screen.getByText("Connected")).toBeTruthy();
     expect(screen.queryByText("Import only")).toBeNull();
+  });
+
+  it("gives WHOOP one exact range and one sync action", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: true,
+        authType: "custom:whoop",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [
+        {
+          providerId: "whoop",
+          status: "skippedCooldown",
+          message: "WHOOP sync is already current",
+        },
+      ],
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByLabelText("From")).toBeTruthy();
+    expect(screen.getByLabelText("To")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Sync" })).toHaveLength(1);
+    expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+    expect(screen.queryByText("Full Sync")).toBeNull();
+    expect(screen.queryByText("Sync Range")).toBeNull();
+    expect(screen.queryByText("Sync Dates")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-15" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    });
+
+    expect(mockSyncMutation.mutateAsync).toHaveBeenCalledWith({
+      providerId: "whoop",
+      sinceDate: "2026-06-01",
+      untilDate: "2026-06-15",
+    });
+  });
+
+  it("does not start a WHOOP sync when its selected range is inverted", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop" });
+    mockProviders.data = [
+      {
+        id: "whoop",
+        name: "WHOOP",
+        authorized: true,
+        authType: "custom:whoop",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-18" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-17" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+
+    expect(screen.getByText('"From" date must be on or before "To" date')).toBeTruthy();
+    expect(mockSyncMutation.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("shows provider processing progress while read models update", async () => {
@@ -908,6 +1012,8 @@ describe("ProviderDetailPage delete all data", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
+    expect(screen.getAllByRole("heading", { name: "Danger Zone" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Disconnect Wahoo" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Delete all data" }));
     const confirmButton = screen.getByRole("button", { name: "Permanently delete data" });
     expect(confirmButton).toHaveProperty("disabled", true);

@@ -13,12 +13,18 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 interface Scenario {
+  cypressArguments?: string[];
   downStatus?: number;
   runStatus?: number;
   upStatus?: number;
 }
 
-function runScenario({ downStatus = 0, runStatus = 0, upStatus = 0 }: Scenario): {
+function runScenario({
+  cypressArguments = [],
+  downStatus = 0,
+  runStatus = 0,
+  upStatus = 0,
+}: Scenario): {
   commands: string[];
   resourcesRemain: boolean;
   status: number | null;
@@ -36,7 +42,8 @@ function runScenario({ downStatus = 0, runStatus = 0, upStatus = 0 }: Scenario):
     `#!/usr/bin/env node
 const { appendFileSync, rmSync, writeFileSync } = require("node:fs");
 const command = process.argv[2];
-appendFileSync(process.env.COMMAND_LOG_PATH, command + "\\n");
+const args = process.argv.slice(3);
+appendFileSync(process.env.COMMAND_LOG_PATH, [command, ...args].join(" ") + "\\n");
 if (command === "e2e:web:up") {
   writeFileSync(process.env.RESOURCE_PATH, "running");
   process.exit(Number(process.env.UP_STATUS));
@@ -54,18 +61,22 @@ process.exit(99);
   chmodSync(fakePnpmPath, 0o755);
 
   try {
-    const result = spawnSync(resolve("node_modules/.bin/tsx"), [resolve("scripts/e2e-web.ts")], {
-      env: {
-        ...process.env,
-        COMMAND_LOG_PATH: commandLogPath,
-        DOWN_STATUS: String(downStatus),
-        PATH: `${binaryDirectory}:${process.env.PATH ?? ""}`,
-        RESOURCE_PATH: resourcePath,
-        RUN_STATUS: String(runStatus),
-        UP_STATUS: String(upStatus),
+    const result = spawnSync(
+      resolve("node_modules/.bin/tsx"),
+      [resolve("scripts/e2e-web.ts"), ...cypressArguments],
+      {
+        env: {
+          ...process.env,
+          COMMAND_LOG_PATH: commandLogPath,
+          DOWN_STATUS: String(downStatus),
+          PATH: `${binaryDirectory}:${process.env.PATH ?? ""}`,
+          RESOURCE_PATH: resourcePath,
+          RUN_STATUS: String(runStatus),
+          UP_STATUS: String(upStatus),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    );
 
     return {
       commands: readFileSync(commandLogPath, "utf8").trim().split("\n"),
@@ -96,6 +107,21 @@ describe("e2e-web", () => {
       resourcesRemain: false,
       status: 23,
       teardownFailureLogged: false,
+    });
+  });
+
+  it("forwards Cypress arguments to the focused E2E run", () => {
+    expect(
+      runScenario({
+        cypressArguments: ["--", "--spec", "cypress/e2e/review-stack.cy.ts"],
+      }),
+    ).toMatchObject({
+      commands: [
+        "e2e:web:up",
+        "e2e:web:run -- --spec cypress/e2e/review-stack.cy.ts",
+        "e2e:web:down",
+      ],
+      status: 0,
     });
   });
 

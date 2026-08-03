@@ -230,6 +230,26 @@ describe("selected chart range query builders", () => {
     await expect(caller.powerCurve({ days: null })).rejects.toThrow();
   });
 
+  it("versions cached days-only responses when their output contract changes", async () => {
+    const testRouter = router({
+      powerCurve: selectedChartRangeQuery(
+        "power.powerCurve",
+        1,
+        ({ range }) => ({ days: range.days }),
+        { keyVersion: "estimated-max-trend-v1" },
+      ),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await caller.powerCurve({ days: 30 });
+
+    expect(cacheSetCalls.at(-1)?.key).toContain(":estimated-max-trend-v1:");
+  });
+
   it("injects ChartRange into date-window selected chart handlers", async () => {
     const testRouter = router({
       sleepList: selectedChartDateRangeQuery("sleep.list", 1, ({ input, range }) => ({
@@ -248,6 +268,29 @@ describe("selected chart range query builders", () => {
       endDate: "2026-07-09",
     });
     expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
+  });
+
+  it("versions cached date-window responses when their output contract changes", async () => {
+    const testRouter = router({
+      sleepList: selectedChartDateRangeQuery(
+        "sleep.list",
+        1,
+        ({ input, range }) => ({
+          days: range.days,
+          endDate: input.endDate,
+        }),
+        { keyVersion: "health-status-evidence-v1" },
+      ),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await caller.sleepList({ days: 30, endDate: "2026-07-09" });
+
+    expect(cacheSetCalls.at(-1)?.key).toContain(":health-status-evidence-v1:");
   });
 
   it("injects ChartRange into selected chart handlers with custom inputs", async () => {
@@ -273,6 +316,30 @@ describe("selected chart range query builders", () => {
       limit: 20,
     });
     expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
+  });
+
+  it("versions cached custom-range responses when their output contract changes", async () => {
+    const testRouter = router({
+      activityVariability: selectedChartCustomRangeQuery(
+        "cyclingAdvanced.activityVariability",
+        1,
+        z.object({
+          days: selectedChartRangeSchema("cyclingAdvanced.activityVariability"),
+        }),
+        ({ input, range }) => ({ days: range.days, inputDays: input.days }),
+        z.object({ days: z.number().nullable(), inputDays: z.number().nullable() }),
+        { keyVersion: "activity-states-v1" },
+      ),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await caller.activityVariability({ days: null });
+
+    expect(cacheSetCalls.at(-1)?.key).toContain(":activity-states-v1:");
   });
 
   it("rejects custom selected chart handlers without input", async () => {

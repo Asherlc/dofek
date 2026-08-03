@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import * as Sentry from "@sentry/node";
 import { Job, UnrecoverableError, Worker } from "bullmq";
 import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
 import { createEncryptedAccountErasureSnapshot } from "../account-erasure/remote-snapshot.ts";
@@ -11,6 +10,7 @@ import { createDatabaseFromEnv } from "../db/index.ts";
 import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
 import { getAllProviders } from "../providers/index.ts";
@@ -110,7 +110,7 @@ try {
   }
   await setupScheduledSync(syncIntervalMinutes);
 } catch (error: unknown) {
-  Sentry.captureException(error, {
+  captureException(error, {
     tags: { workerStartupStep: "scheduledSyncRegistration" },
   });
   logger.error("[worker] Failed to set up scheduled sync", {
@@ -360,7 +360,7 @@ async function persistProviderDataDeletionFailure(
       failure.message || "Provider data deletion failed",
     );
   } catch (error: unknown) {
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { providerDataDeletionStep: "persistFailure" },
       extra: { eventId: job.data.eventId },
     });
@@ -382,7 +382,7 @@ providerDataDeletionWorker.on("failed", (job, error) => {
   void job
     .retry("failed", { resetAttemptsMade: true, resetAttemptsStarted: true })
     .catch(async (redriveError: unknown) => {
-      Sentry.captureException(redriveError, {
+      captureException(redriveError, {
         tags: { providerDataDeletionStep: "redrive" },
         extra: { eventId: job.data.eventId },
       });
@@ -514,7 +514,7 @@ function reportAccountErasureWorkerEvent(
   event: "error" | "failed" | "lockRenewalFailed" | "stalled",
   message: string,
 ): void {
-  Sentry.captureException(new Error(message), {
+  captureException(new Error(message), {
     tags: {
       bullmqEvent: event,
       queue: ACCOUNT_ERASURE_QUEUE,
@@ -547,13 +547,13 @@ for (const worker of allWorkers) {
     const isFitBatchChildFailure =
       worker.name === FIT_FILE_IMPORT_QUEUE && job?.parentKey && err instanceof UnrecoverableError;
     if (!isFitBatchChildFailure) {
-      Sentry.captureException(err);
+      captureException(err);
     }
     logger.error(`[worker] Job failed: ${err.message}`);
     if (job?.id) {
       const message = `BullMQ job failed: queue=${worker.name} jobId=${job.id} cause=${err.message}`;
       void Job.addJobLog(worker, job.id, `[error] ${message}`, 100).catch((logError: unknown) => {
-        Sentry.captureException(logError, {
+        captureException(logError, {
           tags: { bullmqEvent: "failed", queue: worker.name },
           extra: { jobId: job.id, operation: "addJobLog" },
         });
@@ -572,12 +572,12 @@ for (const worker of allWorkers) {
     }
     const message = `BullMQ job stalled: queue=${worker.name} jobId=${jobId} previousState=${previousState}`;
     const error = new Error(message);
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { bullmqEvent: "stalled", queue: worker.name },
     });
     logger.error(`[worker] ${message}`);
     void Job.addJobLog(worker, jobId, `[error] ${message}`, 100).catch((logError: unknown) => {
-      Sentry.captureException(logError);
+      captureException(logError);
       logger.error(`[worker] Failed to append stalled job log: ${String(logError)}`);
     });
   });
@@ -592,14 +592,14 @@ for (const worker of allWorkers) {
     }
     const message = `BullMQ lock renewal failed: queue=${worker.name} jobIds=${jobIds.join(",")}`;
     const error = new Error(message);
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { bullmqEvent: "lockRenewalFailed", queue: worker.name },
       extra: { jobIds },
     });
     logger.error(`[worker] ${message}`);
     for (const jobId of jobIds) {
       void Job.addJobLog(worker, jobId, `[error] ${message}`, 100).catch((logError: unknown) => {
-        Sentry.captureException(logError, {
+        captureException(logError, {
           tags: { bullmqEvent: "lockRenewalFailed", queue: worker.name },
           extra: { jobId, operation: "addJobLog" },
         });
@@ -615,7 +615,7 @@ for (const worker of allWorkers) {
       reportAccountErasureWorkerEvent("error", "Account erasure worker error");
       return;
     }
-    Sentry.captureException(err);
+    captureException(err);
     logger.error(`[worker] Worker error: ${err.message}`);
   });
 }
@@ -636,7 +636,7 @@ for (const worker of allWorkers) {
   void worker.run();
 }
 void garminImportProgressCoordinator.reconcile().catch((error: unknown) => {
-  Sentry.captureException(error, { tags: { garminDumpStep: "progress-reconcile" } });
+  captureException(error, { tags: { garminDumpStep: "progress-reconcile" } });
   logger.error(`[worker] Failed to reconcile Garmin import progress: ${String(error)}`);
 });
 
@@ -684,7 +684,7 @@ process.on("SIGINT", shutdown);
 // processor's try/catch (e.g., from concurrent batch inserts via postgres.js).
 // Log the error but keep the worker alive so it can process the next job.
 process.on("unhandledRejection", (err) => {
-  Sentry.captureException(err);
+  captureException(err);
   logger.error(`[worker] Unhandled rejection (worker still running): ${err}`);
 });
 

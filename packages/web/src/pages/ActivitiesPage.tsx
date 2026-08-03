@@ -1,4 +1,16 @@
 import {
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
+  type ActivityOverviewComparison,
+  activityOverviewChangeForKey,
+  createActivityOverviewComparisonFormatters,
+  formatActivityOverviewChange,
+} from "@dofek/format/activity-overview";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -9,7 +21,7 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
@@ -345,23 +357,45 @@ function ActivityControls({
   onConfirmDelete,
   onConfirmRestore,
 }: ActivityControlsProps) {
+  const selectionGuidanceId = useId();
+  const selectionGuidance = showHidden
+    ? "Choose visible activities to delete or hidden activities to restore."
+    : "Choose one or more activities to delete.";
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold">Activity log</p>
+        <div>
+          <p className="text-sm font-semibold">Activity log</p>
+          {canSelect ? (
+            <p id={selectionGuidanceId} className="mt-0.5 text-xs text-muted">
+              {selectionGuidance}
+            </p>
+          ) : null}
+        </div>
         {canSelect && !selectMode ? (
           <button
             type="button"
             onClick={onSelect}
+            aria-describedby={selectionGuidanceId}
             className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
           >
-            Select
+            Select activities
           </button>
         ) : null}
       </div>
       {selectMode ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-subtle tabular-nums">{selectedCount} selected</span>
+          <output
+            aria-live="polite"
+            aria-atomic="true"
+            className="text-xs text-subtle tabular-nums"
+          >
+            {selectedCountLabel}
+          </output>
           {confirmDelete ? (
             <>
               <span className="text-xs text-muted">
@@ -385,7 +419,7 @@ function ActivityControls({
                 type="button"
                 onClick={onConfirmRestore}
                 disabled={restorePending || selectedHiddenCount === 0}
-                className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 {restorePending ? "Restoring..." : "Confirm Restore"}
               </button>
@@ -397,7 +431,7 @@ function ActivityControls({
                   type="button"
                   onClick={onRestoreSelected}
                   disabled={restorePending || selectedHiddenCount === 0}
-                  className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   Restore
                 </button>
@@ -522,9 +556,18 @@ function ActivityCard({
 interface ActivityOverviewData {
   activityCount: number;
   totalMinutes: number;
-  totalDistanceMeters: number;
-  totalElevationGainM: number;
+  totalDistanceMeters: number | null;
+  totalDistanceState: ActivityDataState;
+  totalElevationGainM: number | null;
+  totalElevationState: ActivityDataState;
+  comparison?: ActivityOverviewComparison;
 }
+
+type ActivityOverviewItem =
+  | { key: "activityCount"; label: string; value: string }
+  | { key: "totalMinutes"; label: string; value: string }
+  | (ActivityMetric & { key: "totalDistanceMeters" })
+  | (ActivityMetric & { key: "totalElevationGainM" });
 
 function ActivityOverview({
   overview,
@@ -533,36 +576,75 @@ function ActivityOverview({
   overview: ActivityOverviewData | undefined;
   units: ReturnType<typeof useUnitConverter>;
 }) {
-  const items = [
-    { label: "Activities", value: overview ? String(overview.activityCount) : "—" },
-    {
-      label: "Time",
-      value: overview ? formatDurationMinutes(overview.totalMinutes) : "—",
-    },
-    {
-      label: "Distance",
-      value: overview
-        ? formatMeasurementText(units.formatDistance(overview.totalDistanceMeters / 1000))
-        : "—",
-    },
-    {
-      label: "Elevation",
-      value: overview
-        ? formatMeasurementText(units.formatElevation(overview.totalElevationGainM))
-        : "—",
-    },
-  ];
+  const items: ActivityOverviewItem[] = overview
+    ? [
+        { key: "activityCount", label: "Activities", value: String(overview.activityCount) },
+        { key: "totalMinutes", label: "Time", value: formatDurationMinutes(overview.totalMinutes) },
+        {
+          key: "totalDistanceMeters",
+          ...formatActivityMetric(
+            "Distance",
+            overview.totalDistanceMeters,
+            overview.totalDistanceState,
+            (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+          ),
+        },
+        {
+          key: "totalElevationGainM",
+          ...formatActivityMetric(
+            "Elevation",
+            overview.totalElevationGainM,
+            overview.totalElevationState,
+            (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+          ),
+        },
+      ]
+    : [
+        { key: "activityCount", label: "Activities", value: "Loading…" },
+        { key: "totalMinutes", label: "Time", value: "Loading…" },
+        { key: "totalDistanceMeters", status: "missing", label: "Distance", reason: "Loading…" },
+        {
+          key: "totalElevationGainM",
+          status: "missing",
+          label: "Elevation",
+          reason: "Loading…",
+        },
+      ];
+  const formatComparisonMagnitude = createActivityOverviewComparisonFormatters(units);
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {items.map((item) => (
-        <div key={item.label} className="rounded-lg border border-border bg-surface-solid p-3">
-          <div className="text-lg font-semibold tabular-nums">{item.value}</div>
-          <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
-            {item.label}
+      {items.map((item) => {
+        const isMetric = "status" in item;
+        const comparison = overview?.comparison
+          ? activityOverviewChangeForKey(overview.comparison, item.key)
+          : undefined;
+        return (
+          <div
+            key={item.key}
+            className="rounded-lg border border-border bg-surface-solid p-3"
+            data-state={isMetric ? item.status : undefined}
+          >
+            <div className="text-lg font-semibold tabular-nums">
+              {isMetric && item.status !== "available"
+                ? `${item.label} ${activityDataStateLabel(item.status)}`
+                : item.value}
+            </div>
+            <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+              {isMetric && item.status !== "available" ? item.reason : item.label}
+            </div>
+            {comparison ? (
+              <div className="mt-1 text-xs text-subtle">
+                {formatActivityOverviewChange(
+                  comparison,
+                  overview?.comparison?.periodLabel ?? "previous period",
+                  formatComparisonMagnitude[item.key],
+                )}
+              </div>
+            ) : null}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

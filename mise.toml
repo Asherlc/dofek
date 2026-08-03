@@ -1,8 +1,5 @@
 min_version = "2026.7.15"
 
-[settings]
-locked = true
-
 [tools]
 node = "26.5.0"
 "npm:pnpm" = "11.17.0"

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { initProductionPostHog } from "./posthog.ts";
 
 const SENTRY_ENVIRONMENT = "production";
 const ACCOUNT_ERASURE_DATABASE_FENCE_CODE = "55000";
@@ -40,6 +41,8 @@ export function initProductionSentry(dsn: string | undefined): void {
   if (initialized || !dsn || !isProductionDeployment(process.env.DEPLOY_ENVIRONMENT)) {
     return;
   }
+
+  initProductionPostHog("dofek-worker");
 
   Sentry.init({
     beforeSend: (event, hint) =>

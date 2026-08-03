@@ -1,17 +1,36 @@
 // Activity router types
 
 export type { ActivityHrZone } from "@dofek/zones/zones";
+// Personalization router types
+export type { PersonalizationModelCard } from "dofek/personalization/model-card";
+export type { BaselineRelativeMetric } from "./contracts/baseline-relative-metrics.ts";
+export type {
+  MonthlyReportEmptyState,
+  ReportEmptyState,
+  ReportKind,
+  WeeklyReportEmptyState,
+} from "./contracts/report-empty-state.ts";
+export type { TrainingChartAvailability } from "./contracts/training-chart-availability.ts";
+export type { InsightEvidence } from "./insights/evidence.ts";
 export type { ActivityDetail } from "./models/activity.ts";
+export type { BehaviorAssociation } from "./repositories/behavior-impact-repository.ts";
 export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 
 // Recovery router types
 
+// Sleep need router types
+export type {
+  SleepNeedResult,
+  SleepNeedV2,
+  SleepNight,
+} from "./contracts/sleep-need-contract.ts";
 // Climbing router types
 export type {
   ClimbingGradeProgressionRow,
   ClimbingSessionSummaryRow,
   ClimbingVolumeByGradeRow,
 } from "./repositories/climbing-repository.ts";
+export type { ReportDecisionSynthesis } from "./repositories/report-decision-synthesis.ts";
 // Training router types
 export type {
   HrZoneRow,
@@ -53,7 +72,11 @@ export type {
   WalkingBiomechanicsRow,
 } from "./routers/hiking.ts";
 // Monthly report router types
-export type { MonthlyReportResult, MonthSummary } from "./routers/monthly-report.ts";
+export type {
+  MonthlyReportData,
+  MonthlyReportResult,
+  MonthSummary,
+} from "./routers/monthly-report.ts";
 // PMC router types
 export type { PmcChartResult, PmcDataPoint, TssModelInfo } from "./routers/pmc.ts";
 // Power router types
@@ -63,6 +86,7 @@ export type {
   ReadinessComponents,
   ReadinessRow,
   ReadinessWeights,
+  SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,
@@ -72,8 +96,7 @@ export type {
 } from "./routers/recovery.ts";
 // Running router types
 export type { PaceTrendRow, RunningDynamicsRow } from "./routers/running.ts";
-// Sleep need router types
-export type { SleepNeedResult, SleepNight, SleepPerformanceInfo } from "./routers/sleep-need.ts";
+export type { SleepPerformanceInfo } from "./routers/sleep-need.ts";
 // Strength router types
 export type {
   EstimatedOneRepMaxEntry,
@@ -92,6 +115,7 @@ export type {
 } from "./routers/stress.ts";
 // Weekly report router types
 export type {
+  WeeklyReportData,
   WeeklyReportResult,
   WeekSummary,
 } from "./routers/weekly-report.ts";

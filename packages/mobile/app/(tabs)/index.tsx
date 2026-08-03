@@ -1,9 +1,5 @@
-import {
-  formatDateLong,
-  formatDateYmd,
-  formatDurationMinutes,
-  formatSleepDebtInline,
-} from "@dofek/format/format";
+import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
@@ -35,17 +31,13 @@ import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
 
-function todayString(): string {
-  return formatDateLong(new Date());
-}
-
 export default function TodayScreen() {
   const router = useRouter();
   const providerGuide = useProviderGuide();
   const endDate = useTodayQueryDate();
 
   // Consolidated dashboard data fetch
-  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery(
+  const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
     { endDate },
     { placeholderData: (previousData) => previousData },
   );
@@ -80,6 +72,7 @@ export default function TodayScreen() {
 
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
+  const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
   const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
   const isLoading = shouldShowBlockingLoading({
@@ -174,7 +167,11 @@ export default function TodayScreen() {
         </View>
       )}
 
-      <Text style={styles.date}>{todayString()}</Text>
+      {dashboardData?.summaryDateContext ? (
+        <Text style={styles.date}>
+          {formatSummaryDateContext(dashboardData.summaryDateContext)}
+        </Text>
+      ) : null}
 
       {/* Log food */}
       <TouchableOpacity
@@ -274,7 +271,20 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep summary */}
-      {!isLoading && (
+      {!isLoading && isSleepDataMissing && (
+        <Animated.View
+          entering={FadeInUp.delay(160)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <Card title="Sleep Data Needed">
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus?.label}</Text>
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
+          </Card>
+        </Animated.View>
+      )}
+
+      {!isLoading && !isSleepDataMissing && (
         <Animated.View
           entering={FadeInUp.delay(160)
             .duration(duration.slow)
@@ -288,13 +298,29 @@ export default function TodayScreen() {
               accessibilityLabel="Open last night sleep details"
             >
               <Card title="Last Night">
-                <SleepBar
-                  durationMinutes={lastNight.durationMinutes}
-                  deepPercentage={lastNight.deepPct}
-                  remPercentage={lastNight.remPct}
-                  lightPercentage={lastNight.lightPct}
-                  awakePercentage={lastNight.awakePct}
-                />
+                {dashboardData?.summaryDateContext ? (
+                  <Text style={styles.sleepDate}>
+                    Night of{" "}
+                    {formatSummaryDateContext({
+                      ...dashboardData.summaryDateContext,
+                      effectiveDate: lastNight.date,
+                    })}
+                  </Text>
+                ) : null}
+                {lastNight.stagingAvailable ? (
+                  <SleepBar
+                    durationMinutes={lastNight.durationMinutes}
+                    deepPercentage={lastNight.deepPct ?? 0}
+                    remPercentage={lastNight.remPct ?? 0}
+                    lightPercentage={lastNight.lightPct ?? 0}
+                    awakePercentage={lastNight.awakePct ?? 0}
+                  />
+                ) : (
+                  <Text style={styles.noDataText}>
+                    {formatDurationMinutes(lastNight.durationMinutes)} recorded. Sleep stages were
+                    not reported.
+                  </Text>
+                )}
                 {sleepDebt > 0 && (
                   <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
                 )}
@@ -308,47 +334,75 @@ export default function TodayScreen() {
         </Animated.View>
       )}
 
-      {/* Sleep Coach */}
-      {!isLoading && (sleepNeed || !lastNight) && (
+      {/* Sleep estimate */}
+      {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
-          <Card title="Sleep Coach">
+          <Card title="Sleep Estimate">
             {sleepNeed == null ? (
               <Text style={styles.noDataText}>No sleep data</Text>
-            ) : sleepNeed.canRecommend ? (
+            ) : sleepNeed.availability === "available" ? (
               <>
+                <Text style={styles.sleepNeedSubtitle}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.sleepNeedTotal}>
-                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                  {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
-                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                <Text style={styles.sleepNeedSubtitle}>
+                  {sleepNeed.estimateMetadata.summaryLabel}
+                </Text>
                 <View style={styles.sleepNeedBreakdown}>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.baseline}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       {formatDurationMinutes(sleepNeed.baselineMinutes)}
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.strainDebt}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.debtRecovery}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
-                      +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                      +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
                     </Text>
                   </View>
                 </View>
+                <View style={styles.sleepNeedMetadata}>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.basisLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.coverageLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.methodLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.uncertaintyLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.limitationLabel}
+                  </Text>
+                </View>
               </>
             ) : (
-              <Text style={styles.sleepNeedMissing}>
-                Need last night's sleep for recommendation
-              </Text>
+              <>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
+                <Text style={styles.noDataText}>{sleepNeed.message}</Text>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
+              </>
             )}
           </Card>
         </Animated.View>
@@ -441,6 +495,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     fontWeight: "500",
+  },
+  sleepDate: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   quickAddButton: {
     flexDirection: "row",
@@ -573,5 +631,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
     fontVariant: ["tabular-nums"],
+  },
+  sleepNeedMetadata: {
+    gap: 4,
+    marginTop: 8,
+  },
+  sleepNeedMetadataText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
   },
 });

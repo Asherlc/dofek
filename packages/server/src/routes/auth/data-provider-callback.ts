@@ -10,6 +10,7 @@ import {
   withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import {
   findExistingUserId,
@@ -616,7 +617,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       res.status(409).type("text/plain").send(err.message);
       return;
     }
-    Sentry.captureException(err);
+    captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(
       `[auth] OAuth callback failed for ${resolvedProviderName ?? "unknown provider"}: ${message}`,

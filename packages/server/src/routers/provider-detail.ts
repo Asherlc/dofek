@@ -1,14 +1,14 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
+import { deleteProviderAuthorization } from "dofek/db/tokens";
 import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema } from "../lib/operation-progress.ts";
 import { logger } from "../logger.ts";
 import {
-  DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
@@ -23,7 +23,6 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 
 // Re-export for backward compatibility (used by settings router and tests)
 export {
-  DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
@@ -86,7 +85,7 @@ async function revokeTokensOnDisconnect(
         logger.warn(
           `[disconnect] Custom revocation failed for ${providerId}, falling back to standard OAuth revocation: ${message}`,
         );
-        Sentry.captureException(customError);
+        captureException(customError);
       }
     }
 
@@ -100,7 +99,7 @@ async function revokeTokensOnDisconnect(
         } catch (accessError) {
           const message = accessError instanceof Error ? accessError.message : String(accessError);
           logger.warn(`[disconnect] Access token revocation failed for ${providerId}: ${message}`);
-          Sentry.captureException(accessError);
+          captureException(accessError);
         }
       }
       if (tokens.refreshToken) {
@@ -110,14 +109,14 @@ async function revokeTokensOnDisconnect(
           const message =
             refreshError instanceof Error ? refreshError.message : String(refreshError);
           logger.warn(`[disconnect] Refresh token revocation failed for ${providerId}: ${message}`);
-          Sentry.captureException(refreshError);
+          captureException(refreshError);
         }
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`[disconnect] Remote token revocation failed for ${providerId}: ${message}`);
-    Sentry.captureException(error);
+    captureException(error);
   }
 }
 
@@ -233,7 +232,7 @@ export const providerDetailRouter = router({
       return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
     }),
 
-  /** Disconnect a provider — revokes remote tokens, then removes all user-scoped data */
+  /** Disconnect a provider while retaining previously imported records. */
   disconnect: protectedProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -241,14 +240,17 @@ export const providerDetailRouter = router({
 
       const isOwner = await repo.verifyOwnership(input.providerId);
       if (!isOwner) {
-        throw new Error("Provider not found or not owned by user");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "This provider is not connected to your account.",
+        });
       }
 
-      // Revoke tokens remotely before deleting local data — prevents orphaned
-      // tokens on the provider side (e.g. Wahoo's active token limit).
+      // Revoke tokens remotely before deleting local authorization — prevents
+      // orphaned tokens on the provider side (e.g. Wahoo's active token limit).
       await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
 
-      await repo.deleteProviderData(input.providerId);
+      await deleteProviderAuthorization(ctx.db, input.providerId, ctx.userId);
       await invalidateAllUserQueries(ctx.userId);
       return { success: true };
     }),
@@ -257,12 +259,12 @@ export const providerDetailRouter = router({
   deleteAllData: protectedProcedure
     .input(z.object({ providerId: z.string(), confirmation: z.literal("DELETE") }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
-      const isOwner = await repo.verifyOwnership(input.providerId);
-      if (!isOwner) {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
+      const canDelete = await repo.canDeleteProviderData(input.providerId);
+      if (!canDelete) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Provider not found or not owned by user",
+          message: "No connected provider or retained provider data was found for your account.",
         });
       }
 
@@ -293,7 +295,7 @@ export const providerDetailRouter = router({
           getProviderDataDeletionQueue().getJob(input.operationId),
         );
       } catch (error: unknown) {
-        Sentry.captureException(error, { tags: { operation: "providerDataDeletionStatus" } });
+        captureException(error, { tags: { operation: "providerDataDeletionStatus" } });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Unable to check provider data deletion progress",

@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 
 interface JobWithProgress {
@@ -14,6 +14,6 @@ export async function reportJobProgress(
 ): Promise<void> {
   await job.updateProgress({ percentage, message }).catch((error: unknown) => {
     logger.warn(warningMessage, error);
-    Sentry.captureException(error, { tags: { [sentryTagKey]: "updateProgress" } });
+    captureException(error, { tags: { [sentryTagKey]: "updateProgress" } });
   });
 }

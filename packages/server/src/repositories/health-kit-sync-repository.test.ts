@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
@@ -687,6 +688,57 @@ describe("HEALTHKIT_STAGE_MAP (via deriveSleepSessionsFromStages stage mapping)"
 });
 
 describe("HEALTHKIT_STAGE_MAP mapped values (via processSleepSamples)", () => {
+  async function getSleepSessionStageParams(stageValue?: string): Promise<unknown[]> {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-4000-8000-000000000001" }]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "inbed-quality",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "inBed",
+        sourceName: "Watch",
+      },
+    ];
+    if (stageValue) {
+      samples.push({
+        uuid: `stage-${stageValue}`,
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: stageValue,
+        sourceName: "Watch",
+      });
+    }
+
+    await repo.processSleepSamples(samples);
+    const sleepInsert = execute.mock.calls.find((call) => {
+      const serialized = JSON.stringify(call[0]);
+      return serialized.includes("sleep_session") && serialized.includes("INSERT");
+    });
+    if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+    return new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+  }
+
+  it.each([
+    ["asleepCore", [0, 0, 60, 0, true]],
+    ["asleepDeep", [60, 0, 0, 0, true]],
+    ["asleepREM", [0, 60, 0, 0, true]],
+  ] as const)("stores %s as an available canonical stage bundle", async (stage, expected) => {
+    expect(await getSleepSessionStageParams(stage)).toEqual(expected);
+  });
+
+  it("does not treat generic asleep intervals as a canonical stage bundle", async () => {
+    expect(await getSleepSessionStageParams("asleep")).toEqual([null, null, null, null, false]);
+  });
+
+  it("preserves an awake-only measurement without claiming a stage bundle", async () => {
+    expect(await getSleepSessionStageParams("awake")).toEqual([null, null, null, 60, false]);
+  });
+
+  it("stores missing stages as null when no stage samples exist", async () => {
+    expect(await getSleepSessionStageParams()).toEqual([null, null, null, null, false]);
+  });
+
   async function getStageInsertSqlJson(stageValue: string): Promise<string> {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
@@ -2322,6 +2374,34 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
       callStr.includes("INSERT INTO fitness.sleep_session"),
     );
     expect(insertCall).toContain("480");
+  });
+
+  it.each([
+    ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00", [-480, -420, "device_offset"]],
+    ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
+  ])("stores record-local sleep context for %s to %s", async (startDate, endDate, expectedContext) => {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "sleep-local-time",
+        startDate,
+        endDate,
+        value: "inBed",
+        sourceName: "Watch",
+      },
+    ];
+
+    await repo.processSleepSamples(samples);
+
+    const sleepCall = execute.mock.calls.find((call) => {
+      const serialized = JSON.stringify(call[0]);
+      return serialized.includes("sleep_session") && serialized.includes("INSERT");
+    });
+    const serialized = JSON.stringify(sleepCall?.[0]);
+    for (const expected of expectedContext) {
+      expect(serialized).toContain(JSON.stringify(expected));
+    }
   });
 
   it("filters out unmappable stage values from sleep_stage insert", async () => {

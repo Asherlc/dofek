@@ -120,7 +120,9 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
         {
           date: input.endDate,
           rawWeight: 73.5,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 73.6,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: -0.2,
           interpolated: false,
         },
@@ -138,10 +140,41 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
         },
         projectionLine: [],
       },
+      baselineRelative: [
+        {
+          metric: "hrv",
+          label: "Heart Rate Variability (HRV)",
+          value: 53,
+          baseline: {
+            windowDays: 30,
+            mean: 50,
+            standardDeviation: 4,
+            zScore: 0.75,
+            sampleCount: 28,
+            coverage: 28 / 30,
+          },
+          comparison: {
+            recentDays: 7,
+            baselineDays: 28,
+            recentMean: 52,
+            baselineMean: 50,
+            delta: 2,
+            direction: "increasing",
+          },
+        },
+      ],
       healthStatus: [],
       healthspan: {
         healthspanScore: 84,
         yearsDelta: 1.8,
+        availability: {
+          status: "available",
+          availableMetricCount: 3,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "3 of 3 required Healthspan metrics are available.",
+          nextCondition: null,
+        },
         metrics: [],
         history: [],
         trend: "improving" as const,
@@ -211,6 +244,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
           hr_samples: 5400,
           power_samples: 5400,
           distance_meters: 42000,
+          distance_state: { status: "available" },
         },
         {
           id: "a2",
@@ -226,12 +260,14 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
           hr_samples: 2700,
           power_samples: null,
           distance_meters: 7500,
+          distance_state: { status: "available" },
         },
       ],
       weeklyVolume: [
         { week: "2026-07-27", activity_type: "cycling", count: 1, hours: 1.5 },
         { week: "2026-07-20", activity_type: "running", count: 1, hours: 0.75 },
       ],
+      progressiveOverload: [],
       verticalAscent: [],
       climbing: {
         gradeProgression: [],
@@ -651,6 +687,7 @@ describe("mobileTrainingFixtureSchema", () => {
           hr_samples: null,
           power_samples: null,
           distance_meters: null,
+          distance_state: { status: "missing", reason: "Distance not recorded" },
         });
       },
     ],
@@ -883,6 +920,7 @@ describe("mobileTrainingFixtureSchema", () => {
         hr_samples: null,
         power_samples: null,
         distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
       },
     ];
     fixture.data.weeklyVolume = [
@@ -919,6 +957,7 @@ describe("mobileTrainingFixtureSchema", () => {
       hr_samples: null,
       power_samples: null,
       distance_meters: null,
+      distance_state: { status: "missing", reason: "Distance not recorded" },
     });
     expectIssue(
       mobileTrainingFixtureSchema.safeParse(activityOnly),

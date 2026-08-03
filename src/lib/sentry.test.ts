@@ -3,10 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   init: vi.fn<(options: NodeOptions) => void>(),
+  initProductionPostHog: vi.fn(),
 }));
 
 vi.mock("@sentry/node", () => ({
   init: mocks.init,
+}));
+
+vi.mock("./posthog.ts", () => ({
+  initProductionPostHog: mocks.initProductionPostHog,
 }));
 
 const originalDeployEnvironment = process.env.DEPLOY_ENVIRONMENT;
@@ -46,6 +51,7 @@ describe("initProductionSentry", () => {
     initProductionSentry(undefined);
 
     expect(mocks.init).not.toHaveBeenCalled();
+    expect(mocks.initProductionPostHog).not.toHaveBeenCalled();
   });
 
   it("does not initialize without a deployment environment", async () => {
@@ -54,6 +60,7 @@ describe("initProductionSentry", () => {
     initProductionSentry("https://key@sentry.example/456");
 
     expect(mocks.init).not.toHaveBeenCalled();
+    expect(mocks.initProductionPostHog).not.toHaveBeenCalled();
   });
 
   it("does not initialize outside production", async () => {
@@ -63,6 +70,7 @@ describe("initProductionSentry", () => {
     initProductionSentry("https://key@sentry.example/456");
 
     expect(mocks.init).not.toHaveBeenCalled();
+    expect(mocks.initProductionPostHog).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -75,6 +83,7 @@ describe("initProductionSentry", () => {
 
     initProductionSentry("https://key@sentry.example/456");
 
+    expect(mocks.initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
     expect(mocks.init).toHaveBeenCalledWith({
       beforeSend: expect.any(Function),
       dsn: "https://key@sentry.example/456",
@@ -149,5 +158,6 @@ describe("initProductionSentry", () => {
     initProductionSentry("https://key@sentry.example/456");
 
     expect(mocks.init).toHaveBeenCalledOnce();
+    expect(mocks.initProductionPostHog).toHaveBeenCalledOnce();
   });
 });

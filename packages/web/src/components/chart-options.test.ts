@@ -64,6 +64,16 @@ function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown
   return (...args: unknown[]) => String(formatter(...args));
 }
 
+function getYAxisMax(option: Record<string, unknown>): number {
+  const yAxis = option.yAxis;
+  if (typeof yAxis !== "object" || yAxis === null || !("max" in yAxis)) {
+    throw new Error("Expected yAxis.max to be present");
+  }
+  const max = yAxis.max;
+  if (typeof max !== "number") throw new Error("Expected yAxis.max to be a number");
+  return max;
+}
+
 describe("PolarizationTrendChart option builder", () => {
   const sampleWeeks = [
     makePolarizationWeek({
@@ -123,7 +133,7 @@ describe("PolarizationTrendChart option builder", () => {
 
     const option = buildPolarizationTrendOption(weeksWithGap);
     const series = getSeriesArray(option);
-    const polarizationSeries = series.find((s) => s.name === "Polarization Index");
+    const polarizationSeries = series.find((s) => s.name === "Easy-to-hard balance");
     expect(polarizationSeries).toBeDefined();
     if (!polarizationSeries) throw new Error("Expected polarization series");
     expect(polarizationSeries.data).toHaveLength(2);
@@ -140,7 +150,7 @@ describe("PolarizationTrendChart option builder", () => {
         value: ["2024-01-01", 2.5],
         dataIndex: 0,
         color: "",
-        seriesName: "Polarization Index",
+        seriesName: "Easy-to-hard balance",
       },
     ]);
     expect(html).toContain("<80% max HR");
@@ -167,11 +177,34 @@ describe("PolarizationTrendChart option builder", () => {
   it("renders threshold as a regular line series at y=2.0", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
     const allSeries = getSeriesArray(option);
-    const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
+    const thresholdSeries = allSeries.find((s) => s.name === "Reference balance level");
     expect(thresholdSeries).toBeDefined();
     if (!thresholdSeries) throw new Error("Expected threshold series");
     expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
     expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
+  });
+
+  it("renders the threshold supplied by the server instead of a client heuristic", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks, 2.5);
+    const allSeries = getSeriesArray(option);
+    const thresholdSeries = allSeries.find((s) => s.name === "Reference balance level");
+    expect(thresholdSeries).toBeDefined();
+    if (!thresholdSeries) throw new Error("Expected threshold series");
+    expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.5]);
+    expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.5]);
+  });
+
+  it("normalizes missing and non-finite thresholds before chart configuration", () => {
+    for (const threshold of [undefined, null, Number.NaN]) {
+      const option = buildPolarizationTrendOption(sampleWeeks, threshold);
+      const allSeries = getSeriesArray(option);
+      const thresholdSeries = allSeries.find((s) => s.name === "Reference balance level");
+      expect(thresholdSeries).toBeDefined();
+      if (!thresholdSeries) throw new Error("Expected threshold series");
+      expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2]);
+      expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2]);
+      expect(Number.isFinite(getYAxisMax(option))).toBe(true);
+    }
   });
 
   it("uses a neutral categorical color on both sides of the descriptive heuristic", () => {
@@ -201,7 +234,7 @@ describe("PolarizationTrendChart option builder", () => {
     ];
     const option = buildPolarizationTrendOption(weeksWithBoundary);
     const allSeries = getSeriesArray(option);
-    const polarizationIndexSeries = allSeries.find((s) => s.name === "Polarization Index");
+    const polarizationIndexSeries = allSeries.find((s) => s.name === "Easy-to-hard balance");
     if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
     // The heuristic is descriptive, so neither side is encoded as good or bad.
     expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", {
@@ -295,7 +328,7 @@ describe("PolarizationTrendChart option builder", () => {
         value: ["2024-01-01", null],
         dataIndex: 0,
         color: "",
-        seriesName: "Polarization Index",
+        seriesName: "Easy-to-hard balance",
       },
     ]);
     expect(html).toContain("Insufficient data");
@@ -333,9 +366,28 @@ describe("RampRateChart option builder", () => {
 });
 
 describe("SleepAnalyticsChart option builder", () => {
+  const sourceEvidence = {
+    providerId: null,
+    sourceName: null,
+    sourceProviders: [],
+    selectedSessionId: null,
+    overlappingSessions: [],
+    durationState: { status: "available" as const },
+    sleepState: { status: "available" as const },
+    stageState: { status: "available" as const },
+  };
   const sampleNightly = [
     {
+      ...sourceEvidence,
       date: "2026-03-10",
+      startedAt: "2026-03-10T22:00:00Z",
+      endedAt: "2026-03-11T05:30:00Z",
+      localTimeContext: {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "unknown" as const,
+      },
       durationMinutes: 450,
       sleepMinutes: 414,
       deepPct: 18,
@@ -343,10 +395,20 @@ describe("SleepAnalyticsChart option builder", () => {
       lightPct: 52,
       awakePct: 8,
       efficiency: 91,
+      stagingAvailable: true,
       rollingAvgDuration: 440,
     },
     {
+      ...sourceEvidence,
       date: "2026-03-11",
+      startedAt: "2026-03-11T22:00:00Z",
+      endedAt: "2026-03-12T05:10:00Z",
+      localTimeContext: {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "unknown" as const,
+      },
       durationMinutes: 430,
       sleepMinutes: 391,
       deepPct: 16,
@@ -354,6 +416,7 @@ describe("SleepAnalyticsChart option builder", () => {
       lightPct: 51,
       awakePct: 9,
       efficiency: 89,
+      stagingAvailable: true,
       rollingAvgDuration: 436,
     },
   ];
@@ -392,5 +455,42 @@ describe("SleepAnalyticsChart option builder", () => {
     expect(firstGraphic.style.text).toContain("14d Sleep Debt:");
     expect(firstGraphic.style.text).toContain("deficit");
     expect(firstGraphic.style.fill).toBe(statusColors.danger);
+  });
+
+  it("identifies partial records in the chart tooltip", () => {
+    const [sampleNight] = sampleNightly;
+    if (!sampleNight) throw new Error("Expected a sample sleep night");
+    const option = buildSleepAnalyticsOption(
+      [
+        {
+          ...sampleNight,
+          deepPct: null,
+          remPct: null,
+          lightPct: null,
+          awakePct: null,
+          efficiency: null,
+          stagingAvailable: false,
+          stageState: {
+            status: "missing",
+            reason: "Sleep stages were not reported for this night.",
+            nextAction: "Sync sleep data from a source that reports sleep stages.",
+          },
+        },
+      ],
+      0,
+    );
+    const formatter = getTooltipFormatter(option);
+    const html = formatter([
+      {
+        dataIndex: 0,
+        seriesName: "Deep",
+        value: ["2026-03-10", null],
+        color: "#123456",
+        marker: "",
+      },
+    ]);
+
+    expect(html).toContain("Sleep stages were not reported for this night.");
+    expect(html).toContain("Sync sleep data from a source that reports sleep stages.");
   });
 });

@@ -1,5 +1,6 @@
 import { formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
 import { useMemo } from "react";
 import { z } from "zod";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
@@ -14,7 +15,7 @@ import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageSection } from "../components/PageSection.tsx";
-import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
@@ -23,7 +24,6 @@ import { WeightPredictionSummary } from "../components/WeightPredictionSummary.t
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { chartColors } from "../lib/chartTheme.ts";
-import { healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -63,25 +63,25 @@ function buildSkinTempSeries(
   };
 }
 
-type QueryResultWithData = { data?: unknown; isError: boolean; error: unknown };
+type QueryResultWithData = { data?: unknown; isError: boolean };
 
-function getQueryError(...queries: QueryResultWithData[]): unknown {
-  for (const query of queries) {
-    if (query.isError && query.data == null) return query.error;
-  }
-  return null;
+function isQueryUnavailable(query: QueryResultWithData): boolean {
+  return query.isError && query.data == null;
 }
 
-function getBackgroundQueryError(...queries: QueryResultWithData[]): unknown {
-  for (const query of queries) {
-    if (query.isError && query.data != null) return query.error;
-  }
-  return null;
+function BodySectionUnavailable({ label }: { label: string }) {
+  return (
+    <QueryStatePanel
+      variant="empty"
+      height={48}
+      message={`${label} is unavailable. Retry from the notice above.`}
+    />
+  );
 }
 
 export function BodyPage() {
   const units = useUnitConverter();
-  const { days, setDays } = useBodyDays();
+  const { days, description, setDays } = useBodyDays();
   const endDate = useTodayQueryDate();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ ...selectedRangeQueryInput(days), endDate });
@@ -124,11 +124,14 @@ export function BodyPage() {
 
   const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
 
-  const healthStatusError = getQueryError(trends, weightOverview);
+  const trendsUnavailable = isQueryUnavailable(trends);
+  const dailyMetricsUnavailable = isQueryUnavailable(dailyMetrics);
+  const hrvUnavailable = isQueryUnavailable(hrvBaseline);
+  const stressUnavailable = isQueryUnavailable(stressData);
+  const weightOverviewUnavailable = isQueryUnavailable(weightOverview);
+  const insightsUnavailable = isQueryUnavailable(insightsQuery);
 
   const healthMetrics = useMemo(() => {
-    if (healthStatusError) return [];
-
     const restingHeartRate = trendData?.healthStatus.find(
       (metric) => metric.metric === "resting_heart_rate",
     );
@@ -136,7 +139,7 @@ export function BodyPage() {
       ...(restingHeartRate ? [restingHeartRate] : []),
       ...(weightOverview.data?.healthStatus ?? []),
     ];
-  }, [healthStatusError, trendData, weightOverview.data]);
+  }, [trendData, weightOverview.data]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -152,19 +155,52 @@ export function BodyPage() {
       ? new Error("Weight prediction is temporarily unavailable.")
       : null;
 
-  const hrvSectionError = getQueryError(hrvBaseline);
-  const stressSectionError = getQueryError(stressData);
-  const spo2SectionError = getQueryError(dailyMetrics);
-  const bodyRecompSectionError = getQueryError(weightOverview);
-  const insightsSectionError = getQueryError(insightsQuery);
-  const backgroundQueryError = getBackgroundQueryError(
-    trends,
-    dailyMetrics,
-    hrvBaseline,
-    stressData,
-    weightOverview,
-    insightsQuery,
+  const failedDependencies = [
+    {
+      id: "health-overview",
+      label: "Health overview",
+      query: trends,
+      retry: () => trends.refetch(),
+    },
+    {
+      id: "daily-metrics",
+      label: "Blood oxygen and skin temperature",
+      query: dailyMetrics,
+      retry: () => dailyMetrics.refetch(),
+    },
+    {
+      id: "hrv",
+      label: "Heart rate variability",
+      query: hrvBaseline,
+      retry: () => hrvBaseline.refetch(),
+    },
+    {
+      id: "stress",
+      label: "Stress",
+      query: stressData,
+      retry: () => stressData.refetch(),
+    },
+    {
+      id: "body-composition",
+      label: "Body composition",
+      query: weightOverview,
+      retry: () => weightOverview.refetch(),
+    },
+    {
+      id: "insights",
+      label: "Body insights",
+      query: insightsQuery,
+      retry: () => insightsQuery.refetch(),
+    },
+  ].filter((dependency) => dependency.query.isError);
+  const hasUnavailableDependency = failedDependencies.some(
+    (dependency) => dependency.query.data == null,
   );
+  const retryFailedDependencies = () => {
+    for (const dependency of failedDependencies) {
+      void dependency.retry();
+    }
+  };
 
   // SpO2/temp chart config
   const spo2TempTitle =
@@ -184,14 +220,38 @@ export function BodyPage() {
   return (
     <>
       <div className="flex justify-end">
-        <TimeRangeSelector days={days} onChange={setDays} />
+        <TimeRangeSelector days={days} description={description} onChange={setDays} />
       </div>
 
-      {backgroundQueryError ? <QueryStatePanel error={backgroundQueryError} height={72} /> : null}
+      {failedDependencies.length > 0 ? (
+        <QueryStatePanel
+          contextLabel="Body data"
+          error={failedDependencies[0]?.query.error}
+          height={72}
+          message={
+            <span className="space-y-1">
+              <span className="block">
+                {hasUnavailableDependency
+                  ? "Some sections are unavailable. Other body data remains visible."
+                  : "Previously loaded body data remains visible, but some sections could not refresh."}
+              </span>
+              {failedDependencies.map((dependency) => (
+                <span className="block" key={dependency.id}>
+                  <strong>{dependency.label}:</strong>{" "}
+                  {getQueryErrorMessage(dependency.query.error)}
+                </span>
+              ))}
+            </span>
+          }
+          onRetry={retryFailedDependencies}
+          retryLabel="Retry unavailable body data"
+          retrying={failedDependencies.some((dependency) => dependency.query.isFetching)}
+        />
+      ) : null}
 
       {/* Health Status Bar */}
-      {healthStatusError ? (
-        <QueryStatePanel error={healthStatusError} height={160} />
+      {trendsUnavailable && weightOverviewUnavailable ? (
+        <BodySectionUnavailable label="Health overview" />
       ) : (
         <HealthStatusBar
           metrics={healthMetrics}
@@ -203,8 +263,8 @@ export function BodyPage() {
 
       {/* HRV & Resting HR */}
       <PageSection title="Heart Rate Variability & Resting Heart Rate">
-        {hrvSectionError ? (
-          <QueryStatePanel error={hrvSectionError} height={200} />
+        {hrvUnavailable ? (
+          <BodySectionUnavailable label="Heart rate variability" />
         ) : (
           <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
         )}
@@ -212,18 +272,18 @@ export function BodyPage() {
 
       {/* Stress */}
       <PageSection title="Stress Monitor">
-        {stressSectionError ? (
-          <QueryStatePanel error={stressSectionError} height={200} />
+        {stressUnavailable ? (
+          <BodySectionUnavailable label="Stress data" />
         ) : (
           <StressChart data={stressData.data} loading={stressData.isLoading} />
         )}
       </PageSection>
 
       {/* SpO2 & Skin Temp */}
-      {(hasSpO2 || hasSkinTemp || spo2SectionError) && (
+      {(hasSpO2 || hasSkinTemp || dailyMetricsUnavailable) && (
         <PageSection title={spo2TempTitle}>
-          {spo2SectionError ? (
-            <QueryStatePanel error={spo2SectionError} height={200} />
+          {dailyMetricsUnavailable ? (
+            <BodySectionUnavailable label="Blood oxygen and skin temperature" />
           ) : (
             <TimeSeriesChart
               series={[
@@ -249,8 +309,8 @@ export function BodyPage() {
           </div>
           {weightOverview.isPending ? (
             <ChartLoadingSkeleton height={48} />
-          ) : weightOverview.isError && weightOverview.data == null ? (
-            <QueryStatePanel error={weightOverview.error} height={48} />
+          ) : weightOverviewUnavailable ? (
+            <BodySectionUnavailable label="Body composition" />
           ) : predictionSectionError ? (
             <QueryStatePanel error={predictionSectionError} height={48} />
           ) : weightPredictionDisplay ? (
@@ -260,35 +320,34 @@ export function BodyPage() {
             />
           ) : null}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="card p-2 sm:p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
-              <ChartDescriptionTooltip description="Trend Weight starts from your first accessible scale reading, then moves 10% toward each day's weight. Missing days between readings are linearly interpolated. The chart also shows goal weight and a forward projection when set." />
+        {!weightOverviewUnavailable && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="card p-2 sm:p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
+                <ChartDescriptionTooltip description="Trend Weight starts from your first accessible scale reading, then moves 10% toward each day's weight. Missing days between readings are linearly interpolated. The chart also shows goal weight and a forward projection when set." />
+              </div>
+              {weightOverview.isPending ? (
+                <SmoothedWeightChart data={[]} loading />
+              ) : (
+                <SmoothedWeightChart
+                  data={smoothedWeightData}
+                  prediction={weightPredictionDisplay}
+                />
+              )}
             </div>
-            {weightOverview.isPending ? (
-              <SmoothedWeightChart data={[]} loading />
-            ) : weightOverview.isError && weightOverview.data == null ? (
-              <QueryStatePanel error={weightOverview.error} height={250} />
-            ) : (
-              <SmoothedWeightChart data={smoothedWeightData} prediction={weightPredictionDisplay} />
-            )}
-          </div>
-          <div className="card p-2 sm:p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <h4 className="text-xs font-medium text-subtle uppercase">Recomposition</h4>
-              <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
-            </div>
-            {bodyRecompSectionError ? (
-              <QueryStatePanel error={bodyRecompSectionError} height={250} />
-            ) : (
+            <div className="card p-2 sm:p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <h4 className="text-xs font-medium text-subtle uppercase">Recomposition</h4>
+                <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
+              </div>
               <BodyRecompositionChart
                 data={weightOverview.data?.recomposition ?? []}
                 loading={weightOverview.isLoading}
               />
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </PageSection>
 
       {/* Body Insights */}
@@ -302,13 +361,13 @@ export function BodyPage() {
         </PageSection>
       )}
 
-      {insightsSectionError && (
+      {insightsUnavailable && (
         <PageSection title="Body Insights" card={false}>
-          <QueryStatePanel error={insightsSectionError} height={120} />
+          <BodySectionUnavailable label="Body insights" />
         </PageSection>
       )}
 
-      {!insightsQuery.isLoading && !insightsSectionError && bodyInsights.length > 0 && (
+      {!insightsQuery.isLoading && !insightsUnavailable && bodyInsights.length > 0 && (
         <PageSection title="Body Insights" card={false}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {bodyInsights.map((insight) => (

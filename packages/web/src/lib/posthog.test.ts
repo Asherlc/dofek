@@ -57,6 +57,20 @@ describe("initPostHog", () => {
       expect.objectContaining({ capture_pageleave: true }),
     );
   });
+
+  it("enables exception autocapture", () => {
+    initPostHog();
+    expect(posthog.init).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        capture_exceptions: {
+          capture_unhandled_errors: true,
+          capture_unhandled_rejections: true,
+          capture_console_errors: true,
+        },
+      }),
+    );
+  });
 });
 
 describe("capturePageView", () => {

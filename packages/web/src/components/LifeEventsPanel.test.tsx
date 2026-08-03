@@ -120,6 +120,92 @@ describe("LifeEventsPanel", () => {
     expect(screen.getByText("Life events refresh failed")).toBeDefined();
   });
 
+  it("stacks the Travel Week event and add control on narrow screens", () => {
+    mocks.listUseQuery.mockReturnValue({
+      data: [{ ...event, id: "event-travel", label: "Travel Week", category: "lifestyle" }],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+
+    const eventButton = screen.getByRole("button", { name: /Travel Week/i });
+    const addButton = screen.getByRole("button", { name: "+ Add event" });
+    const eventList = eventButton.parentElement;
+    const controls = addButton.parentElement;
+    if (!(eventList instanceof HTMLElement) || !(controls instanceof HTMLElement)) {
+      throw new Error("Expected life event controls");
+    }
+
+    expect(controls.classList).toContain("flex-col");
+    expect(controls.classList).toContain("sm:flex-row");
+    expect(eventList.classList).toContain("min-w-0");
+    expect(addButton.classList).toContain("w-full");
+    expect(addButton.classList).toContain("sm:w-auto");
+  });
+
+  it("stacks add-form fields and controls on narrow screens", () => {
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+
+    const typeField = screen.getByText("Type").parentElement;
+    const typeChoices = screen.getByRole("button", { name: "One-time" }).parentElement;
+    const formGrid = typeField?.parentElement;
+    const formActions = screen.getByRole("button", { name: "Cancel" }).parentElement;
+    const labelField = screen.getByRole("textbox", { name: "Label" }).parentElement;
+    if (
+      !(typeChoices instanceof HTMLElement) ||
+      !(formGrid instanceof HTMLElement) ||
+      !(formActions instanceof HTMLElement) ||
+      !(labelField instanceof HTMLElement)
+    ) {
+      throw new Error("Expected responsive life event form controls");
+    }
+
+    expect(formGrid.classList).toContain("grid-cols-1");
+    expect(formGrid.classList).toContain("sm:grid-cols-2");
+    expect(labelField.classList).toContain("sm:col-span-2");
+    expect(typeChoices.classList).toContain("flex-col");
+    expect(typeChoices.classList).toContain("sm:flex-row");
+    expect(formActions.classList).toContain("flex-col");
+    expect(formActions.classList).toContain("sm:flex-row");
+  });
+
+  it("stacks selected-event analysis controls on narrow screens", () => {
+    mocks.analyzeUseQuery.mockReturnValue({ data: analysisData, error: null, isLoading: false });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Started creatine/i }));
+
+    const eventHeading = screen.getByRole("heading", { name: /Started creatine/i });
+    const eventMetadata = eventHeading.parentElement;
+    const analysisHeader = eventMetadata?.parentElement;
+    const windowChoices = screen.getByRole("button", { name: "14d" }).parentElement;
+    const windowControls = windowChoices?.parentElement;
+    const deleteButton = screen.getByRole("button", { name: "Delete" });
+    const analysisControls = windowControls?.parentElement;
+
+    if (
+      !(eventMetadata instanceof HTMLElement) ||
+      !(analysisHeader instanceof HTMLElement) ||
+      !(windowChoices instanceof HTMLElement) ||
+      !(windowControls instanceof HTMLElement) ||
+      !(analysisControls instanceof HTMLElement)
+    ) {
+      throw new Error("Expected responsive selected-event analysis controls");
+    }
+
+    expect(analysisHeader.classList).toContain("flex-col");
+    expect(analysisHeader.classList).toContain("sm:flex-row");
+    expect(eventMetadata.classList).toContain("min-w-0");
+    expect(analysisControls.classList).toContain("flex-col");
+    expect(analysisControls.classList).toContain("sm:flex-row");
+    expect(windowChoices.classList).toContain("grid-cols-4");
+    expect(windowChoices.classList).toContain("sm:flex");
+    expect(deleteButton.classList).toContain("w-full");
+    expect(deleteButton.classList).toContain("sm:w-auto");
+  });
+
   it("paginates life events", () => {
     mocks.listUseQuery.mockReturnValue({
       data: Array.from({ length: 21 }, (_, index) => ({

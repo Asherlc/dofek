@@ -2,7 +2,6 @@ import {
   formatCalories,
   formatDateForDisplay,
   formatDateYmd as formatDateForQuery,
-  formatGrams,
   isToday,
 } from "@dofek/format/format";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@dofek/nutrition/food-entry-nutrition";
 import {
   nutritionSourceResolutionSchema,
+  selectedDateNutritionIntakeContextSchema,
   selectedDateNutritionSummarySchema,
 } from "@dofek/nutrition/selected-date-summary";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
@@ -20,6 +20,7 @@ import { AddFoodModal, type FoodFormData, type MealType } from "../components/Ad
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
+import { NutritionIntakeContext } from "../components/NutritionIntakeContext.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -58,6 +59,7 @@ export const selectedDateFoodV2Schema = z.object({
   entries: z.array(foodEntrySchema),
   summary: selectedDateNutritionSummarySchema.nullable(),
   resolution: nutritionSourceResolutionSchema,
+  intakeContext: selectedDateNutritionIntakeContextSchema.nullable(),
 });
 
 export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrientDetail[] {
@@ -274,79 +276,6 @@ export function NutritionPage() {
           )}
         </div>
 
-        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">AI meal input</h3>
-            <p className="text-xs text-subtle">
-              Describe what you ate and automatically split it into items to log.
-            </p>
-          </div>
-          <form onSubmit={handleAiMealSubmit} className="space-y-3">
-            <textarea
-              value={aiMealInput}
-              onChange={(event) => handleAiMealInputChange(event.target.value)}
-              placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
-              className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-            {aiMealInputError && (
-              <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
-                {aiMealInputError}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={
-                !aiMealInput.trim() ||
-                analyzeItemsMutation.isPending ||
-                createAiEntryMutation.isPending
-              }
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {analyzeItemsMutation.isPending || createAiEntryMutation.isPending
-                ? "Logging..."
-                : "Log with AI"}
-            </button>
-          </form>
-          {pendingAiMealItems.length > 0 && (
-            <div className="rounded-lg border border-border bg-page/60 p-3 space-y-3">
-              <div className="text-sm font-semibold text-foreground">Review AI meal</div>
-              <div className="space-y-2">
-                {pendingAiMealItems.map((item) => (
-                  <div
-                    key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface-solid px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">{item.foodName}</div>
-                      <div className="text-xs text-subtle">{item.foodDescription}</div>
-                    </div>
-                    <div className="text-xs font-semibold text-foreground whitespace-nowrap">
-                      {formatCalories(item.calories)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPendingAiMealItems([])}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmAiMeal}
-                  disabled={createAiEntryMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Loading state */}
         {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
 
@@ -354,6 +283,35 @@ export function NutritionPage() {
 
         {selectedDateFood && (
           <>
+            {/* Daily summary */}
+            {selectedDateFood.intakeContext && (
+              <NutritionIntakeContext context={selectedDateFood.intakeContext} />
+            )}
+
+            {selectedDateFood.resolution.sourceProviders.length > 0 &&
+              selectedDateFood.resolution.status === "available" && (
+                <section
+                  className="rounded-xl border border-border bg-surface-solid px-4 py-3"
+                  aria-label="Nutrition source resolution"
+                >
+                  <p className="text-xs font-medium uppercase tracking-wide text-subtle">
+                    Source coverage
+                  </p>
+                  {selectedDateFood.resolution.contributionLabel && (
+                    <p className="mt-1 font-medium text-foreground">
+                      {selectedDateFood.resolution.contributionLabel}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm text-muted">{selectedDateFood.resolution.message}</p>
+                  {selectedDateFood.resolution.excludedSourceLabels.length > 0 && (
+                    <p className="mt-1 text-xs text-subtle">
+                      Excluded overlapping sources:{" "}
+                      {selectedDateFood.resolution.excludedSourceLabels.join(", ")}
+                    </p>
+                  )}
+                </section>
+              )}
+
             {selectedDateFood.resolution.status === "source_conflict" && (
               <div
                 role="alert"
@@ -367,64 +325,49 @@ export function NutritionPage() {
               </div>
             )}
 
-            {/* Daily summary */}
             {selectedDateFood.summary && (
-              <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-medium text-muted">Calories</span>
-                    <span className="text-sm text-muted tabular-nums">
-                      <span className="text-xl font-semibold text-foreground">
-                        {formatCalories(selectedDateFood.summary.calories)}
-                      </span>
-                      <span className="ml-1">
-                        / {formatCalories(selectedDateFood.summary.calorieGoal.target)}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${
-                        selectedDateFood.summary.calorieGoal.over > 0
-                          ? "bg-red-500"
-                          : "bg-emerald-500"
-                      } transition-all duration-300`}
-                      style={{
-                        width: `${selectedDateFood.summary.calorieGoal.progressPercentage}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="text-xs text-subtle tabular-nums">
-                    {selectedDateFood.summary.calorieGoal.remaining > 0
-                      ? `${formatCalories(selectedDateFood.summary.calorieGoal.remaining)} remaining`
-                      : selectedDateFood.summary.calorieGoal.over > 0
-                        ? `${formatCalories(selectedDateFood.summary.calorieGoal.over)} over goal`
-                        : "Calorie goal reached"}
-                  </div>
-                </div>
-
+              <section
+                className="rounded-xl border border-border bg-surface-solid p-5 space-y-5"
+                aria-labelledby="nutrition-composition-heading"
+              >
                 {/* Macro bars */}
                 <div className="space-y-3">
+                  <p
+                    id="nutrition-composition-heading"
+                    className="text-xs font-medium uppercase tracking-wide text-subtle"
+                  >
+                    Observed intake composition
+                  </p>
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
+                    <p className="text-xs text-subtle">Logged grams are shown separately.</p>
+                  </div>
                   <MacroBar
                     label="Protein"
-                    grams={formatGrams(selectedDateFood.summary.macros.protein.grams)}
-                    percentage={selectedDateFood.summary.macros.protein.percentage}
+                    grams={selectedDateFood.summary.macros.protein.grams}
+                    energySharePercentage={
+                      selectedDateFood.summary.macros.protein.energySharePercentage
+                    }
                     color="blue"
                   />
                   <MacroBar
                     label="Carbs"
-                    grams={formatGrams(selectedDateFood.summary.macros.carbs.grams)}
-                    percentage={selectedDateFood.summary.macros.carbs.percentage}
+                    grams={selectedDateFood.summary.macros.carbs.grams}
+                    energySharePercentage={
+                      selectedDateFood.summary.macros.carbs.energySharePercentage
+                    }
                     color="purple"
                   />
                   <MacroBar
                     label="Fat"
-                    grams={formatGrams(selectedDateFood.summary.macros.fat.grams)}
-                    percentage={selectedDateFood.summary.macros.fat.percentage}
+                    grams={selectedDateFood.summary.macros.fat.grams}
+                    energySharePercentage={
+                      selectedDateFood.summary.macros.fat.energySharePercentage
+                    }
                     color="teal"
                   />
                 </div>
-              </div>
+              </section>
             )}
 
             {/* Meal sections */}
@@ -513,6 +456,80 @@ export function NutritionPage() {
               })}
           </>
         )}
+
+        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">AI meal input</h3>
+            <p className="text-xs text-subtle">
+              Describe what you ate and automatically split it into items to log.
+            </p>
+          </div>
+          <form onSubmit={handleAiMealSubmit} className="space-y-3">
+            <textarea
+              value={aiMealInput}
+              onChange={(event) => handleAiMealInputChange(event.target.value)}
+              placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
+              className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            {aiMealInputError && (
+              <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                {aiMealInputError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={
+                !aiMealInput.trim() ||
+                analyzeItemsMutation.isPending ||
+                createAiEntryMutation.isPending
+              }
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {analyzeItemsMutation.isPending || createAiEntryMutation.isPending
+                ? "Logging..."
+                : "Log with AI"}
+            </button>
+          </form>
+          {pendingAiMealItems.length > 0 && (
+            <div className="rounded-lg border border-border bg-page/60 p-3 space-y-3">
+              <div className="text-sm font-semibold text-foreground">Review AI meal</div>
+              <div className="space-y-2">
+                {pendingAiMealItems.map((item) => (
+                  <div
+                    key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface-solid px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">{item.foodName}</div>
+                      <div className="text-xs text-subtle">{item.foodDescription}</div>
+                    </div>
+                    <div className="text-xs font-semibold text-foreground whitespace-nowrap">
+                      {formatCalories(item.calories)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingAiMealItems([])}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAiMeal}
+                  disabled={createAiEntryMutation.isPending}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="text-center text-xs font-medium text-subtle">
           <a
             href="https://www.fatsecret.com/"

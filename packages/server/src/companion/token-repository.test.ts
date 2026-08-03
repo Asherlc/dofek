@@ -4,6 +4,8 @@ import {
   generateCompanionToken,
   hashCompanionToken,
   regenerateCompanionToken,
+  revokeCompanionToken,
+  revokeCompanionTokenByToken,
   validateCompanionToken,
 } from "./token-repository.ts";
 
@@ -47,7 +49,7 @@ describe("token-repository", () => {
   describe("validateCompanionToken", () => {
     it("returns user_id when token is valid and not revoked", async () => {
       const db = createMockDb();
-      db.execute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      db.execute.mockResolvedValueOnce([{ user_id: "user-123", connection_type: "zepp-main" }]);
       const result = await validateCompanionToken(db, "valid-token");
       expect(result).toBe("user-123");
     });
@@ -67,6 +69,7 @@ describe("token-repository", () => {
         {
           id: "token-id",
           user_id: "user-123",
+          connection_type: "zepp-main",
           created_at: "2026-01-01T00:00:00.000Z",
           revoked_at: null,
         },
@@ -86,6 +89,7 @@ describe("token-repository", () => {
           {
             id: "existing-id",
             user_id: "user-123",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
@@ -119,6 +123,7 @@ describe("token-repository", () => {
           {
             id: "new-id",
             user_id: "user-123",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
@@ -152,6 +157,7 @@ describe("token-repository", () => {
           {
             id: "new-id",
             user_id: "user-123",
+            connection_type: "zepp-main",
             created_at: "2026-01-01T00:01:00.000Z",
             revoked_at: null,
           },
@@ -165,11 +171,60 @@ describe("token-repository", () => {
 
       expect(result).toEqual({
         id: "new-id",
+        connectionType: "zepp-main",
         token: null,
         createdAt: "2026-01-01T00:01:00.000Z",
         revokedAt: null,
       });
       expect(transaction.execute).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("revokeCompanionToken", () => {
+    it("returns true when an active connection is revoked", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([
+        {
+          id: "token-id",
+          user_id: "user-123",
+          connection_type: "zepp-main",
+          created_at: "2026-01-01T00:00:00.000Z",
+          revoked_at: "2026-01-02T00:00:00.000Z",
+        },
+      ]);
+
+      await expect(revokeCompanionToken(db, "user-123", "zepp-main")).resolves.toBe(true);
+    });
+
+    it("returns false when no active connection exists", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(revokeCompanionToken(db, "user-123", "zepp-main")).resolves.toBe(false);
+    });
+  });
+
+  describe("revokeCompanionTokenByToken", () => {
+    it("returns true when the bearer token identifies an active connection", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([
+        {
+          id: "token-id",
+          user_id: "user-123",
+          connection_type: "zepp-workout",
+          created_at: "2026-01-01T00:00:00.000Z",
+          revoked_at: "2026-01-02T00:00:00.000Z",
+        },
+      ]);
+
+      await expect(revokeCompanionTokenByToken(db, "dofek_companion_token")).resolves.toBe(true);
+    });
+
+    it("returns false when the bearer token has no active connection", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(revokeCompanionTokenByToken(db, "dofek_companion_token")).resolves.toBe(false);
     });
   });
 });

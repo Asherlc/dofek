@@ -1,3 +1,4 @@
+import type { inferRouterOutputs } from "@trpc/server";
 import { accountErasureRouter } from "./routers/account-erasure.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { activityRecordingRouter } from "./routers/activity-recording.ts";
@@ -150,3 +151,4 @@ export function createAppRouter(syncRouterOverride: typeof syncRouter) {
 export const appRouter = createAppRouter(syncRouter);
 
 export type AppRouter = typeof appRouter;
+export type AppRouterOutputs = inferRouterOutputs<AppRouter>;

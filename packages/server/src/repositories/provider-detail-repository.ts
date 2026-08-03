@@ -350,8 +350,8 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.activity",
 ];
 
-/** Tables to cascade-delete when disconnecting a provider, including credentials. */
-export const DISCONNECT_CHILD_TABLES = [
+/** All provider-scoped tables removed when deleting an account. */
+export const PROVIDER_ACCOUNT_TABLES = [
   ...PROVIDER_DATA_TABLES,
   "fitness.oauth_token",
   "fitness.provider_connection",
@@ -362,6 +362,10 @@ export const DISCONNECT_CHILD_TABLES = [
 // ---------------------------------------------------------------------------
 
 const ownerCheckSchema = z.object({ id: z.string() });
+const retainedPostgresDataSchema = z.object({ has_data: z.boolean() });
+const retainedMetricStreamDataSchema = z.object({
+  has_data: z.coerce.number().int().min(0).max(1),
+});
 const genericRowSchema = z.record(z.string(), z.unknown());
 const availableDataTypeRowSchema = z.object({ data_type: dataTypeEnum });
 const distinctValueSchema = z.object({ value: z.coerce.string() });
@@ -805,6 +809,52 @@ export class ProviderDetailRepository {
     return rows.length > 0;
   }
 
+  /**
+   * Whether this user may request provider data deletion.
+   * A live connection or an owned canonical record proves access; catalog
+   * membership alone is never sufficient.
+   */
+  async canDeleteProviderData(providerId: string): Promise<boolean> {
+    if (await this.verifyOwnership(providerId)) return true;
+
+    const retainedRecordQueries = PROVIDER_DATA_TABLES.map(
+      (table) =>
+        sql`SELECT 1
+            FROM ${sql.raw(table)}
+            WHERE provider_id = ${providerId}
+              AND user_id = ${this.#userId}`,
+    );
+    const rows = await executeWithSchema(
+      this.#db,
+      retainedPostgresDataSchema,
+      sql`SELECT EXISTS (
+            ${sql.join(retainedRecordQueries, sql` UNION ALL `)}
+          ) AS has_data`,
+    );
+    if (rows[0]?.has_data === true) return true;
+
+    if (!this.#clickHouse) {
+      throw new Error("provider data ownership requires the ClickHouse store");
+    }
+    const metricStreamRows = await this.#clickHouse.query(
+      retainedMetricStreamDataSchema,
+      `
+        SELECT toUInt8(count() > 0) AS has_data
+        FROM (
+          SELECT id
+          FROM ingest.metric_stream
+          WHERE user_id = {userId:UUID}
+            AND provider_id = {providerId:String}
+          GROUP BY id
+          HAVING argMax(is_deleted, tuple(version, ingested_at)) = 0
+          LIMIT 1
+        )
+      `,
+      { userId: this.#userId, providerId },
+    );
+    return metricStreamRows[0]?.has_data === 1;
+  }
+
   /** Atomically delete provider records, advance the generation fence, and write the outbox event. */
   async requestProviderDataDeletion(providerId: string): Promise<ProviderDataDeletionRequest> {
     const eventId = randomUUID();
@@ -819,20 +869,6 @@ export class ProviderDetailRepository {
     eventId: string,
   ): Promise<ProviderDataDeletionRequestStatus | null> {
     return findProviderDataDeletionRequest(this.#db, this.#userId, providerId, eventId);
-  }
-
-  /**
-   * Disconnect a provider — removes all user-scoped child data and tokens.
-   * Caller must verify ownership before calling this method.
-   */
-  async deleteProviderData(providerId: string): Promise<void> {
-    await this.#deleteProviderTables(providerId, DISCONNECT_CHILD_TABLES);
-  }
-
-  async #deleteProviderTables(providerId: string, tables: readonly string[]): Promise<void> {
-    await this.#db.transaction((transaction) =>
-      this.#deleteProviderTablesInTransaction(transaction, providerId, tables),
-    );
   }
 
   async #deleteProviderTablesInTransaction(

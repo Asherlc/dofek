@@ -57,6 +57,14 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
   PUBLIC_URL: "https://app.example.test",
+  // Classify the test environment as non-production by default so no test run is
+  // ever treated as a production deployment. The production-only guard in
+  // initProductionSentry() keys off DEPLOY_ENVIRONMENT; an explicit non-prod
+  // default keeps a stray env mutation in one test from letting local
+  // test-fixture errors reach production error tracking. Tests that need to
+  // exercise the production path must opt in explicitly via vi.stubEnv and
+  // restore it afterwards.
+  DEPLOY_ENVIRONMENT: "test",
 };
 
 const configuredClickHouseUrl = process.env.CLICKHOUSE_URL?.trim();
@@ -79,7 +87,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          setupFiles: ["packages/web/test-setup.ts"],
+          setupFiles: [path.resolve(dirname, "packages/web/test-setup.ts")],
           include: [
             ".github/workflows/**/*.test.ts",
             "entrypoint.test.ts",
@@ -88,6 +96,7 @@ export default defineConfig({
             "packages/web/vite.config.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/zepp/src/**/*.test.ts",
+            "packages/zepp/setting/**/*.test.ts",
             "packages/zepp/workout-extension/**/*.test.ts",
             "scripts/**/*.test.ts",
           ],

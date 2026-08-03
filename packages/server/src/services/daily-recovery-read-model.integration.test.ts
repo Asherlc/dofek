@@ -4,6 +4,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { RecoveryBaselineRepository } from "../repositories/recovery-baseline-repository.ts";
 import { loadDashboardOverview } from "./dashboard-overview.ts";
 
 const testUserId = "00000000-0000-4000-8000-000000001771";
@@ -13,6 +14,22 @@ type ClickHouseClient = ReturnType<typeof createClient>;
 
 const tombstoneRowSchema = z.object({
   is_deleted: z.coerce.number(),
+});
+
+const baselineContextRowSchema = z.object({
+  hrv_score: z.coerce.number(),
+  hrv_mean_30d: z.coerce.number().nullable(),
+  hrv_sd_30d: z.coerce.number().nullable(),
+  hrv_z_score: z.coerce.number().nullable(),
+  hrv_baseline_sample_count: z.coerce.number(),
+  hrv_baseline_coverage: z.coerce.number(),
+  hrv_mean_7d: z.coerce.number().nullable(),
+  hrv_mean_previous_28d: z.coerce.number().nullable(),
+  efficiency_mean_30d: z.coerce.number().nullable(),
+  efficiency_sd_30d: z.coerce.number().nullable(),
+  efficiency_z_score: z.coerce.number().nullable(),
+  efficiency_baseline_sample_count: z.coerce.number(),
+  efficiency_baseline_coverage: z.coerce.number(),
 });
 
 describe("daily recovery read-model lifecycle", () => {
@@ -32,6 +49,68 @@ describe("daily recovery read-model lifecycle", () => {
       await client.command({ query: `DROP DATABASE IF EXISTS ${targetSchema} SYNC` });
       await client.close();
     }
+  });
+
+  it("computes prior-calendar-day baseline context without hiding sparse coverage", async () => {
+    const activeClient = requireClient(client);
+    await seedBaselineFixture(activeClient, targetSchema);
+    await materializeRecoveryInputs(activeClient, targetSchema, false);
+    await materializeRecovery(activeClient, targetSchema, false);
+
+    const rows = await readBaselineContext(activeClient, targetSchema);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      hrv_baseline_sample_count: 3,
+      hrv_baseline_coverage: 0.1,
+      hrv_mean_30d: 60,
+      hrv_mean_7d: 80,
+      hrv_mean_previous_28d: 40,
+      efficiency_baseline_sample_count: 3,
+      efficiency_baseline_coverage: 0.1,
+      efficiency_mean_30d: 80,
+    });
+    expect(rows[0]?.hrv_sd_30d).toBeCloseTo(16.3299, 3);
+    expect(rows[0]?.hrv_z_score).toBeCloseTo(2.4494, 3);
+    expect(rows[0]?.efficiency_sd_30d).toBeCloseTo(8.165, 3);
+    expect(rows[0]?.efficiency_z_score).toBeCloseTo(2.4494, 3);
+  });
+
+  it("selects only the latest non-null canonical metric rows for all-time consumers", async () => {
+    const activeClient = requireClient(client);
+    await seedBaselineFixture(activeClient, targetSchema);
+    await materializeRecoveryInputs(activeClient, targetSchema, false);
+    await materializeRecovery(activeClient, targetSchema, false);
+
+    const repository = new RecoveryBaselineRepository(
+      testUserId,
+      createIsolatedSensorStore(activeClient, targetSchema),
+    );
+
+    await expect(repository.latestMetrics(recoveryDate)).resolves.toMatchObject([
+      { metric: "hrv", value: 100 },
+      { metric: "resting_heart_rate", value: 48 },
+      { metric: "respiratory_rate", value: 18 },
+      { metric: "sleep_efficiency", value: 100 },
+    ]);
+  });
+
+  it("returns null baseline statistics and the default readiness component with no prior samples", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, targetSchema);
+    await materializeRecoveryInputs(activeClient, targetSchema, false);
+    await materializeRecovery(activeClient, targetSchema, false);
+
+    await expect(readBaselineContext(activeClient, targetSchema)).resolves.toMatchObject([
+      {
+        hrv_baseline_sample_count: 0,
+        hrv_baseline_coverage: 0,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        hrv_z_score: null,
+        hrv_score: 62,
+      },
+    ]);
   });
 
   it("tombstones recovery after the final source input is removed and excludes it from the API", async () => {
@@ -150,8 +229,16 @@ async function materializeRecoveryInputs(
   await client.command({
     query: `INSERT INTO ${targetSchema}.daily_recovery_inputs (
       user_id, date, hrv, resting_hr, respiratory_rate, efficiency_pct,
-      hrv_mean_30d, hrv_sd_30d, rhr_mean_30d, rhr_sd_30d,
-      rr_mean_30d, rr_sd_30d, hrv_mean_60d, hrv_sd_60d,
+      hrv_mean_30d, hrv_sd_30d,
+      hrv_baseline_sample_count, hrv_baseline_coverage, hrv_mean_7d, hrv_mean_previous_28d,
+      rhr_mean_30d, rhr_sd_30d,
+      rhr_baseline_sample_count, rhr_baseline_coverage, rhr_mean_7d, rhr_mean_previous_28d,
+      rr_mean_30d, rr_sd_30d,
+      rr_baseline_sample_count, rr_baseline_coverage, rr_mean_7d, rr_mean_previous_28d,
+      efficiency_mean_30d, efficiency_sd_30d,
+      efficiency_baseline_sample_count, efficiency_baseline_coverage,
+      efficiency_mean_7d, efficiency_mean_previous_28d,
+      hrv_mean_60d, hrv_sd_60d,
       rhr_mean_60d, rhr_sd_60d, is_deleted, refresh_version, refreshed_at
     )
 ${renderModelSelectSql("daily_recovery_inputs", targetSchema, isIncremental)}`,
@@ -166,8 +253,16 @@ async function materializeRecovery(
   await client.command({
     query: `INSERT INTO ${targetSchema}.daily_recovery (
       user_id, date, hrv, resting_hr, respiratory_rate, efficiency_pct,
-      hrv_mean_30d, hrv_sd_30d, rhr_mean_30d, rhr_sd_30d,
-      rr_mean_30d, rr_sd_30d, hrv_mean_60d, hrv_sd_60d,
+      hrv_mean_30d, hrv_sd_30d, hrv_z_score,
+      hrv_baseline_sample_count, hrv_baseline_coverage, hrv_mean_7d, hrv_mean_previous_28d,
+      rhr_mean_30d, rhr_sd_30d, resting_hr_z_score,
+      rhr_baseline_sample_count, rhr_baseline_coverage, rhr_mean_7d, rhr_mean_previous_28d,
+      rr_mean_30d, rr_sd_30d, respiratory_rate_z_score,
+      rr_baseline_sample_count, rr_baseline_coverage, rr_mean_7d, rr_mean_previous_28d,
+      efficiency_mean_30d, efficiency_sd_30d, efficiency_z_score,
+      efficiency_baseline_sample_count, efficiency_baseline_coverage,
+      efficiency_mean_7d, efficiency_mean_previous_28d,
+      hrv_mean_60d, hrv_sd_60d,
       rhr_mean_60d, rhr_sd_60d, hrv_score, resting_hr_score,
       sleep_score, respiratory_rate_score, is_deleted, refresh_version, refreshed_at
     )
@@ -227,6 +322,38 @@ async function readRecoveryTombstone(
   return z.array(tombstoneRowSchema).parse(await result.json<unknown>());
 }
 
+async function readBaselineContext(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<z.infer<typeof baselineContextRowSchema>[]> {
+  const result = await client.query({
+    query: `SELECT
+        hrv_score,
+        hrv_mean_30d,
+        hrv_sd_30d,
+        hrv_z_score,
+        hrv_baseline_sample_count,
+        hrv_baseline_coverage,
+        hrv_mean_7d,
+        hrv_mean_previous_28d,
+        efficiency_mean_30d,
+        efficiency_sd_30d,
+        efficiency_z_score,
+        efficiency_baseline_sample_count,
+        efficiency_baseline_coverage
+      FROM ${targetSchema}.daily_recovery FINAL
+      WHERE user_id = {userId:UUID}
+        AND date = toDate({date:String})
+        AND is_deleted = 0`,
+    query_params: {
+      date: recoveryDate,
+      userId: testUserId,
+    },
+    format: "JSONEachRow",
+  });
+  return z.array(baselineContextRowSchema).parse(await result.json<unknown>());
+}
+
 function createIsolatedSensorStore(
   client: ClickHouseClient,
   targetSchema: string,
@@ -284,6 +411,35 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       65,
       14
     )`,
+  ]);
+}
+
+async function seedBaselineFixture(client: ClickHouseClient, targetSchema: string): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createDailyMetricsTableSql(targetSchema),
+    createRestingHeartRateTableSql(targetSchema),
+    createSleepViewTableSql(targetSchema),
+    createRecoveryInputsTableSql(targetSchema),
+    createRecoveryTableSql(targetSchema),
+    createDailyStrainTableSql(targetSchema),
+    createDailySleepTableSql(targetSchema),
+    `INSERT INTO ${targetSchema}.v_daily_metrics VALUES
+      ('${testUserId}', toDate('2025-12-02'), 40, 12),
+      ('${testUserId}', toDate('2025-12-30'), 60, 14),
+      ('${testUserId}', toDate('2025-12-31'), 80, 16),
+      ('${testUserId}', toDate('${recoveryDate}'), 100, 18)`,
+    `INSERT INTO ${targetSchema}.v_sleep VALUES
+      ('${testUserId}', toDateTime64('2025-12-02 08:00:00', 6, 'UTC'), 480, 70, false),
+      ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 80, false),
+      ('${testUserId}', toDateTime64('2025-12-31 08:00:00', 6, 'UTC'), 480, 90, false),
+      ('${testUserId}', toDateTime64('${recoveryDate} 08:00:00', 6, 'UTC'), 480, 100, false)`,
+    `INSERT INTO ${targetSchema}.resting_heart_rate_sleep_window VALUES
+      ('${testUserId}', toDateTime64('2025-12-02 08:00:00', 6, 'UTC'), 480, 54, 0, 1),
+      ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 52, 0, 1),
+      ('${testUserId}', toDateTime64('2025-12-31 08:00:00', 6, 'UTC'), 480, 50, 0, 1),
+      ('${testUserId}', toDateTime64('${recoveryDate} 08:00:00', 6, 'UTC'), 480, 48, 0, 1)`,
   ]);
 }
 
@@ -347,10 +503,28 @@ function createRecoveryInputsTableSql(targetSchema: string): string {
     efficiency_pct Nullable(Float64),
     hrv_mean_30d Nullable(Float64),
     hrv_sd_30d Nullable(Float64),
+    hrv_baseline_sample_count UInt16,
+    hrv_baseline_coverage Float64,
+    hrv_mean_7d Nullable(Float64),
+    hrv_mean_previous_28d Nullable(Float64),
     rhr_mean_30d Nullable(Float64),
     rhr_sd_30d Nullable(Float64),
+    rhr_baseline_sample_count UInt16,
+    rhr_baseline_coverage Float64,
+    rhr_mean_7d Nullable(Float64),
+    rhr_mean_previous_28d Nullable(Float64),
     rr_mean_30d Nullable(Float64),
     rr_sd_30d Nullable(Float64),
+    rr_baseline_sample_count UInt16,
+    rr_baseline_coverage Float64,
+    rr_mean_7d Nullable(Float64),
+    rr_mean_previous_28d Nullable(Float64),
+    efficiency_mean_30d Nullable(Float64),
+    efficiency_sd_30d Nullable(Float64),
+    efficiency_baseline_sample_count UInt16,
+    efficiency_baseline_coverage Float64,
+    efficiency_mean_7d Nullable(Float64),
+    efficiency_mean_previous_28d Nullable(Float64),
     hrv_mean_60d Nullable(Float64),
     hrv_sd_60d Nullable(Float64),
     rhr_mean_60d Nullable(Float64),
@@ -373,10 +547,32 @@ function createRecoveryTableSql(targetSchema: string): string {
     efficiency_pct Nullable(Float64),
     hrv_mean_30d Nullable(Float64),
     hrv_sd_30d Nullable(Float64),
+    hrv_z_score Nullable(Float64),
+    hrv_baseline_sample_count UInt16,
+    hrv_baseline_coverage Float64,
+    hrv_mean_7d Nullable(Float64),
+    hrv_mean_previous_28d Nullable(Float64),
     rhr_mean_30d Nullable(Float64),
     rhr_sd_30d Nullable(Float64),
+    resting_hr_z_score Nullable(Float64),
+    rhr_baseline_sample_count UInt16,
+    rhr_baseline_coverage Float64,
+    rhr_mean_7d Nullable(Float64),
+    rhr_mean_previous_28d Nullable(Float64),
     rr_mean_30d Nullable(Float64),
     rr_sd_30d Nullable(Float64),
+    respiratory_rate_z_score Nullable(Float64),
+    rr_baseline_sample_count UInt16,
+    rr_baseline_coverage Float64,
+    rr_mean_7d Nullable(Float64),
+    rr_mean_previous_28d Nullable(Float64),
+    efficiency_mean_30d Nullable(Float64),
+    efficiency_sd_30d Nullable(Float64),
+    efficiency_z_score Nullable(Float64),
+    efficiency_baseline_sample_count UInt16,
+    efficiency_baseline_coverage Float64,
+    efficiency_mean_7d Nullable(Float64),
+    efficiency_mean_previous_28d Nullable(Float64),
     hrv_mean_60d Nullable(Float64),
     hrv_sd_60d Nullable(Float64),
     rhr_mean_60d Nullable(Float64),
@@ -414,6 +610,7 @@ function createDailySleepTableSql(targetSchema: string): string {
     rem_minutes Nullable(Int32),
     light_minutes Nullable(Int32),
     awake_minutes Nullable(Int32),
+    staging_available Bool,
     is_deleted UInt8,
     refresh_version UInt64
   )

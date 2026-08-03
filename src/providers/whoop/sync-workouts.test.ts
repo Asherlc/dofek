@@ -71,7 +71,11 @@ function makeClient() {
 }
 
 function makeWorkoutRecord(
-  overrides: Partial<{ activity_id: string | undefined; during: string }> = {},
+  overrides: Partial<{
+    activity_id: string | undefined;
+    during: string;
+    timezone_offset: string;
+  }> = {},
 ): WhoopWorkoutRecord {
   return {
     activity_id: "workout-1",
@@ -244,6 +248,38 @@ describe("WHOOP workout sync helpers", () => {
     await expect(persistWhoopWorkoutsFromCycles(context, new Set())).resolves.toBe(0);
     expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalled();
     expect(context.errors).toEqual([]);
+  });
+
+  it.each([
+    [
+      "-08:00",
+      {
+        timezone: null,
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        localTimeSource: "provider_offset",
+      },
+    ],
+    [
+      "not-an-offset",
+      {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "unknown",
+      },
+    ],
+  ])("persists WHOOP local-time context from timezone offset %s", async (timezoneOffset, expected) => {
+    const context = makeContext({
+      cycles: [{ workouts: [makeWorkoutRecord({ timezone_offset: timezoneOffset })] }],
+    });
+
+    await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      context.db,
+      expect.objectContaining(expected),
+      expect.objectContaining(expected),
+    );
   });
 
   it("records parse failures while persisting provider activities", async () => {

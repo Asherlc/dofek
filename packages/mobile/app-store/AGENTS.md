@@ -5,7 +5,7 @@ Read [README.md](README.md) before changing this directory.
 ## Scope
 
 - `screenshots/` contains generated App Store listing images and their manifest.
-- `../scripts/capture-app-store-screenshots.mjs` captures the images from the
+- `../scripts/capture-app-store-screenshots.ts` captures the images from the
   built mobile Storybook.
 - Page stories and seeded data outside this directory define the rendered
   content; do not hand-edit generated screenshots.

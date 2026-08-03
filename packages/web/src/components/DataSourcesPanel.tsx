@@ -1,3 +1,4 @@
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
@@ -20,6 +21,7 @@ import {
 } from "./file-import-configs.ts";
 import { ProcessingStatusWidget } from "./ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
+import { SyncAllControls } from "./SyncAllControls.tsx";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
 const oauthBroadcastMessage = z.object({
@@ -48,6 +50,7 @@ export function DataSourcesPanel() {
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
   const [syncAllMode, setSyncAllMode] = useState<"sync" | "full" | null>(null);
+  const [syncAllError, setSyncAllError] = useState<string>();
 
   // Resume polling for any active sync jobs (e.g. navigated away and back)
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
@@ -131,7 +134,7 @@ export function DataSourcesPanel() {
       try {
         const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
         const providerResult = result.providerResults?.find(
           (entry) => entry.providerId === providerId,
@@ -166,6 +169,7 @@ export function DataSourcesPanel() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
+      setSyncAllError(undefined);
       setSyncAllMode(fullSync ? "full" : "sync");
       const enabled = (providers.data ?? []).filter(
         (p) => p.authorized && !p.importOnly && !p.pushOnly,
@@ -180,7 +184,7 @@ export function DataSourcesPanel() {
       }
       try {
         const result = await syncMutation.mutateAsync({
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
         const providerResults = result.providerResults;
         await Promise.all(
@@ -206,10 +210,12 @@ export function DataSourcesPanel() {
         );
       } catch (err: unknown) {
         captureException(err, { operation: "sync.triggerSync" });
+        const message = err instanceof Error ? err.message : "Sync failed";
+        setSyncAllError(message);
         for (const p of enabled) {
           updateState(p.id, {
             status: "error",
-            message: err instanceof Error ? err.message : "Sync failed",
+            message,
           });
         }
       } finally {
@@ -255,6 +261,13 @@ export function DataSourcesPanel() {
     (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
   );
   const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
+  const syncAllBusy =
+    syncMutation.isPending ||
+    syncAllMode !== null ||
+    Object.values(providerStates).some((state) => state.status === "syncing") ||
+    (activeSyncs.data ?? []).some(
+      (activeSync) => activeSync.status === "running" || activeSync.status === "queued",
+    );
 
   // Resume polling for sync jobs that were already running when the page loaded
   useEffect(() => {
@@ -326,39 +339,39 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (p: SyncProviderSummary, fullSync = false) => {
-      if (p.authorized && !p.needsReauth && !p.pushOnly) {
-        handleSync(p.id, fullSync);
+    (provider: SyncProviderSummary) => {
+      if (provider.authorized && !provider.needsReauth && !provider.pushOnly) {
+        handleSync(provider.id);
         return;
       }
-      if (p.pushOnly) {
+      if (provider.pushOnly) {
         return;
       }
-      switch (p.authType) {
+      switch (provider.authType) {
         case "oauth":
         case "oauth1":
-          window.open(`/auth/provider/${p.id}`, "_blank");
+          window.open(`/auth/provider/${provider.id}`, "_blank");
           break;
         case "credential":
-          setCredentialAuthProvider({ id: p.id, name: p.name });
+          setCredentialAuthProvider({ id: provider.id, name: provider.name });
           break;
         case "token":
-          if (p.tokenAuth) {
+          if (provider.tokenAuth) {
             setTokenAuthProvider({
-              id: p.id,
-              name: p.name,
-              label: p.tokenAuth.label,
-              instructionsUrl: p.tokenAuth.instructionsUrl,
+              id: provider.id,
+              name: provider.name,
+              label: provider.tokenAuth.label,
+              instructionsUrl: provider.tokenAuth.instructionsUrl,
             });
           } else {
             const error = new Error(
-              `${p.name} personal-token authentication is unavailable. Refresh and try again.`,
+              `${provider.name} personal-token authentication is unavailable. Refresh and try again.`,
             );
             captureException(error, {
               operation: "connect-provider",
-              providerId: p.id,
+              providerId: provider.id,
             });
-            updateState(p.id, { status: "error", message: error.message });
+            updateState(provider.id, { status: "error", message: error.message });
           }
           break;
         case "custom:whoop":
@@ -368,7 +381,7 @@ export function DataSourcesPanel() {
           setGarminAuthOpen(true);
           break;
         default:
-          handleSync(p.id, fullSync);
+          handleSync(provider.id);
       }
     },
     [handleSync, updateState],
@@ -399,35 +412,15 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-6 items-center justify-between">
+      <div className="flex min-h-20 items-start justify-between gap-4">
         <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
         {enabledSyncable.length > 1 && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => handleSyncAll()}
-              disabled={syncMutation.isPending}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
-                syncAllMode === "sync"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50"
-              }`}
-            >
-              {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSyncAll(true)}
-              disabled={syncMutation.isPending}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
-                syncAllMode === "full"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-accent/10 text-muted hover:bg-surface-hover disabled:opacity-50"
-              }`}
-            >
-              {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
-            </button>
-          </div>
+          <SyncAllControls
+            busy={syncAllBusy}
+            errorMessage={syncAllError}
+            onRecentSync={() => void handleSyncAll()}
+            onFullSync={() => void handleSyncAll(true)}
+          />
         )}
       </div>
 
@@ -495,7 +488,6 @@ export function DataSourcesPanel() {
                     stats={providerStats}
                     recentLogs={recentLogs}
                     onSync={() => handleProviderClick(provider)}
-                    onFullSync={() => handleProviderClick(provider, true)}
                   />
                 );
               })}

@@ -35,7 +35,7 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: vi.fn() },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -48,8 +48,8 @@ vi.mock("@opentelemetry/api", () => ({
   },
 }));
 
-import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
@@ -374,7 +374,7 @@ describe("trpc", () => {
         code: "SERVICE_UNAVAILABLE",
         message: analyticsUnavailableMessage,
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(reportableError, {
+      expect(captureException).toHaveBeenCalledWith(reportableError, {
         tags: { dependency: "clickhouse", trpcPath: "test" },
       });
     }
@@ -383,7 +383,7 @@ describe("trpc", () => {
       const caller = createSanitizerCaller(error);
 
       await expect(caller.test()).rejects.toMatchObject({ message });
-      expect(Sentry.captureException).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
     }
 
     it("hides ClickHouse DNS failures from tRPC callers and reports the original error", async () => {

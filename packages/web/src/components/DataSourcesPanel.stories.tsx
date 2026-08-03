@@ -13,6 +13,7 @@ import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
+import { PageSection } from "./PageSection.tsx";
 
 type DataSourcesScenario = "default" | "providersLoading" | "empty" | "processingBlocked";
 
@@ -111,7 +112,11 @@ function createStoryRouter() {
   const panelRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    component: () => <DataSourcesPanel />,
+    component: () => (
+      <PageSection title="Data Sources" subtitle="Connect and manage health data providers">
+        <DataSourcesPanel />
+      </PageSection>
+    ),
   });
   const providerRoute = createRoute({
     getParentRoute: () => rootRoute,

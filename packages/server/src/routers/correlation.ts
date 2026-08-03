@@ -1,4 +1,8 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { MIN_CORRELATION_PAIRS } from "@dofek/stats/correlation";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { epistemicStatusSchema } from "../contracts/epistemic-status-contract.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import {
@@ -29,6 +33,45 @@ const correlationDataPointSchema = z.object({
   date: dateStringSchema,
 });
 
+const correlationContributorSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("record"),
+    label: z.string(),
+    providerIds: z.array(z.string()),
+    target: z.object({
+      type: z.literal("activity"),
+      activityId: z.guid(),
+    }),
+  }),
+  z.object({
+    kind: z.literal("aggregate_inputs"),
+    label: z.string(),
+    providerIds: z.array(z.string()),
+    target: z.object({
+      type: z.literal("metric_family"),
+      family: z.enum(["recovery", "sleep", "nutrition", "activity", "body"]),
+    }),
+  }),
+]);
+
+const correlationObservationValueSchema = z.object({
+  metricId: z.string(),
+  date: dateStringSchema,
+  value: z.number(),
+  contributors: z.array(correlationContributorSchema),
+});
+
+const correlationObservationPageSchema = z.object({
+  items: z.array(
+    z.object({
+      x: correlationObservationValueSchema,
+      y: correlationObservationValueSchema,
+    }),
+  ),
+  totalCount: z.number().int().nonnegative(),
+  nextCursor: dateStringSchema.nullable(),
+});
+
 const correlationStatsSchema = z.object({
   mean: z.number(),
   median: z.number(),
@@ -39,6 +82,7 @@ const correlationStatsSchema = z.object({
 });
 
 const correlationResultBaseShape = {
+  epistemicStatus: epistemicStatusSchema,
   dataPoints: z.array(correlationDataPointSchema),
   sampleCount: z.number().int().nonnegative(),
   insight: z.string(),
@@ -49,14 +93,18 @@ const correlationComputeOutputSchema = z.discriminatedUnion("availability", [
   z.object({
     ...correlationResultBaseShape,
     availability: z.literal("insufficient"),
-    sampleCount: z.number().int().min(0).max(4),
-    additionalSamplesRequired: z.number().int().min(1).max(5),
+    sampleCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(MIN_CORRELATION_PAIRS - 1),
+    additionalSamplesRequired: z.number().int().min(1).max(MIN_CORRELATION_PAIRS),
     confidenceLevel: z.literal("insufficient"),
   }),
   z.object({
     ...correlationResultBaseShape,
     availability: z.literal("available"),
-    sampleCount: z.number().int().min(5),
+    sampleCount: z.number().int().min(MIN_CORRELATION_PAIRS),
     spearmanRho: z.number(),
     spearmanPValue: z.number(),
     pearsonR: z.number(),
@@ -110,25 +158,31 @@ const correlationUncertaintySchema = z.discriminatedUnion("availability", [
 ]);
 
 const correlationV2BaseShape = {
+  epistemicStatus: epistemicStatusSchema,
   analysisVersion: z.literal(2),
   dataPoints: z.array(correlationDataPointSchema),
   sampleCount: z.number().int().nonnegative(),
   coverage: correlationCoverageSchema,
   uncertainty: correlationUncertaintySchema,
   insight: z.string(),
+  interpretationWarning: z.string(),
 };
 
 const correlationComputeV2OutputSchema = z.discriminatedUnion("availability", [
   z.object({
     ...correlationV2BaseShape,
     availability: z.literal("insufficient"),
-    sampleCount: z.number().int().min(0).max(4),
-    additionalSamplesRequired: z.number().int().min(1).max(5),
+    sampleCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(MIN_CORRELATION_PAIRS - 1),
+    additionalSamplesRequired: z.number().int().min(1).max(MIN_CORRELATION_PAIRS),
   }),
   z.object({
     ...correlationV2BaseShape,
     availability: z.literal("available"),
-    sampleCount: z.number().int().min(5),
+    sampleCount: z.number().int().min(MIN_CORRELATION_PAIRS),
     spearmanRho: z.number().min(-1).max(1).nullable(),
     regression: z.object({
       slope: z.number().nullable(),
@@ -149,10 +203,32 @@ function correlationInputSchema(endpoint: "correlation.compute" | "correlation.c
   });
 }
 
+function assertDistinctMetrics(metricX: string, metricY: string): void {
+  if (metricX === metricY) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Choose two different metrics to compare.",
+    });
+  }
+}
+
+const correlationObservationsInputSchema = z.object({
+  metricX: z.string(),
+  metricY: z.string(),
+  days: selectedChartRangeSchema("correlation.observations"),
+  lag: z.number().min(0).max(7).default(0),
+  cursor: dateStringSchema.optional(),
+  pageSize: z.number().int().min(1).max(100).default(25),
+});
+
+function currentCorrelationEndDate(timezone: string): string {
+  return formatDateYmdInTimeZone(new Date(), timezone);
+}
+
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
 export const correlationRouter = router({
-  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG, keyVersion: "correlation.metrics:v2" })
     .input(z.object({}).optional())
     .query(({ ctx }) => {
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
@@ -164,16 +240,18 @@ export const correlationRouter = router({
     CacheTTL.MEDIUM,
     correlationInputSchema("correlation.compute"),
     async ({ ctx, input, range }) => {
+      assertDistinctMetrics(input.metricX, input.metricY);
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.compute(
         input.metricX,
         input.metricY,
         range.days,
         input.lag,
-        new Date().toISOString().slice(0, 10),
+        currentCorrelationEndDate(ctx.timezone),
       );
     },
     correlationComputeOutputSchema,
+    { keyVersion: "correlation.compute:v2" },
   ),
 
   computeV2: selectedChartCustomRangeQuery(
@@ -181,15 +259,39 @@ export const correlationRouter = router({
     CacheTTL.MEDIUM,
     correlationInputSchema("correlation.computeV2"),
     async ({ ctx, input, range }) => {
+      assertDistinctMetrics(input.metricX, input.metricY);
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.computeV2(
         input.metricX,
         input.metricY,
         range.days,
         input.lag,
-        new Date().toISOString().slice(0, 10),
+        currentCorrelationEndDate(ctx.timezone),
       );
     },
     correlationComputeV2OutputSchema,
+    { keyVersion: "correlation.computeV2:v2" },
+  ),
+
+  observations: selectedChartCustomRangeQuery(
+    "correlation.observations",
+    CacheTTL.MEDIUM,
+    correlationObservationsInputSchema,
+    async ({ ctx, input, range }) => {
+      assertDistinctMetrics(input.metricX, input.metricY);
+      const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
+      return repo.listObservations(
+        input.metricX,
+        input.metricY,
+        range.days,
+        input.lag,
+        currentCorrelationEndDate(ctx.timezone),
+        {
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          pageSize: input.pageSize,
+        },
+      );
+    },
+    correlationObservationPageSchema,
   ),
 });

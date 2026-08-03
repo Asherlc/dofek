@@ -328,6 +328,7 @@ describe("CorosProvider.sync() (integration)", () => {
     expect(sleepRow.lightMinutes).toBe(200);
     expect(sleepRow.remMinutes).toBe(110);
     expect(sleepRow.awakeMinutes).toBe(30);
+    expect(sleepRow.stagingAvailable).toBe(true);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

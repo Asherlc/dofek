@@ -76,6 +76,20 @@ describe("findHandledMobileErrorViolations", () => {
 
   it.each([
     [
+      "reports through a canonical workout-route helper",
+      `
+        try {
+          await pushRoutes();
+        } catch (error) {
+          handleWorkoutRouteError(error, {
+            errors,
+            errorLabel: "Push workout routes",
+            source: "health-kit-workout-route-push",
+          });
+        }
+      `,
+    ],
+    [
       "reports the original error through the canonical helper",
       `
         try {

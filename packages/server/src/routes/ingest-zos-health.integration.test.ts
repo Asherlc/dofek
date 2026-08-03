@@ -1061,6 +1061,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows[0].rem_minutes).toBe(120);
     expect(rows[0].light_minutes).toBe(240);
     expect(rows[0].awake_minutes).toBe(30);
+    expect(rows[0].staging_available).toBe(true);
     expect(Number(rows[0].efficiency_pct)).toBeCloseTo(87.5);
   });
 });

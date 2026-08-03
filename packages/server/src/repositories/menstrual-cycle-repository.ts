@@ -5,10 +5,13 @@ import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
-// Constants
+// Estimate boundaries
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CYCLE_LENGTH = 28;
+const MINIMUM_COMPLETED_CYCLES = 3;
+const MINIMUM_REGULAR_CYCLE_DAYS = 21;
+const MAXIMUM_REGULAR_CYCLE_DAYS = 35;
+const MAXIMUM_REGULAR_VARIATION_DAYS = 9;
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -38,14 +41,28 @@ const periodMutationRowSchema = z.object({
   notes: z.string().nullable(),
 });
 
+const deletedPeriodRowSchema = z.object({
+  id: z.string(),
+});
+
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
 
-export type CycleEstimateBasis = "personal-cycle-average" | "generic-28-day-default";
+export type CycleEstimateStatus =
+  | "no-history"
+  | "sparse-history"
+  | "irregular-history"
+  | "stale-history"
+  | "estimated";
+
+export interface CycleEstimateAvailability {
+  status: CycleEstimateStatus;
+  label: string;
+}
 
 export interface CyclePhaseEstimate {
-  basis: CycleEstimateBasis;
+  basis: "personal-cycle-average";
   completedCycleCount: number;
   observedCycleLengthRange: {
     minimumDays: number;
@@ -64,6 +81,7 @@ export interface CurrentPhaseResult {
   dayOfCycle: number | null;
   cycleLength: number | null;
   estimate: CyclePhaseEstimate | null;
+  availability: CycleEstimateAvailability;
 }
 
 export interface MenstrualPeriod {
@@ -75,9 +93,39 @@ export interface MenstrualPeriod {
   notes: string | null;
 }
 
+export class PeriodStartDateConflictError extends Error {
+  constructor(startDate: string) {
+    super(`A period is already recorded for ${startDate}. Choose a different start date.`);
+    this.name = "PeriodStartDateConflictError";
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ("code" in error && error.code === "23505") return true;
+  return (
+    "cause" in error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "code" in error.cause &&
+    error.cause.code === "23505"
+  );
+}
+
 function formatPeriodDuration(durationDays: number | null): string | null {
   if (durationDays === null) return null;
   return `${durationDays} ${durationDays === 1 ? "day" : "days"}`;
+}
+
+function mapPeriod(row: z.infer<typeof periodMutationRowSchema>): MenstrualPeriod {
+  return {
+    id: row.id,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    durationDays: row.duration_days,
+    durationLabel: formatPeriodDuration(row.duration_days),
+    notes: row.notes,
+  };
 }
 
 function buildCyclePhaseEstimate({
@@ -92,37 +140,22 @@ function buildCyclePhaseEstimate({
   dayOfCycle: number;
   cycleLength: number;
   completedCycleCount: number;
-  minimumCycleLength: number | null;
-  maximumCycleLength: number | null;
+  minimumCycleLength: number;
+  maximumCycleLength: number;
 }): CyclePhaseEstimate {
-  const hasPersonalHistory =
-    completedCycleCount > 0 && minimumCycleLength !== null && maximumCycleLength !== null;
-  const basis: CycleEstimateBasis = hasPersonalHistory
-    ? "personal-cycle-average"
-    : "generic-28-day-default";
-  const observedCycleLengthRange = hasPersonalHistory
-    ? {
-        minimumDays: minimumCycleLength,
-        maximumDays: maximumCycleLength,
-      }
-    : null;
-  const completedCycleNoun = completedCycleCount === 1 ? "cycle" : "cycles";
-  const methodLabel = hasPersonalHistory
-    ? `Phase and cycle length use the average of ${completedCycleCount} completed ${completedCycleNoun}.`
-    : `Phase and cycle length use a generic ${cycleLength}-day default based on ${completedCycleCount} completed cycles; this is not a personal prediction.`;
+  const methodLabel = `Phase and cycle length use the average of ${completedCycleCount} completed cycles.`;
   const uncertaintyLabel =
-    minimumCycleLength === maximumCycleLength && minimumCycleLength !== null
-      ? completedCycleCount === 1
-        ? `The recorded cycle length was ${minimumCycleLength} days.`
-        : `All ${completedCycleCount} recorded cycles were ${minimumCycleLength} days long.`
-      : hasPersonalHistory
-        ? `Recorded cycle lengths ranged from ${minimumCycleLength} to ${maximumCycleLength} days.`
-        : "No personal cycle-length range is available yet.";
+    minimumCycleLength === maximumCycleLength
+      ? `All ${completedCycleCount} recorded cycles were ${minimumCycleLength} days long.`
+      : `Recorded cycle lengths ranged from ${minimumCycleLength} to ${maximumCycleLength} days.`;
 
   return {
-    basis,
+    basis: "personal-cycle-average",
     completedCycleCount,
-    observedCycleLengthRange,
+    observedCycleLengthRange: {
+      minimumDays: minimumCycleLength,
+      maximumDays: maximumCycleLength,
+    },
     phaseLabel: `Estimated ${PHASE_DISPLAY[phase].label} phase`,
     cycleDayLabel: `Day ${dayOfCycle} of an estimated ${cycleLength}-day cycle`,
     dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
@@ -179,12 +212,56 @@ export class MenstrualCycleRepository {
 
     const latest = rows[0];
     if (!latest) {
-      return { phase: null, dayOfCycle: null, cycleLength: null, estimate: null };
+      return {
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+        availability: {
+          status: "no-history",
+          label: "No periods logged. Add a period start to begin tracking.",
+        },
+      };
     }
 
-    const cycleLength = latest.avg_cycle_length
-      ? Math.round(Number(latest.avg_cycle_length))
-      : DEFAULT_CYCLE_LENGTH;
+    if (
+      latest.completed_cycle_count < MINIMUM_COMPLETED_CYCLES ||
+      latest.avg_cycle_length === null ||
+      latest.min_cycle_length === null ||
+      latest.max_cycle_length === null
+    ) {
+      return {
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+        availability: {
+          status: "sparse-history",
+          label:
+            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
+        },
+      };
+    }
+
+    const cycleLengthVariation = latest.max_cycle_length - latest.min_cycle_length;
+    const hasIrregularHistory =
+      latest.min_cycle_length < MINIMUM_REGULAR_CYCLE_DAYS ||
+      latest.max_cycle_length > MAXIMUM_REGULAR_CYCLE_DAYS ||
+      cycleLengthVariation > MAXIMUM_REGULAR_VARIATION_DAYS;
+    if (hasIrregularHistory) {
+      return {
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+        availability: {
+          status: "irregular-history",
+          label: `No phase estimate is shown because recorded cycle lengths do not support a regular-cycle model (observed range: ${latest.min_cycle_length} to ${latest.max_cycle_length} days).`,
+        },
+      };
+    }
+
+    const cycleLength = Math.round(Number(latest.avg_cycle_length));
 
     const startDate = new Date(latest.start_date);
     const referenceDate = today ?? new Date();
@@ -193,7 +270,17 @@ export class MenstrualCycleRepository {
 
     // If we're past the expected cycle length + 7 days, we can't determine the phase
     if (dayOfCycle > cycleLength + 7) {
-      return { phase: null, dayOfCycle: null, cycleLength, estimate: null };
+      return {
+        phase: null,
+        dayOfCycle: null,
+        cycleLength,
+        estimate: null,
+        availability: {
+          status: "stale-history",
+          label:
+            "The latest period start is beyond the expected cycle window. Correct it or log a newer period start to resume estimates.",
+        },
+      };
     }
 
     const phase = computePhase(dayOfCycle, cycleLength);
@@ -210,6 +297,10 @@ export class MenstrualCycleRepository {
         minimumCycleLength: latest.min_cycle_length,
         maximumCycleLength: latest.max_cycle_length,
       }),
+      availability: {
+        status: "estimated",
+        label: "Phase estimate available from recorded cycle history.",
+      },
     };
   }
 
@@ -239,14 +330,57 @@ export class MenstrualCycleRepository {
     const row = rows[0];
     if (!row) return null;
 
-    return {
-      id: row.id,
-      startDate: row.start_date,
-      endDate: row.end_date,
-      durationDays: row.duration_days,
-      durationLabel: formatPeriodDuration(row.duration_days),
-      notes: row.notes,
-    };
+    return mapPeriod(row);
+  }
+
+  /** Correct an existing period owned by this user. */
+  async updatePeriod(
+    id: string,
+    startDate: string,
+    endDate: string | null,
+    notes: string | null,
+  ): Promise<MenstrualPeriod | null> {
+    if (endDate !== null && endDate < startDate) {
+      throw new Error("Period end date cannot be before start date.");
+    }
+
+    try {
+      const rows = await executeWithSchema(
+        this.#db,
+        periodMutationRowSchema,
+        sql`UPDATE fitness.menstrual_period
+            SET start_date = ${startDate}::date,
+                end_date = ${endDate}::date,
+                notes = ${notes}
+            WHERE id = ${id}::uuid
+              AND user_id = ${this.#userId}
+            RETURNING id, start_date, end_date,
+                      end_date - start_date + 1 AS duration_days,
+                      notes`,
+      );
+
+      const row = rows[0];
+      return row ? mapPeriod(row) : null;
+    } catch (error: unknown) {
+      if (isUniqueViolation(error)) {
+        throw new PeriodStartDateConflictError(startDate);
+      }
+      throw error;
+    }
+  }
+
+  /** Delete an erroneous period owned by this user. */
+  async deletePeriod(id: string): Promise<boolean> {
+    const rows = await executeWithSchema(
+      this.#db,
+      deletedPeriodRowSchema,
+      sql`DELETE FROM fitness.menstrual_period
+          WHERE id = ${id}::uuid
+            AND user_id = ${this.#userId}
+          RETURNING id`,
+    );
+
+    return rows.length > 0;
   }
 
   /** Period history for the past N months. */
@@ -263,13 +397,6 @@ export class MenstrualCycleRepository {
           ORDER BY start_date ASC`,
     );
 
-    return rows.map((row) => ({
-      id: row.id,
-      startDate: row.start_date,
-      endDate: row.end_date,
-      durationDays: row.duration_days,
-      durationLabel: formatPeriodDuration(row.duration_days),
-      notes: row.notes,
-    }));
+    return rows.map(mapPeriod);
   }
 }

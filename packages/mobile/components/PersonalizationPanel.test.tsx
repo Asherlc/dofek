@@ -1,7 +1,13 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { trpc } from "../lib/trpc";
 import { PersonalizationPanel } from "./PersonalizationPanel";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/telemetry", () => ({
+  captureException: mockCaptureException,
+}));
 
 // Mock TRPC
 vi.mock("../lib/trpc", () => ({
@@ -59,6 +65,73 @@ describe("PersonalizationPanel", () => {
       },
       trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
+    modelCards: [
+      {
+        key: "exponentialMovingAverage",
+        title: "Training Load Windows",
+        description: "How many days of training history are used to compute fitness and fatigue",
+        status: "personalized",
+        lastSuccessfulFitAt: "2026-03-18T12:00:00Z",
+        lastFitSummary: "Successful fit time recorded",
+        dataWindow: "Past 365 days",
+        dataSufficiency: "100 qualifying days used; minimum 90 days",
+        fitEvidence: "Pearson correlation: 0.850",
+        uncertainty: "No calibrated uncertainty interval is available.",
+        excludedData: ["Days without a nonzero performance observation", "Unfinished activities"],
+      },
+      {
+        key: "readinessWeights",
+        title: "Readiness Score Weights",
+        description: "How much each factor contributes to your daily readiness score",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+        dataWindow: "Past 365 days after a 60-day rolling-baseline warm-up",
+        dataSufficiency: "90 qualifying days used; minimum 60 days",
+        fitEvidence: "Pearson correlation: 0.750",
+        uncertainty: "No calibrated uncertainty interval is available.",
+        excludedData: ["Days without heart-rate variability or resting heart rate"],
+      },
+      {
+        key: "sleepTarget",
+        title: "Sleep Target",
+        description: "The amount of sleep associated with your best recovery",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+        dataWindow: "Past 365 days; next-day recovery uses up to 60 days of baseline history",
+        dataSufficiency: "30 qualifying nights used; minimum 14 nights",
+        fitEvidence: "This average-based fit does not calculate a goodness-of-fit statistic.",
+        uncertainty: "No calibrated uncertainty interval is available.",
+        excludedData: ["Naps and shorter duplicate sleep sessions"],
+      },
+      {
+        key: "stressThresholds",
+        title: "Stress Sensitivity",
+        description: "How far each threshold is from your usual baseline (in standard deviations)",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+        dataWindow: "Past 425 days, including rolling-baseline warm-up",
+        dataSufficiency: "60 qualifying days used; minimum 60 days",
+        fitEvidence: "This percentile-based fit does not calculate a goodness-of-fit statistic.",
+        uncertainty: "No calibrated uncertainty interval is available.",
+        excludedData: ["Days without nonzero rolling variability"],
+      },
+      {
+        key: "trainingImpulseConstants",
+        title: "Heart Rate Effort Model",
+        description: "How heart rate intensity translates to training load",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+        dataWindow: "All qualifying activities; the power reference uses the past 365 days",
+        dataSufficiency: "50 qualifying activities used; minimum 20 activities",
+        fitEvidence: "R²: 0.900",
+        uncertainty: "No calibrated uncertainty interval is available.",
+        excludedData: ["Activities without heart-rate samples or normalized power"],
+      },
+    ],
   };
 
   beforeEach(() => {
@@ -81,6 +154,36 @@ describe("PersonalizationPanel", () => {
     expect(screen.getByRole("progressbar", { hidden: true })).toBeTruthy();
   });
 
+  it("surfaces the server error message", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      error: { message: "Personalization history is unavailable" },
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    expect(screen.getByText("Personalization history is unavailable")).toBeTruthy();
+  });
+
+  it("reports incomplete model evidence and renders an actionable panel error", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 4) },
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    expect(
+      screen.getByText(
+        "Personalization model details are incomplete. Refresh and try again; contact support if this continues.",
+      ),
+    ).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "personalization-model-cards",
+      missingModelCard: "trainingImpulseConstants",
+    });
+  });
+
   it("renders personalized status", () => {
     vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
       data: mockData,
@@ -88,7 +191,7 @@ describe("PersonalizationPanel", () => {
     });
     render(<PersonalizationPanel />);
     expect(screen.getByText("Personalized")).toBeTruthy();
-    expect(screen.getByText(/Updated/)).toBeTruthy();
+    expect(screen.getByText(/Last refit attempt/)).toBeTruthy();
   });
 
   it("renders parameter cards with learned data", () => {
@@ -182,5 +285,40 @@ describe("PersonalizationPanel", () => {
 
     render(<PersonalizationPanel />);
     expect(screen.queryByText("Reset to Defaults")).toBeNull();
+  });
+
+  it("renders server-built model evidence without deriving confidence", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    const heading = screen.getByLabelText("Training Load Windows model evidence");
+    const card = heading.parentElement?.parentElement;
+    if (!card) throw new Error("Training Load Windows card not found");
+    expect(within(card).getByText("Past 365 days")).toBeTruthy();
+    expect(within(card).getByText("100 qualifying days used; minimum 90 days")).toBeTruthy();
+    expect(within(card).getByText("Pearson correlation: 0.850")).toBeTruthy();
+    expect(within(card).getByText("No calibrated uncertainty interval is available.")).toBeTruthy();
+    expect(within(card).getByText("• Days without a nonzero performance observation")).toBeTruthy();
+    expect(card?.textContent).not.toMatch(/confidence/i);
+  });
+
+  it("renders truthful unavailable fit-time evidence", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    const heading = screen.getByLabelText("Readiness Score Weights model evidence");
+    const card = heading.parentElement?.parentElement;
+    if (!card) throw new Error("Readiness Score Weights card not found");
+    expect(
+      within(card).getByText("Successful fit time unavailable until this model is refit"),
+    ).toBeTruthy();
   });
 });

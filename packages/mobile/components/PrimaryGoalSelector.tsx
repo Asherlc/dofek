@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
   },
   optionSelected: {
     borderColor: colors.accent,
-    backgroundColor: `${colors.accent}15`,
+    backgroundColor: colors.accentSubtle,
   },
   optionLabel: {
     fontSize: 14,

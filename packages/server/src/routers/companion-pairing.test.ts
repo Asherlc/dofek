@@ -59,7 +59,7 @@ vi.mock("../companion/token-repository.ts", () => ({
     mockRegenerateCompanionToken(...args),
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
@@ -86,12 +86,14 @@ describe("companionPairingRouter", () => {
     mockGetByShortCode.mockResolvedValue({
       id: "pairing-1",
       shortCode: "ABC234",
+      connectionType: "zepp-workout",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
     mockClaimChallenge.mockResolvedValue({
       id: "pairing-1",
       shortCode: "ABC234",
+      connectionType: "zepp-workout",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
       claimedAt: "2026-07-12T00:01:00.000Z",
@@ -99,6 +101,7 @@ describe("companionPairingRouter", () => {
     });
     mockRegenerateCompanionToken.mockResolvedValue({
       id: "token-1",
+      connectionType: "zepp-workout",
       token: "dofek_companion_test",
       createdAt: "2026-07-12T00:00:00.000Z",
       revokedAt: null,
@@ -106,6 +109,7 @@ describe("companionPairingRouter", () => {
     mockSetClaimedChallengeToken.mockResolvedValue({
       id: "pairing-1",
       shortCode: "ABC234",
+      connectionType: "zepp-workout",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
       claimedAt: "2026-07-12T00:01:00.000Z",
@@ -117,10 +121,15 @@ describe("companionPairingRouter", () => {
 
     await expect(caller.claim({ code: "ABC234" })).resolves.toEqual({
       state: "claimed",
+      connectionType: "zepp-workout",
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
     expect(mockConsumeClaimAttempt).toHaveBeenCalledWith("user-1");
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(transaction, "user-1");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(
+      transaction,
+      "user-1",
+      "zepp-workout",
+    );
     expect(mockRegenerateCompanionToken).toHaveBeenCalledTimes(1);
     expect(mockClaimChallenge).toHaveBeenCalledWith({
       shortCode: "ABC234",
@@ -182,7 +191,7 @@ describe("companionPairingRouter", () => {
     expect(results[1]).toMatchObject({ status: "rejected" });
     expect(results[2]).toMatchObject({ status: "rejected" });
     expect(mockRegenerateCompanionToken).toHaveBeenCalledOnce();
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(transaction, "user-1");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(transaction, "user-1", "zepp-main");
     expect(mockSetClaimedChallengeToken).toHaveBeenCalledOnce();
   });
 
@@ -241,6 +250,7 @@ describe("companionPairingRouter", () => {
 
     await expect(caller.claim({ code: "ABC234" })).resolves.toEqual({
       state: "claimed",
+      connectionType: "zepp-main",
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
     expect(mockClaimChallenge).not.toHaveBeenCalled();
@@ -407,7 +417,11 @@ describe("companionPairingRouter", () => {
     await expect(winner.claim({ code: "ABC234" })).resolves.toMatchObject({ state: "claimed" });
 
     expect(mockRegenerateCompanionToken).toHaveBeenCalledTimes(2);
-    expect(mockRegenerateCompanionToken).toHaveBeenLastCalledWith(transaction, "user-1");
+    expect(mockRegenerateCompanionToken).toHaveBeenLastCalledWith(
+      transaction,
+      "user-1",
+      "zepp-main",
+    );
     expect(mockSetClaimedChallengeToken).toHaveBeenCalledOnce();
   });
 

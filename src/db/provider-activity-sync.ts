@@ -1,5 +1,7 @@
+import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
@@ -75,10 +77,66 @@ function requireExternalId(externalId: string | null | undefined): string {
 function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
-): ProviderActivityInsert {
-  return values.externalId === normalizedExternalId
-    ? values
-    : { ...values, externalId: normalizedExternalId };
+): { values: ProviderActivityInsert; updateLocalTimeContext: boolean } {
+  const externalIdValues =
+    values.externalId === normalizedExternalId
+      ? values
+      : { ...values, externalId: normalizedExternalId };
+  if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
+    return { values: externalIdValues, updateLocalTimeContext: true };
+  }
+
+  const timezone = externalIdValues.timezone?.trim();
+  if (!timezone) {
+    const hasUntrustedContext =
+      externalIdValues.timezone != null ||
+      externalIdValues.startUtcOffsetMinutes != null ||
+      externalIdValues.endUtcOffsetMinutes != null;
+    return hasUntrustedContext
+      ? {
+          values: {
+            ...externalIdValues,
+            timezone: null,
+            startUtcOffsetMinutes: null,
+            endUtcOffsetMinutes: null,
+            localTimeSource: "unknown",
+          },
+          updateLocalTimeContext: true,
+        }
+      : { values: externalIdValues, updateLocalTimeContext: false };
+  }
+  try {
+    const context = resolveRecordLocalTimeContext({
+      startedAt: externalIdValues.startedAt,
+      endedAt: externalIdValues.endedAt,
+      timezone,
+      source: "provider_timezone",
+    });
+    return {
+      values: {
+        ...externalIdValues,
+        timezone: context.timezone,
+        startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+        endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+        localTimeSource: context.source,
+      },
+      updateLocalTimeContext: true,
+    };
+  } catch (error: unknown) {
+    captureException(error, {
+      tags: { operation: "provider-activity-local-time-context" },
+    });
+    return {
+      values: {
+        ...externalIdValues,
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "unknown",
+      },
+      updateLocalTimeContext: true,
+    };
+  }
 }
 
 /**
@@ -122,11 +180,7 @@ export class ProviderActivityListSync {
     update: ProviderActivityConflictUpdate,
   ): Promise<{ id: string } | undefined> {
     const normalizedExternalId = requireExternalId(values.externalId);
-    const row = await upsertProviderActivity(
-      this.#scope.db,
-      normalizeProviderActivityInsert(values, normalizedExternalId),
-      update,
-    );
+    const row = await upsertProviderActivity(this.#scope.db, values, update);
     this.trackPresent(normalizedExternalId);
     return row;
   }
@@ -154,13 +208,23 @@ export async function upsertProviderActivity(
   update: ProviderActivityConflictUpdate,
 ): Promise<{ id: string } | undefined> {
   const normalizedExternalId = requireExternalId(values.externalId);
+  const normalized = normalizeProviderActivityInsert(values, normalizedExternalId);
+  const normalizedValues = normalized.values;
+  const contextUpdate = normalized.updateLocalTimeContext
+    ? {
+        timezone: normalizedValues.timezone,
+        startUtcOffsetMinutes: normalizedValues.startUtcOffsetMinutes,
+        endUtcOffsetMinutes: normalizedValues.endUtcOffsetMinutes,
+        localTimeSource: normalizedValues.localTimeSource,
+      }
+    : {};
 
   const [row] = await db
     .insert(activity)
-    .values(normalizeProviderActivityInsert(values, normalizedExternalId))
+    .values(normalizedValues)
     .onConflictDoUpdate({
       target: [activity.userId, activity.providerId, activity.externalId],
-      set: update,
+      set: { ...update, ...contextUpdate },
     })
     .returning({ id: activity.id });
 

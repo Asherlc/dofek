@@ -12,6 +12,7 @@ import {
   fetchCurrentUser,
   loginWithPassword,
   logout,
+  redirectToLogin,
   registerWithPassword,
   requestPasswordReset,
 } from "./auth.ts";
@@ -487,8 +488,8 @@ describe("logout", () => {
     vi.restoreAllMocks();
   });
 
-  it("posts to logout endpoint and redirects", async () => {
-    vi.mocked(fetch).mockResolvedValue(mockResponse({}));
+  it("posts to the logout endpoint without navigating", async () => {
+    vi.mocked(fetch).mockResolvedValue(mockResponse({ ok: true }));
 
     await logout();
 
@@ -496,6 +497,37 @@ describe("logout", () => {
       method: "POST",
       credentials: "include",
     });
+    expect(window.location.href).toBe("");
+  });
+
+  it("throws the server error and does not navigate when logout fails", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+        json: () => Promise.resolve({ error: "Session store unavailable" }),
+      }),
+    );
+
+    await expect(logout()).rejects.toThrow("Session store unavailable");
+
+    expect(window.location.href).toBe("");
+  });
+});
+
+describe("redirectToLogin", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", { location: { href: "" } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("navigates to login", () => {
+    redirectToLogin();
+
     expect(window.location.href).toBe("/login");
   });
 });

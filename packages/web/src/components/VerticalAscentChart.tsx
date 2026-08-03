@@ -5,7 +5,7 @@ import {
   getVerticalAscentActivityTypeGroup,
   type VerticalAscentActivityTypeGroup,
 } from "@dofek/training/training";
-import type { VerticalAscentRow } from "dofek-server/types";
+import type { TrainingChartAvailability, VerticalAscentRow } from "dofek-server/types";
 import {
   chartColors,
   dofekAxis,
@@ -16,10 +16,12 @@ import {
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface VerticalAscentChartProps {
   data: VerticalAscentRow[];
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
 const ACTIVITY_TYPE_GROUP_COLORS: Record<VerticalAscentActivityTypeGroup, string> = {
@@ -33,11 +35,15 @@ function colorForActivityTypeGroup(activityTypeGroup: VerticalAscentActivityType
   return ACTIVITY_TYPE_GROUP_COLORS[activityTypeGroup];
 }
 
-export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
+export function VerticalAscentChart({ data, loading, availability }: VerticalAscentChartProps) {
   const units = useUnitConverter();
 
   if (loading) {
     return <DofekChart option={{}} loading={true} height={300} />;
+  }
+
+  if (availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
   }
 
   if (data.length === 0) {

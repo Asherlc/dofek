@@ -1,7 +1,8 @@
-import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
+import { DEFAULT_COMPANION_CONNECTION_TYPE } from "../companion/connection-type.ts";
 import { regenerateCompanionTokenInTransaction } from "../companion/token-repository.ts";
 import { getCompanionPairingStore, parsePairingCodeInput } from "../lib/companion-pairing-store.ts";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -39,6 +40,7 @@ export const companionPairingRouter = router({
     .output(
       z.object({
         state: z.literal("claimed"),
+        connectionType: z.enum(["zepp-main", "zepp-workout"]),
         expiresAt: z.string(),
       }),
     )
@@ -56,6 +58,7 @@ export const companionPairingRouter = router({
               message: "Pairing code was not found or has expired.",
             });
           }
+          const connectionType = challenge.connectionType ?? DEFAULT_COMPANION_CONNECTION_TYPE;
           if (challenge.claimedAt && challenge.userId !== ctx.userId) {
             throw new TRPCError({
               code: "CONFLICT",
@@ -65,11 +68,11 @@ export const companionPairingRouter = router({
 
           if (challenge.claimedAt && challenge.companionToken) {
             return {
-              state: "claimed" as const,
+              state: "claimed",
+              connectionType,
               expiresAt: challenge.expiresAt,
             };
           }
-
           const claimedChallenge = await store.claimChallenge({
             shortCode: challenge.shortCode,
             userId: ctx.userId,
@@ -85,6 +88,7 @@ export const companionPairingRouter = router({
           const companionToken = await regenerateCompanionTokenInTransaction(
             transaction,
             ctx.userId,
+            connectionType,
           );
           if (!companionToken.token) {
             throw new TRPCError({
@@ -108,6 +112,7 @@ export const companionPairingRouter = router({
 
           return {
             state: "claimed" as const,
+            connectionType: pairedChallenge.connectionType ?? DEFAULT_COMPANION_CONNECTION_TYPE,
             expiresAt: pairedChallenge.expiresAt,
           };
         });

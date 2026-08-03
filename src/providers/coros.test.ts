@@ -420,7 +420,13 @@ describe("CorosProvider", () => {
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
-    it("sync uses user-scoped conflict targets for activity, daily metrics, and sleep", async () => {
+    it.each([
+      null,
+      "deepSleep",
+      "lightSleep",
+      "remSleep",
+      "awakeDuration",
+    ] as const)("sync uses user-scoped conflict targets and preserves staging completeness (%s absent)", async (missingStage) => {
       process.env.COROS_CLIENT_ID = "id";
       process.env.COROS_CLIENT_SECRET = "secret";
 
@@ -479,6 +485,7 @@ describe("CorosProvider", () => {
                 lightSleep: 220,
                 remSleep: 80,
                 awakeDuration: 30,
+                ...(missingStage === null ? {} : { [missingStage]: undefined }),
               },
             ],
             message: "OK",
@@ -580,6 +587,18 @@ describe("CorosProvider", () => {
             target[2] === sleepSessionTable.externalId,
         ),
       ).toBe(true);
+
+      const sleepValues = chain.values.mock.calls
+        .map((callArgs) => callArgs[0])
+        .find(
+          (values) =>
+            typeof values === "object" &&
+            values !== null &&
+            Reflect.get(values, "externalId") === "coros-sleep-20260301",
+        );
+      expect(sleepValues).toMatchObject({
+        stagingAvailable: missingStage === null,
+      });
     });
   });
 });

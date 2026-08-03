@@ -1,10 +1,11 @@
-import * as Sentry from "@sentry/node";
 import type { App as AppType, SayFn } from "@slack/bolt";
 import {
   AccountErasureIdentityFencedError,
   AccountErasureUserFencedError,
 } from "dofek/db/account-erasure";
+import { withAiGenerationContext } from "dofek/lib/ai-observability";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { createSlackDedupeStore, type SlackDedupeStore } from "./dedupe-store.ts";
@@ -78,7 +79,7 @@ function buildSlackExceptionContext(context: SlackExceptionContext): Record<stri
 }
 
 function captureSlackException(error: unknown, context: SlackExceptionContext): void {
-  Sentry.captureException(error, {
+  captureException(error, {
     contexts: {
       slack: buildSlackExceptionContext(context),
     },
@@ -333,7 +334,9 @@ async function handleParsedMessage(
                 });
 
                 const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-                const result = await refineNutritionItems(previousItems, msgText, localTime);
+                const result = await withAiGenerationContext({ userId }, () =>
+                  refineNutritionItems(previousItems, msgText, localTime),
+                );
 
                 await repository.deleteUnconfirmed(previousEntryIds);
                 const confirmationMessageTs =
@@ -414,7 +417,9 @@ async function handleParsedMessage(
 
         try {
           const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-          const result = await analyzeNutritionItems(msgText, localTime);
+          const result = await withAiGenerationContext({ userId }, () =>
+            analyzeNutritionItems(msgText, localTime),
+          );
           const confirmationMessageTs = thinkingMsg.ts ?? `fallback-parse-${msgTs}-${Date.now()}`;
           const entryIds = await repository.saveUnconfirmed(userId, date, result.items, {
             channelId: msgChannel,
@@ -707,7 +712,7 @@ export function registerHandlers(
           logger.error(
             `[slack] Failed to load daily calorie progress after confirm: ${progressErrorMessage}`,
           );
-          Sentry.captureException(
+          captureException(
             progressError instanceof Error ? progressError : new Error(progressErrorMessage),
           );
         }

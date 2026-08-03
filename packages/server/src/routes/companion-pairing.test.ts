@@ -84,7 +84,9 @@ describe("createCompanionPairingRouter", () => {
   it("starts a pairing challenge with a verification URL and QR image URL", async () => {
     const app = createTestApp(new InMemoryCompanionPairingStore());
 
-    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+    const response = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-main",
+    });
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -94,11 +96,50 @@ describe("createCompanionPairingRouter", () => {
     });
   });
 
+  it("requires legacy clients to identify their Zepp package", async () => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Update the Zepp package before connecting to Dofek.",
+    });
+  });
+
+  it.each([
+    [{ connectionType: "zepp-unknown" }],
+    [[]],
+  ])("rejects an invalid pairing body without treating it as a legacy client", async (body) => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", body);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid pairing request" });
+  });
+
+  it("preserves the requested companion connection type", async () => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-workout",
+    });
+
+    expect(response.status).toBe(200);
+    const body = pairingStartResponseSchema
+      .extend({ connectionType: z.literal("zepp-workout") })
+      .parse(await response.json());
+    expect(body.connectionType).toBe("zepp-workout");
+  });
+
   it("starts pairing from an HTTP public app URL", async () => {
     process.env.PUBLIC_URL = "http://app.example.test";
     const app = createTestApp(new InMemoryCompanionPairingStore());
 
-    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+    const response = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-main",
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -133,7 +174,9 @@ describe("createCompanionPairingRouter", () => {
   it("returns pending status before the code is claimed", async () => {
     const store = new InMemoryCompanionPairingStore();
     const app = createTestApp(store);
-    const startResponse = await request(app, "POST", "/api/companion-pairing/start", {});
+    const startResponse = await request(app, "POST", "/api/companion-pairing/start", {
+      connectionType: "zepp-main",
+    });
     const startBody = pairingStartResponseSchema.parse(await startResponse.json());
 
     const statusResponse = await request(

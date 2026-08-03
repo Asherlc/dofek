@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 const mockAlert = vi.hoisted(() => vi.fn());
+const mockSendAccessibilityEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -50,45 +52,53 @@ vi.mock("react-native", () => ({
   },
   RefreshControl: () => null,
   Alert: { alert: mockAlert },
-  TouchableOpacity: ({
-    children,
-    onPress,
-    disabled,
-    ...props
-  }: {
-    children?: React.ReactNode;
-    onPress?: () => void;
-    disabled?: boolean;
-  } & Record<string, unknown>) => {
-    const {
-      accessibilityLabel,
-      accessibilityRole,
-      accessibilityState,
-      style: _s,
-      activeOpacity: _ao,
-      testID,
-      ...rest
-    } = props;
-    const state =
-      typeof accessibilityState === "object" && accessibilityState !== null
-        ? accessibilityState
-        : {};
-    return React.createElement(
-      "button",
+  TouchableOpacity: React.forwardRef(
+    (
       {
-        type: "button",
-        onClick: onPress,
+        children,
+        onPress,
         disabled,
-        "aria-busy": "busy" in state ? state.busy : undefined,
-        "aria-disabled": "disabled" in state ? state.disabled : undefined,
-        "aria-label": accessibilityLabel,
-        role: accessibilityRole ?? "presentation",
-        ...(testID ? { "data-testid": testID } : {}),
-        ...rest,
-      },
-      children,
-    );
-  },
+        ...props
+      }: {
+        children?: React.ReactNode;
+        onPress?: () => void;
+        disabled?: boolean;
+      } & Record<string, unknown>,
+      ref: React.ForwardedRef<HTMLButtonElement>,
+    ) => {
+      const {
+        accessibilityLabel,
+        accessibilityRole,
+        accessibilityState,
+        accessible,
+        style: _s,
+        activeOpacity: _ao,
+        testID,
+        ...rest
+      } = props;
+      const state =
+        typeof accessibilityState === "object" && accessibilityState !== null
+          ? accessibilityState
+          : {};
+      return React.createElement(
+        "button",
+        {
+          type: "button",
+          ref,
+          onClick: onPress,
+          disabled,
+          "aria-busy": "busy" in state ? state.busy : undefined,
+          "aria-disabled": "disabled" in state ? state.disabled : undefined,
+          "aria-label": accessibilityLabel,
+          "data-accessible": accessible,
+          role: accessibilityRole ?? "presentation",
+          ...(testID ? { "data-testid": testID } : {}),
+          ...rest,
+        },
+        children,
+      );
+    },
+  ),
   TextInput: ({
     placeholder,
     value,
@@ -125,10 +135,13 @@ vi.mock("react-native", () => ({
     children?: React.ReactNode;
     visible?: boolean;
   } & Record<string, unknown>) => {
-    if (!visible) return null;
-    const { animationType: _at, transparent: _t, onRequestClose: _orc, ...rest } = props;
-    return React.createElement("div", { role: "dialog", ...rest }, children);
+    const { animationType: _at, transparent: _t, onRequestClose: _orc, onShow, ...rest } = props;
+    React.useEffect(() => {
+      if (visible) onShow?.();
+    }, [onShow, visible]);
+    return visible ? React.createElement("div", { role: "dialog", ...rest }, children) : null;
   },
+  AccessibilityInfo: { sendAccessibilityEvent: mockSendAccessibilityEvent },
   Image: ({
     source: _source,
     style: _style,
@@ -488,7 +501,7 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
-  it("exposes provider detail and sync controls as named accessibility actions", async () => {
+  it("exposes one primary action and one details control", async () => {
     const { ProviderCard } = await import("./provider-card.tsx");
     render(
       <ProviderCard
@@ -497,7 +510,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onPress={noopFn}
       />,
@@ -509,9 +521,7 @@ describe("ProviderCard", () => {
     expect(screen.getByRole("button", { name: "Sync Wahoo" }).getAttribute("aria-label")).toBe(
       "Sync Wahoo",
     );
-    expect(screen.getByRole("button", { name: "Full sync Wahoo" }).getAttribute("aria-label")).toBe(
-      "Full sync Wahoo",
-    );
+    expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
   it("announces a syncing provider action as busy and disabled", async () => {
@@ -523,7 +533,6 @@ describe("ProviderCard", () => {
         syncing
         syncProgress={{ message: "Syncing..." }}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onPress={noopFn}
       />,
@@ -543,7 +552,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onPress={noopFn}
       />,
@@ -562,7 +570,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: 45, message: "Fetching activities..." }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -582,7 +589,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ message: "Preparing sync..." }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -600,7 +606,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: 60 }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -621,7 +626,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -640,7 +644,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -659,7 +662,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -678,7 +680,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -696,7 +697,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -716,7 +716,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: -20 }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -735,7 +734,6 @@ describe("ProviderCard", () => {
           syncing={true}
           syncProgress={{ percentage: 150 }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -754,7 +752,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onPress={noopFn}
       />,
     );
@@ -772,7 +769,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onImport={importFile}
         onPress={noopFn}
@@ -795,7 +791,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onImportProvider={importProvider}
         onPress={noopFn}
@@ -829,7 +824,6 @@ describe("ProviderCard", () => {
         syncing={false}
         syncProgress={undefined}
         onSync={noopFn}
-        onFullSync={noopFn}
         onConnect={noopFn}
         onImportProvider={noopFn}
         onPress={noopFn}
@@ -863,7 +857,6 @@ describe("ProviderCard", () => {
           importing={true}
           syncProgress={{ percentage: 25, message: "Importing file" }}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onImport={noopFn}
           onPress={noopFn}
@@ -884,7 +877,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -892,24 +884,6 @@ describe("ProviderCard", () => {
 
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Connect")).toBeNull();
-    });
-
-    it("does not render Full sync link for import-only providers", async () => {
-      const { ProviderCard } = await import("./provider-card.tsx");
-      render(
-        <ProviderCard
-          provider={makeProvider({ importOnly: true, authStatus: "connected" })}
-          stats={undefined}
-          syncing={false}
-          syncProgress={undefined}
-          onSync={noopFn}
-          onFullSync={noopFn}
-          onConnect={noopFn}
-          onPress={noopFn}
-        />,
-      );
-
-      expect(screen.queryByText("Full sync")).toBeNull();
     });
 
     it("shows 'Import only' instead of connection status", async () => {
@@ -921,7 +895,6 @@ describe("ProviderCard", () => {
           syncing={false}
           syncProgress={undefined}
           onSync={noopFn}
-          onFullSync={noopFn}
           onConnect={noopFn}
           onPress={noopFn}
         />,
@@ -951,6 +924,7 @@ describe("ProvidersScreen", () => {
     mockImportSharedFile.mockReset();
     mockGetDocumentAsync.mockReset();
     mockAlert.mockReset();
+    mockSendAccessibilityEvent.mockReset();
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
@@ -986,15 +960,6 @@ describe("ProvidersScreen", () => {
       errors: [],
     });
     setupDefaultMocks();
-  });
-
-  it("renders Full sync link for connected providers", async () => {
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-      expect(wahooCard.getByText("Full sync")).toBeTruthy();
-    });
   });
 
   it("scopes pull-to-refresh to provider list query families", async () => {
@@ -1041,7 +1006,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("does not render Full sync link for disconnected providers", async () => {
+  it("does not render Sync link for disconnected providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [disconnectedProvider],
       isLoading: false,
@@ -1051,14 +1016,15 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     const stravaCard = within(screen.getByTestId("provider-card-strava"));
-    expect(stravaCard.queryByText("Full sync")).toBeNull();
+    expect(stravaCard.queryByText("Sync")).toBeNull();
   });
 
   it("renders Full Sync All button alongside Sync All", async () => {
     await renderProvidersScreen();
 
-    expect(screen.getByText("Sync All")).toBeTruthy();
-    expect(screen.getByText("Full Sync All")).toBeTruthy();
+    expect(screen.getByText("Sync recent data")).toBeTruthy();
+    expect(screen.getByText("Updates the last 7 days for every connected provider.")).toBeTruthy();
+    expect(screen.getByText("Sync full history…")).toBeTruthy();
   });
 
   it("renders dataset-level processing progress on the provider list", async () => {
@@ -1475,12 +1441,24 @@ describe("ProvidersScreen", () => {
     );
 
     const rendered = await renderProvidersScreen();
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
     rendered.unmount();
 
     await act(async () => {
       rejectSync(new Error("Sync failed"));
       await Promise.resolve();
+    });
+  });
+
+  it("shows the exact bulk sync startup error", async () => {
+    const error = new Error("Provider queues unavailable. Try again.");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    await renderProvidersScreen();
+    fireEvent.click(screen.getByText("Sync recent data"));
+
+    await waitFor(() => {
+      expect(screen.getByText(error.message)).toBeTruthy();
     });
   });
 
@@ -1549,9 +1527,9 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     await waitFor(() => {
-      expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
-        true,
-      );
+      expect(
+        screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled"),
+      ).toBe(true);
     });
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
@@ -1560,12 +1538,68 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(wahooCard.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     });
-    expect(screen.getByText("Full Sync All").closest("button")?.hasAttribute("disabled")).toBe(
+    expect(screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled")).toBe(
       true,
     );
   });
 
-  it("passes sinceDays: undefined when Full sync link is clicked", async () => {
+  it("keeps Sync All disabled when another provider is still polling", async () => {
+    const garminProvider = {
+      id: "garmin",
+      name: "Garmin",
+      authType: "oauth",
+      authorized: true,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [connectedProvider, garminProvider],
+      isLoading: false,
+      error: null,
+    });
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "garmin:active-job",
+          status: "running",
+          providers: { garmin: { status: "running", message: "Syncing Garmin" } },
+        },
+      ],
+    });
+    mockSyncStatusFetch.mockImplementation(() => new Promise(() => {}));
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "job-skipped",
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ],
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled"),
+      ).toBe(true);
+    });
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    fireEvent.click(wahooCard.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(wahooCard.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
+    });
+    expect(screen.getByText("Sync full history…").closest("button")?.hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
+  it("passes sinceDays: ROUTINE_SYNC_DAYS when Sync link is clicked", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",
@@ -1575,12 +1609,12 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-    fireEvent.click(wahooCard.getByText("Full sync"));
+    fireEvent.click(wahooCard.getByText("Sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
         providerId: "wahoo",
-        sinceDays: undefined,
+        sinceDays: ROUTINE_SYNC_DAYS,
       });
     });
     await waitFor(() => {
@@ -1597,7 +1631,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: 7 });
@@ -1620,7 +1654,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     await waitFor(() => {
@@ -1645,7 +1679,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     await waitFor(() => {
@@ -1700,7 +1734,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Sync All"));
+    fireEvent.click(screen.getByText("Sync recent data"));
 
     await waitFor(() => {
       expect(mockSyncStatusFetch).toHaveBeenCalledWith(
@@ -1714,7 +1748,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("passes sinceDays: undefined when Full Sync All is clicked", async () => {
+  it("confirms before passing sinceDays: undefined for full history", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-4", providerJobs: [] });
     mockSyncStatusFetch.mockResolvedValue({
       status: "done",
@@ -1723,7 +1757,14 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    fireEvent.click(screen.getByText("Full Sync All"));
+    fireEvent.click(screen.getByText("Sync full history…"));
+    expect(screen.getByText(/all history each connected provider makes available/i)).toBeTruthy();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+    const cancelButton = screen.getByText("Cancel").closest("button");
+    await waitFor(() =>
+      expect(mockSendAccessibilityEvent).toHaveBeenCalledWith(cancelButton, "focus"),
+    );
+    fireEvent.click(screen.getByText("Start full sync"));
 
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: undefined });
@@ -2176,7 +2217,7 @@ describe("ProvidersScreen", () => {
     resolveImport({ providerId: "strong-csv", jobId: "job-1" });
   });
 
-  it("does not render Sync or Full sync for import-only providers", async () => {
+  it("does not render a sync action for import-only providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [importOnlyProvider],
       isLoading: false,
@@ -2188,7 +2229,6 @@ describe("ProvidersScreen", () => {
     expect(strongCard.getByText("Strong")).toBeTruthy();
     expect(strongCard.getByText("Import only")).toBeTruthy();
     expect(strongCard.queryByText("Sync")).toBeNull();
-    expect(strongCard.queryByText("Full sync")).toBeNull();
   });
 
   it("excludes import-only providers from Sync All", async () => {
@@ -2199,11 +2239,11 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    // Sync All button should not appear when only import-only providers exist
-    expect(screen.queryByText("Sync All")).toBeNull();
+    // Bulk sync controls should not appear when only import-only providers exist.
+    expect(screen.queryByText("Sync recent data")).toBeNull();
   });
 
-  it("does not render Sync or Full sync for push-only providers", async () => {
+  it("does not render a sync action for push-only providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [pushOnlyProvider],
       isLoading: false,
@@ -2215,7 +2255,6 @@ describe("ProvidersScreen", () => {
     expect(appleHealthCard.getByText("Apple Health")).toBeTruthy();
     expect(appleHealthCard.getByText("Push only")).toBeTruthy();
     expect(appleHealthCard.queryByText("Sync")).toBeNull();
-    expect(appleHealthCard.queryByText("Full sync")).toBeNull();
   });
 
   it("excludes push-only providers from Sync All", async () => {
@@ -2226,8 +2265,8 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.queryByText("Sync All")).toBeNull();
-    expect(screen.queryByText("Full Sync All")).toBeNull();
+    expect(screen.queryByText("Sync recent data")).toBeNull();
+    expect(screen.queryByText("Sync full history…")).toBeNull();
   });
 
   it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {
@@ -2646,25 +2685,6 @@ describe("ProvidersScreen", () => {
           startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
           endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
-      );
-    });
-  });
-
-  it("triggers HealthKit sync with syncRangeDays: null when Full sync is clicked", async () => {
-    await renderProvidersScreen();
-
-    // Wait for async permission check to resolve (connected state)
-    await waitFor(() => {
-      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-      expect(appleCard.getByText("Full sync")).toBeTruthy();
-    });
-
-    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-    fireEvent.click(appleCard.getByText("Full sync"));
-
-    await waitFor(() => {
-      expect(mockSyncHealthKit).toHaveBeenCalledWith(
-        expect.objectContaining({ syncRangeDays: null }),
       );
     });
   });

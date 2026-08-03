@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockWeightOverviewQuery = vi.hoisted(() => vi.fn());
+const queryMocks = vi.hoisted(() => ({
+  trends: vi.fn(),
+  dailyMetrics: vi.fn(),
+  hrvBaseline: vi.fn(),
+  stress: vi.fn(),
+  weightOverview: vi.fn(),
+  insights: vi.fn(),
+}));
 
 vi.mock("../components/BodyRecompositionChart.tsx", () => ({
   BodyRecompositionChart: ({ data }: { data: unknown[] }) => (
@@ -16,7 +23,9 @@ vi.mock("../components/CorrelationCard.tsx", () => ({
   CorrelationCard: () => null,
   CorrelationCardSkeleton: () => null,
 }));
-vi.mock("../components/GoalWeightInput.tsx", () => ({ GoalWeightInput: () => null }));
+vi.mock("../components/GoalWeightInput.tsx", () => ({
+  GoalWeightInput: () => <div>Goal weight input</div>,
+}));
 vi.mock("../components/HealthStatusBar.tsx", () => ({
   HealthStatusBar: () => <div>Health status bar</div>,
 }));
@@ -24,7 +33,12 @@ vi.mock("../components/HrvBaselineChart.tsx", () => ({
   HrvBaselineChart: () => <div>HRV chart</div>,
 }));
 vi.mock("../components/PageSection.tsx", () => ({
-  PageSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  PageSection: ({ children, title }: { children: ReactNode; title: string }) => (
+    <section>
+      <h2>{title}</h2>
+      {children}
+    </section>
+  ),
 }));
 vi.mock("../components/SmoothedWeightChart.tsx", () => ({
   SmoothedWeightChart: ({ data }: { data: unknown[] }) => (
@@ -43,84 +57,170 @@ vi.mock("../hooks/useTodayQueryDate.ts", () => ({
   useTodayQueryDate: () => "2026-07-25",
 }));
 vi.mock("../lib/bodyDaysContext.ts", () => ({
-  useBodyDays: () => ({ days: 30, setDays: vi.fn() }),
+  useBodyDays: () => ({
+    days: 30,
+    description: "Recommended default: 30 days keeps recent body changes visible.",
+    setDays: vi.fn(),
+  }),
 }));
 vi.mock("../lib/unitContext.ts", () => ({
   useUnitConverter: () => new UnitConverter("metric"),
 }));
-vi.mock("../lib/trpc.ts", () => {
-  const idleQuery = {
-    data: undefined,
-    error: null,
-    isError: false,
-    isLoading: false,
-    isPending: false,
-    isSuccess: true,
-  };
-  return {
-    trpc: {
-      dailyMetrics: {
-        trends: { useQuery: () => idleQuery },
-        list: { useQuery: () => idleQuery },
-        hrvBaseline: { useQuery: () => idleQuery },
-      },
-      stress: { scores: { useQuery: () => idleQuery } },
-      bodyAnalytics: { weightOverview: { useQuery: mockWeightOverviewQuery } },
-      insights: { compute: { useQuery: () => ({ ...idleQuery, data: [] }) } },
+vi.mock("../lib/trpc.ts", () => ({
+  trpc: {
+    dailyMetrics: {
+      trends: { useQuery: queryMocks.trends },
+      list: { useQuery: queryMocks.dailyMetrics },
+      hrvBaseline: { useQuery: queryMocks.hrvBaseline },
     },
-  };
-});
+    stress: { scores: { useQuery: queryMocks.stress } },
+    bodyAnalytics: { weightOverview: { useQuery: queryMocks.weightOverview } },
+    insights: { compute: { useQuery: queryMocks.insights } },
+  },
+}));
 
 import { BodyPage } from "./BodyPage.tsx";
+
+interface MockQueryOptions {
+  data?: unknown;
+  error?: Error | null;
+  isFetching?: boolean;
+}
+
+function mockQuery({ data, error = null, isFetching = false }: MockQueryOptions = {}) {
+  return {
+    data,
+    error,
+    isError: error !== null,
+    isFetching,
+    isLoading: false,
+    isPending: false,
+    isSuccess: error === null,
+    refetch: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+const healthyTrends = {
+  avg_resting_hr: null,
+  latest_resting_hr: null,
+  stddev_resting_hr: null,
+  healthStatus: [],
+};
+
+const healthyWeightOverview = {
+  smoothedWeight: [
+    {
+      date: "2026-07-25",
+      rawWeight: 80,
+      rawWeightStatus: { kind: "observed", label: "Observed" },
+      smoothedWeight: 80,
+      smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+      weeklyChange: null,
+      interpolated: false,
+    },
+  ],
+  prediction: {
+    ratePerWeek: 0,
+    rateConfidence: 1,
+    impliedDailyCalories: 0,
+    periodDeltas: { days7: 0, days14: 0, days30: 0 },
+    goal: null,
+    projectionLine: [],
+  },
+  recomposition: [
+    {
+      date: "2026-07-25",
+      weightKg: 80,
+      bodyFatPct: 20,
+      fatMassKg: 16,
+      leanMassKg: 64,
+      smoothedFatMass: 16,
+      smoothedLeanMass: 64,
+    },
+  ],
+  healthStatus: [],
+};
+
+function setHealthyQueries(): void {
+  queryMocks.trends.mockReturnValue(mockQuery({ data: healthyTrends }));
+  queryMocks.dailyMetrics.mockReturnValue(mockQuery({ data: [] }));
+  queryMocks.hrvBaseline.mockReturnValue(mockQuery({ data: [] }));
+  queryMocks.stress.mockReturnValue(mockQuery({ data: undefined }));
+  queryMocks.weightOverview.mockReturnValue(mockQuery({ data: healthyWeightOverview }));
+  queryMocks.insights.mockReturnValue(mockQuery({ data: [] }));
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setHealthyQueries();
+});
 
 afterEach(cleanup);
 
 describe("BodyPage", () => {
+  it("shows one dependency notice for a repeated body-composition query failure", () => {
+    queryMocks.weightOverview.mockReturnValue(
+      mockQuery({ error: new Error("Body measurements are unavailable.") }),
+    );
+
+    render(<BodyPage />);
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByText("Body measurements are unavailable.")).toHaveLength(1);
+    expect(screen.getByText("Body composition:")).toBeTruthy();
+    expect(screen.getByText("Body composition is unavailable. Retry from the notice above.")).toBe(
+      screen.getByTestId("query-state-empty").querySelector("p"),
+    );
+    expect(screen.getByText("Health status bar")).toBeTruthy();
+    expect(screen.getByText("Goal weight input")).toBeTruthy();
+  });
+
+  it("keeps distinct failed query identities labeled when their messages match", () => {
+    const sharedMessage = "Analytics dependency is unavailable.";
+    queryMocks.trends.mockReturnValue(mockQuery({ error: new Error(sharedMessage) }));
+    queryMocks.hrvBaseline.mockReturnValue(mockQuery({ error: new Error(sharedMessage) }));
+
+    render(<BodyPage />);
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByText("Health overview:")).toBeTruthy();
+    expect(screen.getByText("Heart rate variability:")).toBeTruthy();
+    expect(screen.getAllByText(sharedMessage)).toHaveLength(2);
+  });
+
+  it("retries only failed query identities from the page notice", () => {
+    const trends = mockQuery({ error: new Error("Health overview unavailable.") });
+    const hrv = mockQuery({ error: new Error("HRV unavailable.") });
+    const weight = mockQuery({ data: healthyWeightOverview });
+    queryMocks.trends.mockReturnValue(trends);
+    queryMocks.hrvBaseline.mockReturnValue(hrv);
+    queryMocks.weightOverview.mockReturnValue(weight);
+
+    render(<BodyPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry unavailable body data" }));
+
+    expect(trends.refetch).toHaveBeenCalledOnce();
+    expect(hrv.refetch).toHaveBeenCalledOnce();
+    expect(weight.refetch).not.toHaveBeenCalled();
+  });
+
   it("keeps cached body data visible during a background refresh error", () => {
-    mockWeightOverviewQuery.mockReturnValue({
-      data: {
-        smoothedWeight: [
-          {
-            date: "2026-07-25",
-            rawWeight: 80,
-            smoothedWeight: 80,
-            weeklyChange: null,
-            interpolated: false,
-          },
-        ],
-        prediction: {
-          ratePerWeek: 0,
-          rateConfidence: 1,
-          impliedDailyCalories: 0,
-          periodDeltas: { days7: 0, days14: 0, days30: 0 },
-          goal: null,
-          projectionLine: [],
-        },
-        recomposition: [
-          {
-            date: "2026-07-25",
-            weightKg: 80,
-            bodyFatPct: 20,
-            fatMassKg: 16,
-            leanMassKg: 64,
-            smoothedFatMass: 16,
-            smoothedLeanMass: 64,
-          },
-        ],
-        healthStatus: [],
-      },
-      error: new Error("Body data refresh failed."),
-      isError: true,
-      isLoading: false,
-      isPending: false,
-      isSuccess: false,
-    });
+    queryMocks.weightOverview.mockReturnValue(
+      mockQuery({
+        data: healthyWeightOverview,
+        error: new Error("Body data refresh failed."),
+        isFetching: true,
+      }),
+    );
 
     render(<BodyPage />);
 
     expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
     expect(screen.getByText("Recomposition points: 1")).toBeTruthy();
     expect(screen.getByText("Weight prediction")).toBeTruthy();
-    expect(screen.getByText("Body data refresh failed.")).toBeTruthy();
+    expect(screen.getAllByText("Body data refresh failed.")).toHaveLength(1);
+    expect(
+      screen.queryByText("Body composition is unavailable. Retry from the notice above."),
+    ).toBe(null);
   });
 });

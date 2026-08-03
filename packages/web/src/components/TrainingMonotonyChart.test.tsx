@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { chartColors } from "../lib/chartTheme.ts";
 
@@ -46,9 +46,11 @@ describe("TrainingMonotonyChart", () => {
   it("renders the server-provided calculation choices and primary source", () => {
     render(<TrainingMonotonyChart data={[week]} />);
 
-    expect(screen.getByText(week.method.formula)).toBeTruthy();
-    expect(screen.getByText(week.method.calendar)).toBeTruthy();
-    expect(screen.getByText(week.method.interpretation)).toBeTruthy();
+    expect(screen.getByText("How this is calculated")).toBeTruthy();
+    fireEvent.click(screen.getByText("How this is calculated"));
+    expect(screen.getByText(week.method.formula)).toBeVisible();
+    expect(screen.getByText(week.method.calendar)).toBeVisible();
+    expect(screen.getByText(week.method.interpretation)).toBeVisible();
     expect(screen.getByRole("link", { name: week.method.source.title })).toHaveAttribute(
       "href",
       week.method.source.url,
@@ -74,13 +76,13 @@ describe("TrainingMonotonyChart", () => {
     }
     const tooltip = option.tooltip.formatter([
       {
-        seriesName: "Monotony",
+        seriesName: "Training variety",
         value: [week.week, week.monotony],
         marker: "",
         dataIndex: 0,
       },
     ]);
-    expect(tooltip).toContain("Daily mean cycling load: 161.14");
-    expect(tooltip).toContain("Population standard deviation (SD): 73.92");
+    expect(tooltip).toContain("Average daily cycling load: 161.14");
+    expect(tooltip).toContain("Daily load variation: 73.92");
   });
 });

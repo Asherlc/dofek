@@ -115,29 +115,81 @@ describe("journalRouter", () => {
   });
 
   describe("trends", () => {
-    it("returns trend data for a question", async () => {
-      const trends = [{ date: "2026-03-28", value: 2 }];
-      const caller = makeCaller(trends);
-      const result = await caller.trends({ questionSlug: "caffeine", days: 90 });
-      expect(result).toHaveLength(1);
+    it("returns server-authored multi-series trend evidence", async () => {
+      const caller = makeCaller([
+        {
+          id: "e1",
+          date: "2026-03-28",
+          provider_id: "dofek",
+          question_slug: "caffeine",
+          display_name: "Caffeine",
+          category: "substance",
+          data_type: "numeric",
+          unit: "mg",
+          answer_text: null,
+          answer_numeric: 2,
+          impact_score: null,
+        },
+      ]);
+
+      const result = await caller.trends({
+        days: 3,
+        endDate: "2026-03-28",
+      });
+
+      expect(result).toMatchObject({
+        window: {
+          startDate: "2026-03-26",
+          endDate: "2026-03-28",
+          dayCount: 3,
+          gapRepresentation: "explicit_daily",
+        },
+        statement:
+          "1 exact observation across 1 of 3 days. Missing days indicate no journal value was recorded.",
+        uncertainty: {
+          status: "unavailable",
+          statement: "Uncertainty interval: not available for raw journal observations.",
+        },
+        series: [
+          {
+            questionSlug: "caffeine",
+            displayName: "Caffeine",
+            dataType: "numeric",
+            unit: "mg",
+            points: [
+              { date: "2026-03-26", value: null, source: null },
+              { date: "2026-03-27", value: null, source: null },
+              {
+                date: "2026-03-28",
+                value: 2,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      });
     });
 
-    it("uses default days (90) when not specified", async () => {
+    it("uses the canonical default window when not specified", async () => {
       const caller = makeCaller([]);
-      const result = await caller.trends({ questionSlug: "caffeine" });
-      expect(result).toEqual([]);
+      const result = await caller.trends({});
+      expect(result.window.dayCount).toBe(30);
+      expect(result.series).toEqual([]);
     });
 
-    it("uses a lower date bound for finite selected ranges", async () => {
+    it("uses exact lower and upper date bounds for finite selected ranges", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
       });
 
-      await caller.trends({ questionSlug: "caffeine", days: 90 });
+      await caller.trends({ days: 30, endDate: "2026-03-28" });
 
-      expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND je.date >=");
+      const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("AND je.date >");
+      expect(queryText).toContain("AND je.date <=");
+      expect(queryText).not.toContain("AND je.question_slug =");
     });
 
     it("omits the lower date bound when days is null", async () => {
@@ -147,12 +199,12 @@ describe("journalRouter", () => {
         userId: "user-1",
       });
 
-      await caller.trends({ questionSlug: "caffeine", days: null });
+      await caller.trends({ days: null, endDate: "2026-03-28" });
 
       const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
       expect(queryText).toContain("WHERE je.user_id =");
-      expect(queryText).toContain("AND je.question_slug =");
       expect(queryText).not.toContain("je.date >=");
+      expect(queryText).toContain("AND je.date <=");
     });
   });
 

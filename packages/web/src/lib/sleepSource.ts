@@ -1,3 +1,5 @@
+import { providerLabel, providerRecordLabel } from "@dofek/providers/providers";
+
 export interface SleepProvenance {
   providerId: string | null;
   sourceName: string | null;
@@ -11,10 +13,7 @@ export interface SleepProvenanceSnakeCase {
 }
 
 export function formatProviderId(id: string): string {
-  return id
-    .split(/[_-]/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  return providerLabel(id);
 }
 
 export function formatSleepProvenance(row: SleepProvenance | SleepProvenanceSnakeCase): {
@@ -26,11 +25,7 @@ export function formatSleepProvenance(row: SleepProvenance | SleepProvenanceSnak
   const sourceProviders =
     "sourceProviders" in row ? row.sourceProviders : (row.source_providers ?? []);
 
-  const provider = providerId ? formatProviderId(providerId) : "Unknown";
-  const primary =
-    sourceName && sourceName.toLowerCase() !== providerId?.toLowerCase()
-      ? `${provider} · ${sourceName}`
-      : provider;
+  const primary = providerId ? providerRecordLabel(providerId, sourceName) : "Unknown";
 
   const alsoFrom = sourceProviders
     .filter((id) => id !== providerId)

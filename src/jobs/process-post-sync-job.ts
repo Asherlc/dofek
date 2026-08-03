@@ -1,6 +1,6 @@
-import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
@@ -65,7 +65,7 @@ export async function processPostSyncJob(
     logger.info("[post-sync] Body measurement read model refreshed.");
   } catch (error) {
     logger.error(`[post-sync] Failed to refresh body measurement read model: ${error}`);
-    Sentry.captureException(error, {
+    captureException(error, {
       tags: { postSyncStep: "refreshBodyMeasurements" },
     });
     await updatePostSyncProgress(job, 20, "Body measurement refresh failed; retry required.");
@@ -86,7 +86,7 @@ export async function processPostSyncJob(
     logger.info("[post-sync] Personalized parameters updated.");
   } catch (error) {
     logger.error(`[post-sync] Failed to refit parameters: ${error}`);
-    Sentry.captureException(error, { tags: { postSyncStep: "refitParams" } });
+    captureException(error, { tags: { postSyncStep: "refitParams" } });
     await updatePostSyncProgress(job, 45, "Personalized parameter refit failed; retry required.");
     throw error;
   }
@@ -102,8 +102,8 @@ export async function processPostSyncJob(
     await invalidateAllUserQueries(job.data.userId);
     logger.info("[post-sync] User cache invalidated");
   } catch (error) {
-    logger.error(`[post-sync] Failed to invalidate user cache: ${error}`);
-    Sentry.captureException(error, {
+    logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${error}`);
+    captureException(error, {
       tags: { postSyncStep: "invalidateUserCache" },
     });
     await updatePostSyncProgress(job, 75, "User cache invalidation failed; retry required.");

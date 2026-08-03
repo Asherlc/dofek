@@ -16,7 +16,14 @@ class StorybookEventEmitter {
 
 class StorybookNativeModule {}
 
+interface StorybookLegacyEventEmitterConstructor {
+  new (_nativeModule?: unknown): StorybookEventEmitter;
+}
+
+const StorybookLegacyEventEmitter: StorybookLegacyEventEmitterConstructor = StorybookEventEmitter;
+
 export { StorybookEventEmitter as EventEmitter };
+export { StorybookLegacyEventEmitter as LegacyEventEmitter };
 export { StorybookNativeModule as NativeModule };
 export type { EventSubscription };
 

@@ -1,3 +1,4 @@
+import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -8,6 +9,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface EftpPoint {
   date: string;
@@ -19,9 +21,14 @@ interface EftpTrendChartProps {
   data: EftpPoint[];
   currentEftp: number | null;
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
-export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartProps) {
+export function EftpTrendChart({ data, currentEftp, loading, availability }: EftpTrendChartProps) {
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   const markLine =
     currentEftp != null
       ? {

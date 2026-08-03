@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 
 interface ModalDialogProps {
+  ariaDescribedBy?: string;
   children: ReactNode;
   closeOnEscape?: boolean;
   closeOnInteractOutside?: boolean;
@@ -13,6 +14,7 @@ interface ModalDialogProps {
 }
 
 export function ModalDialog({
+  ariaDescribedBy,
   children,
   closeOnEscape = true,
   closeOnInteractOutside = false,
@@ -25,12 +27,16 @@ export function ModalDialog({
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   function restoreFocus() {
-    if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+    if (returnFocusRef.current?.isConnected) {
+      returnFocusRef.current.focus({ preventScroll: true });
+    }
   }
 
   useEffect(
     () => () => {
-      if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+      if (returnFocusRef.current?.isConnected) {
+        returnFocusRef.current.focus({ preventScroll: true });
+      }
     },
     [],
   );
@@ -48,16 +54,10 @@ export function ModalDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay
-          aria-hidden="true"
-          className={`fixed inset-0 z-50 ${overlayClassName}`}
-          onClick={() => {
-            if (closeOnInteractOutside) closeDialog();
-          }}
-        />
+        <Dialog.Overlay aria-hidden="true" className={`fixed inset-0 z-50 ${overlayClassName}`} />
         <Dialog.Content
           aria-modal="true"
-          aria-describedby={undefined}
+          aria-describedby={ariaDescribedBy}
           className={`fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 ${contentClassName}`}
           onEscapeKeyDown={(event) => {
             if (!closeOnEscape) event.preventDefault();
@@ -73,10 +73,10 @@ export function ModalDialog({
             }
             if (!initialFocusRef?.current) return;
             event.preventDefault();
-            initialFocusRef.current.focus();
+            initialFocusRef.current.focus({ preventScroll: true });
           }}
           onPointerDownOutside={(event) => {
-            event.preventDefault();
+            if (!closeOnInteractOutside) event.preventDefault();
           }}
         >
           {children}

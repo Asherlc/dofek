@@ -1,19 +1,31 @@
 import {
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
-  formatTime,
+  formatRelativeTime,
   isToday,
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
-import { formatMeasurementText } from "@dofek/format/units";
+import {
+  formatRecordLocalTime,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -22,6 +34,9 @@ import {
   View,
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
+import { ActivityHeatmap } from "../../components/ActivityHeatmap";
+import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
+import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
@@ -63,24 +78,78 @@ function formatRouteCoordinate(value: number): string {
   return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
+function displayRecordLocalTime(
+  startedAt: string,
+  localTimeContext: RecordLocalTimeContext,
+): string {
+  const localTime = formatRecordLocalTime(startedAt, localTimeContext, "start");
+  return localTime === "--" ? "Local time unavailable" : localTime;
+}
+
 function formatActivityAccessibilityLabel(
   action: "Open" | "Select" | "Deselect",
   activity: {
     activityType: string;
     durationMin: number;
+    localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
+    distanceMeters: number | null;
+    distanceState: ActivityDataState;
+    elevationGainM: number | null;
+    elevationState: ActivityDataState;
+    location: { mapPreview: unknown } | null;
+    stats: ActivityMetric[];
   },
+  units: UnitConverter,
 ): string {
   const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
   const labelParts = [
     activity.name ?? activityTypeLabel,
-    formatTime(activity.startedAt),
+    displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
     formatDurationMinutes(activity.durationMin),
   ];
 
   if (activity.name !== null) {
     labelParts.push(activityTypeLabel);
+  }
+
+  const hasRouteMetrics =
+    activity.location != null ||
+    activity.distanceState.status !== "missing" ||
+    activity.elevationState.status !== "missing";
+  if (hasRouteMetrics) {
+    const routeMetrics = [
+      formatActivityMetric(
+        "Distance",
+        activity.distanceMeters,
+        activity.distanceState,
+        (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+      ),
+      formatActivityMetric(
+        "Elevation",
+        activity.elevationGainM,
+        activity.elevationState,
+        (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+      ),
+    ];
+    for (const metric of routeMetrics) {
+      if (metric.status === "available") {
+        labelParts.push(`${metric.label} ${metric.value}`);
+      } else {
+        labelParts.push(
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
+        );
+      }
+    }
+  } else {
+    for (const metric of activity.stats) {
+      if (metric.status !== "available") {
+        labelParts.push(
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
+        );
+      }
+    }
   }
 
   return `${action} ${labelParts.join(", ")}`;
@@ -108,11 +177,19 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const calendarQuery = trpc.calendar.calendarData.useQuery(
+    { days: weeks * 7 },
+    {
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
+    },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekList.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
       setSelectedActivityIds(new Set());
       setSelectMode(false);
@@ -123,6 +200,7 @@ export default function ActivitiesScreen() {
       Promise.all([
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
         trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
@@ -266,6 +344,24 @@ export default function ActivitiesScreen() {
         </>
       )}
 
+      {calendarQuery.isLoading && !calendarQuery.data ? (
+        <QueryStatePanel variant="loading" minHeight={180} />
+      ) : calendarQuery.isError && !calendarQuery.data ? (
+        <QueryStatePanel variant="error" message={calendarQuery.error.message} />
+      ) : (
+        <>
+          {calendarQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={calendarQuery.error.message}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          <ActivityHeatmap data={calendarQuery.data ?? []} />
+        </>
+      )}
+
       {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : query.isError && !query.data ? (
@@ -311,6 +407,7 @@ export default function ActivitiesScreen() {
                         : "Select"
                       : "Open",
                     activity,
+                    units,
                   )}
                   accessibilityState={{
                     selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
@@ -339,9 +436,24 @@ export default function ActivitiesScreen() {
                         </Text>
                       </View>
                       <Text style={styles.activityMeta}>
-                        {formatTime(activity.startedAt)} ·{" "}
+                        {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
                         {formatDurationMinutes(activity.durationMin)}
                       </Text>
+                      <View style={styles.provenanceRow}>
+                        <Text style={styles.sourcePill}>{activity.source.primarySourceLabel}</Text>
+                        {activity.source.overlapSummary ? (
+                          <Text style={styles.overlapPill}>Source overlap</Text>
+                        ) : null}
+                        {activity.lastProcessedAt &&
+                        formatRelativeTime(activity.lastProcessedAt) ? (
+                          <Text style={styles.processedAt}>
+                            Processed {formatRelativeTime(activity.lastProcessedAt)}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {activity.source.overlapSummary ? (
+                        <Text style={styles.overlapSummary}>{activity.source.overlapSummary}</Text>
+                      ) : null}
                       <ActivityMetricStrip activity={activity} units={units} />
                     </View>
                     {activity.location ? (
@@ -396,6 +508,16 @@ function ActivityControls({
   onCancelSelection,
   onDeleteSelected,
 }: ActivityControlsProps) {
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
+
+  useEffect(() => {
+    if (selectMode && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(selectedCountLabel);
+    }
+  }, [selectMode, selectedCountLabel]);
+
   return (
     <View style={styles.controlsPanel}>
       <View style={styles.controlsHeader}>
@@ -407,14 +529,20 @@ function ActivityControls({
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Select activities"
+            accessibilityHint="Choose one or more activities to delete"
           >
-            <Text style={styles.selectButtonText}>Select</Text>
+            <Text style={styles.selectButtonText}>Select activities</Text>
           </TouchableOpacity>
         ) : null}
       </View>
+      {canSelect ? (
+        <Text style={styles.selectionGuidance}>Choose one or more activities to delete.</Text>
+      ) : null}
       {selectMode ? (
         <View style={styles.bulkActionRow}>
-          <Text style={styles.selectedCount}>{selectedCount} selected</Text>
+          <Text style={styles.selectedCount} accessibilityLiveRegion="polite">
+            {selectedCountLabel}
+          </Text>
           <TouchableOpacity
             style={[
               styles.deleteSelectionButton,
@@ -515,57 +643,9 @@ function ActivityControls({
   );
 }
 
-interface ActivityOverviewData {
-  activityCount: number;
-  totalMinutes: number;
-  totalDistanceMeters: number;
-  totalElevationGainM: number;
-}
-
-function ActivityOverview({
-  overview,
-  units,
-}: {
-  overview: ActivityOverviewData | undefined;
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const items = [
-    { label: "Activities", value: overview ? String(overview.activityCount) : "—" },
-    {
-      label: "Time",
-      value: overview ? formatDurationMinutes(overview.totalMinutes) : "—",
-    },
-    {
-      label: "Distance",
-      value: overview
-        ? formatMeasurementText(units.formatDistance(overview.totalDistanceMeters / 1000))
-        : "—",
-    },
-    {
-      label: "Elevation",
-      value: overview
-        ? formatMeasurementText(units.formatElevation(overview.totalElevationGainM))
-        : "—",
-    },
-  ];
-
-  return (
-    <View style={styles.overviewGrid}>
-      {items.map((item) => (
-        <View key={item.label} style={styles.overviewItem}>
-          <Text style={styles.overviewValue}>{item.value}</Text>
-          <Text style={styles.overviewLabel}>{item.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 interface ActivityMapTileProps {
   location: {
     mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
   };
 }
 
@@ -674,53 +754,6 @@ function ActivityRouteOverlay({
   );
 }
 
-function ActivityMetricStrip({
-  activity,
-  units,
-}: {
-  activity: {
-    location: {
-      distanceMeters: number | null;
-      elevationGainM: number | null;
-    } | null;
-    stats: { label: string; value: string }[];
-  };
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const stats =
-    activity.location != null
-      ? [
-          {
-            label: "Distance",
-            value:
-              activity.location.distanceMeters != null
-                ? formatMeasurementText(
-                    units.formatDistance(activity.location.distanceMeters / 1000),
-                  )
-                : "—",
-          },
-          {
-            label: "Elevation",
-            value:
-              activity.location.elevationGainM != null
-                ? formatMeasurementText(units.formatElevation(activity.location.elevationGainM))
-                : "—",
-          },
-        ]
-      : activity.stats;
-
-  return (
-    <View style={styles.statsRow}>
-      {stats.slice(0, 2).map((stat) => (
-        <View key={stat.label} style={styles.statBadge}>
-          <Text style={styles.statValue}>{stat.value}</Text>
-          <Text style={styles.statLabel}>{stat.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 function formatDayHeader(dateStr: string): string {
   const date = parseValidDate(`${dateStr}T00:00:00`);
   if (!date) return dateStr;
@@ -781,6 +814,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  selectionGuidance: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
   bulkActionRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -840,32 +877,6 @@ const styles = StyleSheet.create({
   },
   filterChipTextSelected: {
     color: "#fff",
-  },
-  overviewGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  overviewItem: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    flexBasis: "47%",
-    flexGrow: 1,
-    padding: spacing.md,
-  },
-  overviewValue: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  overviewLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginTop: 2,
-    textTransform: "uppercase",
   },
   daySection: {
     gap: spacing.sm,
@@ -948,6 +959,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  provenanceRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  sourcePill: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.sm,
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  overlapPill: {
+    backgroundColor: "rgba(217, 119, 6, 0.12)",
+    borderColor: "rgba(217, 119, 6, 0.4)",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: "#b45309",
+    fontSize: 11,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  processedAt: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  overlapSummary: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: spacing.xs,
+  },
   tileContainer: {
     borderRadius: radius.md,
     height: TILE_SIZE,
@@ -979,28 +1029,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  statBadge: {
-    flex: 1,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-  },
-  statValue: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  statLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
   },
 });

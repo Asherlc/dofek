@@ -1,5 +1,14 @@
+import {
+  getEmailValidationError,
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
+import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { PasswordInput } from "../components/PasswordInput.tsx";
 import { ProviderLogo, providerLabel } from "../components/ProviderLogo.tsx";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import {
@@ -23,6 +32,8 @@ function LoginPage() {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
 
   useEffect(() => {
     fetchConfiguredProviders()
@@ -34,23 +45,71 @@ function LoginPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const allProviders = providers
-    ? [
-        ...providers.identity.map((id) => ({ id, type: "identity" as const })),
-        ...providers.data.map((id) => ({ id, type: "data" as const })),
-      ]
-    : [];
+  const { identityProviders, dataProviders, showIdentityProviders, showDataProviders } =
+    groupConfiguredAuthProviders(providers ?? { identity: [], data: [] });
   const returnTo =
     requestedReturnTo ?? (providerGuide ? "/dashboard?providerGuide=true" : undefined);
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   const showPasswordAuth = providers?.password ?? false;
-  const showOAuthProviders = allProviders.length > 0;
+  const showOAuthProviders = showIdentityProviders || showDataProviders;
+  const passwordResetDisabled = submitting || !email.trim();
+  const passwordAuthDisabled = submitting || !email.trim() || !password;
+  const passwordResetHint = !submitting && !email.trim() ? "Enter your email to continue." : null;
+  const passwordAuthHint =
+    !submitting && passwordAuthDisabled
+      ? !email.trim() && !password
+        ? "Enter your email and password to continue."
+        : !email.trim()
+          ? "Enter your email to continue."
+          : "Enter your password to continue."
+      : null;
+  const emailValidationError =
+    authMode === "reset" || !emailTouched ? null : getEmailValidationError(email);
+  const passwordValidationError = passwordTouched
+    ? password
+      ? authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+      : "Enter your password."
+    : null;
+
+  function changeAuthMode(mode: AuthMode) {
+    setAuthMode(mode);
+    setFormError(null);
+    setEmailTouched(false);
+    setPasswordTouched(false);
+  }
+
+  const headerCopy =
+    authMode === "register"
+      ? {
+          title: "Create your account",
+          subtitle: "Enter your details. Next, you'll connect your health data.",
+        }
+      : authMode === "reset"
+        ? {
+            title: "Reset your password",
+            subtitle: "Enter your email to receive a password reset link.",
+          }
+        : {
+            title: "Sign in to Dofek",
+            subtitle: "View and manage your health data.",
+          };
 
   async function handlePasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
+    setEmailTouched(true);
+    setPasswordTouched(true);
     setFormError(null);
+    const emailError = getEmailValidationError(email);
+    const passwordError = password
+      ? authMode === "register"
+        ? getNewPasswordValidationError(password)
+        : null
+      : "Enter your password.";
+    if (emailError || passwordError) return;
 
+    setSubmitting(true);
     try {
       const result =
         authMode === "register"
@@ -88,10 +147,17 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center">
+    <div className="min-h-screen bg-page flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm p-8 rounded-2xl bg-surface-solid border border-border shadow-xl">
-        <h1 className="text-2xl font-bold text-foreground text-center mb-2">Dofek</h1>
-        <p className="text-muted text-center mb-8 text-sm">Sign in to view your health data</p>
+        <a
+          href="/"
+          aria-label="Back to Dofek"
+          className="inline-flex mb-6 text-sm text-subtle hover:text-foreground transition-colors"
+        >
+          &larr; Back to Dofek
+        </a>
+        <h1 className="text-2xl font-bold text-foreground text-center mb-2">{headerCopy.title}</h1>
+        <p className="text-muted text-center mb-8 text-sm">{headerCopy.subtitle}</p>
 
         {loading ? (
           <div className="flex justify-center py-8">
@@ -131,19 +197,26 @@ function LoginPage() {
                           placeholder="you@example.com"
                         />
                       </div>
+                      {passwordResetHint ? (
+                        <p id="reset-email-submit-hint" className="text-xs text-muted">
+                          {passwordResetHint}
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
-                        disabled={submitting}
-                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        disabled={passwordResetDisabled}
+                        aria-describedby={passwordResetHint ? "reset-email-submit-hint" : undefined}
+                        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+                          passwordResetDisabled
+                            ? "bg-surface-hover text-muted cursor-not-allowed"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        }`}
                       >
                         {submitting ? "Sending..." : "Send reset link"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("login")}
                         className="w-full text-xs text-muted hover:text-foreground transition-colors"
                       >
                         Back to sign in
@@ -155,10 +228,7 @@ function LoginPage() {
                     <div className="flex rounded-lg border border-border overflow-hidden mb-4">
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("login")}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           authMode === "login"
                             ? "bg-accent/15 text-foreground"
@@ -169,10 +239,7 @@ function LoginPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode("register");
-                          setFormError(null);
-                        }}
+                        onClick={() => changeAuthMode("register")}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           authMode === "register"
                             ? "bg-accent/15 text-foreground"
@@ -183,13 +250,7 @@ function LoginPage() {
                       </button>
                     </div>
 
-                    {formError ? (
-                      <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
-                        {formError}
-                      </div>
-                    ) : null}
-
-                    <form onSubmit={handlePasswordSubmit} className="space-y-3">
+                    <form onSubmit={handlePasswordSubmit} className="space-y-3" noValidate>
                       {authMode === "register" ? (
                         <div>
                           <label htmlFor="register-name" className="block text-xs text-muted mb-1">
@@ -214,62 +275,136 @@ function LoginPage() {
                           id="auth-email"
                           type="email"
                           value={email}
-                          onChange={(event) => setEmail(event.target.value)}
+                          onChange={(event) => {
+                            setEmail(event.target.value);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setEmailTouched(true)}
                           required
                           autoComplete="email"
+                          aria-invalid={emailValidationError ? true : undefined}
+                          aria-describedby={emailValidationError ? "auth-email-error" : undefined}
                           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                           placeholder="you@example.com"
                         />
+                        {emailValidationError ? (
+                          <p
+                            id="auth-email-error"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {emailValidationError}
+                          </p>
+                        ) : null}
                       </div>
                       <div>
                         <label htmlFor="auth-password" className="block text-xs text-muted mb-1">
                           Password
                         </label>
-                        <input
+                        <PasswordInput
+                          key={authMode}
                           id="auth-password"
-                          type="password"
+                          visibilityLabel="password"
                           value={password}
-                          onChange={(event) => setPassword(event.target.value)}
+                          onChange={(event) => {
+                            setPassword(event.target.value);
+                            setFormError(null);
+                          }}
+                          onBlur={() => setPasswordTouched(true)}
                           required
-                          minLength={8}
+                          minLength={authMode === "register" ? PASSWORD_MIN_LENGTH : undefined}
+                          maxLength={authMode === "register" ? PASSWORD_MAX_LENGTH : undefined}
                           autoComplete={
                             authMode === "register" ? "new-password" : "current-password"
                           }
+                          aria-invalid={passwordValidationError ? true : undefined}
+                          aria-describedby={
+                            passwordValidationError || authMode === "register" || formError
+                              ? "auth-password-message"
+                              : undefined
+                          }
                           className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                         />
+                        {passwordValidationError ? (
+                          <p
+                            id="auth-password-message"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {passwordValidationError}
+                          </p>
+                        ) : formError ? (
+                          <p
+                            id="auth-password-message"
+                            role="alert"
+                            className="mt-1 text-xs text-red-400"
+                          >
+                            {formError}
+                          </p>
+                        ) : authMode === "register" ? (
+                          <p id="auth-password-message" className="mt-1 text-xs text-subtle">
+                            {PASSWORD_REQUIREMENT_TEXT}
+                          </p>
+                        ) : null}
                       </div>
                       {authMode === "login" ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            setAuthMode("reset");
-                            setFormError(null);
-                          }}
+                          onClick={() => changeAuthMode("reset")}
                           className="text-xs text-muted hover:text-accent transition-colors"
                         >
                           Forgot password?
                         </button>
                       ) : null}
+                      {passwordAuthHint ? (
+                        <p id="password-submit-hint" className="text-xs text-muted">
+                          {passwordAuthHint}
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
-                        disabled={submitting || !email.trim() || !password}
-                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        disabled={passwordAuthDisabled}
+                        aria-describedby={passwordAuthHint ? "password-submit-hint" : undefined}
+                        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+                          passwordAuthDisabled
+                            ? "bg-surface-hover text-muted cursor-not-allowed"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        }`}
                       >
                         {submitting
                           ? authMode === "register"
                             ? "Creating account..."
                             : "Signing in..."
                           : authMode === "register"
-                            ? "Create account"
+                            ? "Create account and continue"
                             : "Sign in with email"}
                       </button>
+                      {authMode === "register" ? (
+                        <p className="text-xs text-subtle text-center leading-relaxed">
+                          By creating an account, you agree to the{" "}
+                          <a
+                            href="/terms"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Terms of Service
+                          </a>{" "}
+                          and acknowledge the{" "}
+                          <a
+                            href="/privacy"
+                            className="text-accent hover:text-accent-secondary underline"
+                          >
+                            Privacy Policy
+                          </a>
+                          .
+                        </p>
+                      ) : null}
                     </form>
                   </>
                 )}
               </div>
             ) : null}
 
-            {showPasswordAuth && showOAuthProviders ? (
+            {showPasswordAuth && showIdentityProviders ? (
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-border" />
                 <span className="text-xs text-subtle uppercase tracking-wide">or</span>
@@ -277,16 +412,12 @@ function LoginPage() {
               </div>
             ) : null}
 
-            {showOAuthProviders ? (
+            {showIdentityProviders ? (
               <div className="space-y-3">
-                {allProviders.map(({ id, type }) => (
+                {identityProviders.map((id) => (
                   <a
                     key={id}
-                    href={
-                      type === "identity"
-                        ? `/auth/login/${id}${returnToQuery}`
-                        : `/auth/login/data/${id}${returnToQuery}`
-                    }
+                    href={`/auth/login/${id}${returnToQuery}`}
                     className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-accent/10 hover:bg-surface-hover border border-border-strong hover:border-border-strong text-foreground transition-colors text-sm font-medium"
                   >
                     <ProviderLogo provider={id} size={20} />
@@ -294,6 +425,32 @@ function LoginPage() {
                   </a>
                 ))}
               </div>
+            ) : null}
+
+            {showDataProviders ? (
+              <section
+                aria-labelledby="health-data-sign-in-heading"
+                className="space-y-4 rounded-xl border border-border bg-surface-hover/40 p-4"
+              >
+                <h2
+                  id="health-data-sign-in-heading"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Sign in with a health data provider
+                </h2>
+                <div className="space-y-3">
+                  {dataProviders.map((id) => (
+                    <a
+                      key={id}
+                      href={`/auth/login/data/${id}${returnToQuery}`}
+                      className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-surface-solid hover:bg-surface-hover border border-border text-foreground transition-colors text-sm font-medium"
+                    >
+                      <ProviderLogo provider={id} size={20} />
+                      Sign in with {providerLabel(id)}
+                    </a>
+                  ))}
+                </div>
+              </section>
             ) : null}
           </div>
         )}

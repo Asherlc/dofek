@@ -15,32 +15,38 @@ function cssRgb(hex: string): string {
 }
 
 describe("MacroBar", () => {
-  it("clamps visual progress without hiding the server-owned percentage", () => {
+  it("labels the server-owned energy share separately from logged grams", () => {
     const { container } = render(
-      <MacroBar label="Protein" grams="135 g" percentage={135} color="blue" />,
+      <MacroBar label="Protein" grams={65} energySharePercentage={25} color="blue" />,
     );
 
     expect(
       container.querySelector('[data-testid="macro-bar-fill"]')?.getAttribute("style"),
-    ).toContain("100%");
-    expect(screen.getByText("(135%)")).not.toBeNull();
+    ).toContain("25%");
+    expect(screen.getByText("25% of energy")).not.toBeNull();
+    expect(screen.getByText("65 g logged")).not.toBeNull();
+    expect(
+      screen.getByRole("meter", {
+        name: "Protein: 25% share of energy; 65 grams logged",
+      }),
+    ).not.toBeNull();
   });
 
   it("uses neutral categorical colors instead of status colors", () => {
     const { rerender } = render(
-      <MacroBar label="Protein" grams="30 g" percentage={30} color="blue" />,
+      <MacroBar label="Protein" grams={30} energySharePercentage={30} color="blue" />,
     );
 
     expect(screen.getByTestId("macro-bar-fill").style.backgroundColor).toBe(
       cssRgb(chartColors.blue),
     );
 
-    rerender(<MacroBar label="Carbs" grams="50 g" percentage={50} color="purple" />);
+    rerender(<MacroBar label="Carbs" grams={50} energySharePercentage={50} color="purple" />);
     expect(screen.getByTestId("macro-bar-fill").style.backgroundColor).toBe(
       cssRgb(chartColors.purple),
     );
 
-    rerender(<MacroBar label="Fat" grams="20 g" percentage={20} color="teal" />);
+    rerender(<MacroBar label="Fat" grams={20} energySharePercentage={20} color="teal" />);
     expect(screen.getByTestId("macro-bar-fill").style.backgroundColor).toBe(
       cssRgb(chartColors.teal),
     );

@@ -310,11 +310,13 @@ export class UltrahumanProvider implements SyncProvider {
                     startedAt: new Date(`${dateStr}T00:00:00Z`),
                     endedAt: new Date(`${dateStr}T08:00:00Z`),
                     durationMinutes: sleep.durationMinutes,
+                    stagingAvailable: false,
                   })
                   .onConflictDoUpdate({
                     target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       durationMinutes: sleep.durationMinutes,
+                      stagingAvailable: false,
                     },
                   });
                 dailyCount++;

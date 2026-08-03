@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { captureException } from "@sentry/node";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 import {
   type AnalyticsMicrobatchQueryClient,
   resolveAnalyticsMicrobatchBounds,

@@ -1,6 +1,7 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import { captureException } from "@sentry/node";
+import { type EpistemicStatus, getEpistemicStatus } from "@dofek/scoring/epistemic-status";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString, type RangeDays } from "../lib/date-window.ts";
@@ -18,7 +19,11 @@ export interface SmoothedWeightRow {
   date: string;
   /** Raw weight measurement in kg. Null for interpolated days. */
   rawWeight: number | null;
+  /** Server-authored epistemic status for the raw measurement, when present. */
+  rawWeightStatus: EpistemicStatus | null;
   smoothedWeight: number;
+  /** Server-authored epistemic status for the smoothed trend value. */
+  smoothedWeightStatus: EpistemicStatus;
   weeklyChange: number | null;
   /** True when this day had no actual measurement and was linearly interpolated. */
   interpolated: boolean;
@@ -374,7 +379,9 @@ export class BodyAnalyticsRepository extends BaseRepository {
       result.push({
         date: point.date,
         rawWeight: point.interpolated ? null : roundWeight(point.value),
+        rawWeightStatus: point.interpolated ? null : getEpistemicStatus("observed"),
         smoothedWeight: roundWeight(smoothed),
+        smoothedWeightStatus: getEpistemicStatus("estimated"),
         weeklyChange,
         interpolated: point.interpolated,
       });

@@ -4,15 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const mockCaptureException = vi.fn();
   const mockInitProductionSentry = vi.fn();
-  return { mockCaptureException, mockInitProductionSentry };
+  const mockInitProductionPostHog = vi.fn();
+  return { mockCaptureException, mockInitProductionSentry, mockInitProductionPostHog };
 });
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: mocks.mockCaptureException,
 }));
 
 vi.mock("dofek/lib/sentry", () => ({
   initProductionSentry: mocks.mockInitProductionSentry,
+}));
+
+vi.mock("dofek/lib/posthog", () => ({
+  initProductionPostHog: mocks.mockInitProductionPostHog,
 }));
 
 /** Type-safe partial mock helper — avoids banned `as` assertions. */
@@ -40,6 +45,7 @@ describe("server sentry", () => {
     const { initSentry } = await import("./sentry.ts");
     initSentry();
 
+    expect(mocks.mockInitProductionPostHog).toHaveBeenCalledWith("dofek-web-server");
     expect(mocks.mockInitProductionSentry).toHaveBeenCalledOnce();
     expect(mocks.mockInitProductionSentry).toHaveBeenCalledWith(undefined);
   });
@@ -51,6 +57,7 @@ describe("server sentry", () => {
     initSentry();
     initSentry(); // idempotent
 
+    expect(mocks.mockInitProductionPostHog).toHaveBeenCalledOnce();
     expect(mocks.mockInitProductionSentry).toHaveBeenCalledOnce();
     expect(mocks.mockInitProductionSentry).toHaveBeenCalledWith("https://key@sentry.example/456");
   });

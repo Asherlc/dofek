@@ -1,7 +1,7 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { File as ExpoFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import {
@@ -93,8 +93,18 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   const [dataExports, setDataExports] = useState<DataExport[]>([]);
   const [exportsLoading, setExportsLoading] = useState(true);
   const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const loadExports = useCallback(async () => {
+    if (!isMounted.current) return;
+
     const usableSessionToken = getUsableSessionToken(sessionToken);
     if (!usableSessionToken) {
       setExportState("error");
@@ -111,14 +121,18 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
         throw new Error(await getResponseErrorMessage(response, "Failed to load exports"));
       }
       const parsed = ExportListSchema.parse(await response.json());
+      if (!isMounted.current) return;
       setDataExports(parsed.exports);
       setExportMessage("");
     } catch (error: unknown) {
       captureException(error, { context: "data-export-list" });
+      if (!isMounted.current) return;
       setExportState("error");
       setExportMessage(error instanceof Error ? error.message : "Failed to load exports");
     } finally {
-      setExportsLoading(false);
+      if (isMounted.current) {
+        setExportsLoading(false);
+      }
     }
   }, [serverUrl, sessionToken]);
 
@@ -144,16 +158,20 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
       });
 
       if (!triggerRes.ok) {
+        const message = await getResponseErrorMessage(triggerRes, "Failed to start export");
+        if (!isMounted.current) return;
         setExportState("error");
-        setExportMessage(await getResponseErrorMessage(triggerRes, "Failed to start export"));
+        setExportMessage(message);
         return;
       }
 
       ExportTriggerSchema.parse(await triggerRes.json());
+      if (!isMounted.current) return;
       setExportState("done");
       await loadExports();
     } catch (error: unknown) {
       captureException(error, { context: "data-export" });
+      if (!isMounted.current) return;
       setExportState("error");
       setExportMessage("Network error during export");
     }
@@ -177,6 +195,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
         headers: getAuthHeaders(usableSessionToken),
         idempotent: true,
       });
+      if (!isMounted.current) return;
       setExportState("done");
       setExportMessage("Export ready");
       await Sharing.shareAsync(file.uri, {
@@ -186,6 +205,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
     } catch (error: unknown) {
       operationFailed = true;
       captureException(error, { context: "data-export-download" });
+      if (!isMounted.current) return;
       setExportState("error");
       setExportMessage(error instanceof Error ? error.message : "Failed to download export");
     } finally {
@@ -204,7 +224,9 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
           }
         }
       }
-      setDownloadingExportId(null);
+      if (isMounted.current) {
+        setDownloadingExportId(null);
+      }
     }
   }
 

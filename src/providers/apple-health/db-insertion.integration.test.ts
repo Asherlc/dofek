@@ -350,6 +350,7 @@ describe("db-insertion deduplication (integration)", () => {
       // Stage aggregation should still work on the deduplicated session
       expect(matching[0]?.deepMinutes).toBe(90);
       expect(matching[0]?.remMinutes).toBe(90);
+      expect(matching[0]?.stagingAvailable).toBe(true);
     });
 
     it("preserves unique sleep sessions while deduplicating duplicates", async () => {
@@ -384,6 +385,27 @@ describe("db-insertion deduplication (integration)", () => {
 
       // 2 unique sessions (the two duplicate night-1 records collapse into 1, plus night-2)
       expect(count).toBe(2);
+
+      const matching = await ctx.db
+        .select()
+        .from(schema.sleepSession)
+        .where(
+          sql`${schema.sleepSession.externalId} IN (
+            ${`ah:sleep:${bedStart1.toISOString()}`},
+            ${`ah:sleep:${bedStart2.toISOString()}`}
+          )`,
+        );
+
+      expect(matching).toHaveLength(2);
+      expect(
+        matching.every(
+          (row) =>
+            row.stagingAvailable === false &&
+            row.deepMinutes === null &&
+            row.remMinutes === null &&
+            row.lightMinutes === null,
+        ),
+      ).toBe(true);
     });
   });
 

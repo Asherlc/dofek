@@ -124,4 +124,13 @@ describe("HikingTab", () => {
 
     expect(screen.getAllByText("Error in input stream")).toHaveLength(4);
   });
+
+  it("leads with plain meaning without exposing the slope-cost model in the subtitle", async () => {
+    await renderHikingTab();
+
+    expect(screen.getByRole("heading", { name: /Effort-adjusted pace for grade/i })).toBeDefined();
+    expect(
+      screen.getByText("Pace adjusted for the effort of walking or hiking on slopes."),
+    ).toBeDefined();
+  });
 });

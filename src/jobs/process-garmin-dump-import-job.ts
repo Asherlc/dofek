@@ -1,8 +1,8 @@
-import * as Sentry from "@sentry/node";
 import { WaitingChildrenError } from "bullmq";
 import { z } from "zod";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   cleanupPreparedGarminDumpImport,
@@ -63,7 +63,7 @@ function requireTransactionalDatabase(
 
 async function logGarminImportPhase(job: GarminDumpImportJob, message: string): Promise<void> {
   await job.log(message).catch((error: unknown) => {
-    Sentry.captureException(error, { tags: { garminDumpStep: "job-log" } });
+    captureException(error, { tags: { garminDumpStep: "job-log" } });
     logger.warn("Failed to append Garmin import job log: %s", error);
   });
 }
@@ -225,10 +225,10 @@ export async function processGarminDumpImportJob(
     job,
     `[phase] Finalized Garmin dump batch ${checkpoint.batchId}: ${result.recordsSynced} activities, ${result.errors.length} error groups`,
   );
-  // Report one Sentry event per unique error cause from the finalized result so
-  // operators can observe failures without flooding Sentry per file.
+  // Report one event per unique error cause from the finalized result so
+  // operators can observe failures without flooding telemetry per file.
   for (const error of result.errors) {
-    Sentry.captureException(
+    captureException(
       new Error(`Garmin dump import batch ${checkpoint.batchId}: ${error.message}`),
       { tags: { garminDumpStep: "import-summary" } },
     );

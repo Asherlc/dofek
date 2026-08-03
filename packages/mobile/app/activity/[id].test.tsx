@@ -16,8 +16,12 @@ function stripStyle({
 }
 
 vi.mock("react-native", () => ({
-  View: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", stripStyle(props), ...(children != null ? [children] : [])),
+  View: ({ children, accessibilityLabel, ...props }: Record<string, unknown>) =>
+    React.createElement(
+      "div",
+      stripStyle({ ...props, "aria-label": accessibilityLabel }),
+      ...(children != null ? [children] : []),
+    ),
   Text: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("span", stripStyle(props), ...(children != null ? [children] : [])),
   ScrollView: ({ children, ...props }: Record<string, unknown>) =>
@@ -281,6 +285,12 @@ const baseCyclingActivity = {
   activityType: "cycling",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone",
+  },
   name: "Morning Ride",
   notes: null,
   providerId: "wahoo",
@@ -289,16 +299,27 @@ const baseCyclingActivity = {
   sourceLinks: [],
   sourceDecision: null,
   avgHr: 145,
+  avgHrState: { status: "available" },
   maxHr: 172,
+  maxHrState: { status: "available" },
   avgPower: 220,
+  avgPowerState: { status: "available" },
   maxPower: 350,
+  maxPowerState: { status: "available" },
   avgSpeed: 30,
+  avgSpeedState: { status: "available" },
   maxSpeed: 50,
+  maxSpeedState: { status: "available" },
   avgCadence: 88,
+  avgCadenceState: { status: "available" },
   totalDistance: 30000,
+  totalDistanceState: { status: "available" },
   elevationGain: 400,
+  elevationGainState: { status: "available" },
   elevationLoss: 380,
+  elevationLossState: { status: "available" },
   sampleCount: 200,
+  sampleCountState: { status: "available" },
 };
 
 const streamPointsWithHrAndPower = Array.from({ length: 5 }, (_, index) => ({
@@ -422,6 +443,85 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("renders server-authored detail state when a metric is unavailable without GPS", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        totalDistance: null,
+        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockStreamQuery.mockReturnValue({ data: [], isLoading: false });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Distance unavailable")).toBeTruthy();
+    expect(screen.getByText("Distance not recorded")).toBeTruthy();
+    expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeTruthy();
+  });
+
+  it("renders reasons for every unavailable activity metric state", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        totalDistance: null,
+        totalDistanceState: { status: "processing", reason: "Distance is being recomputed" },
+        elevationGain: null,
+        elevationGainState: { status: "failed", reason: "Elevation processing failed" },
+        avgHr: null,
+        avgHrState: { status: "conflicting", reason: "Heart-rate sources disagree" },
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockStreamQuery.mockReturnValue({ data: [], isLoading: false });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Distance processing")).toBeTruthy();
+    expect(screen.getByText("Distance is being recomputed")).toBeTruthy();
+    expect(screen.getByText("Elevation Gain failed")).toBeTruthy();
+    expect(screen.getByText("Elevation processing failed")).toBeTruthy();
+    expect(screen.getByText("Avg Heart Rate conflicting")).toBeTruthy();
+    expect(screen.getByText("Heart-rate sources disagree")).toBeTruthy();
+  });
+
+  it("preserves a server-provided zero detail distance without GPS", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        totalDistance: 0,
+        totalDistanceState: { status: "available" },
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockStreamQuery.mockReturnValue({ data: [], isLoading: false });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("0 km")).toBeTruthy();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+  });
+
+  it("surfaces the activity detail server error", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Activity detail is temporarily unavailable"),
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Activity detail is temporarily unavailable")).toBeTruthy();
   });
 
   it("uses layman-readable accessible names for activity export formats", async () => {
@@ -602,10 +702,13 @@ describe("ActivityDetailScreen", () => {
           grade: "V4",
           sent: true,
           attemptCount: 7,
+          attempts: [],
           ascentType: "Redpoint",
+          holdType: null,
           routeName: "Blue Circuit",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          wallAngleDegrees: null,
         },
         {
           id: "climb-project",
@@ -614,10 +717,20 @@ describe("ActivityDetailScreen", () => {
           grade: "V5",
           sent: false,
           attemptCount: 1,
+          attempts: [
+            {
+              attemptIndex: 1,
+              failureReason: "technique",
+              notes: null,
+              outcome: "failed",
+            },
+          ],
           ascentType: null,
+          holdType: "crimp",
           routeName: "Project",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          wallAngleDegrees: 35,
         },
       ],
       isLoading: false,
@@ -634,6 +747,8 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Sent in 7 attempts")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Attempted 1 time")).toBeTruthy();
+    expect(screen.getByText("35° · Crimp")).toBeTruthy();
+    expect(screen.getByText("1: Technique")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
   });
 

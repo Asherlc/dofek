@@ -1,12 +1,14 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { aiObservabilityMocks } from "../lib/test-helpers.ts";
+import type { FoodEntryRow } from "../repositories/food-repository.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const cacheMocks = vi.hoisted(() => ({
   invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -15,6 +17,11 @@ vi.mock("dofek/lib/cache", () => ({
     invalidateByPrefix: cacheMocks.invalidateByPrefix,
   },
 }));
+
+vi.mock(
+  "dofek/lib/ai-observability",
+  async () => (await import("../lib/test-helpers.ts")).aiObservabilityMocks,
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -78,6 +85,71 @@ import { foodRouter } from "./food.ts";
 
 const createCaller = createTestCallerFactory(foodRouter);
 
+const validFoodEntry = {
+  id: "f1",
+  provider_id: "dofek",
+  user_id: "user-1",
+  external_id: null,
+  date: "2024-01-15",
+  meal: "lunch",
+  food_name: "Lunch",
+  food_description: null,
+  category: null,
+  provider_food_id: null,
+  provider_serving_id: null,
+  number_of_units: null,
+  logged_at: "2024-01-15T12:00:00.000Z",
+  source_name: null,
+  started_at: null,
+  ended_at: null,
+  barcode: null,
+  serving_unit: null,
+  serving_weight_grams: null,
+  nutrition_data_id: null,
+  raw: null,
+  confirmed: true,
+  created_at: "2024-01-15T12:00:00.000Z",
+  calories: 0,
+  protein_g: null,
+  carbs_g: null,
+  fat_g: null,
+  saturated_fat_g: null,
+  polyunsaturated_fat_g: null,
+  monounsaturated_fat_g: null,
+  trans_fat_g: null,
+  cholesterol_mg: null,
+  sodium_mg: null,
+  potassium_mg: null,
+  fiber_g: null,
+  sugar_g: null,
+  vitamin_a_mcg: null,
+  vitamin_c_mg: null,
+  vitamin_d_mcg: null,
+  vitamin_e_mg: null,
+  vitamin_k_mcg: null,
+  vitamin_b1_mg: null,
+  vitamin_b2_mg: null,
+  vitamin_b3_mg: null,
+  vitamin_b5_mg: null,
+  vitamin_b6_mg: null,
+  vitamin_b7_mcg: null,
+  vitamin_b9_mcg: null,
+  vitamin_b12_mcg: null,
+  calcium_mg: null,
+  iron_mg: null,
+  magnesium_mg: null,
+  zinc_mg: null,
+  selenium_mcg: null,
+  copper_mg: null,
+  manganese_mg: null,
+  chromium_mcg: null,
+  iodine_mcg: null,
+  omega3_mg: null,
+  omega6_mg: null,
+  caffeine_mg: null,
+  water_ml: null,
+} satisfies FoodEntryRow;
+
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
@@ -90,7 +162,7 @@ function makeConflictCaller() {
   const execute = vi
     .fn()
     .mockResolvedValueOnce([])
-    .mockResolvedValueOnce([{ id: "f1", food_name: "Lunch" }])
+    .mockResolvedValueOnce([validFoodEntry])
     .mockResolvedValueOnce([
       {
         calories: null,
@@ -111,6 +183,8 @@ function makeConflictCaller() {
         source_labels: ["cronometer", "fatsecret"],
         contributing_source_labels: [],
         excluded_source_labels: ["cronometer", "fatsecret"],
+        contribution_grain: null,
+        contribution_source_label: null,
       },
     ]);
   return createCaller({
@@ -124,7 +198,8 @@ describe("foodRouter", () => {
   beforeEach(() => {
     cacheMocks.invalidateByPrefix.mockReset();
     cacheMocks.invalidateByPrefix.mockResolvedValue(undefined);
-    vi.mocked(Sentry.captureException).mockReset();
+    aiObservabilityMocks.withAiGenerationContext.mockClear();
+    vi.mocked(captureException).mockReset();
   });
 
   describe("list", () => {
@@ -176,6 +251,8 @@ describe("foodRouter", () => {
             source_labels: ["apple-health", "cronometer"],
             contributing_source_labels: ["cronometer"],
             excluded_source_labels: ["apple-health"],
+            contribution_grain: "itemized",
+            contribution_source_label: "cronometer",
           },
         ]);
       const caller = createCaller({
@@ -204,9 +281,9 @@ describe("foodRouter", () => {
             progressPercentage: 62.5,
           },
           macros: {
-            protein: { grams: 55, calories: 220, percentage: 22 },
-            carbs: { grams: 105, calories: 420, percentage: 42 },
-            fat: { grams: 40, calories: 360, percentage: 36 },
+            protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+            carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+            fat: { grams: 40, calories: 360, energySharePercentage: 36 },
           },
         },
       });
@@ -236,6 +313,121 @@ describe("foodRouter", () => {
       );
     });
 
+    it("returns a neutral uncapped intake context from v2", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2450 }])
+        .mockResolvedValueOnce([
+          { ...validFoodEntry, food_name: "Large logged meal", calories: 4259 },
+        ])
+        .mockResolvedValueOnce([
+          {
+            calories: 4259,
+            protein_g: 100,
+            carbs_g: 300,
+            fat_g: 150,
+            breakfast_calories: 1000,
+            lunch_calories: 1200,
+            dinner_calories: 1800,
+            snack_calories: 259,
+            other_calories: 0,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: ["dofek"],
+            contributing_providers: ["dofek"],
+            excluded_providers: [],
+            source_labels: ["Dofek"],
+            contributing_source_labels: ["Dofek"],
+            excluded_source_labels: [],
+            contribution_grain: "itemized",
+            contribution_source_label: "Dofek",
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.byDateV2({ date: "2024-01-15" });
+
+      expect(result.intakeContext).toEqual({
+        observedCalories: 4259,
+        target: {
+          calories: 2450,
+          type: "configured",
+          label: "Configured daily logged-intake target",
+        },
+        scale: {
+          maximumCalories: 4259,
+          observedPercentage: 100,
+          targetPercentage: 57.525240666823194,
+        },
+        comparison: {
+          status: "above_target",
+          differenceCalories: 1809,
+          message:
+            "Observed logged intake is 1,809 kcal above the configured daily logged-intake target.",
+        },
+        limitation:
+          "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+      });
+    });
+
+    it("returns an at-target intake context from v2", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2450 }])
+        .mockResolvedValueOnce([{ ...validFoodEntry, food_name: "Matched intake", calories: 2450 }])
+        .mockResolvedValueOnce([
+          {
+            calories: 2450,
+            protein_g: 100,
+            carbs_g: 200,
+            fat_g: 50,
+            breakfast_calories: 2450,
+            lunch_calories: 0,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 0,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: ["dofek"],
+            contributing_providers: ["dofek"],
+            excluded_providers: [],
+            source_labels: ["Dofek"],
+            contributing_source_labels: ["Dofek"],
+            excluded_source_labels: [],
+            contribution_grain: "itemized",
+            contribution_source_label: "Dofek",
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.byDateV2({ date: "2024-01-15" });
+
+      expect(result.intakeContext).toMatchObject({
+        observedCalories: 2450,
+        target: {
+          calories: 2450,
+        },
+        scale: {
+          maximumCalories: 2450,
+          observedPercentage: 100,
+          targetPercentage: 100,
+        },
+        comparison: {
+          status: "at_target",
+          differenceCalories: 0,
+          message: "Observed logged intake matches the configured daily logged-intake target.",
+        },
+      });
+    });
+
     it("logs when no rows are returned", async () => {
       const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
       const execute = vi
@@ -261,6 +453,8 @@ describe("foodRouter", () => {
             source_labels: [],
             contributing_source_labels: [],
             excluded_source_labels: [],
+            contribution_grain: null,
+            contribution_source_label: null,
           },
         ]);
       const caller = createCaller({
@@ -307,6 +501,8 @@ describe("foodRouter", () => {
             source_labels: ["Apple Health"],
             contributing_source_labels: ["Apple Health"],
             excluded_source_labels: [],
+            contribution_grain: "daily_aggregate",
+            contribution_source_label: "Apple Health",
           },
         ]);
       const caller = createCaller({
@@ -315,9 +511,13 @@ describe("foodRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.byDateV2({ date: "2024-01-15" });
+      const result = await caller.byDateV2({ date: "2024-01-15" });
 
       expect(infoSpy).not.toHaveBeenCalled();
+      expect(result.resolution).toMatchObject({
+        contributionGrain: "daily_aggregate",
+        contributionLabel: "Apple Health daily total",
+      });
     });
   });
 
@@ -430,7 +630,7 @@ describe("foodRouter", () => {
       });
 
       expect(result).toEqual({ success: true });
-      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(captureException).toHaveBeenCalledWith(cacheError);
       expect(warnSpy).toHaveBeenCalledWith(
         "[nutrition] Failed to invalidate nutrition cache for userId=user-1: Error: Redis unavailable",
       );
@@ -442,6 +642,10 @@ describe("foodRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.analyzeWithAi({ description: "1 medium apple" });
       expect(result.nutrition).toHaveProperty("foodName", "Apple");
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-1" },
+        expect.any(Function),
+      );
     });
   });
 
@@ -453,6 +657,10 @@ describe("foodRouter", () => {
       });
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty("foodName", "Apple");
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-1" },
+        expect.any(Function),
+      );
     });
 
     it("returns an actionable error when AI cannot parse the meal", async () => {

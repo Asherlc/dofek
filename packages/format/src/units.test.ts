@@ -173,6 +173,11 @@ describe("format functions", () => {
     });
   });
 
+  it("formats temperature deltas without applying the absolute-temperature offset", () => {
+    expect(formatMeasurementText(metric.formatTemperatureDelta(1))).toBe("1.0°C");
+    expect(formatMeasurementText(imperial.formatTemperatureDelta(1))).toBe("1.8°F");
+  });
+
   it("formats speed with 1 decimal", () => {
     expect(formatMeasurementText(metric.formatSpeed(5.5))).toBe("5.5 km/h");
     expect(formatMeasurementText(imperial.formatSpeed(5.5))).toBe("3.4 mph");

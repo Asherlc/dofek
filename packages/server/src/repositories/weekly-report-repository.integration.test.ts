@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -11,7 +12,6 @@ import type { ActivitySensorStore } from "./activity-repository.ts";
 import { WeeklyReportRepository } from "./weekly-report-repository.ts";
 
 const userId = "99999999-9999-4999-8999-999999999999";
-const emptyUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const boundaryUserId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const activityId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const boundaryActivityId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -273,10 +273,51 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
     expect(report.history).toEqual([]);
   });
 
-  it("returns the no-data result for an empty user", async () => {
-    const report = await new WeeklyReportRepository(emptyUserId, sensorStore).getReport(1, endDate);
+  it("transitions from the preview to a report after one observed day", async () => {
+    const transitionUserId = randomUUID();
+    const repository = new WeeklyReportRepository(transitionUserId, sensorStore);
+    const emptyReport = await repository.getReport(1, endDate);
 
-    expect(report).toEqual({ current: null, history: [] });
+    expect(emptyReport.current).toBeNull();
+    expect(emptyReport.history).toEqual([]);
+    expect(emptyReport.emptyState).toEqual(
+      expect.objectContaining({
+        reportKind: "weekly",
+        minimumObservedDays: 1,
+      }),
+    );
+    expect(emptyReport.decisionSupport).toBeNull();
+
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.daily_recovery (
+        user_id,
+        date,
+        hrv,
+        resting_hr,
+        is_deleted,
+        refresh_version,
+        refreshed_at
+      ) VALUES (
+        toUUID('${transitionUserId}'),
+        toDate('${endDate}'),
+        55,
+        51,
+        0,
+        1,
+        now64(9)
+      )`,
+    );
+
+    const report = await repository.getReport(1, endDate);
+
+    expect(report.current).toEqual(
+      expect.objectContaining({
+        weekStart,
+        avgRestingHr: 51,
+        avgHrv: 55,
+      }),
+    );
   });
 
   it("uses the serving-model health-day boundary for non-UTC requests", async () => {

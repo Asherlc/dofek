@@ -5,8 +5,8 @@ import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
+import { seedFoodStoryQuery } from "./_food-story-fixture";
 import FoodScreen from "./food";
-import { seedFoodStoryQuery } from "./food-story-fixture";
 
 function localDateString(dayOffset = 0): string {
   const date = new Date();

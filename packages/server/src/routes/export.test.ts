@@ -36,11 +36,16 @@ const exportUserId = "33333333-3333-3333-3333-333333333333";
 const otherUserId = "44444444-4444-4444-4444-444444444444";
 
 type MockDatabase = Parameters<typeof createExportRouter>[0]["db"];
+type MockQueue = NonNullable<Parameters<typeof createExportRouter>[0]["exportQueue"]>;
 
 const mockDatabase: MockDatabase = {
   execute: vi.fn(),
   transaction: vi.fn(),
 };
+
+const mockQueue = {
+  add: vi.fn().mockResolvedValue({ id: "job-42" }),
+} satisfies MockQueue;
 
 function mockExecute() {
   return vi.mocked(mockDatabase.execute);
@@ -54,6 +59,7 @@ function createTestApp() {
     createExportRouter({
       createSignedDownloadUrl: mockCreateSignedExportDownloadUrl,
       db: mockDatabase,
+      exportQueue: mockQueue,
     }),
   );
   return app;

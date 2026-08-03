@@ -65,7 +65,6 @@ const meta = {
       },
     ],
     onSync: () => {},
-    onFullSync: () => {},
   },
 } satisfies Meta<typeof SyncProviderCard>;
 
@@ -88,6 +87,20 @@ export const NoSyncHistory: Story = {
       id: "strava",
       name: "Strava",
       lastSyncedAt: null,
+      authorized: true,
+      description: null,
+    },
+  },
+};
+
+export const StaleProvider: Story = {
+  name: "Stale provider",
+  tags: ["review-scenario", "review-scenario-stale-provider"],
+  args: {
+    provider: {
+      id: "strava",
+      name: "Strava",
+      lastSyncedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
       authorized: true,
       description: null,
     },

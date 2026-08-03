@@ -9,6 +9,10 @@ import type { TimeRangeDays } from "../../lib/timeRange.ts";
 const state = vi.hoisted<{
   days: TimeRangeDays;
   queryCalls: Array<{ name: string; input: unknown; options?: unknown }>;
+  recentActivitiesProps: Array<{
+    activityTypes?: readonly string[];
+    emptyMessage?: string;
+  }>;
   routeComponents: Record<string, ComponentType>;
   trainingVolumeQuery: {
     data: unknown;
@@ -23,6 +27,7 @@ const state = vi.hoisted<{
 }>(() => ({
   days: 90,
   queryCalls: [],
+  recentActivitiesProps: [],
   routeComponents: {},
   trainingVolumeQuery: { data: [], isLoading: false, error: null },
   trainingHrZonesQuery: {
@@ -63,7 +68,11 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../components/ChartDescriptionTooltip.tsx", () => ({
-  ChartDescriptionTooltip: () => null,
+  ChartDescriptionTooltip: ({ description }: { description: string }) => (
+    <button type="button" aria-label="About this chart" data-description={description}>
+      About
+    </button>
+  ),
 }));
 vi.mock("../../components/EstimatedMaxChart.tsx", () => ({ EstimatedMaxChart: () => <div /> }));
 vi.mock("../../components/HrvBaselineChart.tsx", () => ({ HrvBaselineChart: () => <div /> }));
@@ -85,12 +94,23 @@ vi.mock("../../components/QueryStatePanel.tsx", () => ({
 vi.mock("../../components/RampRateChart.tsx", () => ({ RampRateChart: () => <div /> }));
 vi.mock("../../components/ReadinessScoreCard.tsx", () => ({ ReadinessScoreCard: () => <div /> }));
 vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
-  RecentActivitiesSection: () => <div />,
+  RecentActivitiesSection: (props: {
+    activityTypes?: readonly string[];
+    emptyMessage?: string;
+  }) => {
+    state.recentActivitiesProps.push(props);
+    return <div>Recent activities</div>;
+  },
 }));
 vi.mock("../../components/SleepAnalyticsChart.tsx", () => ({ SleepAnalyticsChart: () => <div /> }));
 vi.mock("../../components/StrengthVolumeChart.tsx", () => ({ StrengthVolumeChart: () => <div /> }));
 vi.mock("../../components/TrainingMonotonyChart.tsx", () => ({
   TrainingMonotonyChart: () => <div />,
+}));
+vi.mock("../../components/TodayPlanCard.tsx", () => ({
+  TodayPlanCard: ({ plan }: { plan?: { status: "ready"; action: { title: string } } }) => (
+    <section aria-label="What matters today">{plan?.action.title}</section>
+  ),
 }));
 vi.mock("../../components/WorkloadRatioChart.tsx", () => ({ WorkloadRatioChart: () => <div /> }));
 vi.mock("../../components/DofekChart.tsx", () => ({ DofekChart: () => <div /> }));
@@ -133,6 +153,21 @@ vi.mock("../../lib/trpc.ts", () => ({
               displayedStrain: 0,
               displayedDate: null,
               timeSeries: [],
+            },
+            isLoading: false,
+            error: null,
+          };
+        },
+      },
+    },
+    todayPlan: {
+      get: {
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "todayPlan.get", input, options });
+          return {
+            data: {
+              status: "ready" as const,
+              action: { title: "Server-authored recovery action" },
             },
             isLoading: false,
             error: null,
@@ -187,6 +222,7 @@ export function expectRegistryInputs(
 export function resetRangePlumbingState() {
   state.days = 90;
   state.queryCalls.length = 0;
+  state.recentActivitiesProps.length = 0;
   state.trainingVolumeQuery = { data: [], isLoading: false, error: null };
   state.trainingHrZonesQuery = {
     data: {

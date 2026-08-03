@@ -31,6 +31,7 @@ export interface ParsedFitbitSleep {
   lightMinutes?: number;
   remMinutes?: number;
   awakeMinutes?: number;
+  stagingAvailable: boolean;
   efficiencyPct: number;
   sleepType: "main" | "not_main";
   isNap: boolean;
@@ -103,6 +104,8 @@ export function parseFitbitActivity(rawActivity: FitbitActivity): ParsedFitbitAc
 
 export function parseFitbitSleep(sleep: FitbitSleepLog): ParsedFitbitSleep {
   const summary = sleep.levels.summary;
+  const stagingAvailable =
+    summary.deep != null && summary.light != null && summary.rem != null && summary.wake != null;
 
   return {
     externalId: String(sleep.logId),
@@ -113,6 +116,7 @@ export function parseFitbitSleep(sleep: FitbitSleepLog): ParsedFitbitSleep {
     lightMinutes: summary.light?.minutes,
     remMinutes: summary.rem?.minutes,
     awakeMinutes: summary.wake?.minutes,
+    stagingAvailable,
     efficiencyPct: sleep.efficiency,
     sleepType: sleep.isMainSleep ? "main" : "not_main",
     isNap: !sleep.isMainSleep,

@@ -9,7 +9,12 @@ import {
 import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
+import {
+  mapOuraActivityType,
+  ouraProviderOffsetColumns,
+  parseOuraDailyMetrics,
+  parseOuraSleep,
+} from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
   type OuraDailyActivity,
@@ -727,6 +732,19 @@ const sampleResilience: OuraDailyResilience = {
 // ============================================================
 
 describe("Oura Provider", () => {
+  describe("ouraProviderOffsetColumns", () => {
+    it("maps independent timestamp offsets to provider-local persistence columns", () => {
+      expect(
+        ouraProviderOffsetColumns("2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00"),
+      ).toEqual({
+        timezone: null,
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_offset",
+      });
+    });
+  });
+
   describe("parseOuraSleep", () => {
     it("maps sleep fields correctly", () => {
       const result = parseOuraSleep(sampleSleep);
@@ -739,6 +757,7 @@ describe("Oura Provider", () => {
       expect(result.remMinutes).toBe(95);
       expect(result.lightMinutes).toBe(240);
       expect(result.awakeMinutes).toBe(55);
+      expect(result.stagingAvailable).toBe(true);
       expect(result.efficiencyPct).toBe(87);
       expect(result.isNap).toBe(false);
     });
@@ -780,6 +799,7 @@ describe("Oura Provider", () => {
       expect(result.lightMinutes).toBeUndefined();
       expect(result.awakeMinutes).toBeUndefined();
       expect(result.durationMinutes).toBeUndefined();
+      expect(result.stagingAvailable).toBe(false);
     });
 
     it("rounds seconds to nearest minute", () => {
@@ -1769,6 +1789,7 @@ describe("OuraProvider.sync()", () => {
     expect(sleepValues.remMinutes).toBe(95);
     expect(sleepValues.lightMinutes).toBe(240);
     expect(sleepValues.awakeMinutes).toBe(55);
+    expect(sleepValues.stagingAvailable).toBe(true);
     expect(sleepValues.efficiencyPct).toBe(87);
     expect(sleepValues.sleepType).toBe("long_sleep");
     expect(sleepValues.startedAt).toEqual(new Date("2026-02-28T22:30:00+00:00"));

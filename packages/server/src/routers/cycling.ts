@@ -1,5 +1,7 @@
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
@@ -15,6 +17,8 @@ const powerPointSchema = z.object({
   label: z.string(),
   bestPower: z.number(),
   activityDate: z.string(),
+  sourceActivityId: z.string().nullable(),
+  sourceActivityName: z.string().nullable(),
 });
 const powerCurveSchema = z.object({
   points: z.array(powerPointSchema),
@@ -31,6 +35,23 @@ const powerSummaryPeriodSchema = z.object({
   maximalAerobicPower: z.number().nullable(),
   vo2Max: z.number().nullable(),
   timeToExhaustionSeconds: z.number().nullable(),
+});
+const sourceWorkoutSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  date: z.string(),
+});
+const estimateEvidenceSchema = z.object({
+  method: z.string(),
+  confidence: z.enum(["high", "moderate", "limited", "not_available"]),
+  confidenceLabel: z.string(),
+  confidenceDetail: z.string(),
+  sourceWorkouts: z.array(sourceWorkoutSchema),
+  pacingGuidance: z.string(),
+});
+const estimateEvidenceByPeriodSchema = z.object({
+  threshold: estimateEvidenceSchema,
+  vo2Max: estimateEvidenceSchema,
 });
 const pmcSchema = z.object({
   data: z.array(
@@ -68,6 +89,16 @@ const performanceOutputSchema = z.object({
     currentEftp: z.number().nullable(),
     model: powerModelSchema.nullable(),
   }),
+  availability: z.object({
+    powerCurve: trainingChartAvailabilitySchema,
+    pmc: trainingChartAvailabilitySchema,
+    eftpTrend: trainingChartAvailabilitySchema,
+  }),
+  estimateEvidence: z.object({
+    recent: estimateEvidenceByPeriodSchema,
+    season: estimateEvidenceByPeriodSchema,
+    eftp: estimateEvidenceSchema,
+  }),
 });
 
 const activityItemSchema = z.object({
@@ -79,6 +110,9 @@ const activityItemSchema = z.object({
   provider_id: z.string(),
   source_providers: z.array(z.string()),
   distance_meters: z.number().nullable(),
+  distance_state: activityDataStateSchema,
+  elevation_gain_m: z.number().nullable(),
+  elevation_state: activityDataStateSchema,
 });
 const activitiesOutputSchema = z.object({
   activities: z.object({ items: z.array(activityItemSchema), totalCount: z.number() }),
@@ -123,6 +157,10 @@ const activitiesOutputSchema = z.object({
       }),
     ),
   }),
+  availability: z.object({
+    verticalAscent: trainingChartAvailabilitySchema,
+    aerobicEfficiency: trainingChartAvailabilitySchema,
+  }),
 });
 
 function requireRepository(ctx: {
@@ -154,6 +192,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
+    { keyVersion: "cycling-performance-v2" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",
@@ -167,5 +206,7 @@ export const cyclingRouter = router({
     }),
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
+    activitiesOutputSchema,
+    { keyVersion: "cycling-activity-states-v1" },
   ),
 });

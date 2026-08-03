@@ -42,8 +42,10 @@
         "app/**/*.{ts,tsx}",
         "modules/*/index.ts",
         "plugins/*.js",
+        "scripts/capture-app-store-screenshots.ts",
         "types/api.ts",
-        "theme.ts"
+        "theme.ts",
+        "theme.ios.ts"
       ],
       "project": [
         "**/*.{ts,tsx,js}",

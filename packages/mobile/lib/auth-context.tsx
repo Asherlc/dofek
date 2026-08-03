@@ -25,7 +25,8 @@ import {
 import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { isSecureStoreAccessibilityError } from "./secure-store-access";
 import { SERVER_URL } from "./server";
-import { captureException } from "./telemetry";
+import { finishStartupPhase, startStartupPhase } from "./startup-telemetry";
+import { captureException, identifyUser, resetUser } from "./telemetry";
 
 export interface AccountErasureCleanupLease {
   cleanupId: number;
@@ -98,10 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const retryBootstrap = useCallback(async () => {
     if (activeCleanupLeaseRef.current) return;
+    startStartupPhase("authentication");
     setIsLoading(true);
     bootstrapDeferredRef.current = false;
     let deferBootstrap = false;
     const bootstrapGeneration = sessionGenerationRef.current;
+    let startupOutcome: "authenticated" | "deferred" | "error" | "unauthenticated" = "error";
     try {
       const token = await getSessionToken();
       if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== bootstrapGeneration) {
@@ -118,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           updateSessionToken(null);
           updateSessionOwnerNonce(null);
           setBootstrapError(null);
+          startupOutcome = "deferred";
           return;
         }
 
@@ -125,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
         setBootstrapError(null);
+        startupOutcome = "unauthenticated";
         return;
       }
 
@@ -148,12 +153,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateSessionOwnerNonce(sessionOwnerNonce);
         updateUser(currentUser);
         setBootstrapError(null);
+        startupOutcome = "authenticated";
+        identifyUser(currentUser);
       } else {
         await clearSessionToken();
         updateUser(null);
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
         setBootstrapError(null);
+        startupOutcome = "unauthenticated";
       }
     } catch (error: unknown) {
       if (isSecureStoreAccessibilityError(error) && AppState.currentState === "background") {
@@ -166,13 +174,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
         setBootstrapError(null);
+        startupOutcome = "deferred";
         return;
       }
 
       captureException(error, { source: "auth-state-restore" });
       updateUser(null);
       setBootstrapError(error instanceof Error ? error.message : String(error));
+      startupOutcome = "error";
     } finally {
+      finishStartupPhase("authentication", startupOutcome);
       if (!deferBootstrap) {
         setIsLoading(false);
       }
@@ -226,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateSessionOwnerNonce(sessionOwnerNonce);
       updateUser(currentUser);
       setBootstrapError(null);
+      identifyUser(currentUser);
     },
     [updateSessionOwnerNonce, updateSessionToken, updateUser],
   );
@@ -328,6 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       await logoutOperation;
+      resetUser();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
     }

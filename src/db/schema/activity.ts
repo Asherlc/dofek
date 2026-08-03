@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -17,8 +18,14 @@ import {
 import { fitness, resolveImplicitUserId } from "./core.ts";
 import {
   activityTypeEnum,
+  climbingAttemptOutcomeEnum,
   climbingClimbTypeEnum,
+  climbingFailureReasonEnum,
   climbingGradeSystemEnum,
+  climbingHoldTypeEnum,
+  fingerLoadingExerciseEnum,
+  fingerLoadingGripPositionEnum,
+  fingerLoadingLateralityEnum,
   setTypeEnum,
   sleepStageNameEnum,
 } from "./enums.ts";
@@ -54,6 +61,47 @@ export const strengthSet = fitness.table(
   (table) => [index("strength_set_activity_idx").on(table.activityId)],
 );
 
+export const fingerLoadingEntry = fitness.table(
+  "finger_loading_entry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activity.id, { onDelete: "cascade" }),
+    exercise: fingerLoadingExerciseEnum("exercise").notNull(),
+    edgeSizeMm: real("edge_size_mm"),
+    gripPosition: fingerLoadingGripPositionEnum("grip_position"),
+    externalLoadKg: real("external_load_kg").notNull(),
+    bodyweightKg: real("bodyweight_kg").notNull(),
+    laterality: fingerLoadingLateralityEnum("laterality").notNull(),
+    setCount: integer("set_count").notNull(),
+    holdDurationSeconds: real("hold_duration_seconds").notNull(),
+    restIntervalSeconds: integer("rest_interval_seconds").notNull(),
+    rpe: real("rpe"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("finger_loading_entry_activity_idx").on(table.activityId),
+    check(
+      "finger_loading_entry_edge_size_positive",
+      sql`${table.edgeSizeMm} IS NULL OR ${table.edgeSizeMm} > 0`,
+    ),
+    check("finger_loading_entry_bodyweight_positive", sql`${table.bodyweightKg} > 0`),
+    check(
+      "finger_loading_entry_effective_load_positive",
+      sql`${table.bodyweightKg} + ${table.externalLoadKg} > 0`,
+    ),
+    check("finger_loading_entry_set_count_positive", sql`${table.setCount} > 0`),
+    check("finger_loading_entry_hold_duration_positive", sql`${table.holdDurationSeconds} > 0`),
+    check("finger_loading_entry_rest_interval_nonnegative", sql`${table.restIntervalSeconds} >= 0`),
+    check(
+      "finger_loading_entry_rpe_range",
+      sql`${table.rpe} IS NULL OR (${table.rpe} >= 0 AND ${table.rpe} <= 10)`,
+    ),
+  ],
+);
+
 // ============================================================
 // Rock climbing
 // ============================================================
@@ -69,8 +117,10 @@ export const climbingEntry = fitness.table(
     climbType: climbingClimbTypeEnum("climb_type").notNull(),
     gradeSystem: climbingGradeSystemEnum("grade_system").notNull(),
     grade: text("grade").notNull(),
-    sent: boolean("sent").notNull(),
-    attemptCount: integer("attempt_count").notNull().default(1),
+    sent: boolean("sent"),
+    attemptCount: integer("attempt_count").default(1),
+    wallAngleDegrees: real("wall_angle_degrees"),
+    holdType: climbingHoldTypeEnum("hold_type"),
     routeName: text("route_name"),
     locationName: text("location_name"),
     sourceName: text("source_name"),
@@ -86,6 +136,14 @@ export const climbingEntry = fitness.table(
     check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
     check("climbing_entry_attempt_count_positive", sql`${table.attemptCount} > 0`),
     check(
+      "climbing_entry_aggregate_pair",
+      sql`(${table.sent} IS NULL) = (${table.attemptCount} IS NULL)`,
+    ),
+    check(
+      "climbing_entry_wall_angle_range",
+      sql`${table.wallAngleDegrees} IS NULL OR (${table.wallAngleDegrees} >= -90 AND ${table.wallAngleDegrees} <= 90)`,
+    ),
+    check(
       "climbing_entry_external_id_nonempty",
       sql`${table.externalId} IS NULL OR btrim(${table.externalId}) <> ''`,
     ),
@@ -100,6 +158,35 @@ export const climbingEntry = fitness.table(
     check(
       "climbing_entry_source_name_nonempty",
       sql`${table.sourceName} IS NULL OR btrim(${table.sourceName}) <> ''`,
+    ),
+  ],
+);
+
+export const climbingAttempt = fitness.table(
+  "climbing_attempt",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    climbingEntryId: uuid("climbing_entry_id")
+      .notNull()
+      .references(() => climbingEntry.id, { onDelete: "cascade" }),
+    attemptIndex: integer("attempt_index").notNull(),
+    outcome: climbingAttemptOutcomeEnum("outcome").notNull(),
+    failureReason: climbingFailureReasonEnum("failure_reason"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("climbing_attempt_entry_idx").on(table.climbingEntryId),
+    uniqueIndex("climbing_attempt_entry_index_idx").on(table.climbingEntryId, table.attemptIndex),
+    check("climbing_attempt_index_positive", sql`${table.attemptIndex} > 0`),
+    check(
+      "climbing_attempt_failure_reason",
+      sql`(${table.outcome} = 'sent' AND ${table.failureReason} IS NULL)
+        OR (${table.outcome} = 'failed' AND ${table.failureReason} IS NOT NULL)`,
+    ),
+    check(
+      "climbing_attempt_notes_nonempty",
+      sql`${table.notes} IS NULL OR btrim(${table.notes}) <> ''`,
     ),
   ],
 );
@@ -128,6 +215,9 @@ export const activity = fitness.table(
     perceivedExertion: real("perceived_exertion"),
     sourceName: text("source_name"),
     timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
+    localTimeSource: text("local_time_source").notNull().default("unknown"),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
@@ -141,6 +231,24 @@ export const activity = fitness.table(
       table.externalId,
     ),
     index("activity_user_provider_idx").on(table.userId, table.providerId),
+    check(
+      "activity_local_time_context_check",
+      sql`(
+        ${table.localTimeSource} = 'unknown'
+        AND ${table.startUtcOffsetMinutes} IS NULL
+        AND ${table.endUtcOffsetMinutes} IS NULL
+      ) OR (
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      ) OR (
+        ${table.localTimeSource} IN ('provider_offset', 'device_offset')
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      )`,
+    ),
   ],
 );
 
@@ -302,6 +410,7 @@ export const sleepSession = fitness.table(
     lightMinutes: integer("light_minutes"),
     awakeMinutes: integer("awake_minutes"),
     efficiencyPct: real("efficiency_pct"),
+    stagingAvailable: boolean("staging_available").notNull().default(false),
     sleepType: text("sleep_type"),
     isNap: boolean("is_nap").notNull().default(false),
     sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
@@ -309,6 +418,10 @@ export const sleepSession = fitness.table(
     sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
     sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
+    timezone: text("timezone"),
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
+    localTimeSource: text("local_time_source").notNull().default("unknown"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -318,6 +431,25 @@ export const sleepSession = fitness.table(
       table.externalId,
     ),
     index("sleep_session_user_provider_idx").on(table.userId, table.providerId),
+    check(
+      "sleep_session_local_time_context_check",
+      sql`(
+        ${table.localTimeSource} = 'unknown'
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} IS NULL
+        AND ${table.endUtcOffsetMinutes} IS NULL
+      ) OR (
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      ) OR (
+        ${table.localTimeSource} IN ('provider_offset', 'device_offset')
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      )`,
+    ),
   ],
 );
 

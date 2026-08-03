@@ -88,14 +88,19 @@ describe("SupportPanel", () => {
     expect(screen.getByText("We couldn't submit your request right now.")).toBeTruthy();
   });
 
-  it("shows the reference number and resets on success", () => {
+  it("shows the ticket ID and resets on success", () => {
     const onReset = vi.fn();
 
     render(
-      <SupportPanel onSubmit={vi.fn()} onReset={onReset} isPending={false} ticketNumber="1042" />,
+      <SupportPanel
+        onSubmit={vi.fn()}
+        onReset={onReset}
+        isPending={false}
+        ticketId="ticket-1042"
+      />,
     );
 
-    expect(screen.getByText("Reference number: #1042")).toBeTruthy();
+    expect(screen.getByText("Ticket ID: ticket-1042")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Submit another request"));
 

@@ -124,6 +124,10 @@ const mockUnitSettingQuery: {
   refetch: mockUnitSettingRefetch,
 };
 const mockZeppPairingClaim = vi.fn();
+const mockZeppConnectionRevoke = vi.fn();
+let mockZeppConnections: Array<{
+  connectionType: "zepp-main" | "zepp-workout";
+}> = [];
 type ZeppPairingMutationOptions = {
   onError?: (error: { message: string }) => void;
   onMutate?: () => void;
@@ -135,6 +139,7 @@ type SetPasswordMutationOptions = {
   onSuccess?: () => Promise<void>;
 };
 let mockSetPasswordMutationOptions: SetPasswordMutationOptions | null = null;
+const mockSetPasswordMutate = vi.fn();
 const mockPasswordCredentialStatusQuery = vi.fn(() => ({
   data: { hasPassword: false },
   isLoading: false,
@@ -202,7 +207,7 @@ vi.mock("../lib/trpc", () => ({
         useMutation: (options: SetPasswordMutationOptions) => {
           mockSetPasswordMutationOptions = options;
           return {
-            mutate: vi.fn(),
+            mutate: mockSetPasswordMutate,
             isPending: false,
           };
         },
@@ -240,6 +245,23 @@ vi.mock("../lib/trpc", () => ({
             error: null,
           };
         },
+      },
+    },
+    companionToken: {
+      list: {
+        useQuery: () => ({
+          data: mockZeppConnections,
+          error: null,
+          isLoading: false,
+          refetch: vi.fn().mockResolvedValue(undefined),
+        }),
+      },
+      revoke: {
+        useMutation: () => ({
+          mutate: mockZeppConnectionRevoke,
+          error: null,
+          isPending: false,
+        }),
       },
     },
     medicationDoseEvents: {
@@ -289,28 +311,69 @@ beforeEach(() => {
     access: { ...defaultBillingStatus.access },
   };
   mockZeppPairingMutationOptions = null;
+  mockZeppConnections = [];
   mockSetPasswordMutationOptions = null;
   mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
   mockUnitSettingQuery.error = null;
   vi.clearAllMocks();
 });
 
-describe("SettingsScreen tabs", () => {
-  it("shows general settings by default and switches to connections", async () => {
+describe("SettingsScreen categories", () => {
+  it("shows searchable categories with Account selected by default", async () => {
     const { default: SettingsScreen } = await import("./settings");
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Units")).toBeTruthy();
-    expect(screen.queryByText("Data Sources")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
-
-    expect(screen.getByText("Data Sources")).toBeTruthy();
-    expect(screen.queryByText("Units")).toBeNull();
-    expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "connections" });
+    expect(screen.getByRole("textbox", { name: "Search settings" })).toBeTruthy();
+    for (const category of [
+      "Account",
+      "Data Sources",
+      "Goals & Models",
+      "Privacy/Export",
+      "Notifications",
+      "Billing",
+      "Advanced",
+    ]) {
+      expect(screen.getByRole("button", { name: category })).toBeTruthy();
+    }
+    expect(screen.getByRole("button", { name: "Account" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("Password")).toBeTruthy();
+    expect(screen.queryByText("2 connected")).toBeNull();
   });
 
-  it("opens the health tab for medication reminder deep links", async () => {
+  it("filters categories and opens the matching section from a search term", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "medication" },
+    });
+
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
+    expect(screen.getByText("Medication Reminders")).toBeTruthy();
+  });
+
+  it("switches from Account to Data Sources", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Data Sources" }));
+
+    expect(screen.getByText("2 connected")).toBeTruthy();
+    expect(screen.queryByText("Password")).toBeNull();
+    expect(screen.getByRole("button", { name: "Account" }).getAttribute("aria-selected")).toBe(
+      "false",
+    );
+    const selectedDataSourceCategory = screen
+      .getAllByRole("button", { name: "Data Sources" })
+      .find((button) => button.getAttribute("aria-selected") === "true");
+    expect(selectedDataSourceCategory).toBeTruthy();
+    expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "data-sources" });
+  });
+
+  it("opens the Notifications category for medication reminder deep links", async () => {
     mockSearchParams = {
       focus: "medicationReminders",
       reminderId: "11111111-1111-4111-8111-111111111111",
@@ -320,29 +383,51 @@ describe("SettingsScreen tabs", () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText("Medication Reminders")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Health" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-selected"),
+    ).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Account" }));
-    expect(screen.getByText("Billing")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Billing" }));
+    expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
   });
 
-  it("respects an account tab deep link", async () => {
-    mockSearchParams = { tab: "account" };
+  it("respects a billing category deep link", async () => {
+    mockSearchParams = { tab: "billing" };
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Billing")).toBeTruthy();
+    expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
     expect(screen.queryByText("Units")).toBeNull();
-    expect(screen.getByRole("button", { name: "Account" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("button", { name: "Billing" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+  });
+
+  it.each([
+    ["connections", "Data Sources", "2 connected"],
+    ["general", "Goals & Models", "Units"],
+    ["health", "Goals & Models", "Units"],
+    ["account", "Account", "Password"],
+  ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory, sectionText) => {
+    mockSearchParams = { tab: legacyTab };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    const selectedCategoryButton = screen
+      .getAllByRole("button", { name: currentCategory })
+      .find((button) => button.getAttribute("aria-selected") === "true");
+    expect(selectedCategoryButton).toBeTruthy();
+    expect(screen.getByText(sectionText)).toBeTruthy();
   });
 });
 
 describe("SettingsScreen unit system", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "goals-models" };
+  });
+
   it("restores the exact cached unit setting and shows the server error when a write fails", async () => {
     const previousSetting = { key: "unitSystem", value: "metric" };
     mockSettingsGetData.mockReturnValue(previousSetting);
@@ -387,7 +472,7 @@ describe("SettingsScreen unit system", () => {
 
 describe("SettingsScreen data sources", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "connections" };
+    mockSearchParams = { tab: "data-sources" };
   });
 
   it("renders Data Sources section with connected count", async () => {
@@ -395,7 +480,7 @@ describe("SettingsScreen data sources", () => {
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Data Sources")).toBeTruthy();
+    expect(screen.getAllByText("Data Sources")).toHaveLength(2);
     expect(screen.getByText("2 connected")).toBeTruthy();
   });
 
@@ -444,16 +529,22 @@ describe("SettingsScreen data sources", () => {
 
     render(<SettingsScreen />);
 
-    const dataSourcesButton = screen.getByRole("button", { name: "Data Sources" });
+    const dataSourcesButton = screen
+      .getAllByRole("button", { name: "Data Sources" })
+      .find((button) => button.getAttribute("aria-busy") !== null);
+    if (!dataSourcesButton) throw new Error("Expected the Data Sources card");
     expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
   });
 
   it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "advanced" };
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
+    expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
@@ -471,7 +562,7 @@ describe("SettingsScreen data sources", () => {
   });
 
   it("navigates to cycle tracking from the health tracking section", async () => {
-    mockSearchParams = { tab: "health" };
+    mockSearchParams = { tab: "goals-models" };
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
@@ -480,11 +571,22 @@ describe("SettingsScreen data sources", () => {
 
     expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
   });
+
+  it("navigates to journal trends from the health tracking section", async () => {
+    mockSearchParams = { tab: "goals-models" };
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Journal Trends" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/tracking");
+  });
 });
 
 describe("SettingsScreen reports", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "health" };
+    mockSearchParams = { tab: "goals-models" };
   });
 
   it("opens the health reports screen", async () => {
@@ -532,6 +634,79 @@ describe("SettingsScreen password", () => {
     expect(await screen.findByText("Change Password")).toBeTruthy();
   });
 
+  it("shows shared requirements, native semantics, and independent visibility controls", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    const currentPassword = await screen.findByLabelText("Current password");
+    const newPassword = screen.getByLabelText("New password");
+    const confirmPassword = screen.getByLabelText("Confirm password");
+
+    expect(currentPassword.getAttribute("autocomplete")).toBe("current-password");
+    expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 8; maxlength: 128;");
+    expect(confirmPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByText("Use 8–128 characters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show current password" }));
+    expect(currentPassword.getAttribute("type")).toBe("text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide current password" }));
+    expect(currentPassword.getAttribute("type")).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show new password" }));
+    expect(newPassword.getAttribute("type")).toBe("text");
+    expect(confirmPassword.getAttribute("type")).toBe("password");
+  });
+
+  it("blocks an invalid new password before calling the mutation", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: false },
+      isLoading: false,
+      error: null,
+    });
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set Password" }));
+
+    expect(await screen.findByText("Use at least 8 characters.")).toBeTruthy();
+    expect(mockSetPasswordMutate).not.toHaveBeenCalled();
+  });
+
+  it("requires the current password before changing an existing credential", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+
+    expect(await screen.findByText("Enter your current password.")).toBeTruthy();
+    expect(mockSetPasswordMutate).not.toHaveBeenCalled();
+  });
+
   it("confirms before logging out after changing an existing password", async () => {
     mockPasswordCredentialStatusQuery.mockReturnValue({
       data: { hasPassword: true },
@@ -560,7 +735,7 @@ describe("SettingsScreen password", () => {
 
 describe("SettingsScreen Zepp pairing", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "connections" };
+    mockSearchParams = { tab: "data-sources" };
   });
 
   it("claims a short code from settings", async () => {
@@ -591,11 +766,25 @@ describe("SettingsScreen Zepp pairing", () => {
 
     expect(screen.queryByText("Old pairing error")).toBeNull();
   });
+
+  it("shows and disconnects each active Zepp app independently", async () => {
+    mockZeppConnections = [{ connectionType: "zepp-main" }, { connectionType: "zepp-workout" }];
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Zepp app: Connected")).toBeTruthy();
+    expect(screen.getByText("Workout extension: Connected")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Disconnect Workout extension"));
+    expect(mockZeppConnectionRevoke).toHaveBeenCalledWith({
+      connectionType: "zepp-workout",
+    });
+  });
 });
 
 describe("SettingsScreen medication doses", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "health" };
+    mockSearchParams = { tab: "notifications" };
   });
 
   it("shows medication dose empty state when no imported dose events exist", async () => {
@@ -614,7 +803,7 @@ describe("SettingsScreen medication doses", () => {
 
 describe("SettingsScreen billing", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "billing" };
   });
 
   it("renders signup-week limited access notice", async () => {
@@ -622,7 +811,7 @@ describe("SettingsScreen billing", () => {
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Billing")).toBeTruthy();
+    expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
     expect(screen.getByText(/Access limited to your signup week/)).toBeTruthy();
     expect(screen.getByText("Upgrade to Full Access")).toBeTruthy();
   });
@@ -666,7 +855,7 @@ describe("SettingsScreen billing", () => {
 
 describe("SettingsScreen export UI rendering", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "privacy-export" };
   });
 
   it("renders the Start Export button", async () => {
@@ -675,6 +864,16 @@ describe("SettingsScreen export UI rendering", () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText("Start Export")).toBeTruthy();
+  });
+
+  it("renders account deletion controls in Privacy/Export", async () => {
+    mockSessionToken = "   ";
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Danger Zone")).toBeTruthy();
+    expect(screen.getByText("AccountErasurePanel")).toBeTruthy();
   });
 
   it("shows Starting... and disables the button while processing", async () => {
@@ -707,7 +906,7 @@ describe("SettingsScreen export UI rendering", () => {
 
 describe("SettingsScreen OTA debug details", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "advanced" };
   });
 
   it("renders OTA created time in the local timezone format", async () => {
@@ -730,7 +929,7 @@ describe("SettingsScreen OTA debug details", () => {
 
 describe("SettingsScreen account erasure", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "privacy-export" };
   });
 
   it("uses the durable account-erasure flow in the danger zone", async () => {
@@ -745,7 +944,7 @@ describe("SettingsScreen account erasure", () => {
 
 describe("SettingsScreen export flow", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "account" };
+    mockSearchParams = { tab: "privacy-export" };
   });
 
   afterEach(() => {

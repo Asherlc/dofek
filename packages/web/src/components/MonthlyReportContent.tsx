@@ -1,9 +1,11 @@
 import { formatDurationMinutes, formatHRV, formatMonthYear } from "@dofek/format/format";
 import { textColors } from "@dofek/scoring/colors";
-import type { MonthlyReportResult, MonthSummary } from "dofek-server/types";
+import type { MonthlyReportData, MonthSummary } from "dofek-server/types";
+import { EmptyStatePreview } from "./EmptyStatePreview.tsx";
+import { ReportDecisionSynthesis } from "./ReportDecisionSynthesis.tsx";
 
-export function MonthlyReportContent({ data }: { data: MonthlyReportResult | undefined }) {
-  if (!data || (!data.current && data.history.length === 0)) {
+export function MonthlyReportContent({ data }: { data: MonthlyReportData | undefined }) {
+  if (!data) {
     return (
       <div className="card p-6">
         <p className="text-sm text-dim">Not enough data for a monthly report yet.</p>
@@ -11,14 +13,17 @@ export function MonthlyReportContent({ data }: { data: MonthlyReportResult | und
     );
   }
 
+  if (!data.current) {
+    return <EmptyStatePreview content={data.emptyState} />;
+  }
+
   return (
     <div className="space-y-4">
-      {data.current && (
-        <div>
-          <h3 className="text-xs text-muted uppercase tracking-wider mb-2">Current Month</h3>
-          <MonthCard month={data.current} />
-        </div>
-      )}
+      {data.decisionSupport && <ReportDecisionSynthesis synthesis={data.decisionSupport} />}
+      <div>
+        <h3 className="text-xs text-muted uppercase tracking-wider mb-2">Current Month</h3>
+        <MonthCard month={data.current} />
+      </div>
       {data.history.length > 0 && (
         <div>
           <h3 className="text-xs text-muted uppercase tracking-wider mb-2">Previous Months</h3>

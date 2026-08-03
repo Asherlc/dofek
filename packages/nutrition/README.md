@@ -10,15 +10,50 @@ calories, macros, goal progress, or source selection. An available day includes
 the contributing and excluded providers/sources; an overlapping-source conflict
 has a null summary plus an actionable message and provenance.
 
+Available days also expose a server-authored `contributionGrain` and
+`contributionLabel`. The label combines the canonical provider display name with
+the source path when one exists, such as `Cronometer (via Apple Health) daily
+total`. Web and mobile show this metadata as an informational resolution panel
+and preserve the server's exact resolution message and excluded-source labels.
+Provider daily aggregates remain excluded from editable meal cards.
+
 The `food.byDate` v1 procedure retains its installed-client contract of
 `{ entries, summary }` with a non-null summary and fails with an actionable
 precondition error when sources conflict. New web and mobile clients use
-`food.byDateV2`, whose separate response contract includes nullable `summary`
-and required `resolution` metadata.
+`food.byDateV2`, whose separate response contract includes nullable `summary`,
+required `resolution` metadata, and nullable `intakeContext`. When a summary is
+available, `intakeContext` contains the observed logged calories, the
+configured-or-default daily logged-intake target, an uncapped two-value scale,
+a neutral below/at/above-target status and explanation, and the limitation that
+the target is not an estimate of energy expenditure or calorie balance. Web and
+mobile render these server-computed values without recalculating them. Scale
+percentages remain server-provided values; clients constrain only the visual
+track geometry to its 0-to-100 percent bounds so an unusual over-target value
+does not overflow the layout or lose its numerical context.
 
 The database creates these values as query-time projections over raw entries,
 consistent with PostgreSQL views being virtual tables defined by a query:
 [PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
+
+## Nutrition Analytics Source Contract
+
+`nutritionAnalytics.micronutrientAdequacyV2` keeps source quality visible before
+adequacy interpretation. For the selected window, it reports dates with any
+nutrition data, dates with an available canonical contribution set, resolved or
+unresolved overlap dates, unresolved conflicts, and contributing or excluded
+source labels. Completeness is the percentage of selected calendar days with an
+available canonical contribution set; the All-history range has no invented
+calendar denominator and therefore returns a null percentage.
+
+Each nutrient separates itemized food, provider daily totals, and explicitly
+taken supplements. Per-source rows report each provider/source's contribution
+to the nutrient's average over all recorded days for that nutrient. Contributions
+and the total use the same denominator, but independently rounded presentation
+values can differ by the displayed precision. These values are query-time
+projections over `fitness.v_nutrition_canonical_nutrient` and
+`fitness.v_nutrition_daily`; they do not introduce another nutrient storage path.
+PostgreSQL documents views as query-defined, non-materialized virtual tables in
+[`CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
 
 ## Implementation Details
 

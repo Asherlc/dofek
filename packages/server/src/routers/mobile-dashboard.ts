@@ -1,13 +1,18 @@
+import { summaryDateContextSchema } from "@dofek/format/summary-date-context";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { sleepNeedV1Schema, sleepNeedV2Schema } from "../contracts/sleep-need-contract.ts";
 import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
+import { ProcessingRepository } from "../repositories/processing-repository.ts";
+import { baselineProcessingStatus } from "../services/baseline-progress.ts";
 import { loadDashboardOverview } from "../services/dashboard-overview.ts";
+import { HEALTH_STATUS_CACHE_KEY_VERSION } from "../services/health-status.ts";
 import {
   loadMobileRecoveryTab,
   mobileRecoveryTabOutputSchema,
@@ -17,7 +22,10 @@ import {
   mobileTrainingTabOutputSchema,
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-import type { SleepNeedResult } from "./sleep-need.ts";
+
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-activity-states-v2";
+const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
+const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -45,25 +53,6 @@ function requireAccessWindow(
   return accessWindow;
 }
 
-const sleepNeedOutputSchema = z.object({
-  baselineMinutes: z.number(),
-  strainDebtMinutes: z.number(),
-  accumulatedDebtMinutes: z.number(),
-  totalNeedMinutes: z.number(),
-  recentNights: z.array(
-    z.object({
-      date: z.string(),
-      actualMinutes: z.number().nullable(),
-      neededMinutes: z.number(),
-      debtMinutes: z.number().nullable(),
-      providerId: z.string().nullable(),
-      sourceName: z.string().nullable(),
-      sourceProviders: z.array(z.string()),
-    }),
-  ),
-  canRecommend: z.boolean(),
-}) satisfies z.ZodType<SleepNeedResult>;
-
 const anomalyCheckOutputSchema = z.object({
   anomalies: z.array(
     z.object({
@@ -79,7 +68,8 @@ const anomalyCheckOutputSchema = z.object({
   checkedMetrics: z.array(z.string()),
 }) satisfies z.ZodType<AnomalyCheckResult>;
 
-const mobileDashboardOutputSchema = z.object({
+const mobileDashboardSharedOutputSchema = z.object({
+  summaryDateContext: summaryDateContextSchema,
   readiness: z
     .object({
       score: z.number(),
@@ -104,10 +94,11 @@ const mobileDashboardOutputSchema = z.object({
         .object({
           date: z.string(),
           durationMinutes: z.number(),
-          deepPct: z.number(),
-          remPct: z.number(),
-          lightPct: z.number(),
-          awakePct: z.number(),
+          deepPct: z.number().nullable(),
+          remPct: z.number().nullable(),
+          lightPct: z.number().nullable(),
+          awakePct: z.number().nullable(),
+          stagingAvailable: z.boolean(),
         })
         .nullable(),
       sleepDebt: z.number(),
@@ -120,15 +111,26 @@ const mobileDashboardOutputSchema = z.object({
     workloadRatio: z.number().nullable(),
     date: z.string().nullable(),
   }),
-  sleepNeed: sleepNeedOutputSchema.nullable(),
   anomalies: anomalyCheckOutputSchema.nullable(),
   latestDate: z.string().nullable(),
 });
 
+const mobileDashboardOutputSchema = mobileDashboardSharedOutputSchema.extend({
+  sleepNeed: sleepNeedV1Schema.nullable(),
+});
+
+const mobileDashboardV2OutputSchema = mobileDashboardSharedOutputSchema.extend({
+  sleepNeed: sleepNeedV2Schema,
+});
+
 export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
+export type MobileDashboardV2Result = z.infer<typeof mobileDashboardV2OutputSchema>;
 
 export const mobileDashboardRouter = router({
-  dashboard: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  dashboard: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: MOBILE_DASHBOARD_CACHE_KEY_VERSION,
+  })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
@@ -142,6 +144,7 @@ export const mobileDashboardRouter = router({
         endDate,
         readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
+        timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
       });
       logger.info(
@@ -150,12 +153,47 @@ export const mobileDashboardRouter = router({
       return result;
     }),
 
-  recovery: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  dashboardV2: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION,
+  })
+    .input(z.object({ endDate: endDateSchema }))
+    .output(mobileDashboardV2OutputSchema)
+    .query(async ({ ctx, input }): Promise<MobileDashboardV2Result> => {
+      const { endDate } = input;
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboardV2");
+      const accessWindow = ctx.accessWindow ?? { kind: "full" as const };
+      const dashboardStart = performance.now();
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const result = await loadDashboardOverview({
+        accessWindow,
+        endDate,
+        readinessWeights: getEffectiveParams(storedParams).readinessWeights,
+        sensorStore,
+        timezone: ctx.timezone ?? "UTC",
+        userId: ctx.userId,
+      });
+      logger.info(
+        `[mobile-dashboard] dashboardV2 timings userId=${ctx.userId} endDate=${endDate} total=${Math.round(performance.now() - dashboardStart)}ms`,
+      );
+      return {
+        ...result,
+        sleepNeed: result.sleepNeedV2,
+      };
+    }),
+
+  recovery: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
+  })
     .input(dateWindowInput)
     .output(mobileRecoveryTabOutputSchema)
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.recovery");
       const tabStart = performance.now();
+      const processingSnapshot = await new ProcessingRepository(ctx.db, ctx.userId).status({
+        datasets: ["recovery"],
+      });
       const result = await loadMobileRecoveryTab(
         {
           db: ctx.db,
@@ -163,6 +201,7 @@ export const mobileDashboardRouter = router({
           timezone: ctx.timezone ?? "UTC",
           accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.recovery"),
           sensorStore,
+          processingStatus: baselineProcessingStatus(processingSnapshot, "recovery"),
         },
         input.days,
         input.endDate,
@@ -173,7 +212,10 @@ export const mobileDashboardRouter = router({
       return result;
     }),
 
-  training: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  training: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: MOBILE_TRAINING_CACHE_KEY_VERSION,
+  })
     .input(dateWindowInput)
     .output(mobileTrainingTabOutputSchema)
     .query(async ({ ctx, input }) => {

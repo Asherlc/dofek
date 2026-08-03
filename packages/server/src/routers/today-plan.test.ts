@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -15,7 +17,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -46,6 +51,13 @@ function makeSensorStore(queryImpl: SensorStore["query"]): SensorStore {
 }
 
 describe("todayPlanRouter.get", () => {
+  it("versions the Today Plan response cache contract", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "today-plan-evidence-v2",
+    });
+  });
+
   it("returns the insufficient_data contract when recovery is missing", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -94,6 +106,7 @@ describe("todayPlanRouter.get", () => {
     if (result.status !== "ready") return;
     expect(result.action.zone).toMatch(/Push|Maintain|Recovery/);
     expect(result.supportingFacts).toHaveLength(2);
+    expect(result.caveats).toEqual([]);
     expect(result.confidence).toBe("high");
   });
 });

@@ -1,8 +1,8 @@
 import {
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
-import * as Sentry from "@sentry/node";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
@@ -10,6 +10,7 @@ import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
@@ -159,7 +160,13 @@ function createCheckpointStore(job: SyncJob): SyncCheckpointStore {
 
 function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   return (
-    errors.find((syncError) => isRetryableInfraError(syncError.cause ?? syncError.message)) ?? null
+    errors.find((syncError) => {
+      const reportableError = syncError.cause ?? syncError.message;
+      if (isProviderTransportError(reportableError)) {
+        return false;
+      }
+      return isRetryableInfraError(reportableError);
+    }) ?? null
   );
 }
 
@@ -194,8 +201,28 @@ function isProviderServiceUnavailableError(error: unknown): boolean {
   return false;
 }
 
+function isProviderRequestTimeoutError(error: unknown): boolean {
+  const visitedErrors = new Set<Error>();
+  let currentError = error;
+
+  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
+    if (currentError instanceof ProviderRequestTimeoutError) {
+      return true;
+    }
+
+    visitedErrors.add(currentError);
+    currentError = "cause" in currentError ? currentError.cause : undefined;
+  }
+
+  return false;
+}
+
+function isProviderTransportError(error: unknown): boolean {
+  return isProviderServiceUnavailableError(error) || isProviderRequestTimeoutError(error);
+}
+
 function shouldReportProviderError(error: unknown): boolean {
-  return !isProviderServiceUnavailableError(error) && !authFailureReasonFromError(error);
+  return !isProviderTransportError(error) && !authFailureReasonFromError(error);
 }
 
 async function scheduleRateLimitRetry(
@@ -466,7 +493,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
           const reportableError = err.cause ?? new Error(err.message);
           if (shouldReportProviderError(reportableError)) {
-            Sentry.captureException(reportableError, {
+            captureException(reportableError, {
               tags: { provider: provider.id },
               ...(err.context ? { extra: err.context } : {}),
             });
@@ -537,9 +564,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         continue;
       }
 
-      if (isRetryableInfraError(err)) {
+      if (isRetryableInfraError(err) && !isProviderTransportError(err)) {
         const message = err instanceof Error ? err.message : String(err);
-        Sentry.captureException(err, {
+        captureException(err, {
           tags: { provider: provider.id, retryable: "true" },
           level: "warning",
         });
@@ -558,7 +585,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       const message = err instanceof Error ? err.message : String(err);
       const authFailureReason = authFailureReasonFromError(err);
       if (shouldReportProviderError(err)) {
-        Sentry.captureException(err, { tags: { provider: provider.id } });
+        captureException(err, { tags: { provider: provider.id } });
       }
       providerStatus[provider.id] = { status: "error", message };
       await appendProcessingStageEvent(db, {
@@ -600,7 +627,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     await enqueueDebouncedPostSyncMaintenance();
   } catch (err) {
     logger.error(`[worker] Failed to enqueue global post-sync maintenance: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-sync-global-maintenance-enqueue" } });
+    captureException(err, { tags: { phase: "post-sync-global-maintenance-enqueue" } });
   }
 
   try {
@@ -614,6 +641,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     );
   } catch (err) {
     logger.error(`[worker] Failed to enqueue user refit: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });
+    captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });
   }
 }

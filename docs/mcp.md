@@ -46,7 +46,7 @@ OAuth discovery and protocol endpoints ([MCP authorization specification](https:
 
 Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients authenticate automatically.
 
-Open Dofek Settings and use the **MCP** section to create, copy, list, and revoke tokens.
+Open Dofek web Settings, select **Advanced**, and use the **MCP** section to create, copy, list, and revoke tokens.
 
 The UI calls the authenticated tRPC `mcp.createToken` procedure from the logged-in Dofek client session.
 
@@ -82,15 +82,25 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | Tool | Scope | Purpose |
 |------|-------|---------|
 | `get_daily_health_summary` | `health:read` | Returns server-computed metrics for one date. |
-| `get_health_trends` | `health:read` | Returns daily or weekly health metric aggregates for a date range. |
+| `get_health_trends` | `health:read` | Returns daily or weekly health metric aggregates and baseline-relative recovery context for a date range. |
 | `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
 | `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type or ISO week. |
+| `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols and server-derived effective load inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
 | `get_body_metrics` | `health:read` | Returns weight and body-composition measurements. |
 | `log_food` | `nutrition:write` | Creates a Dofek food entry from text. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
+
+For Heart Rate Variability (HRV), resting heart rate, respiratory rate, and sleep
+efficiency, `get_health_trends` includes `baseline_relative` on the matching
+aggregate. The context contains the preceding 30-day mean, standard deviation,
+z-score, sample count and coverage, plus the latest 7-day mean compared with the
+preceding 28-day mean. The current day is excluded from its own 30-day baseline;
+standard deviation and z-score remain `null` until at least two varied baseline
+samples exist. See the canonical
+[baseline-relative metric contract](../packages/server/src/contracts/baseline-relative-metrics.ts).
 
 ## Connect A Header-Capable Client
 

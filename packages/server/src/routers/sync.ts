@@ -1,5 +1,4 @@
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
-import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
@@ -15,6 +14,7 @@ import {
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
@@ -647,7 +647,7 @@ function createTriggerSyncProcedure() {
                   userId: ctx.userId,
                   ...syncWindowToJobData(syncWindow, input.sinceDays),
                 },
-                { skipWhenRateLimited: true },
+                { skipWhenRateLimited: true, singleFlightFullSync: true },
               );
               if (!job) {
                 return {

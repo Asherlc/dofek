@@ -35,6 +35,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Agent-only content**: Populate `AGENTS.md` with information useful *only* to an agent.
 - **Shared content**: Use `README.md` for information relevant to both agents and humans.
 - **Human docs must stand alone**: `README.md` and files in `docs/` must not depend on agent skills, agent-only workflows, or instructions that assume an agent is present.
+- **Written implementation plans**: When executing a written multi-step plan, use the `superpowers:subagent-driven-development` or `superpowers:executing-plans` workflow and keep its review checkpoints explicit in the working notes.
 - **README reference**: `AGENTS.md` must always instruct the agent to read the `README.md`.
 - **Cite sources in documentation**: When adding or updating a claim in `AGENTS.md`, `README.md`, or `docs/`, include a citation — a link to the official docs, spec, or primary source that backs the claim. Unsourced assertions about third-party platform behavior (API availability, runtime limits, SDK constraints) are not acceptable.
 

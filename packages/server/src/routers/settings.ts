@@ -1,7 +1,8 @@
 import { medicationRemindersSchema } from "@dofek/format/medication-reminders";
 import { PRIMARY_GOAL_SETTINGS_KEY, primaryGoalIds } from "@dofek/onboarding/primary-goal";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
+import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
@@ -61,5 +62,12 @@ export const settingsRouter = router({
   slackStatus: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     return repo.slackStatus();
+  }),
+
+  deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
+    const repo = new SettingsRepository(ctx.db, ctx.userId);
+    await repo.deleteAllUserData(PROVIDER_ACCOUNT_TABLES);
+    await invalidateAllUserQueries(ctx.userId);
+    return { success: true };
   }),
 });

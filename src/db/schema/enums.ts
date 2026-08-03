@@ -48,6 +48,50 @@ export const climbingClimbTypeEnum = fitness.enum("climbing_climb_type", ["bould
 
 export const climbingGradeSystemEnum = fitness.enum("climbing_grade_system", ["v_scale", "yds"]);
 
+export const fingerLoadingExerciseEnum = fitness.enum("finger_loading_exercise", [
+  "max_hang",
+  "repeater",
+  "min_edge",
+  "one_arm",
+  "campus",
+  "no_hang",
+]);
+
+export const fingerLoadingGripPositionEnum = fitness.enum("finger_loading_grip_position", [
+  "half_crimp",
+  "full_crimp",
+  "open_hand",
+  "three_finger_drag",
+  "two_finger_pocket",
+]);
+
+export const fingerLoadingLateralityEnum = fitness.enum("finger_loading_laterality", [
+  "both",
+  "left",
+  "right",
+]);
+
+export const climbingHoldTypeEnum = fitness.enum("climbing_hold_type", [
+  "crimp",
+  "sloper",
+  "pinch",
+  "pocket",
+  "jug",
+]);
+
+export const climbingAttemptOutcomeEnum = fitness.enum("climbing_attempt_outcome", [
+  "sent",
+  "failed",
+]);
+
+export const climbingFailureReasonEnum = fitness.enum("climbing_failure_reason", [
+  "fell",
+  "pumped",
+  "skin",
+  "technique",
+  "fear",
+]);
+
 export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "final",
   "preliminary",

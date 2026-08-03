@@ -4,23 +4,129 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockRecoveryData: Record<string, unknown> | undefined;
+let mockRecoveryError: Error | null = null;
 let mockRecoveryLoading = false;
 let mockRecoveryFetching = false;
+let mockRecoveryDataDays = 30;
 let sparkLinePropsCalls: Record<string, unknown>[];
+let mockTodayPlanData: { status: "ready"; action: { title: string } } | undefined;
+let mockTodayPlanQueryCalls: Array<{ days: number; endDate?: string }>;
+const mockTodayPlanInvalidate = vi.fn();
+let mockRecoveryQueryCalls: Array<{
+  input: { days: number; endDate?: string };
+  options: {
+    enabled?: boolean;
+    placeholderData?: (previousData: Record<string, unknown> | undefined) => unknown;
+  };
+}>;
+let mockTimeRangePreference = {
+  days: 30,
+  description: "Recommended default: 30 days keeps recent recovery changes visible.",
+  isHydrated: true,
+  setDays: vi.fn(),
+};
 const mockRecoveryInvalidate = vi.fn();
+const mockRecoveryRefetch = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
+function baselineMetric(
+  metric: "hrv" | "resting_heart_rate" | "respiratory_rate" | "sleep_efficiency",
+  value: number,
+) {
+  return {
+    metric,
+    label: metric,
+    value,
+    baseline: {
+      windowDays: 30,
+      mean: 50,
+      standardDeviation: 5,
+      zScore: 1,
+      sampleCount: 24,
+      coverage: 0.8,
+    },
+    comparison: {
+      recentDays: 7,
+      baselineDays: 28,
+      recentMean: 52,
+      baselineMean: 50,
+      delta: 2,
+      direction: "increasing",
+    },
+  };
+}
+
+const insufficientHealthspan = {
+  healthspanScore: null,
+  yearsDelta: null,
+  metrics: [],
+  history: [],
+  trend: null,
+  availability: {
+    status: "insufficient_data",
+    availableMetricCount: 0,
+    requiredMetricCount: 3,
+    missingMetricLabels: [
+      "Sleep Consistency",
+      "Sleep Duration",
+      "Aerobic Activity",
+      "High Intensity",
+      "Strength Training",
+      "Daily Steps",
+      "VO2 Max",
+      "Resting Heart Rate",
+      "Lean Body Mass",
+    ],
+    summary: "0 of 3 required Healthspan metrics are available.",
+    nextCondition: "The score becomes available after 3 more supported metrics sync successfully.",
+  },
+} as const;
+
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    todayPlan: {
+      get: {
+        useQuery: (input: { days: number; endDate?: string }) => {
+          mockTodayPlanQueryCalls.push(input);
+          return {
+            data: mockTodayPlanData,
+            error: null,
+            isError: false,
+            isLoading: false,
+            isFetching: false,
+            refetch: vi.fn(),
+          };
+        },
+      },
+    },
     mobileDashboard: {
       recovery: {
-        useQuery: () => ({
-          data: mockRecoveryData == null ? undefined : { healthStatus: [], ...mockRecoveryData },
-          isLoading: mockRecoveryLoading,
-          isFetching: mockRecoveryFetching,
-        }),
+        useQuery: (
+          input: { days: number; endDate?: string },
+          options: {
+            enabled?: boolean;
+            placeholderData?: (previousData: Record<string, unknown> | undefined) => unknown;
+          },
+        ) => {
+          mockRecoveryQueryCalls.push({ input, options });
+          const cachedData =
+            mockRecoveryData == null
+              ? undefined
+              : { baselineRelative: [], healthStatus: [], ...mockRecoveryData };
+          return {
+            data:
+              input.days === mockRecoveryDataDays
+                ? cachedData
+                : options.placeholderData?.(cachedData),
+            error: mockRecoveryError,
+            isError: mockRecoveryError !== null,
+            isLoading: mockRecoveryLoading,
+            isFetching: mockRecoveryFetching,
+            refetch: mockRecoveryRefetch,
+          };
+        },
       },
     },
     processing: {
@@ -32,6 +138,9 @@ vi.mock("../../lib/trpc", () => ({
       mobileDashboard: {
         recovery: { invalidate: mockRecoveryInvalidate },
       },
+      todayPlan: {
+        get: { invalidate: mockTodayPlanInvalidate },
+      },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
       },
@@ -39,11 +148,29 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
+vi.mock("../../lib/useTimeRangePreference", () => ({
+  useTimeRangePreference: () => mockTimeRangePreference,
+}));
+
+vi.mock("../../lib/useTodayQueryDate", () => ({
+  useTodayQueryDate: () => "2026-07-26",
+}));
+
 vi.mock("../../components/charts/SparkLine", () => ({
   SparkLine: (props: Record<string, unknown>) => {
     sparkLinePropsCalls.push(props);
     return <div data-testid="sparkline-mock" />;
   },
+}));
+
+vi.mock("../../components/ProcessingStatusWidget", () => ({
+  ProcessingStatusWidget: () => <div>Processing status</div>,
+}));
+
+vi.mock("../../components/TodayPlanCard", () => ({
+  TodayPlanCard: ({ plan }: { plan?: { status: "ready"; action: { title: string } } }) => (
+    <section aria-label="What matters today">{plan?.action.title}</section>
+  ),
 }));
 
 vi.mock("expo-router", () => ({
@@ -92,15 +219,110 @@ vi.mock("../../theme", () => ({
 describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockRecoveryData = undefined;
+    mockRecoveryError = null;
     mockRecoveryLoading = false;
     mockRecoveryFetching = false;
+    mockRecoveryDataDays = 30;
+    mockTodayPlanData = {
+      status: "ready",
+      action: { title: "Server-authored recovery action" },
+    };
+    mockTodayPlanQueryCalls = [];
+    mockRecoveryQueryCalls = [];
+    mockTimeRangePreference = {
+      days: 30,
+      description: "Recommended default: 30 days keeps recent recovery changes visible.",
+      isHydrated: true,
+      setDays: vi.fn(),
+    };
     sparkLinePropsCalls = [];
     mockRecoveryInvalidate.mockReset();
+    mockTodayPlanInvalidate.mockReset();
+    mockRecoveryRefetch.mockReset();
     mockProcessingStatusInvalidate.mockReset();
     mockRouterPush.mockReset();
     mockRecoveryInvalidate.mockResolvedValue(undefined);
+    mockRecoveryRefetch.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
+  });
+
+  it("leads the recovery metrics with the server-authored decision summary", async () => {
+    mockRecoveryData = {
+      healthStatus: [
+        {
+          metric: "hrv",
+          label: "Heart Rate Variability",
+          value: 55,
+          valueText: null,
+          baseline: 50,
+          baselineText: null,
+          sampleDeviation: 5,
+          deviation: 1,
+          direction: "above",
+          intent: "higher",
+          statusToken: "moving_as_intended",
+          statusColor: "positive",
+          statusLabel: "Moving as intended",
+          evaluationRule: "Above your baseline, where higher values support this metric",
+          explanation: "Heart Rate Variability is moving as intended.",
+          provenance: null,
+          comparison: null,
+          baselineProgress: {
+            requiredObservationDays: 3,
+            observedObservationDays: 3,
+            hasMeasurableVariation: true,
+            blocker: null,
+            requirement: "A current value plus at least 2 more recorded days.",
+            summary: "The baseline is ready.",
+            action: "No action needed.",
+          },
+        },
+      ],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    const decisionSummary = screen.getByLabelText("What matters today");
+    const healthStatus = screen.getByText("HEALTH STATUS");
+    expect(
+      decisionSummary.compareDocumentPosition(healthStatus) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText("Server-authored recovery action")).toBeTruthy();
+    expect(mockTodayPlanQueryCalls).toEqual([{ days: 30, endDate: "2026-07-26" }]);
+  });
+
+  it("does not consume cached default-range data during preference hydration", async () => {
+    mockRecoveryData = {
+      readinessScore: [{ date: "2026-04-06", readinessScore: 77 }],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    };
+    mockTimeRangePreference.isHydrated = false;
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    const view = render(<RecoveryScreen />);
+
+    expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(false);
+    expect(screen.queryByText("77")).toBeNull();
+
+    mockTimeRangePreference.days = 90;
+    mockTimeRangePreference.isHydrated = true;
+    view.rerender(<RecoveryScreen />);
+
+    expect(mockRecoveryQueryCalls.at(-1)?.input.days).toBe(90);
+    expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(true);
+    expect(mockRecoveryQueryCalls.at(-1)?.options.placeholderData).toBeUndefined();
+    expect(screen.queryByText("77")).toBeNull();
+
+    mockRecoveryDataDays = 90;
+    view.rerender(<RecoveryScreen />);
+    mockTimeRangePreference.days = 30;
+    view.rerender(<RecoveryScreen />);
+
+    expect(mockRecoveryQueryCalls.at(-1)?.options.placeholderData).toBeTypeOf("function");
   });
 
   it("refreshes recovery data and processing status together", async () => {
@@ -111,16 +333,30 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     await mockRefreshInvalidate?.();
 
     expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
+    expect(mockTodayPlanInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
   it("opens breathwork from recovery tools", async () => {
+    mockRecoveryData = {};
+
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
     fireEvent.click(screen.getByRole("button", { name: "Breathwork" }));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/breathwork");
+  });
+
+  it("opens behavior associations from recovery tools", async () => {
+    mockRecoveryData = {};
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior Associations" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/behavior-associations");
   });
 
   it("keeps day selector visible while recovery data is loading", async () => {
@@ -143,18 +379,60 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
       ],
       hrvBaseline: [],
+      baselineRelative: [baselineMetric("hrv", 44)],
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(screen.getByText("44 ms")).toBeTruthy();
+  });
+
+  it("shows one actionable server error without rendering false recovery metrics", async () => {
+    mockRecoveryError = new Error("Recovery analytics are temporarily unavailable.");
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByText("Recovery analytics are temporarily unavailable.")).toHaveLength(1);
+    expect(screen.getByText("Processing status")).toBeTruthy();
+    expect(screen.queryByText("Heart Rate Variability")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry recovery data" }));
+    expect(mockRecoveryRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps cached recovery data visible during a background error", async () => {
+    mockRecoveryError = new Error("Recovery refresh failed.");
+    mockRecoveryFetching = true;
+    mockRecoveryData = {
+      hrvVariability: [
+        { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
+        { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
+      ],
+      hrvBaseline: [],
+      baselineRelative: [baselineMetric("hrv", 44)],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getAllByText("Recovery refresh failed.")).toHaveLength(1);
     expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
     expect(screen.getByText("44 ms")).toBeTruthy();
   });
@@ -166,12 +444,13 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
       ],
       hrvBaseline: [],
+      baselineRelative: [baselineMetric("hrv", 44)],
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: 24, latest_skin_temp: null },
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -199,12 +478,13 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           resting_hr_mean_7d: 55,
         },
       ],
+      baselineRelative: [baselineMetric("resting_heart_rate", 54)],
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -212,13 +492,43 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
     expect(screen.getByText("54")).toBeTruthy();
-    expect(screen.getByText("7-day baseline: 55 bpm")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "30d baseline 50.0 bpm ± 5.0 bpm · 1.0 SD above baseline · 7d vs prior 28d +2.0 bpm · 24/30 baseline days",
+      ),
+    ).toBeTruthy();
 
     const restingHeartRateSparklineCall = sparkLinePropsCalls.find((sparkLineProps) => {
       const data = sparkLineProps.data;
       return Array.isArray(data) && data[0] === 56 && data[1] === 54;
     });
     expect(restingHeartRateSparklineCall).toBeDefined();
+  });
+
+  it("displays respiratory rate and sleep efficiency with canonical baseline context", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      baselineRelative: [
+        baselineMetric("respiratory_rate", 14),
+        baselineMetric("sleep_efficiency", 90),
+      ],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
+    expect(screen.getByText("14.0")).toBeTruthy();
+    expect(screen.getByText("Sleep Efficiency")).toBeTruthy();
+    expect(screen.getByText("90.0")).toBeTruthy();
+    expect(screen.getAllByText(/24\/30 baseline days/)).toHaveLength(2);
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {
@@ -230,7 +540,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: 97, latest_skin_temp: null },
       dailyMetrics: [{ spo2_avg: 96 }, { spo2_avg: 97 }],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -249,7 +559,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: null, latest_skin_temp: 36.8 },
       dailyMetrics: [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -267,7 +577,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: null, latest_skin_temp: null },
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -285,13 +595,99 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: { latest_spo2: null, latest_skin_temp: null },
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Skin Temperature")).toBeNull();
+  });
+
+  it("shows exact Healthspan progress and the next availability condition", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: {
+        healthspanScore: null,
+        yearsDelta: null,
+        metrics: [],
+        history: [],
+        trend: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 2,
+          requiredMetricCount: 3,
+          missingMetricLabels: ["VO2 Max", "Daily Steps"],
+          summary: "2 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 1 more supported metric syncs successfully.",
+        },
+      },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("HEALTHSPAN SCORE")).toBeTruthy();
+    expect(screen.getByText("2 of 3 required Healthspan metrics are available.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The score becomes available after 1 more supported metric syncs successfully.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Missing supported metrics: VO2 Max, Daily Steps")).toBeTruthy();
+  });
+
+  it("labels the Healthspan Score trend against recorded weekly scores", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: {
+        healthspanScore: 84,
+        yearsDelta: -1.2,
+        metrics: [
+          {
+            name: "Daily Steps",
+            value: 9200,
+            unit: "steps/day",
+            score: 85,
+            status: "excellent",
+            yearsDelta: -1.75,
+          },
+        ],
+        history: [
+          { weekStart: "2026-03-02", score: 73 },
+          { weekStart: "2026-03-09", score: 75 },
+          { weekStart: "2026-03-16", score: 78 },
+          { weekStart: "2026-03-23", score: 81 },
+        ],
+        trend: "improving",
+        availability: {
+          status: "available",
+          availableMetricCount: 1,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "1 of 3 required Healthspan metrics are available.",
+          nextCondition: null,
+        },
+      },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("Weekly trend across your recorded scores: Improving")).toBeTruthy();
   });
 
   it("labels smoothed body weight as Trend Weight and shows the latest scale reading", async () => {
@@ -306,19 +702,23 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         {
           date: "2026-04-05",
           rawWeight: 80.2,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },
         {
           date: "2026-04-06",
           rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
           smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
           weeklyChange: null,
           interpolated: false,
         },
       ],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -326,13 +726,14 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
     expect(screen.getByText("79.8 kg")).toBeTruthy();
-    expect(screen.getByText("Scale: 80.0 kg")).toBeTruthy();
+    expect(screen.getByText("Estimated")).toBeTruthy();
+    expect(screen.getByText("Observed: 80.0 kg")).toBeTruthy();
     expect(
       screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
     ).toBeTruthy();
   });
 
-  it("uses neutral text for weight-rate direction", async () => {
+  it("keeps a legacy cached weight row visible without epistemic statuses", async () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
@@ -349,6 +750,35 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           interpolated: false,
         },
       ],
+      healthspan: insufficientHealthspan,
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+    expect(screen.queryByText("Estimated")).toBeNull();
+  });
+
+  it("uses neutral text for weight-rate direction", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [
+        {
+          date: "2026-04-06",
+          rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
+          smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
       weightPrediction: {
         ratePerWeek: -0.3,
         rateConfidence: 0.92,
@@ -357,7 +787,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         goal: null,
         projectionLine: [],
       },
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -398,7 +828,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");
@@ -447,7 +877,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       trends: null,
       dailyMetrics: [],
       weight: [],
-      healthspan: { healthspanScore: null, metrics: [], trend: null },
+      healthspan: insufficientHealthspan,
     };
 
     const { default: RecoveryScreen } = await import("./recovery");

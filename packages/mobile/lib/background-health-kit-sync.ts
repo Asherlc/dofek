@@ -2,11 +2,16 @@ import type { EventSubscription } from "expo-modules-core";
 import {
   addSampleUpdateListener,
   completeObserverUpdates,
+  setObserverSyncInProgress,
   setupBackgroundObservers,
   teardownBackgroundObservers,
 } from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
-import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
+import {
+  isBackgroundHealthKitTransientNetworkError,
+  isHealthKitDatabaseInaccessible,
+  isTransientNetworkErrorMessage,
+} from "./health-kit-errors";
 import {
   BACKGROUND_HEALTH_KIT_TYPES,
   type HealthKitSyncStage,
@@ -89,19 +94,31 @@ async function performHealthKitSync(
       logger.info(TAG, "Device locked, skipping sync");
       return false;
     }
+    if (isBackgroundHealthKitTransientNetworkError(error)) {
+      logger.info(TAG, "Background HealthKit upload timed out; retrying on next delivery");
+      return false;
+    }
     logger.warn(TAG, `Sync failed: ${message}`);
     captureException(error, { source: TAG });
     return false;
   }
 
   if (result.errors.length > 0) {
+    const actionableErrors = result.errors.filter(
+      (message) => !isTransientNetworkErrorMessage(message),
+    );
+    if (actionableErrors.length === 0) {
+      stageTelemetry.complete("failed");
+      logger.info(TAG, "Background HealthKit upload timed out; retrying on next delivery");
+      return false;
+    }
     stageTelemetry.complete("failed");
     const error = new Error(
-      `HealthKit observer sync completed with ${result.errors.length} error(s): ${result.errors.join("; ")}`,
+      `HealthKit observer sync completed with ${actionableErrors.length} error(s): ${actionableErrors.join("; ")}`,
     );
     logger.warn(TAG, error.message);
     captureException(error, {
-      errorCount: result.errors.length,
+      errorCount: actionableErrors.length,
       source: TAG,
     });
     return false;
@@ -170,6 +187,7 @@ async function drainSyncQueue(): Promise<void> {
   }
 
   syncing = true;
+  setObserverSyncInProgress(true);
   try {
     const succeeded = await performHealthKitSync(
       context.trpcClient,
@@ -195,6 +213,7 @@ async function drainSyncQueue(): Promise<void> {
     }
   } finally {
     syncing = undefined;
+    setObserverSyncInProgress(pendingCatchUp !== undefined || pendingUpdates.size > 0);
   }
 
   await drainSyncQueue();
@@ -236,6 +255,7 @@ export async function initBackgroundHealthKitSync(
       typeIdentifier: event.typeIdentifier,
     });
     pendingUpdates.set(event.updateId, event.typeIdentifier);
+    setObserverSyncInProgress(true);
     void drainSyncQueue();
   });
 

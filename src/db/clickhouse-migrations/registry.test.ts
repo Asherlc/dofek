@@ -141,8 +141,80 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("GROUP BY user_id, provider_id, id"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
-      id: "0062_account_erasure_fence",
+    expect(
+      migrations.find((migration) => migration.id === "0062_daily_recovery_baseline_context"),
+    ).toMatchObject({
+      id: "0062_daily_recovery_baseline_context",
+      statements: expect.arrayContaining([
+        expect.stringContaining("hrv_baseline_sample_count"),
+        expect.stringContaining("efficiency_mean_previous_28d"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0063_record_local_time_context"),
+    ).toMatchObject({
+      id: "0063_record_local_time_context",
+      statements: expect.arrayContaining([
+        expect.stringContaining("start_utc_offset_minutes"),
+        expect.stringContaining("local_time_source"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0064_activity_summary_freshness"),
+    ).toMatchObject({
+      id: "0064_activity_summary_freshness",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        expect.stringContaining("climbing_seconds,\n  refreshed_at"),
+      ],
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0065_sleep_staging_available")?.id,
+    ).toBe("0065_sleep_staging_available");
+    expect(
+      migrations.find((migration) => migration.id === "0066_daily_sleep_overlap_evidence"),
+    ).toMatchObject({
+      id: "0066_daily_sleep_overlap_evidence",
+      statements: expect.arrayContaining([
+        expect.stringContaining("selected_session_id Nullable(UUID)"),
+        expect.stringContaining("overlapping_sessions Array(Tuple("),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0067_repair_local_time_column_order"),
+    ).toMatchObject({
+      id: "0067_repair_local_time_column_order",
+      statements: expect.arrayContaining([
+        expect.stringContaining(
+          "MODIFY COLUMN start_utc_offset_minutes Nullable(Int16) AFTER timezone",
+        ),
+        expect.stringContaining(
+          "MODIFY COLUMN timezone Nullable(String) AFTER overlapping_sessions",
+        ),
+      ]),
+      run: expect.any(Function),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0068_provider_metric_stream_daily_counts"),
+    ).toMatchObject({
+      id: "0068_provider_metric_stream_daily_counts",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.metric_stream_day_change"),
+        expect.stringContaining("ORDER BY (user_id, provider_id, recorded_date)"),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.metric_stream_day_change_ingest",
+        ),
+        expect.stringContaining("FROM ingest.metric_stream"),
+        expect.stringContaining("toDate(recorded_at) AS recorded_date"),
+        expect.stringContaining(
+          "ADD PROJECTION IF NOT EXISTS by_provider_current_state_recorded_at",
+        ),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0069_account_erasure_fence"),
+    ).toMatchObject({
+      id: "0069_account_erasure_fence",
       statements: [
         expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.account_erasure_fence"),
         expect.stringContaining(

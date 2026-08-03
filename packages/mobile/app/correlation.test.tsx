@@ -1,14 +1,36 @@
 /** @vitest-environment jsdom */
 
+import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{
-  correlationData: Record<string, unknown>;
-  metricsData: Array<{ id: string; label: string; unit: string; domain: string }> | undefined;
+  correlationData: Record<string, unknown> | undefined;
+  correlationError: Error | null;
+  observationData: Record<string, unknown>;
+  observationPages: Record<string, Record<string, unknown>>;
+  observationInputs: Array<Record<string, unknown>>;
+  observationError: Error | null;
+  routerPush: ReturnType<typeof vi.fn>;
+  metricsData:
+    | Array<{
+        id: string;
+        label: string;
+        unit: string;
+        domain: string;
+        description: string;
+        availabilityDescription: string;
+      }>
+    | undefined;
 }>(() => ({
   correlationData: {},
+  correlationError: null,
+  observationData: {},
+  observationPages: {},
+  observationInputs: [],
+  observationError: null,
+  routerPush: vi.fn(),
   metricsData: undefined,
 }));
 
@@ -21,6 +43,9 @@ vi.mock("@dofek/format/format", () => ({
 vi.mock("@dofek/scoring/colors", () => ({
   chartColors: {
     blue: "#2563eb",
+  },
+  textColors: {
+    neutral: "#71717a",
   },
   operationalStatusColors: {
     info: {
@@ -36,6 +61,12 @@ vi.mock("@dofek/scoring/colors", () => ({
 
 vi.mock("../components/ChartTitleWithTooltip", () => ({
   ChartTitleWithTooltip: ({ title }: { title: string }) => <span>{title}</span>,
+}));
+
+vi.mock("../components/QueryStatePanel", () => ({
+  getQueryErrorMessage: (error: unknown) =>
+    error instanceof Error ? error.message : "Could not load this section.",
+  QueryStatePanel: ({ message }: { message?: string }) => <span>{message}</span>,
 }));
 
 vi.mock("react-native-svg", () => ({
@@ -62,15 +93,29 @@ vi.mock("../lib/trpc", () => ({
       computeV2: {
         useQuery: () => ({
           data: state.correlationData,
+          error: state.correlationError,
+          isError: state.correlationError !== null,
           isLoading: false,
         }),
+      },
+      observations: {
+        useQuery: (input: Record<string, unknown>) => {
+          state.observationInputs.push(input);
+          const cursor = typeof input.cursor === "string" ? input.cursor : "first";
+          return {
+            data: state.observationPages[cursor] ?? state.observationData,
+            isLoading: false,
+            isError: state.observationError !== null,
+            error: state.observationError,
+          };
+        },
       },
     },
   },
 }));
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: state.routerPush }),
 }));
 
 vi.mock("../lib/useRefresh", () => ({
@@ -83,13 +128,29 @@ vi.mock("../theme", () => ({
 
 describe("CorrelationScreen", () => {
   beforeEach(() => {
+    state.correlationError = null;
     state.metricsData = [
-      { id: "protein", label: "Protein", unit: "g", domain: "nutrition" },
-      { id: "hrv", label: "Heart Rate Variability", unit: "ms", domain: "recovery" },
+      {
+        id: "protein",
+        label: "Protein",
+        unit: "g",
+        domain: "nutrition",
+        description: "Daily protein intake",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
+      },
+      {
+        id: "hrv",
+        label: "Heart Rate Variability",
+        unit: "ms",
+        domain: "recovery",
+        description: "Variation between heartbeats",
+        availabilityDescription: "Needs a daily recovery measurement.",
+      },
     ];
     state.correlationData = {
       analysisVersion: 2,
       availability: "insufficient",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       dataPoints: [],
       sampleCount: 0,
       additionalSamplesRequired: 5,
@@ -113,7 +174,69 @@ describe("CorrelationScreen", () => {
       },
       insight:
         "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
+      interpretationWarning:
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
     };
+    state.observationData = { items: [], totalCount: 0, nextCursor: null };
+    state.observationPages = {};
+    state.observationInputs = [];
+    state.observationError = null;
+    state.routerPush.mockReset();
+  });
+
+  it("prevents selecting the metric already used on the opposite axis", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    const proteinChips = screen.getAllByLabelText("Protein (g)");
+    const heartRateVariabilityChips = screen.getAllByLabelText("Heart Rate Variability (ms)");
+
+    expect(proteinChips[0].getAttribute("aria-disabled")).not.toBe("true");
+    expect(proteinChips[1].getAttribute("aria-disabled")).toBe("true");
+    expect(heartRateVariabilityChips[0].getAttribute("aria-disabled")).toBe("true");
+    expect(heartRateVariabilityChips[1].getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(proteinChips[1]);
+    expect(screen.queryByText("Select two different metrics to compare.")).toBeNull();
+  });
+
+  it("supports searching metrics, shows units, and explains availability before selection", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByRole("textbox", { name: "Search X Axis metrics" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Search Y Axis metrics" })).toBeTruthy();
+    expect(screen.getByText(CORRELATION_AVAILABILITY_DESCRIPTION)).toBeTruthy();
+    expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(2);
+    expect(screen.getByText("Needs a complete, resolved daily nutrition record.")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search X Axis metrics" }), {
+      target: { value: "heart" },
+    });
+
+    expect(screen.getAllByLabelText("Heart Rate Variability (ms)")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(1);
+  });
+
+  it("renders the server-authored interpretation warning", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(
+      screen.getByText(
+        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders the specific server error when a request is rejected", async () => {
+    state.correlationData = undefined;
+    state.correlationError = new Error("Choose two different metrics to compare.");
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Choose two different metrics to compare.")).toBeTruthy();
   });
 
   it("shows sample requirements without inferential statistics when data is insufficient", async () => {
@@ -121,6 +244,7 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("n = 0")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
     expect(screen.getByText("90 selected")).toBeTruthy();
     expect(screen.getByText("90 missing pairs")).toBeTruthy();
@@ -132,6 +256,18 @@ describe("CorrelationScreen", () => {
     expect(screen.queryByText("Pearson")).toBeNull();
     expect(screen.queryByText(/R²/)).toBeNull();
     expect(screen.queryByText(/^p =/)).toBeNull();
+  });
+
+  it("renders a legacy cached result without an epistemic status", async () => {
+    const legacyCorrelationData = { ...(state.correlationData ?? {}) };
+    delete legacyCorrelationData.epistemicStatus;
+    state.correlationData = legacyCorrelationData;
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("n = 0")).toBeTruthy();
+    expect(screen.queryByText("Unavailable")).toBeNull();
   });
 
   it("uses singular sample wording when one additional sample is required", async () => {
@@ -152,6 +288,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: 0.75,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [],
@@ -184,6 +321,7 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("Spearman rho = +0.75")).toBeTruthy();
+    expect(screen.getByText("Associated")).toBeTruthy();
     expect(screen.getByText("95% block-bootstrap interval: +0.42 to +0.86")).toBeTruthy();
     expect(screen.getByText("Slope = 1.000 ms per g")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
@@ -197,6 +335,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: -0.75,
       regression: { slope: -1, intercept: 3, rSquared: 0.49 },
       dataPoints: [
@@ -233,6 +372,16 @@ describe("CorrelationScreen", () => {
 
     expect(screen.queryByText("strong")).toBeNull();
     expect(screen.getByTestId("correlation-trend-line").dataset.stroke).toBe("#2563eb");
+    expect(
+      screen.getByRole("image", {
+        name: "Scatter plot. Scatter plot comparing Protein (g) and Heart Rate Variability (ms).",
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View Scatter plot data" }));
+    expect(screen.getByText("2025-01-01")).toBeTruthy();
+    expect(screen.getByText(/Protein \(g\): 1.0/)).toBeTruthy();
+    expect(screen.getByText(/Heart Rate Variability \(ms\): 2.0/)).toBeTruthy();
   });
 
   it("waits for metric metadata before rendering unit-dependent evidence", async () => {
@@ -240,6 +389,7 @@ describe("CorrelationScreen", () => {
     state.correlationData = {
       analysisVersion: 2,
       availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
       spearmanRho: 0.75,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [
@@ -282,8 +432,22 @@ describe("CorrelationScreen", () => {
     expect(view.container.textContent).not.toContain("()");
 
     state.metricsData = [
-      { id: "protein", label: "Protein", unit: "g", domain: "nutrition" },
-      { id: "hrv", label: "Heart Rate Variability", unit: "ms", domain: "recovery" },
+      {
+        id: "protein",
+        label: "Protein",
+        unit: "g",
+        domain: "nutrition",
+        description: "Protein intake",
+        availabilityDescription: "Needs a complete, resolved daily nutrition record.",
+      },
+      {
+        id: "hrv",
+        label: "Heart Rate Variability",
+        unit: "ms",
+        domain: "recovery",
+        description: "Heart rate variability",
+        availabilityDescription: "Needs a daily recovery measurement.",
+      },
     ];
     view.rerender(<CorrelationScreen />);
 
@@ -307,5 +471,124 @@ describe("CorrelationScreen", () => {
     expect(
       screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
     ).toBeTruthy();
+  });
+
+  it("renders lagged paired values with accessible aggregate and record navigation", async () => {
+    state.observationData = {
+      totalCount: 1,
+      nextCursor: null,
+      items: [
+        {
+          x: {
+            metricId: "protein",
+            date: "2025-04-01",
+            value: 120,
+            contributors: [
+              {
+                kind: "aggregate_inputs",
+                label: "Canonical daily nutrition inputs",
+                providerIds: ["apple_health"],
+                target: { type: "metric_family", family: "nutrition" },
+              },
+            ],
+          },
+          y: {
+            metricId: "hrv",
+            date: "2025-04-02",
+            value: 55,
+            contributors: [
+              {
+                kind: "record",
+                label: "Morning run",
+                providerIds: [],
+                target: {
+                  type: "activity",
+                  activityId: "00000000-0000-4000-8000-000000000106",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Paired Observations")).toBeTruthy();
+    expect(screen.getByText("2025-04-01 → 2025-04-02")).toBeTruthy();
+    expect(screen.getByText("Protein: 120 g")).toBeTruthy();
+    expect(screen.getByText("Heart Rate Variability: 55 ms")).toBeTruthy();
+    expect(screen.getByText("Aggregate inputs · Apple Health")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Canonical daily nutrition inputs" }));
+    expect(state.routerPush).toHaveBeenCalledWith("/food");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Morning run" }));
+    expect(state.routerPush).toHaveBeenCalledWith("/activity/00000000-0000-4000-8000-000000000106");
+  });
+
+  it("traverses cursor pages with accessible next and previous controls", async () => {
+    state.observationPages = {
+      first: {
+        totalCount: 2,
+        nextCursor: "2025-04-02",
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-03",
+              value: 123,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-03",
+              value: 58,
+              contributors: [],
+            },
+          },
+        ],
+      },
+      "2025-04-02": {
+        totalCount: 2,
+        nextCursor: null,
+        items: [
+          {
+            x: {
+              metricId: "protein",
+              date: "2025-04-01",
+              value: 120,
+              contributors: [],
+            },
+            y: {
+              metricId: "hrv",
+              date: "2025-04-01",
+              value: 55,
+              contributors: [],
+            },
+          },
+        ],
+      },
+    };
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next observation page" }));
+    expect(screen.getByText("2025-04-01")).toBeTruthy();
+    expect(state.observationInputs.some((input) => input.cursor === "2025-04-02")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous observation page" }));
+    expect(screen.getByText("2025-04-03")).toBeTruthy();
+  });
+
+  it("surfaces the server observation error message", async () => {
+    state.observationError = new Error("Paired observations are temporarily unavailable");
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Paired observations are temporarily unavailable")).toBeTruthy();
   });
 });

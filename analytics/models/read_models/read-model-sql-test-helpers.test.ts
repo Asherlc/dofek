@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compactWhitespace, extractCteSql } from "./read-model-sql-test-helpers.ts";
+import {
+  compactWhitespace,
+  extractCteSql,
+  renderDbtModelSql,
+} from "./read-model-sql-test-helpers.ts";
 
 describe("compactWhitespace", () => {
   it("collapses each whitespace run to one space", () => {
@@ -92,5 +96,36 @@ SELECT * FROM target
 
     expect(body).toContain("SELECT 'right'");
     expect(body).not.toContain("wrong");
+  });
+});
+
+describe("renderDbtModelSql", () => {
+  const modelSql = `
+{% set batch_size = var('batch_size', 1) %}
+{{ config(materialized='incremental') }}
+WITH state AS (
+  SELECT 1
+  {% if is_incremental() %}
+  WHERE active = 1
+  {% else %}
+  WHERE active = 0
+  {% endif %}
+)
+SELECT * FROM state
+`;
+
+  it("removes dbt wrappers and selects the incremental branch", () => {
+    const renderedSql = renderDbtModelSql(modelSql, { isIncremental: true });
+
+    expect(renderedSql).not.toContain("{% ");
+    expect(renderedSql).not.toContain("{{ config");
+    expect(renderedSql).toContain("WHERE active = 1");
+    expect(renderedSql).not.toContain("WHERE active = 0");
+  });
+
+  it("selects the initial branch when incremental mode is disabled", () => {
+    expect(renderDbtModelSql(modelSql, { isIncremental: false })).toContain(
+      "WHERE active = 0",
+    );
   });
 });

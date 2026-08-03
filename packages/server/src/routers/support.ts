@@ -1,102 +1,205 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import {
   AccountErasureUserFencedError,
   withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
 import { userProfile } from "dofek/db/schema/reference";
-import { recordUserExternalEffect } from "dofek/db/user-external-effect";
-import { getZohoDeskClient } from "dofek/zoho-desk";
+import { captureException } from "dofek/lib/error-reporting";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import {
+  getPostHogConversationsClient,
+  PostHogConversationsError,
+} from "../lib/posthog-conversations.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
+const MAX_SUPPORT_MESSAGE_LENGTH = 4_000;
+// Mirrors PostHog's WidgetMessageSerializer max_length=5000:
+// https://github.com/PostHog/posthog/blob/master/products/conversations/backend/api/serializers.py
+const POSTHOG_WIDGET_MESSAGE_MAX_LENGTH = 5_000;
+
 const createTicketInput = z.object({
   subject: z.string().trim().min(1, "Subject is required").max(255),
-  message: z.string().trim().min(1, "Message is required").max(10_000),
+  message: z
+    .string()
+    .trim()
+    .min(1, "Message is required")
+    .max(MAX_SUPPORT_MESSAGE_LENGTH, "Message is too long"),
   /** Optional reply-to email; falls back to the account's profile email. */
   email: z.string().email().optional(),
+});
+
+const createTicketOutput = z.object({
+  ticketId: z.string().trim().min(1),
 });
 
 /**
  * Build the ticket description sent to support agents. Includes the user's
  * message plus identifying context so agents can locate the account.
  */
-function buildDescription(message: string, userId: string, appVersion?: string): string {
-  return [message, "", "---", `User ID: ${userId}`, `App version: ${appVersion ?? "unknown"}`].join(
-    "\n",
-  );
+function buildDescription(
+  subject: string,
+  message: string,
+  userId: string,
+  appVersion?: string,
+): string {
+  return [
+    `Subject: ${subject}`,
+    "",
+    message,
+    "",
+    "---",
+    `User ID: ${userId}`,
+    `App version: ${appVersion ?? "unknown"}`,
+  ].join("\n");
 }
 
-function reportSupportFailure(operation: string): void {
-  Sentry.captureException(new Error(`Support ${operation} failed`), {
-    tags: { source: "support", operation },
-  });
+type SupportTicketErrorCode =
+  | "BAD_GATEWAY"
+  | "BAD_REQUEST"
+  | "GATEWAY_TIMEOUT"
+  | "SERVICE_UNAVAILABLE"
+  | "TOO_MANY_REQUESTS"
+  | "UNPROCESSABLE_CONTENT";
+
+function mapPostHogError(error: unknown): {
+  code: SupportTicketErrorCode;
+  message: string;
+} {
+  if (!(error instanceof PostHogConversationsError)) {
+    return {
+      code: "BAD_GATEWAY",
+      message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+    };
+  }
+
+  if (error.status === 401 || error.status === 403) {
+    return {
+      code: "SERVICE_UNAVAILABLE",
+      message:
+        "Support Tickets could not authenticate this request. Please contact the administrator.",
+    };
+  }
+
+  if (error.status === 422) {
+    return {
+      code: "UNPROCESSABLE_CONTENT",
+      message: "Support Tickets rejected the request. Review your message and try again.",
+    };
+  }
+
+  if (error.status === 429) {
+    return {
+      code: "TOO_MANY_REQUESTS",
+      message: "Support Tickets is rate-limited. Please wait a moment before trying again.",
+    };
+  }
+
+  if (error.status === 503) {
+    return {
+      code: "SERVICE_UNAVAILABLE",
+      message:
+        "Support Tickets is not available for this project. Please contact the administrator.",
+    };
+  }
+
+  if (error.status === 408 || error.status === 504) {
+    return {
+      code: "GATEWAY_TIMEOUT",
+      message: "Support Tickets timed out. Please try again shortly.",
+    };
+  }
+
+  if (error.status >= 400 && error.status < 500) {
+    return {
+      code: "BAD_REQUEST",
+      message: "Support Tickets rejected the request. Review your message and try again.",
+    };
+  }
+
+  return {
+    code: "BAD_GATEWAY",
+    message: "PostHog Support Tickets is unavailable. Please try again shortly.",
+  };
 }
 
 export const supportRouter = router({
-  createTicket: protectedProcedure.input(createTicketInput).mutation(async ({ ctx, input }) => {
-    const zohoDesk = getZohoDeskClient();
-    let createdTicketId: string | null = null;
-    try {
-      return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
-        const [profile] = await transaction
-          .select({ name: userProfile.name, email: userProfile.email })
-          .from(userProfile)
-          .where(eq(userProfile.id, ctx.userId))
-          .limit(1);
+  createTicket: protectedProcedure
+    .input(createTicketInput)
+    .output(createTicketOutput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+          const [profile] = await transaction
+            .select({ name: userProfile.name, email: userProfile.email })
+            .from(userProfile)
+            .where(eq(userProfile.id, ctx.userId))
+            .limit(1);
 
-        const contactEmail = input.email ?? profile?.email ?? undefined;
-        if (!contactEmail) {
+          const contactEmail = input.email ?? profile?.email ?? undefined;
+          if (!contactEmail) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "We need an email to reply to. Add an email to your profile or enter one above.",
+            });
+          }
+
+          const description = buildDescription(
+            input.subject,
+            input.message,
+            ctx.userId,
+            ctx.appVersion,
+          );
+          if ([...description].length > POSTHOG_WIDGET_MESSAGE_MAX_LENGTH) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Support message is too long after context is added. Shorten it and try again.",
+            });
+          }
+
+          const ticket = await getPostHogConversationsClient().createTicket({
+            message: description,
+            contactEmail,
+            contactName: profile?.name ?? contactEmail,
+            distinctId: ctx.userId,
+            widgetSessionId: crypto.randomUUID(),
+          });
+          logger.info(`[support] ticket created userId=${ctx.userId} ticketId=${ticket.ticketId}`);
+          return { ticketId: ticket.ticketId };
+        });
+      } catch (error: unknown) {
+        if (error instanceof AccountErasureUserFencedError) {
+          logger.info("[support] ticket creation blocked by account deletion");
           throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message:
-              "We need an email to reply to. Add an email to your profile or enter one above.",
+            code: "CONFLICT",
+            message: error.message,
           });
         }
-
-        const ticket = await zohoDesk.createTicket({
-          subject: input.subject,
-          description: buildDescription(input.message, ctx.userId, ctx.appVersion),
-          contactEmail,
-          contactName: profile?.name ?? contactEmail,
-        });
-        createdTicketId = ticket.id;
-        await recordUserExternalEffect(transaction, {
-          system: "zoho_desk",
-          resourceType: "ticket",
-          externalId: ticket.id,
-          userId: ctx.userId,
-          contactEmail,
-        });
-        logger.info("[support] ticket created");
-        return { ticketNumber: ticket.ticketNumber };
-      });
-    } catch (error: unknown) {
-      if (createdTicketId) {
-        try {
-          await zohoDesk.deleteTicket(createdTicketId);
-        } catch {
-          reportSupportFailure("delete-orphan-ticket");
-          logger.error("[support] orphan ticket cleanup failed");
+        if (error instanceof TRPCError) throw error;
+        if (
+          !(error instanceof PostHogConversationsError) ||
+          error.status >= 500 ||
+          error.status < 300 ||
+          error.status === 401 ||
+          error.status === 403 ||
+          error.status === 408
+        ) {
+          captureException(error);
         }
-      }
-      if (error instanceof AccountErasureUserFencedError) {
-        logger.info("[support] ticket creation blocked by account deletion");
+        logger.error(
+          `[support] ticket creation failed userId=${ctx.userId} message=${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        const mappedError = mapPostHogError(error);
         throw new TRPCError({
-          code: "CONFLICT",
-          message: error.message,
+          code: mappedError.code,
+          message: mappedError.message,
+          cause: error,
         });
       }
-      if (error instanceof TRPCError) throw error;
-      reportSupportFailure("create-ticket");
-      logger.error("[support] ticket creation failed");
-      throw new TRPCError({
-        code: "BAD_GATEWAY",
-        message: "We couldn't submit your request right now. Please try again shortly.",
-        cause: error,
-      });
-    }
-  }),
+    }),
 });

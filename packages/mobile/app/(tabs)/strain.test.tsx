@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -10,6 +11,21 @@ const mockPolarizationInvalidate = vi.fn();
 const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
+let mockTrainingDataDays = 90;
+type MockRangeQueryOptions = {
+  enabled?: boolean;
+  placeholderData?: (previousData: unknown) => unknown;
+};
+let mockRangeQueryCalls: Record<
+  "training" | "hrZones" | "polarization" | "monotony",
+  Array<{ input: { days: number; endDate?: string }; options: MockRangeQueryOptions }>
+>;
+let mockTimeRangePreference = {
+  days: 90,
+  description: "Recommended default: 90 days balances recent training changes with enough history.",
+  isHydrated: true,
+  setDays: vi.fn(),
+};
 
 type MockTrainingData = Record<string, unknown>;
 type MockTrainingState = {
@@ -77,6 +93,7 @@ function defaultMockTrainingData(): MockTrainingData {
     strainTarget: undefined,
     activities: [],
     weeklyVolume: [],
+    progressiveOverload: [],
     verticalAscent: [],
     climbing: {
       gradeProgression: [],
@@ -109,28 +126,43 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       training: {
-        useQuery: () => ({
-          data: mockTrainingState.data,
-          isLoading: mockTrainingState.isLoading,
-          isFetching: mockTrainingState.isFetching,
-          isError: mockTrainingState.isError,
-          error: mockTrainingState.error,
-        }),
+        useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.training.push({ input, options });
+          return {
+            data:
+              input.days === mockTrainingDataDays
+                ? mockTrainingState.data
+                : options.placeholderData?.(mockTrainingState.data),
+            isLoading: mockTrainingState.isLoading,
+            isFetching: mockTrainingState.isFetching,
+            isError: mockTrainingState.isError,
+            error: mockTrainingState.error,
+          };
+        },
       },
     },
     training: {
       hrZones: {
-        useQuery: () => ({ ...mockHrZonesState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.hrZones.push({ input, options });
+          return { ...mockHrZonesState };
+        },
       },
     },
     efficiency: {
       polarizationTrend: {
-        useQuery: () => ({ ...mockPolarizationState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.polarization.push({ input, options });
+          return { ...mockPolarizationState };
+        },
       },
     },
     cyclingAdvanced: {
       trainingMonotony: {
-        useQuery: () => ({ ...mockMonotonyState }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.monotony.push({ input, options });
+          return { ...mockMonotonyState };
+        },
       },
     },
     processing: {
@@ -158,6 +190,10 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
+vi.mock("../../lib/useTimeRangePreference", () => ({
+  useTimeRangePreference: () => mockTimeRangePreference,
+}));
+
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: (input: { invalidate?: (() => Promise<void> | void) | null }) => {
     mockRefreshInvalidate = input.invalidate;
@@ -179,6 +215,12 @@ vi.mock("../../lib/units", () => ({
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
     distanceLabel: "km",
+    formatWeight: (kg: number) => ({
+      text: `${kg.toFixed(1)} kg`,
+      parts: [{ type: "unit", value: "kg" }],
+    }),
+    convertWeight: (kg: number) => kg,
+    weightLabel: "kg",
   }),
 }));
 
@@ -199,7 +241,53 @@ describe("StrainScreen recent activity navigation", () => {
     mockPolarizationInvalidate.mockResolvedValue(undefined);
     mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
+    mockTrainingDataDays = 90;
+    mockRangeQueryCalls = {
+      training: [],
+      hrZones: [],
+      polarization: [],
+      monotony: [],
+    };
+    mockTimeRangePreference = {
+      days: 90,
+      description:
+        "Recommended default: 90 days balances recent training changes with enough history.",
+      isHydrated: true,
+      setDays: vi.fn(),
+    };
     resetMockTrainingState();
+  });
+
+  it("does not consume cached default-range data during preference hydration", async () => {
+    mockTimeRangePreference.isHydrated = false;
+
+    const { default: StrainScreen } = await import("./strain");
+    const view = render(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.options.enabled).toBe(false);
+    }
+    expect(screen.queryByText("16.0")).toBeNull();
+
+    mockTimeRangePreference.days = 30;
+    mockTimeRangePreference.isHydrated = true;
+    view.rerender(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.input.days).toBe(30);
+      expect(calls.at(-1)?.options.enabled).toBe(true);
+      expect(calls.at(-1)?.options.placeholderData).toBeUndefined();
+    }
+    expect(screen.queryByText("16.0")).toBeNull();
+
+    mockTrainingDataDays = 30;
+    view.rerender(<StrainScreen />);
+    mockTimeRangePreference.days = 90;
+    view.rerender(<StrainScreen />);
+
+    for (const calls of Object.values(mockRangeQueryCalls)) {
+      expect(calls.at(-1)?.options.placeholderData).toBeTypeOf("function");
+    }
   });
 
   it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
@@ -216,7 +304,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
-  it("renders server-owned intensity and polarization models", async () => {
+  it("leads with plain labels while keeping server-owned model details accessible", async () => {
     mockHrZonesState.data = {
       maxHr: 190,
       weeks: [],
@@ -281,14 +369,33 @@ describe("StrainScreen recent activity navigation", () => {
     ];
 
     const { default: StrainScreen } = await import("./strain");
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
     render(<StrainScreen />);
 
-    expect(screen.getByText("Karvonen Intensity Distribution")).toBeTruthy();
-    expect(screen.getByText("Mobile descriptive intensity explanation.")).toBeTruthy();
+    expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
+    expect(
+      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Mobile descriptive intensity explanation.")).toBeNull();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(screen.getByText("Server says exactly 2.00 is not polarized.")).toBeTruthy();
-    expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
-    expect(screen.getByText("Mobile Foster formula.")).toBeTruthy();
+    expect(
+      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Server says exactly 2.00 is not polarized.")).toBeNull();
+    expect(screen.getByText("Training variety and total load")).toBeTruthy();
+    expect(screen.queryByText("Mobile Foster formula.")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "About How this is calculated for Easy-to-hard training balance",
+      }),
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      "How this is calculated for Easy-to-hard training balance",
+      expect.stringContaining("Server says exactly 2.00 is not polarized."),
+      [{ text: "Close" }],
+    );
+    alertSpy.mockRestore();
   });
 
   it("renders intensity, polarization, and monotony query failures separately", async () => {
@@ -305,6 +412,8 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
     expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
     expect(screen.getByText("Training monotony failed")).toBeTruthy();
+    expect(screen.getByText("Could not load easy-to-hard training balance")).toBeTruthy();
+    expect(screen.getByText("Could not load training variety and total load")).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
     expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
     expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
@@ -350,8 +459,10 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Intensity refresh failed")).toBeTruthy();
     expect(screen.getByText("Polarization refresh failed")).toBeTruthy();
-    expect(screen.getByText("Cached mobile intensity distribution.")).toBeTruthy();
-    expect(screen.getByText("No cycling polarization data in this period")).toBeTruthy();
+    expect(
+      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
+    ).toBeTruthy();
+    expect(screen.getByText("No easy-to-hard training balance data in this period")).toBeTruthy();
   });
 
   it("keeps day selector visible while training data is loading", async () => {
@@ -405,6 +516,7 @@ describe("StrainScreen recent activity navigation", () => {
           max_hr: 178,
           avg_power: 240,
           distance_meters: 24000,
+          distance_state: { status: "available" },
           calories: 640,
         },
       ],
@@ -433,6 +545,7 @@ describe("StrainScreen recent activity navigation", () => {
           max_hr: 178,
           avg_power: 240,
           distance_meters: 24000,
+          distance_state: { status: "available" },
           calories: 640,
         },
       ],
@@ -526,6 +639,22 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("4.00")).toBeTruthy();
   });
 
+  it("constrains training load metrics to equal columns with centered wrapping labels", async () => {
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    for (const label of [
+      "Recent 7-day load",
+      "28-day baseline load",
+      "Recent-to-baseline workload ratio",
+    ]) {
+      const labelElement = screen.getByText(label);
+
+      expect(labelElement.parentElement?.style.flex).toBe("1 1 0%");
+      expect(labelElement.style.textAlign).toBe("center");
+    }
+  });
+
   it("does not use a prior displayed strain as today's strain fallback", async () => {
     mockTrainingState.data = {
       strainTarget: undefined,
@@ -583,6 +712,7 @@ describe("StrainScreen recent activity navigation", () => {
           max_hr: 178,
           avg_power: 240,
           distance_meters: 24000,
+          distance_state: { status: "available" },
           calories: 640,
         },
       ],
@@ -735,16 +865,108 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("No climbing sessions")).toBeTruthy();
   });
 
-  it("shows the server error message for climbing data failures", async () => {
-    mockTrainingState.data = undefined;
-    mockTrainingState.isError = true;
-    mockTrainingState.error = new Error("Climbing data failed to load");
+  it("renders server-authored exercise trend evidence", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      progressiveOverload: [
+        {
+          exerciseName: "Back Squat",
+          observations: [
+            { week: "2026-03-09", totalVolumeKg: 1_000 },
+            { week: "2026-03-23", totalVolumeKg: 1_200 },
+          ],
+          period: {
+            startWeek: "2026-03-09",
+            endWeek: "2026-03-23",
+            observationCount: 2,
+            elapsedWeekCount: 3,
+          },
+          slopeKgPerWeek: 100,
+          trend: "increasing",
+          uncertainty: {
+            availability: "unavailable",
+            level: 0.95,
+            method: "residual_circular_moving_block_bootstrap",
+            methodLabel: "95% moving-block interval",
+            reason: "insufficient_observations",
+            statement: "Uncertainty needs at least 4 recorded weeks; this estimate has 2.",
+          },
+          interpretation:
+            "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+          deloadContext:
+            "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
+        },
+      ],
+    };
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
-    expect(screen.getAllByText("Climbing data failed to load").length).toBeGreaterThan(0);
+    expect(screen.getByText("Back Squat")).toBeTruthy();
+    expect(screen.getByText("Increasing 100.0 kg/week")).toBeTruthy();
+    expect(
+      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 2."),
+    ).toBeTruthy();
+  });
+
+  it("shows one server error notice for a failed composite training query", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
+    expect(screen.queryByText("Training Load")).toBeNull();
+    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByText("Weekly Volume")).toBeNull();
+    expect(screen.queryByText("Recent Activities")).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it("keeps successful companion analytics visible beside a training query failure", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+    mockHrZonesState.data = {
+      maxHr: 190,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 3600,
+        zones: [{ zone: 2, label: "Aerobic", seconds: 3600, percent: 100 }],
+        explanation: "Independent intensity data remains available.",
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
+    expect(
+      screen
+        .getByRole("button", {
+          name: "About How this is calculated for Heart-rate zone distribution",
+        })
+        .getAttribute("aria-description"),
+    ).toContain("Independent intensity data remains available.");
+  });
+
+  it("keeps equal messages separate when training and companion queries both fail", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training analytics unavailable");
+    mockHrZonesState.isError = true;
+    mockHrZonesState.error = new Error("Training analytics unavailable");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Training analytics unavailable")).toHaveLength(2);
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(2);
   });
 
   it("keeps cached climbing data visible during background refetch failures", async () => {

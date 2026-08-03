@@ -1,7 +1,7 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { ensureProvider as ensureProviderConnection } from "dofek/db/tokens";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
@@ -82,13 +82,13 @@ export const healthKitSyncRouter = router({
         );
       } catch (error) {
         if (!(error instanceof HealthKitDeletionTombstonesUnsupportedError)) {
-          Sentry.captureException(error, {
+          captureException(error, {
             tags: { endpoint: "deleteQuantitySamples" },
             extra: { userId: ctx.userId },
           });
           throw error;
         }
-        Sentry.captureException(error, {
+        captureException(error, {
           tags: { endpoint: "deleteQuantitySamples" },
           extra: { userId: ctx.userId },
         });
@@ -219,7 +219,7 @@ export const healthKitSyncRouter = router({
           await ctx.sensorStore.refreshBodyMeasurements();
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
-          Sentry.captureException(error, {
+          captureException(error, {
             tags: { healthKitSyncStep: "refreshBodyMeasurements" },
           });
           errors.push(`Body measurements refresh: ${message}`);

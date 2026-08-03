@@ -56,9 +56,7 @@ function createWorkLockPool(): AccountErasureWorkLockPool {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.isAccountErasureActive.mockResolvedValue(false);
-  mocks.poolClient.query.mockImplementation(async (statement: unknown) => ({
-    rows: String(statement).includes("pg_advisory_unlock_shared") ? [{ unlocked: true }] : [{}],
-  }));
+  mocks.poolClient.query.mockResolvedValue({ rows: [{ unlocked: true }] });
 });
 
 describe("PostgreSQL queued-work lock pool", () => {
@@ -90,12 +88,16 @@ describe("PostgreSQL queued-work lock pool", () => {
 
     expect(mocks.poolClient.query).toHaveBeenNthCalledWith(
       1,
-      "SELECT pg_advisory_lock_shared(hashtextextended($1::text, 0))",
+      expect.objectContaining({
+        text: expect.stringContaining("SELECT pg_advisory_lock_shared"),
+      }),
       ["account-erasure-queued-user-work:user-1"],
     );
     expect(mocks.poolClient.query).toHaveBeenNthCalledWith(
       2,
-      "SELECT pg_advisory_unlock_shared(hashtextextended($1::text, 0)) AS unlocked",
+      expect.objectContaining({
+        text: expect.stringContaining("SELECT pg_advisory_unlock_shared"),
+      }),
       ["account-erasure-queued-user-work:user-1"],
     );
     expect(mocks.poolClient.release).toHaveBeenCalledWith();

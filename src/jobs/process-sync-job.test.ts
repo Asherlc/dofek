@@ -1,5 +1,6 @@
 import {
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1358,6 +1359,40 @@ describe("processSyncJob", () => {
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
 
+  it("records metrics without reporting returned provider connect timeouts to Sentry", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const timeout = new ProviderRequestTimeoutError({
+      cause: fetchError,
+      providerId: "withings",
+      timeoutMs: 120_000,
+    });
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: "metric_stream: fetch failed", cause: timeout }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "withings" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "withings",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "withings",
+      data_type: "sync",
+    });
+  });
+
   it("rethrows retryable infrastructure errors returned in sync results", async () => {
     const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
     const fetchError = new TypeError("fetch failed", { cause });
@@ -1608,8 +1643,9 @@ describe("processSyncJob", () => {
   });
 
   it("continues when global post-sync enqueue fails", async () => {
+    const enqueueError = new Error("queue gone");
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
+    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(enqueueError);
 
     // Should not throw
     await runSyncJob(createMockJob(), mockDb);
@@ -1619,11 +1655,15 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue global post-sync maintenance"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-global-maintenance-enqueue" },
+    });
   });
 
   it("continues when per-user refit enqueue fails", async () => {
+    const enqueueError = new Error("queue gone");
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
+    mockEnqueueDebouncedUserRefit.mockRejectedValue(enqueueError);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -1632,6 +1672,9 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue user refit"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-user-refit-enqueue" },
+    });
   });
 
   it("relays within-provider progress to job.updateProgress with correct percentage", async () => {

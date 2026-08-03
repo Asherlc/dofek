@@ -99,6 +99,19 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
+    for (const tableName of ["v_activity", "v_sleep", "deduped_activities", "daily_sleep"]) {
+      expect(
+        setupCommands.some(
+          (command) =>
+            command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+            command.includes(`.${tableName}`) &&
+            command.includes("timezone Nullable(String)") &&
+            command.includes("start_utc_offset_minutes Nullable(Int16)") &&
+            command.includes("end_utc_offset_minutes Nullable(Int16)") &&
+            command.includes("local_time_source String"),
+        ),
+      ).toBe(true);
+    }
     expect(
       setupCommands.some(
         (command) =>
@@ -118,6 +131,32 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".activity_location_sample"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_summary") &&
+          command.includes("refreshed_at DateTime64(9)"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_sensor_summary_rows") &&
+          command.includes("avg_hr Nullable(Float64)") &&
+          command.includes("climbing_seconds Nullable(Int32)"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_location_summary_rows") &&
+          command.includes("centroid_lat Nullable(Float64)") &&
+          command.includes("centroid_lng Nullable(Float64)"),
       ),
     ).toBe(true);
     expect(
@@ -237,7 +276,21 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO postgres_fitness_test_") &&
           command.includes(".activity") &&
-          command.includes("FROM postgresql('db:5432', 'health', 'activity'"),
+          command.includes("FROM postgresql('db:5432', 'health', 'activity'") &&
+          command.includes("start_utc_offset_minutes") &&
+          command.includes("end_utc_offset_minutes") &&
+          command.includes("local_time_source"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO postgres_fitness_test_") &&
+          command.includes(".sleep_session") &&
+          command.includes("timezone") &&
+          command.includes("start_utc_offset_minutes") &&
+          command.includes("end_utc_offset_minutes") &&
+          command.includes("local_time_source"),
       ),
     ).toBe(true);
     expect(
@@ -255,6 +308,22 @@ describe("clickhouse integration test helpers", () => {
           command.endsWith(".deduped_activities"),
       ),
     ).toBe(true);
+    for (const tableName of ["deduped_activities", "daily_sleep"]) {
+      expect(
+        commands.some(
+          (command) =>
+            command.includes("INSERT INTO analytics_test_") &&
+            command.includes(`.${tableName}`) &&
+            command.includes("start_utc_offset_minutes") &&
+            command.includes("end_utc_offset_minutes") &&
+            command.includes("local_time_source") &&
+            (tableName !== "deduped_activities" ||
+              command.includes(
+                "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
+              )),
+        ),
+      ).toBe(true);
+    }
     expect(
       commands.some(
         (command) =>
@@ -329,6 +398,25 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".activity_sensor_summary_rows") &&
+          command.includes("elevation_per_activity.elevation_gain_m AS elevation_gain_m") &&
+          command.includes("elevation_per_activity.elevation_loss_m AS elevation_loss_m") &&
+          command.includes("isNotNull(previous_altitude) AND altitude - previous_altitude < 0") &&
+          !command.includes("FROM altitude_deltas\n  WHERE previous_altitude IS NOT NULL"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".activity_location_summary_rows") &&
+          command.includes("distance_per_activity.total_distance AS total_distance"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("TRUNCATE TABLE analytics_test_") &&
           command.endsWith(".activity_vo2max_estimate"),
       ),
@@ -353,7 +441,29 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".daily_recovery") &&
-          command.includes(".daily_recovery_inputs"),
+          command.includes(".daily_recovery_inputs") &&
+          [
+            "hrv_z_score",
+            "hrv_baseline_sample_count",
+            "hrv_baseline_coverage",
+            "hrv_mean_7d",
+            "hrv_mean_previous_28d",
+            "resting_hr_z_score",
+            "rhr_baseline_sample_count",
+            "rhr_baseline_coverage",
+            "rhr_mean_7d",
+            "rhr_mean_previous_28d",
+            "respiratory_rate_z_score",
+            "rr_baseline_sample_count",
+            "rr_baseline_coverage",
+            "rr_mean_7d",
+            "rr_mean_previous_28d",
+            "efficiency_z_score",
+            "efficiency_baseline_sample_count",
+            "efficiency_baseline_coverage",
+            "efficiency_mean_7d",
+            "efficiency_mean_previous_28d",
+          ].every((column) => command.includes(column)),
       ),
     ).toBe(true);
     expect(

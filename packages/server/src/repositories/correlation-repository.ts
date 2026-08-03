@@ -1,15 +1,18 @@
+import { getEpistemicStatus } from "@dofek/scoring/epistemic-status";
 import { circularMovingBlockBootstrapInterval } from "@dofek/stats/block-bootstrap";
 import {
   CORRELATION_METRICS,
   CorrelationResult,
   linearRegression,
+  MIN_CORRELATION_PAIRS,
   pearsonCorrelation,
 } from "@dofek/stats/correlation";
 import { formatCorrelationComparison } from "@dofek/stats/correlation-lag";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import type { JoinedDay } from "../insights/data-join.ts";
-import { joinByDate } from "../insights/data-join.ts";
+import { classifyActivity, joinByDate } from "../insights/data-join.ts";
 import {
   activityRowSchema,
   dailyRowSchema,
@@ -25,9 +28,22 @@ import {
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { fetchBodyCompRows } from "./body-clickhouse.ts";
+import { bodyCompClickHouseSchema, fetchBodyCompProvenanceRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
+
+const correlationDailyRowSchema = dailyRowSchema.extend({
+  source_providers: z.array(z.string()),
+});
+
+const correlationActivityRowSchema = activityRowSchema.extend({
+  activity_id: z.string(),
+  name: z.string().nullable(),
+});
+
+const correlationNutritionRowSchema = nutritionRowSchema.extend({
+  contributing_providers: z.array(z.string()),
+});
 
 // ── Metric extraction ───────────────────────────────────────────────────
 
@@ -62,6 +78,65 @@ const METRIC_EXTRACTORS = new Map<string, JoinedDayExtractor>(
 );
 
 const METRIC_LABEL_MAP = new Map(CORRELATION_METRICS.map((m) => [m.id, m.label]));
+const METRIC_DOMAIN_MAP = new Map(CORRELATION_METRICS.map((metric) => [metric.id, metric.domain]));
+
+type CorrelationMetricFamily = "recovery" | "sleep" | "nutrition" | "activity" | "body";
+
+export interface CorrelationActivityEvidence {
+  id: string;
+  activityType: string;
+  label: string;
+}
+
+export interface CorrelationDayEvidence {
+  dailyMetricProviderIds: string[];
+  sleepProviderIds: string[];
+  nutritionProviderIds: string[];
+  bodyProviderIds: string[];
+  activities: CorrelationActivityEvidence[];
+}
+
+export type CorrelationEvidenceByDate = ReadonlyMap<string, CorrelationDayEvidence>;
+
+export type CorrelationContributor =
+  | {
+      kind: "record";
+      label: string;
+      providerIds: string[];
+      target: { type: "activity"; activityId: string };
+    }
+  | {
+      kind: "aggregate_inputs";
+      label: string;
+      providerIds: string[];
+      target: { type: "metric_family"; family: CorrelationMetricFamily };
+    };
+
+export interface CorrelationObservationValue {
+  metricId: string;
+  date: string;
+  value: number;
+  contributors: CorrelationContributor[];
+}
+
+export interface CorrelationPairedObservation {
+  x: CorrelationObservationValue;
+  y: CorrelationObservationValue;
+}
+
+export interface CorrelationObservationPage {
+  items: CorrelationPairedObservation[];
+  totalCount: number;
+  nextCursor: string | null;
+}
+
+interface CorrelationObservationPagination {
+  cursor?: string;
+  pageSize: number;
+}
+
+const CORRELATION_INTERPRETATION_WARNING =
+  "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.";
 
 export function extractMetricValue(day: JoinedDay, metricId: string): number | null {
   const extractor = METRIC_EXTRACTORS.get(metricId);
@@ -102,6 +177,7 @@ export function downsample<T>(arr: T[], max: number): T[] {
 
 interface CorrelationCalendarObservation {
   date: string;
+  yDate: string;
   x: number | null;
   y: number | null;
 }
@@ -134,9 +210,11 @@ function buildCorrelationAnalysis(
 
   for (const date of selectedDates.slice(firstEligibleIndex, lastEligibleIndex)) {
     const dayX = daysByDate.get(date);
-    const dayY = daysByDate.get(addCalendarDays(date, lag));
+    const yDate = addCalendarDays(date, lag);
+    const dayY = daysByDate.get(yDate);
     observations.push({
       date,
+      yDate,
       x: dayX ? extractMetricValue(dayX, metricX) : null,
       y: dayY ? extractMetricValue(dayY, metricY) : null,
     });
@@ -164,6 +242,166 @@ function buildCorrelationAnalysis(
   };
 }
 
+function uniqueSorted(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function emptyDayEvidence(): CorrelationDayEvidence {
+  return {
+    dailyMetricProviderIds: [],
+    sleepProviderIds: [],
+    nutritionProviderIds: [],
+    bodyProviderIds: [],
+    activities: [],
+  };
+}
+
+function dayEvidence(
+  evidenceByDate: Map<string, CorrelationDayEvidence>,
+  date: string,
+): CorrelationDayEvidence {
+  const existing = evidenceByDate.get(date);
+  if (existing) return existing;
+  const created = emptyDayEvidence();
+  evidenceByDate.set(date, created);
+  return created;
+}
+
+function sleepWakeDate(startedAt: string, durationMinutes: number | null): string {
+  const wakeDate = new Date(startedAt);
+  if (durationMinutes !== null) wakeDate.setMinutes(wakeDate.getMinutes() + durationMinutes);
+  return wakeDate.toISOString().slice(0, 10);
+}
+
+function providerIdsForMetric(
+  metricId: string,
+  date: string,
+  evidenceByDate: CorrelationEvidenceByDate,
+): string[] {
+  const evidence = evidenceByDate.get(date);
+  if (["hrv", "spo2", "skin_temp", "steps"].includes(metricId)) {
+    return evidence?.dailyMetricProviderIds ?? [];
+  }
+  if (["sleep_duration", "deep_sleep", "rem_sleep", "sleep_efficiency"].includes(metricId)) {
+    return evidence?.sleepProviderIds ?? [];
+  }
+  if (["calories", "protein", "carbs", "fat", "fiber"].includes(metricId)) {
+    return evidence?.nutritionProviderIds ?? [];
+  }
+  if (metricId === "weight_30d") {
+    const startDate = addCalendarDays(date, -29);
+    return uniqueSorted(
+      [...evidenceByDate.entries()].flatMap(([evidenceDate, dayEvidence]) =>
+        evidenceDate >= startDate && evidenceDate <= date ? dayEvidence.bodyProviderIds : [],
+      ),
+    );
+  }
+  if (metricId === "weight" || metricId === "body_fat") {
+    return evidence?.bodyProviderIds ?? [];
+  }
+  return [];
+}
+
+function activityContributors(
+  metricId: string,
+  date: string,
+  evidenceByDate: CorrelationEvidenceByDate,
+): CorrelationContributor[] {
+  const activities = evidenceByDate.get(date)?.activities ?? [];
+  const contributingActivities = activities.filter((activity) => {
+    if (metricId === "exercise_duration") return true;
+    if (metricId === "cardio_duration") return classifyActivity(activity.activityType) === "cardio";
+    if (metricId === "strength_duration") {
+      return classifyActivity(activity.activityType) === "strength";
+    }
+    return false;
+  });
+
+  return contributingActivities.map((activity) => ({
+    kind: "record" as const,
+    label: activity.label,
+    providerIds: [],
+    target: { type: "activity" as const, activityId: activity.id },
+  }));
+}
+
+function aggregateInputLabel(metricId: string, family: CorrelationMetricFamily): string {
+  if (metricId === "weight_30d") return "30-day body measurement inputs";
+  if (family === "recovery") return "Daily recovery aggregate inputs";
+  if (family === "sleep") return "Selected sleep-session input";
+  if (family === "nutrition") return "Canonical daily nutrition inputs";
+  if (family === "activity") return "Daily activity aggregate inputs";
+  return "Body measurement inputs";
+}
+
+function contributorsForMetric(
+  metricId: string,
+  date: string,
+  evidenceByDate: CorrelationEvidenceByDate,
+): CorrelationContributor[] {
+  if (
+    metricId === "exercise_duration" ||
+    metricId === "cardio_duration" ||
+    metricId === "strength_duration"
+  ) {
+    const contributors = activityContributors(metricId, date, evidenceByDate);
+    if (contributors.length > 0) return contributors;
+  }
+
+  const family = METRIC_DOMAIN_MAP.get(metricId);
+  if (!family) return [];
+  return [
+    {
+      kind: "aggregate_inputs",
+      label: aggregateInputLabel(metricId, family),
+      providerIds: providerIdsForMetric(metricId, date, evidenceByDate),
+      target: { type: "metric_family", family },
+    },
+  ];
+}
+
+export function buildCorrelationObservationPage(
+  joined: JoinedDay[],
+  input: CorrelationInput,
+  evidenceByDate: CorrelationEvidenceByDate,
+  pagination: CorrelationObservationPagination,
+): CorrelationObservationPage {
+  const analysis = buildCorrelationAnalysis(joined, input);
+  const items: CorrelationPairedObservation[] = [];
+  let hasMore = false;
+  let pageCursor: string | null = null;
+  const totalCount = analysis.observations.reduceRight((count, observation) => {
+    if (observation.x === null || observation.y === null) return count;
+    const nextCount = count + 1;
+    if (pagination.cursor !== undefined && observation.date >= pagination.cursor) return nextCount;
+    if (items.length >= pagination.pageSize) {
+      hasMore = true;
+      return nextCount;
+    }
+    items.push({
+      x: {
+        metricId: input.metricX,
+        date: observation.date,
+        value: observation.x,
+        contributors: contributorsForMetric(input.metricX, observation.date, evidenceByDate),
+      },
+      y: {
+        metricId: input.metricY,
+        date: observation.yDate,
+        value: observation.y,
+        contributors: contributorsForMetric(input.metricY, observation.yDate, evidenceByDate),
+      },
+    });
+    pageCursor = observation.date;
+    return nextCount;
+  }, 0);
+  return {
+    items,
+    totalCount,
+    nextCursor: hasMore ? pageCursor : null,
+  };
+}
+
 function buildSelectedDates(joined: JoinedDay[], input: CorrelationInput): string[] {
   const sortedDates = joined.map((day) => day.date).sort((a, b) => a.localeCompare(b));
   const endDate = input.endDate ?? sortedDates.at(-1);
@@ -185,10 +423,11 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   const analysis = buildCorrelationAnalysis(joined, input);
   const pairCount = analysis.pairs.length;
 
-  if (pairCount < 5) {
-    const additionalSamplesRequired = 5 - pairCount;
+  if (pairCount < MIN_CORRELATION_PAIRS) {
+    const additionalSamplesRequired = MIN_CORRELATION_PAIRS - pairCount;
     return {
       availability: "insufficient" as const,
+      epistemicStatus: getEpistemicStatus("unavailable"),
       dataPoints: analysis.pairs,
       sampleCount: pairCount,
       additionalSamplesRequired,
@@ -224,6 +463,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
 
   return {
     availability: "available" as const,
+    epistemicStatus: getEpistemicStatus("associated"),
     spearmanRho: spearman.rho,
     spearmanPValue: spearman.pValue,
     pearsonR: pearson.r,
@@ -244,17 +484,19 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
   const analysis = buildCorrelationAnalysis(joined, input);
   const pairCount = analysis.pairs.length;
 
-  if (pairCount < 5) {
-    const additionalSamplesRequired = 5 - pairCount;
+  if (pairCount < MIN_CORRELATION_PAIRS) {
+    const additionalSamplesRequired = MIN_CORRELATION_PAIRS - pairCount;
     return {
       analysisVersion: 2 as const,
       availability: "insufficient" as const,
+      epistemicStatus: getEpistemicStatus("unavailable"),
       dataPoints: analysis.pairs,
       sampleCount: pairCount,
       additionalSamplesRequired,
       coverage: analysis.coverage,
       uncertainty: unavailableUncertainty(analysis.observations.length, "insufficient_pairs"),
       insight: `Insufficient data to describe the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} paired calendar ${pairCount === 1 ? "day" : "days"}; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "is" : "are"} required).`,
+      interpretationWarning: CORRELATION_INTERPRETATION_WARNING,
     };
   }
 
@@ -286,6 +528,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
   return {
     analysisVersion: 2 as const,
     availability: "available" as const,
+    epistemicStatus: getEpistemicStatus("associated"),
     spearmanRho,
     regression,
     dataPoints: downsample(analysis.pairs, MAX_DATA_POINTS),
@@ -295,6 +538,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
     xStats,
     yStats,
     insight,
+    interpretationWarning: CORRELATION_INTERPRETATION_WARNING,
   };
 }
 
@@ -308,7 +552,7 @@ function computeUncertainty(observations: CorrelationCalendarObservation[]) {
         y: number;
       } => observation.x !== null && observation.y !== null,
     );
-    if (pairs.length < 5) return null;
+    if (pairs.length < MIN_CORRELATION_PAIRS) return null;
     const result = spearmanCorrelation(
       pairs.map((pair) => pair.x),
       pairs.map((pair) => pair.y),
@@ -375,13 +619,16 @@ export class CorrelationRepository {
   }
 
   getMetrics() {
-    return CORRELATION_METRICS.map(({ id, label, unit, domain, description }) => ({
-      id,
-      label,
-      unit,
-      domain,
-      description,
-    }));
+    return CORRELATION_METRICS.map(
+      ({ id, label, unit, domain, description, availabilityDescription }) => ({
+        id,
+        label,
+        unit,
+        domain,
+        description,
+        availabilityDescription,
+      }),
+    );
   }
 
   async compute(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {
@@ -406,7 +653,31 @@ export class CorrelationRepository {
     });
   }
 
+  async listObservations(
+    metricX: string,
+    metricY: string,
+    days: RangeDays,
+    lag: number,
+    endDate: string,
+    pagination: { cursor?: string; pageSize: number },
+  ): Promise<CorrelationObservationPage> {
+    const { joined, evidenceByDate } = await this.#loadCorrelationData(days, endDate);
+    return buildCorrelationObservationPage(
+      joined,
+      { metricX, metricY, days, lag, endDate },
+      evidenceByDate,
+      pagination,
+    );
+  }
+
   async #loadJoinedDays(days: RangeDays, effectiveEndDate: string): Promise<JoinedDay[]> {
+    return (await this.#loadCorrelationData(days, effectiveEndDate)).joined;
+  }
+
+  async #loadCorrelationData(
+    days: RangeDays,
+    effectiveEndDate: string,
+  ): Promise<{ joined: JoinedDay[]; evidenceByDate: CorrelationEvidenceByDate }> {
     const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
       sensorStore,
@@ -415,12 +686,19 @@ export class CorrelationRepository {
       endDate: effectiveEndDate,
       days,
     });
-    const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
+    const [metrics, sleepResult, activities, nutrition, bodyComp] = await Promise.all([
       executeWithSchema(
         this.#db,
-        dailyRowSchema,
+        correlationDailyRowSchema,
         sql`WITH ${restingHeartRateCte}
-            SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.skin_temp_c
+            SELECT
+              dm.date,
+              drhr.resting_hr,
+              dm.hrv,
+              dm.spo2_avg,
+              dm.steps,
+              dm.skin_temp_c,
+              dm.source_providers
 	            FROM fitness.v_daily_metrics dm
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date
@@ -436,8 +714,9 @@ export class CorrelationRepository {
         endDate: effectiveEndDate,
         days,
         order: "asc",
-      }).then((rows) =>
-        rows.map((row) =>
+      }).then((evidenceRows) => ({
+        evidenceRows,
+        joinedRows: evidenceRows.map((row) =>
           sleepRowSchema.parse({
             started_at: row.started_at,
             duration_minutes: row.duration_minutes,
@@ -449,14 +728,16 @@ export class CorrelationRepository {
             is_nap: false,
           }),
         ),
-      ),
+      })),
       sensorStore.query(
-        activityRowSchema,
+        correlationActivityRowSchema,
         `SELECT
+           toString(activity_id) AS activity_id,
            toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
            started_at,
            ended_at,
-           activity_type
+           activity_type,
+           name
          FROM analytics.activity_summary
          WHERE user_id = {userId:UUID}
            ${clickHouseDateRangePredicate({
@@ -474,8 +755,16 @@ export class CorrelationRepository {
       ),
       executeWithSchema(
         this.#db,
-        nutritionRowSchema,
-        sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
+        correlationNutritionRowSchema,
+        sql`SELECT
+              date,
+              calories,
+              protein_g,
+              carbs_g,
+              fat_g,
+              fiber_g,
+              water_ml,
+              contributing_providers
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.#userId}
               AND resolution_status = 'available'
@@ -483,14 +772,69 @@ export class CorrelationRepository {
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),
-      fetchBodyCompRows(sensorStore, this.#userId, this.#timezone, effectiveEndDate, days),
+      fetchBodyCompProvenanceRows(
+        sensorStore,
+        this.#userId,
+        this.#timezone,
+        effectiveEndDate,
+        days,
+      ),
     ]);
 
-    const joined = joinByDate(metrics, sleep, activities, nutrition, bodyComp, {
-      minDailyCalories: 1200,
-    });
+    const joined = joinByDate(
+      metrics.map((row) => dailyRowSchema.parse(row)),
+      sleepResult.joinedRows,
+      activities,
+      nutrition.map((row) => nutritionRowSchema.parse(row)),
+      bodyComp.map((row) => bodyCompClickHouseSchema.parse(row)),
+      {
+        minDailyCalories: 1200,
+      },
+    );
 
-    return joined;
+    const evidenceByDate = new Map<string, CorrelationDayEvidence>();
+    for (const row of metrics) {
+      dayEvidence(evidenceByDate, row.date).dailyMetricProviderIds = uniqueSorted(
+        row.source_providers,
+      );
+    }
+    const selectedSleepDurationByDate = new Map<string, number>();
+    for (const row of sleepResult.evidenceRows) {
+      const wakeDate = sleepWakeDate(row.started_at, row.duration_minutes);
+      const durationMinutes = row.duration_minutes ?? 0;
+      if (durationMinutes <= (selectedSleepDurationByDate.get(wakeDate) ?? -1)) continue;
+      selectedSleepDurationByDate.set(wakeDate, durationMinutes);
+      const providerIds = uniqueSorted([
+        ...row.source_providers,
+        ...(row.provider_id === null ? [] : [row.provider_id]),
+      ]);
+      dayEvidence(evidenceByDate, wakeDate).sleepProviderIds = providerIds;
+    }
+    for (const row of activities) {
+      if (row.ended_at === null) continue;
+      const evidence = dayEvidence(
+        evidenceByDate,
+        row.date ?? new Date(row.started_at).toISOString().slice(0, 10),
+      );
+      evidence.activities.push({
+        id: row.activity_id,
+        activityType: row.activity_type,
+        label: row.name ?? row.activity_type,
+      });
+    }
+    for (const row of nutrition) {
+      dayEvidence(evidenceByDate, row.date).nutritionProviderIds = uniqueSorted(
+        row.contributing_providers,
+      );
+    }
+    for (const row of bodyComp) {
+      dayEvidence(evidenceByDate, row.date).bodyProviderIds = uniqueSorted([
+        ...row.source_providers,
+        row.provider_id,
+      ]);
+    }
+
+    return { joined, evidenceByDate };
   }
 
   #requireSensorStore(): Pick<ActivitySensorStore, "query"> {

@@ -15,10 +15,15 @@ const mockLogout = vi.hoisted(() => vi.fn());
 const mockIdentify = vi.hoisted(() => vi.fn());
 const mockReset = vi.hoisted(() => vi.fn());
 const mockClearPreparation = vi.hoisted(() => vi.fn());
+const mockCaptureException = vi.hoisted(() => vi.fn());
+const mockIdentifyUser = vi.hoisted(() => vi.fn());
+const mockResetUser = vi.hoisted(() => vi.fn());
+const mockRedirectToLogin = vi.hoisted(() => vi.fn());
 
 vi.mock("./auth.ts", () => ({
   fetchCurrentUser: mockFetchCurrentUser,
   logout: mockLogout,
+  redirectToLogin: mockRedirectToLogin,
 }));
 
 vi.mock("./posthog.ts", () => ({
@@ -29,6 +34,12 @@ vi.mock("./posthog.ts", () => ({
 vi.mock("./account-erasure-storage.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./account-erasure-storage.ts")>()),
   clearAccountErasurePreparation: mockClearPreparation,
+}));
+
+vi.mock("./telemetry.ts", () => ({
+  captureException: mockCaptureException,
+  identifyUser: mockIdentifyUser,
+  resetUser: mockResetUser,
 }));
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -243,6 +254,153 @@ describe("web auth account identity", () => {
     expect(secondTab.result.current.user?.id).toBe("user-2");
     expect(secondTab.result.current.accountSessionOwnerNonce).not.toBe(
       activeCleanupLease.cleanupOwnerNonce,
+    );
+  });
+});
+
+describe("AuthProvider analytics identity", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("identifies the authenticated user after bootstrap", async () => {
+    const { fetchCurrentUser } = await import("./auth.ts");
+    const user = {
+      id: "user-123",
+      name: "Alice Example",
+      email: "alice@example.com",
+    };
+    vi.mocked(fetchCurrentUser).mockResolvedValue(user);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.user).toEqual(user);
+    });
+
+    expect(mockIdentifyUser).toHaveBeenCalledOnce();
+    expect(mockIdentifyUser).toHaveBeenCalledWith(user);
+    expect(mockResetUser).not.toHaveBeenCalled();
+  });
+
+  it("does not identify or reset an unauthenticated visitor during bootstrap", async () => {
+    const { fetchCurrentUser } = await import("./auth.ts");
+    vi.mocked(fetchCurrentUser).mockResolvedValue(null);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(mockIdentifyUser).not.toHaveBeenCalled();
+    expect(mockResetUser).not.toHaveBeenCalled();
+  });
+
+  it("resets the analytics identity after logout succeeds", async () => {
+    const { fetchCurrentUser, logout } = await import("./auth.ts");
+    vi.mocked(fetchCurrentUser).mockResolvedValue({
+      id: "user-123",
+      name: "Alice Example",
+      email: "alice@example.com",
+    });
+    vi.mocked(logout).mockResolvedValue();
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.user).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(mockResetUser).toHaveBeenCalledOnce();
+    expect(vi.mocked(logout).mock.invocationCallOrder[0]).toBeLessThan(
+      mockResetUser.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(mockResetUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRedirectToLogin.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("preserves the analytics identity when logout fails", async () => {
+    const { fetchCurrentUser, logout } = await import("./auth.ts");
+    const error = new Error("Network unavailable");
+    vi.mocked(fetchCurrentUser).mockResolvedValue({
+      id: "user-123",
+      name: "Alice Example",
+      email: "alice@example.com",
+    });
+    vi.mocked(logout).mockRejectedValue(error);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.user).not.toBeNull();
+    });
+
+    await expect(
+      act(async () => {
+        await result.current.logout();
+      }),
+    ).rejects.toThrow("Network unavailable");
+
+    expect(mockResetUser).not.toHaveBeenCalled();
+    expect(mockRedirectToLogin).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "logout" });
+    expect(result.current.user?.id).toBe("user-123");
+  });
+
+  it("resets when an identified session becomes unauthenticated", async () => {
+    const { fetchCurrentUser } = await import("./auth.ts");
+    vi.mocked(fetchCurrentUser)
+      .mockResolvedValueOnce({
+        id: "user-123",
+        name: "Alice Example",
+        email: "alice@example.com",
+      })
+      .mockResolvedValueOnce(null);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe("user-123");
+    });
+
+    await act(async () => {
+      await result.current.retryBootstrap();
+    });
+
+    expect(result.current.user).toBeNull();
+    expect(mockResetUser).toHaveBeenCalledOnce();
+  });
+
+  it("resets before identifying a different authenticated user", async () => {
+    const { fetchCurrentUser } = await import("./auth.ts");
+    vi.mocked(fetchCurrentUser)
+      .mockResolvedValueOnce({
+        id: "user-123",
+        name: "Alice Example",
+        email: "alice@example.com",
+      })
+      .mockResolvedValueOnce({
+        id: "user-456",
+        name: "Bob Example",
+        email: "bob@example.com",
+      });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe("user-123");
+    });
+
+    await act(async () => {
+      await result.current.retryBootstrap();
+    });
+
+    expect(result.current.user?.id).toBe("user-456");
+    expect(mockResetUser).toHaveBeenCalledOnce();
+    expect(mockResetUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockIdentifyUser.mock.invocationCallOrder[1] ?? 0,
     );
   });
 });

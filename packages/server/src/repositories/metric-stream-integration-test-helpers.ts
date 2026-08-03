@@ -5,6 +5,7 @@ export interface MetricStreamSeedRow {
   channel: string;
   scalar: number;
   is_deleted: 0 | 1;
+  ingested_at?: string;
   version: number;
 }
 
@@ -32,7 +33,7 @@ export async function seedMetricStreamRows(
       channel: row.channel,
       scalar: row.scalar,
       is_deleted: row.is_deleted,
-      ingested_at: "2026-04-12 00:00:00.000",
+      ingested_at: row.ingested_at ?? "2026-04-12 00:00:00.000",
       version: row.version,
     })),
   });

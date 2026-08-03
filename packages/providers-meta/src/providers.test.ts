@@ -10,7 +10,9 @@ import {
   providerLabel,
   providerLogoId,
   providerLogoType,
+  providerRecordLabel,
   providerSourceLabel,
+  resolveProviderProvenance,
   SVG_LOGOS,
 } from "./providers.ts";
 
@@ -25,6 +27,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS["fit-file"]).toBe("FIT File");
     expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
     expect(PROVIDER_LABELS.apple_health).toBe("Apple Health");
+    expect(PROVIDER_LABELS.manual_review).toBe("Manual review");
   });
 
   it("all values are non-empty strings", () => {
@@ -48,6 +51,15 @@ describe("providerLabel", () => {
   });
 });
 
+describe("resolveProviderProvenance", () => {
+  it("pairs the canonical human label with the diagnostic provider ID", () => {
+    expect(resolveProviderProvenance("manual_review")).toEqual({
+      providerId: "manual_review",
+      label: "Manual review",
+    });
+  });
+});
+
 describe("providerSourceLabel", () => {
   it("shows Apple Health upstream app names when present", () => {
     expect(providerSourceLabel("apple_health", "Strong")).toBe("Strong (via Apple Health)");
@@ -56,6 +68,17 @@ describe("providerSourceLabel", () => {
   it("falls back to the provider label in other cases", () => {
     expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
     expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP (Cloud)");
+  });
+});
+
+describe("providerRecordLabel", () => {
+  it("combines the canonical provider and device labels without duplicating them", () => {
+    expect(providerRecordLabel("whoop", "WHOOP 4.0")).toBe("WHOOP (Cloud) · WHOOP 4.0");
+    expect(providerRecordLabel("whoop", "WHOOP")).toBe("WHOOP (Cloud)");
+    expect(providerRecordLabel("whoop", "whoop (cloud)")).toBe("WHOOP (Cloud)");
+    expect(providerRecordLabel("whoop", "  WHOOP 4.0  ")).toBe("WHOOP (Cloud) · WHOOP 4.0");
+    expect(providerRecordLabel("whoop", "   ")).toBe("WHOOP (Cloud)");
+    expect(providerRecordLabel("apple_health", null)).toBe("Apple Health");
   });
 });
 

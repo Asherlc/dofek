@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 
 interface DailyBySourceQueryResult {
@@ -12,7 +13,7 @@ interface DailyBySourceQueryResult {
 }
 
 const { mockDailyBySourceQuery, mockDofekChart } = vi.hoisted(() => ({
-  mockDailyBySourceQuery: vi.fn<() => DailyBySourceQueryResult>(() => ({
+  mockDailyBySourceQuery: vi.fn<(input: { date: string }) => DailyBySourceQueryResult>(() => ({
     data: [
       {
         providerId: "apple_health",
@@ -49,7 +50,24 @@ vi.mock("../lib/trpc.ts", () => ({
 import { DailyHeartRatePage } from "./DailyHeartRatePage.tsx";
 
 describe("DailyHeartRatePage", () => {
+  it("nests its title below the Body page heading", () => {
+    mockDailyBySourceQuery.mockReturnValue({
+      data: [],
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    render(createElement(DailyHeartRatePage));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Daily Heart Rate by Source" }),
+    ).toBeTruthy();
+  });
+
   beforeEach(() => {
+    mockDailyBySourceQuery.mockClear();
+    mockDofekChart.mockClear();
     mockDailyBySourceQuery.mockReturnValue({
       data: [
         {
@@ -71,12 +89,75 @@ describe("DailyHeartRatePage", () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("fits the time axis to the selected day's samples", () => {
     render(createElement(DailyHeartRatePage));
 
     expect(mockDofekChart.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ timeRangeMode: "data" }),
     );
+  });
+
+  it("provides accessible day navigation and identifies the local timezone", () => {
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+    expect(
+      screen.getByText(`Local day in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`),
+    ).toBeTruthy();
+  });
+
+  it("queries the previous day and returns to today through the controls", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 12, 12));
+
+    const today = formatDateYmd();
+    const previousDate = shiftDateYmd(today, -1);
+    render(createElement(DailyHeartRatePage));
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({
+      date: previousDate,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+  });
+
+  it("refreshes today navigation after local midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 12, 23, 59, 58));
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(screen.getByRole("button", { name: "Next day" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).not.toBeDisabled();
+  });
+
+  it("rejects future dates from the date input", () => {
+    render(createElement(DailyHeartRatePage));
+
+    const today = formatDateYmd();
+    const futureDate = `${Number(today.slice(0, 4)) + 1}-01-01`;
+    const dateInput = screen.getByLabelText("Date");
+
+    fireEvent.change(dateInput, { target: { value: futureDate } });
+
+    expect(dateInput).toHaveValue(today);
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
   });
 
   it("renders the canonical server-provided source summary", () => {

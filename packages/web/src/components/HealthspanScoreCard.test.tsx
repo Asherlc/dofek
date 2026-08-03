@@ -37,29 +37,77 @@ function makeData(overrides: Partial<HealthspanResult> = {}): HealthspanResult {
     metrics: baseMetrics,
     history: [{ weekStart: "2026-03-01", score: 70 }],
     trend: "stable",
+    availability: {
+      status: "available",
+      availableMetricCount: 3,
+      requiredMetricCount: 3,
+      missingMetricLabels: [],
+      summary: "3 of 3 required Healthspan metrics are available.",
+      nextCondition: null,
+    },
     ...overrides,
   };
 }
 
 describe("HealthspanScoreCard", () => {
-  it("renders loading skeleton when loading", () => {
-    const { container } = render(<HealthspanScoreCard data={undefined} loading={true} />);
-    expect(container.querySelector("[class*='animate-spin']")).not.toBeNull();
+  it("renders the canonical loading state when loading", () => {
+    render(<HealthspanScoreCard data={undefined} loading={true} />);
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
   });
 
-  it("renders empty state when data is undefined", () => {
+  it("renders the canonical empty state when data is undefined", () => {
     render(<HealthspanScoreCard data={undefined} />);
-    expect(screen.getByText(/Insufficient data for healthspan analysis/)).toBeDefined();
+    expect(screen.getByTestId("query-state-empty")).toBeDefined();
+    expect(screen.getByText("Healthspan availability is unavailable.")).toBeDefined();
   });
 
   it("renders empty state when healthspanScore is null", () => {
-    render(<HealthspanScoreCard data={makeData({ healthspanScore: null })} />);
-    expect(screen.getByText(/Insufficient data for healthspan analysis/)).toBeDefined();
+    render(
+      <HealthspanScoreCard
+        data={makeData({
+          healthspanScore: null,
+          availability: {
+            status: "insufficient_data",
+            availableMetricCount: 2,
+            requiredMetricCount: 3,
+            missingMetricLabels: ["VO2 Max", "Daily Steps"],
+            summary: "2 of 3 required Healthspan metrics are available.",
+            nextCondition:
+              "The score becomes available after 1 more supported metric syncs successfully.",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("query-state-empty")).toBeDefined();
+    expect(screen.getByText("2 of 3 required Healthspan metrics are available.")).toBeDefined();
+    expect(
+      screen.getByText(
+        "The score becomes available after 1 more supported metric syncs successfully.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("Missing supported metrics: VO2 Max, Daily Steps")).toBeDefined();
   });
 
   it("renders empty state when metrics array is empty", () => {
-    render(<HealthspanScoreCard data={makeData({ metrics: [] })} />);
-    expect(screen.getByText(/Insufficient data for healthspan analysis/)).toBeDefined();
+    render(
+      <HealthspanScoreCard
+        data={makeData({
+          healthspanScore: null,
+          metrics: [],
+          availability: {
+            status: "insufficient_data",
+            availableMetricCount: 0,
+            requiredMetricCount: 3,
+            missingMetricLabels: ["Sleep Duration", "Daily Steps", "Resting Heart Rate"],
+            summary: "0 of 3 required Healthspan metrics are available.",
+            nextCondition:
+              "The score becomes available after 3 more supported metrics sync successfully.",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("0 of 3 required Healthspan metrics are available.")).toBeDefined();
   });
 
   it("displays the healthspan score", () => {
@@ -91,7 +139,7 @@ describe("HealthspanScoreCard", () => {
 
   it("renders trend badge when trend is present", () => {
     render(<HealthspanScoreCard data={makeData({ trend: "improving" })} />);
-    expect(screen.getByText("Improving")).toBeDefined();
+    expect(screen.getByText("Weekly trend across your recorded scores: Improving")).toBeDefined();
   });
 
   it("does not render trend badge when trend is null", () => {
