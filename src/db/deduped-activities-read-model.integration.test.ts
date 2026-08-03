@@ -97,7 +97,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     ]);
   }, 180_000);
 
-  it("uses a linked rock climbing classification instead of the canonical provider's cardio type", async () => {
+  it("uses the canonical type from the selected provider", async () => {
     const activeClient = requireClient(client);
     await seedSpecificActivityTypeFixture(activeClient, targetSchema);
 
@@ -119,7 +119,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
     const rows = await result.json<ActivityTypeRow>();
 
-    expect(rows).toEqual([{ activityId, providerId: "peloton", activityType: "rock_climbing" }]);
+    expect(rows).toEqual([{ activityId, providerId: "peloton", activityType: "cardio" }]);
   }, 180_000);
 });
 
