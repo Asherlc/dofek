@@ -138,6 +138,33 @@ const healthyWeightOverview = {
       smoothedLeanMass: 64,
     },
   ],
+  decisionContext: {
+    latestMeasurement: {
+      date: "2026-07-25",
+      recordedAt: "2026-07-25T15:00:00.000Z",
+      recordedAtLocal: "2026-07-25 08:00:00",
+      weightKg: 80,
+      providerId: "withings",
+      sourceName: "Body+",
+    },
+    trendWeight: {
+      smoothing: "ewma",
+      alpha: 0.1,
+      gapHandling: "linear_interpolation",
+      invalidWeightHandling: "exclude_non_positive",
+      outlierHandling: "retain",
+    },
+    variation: {
+      status: "insufficient_data",
+      observations: 1,
+      minimumObservations: 8,
+      maximumObservations: 30,
+      method: "tukey_inner_fence",
+      lowerResidualKg: null,
+      upperResidualKg: null,
+      outliersIncluded: true,
+    },
+  },
   healthStatus: [],
 };
 

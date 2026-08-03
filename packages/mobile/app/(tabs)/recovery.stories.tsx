@@ -184,6 +184,33 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         weeklyChange: -0.2,
         interpolated: false,
       })),
+      decisionContext: {
+        latestMeasurement: {
+          date: endDate,
+          recordedAt: `${endDate}T15:00:00.000Z`,
+          recordedAtLocal: `${endDate} 08:00:00`,
+          weightKg: 73.55,
+          providerId: "withings",
+          sourceName: "Body+",
+        },
+        trendWeight: {
+          smoothing: "ewma",
+          alpha: 0.1,
+          gapHandling: "linear_interpolation",
+          invalidWeightHandling: "exclude_non_positive",
+          outlierHandling: "retain",
+        },
+        variation: {
+          status: "available",
+          observations: 12,
+          minimumObservations: 8,
+          maximumObservations: 30,
+          method: "tukey_inner_fence",
+          lowerResidualKg: -0.4,
+          upperResidualKg: 0.6,
+          outliersIncluded: true,
+        },
+      },
       weightPrediction: {
         ratePerWeek: -0.2,
         rateConfidence: 0.72,

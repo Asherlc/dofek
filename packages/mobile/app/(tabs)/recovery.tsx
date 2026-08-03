@@ -30,6 +30,7 @@ import {
   UIManager,
   View,
 } from "react-native";
+import { BodyDecisionContext } from "../../components/BodyDecisionContext";
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
@@ -635,9 +636,6 @@ export default function RecoveryScreen() {
                       {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
                     </Text>
                   )}
-                  <Text style={styles.weightExplanation}>
-                    Moves 10% toward each day's scale weight; gaps are interpolated.
-                  </Text>
                   {weightPrediction?.ratePerWeek != null && (
                     <Text style={[styles.weightRate, { color: colors.textSecondary }]}>
                       {weightPrediction.ratePerWeek > 0 ? "+" : ""}
@@ -669,6 +667,7 @@ export default function RecoveryScreen() {
                   </View>
                 )}
               </View>
+              <BodyDecisionContext context={recoveryData?.decisionContext ?? null} />
             </Card>
           )}
 
@@ -865,11 +864,6 @@ const styles = StyleSheet.create({
   weightScale: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 2,
-  },
-  weightExplanation: {
-    fontSize: 11,
-    color: colors.textTertiary,
     marginTop: 2,
   },
   weightGoal: {

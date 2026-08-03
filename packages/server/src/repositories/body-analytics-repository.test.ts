@@ -256,6 +256,32 @@ describe("BodyAnalyticsRepository", () => {
     expect(query).toHaveBeenCalledOnce();
   });
 
+  it("builds decision context from the same trend series and body provenance", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => {
+      const date = `2024-01-${String(index + 1).padStart(2, "0")}`;
+      return {
+        date,
+        weight_kg: 80 + index / 10,
+        recorded_at: `${date}T08:00:00.000Z`,
+        recorded_at_local: `${date} 08:00:00`,
+        provider_id: index === 7 ? "apple_health" : "withings",
+        source_name: index === 7 ? "Apple Watch" : "Body+",
+      };
+    });
+    const { repo } = makeRepository(rows);
+
+    const result = await repo.getBodyDecisionContext("2024-01-08");
+
+    expect(result.latestMeasurement).toMatchObject({
+      date: "2024-01-08",
+      recordedAtLocal: "2024-01-08 08:00:00",
+      providerId: "apple_health",
+      sourceName: "Apple Watch",
+    });
+    expect(result.variation.status).toBe("available");
+    expect(result.variation.observations).toBe(8);
+  });
+
   it("evicts rejected body weight fetches from the per-instance cache", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const query = vi
