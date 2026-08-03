@@ -110,6 +110,8 @@ const rawTableSyncs: RawTableSync[] = [
       "user_id",
       "external_id",
       "canonical_type",
+      "provider_type",
+      "modality",
       "started_at",
       "ended_at",
       "name",
