@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
@@ -13,7 +13,9 @@ export function SubjectiveTrackingPanel() {
   const checkIn = trpc.subjective.checkIn.useQuery({ date });
   const regions = trpc.subjective.regions.useQuery();
   const injuries = trpc.subjective.injuries.useQuery();
-  const [regionId, setRegionId] = useState<string | null>(null);
+  const [symptomRegionId, setSymptomRegionId] = useState<string | null>(null);
+  const [injuryRegionId, setInjuryRegionId] = useState<string | null>(null);
+  const [regionPicker, setRegionPicker] = useState<"symptom" | "injury" | null>(null);
   const [kind, setKind] = useState<"soreness" | "stiffness" | "tenderness">("soreness");
   const [score, setScore] = useState(1);
   const [injuryKind, setInjuryKind] = useState<"injury" | "niggle">("niggle");
@@ -62,13 +64,14 @@ export function SubjectiveTrackingPanel() {
     );
   }, [checkIn.data]);
 
-  const selectedLabel = regions.data?.find((region) => region.id === regionId)?.label;
+  const selectedSymptomLabel = regions.data?.find((region) => region.id === symptomRegionId)?.label;
+  const selectedInjuryLabel = regions.data?.find((region) => region.id === injuryRegionId)?.label;
   const checkInReady = checkIn.data !== undefined && !checkIn.error;
   const addSymptom = () => {
-    if (!regionId) return;
+    if (!symptomRegionId) return;
     setSavedSymptoms((current) => [
-      ...current.filter((item) => !(item.bodyRegionId === regionId && item.kind === kind)),
-      { bodyRegionId: regionId, kind, score },
+      ...current.filter((item) => !(item.bodyRegionId === symptomRegionId && item.kind === kind)),
+      { bodyRegionId: symptomRegionId, kind, score },
     ]);
   };
 
@@ -101,15 +104,10 @@ export function SubjectiveTrackingPanel() {
         ) : (
           <Pressable
             style={styles.control}
-            onPress={() => {
-              const options = regions.data ?? [];
-              if (options.length === 0) return;
-              const currentIndex = options.findIndex((region) => region.id === regionId);
-              setRegionId(options[(currentIndex + 1) % options.length]?.id ?? null);
-            }}
+            onPress={() => setRegionPicker("symptom")}
             accessibilityLabel="Choose body region"
           >
-            <Text style={styles.controlText}>{selectedLabel ?? "Choose region"}</Text>
+            <Text style={styles.controlText}>{selectedSymptomLabel ?? "Choose region"}</Text>
           </Pressable>
         )}
         <Pressable
@@ -130,7 +128,7 @@ export function SubjectiveTrackingPanel() {
         <Pressable
           style={styles.secondaryButton}
           onPress={addSymptom}
-          disabled={!checkInReady || !regionId}
+          disabled={!checkInReady || !symptomRegionId}
           accessibilityRole="button"
         >
           <Text style={styles.secondaryText}>Add symptom</Text>
@@ -158,6 +156,13 @@ export function SubjectiveTrackingPanel() {
       <Text style={styles.timelineTitle}>Injuries and niggles</Text>
       <View style={styles.injuryForm}>
         <View style={styles.row}>
+          <Pressable
+            style={styles.control}
+            onPress={() => setRegionPicker("injury")}
+            accessibilityLabel="Choose injury body region"
+          >
+            <Text style={styles.controlText}>{selectedInjuryLabel ?? "Choose region"}</Text>
+          </Pressable>
           <Pressable
             style={styles.control}
             onPress={() => setInjuryKind(injuryKind === "niggle" ? "injury" : "niggle")}
@@ -200,9 +205,9 @@ export function SubjectiveTrackingPanel() {
         <Pressable
           style={styles.secondaryButton}
           onPress={() => {
-            if (!regionId || !injuryDescription.trim()) return;
+            if (!injuryRegionId || !injuryDescription.trim()) return;
             createInjury.mutate({
-              bodyRegionId: regionId,
+              bodyRegionId: injuryRegionId,
               description: injuryDescription.trim(),
               kind: injuryKind,
               onsetDate: injuryOnsetDate,
@@ -210,7 +215,7 @@ export function SubjectiveTrackingPanel() {
               severity: injurySeverity,
             });
           }}
-          disabled={!regionId || !injuryDescription.trim() || createInjury.isPending}
+          disabled={!injuryRegionId || !injuryDescription.trim() || createInjury.isPending}
           accessibilityRole="button"
           accessibilityLabel="Add injury"
         >
@@ -232,6 +237,45 @@ export function SubjectiveTrackingPanel() {
       ) : (
         <Text style={styles.subtitle}>No injury events logged.</Text>
       )}
+      <Modal
+        visible={regionPicker !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRegionPicker(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.regionPicker}>
+            <Text style={styles.timelineTitle}>
+              Choose {regionPicker === "injury" ? "injury" : "symptom"} body region
+            </Text>
+            <ScrollView style={styles.regionOptions}>
+              {(regions.data ?? []).map((region) => (
+                <Pressable
+                  key={region.id}
+                  style={styles.regionOption}
+                  onPress={() => {
+                    if (regionPicker === "injury") setInjuryRegionId(region.id);
+                    else setSymptomRegionId(region.id);
+                    setRegionPicker(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={region.label}
+                >
+                  <Text style={styles.controlText}>{region.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => setRegionPicker(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Close region picker"
+            >
+              <Text style={styles.secondaryText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Card>
   );
 }
@@ -286,5 +330,27 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  modalBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+  },
+  regionPicker: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    maxHeight: "80%",
+    padding: 16,
+    width: "100%",
+  },
+  regionOptions: { marginVertical: 12 },
+  regionOption: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    minHeight: 42,
+    justifyContent: "center",
+    paddingVertical: 10,
   },
 });

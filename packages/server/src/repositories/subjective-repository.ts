@@ -127,6 +127,19 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
     );
   }
 
+  async getInjury(id: string): Promise<InjuryEvent | null> {
+    const rows = await this.query(
+      injuryRowSchema,
+      sql`SELECT id::text AS id, kind, body_region_id, onset_date::text AS onset_date,
+                 resolved_date::text AS resolved_date, severity, description,
+                 created_at::text AS created_at, updated_at::text AS updated_at
+          FROM fitness.injury_event
+          WHERE id = ${id}::uuid AND user_id = ${this.userId}::uuid
+          LIMIT 1`,
+    );
+    return rows[0] ?? null;
+  }
+
   async createInjury(input: {
     kind: z.infer<typeof injuryKindSchema>;
     bodyRegionId: string;

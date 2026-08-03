@@ -28,20 +28,6 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
-  return {
-    ...original,
-    executeWithSchema: vi.fn(
-      async (
-        db: { execute: (query: unknown) => Promise<unknown[]> },
-        _schema: unknown,
-        query: unknown,
-      ) => db.execute(query),
-    ),
-  };
-});
-
 import { subjectiveRouter } from "./subjective.ts";
 
 const createCaller = createTestCallerFactory(subjectiveRouter);
@@ -98,6 +84,25 @@ describe("subjectiveRouter", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("rejects an injury resolution date before its onset date", async () => {
+    const { caller, execute } = makeCaller();
+
+    await expect(
+      caller.createInjury({
+        kind: "injury",
+        bodyRegionId: "left_hand",
+        onsetDate: "2026-08-02",
+        resolvedDate: "2026-08-01",
+        severity: 4,
+        description: "Finger pain",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "An injury resolution date must not be before its onset date",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid calendar dates before touching the database", async () => {
     const { caller, execute } = makeCaller();
     await expect(caller.checkIn({ date: "2026-02-30" })).rejects.toMatchObject({
@@ -127,6 +132,29 @@ describe("subjectiveRouter", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("rejects an update whose effective resolution date precedes the stored onset", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand",
+      onset_date: "2026-08-02",
+      resolved_date: null,
+      severity: 3,
+      description: "Hand soreness",
+      created_at: "2026-08-02T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
+    };
+    const { caller, execute } = makeCaller([[injury]]);
+
+    await expect(
+      caller.updateInjury({ id: injury.id, resolvedDate: "2026-08-01" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "An injury resolution date must not be before its onset date",
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it("updates an injury and invalidates subjective caches", async () => {
     const injury = {
       id: "50000000-0000-4000-8000-000000002247",
@@ -136,10 +164,10 @@ describe("subjectiveRouter", () => {
       resolved_date: null,
       severity: 3,
       description: "Updated hand soreness",
-      created_at: "2026-08-02T08:00:00Z",
-      updated_at: "2026-08-02T08:00:00Z",
+      created_at: "2026-08-02T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
     };
-    const { caller } = makeCaller([[injury]]);
+    const { caller } = makeCaller([[injury], [injury]]);
 
     await expect(
       caller.updateInjury({
@@ -169,8 +197,8 @@ describe("subjectiveRouter", () => {
       resolved_date: null,
       severity: null,
       description: "Hand soreness",
-      created_at: "2026-08-02T08:00:00Z",
-      updated_at: "2026-08-02T08:00:00Z",
+      created_at: "2026-08-02T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
     };
     const { caller } = makeCaller([[injury]]);
 

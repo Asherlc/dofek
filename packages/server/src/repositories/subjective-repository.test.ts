@@ -169,6 +169,27 @@ describe("SubjectiveRepository", () => {
     ).resolves.toEqual(injury);
   });
 
+  it("loads an owned injury by id for update validation", async () => {
+    const injury = {
+      id: "50000000-0000-4000-8000-000000002247",
+      kind: "niggle",
+      body_region_id: "left_hand",
+      onset_date: "2026-08-02",
+      resolved_date: null,
+      severity: 2,
+      description: "Hand soreness",
+      created_at: "2026-08-02T08:00:00.000Z",
+      updated_at: "2026-08-02T08:00:00.000Z",
+    };
+    const { repository, execute } = makeRepository([[injury]]);
+
+    await expect(repository.getInjury(injury.id)).resolves.toEqual(injury);
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("WHERE id =");
+    expect(query.params).toContain(injury.id);
+    expect(query.params).toContain(USER_ID);
+  });
+
   it("throws when the injury insert returns no row", async () => {
     const { repository } = makeRepository([[]]);
 

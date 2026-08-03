@@ -451,6 +451,20 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Morning Ride")).toBeTruthy();
   });
 
+  it("renders the activity's session perceived exertion control", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, perceivedExertion: 7 },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByLabelText("Session perceived exertion")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
+  });
+
   it("renders server-authored detail state when a metric is unavailable without GPS", async () => {
     mockByIdQuery.mockReturnValue({
       data: {

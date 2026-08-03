@@ -28,6 +28,7 @@ export function SubjectiveTrackingPanel() {
   const injuries = trpc.subjective.injuries.useQuery();
   const [symptoms, setSymptoms] = useState<SymptomDraft[]>([]);
   const [selectedRegion, setSelectedRegion] = useState("");
+  const [selectedInjuryRegion, setSelectedInjuryRegion] = useState("");
   const [selectedKind, setSelectedKind] = useState<SymptomDraft["kind"]>("soreness");
   const [selectedScore, setSelectedScore] = useState(1);
   const [selectedInjuryKind, setSelectedInjuryKind] = useState<InjuryKind>("niggle");
@@ -196,7 +197,10 @@ export function SubjectiveTrackingPanel() {
               <button
                 type="button"
                 className="rounded border border-border px-3 py-1.5 text-sm"
-                onClick={() => save.mutate({ date, symptoms: [] })}
+                onClick={() => {
+                  setSymptoms([]);
+                  save.mutate({ date, symptoms: [] });
+                }}
                 disabled={!checkInReady || save.isPending}
               >
                 Log all clear
@@ -210,6 +214,22 @@ export function SubjectiveTrackingPanel() {
       <div className="card p-4 space-y-3">
         <h3 className="font-medium">Injury and niggle timeline</h3>
         <div className="flex flex-wrap gap-2 items-end">
+          <label className="text-xs text-muted">
+            Injury body region
+            <select
+              aria-label="Injury body region"
+              className="block mt-1 rounded border border-border bg-surface px-2 py-1 text-sm"
+              value={selectedInjuryRegion}
+              onChange={(event) => setSelectedInjuryRegion(event.target.value)}
+            >
+              <option value="">Choose region</option>
+              {regionOptions.map((region) => (
+                <option key={region.id} value={region.id}>
+                  {region.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="text-xs text-muted">
             Event type
             <select
@@ -269,11 +289,11 @@ export function SubjectiveTrackingPanel() {
           <button
             type="button"
             className="rounded border border-border px-3 py-1.5 text-sm"
-            disabled={!injuryDescription.trim() || !selectedRegion || createInjury.isPending}
+            disabled={!injuryDescription.trim() || !selectedInjuryRegion || createInjury.isPending}
             onClick={() =>
               createInjury.mutate({
                 kind: selectedInjuryKind,
-                bodyRegionId: selectedRegion,
+                bodyRegionId: selectedInjuryRegion,
                 onsetDate: injuryOnsetDate,
                 resolvedDate: injuryResolvedDate,
                 severity: selectedInjurySeverity,

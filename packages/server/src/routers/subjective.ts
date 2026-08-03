@@ -26,6 +26,15 @@ const injuryFieldsSchema = z.object({
   description: z.string().trim().min(1),
 });
 
+function assertInjuryDateOrder(onsetDate: string, resolvedDate: string | null): void {
+  if (resolvedDate !== null && resolvedDate < onsetDate) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "An injury resolution date must not be before its onset date",
+    });
+  }
+}
+
 export const subjectiveRouter = router({
   regions: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(async ({ ctx }) => {
     return new SubjectiveRepository(ctx.db, ctx.userId, ctx.timezone).regions();
@@ -53,6 +62,7 @@ export const subjectiveRouter = router({
   }),
 
   createInjury: protectedProcedure.input(injuryFieldsSchema).mutation(async ({ ctx, input }) => {
+    assertInjuryDateOrder(input.onsetDate, input.resolvedDate);
     const result = await new SubjectiveRepository(ctx.db, ctx.userId, ctx.timezone).createInjury(
       input,
     );
@@ -74,10 +84,14 @@ export const subjectiveRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...changes } = input;
-      const result = await new SubjectiveRepository(ctx.db, ctx.userId, ctx.timezone).updateInjury(
-        id,
-        changes,
+      const repository = new SubjectiveRepository(ctx.db, ctx.userId, ctx.timezone);
+      const current = await repository.getInjury(id);
+      if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Injury event not found" });
+      assertInjuryDateOrder(
+        changes.onsetDate ?? current.onset_date,
+        changes.resolvedDate !== undefined ? changes.resolvedDate : current.resolved_date,
       );
+      const result = await repository.updateInjury(id, changes);
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Injury event not found" });
       await invalidateUserQueryDomains(ctx.userId, ["subjective"]);
       return result;

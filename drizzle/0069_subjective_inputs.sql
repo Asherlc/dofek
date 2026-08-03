@@ -124,3 +124,6 @@ CREATE TABLE fitness.injury_event (
 
 CREATE INDEX injury_event_user_onset_idx
 ON fitness.injury_event (user_id, onset_date DESC);
+
+CREATE INDEX injury_event_body_region_idx
+ON fitness.injury_event (body_region_id);

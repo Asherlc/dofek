@@ -3,6 +3,22 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type SaveCheckInInput = {
+  date: string;
+  symptoms: Array<{
+    bodyRegionId: string;
+    kind: "soreness" | "stiffness" | "tenderness";
+    score: number;
+  }>;
+};
+
+type MutationOptions = {
+  onSuccess?: (result: {
+    symptoms?: Array<{ body_region_id: string; kind: string; score: number }>;
+  }) => void;
+  onError?: (error: Error) => void;
+};
+
 const mocks = vi.hoisted(() => {
   const regionData: Array<{ id: string; label: string }> | undefined = [
     { id: "left_hand", label: "Left hand" },
@@ -13,6 +29,8 @@ const mocks = vi.hoisted(() => {
     checkInResult: { data: { logged: false, symptoms: [] }, error: null, isLoading: false },
     createInjury: vi.fn(),
     saveCheckIn: vi.fn(),
+    invokeMutationSuccess: false,
+    invokeMutationError: false,
     injuriesResult: { data: [], error: null, isLoading: false },
     invalidate: vi.fn(),
     regionsResult: {
@@ -37,12 +55,40 @@ vi.mock("../lib/trpc", () => ({
     subjective: {
       checkIn: { useQuery: () => mocks.checkInResult },
       createInjury: {
-        useMutation: () => ({ error: null, isPending: false, mutate: mocks.createInjury }),
+        useMutation: (options: MutationOptions) => {
+          return {
+            error: null,
+            isPending: false,
+            mutate: (input: unknown) => {
+              mocks.createInjury(input);
+              if (mocks.invokeMutationSuccess) options.onSuccess?.({});
+              if (mocks.invokeMutationError) options.onError?.(new Error("Injury unavailable"));
+            },
+          };
+        },
       },
       injuries: { useQuery: () => mocks.injuriesResult },
       regions: { useQuery: () => mocks.regionsResult },
       saveCheckIn: {
-        useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }),
+        useMutation: (options: MutationOptions) => {
+          return {
+            error: null,
+            isPending: false,
+            mutate: (input: SaveCheckInInput) => {
+              mocks.saveCheckIn(input);
+              if (mocks.invokeMutationSuccess) {
+                options.onSuccess?.({
+                  symptoms: input.symptoms.map((symptom) => ({
+                    body_region_id: symptom.bodyRegionId,
+                    kind: symptom.kind,
+                    score: symptom.score,
+                  })),
+                });
+              }
+              if (mocks.invokeMutationError) options.onError?.(new Error("Check-in unavailable"));
+            },
+          };
+        },
       },
     },
   },
@@ -55,6 +101,8 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.captureException.mockReset();
     mocks.createInjury.mockReset();
     mocks.saveCheckIn.mockReset();
+    mocks.invokeMutationSuccess = false;
+    mocks.invokeMutationError = false;
     mocks.invalidate.mockReset();
     mocks.regionsResult.data = [{ id: "left_hand", label: "Left hand" }];
     mocks.regionsResult.error = null;
@@ -70,7 +118,8 @@ describe("SubjectiveTrackingPanel", () => {
   it("creates an injury with an explicit zero severity", () => {
     render(<SubjectiveTrackingPanel />);
 
-    fireEvent.click(screen.getByLabelText("Choose body region"));
+    fireEvent.click(screen.getByLabelText("Choose injury body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
     fireEvent.change(screen.getByLabelText("Injury description"), {
       target: { value: "No pain at rest" },
     });
@@ -89,7 +138,8 @@ describe("SubjectiveTrackingPanel", () => {
   it("uses editable injury dates", () => {
     render(<SubjectiveTrackingPanel />);
 
-    fireEvent.click(screen.getByLabelText("Choose body region"));
+    fireEvent.click(screen.getByLabelText("Choose injury body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
     fireEvent.change(screen.getByLabelText("Injury onset date"), {
       target: { value: "2026-07-31" },
     });
@@ -113,6 +163,7 @@ describe("SubjectiveTrackingPanel", () => {
     const view = render(<SubjectiveTrackingPanel />);
 
     fireEvent.click(screen.getByLabelText("Choose body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
     fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
 
     mocks.checkInResult.data = { logged: false, symptoms: [] };
@@ -122,6 +173,46 @@ describe("SubjectiveTrackingPanel", () => {
     expect(mocks.saveCheckIn).toHaveBeenCalledWith({
       date: "2026-08-02",
       symptoms: [{ bodyRegionId: "left_hand", kind: "soreness", score: 1 }],
+    });
+  });
+
+  it("uses independent region pickers for symptoms and injuries", () => {
+    mocks.regionsResult.data = [
+      { id: "left_hand", label: "Left hand" },
+      { id: "right_hand", label: "Right hand" },
+    ];
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByLabelText("Choose body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
+    fireEvent.click(screen.getByLabelText("Choose injury body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Right hand" }));
+    fireEvent.change(screen.getByLabelText("Injury description"), {
+      target: { value: "Right hand pain" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
+
+    expect(mocks.createInjury).toHaveBeenCalledWith(
+      expect.objectContaining({ bodyRegionId: "right_hand" }),
+    );
+  });
+
+  it("runs mutation callbacks so success and failure side effects are testable", () => {
+    mocks.invokeMutationSuccess = true;
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByLabelText("Choose injury body region"));
+    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
+    fireEvent.change(screen.getByLabelText("Injury description"), {
+      target: { value: "Morning pain" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
+    expect(mocks.invalidate).toHaveBeenCalled();
+
+    mocks.invokeMutationError = true;
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      operation: "subjective.saveCheckIn",
     });
   });
 

@@ -14,7 +14,7 @@
 - Persist raw subjective entries only; do not add analytics, readiness scores, or client-side calculations.
 - All writes and reads are user-scoped and every API boundary has Zod validation.
 - `subjective_check_in` presence means logged; an empty symptom set means all clear.
-- Symptom scores are integers 1–10; injury severity and activity RPE are nullable-or-integer/real values in 0–10.
+- Symptom scores are integers 1–10; injury severity is a nullable integer 0–10; activity RPE is a nullable real 0–10.
 - Stable body-region IDs include bilateral hands, thumb-specific nodes, and A1–A5 pulley nodes for each non-thumb finger.
 - Keep web and mobile workflows functionally equivalent; reusable UI components have colocated tests and stories.
 - Use a new forward-only Drizzle migration and executable database integration tests.

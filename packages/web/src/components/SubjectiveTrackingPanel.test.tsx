@@ -61,6 +61,21 @@ describe("SubjectiveTrackingPanel", () => {
     expect(mocks.saveCheckIn).toHaveBeenCalledWith({ date: expect.any(String), symptoms: [] });
   });
 
+  it("clears a staged symptom when logging all clear", () => {
+    mocks.checkInQuery.mockReturnValue({ data: { logged: true, symptoms: [] } });
+    render(<SubjectiveTrackingPanel />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
+      target: { value: "left_hand" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
+    expect(screen.getByText(/Left hand · soreness/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Log all clear" }));
+
+    expect(screen.queryByText(/Left hand · soreness/)).not.toBeInTheDocument();
+    expect(screen.getByText("All clear")).toBeInTheDocument();
+  });
+
   it("saves a sparse symptom without turning missing regions into zeros", () => {
     render(<SubjectiveTrackingPanel />);
     fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
@@ -79,7 +94,7 @@ describe("SubjectiveTrackingPanel", () => {
 
   it("creates an injury or niggle with the selected region", () => {
     render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Injury body region" }), {
       target: { value: "left_hand" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Injury description" }), {
@@ -98,7 +113,7 @@ describe("SubjectiveTrackingPanel", () => {
 
   it("creates an injury with its own kind and zero severity", () => {
     render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Injury body region" }), {
       target: { value: "left_hand" },
     });
     fireEvent.change(screen.getByRole("combobox", { name: "Injury type" }), {
@@ -116,7 +131,7 @@ describe("SubjectiveTrackingPanel", () => {
 
   it("uses an editable injury onset date", () => {
     render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Injury body region" }), {
       target: { value: "left_hand" },
     });
     fireEvent.change(screen.getByLabelText("Injury onset date"), {
@@ -129,6 +144,31 @@ describe("SubjectiveTrackingPanel", () => {
 
     expect(mocks.createInjury).toHaveBeenCalledWith(
       expect.objectContaining({ onsetDate: "2026-07-31" }),
+    );
+  });
+
+  it("keeps symptom and injury region selections independent", () => {
+    mocks.regionsQuery.mockReturnValue({
+      data: [
+        { id: "left_hand", label: "Left hand", kind: "hand", parent_id: "body" },
+        { id: "right_hand", label: "Right hand", kind: "hand", parent_id: "body" },
+      ],
+    });
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
+      target: { value: "left_hand" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Injury body region" }), {
+      target: { value: "right_hand" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Injury description" }), {
+      target: { value: "Right hand pain" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add niggle" }));
+
+    expect(mocks.createInjury).toHaveBeenCalledWith(
+      expect.objectContaining({ bodyRegionId: "right_hand" }),
     );
   });
 

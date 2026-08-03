@@ -323,6 +323,7 @@ export const injuryEvent = fitness.table(
   },
   (table) => [
     index("injury_event_user_onset_idx").on(table.userId, table.onsetDate.desc()),
+    index("injury_event_body_region_idx").on(table.bodyRegionId),
     check("injury_event_kind_valid", sql`${table.kind} IN ('injury', 'niggle')`),
     check("injury_event_severity_range", sql`${table.severity} BETWEEN 0 AND 10`),
     check("injury_event_description_nonempty", sql`btrim(${table.description}) <> ''`),

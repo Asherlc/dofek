@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => {
     invalidate: vi.fn(),
     mutate: vi.fn(),
     mutation: { error, isPending: false },
+    invokeMutationSuccess: false,
+    invokeMutationError: false,
   };
 });
 
@@ -19,7 +21,21 @@ vi.mock("../lib/trpc", () => ({
     useUtils: () => ({ activity: { byId: { invalidate: mocks.invalidate } } }),
     activity: {
       setPerceivedExertion: {
-        useMutation: () => ({ ...mocks.mutation, mutate: mocks.mutate }),
+        useMutation: (options: {
+          onSuccess?: (result: { perceivedExertion: number | null }) => void;
+          onError?: (error: Error) => void;
+        }) => ({
+          ...mocks.mutation,
+          mutate: (input: { id: string; value: number | null }) => {
+            mocks.mutate(input);
+            if (mocks.invokeMutationSuccess) {
+              options.onSuccess?.({ perceivedExertion: input.value });
+            }
+            if (mocks.invokeMutationError) {
+              options.onError?.(new Error("RPE unavailable"));
+            }
+          },
+        }),
       },
     },
   },
@@ -34,6 +50,8 @@ describe("ActivityPerceivedExertion", () => {
     mocks.mutate.mockReset();
     mocks.mutation.error = null;
     mocks.mutation.isPending = false;
+    mocks.invokeMutationSuccess = false;
+    mocks.invokeMutationError = false;
   });
 
   it("adjusts and saves a session effort, and can clear it", () => {
@@ -56,5 +74,20 @@ describe("ActivityPerceivedExertion", () => {
     expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Clear" })).toHaveProperty("disabled", true);
     expect(screen.getByText("RPE unavailable")).toBeTruthy();
+  });
+
+  it("runs mutation success and error callbacks", () => {
+    mocks.invokeMutationSuccess = true;
+    render(<ActivityPerceivedExertion activityId="activity-1" value={null} />);
+
+    fireEvent.click(screen.getByLabelText("Increase perceived exertion"));
+    fireEvent.click(screen.getByText("Save"));
+    expect(mocks.invalidate).toHaveBeenCalledWith({ id: "activity-1" });
+
+    mocks.invokeMutationError = true;
+    fireEvent.click(screen.getByText("Clear"));
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      operation: "activity.setPerceivedExertion",
+    });
   });
 });
