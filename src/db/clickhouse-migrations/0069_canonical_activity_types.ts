@@ -200,7 +200,7 @@ async function migrateServingTables(client: ClickHouseCommandClient): Promise<vo
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0063_canonical_activity_types",
+    id: "0069_canonical_activity_types",
     statements: [
       "ALTER TABLE postgres_fitness.activity RENAME COLUMN activity_type TO canonical_type",
       `ALTER TABLE postgres_fitness.activity

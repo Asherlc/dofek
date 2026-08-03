@@ -6,7 +6,7 @@ import {
   type ClickHouseCommandClient,
   createClickHouseClientFromEnv,
 } from "../clickhouse.ts";
-import { createMigration } from "./0063_canonical_activity_types.ts";
+import { createMigration } from "./0069_canonical_activity_types.ts";
 
 const activityRowsSchema = z.array(
   z.object({
@@ -16,7 +16,7 @@ const activityRowsSchema = z.array(
   }),
 );
 
-describe("0063_canonical_activity_types migration", () => {
+describe("0069_canonical_activity_types migration", () => {
   const database = `canonical_activity_types_${randomUUID().replaceAll("-", "")}`;
   let client: ClickHouseClient;
 

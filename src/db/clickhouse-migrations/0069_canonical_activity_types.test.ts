@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createMigration } from "./0063_canonical_activity_types.ts";
+import { createMigration } from "./0069_canonical_activity_types.ts";
 
-describe("0063_canonical_activity_types", () => {
+describe("0069_canonical_activity_types", () => {
   it("migrates the replicated activity source before rebuilding serving models", () => {
     const migration = createMigration();
 
-    expect(migration.id).toBe("0063_canonical_activity_types");
+    expect(migration.id).toBe("0069_canonical_activity_types");
     expect(migration.statements).toContain(
       "ALTER TABLE postgres_fitness.activity RENAME COLUMN activity_type TO canonical_type",
     );
