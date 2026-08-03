@@ -1,6 +1,6 @@
 # Subjective Inputs Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add durable subjective check-ins, body symptoms, injury tracking, and session RPE with equivalent web and iOS workflows.
 
@@ -102,4 +102,4 @@
 - [ ] Run the full Docker-backed integration tier; blocked by exhausted Docker address pools.
 - [x] Run focused unit tests, server/web/mobile typechecks, migration policy, Biome, and web Storybook coverage.
 - [x] Review the complete diff against this plan: no life-event/provider-measurement duplication, no derived analytics, raw score boundaries enforced, and both platforms expose both workflow classes.
-- [x] Commit all issue changes on `Asherlc/issue-2247-subjective-inputs` with conventional subjects.
+- [x] Commit all issue changes on the working branch with conventional subjects.

@@ -977,6 +977,8 @@ describe("ActivityRepository", () => {
       expect(query.sql).toContain("member_activity_ids");
       expect(query.params).toContain("activity-1");
       expect(query.params).toContain("user-1");
+      expect(query.params).toContain(7);
+      expect(query.sql).toContain("activity_id IN");
     });
 
     it("reports an activity not found when no visible member row was updated", async () => {

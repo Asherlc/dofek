@@ -56,6 +56,22 @@ describe("SubjectiveRepository", () => {
     expect(database.transaction).toHaveBeenCalledOnce();
   });
 
+  it("inserts all symptoms in one statement", async () => {
+    const { repository, database } = makeRepository([[checkInRow], [], [], [checkInRow], []]);
+
+    await repository.saveCheckIn("2026-08-02", [
+      { bodyRegionId: "left_hand", kind: "soreness", score: 3 },
+      { bodyRegionId: "right_knee", kind: "stiffness", score: 5 },
+    ]);
+
+    const query = new PgDialect().sqlToQuery(database.execute.mock.calls[2]?.[0]);
+    expect(query.sql).toContain("INSERT INTO fitness.subjective_symptom");
+    expect(query.params).toEqual(
+      expect.arrayContaining([checkInRow.id, "left_hand", "right_knee"]),
+    );
+    expect(database.execute).toHaveBeenCalledTimes(5);
+  });
+
   it("assembles date-window check-ins and overlapping injury events", async () => {
     const symptom = {
       id: "40000000-0000-4000-8000-000000002247",
@@ -72,8 +88,8 @@ describe("SubjectiveRepository", () => {
       resolved_date: null,
       severity: 4,
       description: "Morning tenderness",
-      created_at: "2026-08-01T08:00:00Z",
-      updated_at: "2026-08-01T08:00:00Z",
+      created_at: "2026-08-01T08:00:00.000Z",
+      updated_at: "2026-08-01T08:00:00.000Z",
     };
     const { repository } = makeRepository([[checkInRow], [injury], [symptom]]);
 
@@ -112,5 +128,28 @@ describe("SubjectiveRepository", () => {
     const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
     expect(query.sql).toContain("user_id");
     expect(query.params).toContain(USER_ID);
+  });
+
+  it("clears an injury resolution date with an explicit NULL assignment", async () => {
+    const { repository, execute } = makeRepository([[]]);
+
+    await expect(
+      repository.updateInjury("50000000-0000-4000-8000-000000002247", {
+        resolvedDate: null,
+      }),
+    ).resolves.toBeNull();
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("resolved_date = NULL");
+    expect(query.params).toContain("50000000-0000-4000-8000-000000002247");
+    expect(query.params).toContain(USER_ID);
+  });
+
+  it("reports false when deleting an injury that is not owned by the user", async () => {
+    const { repository } = makeRepository([[]]);
+
+    await expect(repository.deleteInjury("50000000-0000-4000-8000-000000002247")).resolves.toBe(
+      false,
+    );
   });
 });

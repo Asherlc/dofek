@@ -452,7 +452,7 @@ describe("createMcpRouter", () => {
     const tools = parsedResponse.result.tools;
     expect(findListedTool(tools, "get_daily_health_summary").inputSchema).toMatchObject({
       properties: {
-        date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        date: { format: "date", type: "string" },
         timezone: { type: "string" },
       },
       required: ["date"],
@@ -460,19 +460,19 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "search_activities").inputSchema).toMatchObject({
       properties: {
-        from: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        from: { format: "date", type: "string" },
         limit: { maximum: 25, minimum: 1, type: "integer" },
         query: { maxLength: 200, type: "string" },
-        to: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        to: { format: "date", type: "string" },
       },
       type: "object",
     });
     expect(findListedTool(tools, "get_health_trends").inputSchema).toMatchObject({
       properties: {
-        end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        end_date: { format: "date", type: "string" },
         granularity: { enum: ["daily", "weekly"], type: "string" },
         metrics: { type: "array" },
-        start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        start_date: { format: "date", type: "string" },
         timezone: { type: "string" },
       },
       required: ["start_date", "end_date"],
@@ -480,9 +480,8 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_subjective_timeline").inputSchema).toMatchObject({
       properties: {
-        end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
-        start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
-        timezone: { type: "string" },
+        end_date: { format: "date", type: "string" },
+        start_date: { format: "date", type: "string" },
       },
       required: ["start_date", "end_date"],
       type: "object",
@@ -504,8 +503,8 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_finger_loading").inputSchema).toMatchObject({
       properties: {
-        end_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
-        start_date: { pattern: "^\\d{4}-\\d{2}-\\d{2}$", type: "string" },
+        end_date: { format: "date", type: "string" },
+        start_date: { format: "date", type: "string" },
         timezone: { type: "string" },
       },
       required: ["start_date", "end_date"],
@@ -542,7 +541,7 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("uses an explicitly requested timezone for subjective timelines", async () => {
+  it("returns a subjective timeline using the request context timezone", async () => {
     authorizeMcpToken();
     toolTestMocks.subjectiveTimeline.mockResolvedValue({
       checkIns: [],
@@ -554,7 +553,6 @@ describe("createMcpRouter", () => {
       body: createToolCallRequest("get_subjective_timeline", {
         end_date: "2026-05-20",
         start_date: "2026-05-01",
-        timezone: "America/New_York",
       }),
     });
 
@@ -563,9 +561,26 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.subjectiveRepository).toHaveBeenCalledWith(
       expect.anything(),
       "user-id",
-      "America/New_York",
+      "UTC",
     );
     expect(toolTestMocks.subjectiveTimeline).toHaveBeenCalledWith("2026-05-01", "2026-05-20");
+  });
+
+  it("returns a tool error for a reversed subjective timeline range", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_subjective_timeline", {
+        end_date: "2026-05-01",
+        start_date: "2026-05-20",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("start_date must be on or before end_date");
+    expect(toolTestMocks.subjectiveTimeline).not.toHaveBeenCalled();
   });
 
   it("returns daily health summaries from the metrics repository", async () => {

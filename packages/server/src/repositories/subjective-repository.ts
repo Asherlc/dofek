@@ -24,10 +24,13 @@ const checkInRowSchema = z.object({
 
 const symptomRowSchema = z.object({
   id: z.string(),
-  check_in_id: z.string().optional(),
   body_region_id: z.string(),
   kind: subjectiveKindSchema,
   score: z.coerce.number().int().min(1).max(10),
+});
+
+const timelineSymptomRowSchema = symptomRowSchema.extend({
+  check_in_id: z.string(),
 });
 
 const injuryRowSchema = z.object({
@@ -96,10 +99,16 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
       await transaction.execute(
         sql`DELETE FROM fitness.subjective_symptom WHERE check_in_id = ${checkIn.id}::uuid`,
       );
-      for (const symptom of symptoms) {
+      if (symptoms.length > 0) {
         await transaction.execute(
           sql`INSERT INTO fitness.subjective_symptom (check_in_id, body_region_id, kind, score)
-              VALUES (${checkIn.id}::uuid, ${symptom.bodyRegionId}, ${symptom.kind}, ${symptom.score})`,
+              VALUES ${sql.join(
+                symptoms.map(
+                  (symptom) =>
+                    sql`(${checkIn.id}::uuid, ${symptom.bodyRegionId}, ${symptom.kind}, ${symptom.score})`,
+                ),
+                sql`, `,
+              )}`,
         );
       }
     });
@@ -181,12 +190,13 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
   }
 
   async deleteInjury(id: string): Promise<boolean> {
-    const result = await this.db.execute(
+    const rows = await this.query(
+      z.object({ id: z.string() }),
       sql`DELETE FROM fitness.injury_event
           WHERE id = ${id}::uuid AND user_id = ${this.userId}::uuid
-          RETURNING id`,
+          RETURNING id::text AS id`,
     );
-    return result.length > 0;
+    return rows.length > 0;
   }
 
   async timeline(startDate: string, endDate: string): Promise<SubjectiveTimeline> {
@@ -216,7 +226,7 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
       checkInRows.length === 0
         ? []
         : await this.query(
-            symptomRowSchema,
+            timelineSymptomRowSchema,
             sql`SELECT id::text AS id, check_in_id::text AS check_in_id, body_region_id, kind, score
               FROM fitness.subjective_symptom
               WHERE check_in_id IN (${sql.join(
@@ -227,9 +237,9 @@ export class SubjectiveRepository extends BaseRepository<TransactionalDatabase> 
           );
     const symptomsByCheckIn = new Map<string, SubjectiveSymptom[]>();
     for (const symptom of symptoms) {
-      const list = symptomsByCheckIn.get(symptom.check_in_id ?? "") ?? [];
+      const list = symptomsByCheckIn.get(symptom.check_in_id) ?? [];
       list.push(symptom);
-      symptomsByCheckIn.set(symptom.check_in_id ?? "", list);
+      symptomsByCheckIn.set(symptom.check_in_id, list);
     }
     return {
       checkIns: checkInRows.map((row) => ({

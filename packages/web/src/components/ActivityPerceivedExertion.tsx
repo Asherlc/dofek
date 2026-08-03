@@ -45,7 +45,7 @@ export function ActivityPerceivedExertion({
           type="button"
           className="rounded bg-accent/15 px-2 py-1 text-xs text-accent"
           onClick={() => mutation.mutate({ id: activityId, value: draft ?? 0 })}
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || draft == null}
         >
           Save
         </button>

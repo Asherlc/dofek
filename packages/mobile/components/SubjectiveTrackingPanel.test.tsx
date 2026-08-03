@@ -3,14 +3,24 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  captureException: vi.fn(),
-  checkInResult: { data: { logged: false, symptoms: [] } },
-  createInjury: vi.fn(),
-  injuriesResult: { data: [] },
-  invalidate: vi.fn(),
-  regionsResult: { data: [{ id: "left_hand", label: "Left hand" }] },
-}));
+const mocks = vi.hoisted(() => {
+  const regionData: Array<{ id: string; label: string }> | undefined = [
+    { id: "left_hand", label: "Left hand" },
+  ];
+  const regionError: Error | null = null;
+  return {
+    captureException: vi.fn(),
+    checkInResult: { data: { logged: false, symptoms: [] }, error: null, isLoading: false },
+    createInjury: vi.fn(),
+    injuriesResult: { data: [], error: null, isLoading: false },
+    invalidate: vi.fn(),
+    regionsResult: {
+      data: regionData,
+      error: regionError,
+      isLoading: false,
+    },
+  };
+});
 
 vi.mock("../lib/telemetry", () => ({ captureException: mocks.captureException }));
 vi.mock("../lib/useTodayQueryDate", () => ({ useTodayQueryDate: () => "2026-08-02" }));
@@ -61,5 +71,39 @@ describe("SubjectiveTrackingPanel", () => {
       resolvedDate: null,
       severity: 0,
     });
+  });
+
+  it("uses editable injury dates", () => {
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByLabelText("Choose body region"));
+    fireEvent.change(screen.getByLabelText("Injury onset date"), {
+      target: { value: "2026-07-31" },
+    });
+    fireEvent.change(screen.getByLabelText("Injury resolution date"), {
+      target: { value: "2026-08-01" },
+    });
+    fireEvent.change(screen.getByLabelText("Injury description"), {
+      target: { value: "Resolved soreness" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
+
+    expect(mocks.createInjury).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onsetDate: "2026-07-31",
+        resolvedDate: "2026-08-01",
+      }),
+    );
+  });
+
+  it("shows a region query error instead of enabling an empty selector", () => {
+    mocks.regionsResult.data = undefined;
+    mocks.regionsResult.error = new Error("Regions unavailable");
+
+    render(<SubjectiveTrackingPanel />);
+
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    expect(screen.getByText("Regions unavailable")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add injury" })).toHaveProperty("disabled", true);
   });
 });

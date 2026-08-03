@@ -32,6 +32,7 @@ export function ActivityPerceivedExertion({
           style={styles.adjustButton}
           onPress={() => setDraft(Math.max(0, (draft ?? 0) - 1))}
           accessibilityLabel="Decrease perceived exertion"
+          accessibilityRole="button"
         >
           <Text style={styles.adjustText}>−</Text>
         </Pressable>
@@ -40,13 +41,15 @@ export function ActivityPerceivedExertion({
           style={styles.adjustButton}
           onPress={() => setDraft(Math.min(10, (draft ?? 0) + 1))}
           accessibilityLabel="Increase perceived exertion"
+          accessibilityRole="button"
         >
           <Text style={styles.adjustText}>+</Text>
         </Pressable>
         <Pressable
           style={styles.saveButton}
           onPress={() => mutation.mutate({ id: activityId, value: draft })}
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || draft == null}
+          accessibilityRole="button"
         >
           <Text style={styles.saveText}>Save</Text>
         </Pressable>
@@ -54,6 +57,7 @@ export function ActivityPerceivedExertion({
           style={styles.clearButton}
           onPress={() => mutation.mutate({ id: activityId, value: null })}
           disabled={mutation.isPending}
+          accessibilityRole="button"
         >
           <Text style={styles.clearText}>Clear</Text>
         </Pressable>

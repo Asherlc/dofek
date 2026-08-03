@@ -98,6 +98,14 @@ describe("subjectiveRouter", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("rejects invalid calendar dates before touching the database", async () => {
+    const { caller, execute } = makeCaller();
+    await expect(caller.checkIn({ date: "2026-02-30" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("rejects reversed timeline windows with an actionable error", async () => {
     const { caller, execute } = makeCaller();
     await expect(

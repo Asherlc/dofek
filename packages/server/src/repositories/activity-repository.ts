@@ -569,7 +569,7 @@ export class ActivityRepository extends BaseRepository {
             AND id IN (
               SELECT member_activity_id
               FROM fitness.v_activity_members
-              WHERE activity_id = (
+              WHERE activity_id IN (
                 SELECT id
                 FROM fitness.v_activity
                 WHERE ${activityId}::uuid = ANY(member_activity_ids)

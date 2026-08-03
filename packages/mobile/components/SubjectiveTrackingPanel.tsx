@@ -5,6 +5,7 @@ import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors } from "../theme";
 import { Card } from "./Card";
+import { QueryStatePanel } from "./QueryStatePanel";
 
 export function SubjectiveTrackingPanel() {
   const date = useTodayQueryDate();
@@ -12,17 +13,26 @@ export function SubjectiveTrackingPanel() {
   const checkIn = trpc.subjective.checkIn.useQuery({ date });
   const regions = trpc.subjective.regions.useQuery();
   const injuries = trpc.subjective.injuries.useQuery();
-  const [regionId, setRegionId] = useState("");
+  const [regionId, setRegionId] = useState<string | null>(null);
   const [kind, setKind] = useState<"soreness" | "stiffness" | "tenderness">("soreness");
   const [score, setScore] = useState(1);
   const [injuryKind, setInjuryKind] = useState<"injury" | "niggle">("niggle");
   const [injurySeverity, setInjurySeverity] = useState(0);
+  const [injuryOnsetDate, setInjuryOnsetDate] = useState(date);
+  const [injuryResolvedDate, setInjuryResolvedDate] = useState<string | null>(null);
   const [injuryDescription, setInjuryDescription] = useState("");
   const [savedSymptoms, setSavedSymptoms] = useState<
     Array<{ bodyRegionId: string; kind: "soreness" | "stiffness" | "tenderness"; score: number }>
   >([]);
   const save = trpc.subjective.saveCheckIn.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      setSavedSymptoms(
+        result.symptoms.map((symptom) => ({
+          bodyRegionId: symptom.body_region_id,
+          kind: symptom.kind,
+          score: symptom.score,
+        })),
+      );
       void utils.subjective.checkIn.invalidate({ date });
       void utils.subjective.timeline.invalidate();
     },
@@ -31,6 +41,8 @@ export function SubjectiveTrackingPanel() {
   const createInjury = trpc.subjective.createInjury.useMutation({
     onSuccess: () => {
       setInjuryDescription("");
+      setInjuryOnsetDate(date);
+      setInjuryResolvedDate(null);
       void utils.subjective.injuries.invalidate();
       void utils.subjective.timeline.invalidate();
     },
@@ -49,6 +61,7 @@ export function SubjectiveTrackingPanel() {
   }, [checkIn.data]);
 
   const selectedLabel = regions.data?.find((region) => region.id === regionId)?.label;
+  const checkInReady = checkIn.data !== undefined && !checkIn.error;
   const addSymptom = () => {
     if (!regionId) return;
     setSavedSymptoms((current) => [
@@ -60,26 +73,43 @@ export function SubjectiveTrackingPanel() {
   return (
     <Card>
       <Text style={styles.title}>Body check-in</Text>
-      <Text style={styles.subtitle}>
-        {checkIn.data?.logged
-          ? savedSymptoms.length === 0
-            ? "Logged all clear"
-            : "Logged"
-          : "Not logged"}
-      </Text>
+      {checkIn.isLoading && checkIn.data === undefined ? (
+        <QueryStatePanel variant="loading" minHeight={72} />
+      ) : checkIn.error && checkIn.data === undefined ? (
+        <QueryStatePanel variant="error" message={checkIn.error.message} minHeight={96} />
+      ) : (
+        <Text style={styles.subtitle}>
+          {checkIn.data?.logged
+            ? savedSymptoms.length === 0
+              ? "Logged all clear"
+              : "Logged"
+            : "Not logged"}
+        </Text>
+      )}
       <View style={styles.row}>
-        <Pressable
-          style={styles.control}
-          onPress={() => {
-            const options = regions.data ?? [];
-            if (options.length === 0) return;
-            const currentIndex = options.findIndex((region) => region.id === regionId);
-            setRegionId(options[(currentIndex + 1) % options.length]?.id ?? "");
-          }}
-          accessibilityLabel="Choose body region"
-        >
-          <Text style={styles.controlText}>{selectedLabel ?? "Choose region"}</Text>
-        </Pressable>
+        {regions.isLoading && regions.data === undefined ? (
+          <QueryStatePanel variant="loading" minHeight={56} style={styles.regionState} />
+        ) : regions.error && regions.data === undefined ? (
+          <QueryStatePanel
+            variant="error"
+            message={regions.error.message}
+            minHeight={80}
+            style={styles.regionState}
+          />
+        ) : (
+          <Pressable
+            style={styles.control}
+            onPress={() => {
+              const options = regions.data ?? [];
+              if (options.length === 0) return;
+              const currentIndex = options.findIndex((region) => region.id === regionId);
+              setRegionId(options[(currentIndex + 1) % options.length]?.id ?? null);
+            }}
+            accessibilityLabel="Choose body region"
+          >
+            <Text style={styles.controlText}>{selectedLabel ?? "Choose region"}</Text>
+          </Pressable>
+        )}
         <Pressable
           style={styles.control}
           onPress={() =>
@@ -95,13 +125,18 @@ export function SubjectiveTrackingPanel() {
         </Pressable>
       </View>
       <View style={styles.row}>
-        <Pressable style={styles.secondaryButton} onPress={addSymptom} accessibilityRole="button">
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={addSymptom}
+          disabled={!checkInReady || !regionId}
+          accessibilityRole="button"
+        >
           <Text style={styles.secondaryText}>Add symptom</Text>
         </Pressable>
         <Pressable
           style={styles.primaryButton}
           onPress={() => save.mutate({ date, symptoms: savedSymptoms })}
-          disabled={save.isPending}
+          disabled={!checkInReady || save.isPending}
           accessibilityRole="button"
         >
           <Text style={styles.primaryText}>Save</Text>
@@ -109,10 +144,9 @@ export function SubjectiveTrackingPanel() {
         <Pressable
           style={styles.secondaryButton}
           onPress={() => {
-            setSavedSymptoms([]);
             save.mutate({ date, symptoms: [] });
           }}
-          disabled={save.isPending}
+          disabled={!checkInReady || save.isPending}
           accessibilityRole="button"
         >
           <Text style={styles.secondaryText}>All clear</Text>
@@ -138,6 +172,22 @@ export function SubjectiveTrackingPanel() {
           </Pressable>
         </View>
         <TextInput
+          accessibilityLabel="Injury onset date"
+          onChangeText={setInjuryOnsetDate}
+          placeholder="Onset date (YYYY-MM-DD)"
+          placeholderTextColor={colors.textSecondary}
+          style={styles.descriptionInput}
+          value={injuryOnsetDate}
+        />
+        <TextInput
+          accessibilityLabel="Injury resolution date"
+          onChangeText={(value) => setInjuryResolvedDate(value.trim() === "" ? null : value)}
+          placeholder="Resolution date (optional)"
+          placeholderTextColor={colors.textSecondary}
+          style={styles.descriptionInput}
+          value={injuryResolvedDate ?? ""}
+        />
+        <TextInput
           accessibilityLabel="Injury description"
           onChangeText={setInjuryDescription}
           placeholder="Describe an injury or niggle"
@@ -153,8 +203,8 @@ export function SubjectiveTrackingPanel() {
               bodyRegionId: regionId,
               description: injuryDescription.trim(),
               kind: injuryKind,
-              onsetDate: date,
-              resolvedDate: null,
+              onsetDate: injuryOnsetDate,
+              resolvedDate: injuryResolvedDate,
               severity: injurySeverity,
             });
           }}
@@ -166,7 +216,11 @@ export function SubjectiveTrackingPanel() {
         </Pressable>
       </View>
       {createInjury.error ? <Text style={styles.error}>{createInjury.error.message}</Text> : null}
-      {injuries.data?.length ? (
+      {injuries.isLoading && injuries.data === undefined ? (
+        <QueryStatePanel variant="loading" minHeight={72} />
+      ) : injuries.error && injuries.data === undefined ? (
+        <QueryStatePanel variant="error" message={injuries.error.message} minHeight={96} />
+      ) : injuries.data?.length ? (
         injuries.data.map((injury) => (
           <Text key={injury.id} style={styles.injury}>
             {injury.kind}: {injury.description} ({injury.severity}/10)
@@ -219,6 +273,7 @@ const styles = StyleSheet.create({
   timelineTitle: { color: colors.text, fontSize: 14, fontWeight: "600", marginTop: 16 },
   injury: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },
   injuryForm: { gap: 8, marginTop: 8 },
+  regionState: { flex: 1 },
   descriptionInput: {
     backgroundColor: colors.surfaceSecondary,
     borderColor: colors.border,

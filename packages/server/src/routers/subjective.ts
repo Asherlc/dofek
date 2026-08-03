@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
+import { dateSchema } from "../lib/date-schema.ts";
 import {
   injuryKindSchema,
   SubjectiveRepository,
@@ -8,7 +9,6 @@ import {
 } from "../repositories/subjective-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD dates");
 const scoreSchema = z.number().int().min(1).max(10);
 
 const symptomInputSchema = z.object({

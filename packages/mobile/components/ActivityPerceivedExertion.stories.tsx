@@ -1,22 +1,21 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
-import { trpc } from "../lib/trpc.ts";
-import { ActivityPerceivedExertion } from "./ActivityPerceivedExertion.tsx";
+import { View } from "react-native";
+import { trpc } from "../lib/trpc";
+import { ActivityPerceivedExertion } from "./ActivityPerceivedExertion";
 
-type ActivityStoryScenario = "default" | "error" | "pending";
+type ActivityStoryScenario = "default" | "error" | "loading";
 
 function createMockLink(scenario: ActivityStoryScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
-          if (op.path === "activity.setPerceivedExertion" && scenario === "pending") {
-            return { unsubscribe: () => {} };
-          }
-          if (op.path === "activity.setPerceivedExertion" && scenario === "error") {
+          if (scenario === "loading") return { unsubscribe: () => {} };
+          if (scenario === "error") {
             observer.error?.(TRPCClientError.from(new Error("Session effort is unavailable.")));
             return { unsubscribe: () => {} };
           }
@@ -33,7 +32,7 @@ function createMockLink(scenario: ActivityStoryScenario): TRPCLink<AppRouter> {
     };
 }
 
-function ActivityStory({
+function ActivityStoryFrame({
   scenario,
   value,
 }: {
@@ -49,9 +48,9 @@ function ActivityStory({
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <div className="w-[640px] rounded-xl border border-border bg-surface p-5">
+        <View style={{ width: 360, padding: 16 }}>
           <ActivityPerceivedExertion activityId="activity-story" value={value} />
-        </div>
+        </View>
       </QueryClientProvider>
     </trpc.Provider>
   );
@@ -60,31 +59,25 @@ function ActivityStory({
 const meta = {
   title: "Activity/ActivityPerceivedExertion",
   component: ActivityPerceivedExertion,
-  tags: ["autodocs"],
 } satisfies Meta<typeof ActivityPerceivedExertion>;
 
 export default meta;
-
 type Story = StoryObj<typeof meta>;
 
 export const Unset: Story = {
-  args: { activityId: "activity-story", value: null },
-  render: (args) => <ActivityStory scenario="default" value={args.value} />,
+  render: () => <ActivityStoryFrame scenario="default" value={null} />,
 };
 
 export const Logged: Story = {
-  args: { activityId: "activity-story", value: 7 },
-  render: (args) => <ActivityStory scenario="default" value={args.value} />,
+  render: () => <ActivityStoryFrame scenario="default" value={7} />,
 };
 
 export const Pending: Story = {
-  args: { activityId: "activity-story", value: 7 },
-  render: (args) => <ActivityStory scenario="pending" value={args.value} />,
+  render: () => <ActivityStoryFrame scenario="loading" value={7} />,
   tags: ["review-scenario", "review-scenario-loading"],
 };
 
 export const ErrorState: Story = {
-  args: { activityId: "activity-story", value: 7 },
-  render: (args) => <ActivityStory scenario="error" value={args.value} />,
+  render: () => <ActivityStoryFrame scenario="error" value={7} />,
   tags: ["review-scenario", "review-scenario-error"],
 };

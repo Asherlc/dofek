@@ -892,6 +892,26 @@ describe("activityRouter", () => {
         }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
+
+    it("clears a previously logged session RPE", async () => {
+      const setPerceivedExertion = vi
+        .spyOn(ActivityRepository.prototype, "setPerceivedExertion")
+        .mockResolvedValue({ found: true, perceivedExertion: null });
+      const caller = makeCaller();
+
+      await expect(
+        caller.setPerceivedExertion({
+          id: "00000000-0000-0000-0000-000000000001",
+          value: null,
+        }),
+      ).resolves.toEqual({ perceivedExertion: null });
+
+      expect(setPerceivedExertion).toHaveBeenCalledWith(
+        "00000000-0000-0000-0000-000000000001",
+        null,
+      );
+      setPerceivedExertion.mockRestore();
+    });
   });
 
   describe("restoreProviderAbsent", () => {
