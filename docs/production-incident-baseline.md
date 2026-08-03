@@ -159,6 +159,7 @@ Compose resources.
 Run `pnpm test:unit`, the heart-rate integration test, and full `pnpm lint` on
 the exact PR head in CI or after an explicitly scoped Docker cleanup, following
 the resource guidance in [`docs/testing.md`](testing.md#docker-disk-recovery).
+
 ## 2026-08-02: Mobile Preview OTA workflow exposed an unmasked Infisical credential
 
 ### Symptoms

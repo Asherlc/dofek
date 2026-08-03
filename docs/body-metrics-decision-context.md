@@ -34,5 +34,5 @@ band is not a clinical threshold, and outlying readings remain included in the
 underlying data. This follows the standard boxplot inner-fence definition
 described by [NIST’s outlier guidance](https://www.itl.nist.gov/div898/handbook/prc/section1/prc16.htm).
 
-When fewer than eight actual readings are available, the response explicitly
+When fewer than eight residual observations are available, the response explicitly
 returns an insufficient-data state instead of inventing a range.
