@@ -1,3 +1,4 @@
+import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
@@ -66,7 +67,7 @@ const vamRowSchema = z.object({
   date: dateStringSchema,
   name: z.string(),
   canonical_type: z.string(),
-  modality: z.string().nullable(),
+  modality: z.enum(ACTIVITY_MODALITIES).nullable(),
   elevation_gain: z.coerce.number(),
   elapsed_seconds: z.coerce.number(),
 });
