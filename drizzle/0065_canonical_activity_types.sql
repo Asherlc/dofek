@@ -35,8 +35,8 @@ SELECT
   pg_get_constraintdef(constraint_record.oid, true) AS definition,
   constraint_record.convalidated
 FROM pg_constraint AS constraint_record
-INNER JOIN pg_class AS child_class ON child_class.oid = constraint_record.conrelid
-INNER JOIN pg_namespace AS child_namespace ON child_namespace.oid = child_class.relnamespace
+INNER JOIN pg_class AS child_class ON constraint_record.conrelid = child_class.oid
+INNER JOIN pg_namespace AS child_namespace ON child_class.relnamespace = child_namespace.oid
 WHERE
   constraint_record.contype = 'f'
   AND constraint_record.confrelid = 'fitness.activity'::regclass;
@@ -57,7 +57,7 @@ SELECT
   index_class.relname AS index_name,
   pg_get_indexdef(index_record.indexrelid) AS definition
 FROM pg_index AS index_record
-INNER JOIN pg_class AS index_class ON index_class.oid = index_record.indexrelid
+INNER JOIN pg_class AS index_class ON index_record.indexrelid = index_class.oid
 WHERE
   index_record.indrelid = 'fitness.activity'::regclass
   AND NOT EXISTS (
@@ -76,12 +76,14 @@ WHERE
   AND attribute.attnotnull;
 
 CREATE TEMP TABLE activity_column_defaults ON COMMIT DROP AS
-SELECT column_name, column_default
+SELECT
+  column_name,
+  column_default
 FROM information_schema.columns
 WHERE
   table_schema = 'fitness'
   AND table_name = 'activity'
-  AND column_default IS NOT NULL;
+  AND column_default IS NOT null;
 
 CREATE TEMP TABLE activity_trigger_definitions ON COMMIT DROP AS
 SELECT
@@ -100,13 +102,16 @@ SELECT
 FROM pg_description AS description
 LEFT JOIN pg_attribute AS attribute
   ON
-    attribute.attrelid = description.objoid
-    AND attribute.attnum = description.objsubid
+    description.objoid = attribute.attrelid
+    AND description.objsubid = attribute.attnum
 WHERE
   description.objoid = 'fitness.activity'::regclass;
 
 CREATE TEMP TABLE activity_grants ON COMMIT DROP AS
-SELECT grantee, privilege_type, is_grantable
+SELECT
+  grantee,
+  privilege_type,
+  is_grantable
 FROM information_schema.role_table_grants
 WHERE table_schema = 'fitness' AND table_name = 'activity';
 
@@ -388,6 +393,9 @@ SELECT
   perceived_exertion,
   source_name,
   timezone,
+  start_utc_offset_minutes,
+  end_utc_offset_minutes,
+  local_time_source,
   strava_id,
   raw,
   provider_absent_at,
@@ -502,10 +510,10 @@ WITH RECURSIVE ranked AS (
       AND a.source_name LIKE dp2.source_name_pattern
     ORDER BY length(dp2.source_name_pattern) DESC
     LIMIT 1
-  ) AS dp ON TRUE
+  ) AS dp ON true
   WHERE
-    a.provider_absent_at IS NULL
-    AND a.deleted_at IS NULL
+    a.provider_absent_at IS null
+    AND a.deleted_at IS null
 ),
 
 tombstoned AS (
@@ -524,9 +532,9 @@ tombstoned AS (
     ) AS subsource
   FROM fitness.activity AS a
   WHERE
-    a.provider_absent_at IS NOT NULL
-    AND a.deleted_at IS NULL
-    AND a.external_id IS NOT NULL
+    a.provider_absent_at IS NOT null
+    AND a.deleted_at IS null
+    AND a.external_id IS NOT null
     AND a.external_id <> ''
 ),
 
@@ -564,7 +572,7 @@ effective_tombstoned AS (
       WHERE
         sib.user_id = a.user_id
         AND sib.provider_id = 'apple_health'
-        AND sib.deleted_at IS NULL
+        AND sib.deleted_at IS null
         AND sib.id <> a.id
         AND coalesce(
           nullif(trim(sib.raw -> 'metadata' ->> 'HKMetadataKeySyncIdentifier'), ''),
@@ -582,7 +590,7 @@ effective_tombstoned AS (
           )
         )
         AND (
-          sib.provider_absent_at IS NULL AND sib.deleted_at IS NULL
+          sib.provider_absent_at IS null AND sib.deleted_at IS null
           OR coalesce(
             CASE
               WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
@@ -778,17 +786,17 @@ merged AS (
     b.source_name,
     (
       SELECT r.name FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
-      WHERE fg2.group_id = b.group_id AND r.name IS NOT NULL
+      WHERE fg2.group_id = b.group_id AND r.name IS NOT null
       ORDER BY r.prio ASC LIMIT 1
     ) AS name,
     (
       SELECT r.notes FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
-      WHERE fg2.group_id = b.group_id AND r.notes IS NOT NULL
+      WHERE fg2.group_id = b.group_id AND r.notes IS NOT null
       ORDER BY r.prio ASC LIMIT 1
     ) AS notes,
     (
       SELECT r.timezone FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
-      WHERE fg2.group_id = b.group_id AND r.timezone IS NOT NULL
+      WHERE fg2.group_id = b.group_id AND r.timezone IS NOT null
       ORDER BY r.prio ASC LIMIT 1
     ) AS timezone,
     (
@@ -828,7 +836,7 @@ merged AS (
       FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
       WHERE
         fg2.group_id = b.group_id
-        AND r.external_id IS NOT NULL
+        AND r.external_id IS NOT null
         AND r.external_id <> ''
     ) AS source_external_ids,
     (

@@ -106,6 +106,9 @@ async function createLegacySchema(client: Client): Promise<void> {
       perceived_exertion real,
       source_name text,
       timezone text,
+      start_utc_offset_minutes integer,
+      end_utc_offset_minutes integer,
+      local_time_source text NOT NULL DEFAULT 'unknown',
       strava_id text,
       provider_absent_at timestamptz,
       deleted_at timestamptz,
@@ -239,6 +242,9 @@ async function createLegacySchema(client: Client): Promise<void> {
       perceived_exertion,
       source_name,
       timezone,
+      start_utc_offset_minutes,
+      end_utc_offset_minutes,
+      local_time_source,
       strava_id
     )
     VALUES
@@ -256,6 +262,9 @@ async function createLegacySchema(client: Client): Promise<void> {
         7,
         'Bike Computer',
         'America/Los_Angeles',
+        -420,
+        -420,
+        'provider_timezone',
         'strava-101'
       ),
       (
@@ -272,6 +281,9 @@ async function createLegacySchema(client: Client): Promise<void> {
         NULL,
         'Watch',
         NULL,
+        NULL,
+        NULL,
+        'unknown',
         NULL
       ),
       (
@@ -288,6 +300,9 @@ async function createLegacySchema(client: Client): Promise<void> {
         NULL,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        'unknown',
         NULL
       ),
       (
@@ -304,6 +319,9 @@ async function createLegacySchema(client: Client): Promise<void> {
         NULL,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        'unknown',
         NULL
       ),
       (
@@ -320,6 +338,9 @@ async function createLegacySchema(client: Client): Promise<void> {
         NULL,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        'unknown',
         NULL
       ),
       (
@@ -336,6 +357,9 @@ async function createLegacySchema(client: Client): Promise<void> {
         NULL,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        'unknown',
         NULL
       );
 
@@ -560,22 +584,36 @@ describe("canonical activity types Postgres migration", () => {
       );
 
       const preservedRow = await client.query<{
+        end_utc_offset_minutes: number;
+        local_time_source: string;
         notes: string;
         perceived_exertion: number;
         raw: { source: string };
+        start_utc_offset_minutes: number;
         strava_id: string;
         timezone: string;
       }>(
-        `SELECT notes, perceived_exertion, raw, strava_id, timezone
+        `SELECT
+           end_utc_offset_minutes,
+           local_time_source,
+           notes,
+           perceived_exertion,
+           raw,
+           start_utc_offset_minutes,
+           strava_id,
+           timezone
          FROM fitness.activity
          WHERE id = $1`,
         [activityIds.roadCycling],
       );
       expect(preservedRow.rows).toEqual([
         {
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_timezone",
           notes: "Preserve me",
           perceived_exertion: 7,
           raw: { source: "road" },
+          start_utc_offset_minutes: -420,
           strava_id: "strava-101",
           timezone: "America/Los_Angeles",
         },
