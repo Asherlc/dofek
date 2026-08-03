@@ -13,6 +13,7 @@ const {
   mockResetPasswordWithToken,
   mockUserAndIdentityFence,
   mockUserWriteFence,
+  MockAccountErasureIdentityFencedError,
   MockAccountErasureUserFencedError,
 } = vi.hoisted(() => ({
   mockRegisterPasswordUser: vi.fn(),
@@ -29,6 +30,12 @@ const {
   mockResetPasswordWithToken: vi.fn(),
   mockUserAndIdentityFence: vi.fn(),
   mockUserWriteFence: vi.fn(),
+  MockAccountErasureIdentityFencedError: class MockAccountErasureIdentityFencedError extends Error {
+    constructor() {
+      super("Account deletion is active for this identity.");
+      this.name = "AccountErasureIdentityFencedError";
+    }
+  },
   MockAccountErasureUserFencedError: class MockAccountErasureUserFencedError extends Error {
     constructor(cause?: unknown) {
       super("Account deletion is active for this user.", { cause });
@@ -38,7 +45,7 @@ const {
 }));
 
 vi.mock("dofek/db/account-erasure", () => ({
-  AccountErasureIdentityFencedError: class AccountErasureIdentityFencedError extends Error {},
+  AccountErasureIdentityFencedError: MockAccountErasureIdentityFencedError,
   AccountErasureUserFencedError: MockAccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence: (...args: unknown[]) =>
     mockUserAndIdentityFence(...args),
@@ -187,12 +194,34 @@ describe("handlePasswordRegister", () => {
     await handlePasswordRegister(req, res);
 
     expect(mockRegisterPasswordUser).toHaveBeenCalled();
+    expect(mockUserAndIdentityFence).toHaveBeenCalledWith(
+      {},
+      expect.any(String),
+      [{ email: "user@example.com", kind: "email" }],
+      expect.any(Function),
+    );
     expect(mockSetSessionCookie).toHaveBeenCalledWith(res, "sess-register", new Date("2027-01-01"));
     expect(res.json).toHaveBeenCalledWith({
       session: "sess-register",
       redirect: "/?newUser=true",
       isNewUser: true,
     });
+  });
+
+  it("returns a conflict when the registration identity is fenced", async () => {
+    mockUserAndIdentityFence.mockRejectedValueOnce(new MockAccountErasureIdentityFencedError());
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Account deletion is active for this identity.",
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("marks new registrations in the default redirect", async () => {

@@ -1,6 +1,14 @@
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+} from "dofek/db/account-erasure";
 import { describe, expect, it, vi } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
-import { extractLatestConfirmFromThread, FoodEntryRepository } from "./food-entry-repository.ts";
+import {
+  extractLatestConfirmFromThread,
+  FALLBACK_TIMEZONE,
+  FoodEntryRepository,
+} from "./food-entry-repository.ts";
 import { slackTimestampToDateString, slackTimestampToLocalTime } from "./formatting.ts";
 import type { PendingSlackEntry } from "./pending-entry-store.ts";
 import { InMemoryPendingEntryStore } from "./pending-entry-store.ts";
@@ -193,6 +201,93 @@ describe("slackTimestampToLocalTime", () => {
 });
 
 describe("FoodEntryRepository", () => {
+  describe("withInboundNutritionWriteFence", () => {
+    function slackClient() {
+      return {
+        users: {
+          info: vi.fn(async () => ({ user: {} })),
+        },
+      };
+    }
+
+    it("runs the operation with the fenced repository and resolved identity", async () => {
+      const execute = vi.fn().mockResolvedValue([{ user_id: "user-1" }]);
+      const transaction = {
+        execute: vi.fn().mockResolvedValue([{ fenced: false, user_id: "user-1" }]),
+      };
+      const transactionCall = vi.fn(
+        async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction),
+      );
+      const operation = vi.fn(async (context: { userId: string; timezone: string }) => context);
+      const repository = new FoodEntryRepository(asMock({ execute, transaction: transactionCall }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          operation,
+        ),
+      ).resolves.toMatchObject({ userId: "user-1", timezone: FALLBACK_TIMEZONE });
+      expect(operation).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user-1", timezone: FALLBACK_TIMEZONE }),
+      );
+    });
+
+    it("rejects when the mapping changes while the transaction is being prepared", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ user_id: "user-1" }])
+        .mockResolvedValue([{ user_id: "user-2" }]);
+      const transaction = {
+        execute: vi.fn().mockResolvedValue([{ fenced: false, user_id: "user-2" }]),
+      };
+      const transactionCall = vi.fn(
+        async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction),
+      );
+      const repository = new FoodEntryRepository(asMock({ execute, transaction: transactionCall }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          vi.fn(),
+        ),
+      ).rejects.toThrow("Slack account mapping changed while the message was being processed");
+    });
+
+    it.each([
+      new AccountErasureIdentityFencedError(),
+      new AccountErasureUserFencedError(),
+      { code: "55000", message: "Account erasure is active for this user" },
+      {
+        cause: { code: "55000", message: "Account erasure is active for this user" },
+      },
+    ])("converts account-erasure fence errors into a user fence", async (error) => {
+      const execute = vi.fn().mockResolvedValue([{ user_id: "user-1" }]);
+      const transaction = vi.fn().mockRejectedValue(error);
+      const repository = new FoodEntryRepository(asMock({ execute, transaction }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          vi.fn(),
+        ),
+      ).rejects.toBeInstanceOf(AccountErasureUserFencedError);
+    });
+
+    it("rethrows unexpected transaction errors", async () => {
+      const error = new Error("database unavailable");
+      const execute = vi.fn().mockResolvedValue([{ user_id: "user-1" }]);
+      const transaction = vi.fn().mockRejectedValue(error);
+      const repository = new FoodEntryRepository(asMock({ execute, transaction }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          vi.fn(),
+        ),
+      ).rejects.toBe(error);
+    });
+  });
+
   describe("confirm", () => {
     it("returns empty result immediately for empty input", async () => {
       const store = new InMemoryPendingEntryStore();

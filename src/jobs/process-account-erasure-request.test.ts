@@ -346,9 +346,18 @@ describe("processAccountErasureRequest", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     finishPhase();
 
-    await expect(processing).rejects.toThrow(
+    const processingError = await processing.catch((error: unknown) => error);
+    expect(processingError).toBeInstanceOf(AggregateError);
+    await expect(Promise.reject(processingError)).rejects.toThrow(
       "Account erasure failed and its retry state could not be fully persisted",
     );
+    if (!(processingError instanceof AggregateError)) throw processingError;
+    expect(processingError.cause).toBeInstanceOf(AggregateError);
+    if (!(processingError.cause instanceof AggregateError)) throw processingError.cause;
+    const phaseError = processingError.cause.errors[0];
+    expect(phaseError).toBeInstanceOf(Error);
+    if (!(phaseError instanceof Error)) throw phaseError;
+    expect(phaseError.cause).toBeInstanceOf(Error);
     expect(sentryMocks.captureException).toHaveBeenCalledWith(
       expect.objectContaining({
         message: "Account erasure phase failed",
@@ -404,6 +413,7 @@ describe("processAccountErasureRequest", () => {
         },
       },
     );
+    expect(sentryMocks.captureException).toHaveBeenCalledOnce();
     expect(JSON.stringify(sentryMocks.captureException.mock.calls)).not.toContain(
       privateFailureDetail,
     );
@@ -548,6 +558,63 @@ describe("processAccountErasureRequest", () => {
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(accountErasureDatabaseMocks.renewAccountErasureLease).toHaveBeenCalledOnce();
+  });
+
+  it("allows a new lease renewal after an earlier renewal finishes", async () => {
+    vi.useFakeTimers();
+    let resolveFirstRenewal: (() => void) | undefined;
+    const firstRenewal = new Promise<void>((resolve) => {
+      resolveFirstRenewal = resolve;
+    });
+    accountErasureDatabaseMocks.renewAccountErasureLease
+      .mockReturnValueOnce(firstRenewal)
+      .mockResolvedValue(undefined);
+    let finishPhase: () => void = () => {
+      throw new Error("phase release was not initialized");
+    };
+    const phaseBlocked = new Promise<void>((resolve) => {
+      finishPhase = resolve;
+    });
+    const processing = processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      phaseRunner(async () => {
+        await phaseBlocked;
+        return null;
+      }),
+      new Date("2026-07-26T12:00:00.000Z"),
+    );
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    resolveFirstRenewal?.();
+    await vi.waitFor(() =>
+      expect(accountErasureDatabaseMocks.renewAccountErasureLease).toHaveBeenCalledOnce(),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(accountErasureDatabaseMocks.renewAccountErasureLease).toHaveBeenCalledTimes(2);
+
+    finishPhase();
+    await expect(processing).resolves.toMatchObject({ status: "waiting", waitReason: "replay" });
+  });
+
+  it("reports checkpoint persistence failures as phase failures", async () => {
+    const failure = new Error("checkpoint write failed");
+    accountErasureDatabaseMocks.markAccountErasurePhaseCompleted.mockRejectedValueOnce(failure);
+
+    await expect(
+      processAccountErasureRequest(database, request.id, "worker-1", phaseRunner()),
+    ).rejects.toThrow("initial account erasure");
+
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          accountErasurePhase: expect.any(String),
+        }),
+      }),
+    );
+    expect(sentryMocks.captureException).toHaveBeenCalledOnce();
   });
 
   it.each([

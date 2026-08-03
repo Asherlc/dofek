@@ -116,6 +116,31 @@ describe("processExportJob", () => {
     expect(mockSendExportReadyEmail).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [2, "file generation", "upload"],
+    [3, "object upload", "signed URL"],
+    [4, "delivery", "email"],
+    [5, "notification", "completion"],
+    [6, "completion", "completion update"],
+  ])("stops before %s when erasure activates during %s", async (blockedCall, _blockedStage, forbiddenEffect) => {
+    for (let call = 1; call < blockedCall; call++) {
+      mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(true);
+    }
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
+
+    await processExportJob(createMockJob(), mockDb);
+
+    if (forbiddenEffect === "upload") {
+      expect(mockUploadExportFileToR2).not.toHaveBeenCalled();
+    } else if (forbiddenEffect === "signed URL") {
+      expect(mockCreateSignedExportDownloadUrl).not.toHaveBeenCalled();
+    } else if (forbiddenEffect === "email") {
+      expect(mockSendExportReadyEmail).not.toHaveBeenCalled();
+    } else {
+      expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(2);
+    }
+  });
+
   it("uploads the export to R2, marks completion, and emails the user", async () => {
     const job = createMockJob();
     await processExportJob(job, mockDb);

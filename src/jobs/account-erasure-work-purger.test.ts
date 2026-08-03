@@ -225,6 +225,40 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
   });
 
+  it("rejects unsupported BullMQ states instead of silently skipping them", async () => {
+    const purger = createAccountErasureWorkPurgerFromEnv();
+    await purger.purge(snapshot);
+    const dependencies = mocks.purgeAccountWork.mock.calls.at(-1)?.[1];
+    if (!dependencies) throw new Error("Work erasure dependencies were not passed");
+
+    await expect(dependencies.queues[0]?.getJobs(["unsupported"], 0, 99, true)).rejects.toThrow(
+      "unsupported BullMQ job state: unsupported",
+    );
+  });
+
+  it("uses the configured local work directory", async () => {
+    process.env.JOB_FILES_DIR = "/var/lib/dofek-job-files";
+    const purger = createAccountErasureWorkPurgerFromEnv();
+
+    await purger.purge(snapshot);
+
+    expect(mocks.purgeAccountWork.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ jobFilesDirectory: "/var/lib/dofek-job-files" }),
+    );
+    delete process.env.JOB_FILES_DIR;
+  });
+
+  it("destroys the R2 client even when queue shutdown fails", async () => {
+    const purger = createAccountErasureWorkPurgerFromEnv();
+    const queueClose = mocks.closeByQueue.get("sync");
+    if (!queueClose) throw new Error("Sync queue was not created");
+    const error = new Error("queue shutdown failed");
+    queueClose.mockRejectedValueOnce(error);
+
+    await expect(purger.close()).rejects.toBe(error);
+    expect(mocks.r2Client.destroy).toHaveBeenCalled();
+  });
+
   it("converges when a previously aborted multipart upload is already absent", async () => {
     const purger = createAccountErasureWorkPurgerFromEnv();
     await purger.purge(snapshot);
@@ -258,5 +292,35 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     await expect(
       dependencies.abortImportMultipart("imports/user/upload", "multipart-1994"),
     ).rejects.toBe(storageError);
+  });
+
+  it("does not treat a 404 from a different error as an absent multipart upload", async () => {
+    const purger = createAccountErasureWorkPurgerFromEnv();
+    await purger.purge(snapshot);
+    const dependencies = mocks.purgeAccountWork.mock.calls.at(-1)?.[1];
+    if (!dependencies) throw new Error("Work erasure dependencies were not passed");
+    const error = { $metadata: { httpStatusCode: 404 }, name: "NoSuchUpload" };
+    mocks.abortImportMultipart.mockRejectedValueOnce(error);
+
+    await expect(
+      dependencies.abortImportMultipart("imports/user/upload", "multipart-1994"),
+    ).rejects.toBe(error);
+  });
+
+  it("does not treat a NoSuchUpload with a non-404 status as absent", async () => {
+    const purger = createAccountErasureWorkPurgerFromEnv();
+    await purger.purge(snapshot);
+    const dependencies = mocks.purgeAccountWork.mock.calls.at(-1)?.[1];
+    if (!dependencies) throw new Error("Work erasure dependencies were not passed");
+    const error = new S3ServiceException({
+      $fault: "client",
+      $metadata: { httpStatusCode: 500 },
+      name: "NoSuchUpload",
+    });
+    mocks.abortImportMultipart.mockRejectedValueOnce(error);
+
+    await expect(
+      dependencies.abortImportMultipart("imports/user/upload", "multipart-1994"),
+    ).rejects.toBe(error);
   });
 });
