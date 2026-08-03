@@ -767,6 +767,33 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           interpolated: false,
         },
       ],
+      decisionContext: {
+        latestMeasurement: {
+          date: "2026-04-06",
+          recordedAt: "2026-04-06T15:00:00.000Z",
+          recordedAtLocal: "2026-04-06 08:00:00",
+          weightKg: 80,
+          providerId: "withings",
+          sourceName: "Body+",
+        },
+        trendWeight: {
+          smoothing: "ewma",
+          alpha: 0.1,
+          gapHandling: "linear_interpolation",
+          invalidWeightHandling: "exclude_non_positive",
+          outlierHandling: "retain",
+        },
+        variation: {
+          status: "insufficient_data",
+          observations: 2,
+          minimumObservations: 8,
+          maximumObservations: 30,
+          method: "tukey_inner_fence",
+          lowerResidualKg: null,
+          upperResidualKg: null,
+          outliersIncluded: true,
+        },
+      },
       healthspan: insufficientHealthspan,
     };
 
@@ -778,7 +805,9 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("Estimated")).toBeTruthy();
     expect(screen.getByText("Observed: 80.0 kg")).toBeTruthy();
     expect(
-      screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
+      screen.getByText(
+        "Trend Weight moves 10% toward each selected daily scale reading. Missing days are linearly interpolated; non-positive values are excluded and outliers remain included.",
+      ),
     ).toBeTruthy();
   });
 
@@ -807,7 +836,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(screen.getByText("79.8 kg")).toBeTruthy();
     expect(screen.queryByText("Estimated")).toBeNull();
-    expect(screen.getByText("Scale: 80.0 kg")).toBeTruthy();
     expect(
       screen.getByText(
         "Measurement decision context is temporarily unavailable. Refresh to try again.",

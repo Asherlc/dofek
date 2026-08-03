@@ -7,6 +7,20 @@ import {
 } from "./test-helpers.ts";
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+type ProcessingStatus = "ready" | "active" | "failed";
+type ProcessingStatusResult = {
+  overallStatus: ProcessingStatus;
+  datasets: readonly [{ key: "recovery"; status: ProcessingStatus }];
+};
+const processingStatusMock = vi.hoisted(() =>
+  vi.fn(
+    async (_input: ProcessingStatusQuery): Promise<ProcessingStatusResult> => ({
+      overallStatus: "ready" as const,
+      datasets: [{ key: "recovery" as const, status: "ready" as const }],
+    }),
+  ),
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -101,7 +115,7 @@ function makeSensorStore(
     queryOverride ??
     vi.fn(async (_schema: unknown, queryText: unknown) => {
       const querySql = String(queryText);
-      if (querySql.includes("analytics.daily_strain") && querySql.includes("coalesce")) {
+      if (querySql.includes("analytics.daily_strain") && querySql.includes(" AS load")) {
         return [{ load: yesterdayLoad }];
       }
       if (querySql.includes("analytics.daily_strain")) return dailyLoads;
@@ -162,6 +176,14 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
+vi.mock("../repositories/processing-repository.ts", () => ({
+  ProcessingRepository: class {
+    status(input: ProcessingStatusQuery) {
+      return processingStatusMock(input);
+    }
+  },
+}));
+
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { logger } from "../logger.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
@@ -197,6 +219,7 @@ describe("mobileDashboard.dashboardV2", () => {
 
     expect(result.sleepNeed).toEqual({
       availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
       message: "Sync last night's sleep data to see tonight's sleep need.",
     });
     expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
@@ -245,7 +268,7 @@ describe("mobileDashboard.dashboardV2", () => {
     }
   });
 
-  it("returns the available projection with server-computed debt recovery", async () => {
+  it("returns the insufficient-data projection when baseline history is short", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
       userId: "user-1",
@@ -260,11 +283,12 @@ describe("mobileDashboard.dashboardV2", () => {
 
     const result = await caller.dashboardV2({ endDate: "2026-03-28" });
 
-    expect(result.sleepNeed).toMatchObject({
-      availability: "available",
-      accumulatedDebtMinutes: 60,
-      debtRecoveryMinutes: 15,
-      totalNeedMinutes: 495,
+    expect(result.sleepNeed).toEqual({
+      availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
     });
   });
 });
@@ -776,7 +800,15 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.readiness).toBeNull();
     expect(result.sleep?.lastNight).toBeNull();
-    expect(result.sleepNeed).toBeNull();
+    expect(result.sleepNeed).toEqual(
+      expect.objectContaining({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        totalNeedMinutes: 480,
+        canRecommend: false,
+      }),
+    );
     expect(result.strain).toEqual({
       dailyStrain: 0,
       acuteLoad: 0,
@@ -793,6 +825,63 @@ const fullAccessWindow = {
   paid: true as const,
   reason: "paid_grant" as const,
 };
+
+const emptyTrainingChartAvailability = {
+  strainTrend: {
+    status: "insufficient_data",
+    sourceLabel: "Daily strain model",
+    observedCount: 0,
+    minimumCount: 2,
+    message: "No daily strain trend is available from the daily strain model.",
+  },
+  verticalAscent: {
+    status: "insufficient_data",
+    sourceLabel: "Cycling activity altitude sensor summaries",
+    observedCount: 0,
+    minimumCount: 1,
+    message:
+      "No vertical ascent data is available from cycling activity altitude sensor summaries.",
+  },
+} as const;
+
+function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").MobileRecoveryTabResult {
+  return {
+    hrvVariability: [],
+    hrvBaseline: [],
+    readinessScore: [],
+    stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    trends: null,
+    dailyMetrics: [],
+    baselineRelative: [],
+    weight: [],
+    decisionContext: null,
+    weightPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      goal: null,
+      projectionLine: [],
+    },
+    healthStatus: [],
+    healthspan: {
+      healthspanScore: null,
+      yearsDelta: null,
+      availability: {
+        status: "insufficient_data",
+        availableMetricCount: 0,
+        requiredMetricCount: 3,
+        missingMetricLabels: [],
+        summary: "0 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 3 more supported metrics sync successfully.",
+      },
+      metrics: [],
+      history: [],
+      trend: null,
+    },
+  };
+}
 
 function parseTimingTotalMs(logMessage: unknown): number {
   const match = String(logMessage).match(/total=(\d+)ms/);
@@ -813,6 +902,54 @@ describe("mobileDashboard.recovery", () => {
         "mobileDashboard.recovery requires the ClickHouse activity analytics store",
       ),
     });
+  });
+
+  it("requests processing status for the recovery dataset", async () => {
+    processingStatusMock.mockClear();
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
+  });
+
+  it.each([
+    { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
+    { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
+  ])("passes the normalized $normalizedStatus status to the recovery tab loader", async ({
+    rawStatus,
+    normalizedStatus,
+  }) => {
+    processingStatusMock.mockResolvedValueOnce({
+      overallStatus: rawStatus,
+      datasets: [{ key: "recovery", status: rawStatus }],
+    });
+    const loadSpy = vi
+      .spyOn(mobileRecoveryTab, "loadMobileRecoveryTab")
+      .mockResolvedValue(emptyRecoveryTabResult());
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ processingStatus: normalizedStatus }),
+      30,
+      "2026-03-28",
+    );
   });
 
   it("returns consolidated recovery tab data", async () => {
@@ -945,6 +1082,7 @@ describe("mobileDashboard.recovery", () => {
         timezone: "UTC",
         accessWindow: fullAccessWindow,
         sensorStore: expect.anything(),
+        processingStatus: null,
       },
       30,
       "2026-03-28",
@@ -1025,7 +1163,7 @@ describe("mobileDashboard.training", () => {
   it("uses a versioned cache key for its progressive-overload contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-progressive-overload-v1",
+      keyVersion: "training-activity-states-v2",
     });
   });
 
@@ -1146,6 +1284,7 @@ describe("mobileDashboard.training", () => {
       weeklyVolume: [],
       progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: emptyTrainingChartAvailability,
       climbing: {
         gradeProgression: [],
         volumeByGrade: [],
@@ -1221,6 +1360,7 @@ describe("mobileDashboard.training", () => {
       weeklyVolume: [],
       progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: emptyTrainingChartAvailability,
       climbing: {
         gradeProgression: [],
         volumeByGrade: [],

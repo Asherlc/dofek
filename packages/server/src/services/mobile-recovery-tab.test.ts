@@ -510,24 +510,45 @@ describe("loadMobileRecoveryTab", () => {
       expect(vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input)).toEqual([
         {
           metric: "spo2",
-          label: "SpO2",
+          label: "Blood Oxygen Saturation (SpO2)",
           values: [97, 99],
           intent: "neutral",
+          observations: [
+            { date: "2026-03-26", value: 97, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 99, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
         {
           metric: "steps",
           label: "Steps",
           values: [8_000, 10_000],
           intent: "neutral",
+          observations: [
+            { date: "2026-03-26", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: 8_000, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 10_000, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
         {
           metric: "skin_temperature",
           label: "Skin Temperature",
           values: [33.1, 33.5],
           intent: "neutral",
+          observations: [
+            { date: "2026-03-26", value: 33.1, sourceProviders: ["apple_health"] },
+            { date: "2026-03-27", value: null, sourceProviders: ["apple_health"] },
+            { date: "2026-03-28", value: 33.5, sourceProviders: ["apple_health"] },
+          ],
+          windowDays: 35,
+          processingStatus: null,
         },
       ]);
-      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75);
+      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75, null);
     });
 
     it("rounds HRV deviation to 2 decimal places", async () => {

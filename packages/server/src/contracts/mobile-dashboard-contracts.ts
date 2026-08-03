@@ -5,8 +5,8 @@ import {
   baselineComparisonDirectionSchema,
   baselineRelativeMetricSchema,
 } from "./baseline-relative-metrics.ts";
-import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 import { bodyDecisionContextOutputSchema } from "./body-decision-context.ts";
+import { epistemicStatusSchema } from "./epistemic-status-contract.ts";
 import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
