@@ -439,6 +439,27 @@ describe("mobileRecoveryFixtureSchema", () => {
     );
   });
 
+  it.each([
+    [
+      "a missing decision context",
+      (fixture: z.input<typeof mobileRecoveryFixtureSchema>) => {
+        fixture.data.decisionContext = null;
+      },
+    ],
+    [
+      "a missing latest measurement",
+      (fixture: z.input<typeof mobileRecoveryFixtureSchema>) => {
+        if (!fixture.data.decisionContext) throw new Error("Missing decision-context fixture");
+        fixture.data.decisionContext.latestMeasurement = null;
+      },
+    ],
+  ])("accepts recovery fixtures with %s", (_label, removeMeasurement) => {
+    const fixture = validRecoveryFixture();
+    removeMeasurement(fixture);
+
+    expect(mobileRecoveryFixtureSchema.safeParse(fixture).success).toBe(true);
+  });
+
   it("rejects calendar-invalid dates even when they sort inside the selected window", () => {
     const fixture = validRecoveryFixture();
     const firstHrv = fixture.data.hrvVariability[0];
