@@ -3,9 +3,9 @@ import {
   resolveTimestampOffsetLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import {
-  resolveProviderActivityType,
   type LegacyActivityType,
   type ProviderActivityType,
+  resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import type {

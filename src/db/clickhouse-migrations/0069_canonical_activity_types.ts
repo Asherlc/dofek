@@ -1,7 +1,4 @@
-import {
-  LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS,
-  type LegacyActivityType,
-} from "@dofek/training/activity-types";
+import { LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS } from "@dofek/training/activity-types";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
@@ -167,9 +164,7 @@ async function migrateServingTables(client: ClickHouseCommandClient): Promise<vo
         client,
         `ALTER TABLE analytics.${table}
   UPDATE canonical_type = ${canonicalCase}
-  WHERE canonical_type IN (${(
-    Object.keys(LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS) as LegacyActivityType[]
-  )
+  WHERE canonical_type IN (${Object.keys(LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS)
     .map(clickHouseString)
     .join(", ")})
   SETTINGS mutations_sync = 2`,

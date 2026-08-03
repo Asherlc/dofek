@@ -101,7 +101,6 @@ vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
     emptyMessage?: string;
   }) => {
     state.recentActivitiesProps.push(props);
-    return <div>Recent activities</div>;
     state.recentActivityTypes = props.activityTypes;
     return <div>Recent activities</div>;
   },
