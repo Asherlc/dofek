@@ -31,7 +31,9 @@ const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 const mockSubjectiveCheckInInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockSubjectiveInjuriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockSubjectiveTimelineInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockSubjectiveCreateInjury = vi.fn();
 const mockSubjectiveCheckInData = { logged: false, symptoms: [] };
 const mockSubjectiveRegionsData: never[] = [];
 const mockSubjectiveInjuriesData: never[] = [];
@@ -150,6 +152,9 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: () => ({ data: mockSubjectiveInjuriesData, isLoading: false, error: null }),
       },
       saveCheckIn: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
+      createInjury: {
+        useMutation: () => ({ mutate: mockSubjectiveCreateInjury, isPending: false, error: null }),
+      },
     },
     useUtils: () => ({
       mobileDashboard: {
@@ -163,6 +168,7 @@ vi.mock("../../lib/trpc", () => ({
       },
       subjective: {
         checkIn: { invalidate: mockSubjectiveCheckInInvalidate },
+        injuries: { invalidate: mockSubjectiveInjuriesInvalidate },
         timeline: { invalidate: mockSubjectiveTimelineInvalidate },
       },
     }),
