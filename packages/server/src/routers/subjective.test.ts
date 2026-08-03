@@ -151,6 +151,15 @@ describe("subjectiveRouter", () => {
     expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["subjective"]);
   });
 
+  it("deletes an injury and invalidates subjective caches", async () => {
+    const { caller } = makeCaller([[{ id: "50000000-0000-4000-8000-000000002247" }]]);
+
+    await expect(
+      caller.deleteInjury({ id: "50000000-0000-4000-8000-000000002247" }),
+    ).resolves.toEqual({ success: true });
+    expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["subjective"]);
+  });
+
   it("accepts nullable injury severity", async () => {
     const injury = {
       id: "50000000-0000-4000-8000-000000002247",
