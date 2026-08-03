@@ -82,6 +82,17 @@ function readMigrationHistory(migrationsFolder: string): MigrationHistoryEntry[]
   const journal = migrationJournalSchema.parse(
     JSON.parse(readFileSync(join(migrationsFolder, "meta/_journal.json"), "utf8")),
   );
+
+  let previousEntry: { tag: string; when: number } | undefined;
+  for (const entry of journal.entries) {
+    if (previousEntry && entry.when <= previousEntry.when) {
+      throw new Error(
+        `Migration journal timestamps must be strictly increasing: ${entry.tag} follows ${previousEntry.tag}`,
+      );
+    }
+    previousEntry = entry;
+  }
+
   const migrations = readMigrationFiles({ migrationsFolder });
   return journal.entries.map((entry, index) => {
     const migration = migrations[index];
