@@ -38,12 +38,13 @@ describe("EfficiencyRepository ClickHouse serving model", () => {
     const endedAt = new Date(startedAt.getTime() + 3_600_000);
     await testContext.db.execute(sql`
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+        id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
       ) VALUES (
         ${ACTIVITY_ID},
         'polarization_fixture',
         ${TEST_USER_ID},
         'polarization-empty-serving-model',
+        'cycling',
         'cycling',
         ${startedAt.toISOString()},
         ${endedAt.toISOString()},

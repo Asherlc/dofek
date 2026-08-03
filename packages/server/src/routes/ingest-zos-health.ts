@@ -1,3 +1,4 @@
+import { resolveRawProviderActivityType } from "@dofek/training/activity-types";
 import type { Database } from "dofek/db";
 import { sleepSession, sleepStage } from "dofek/db/schema/activity";
 import { ensureProvider } from "dofek/db/tokens";
@@ -401,11 +402,15 @@ export function createIngestZosHealthRouter(deps: {
           }
 
           const raw = act.raw === undefined ? null : JSON.stringify(act.raw);
+          const activityType = resolveRawProviderActivityType(act.activityType);
           await deps.db.execute(
             sql`INSERT INTO fitness.activity
-                (provider_id, user_id, external_id, activity_type, started_at, ended_at, name, source_name, raw)
-                VALUES (${PROVIDER_ID}, ${userId}, ${act.externalId}, ${act.activityType}, ${activityStartedAt}, ${activityEndedAt}, ${act.name ?? null}, 'zepp-companion', ${raw}::jsonb)
+                (provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name, source_name, raw)
+                VALUES (${PROVIDER_ID}, ${userId}, ${act.externalId}, ${activityType.canonicalType}, ${activityType.providerType}, ${activityType.modality}, ${activityStartedAt}, ${activityEndedAt}, ${act.name ?? null}, 'zepp-companion', ${raw}::jsonb)
                 ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
+                  canonical_type = EXCLUDED.canonical_type,
+                  provider_type = EXCLUDED.provider_type,
+                  modality = EXCLUDED.modality,
                   ended_at = GREATEST(activity.ended_at, EXCLUDED.ended_at),
                   name = COALESCE(EXCLUDED.name, activity.name),
                   source_name = EXCLUDED.source_name,

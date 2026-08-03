@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -380,14 +381,14 @@ export async function importStrongCsv(
           providerId: STRONG_PROVIDER_ID,
           userId,
           externalId,
-          activityType: "strength",
+          activityType: resolveProviderActivityType("strength", "strength"),
           startedAt,
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
         },
         {
-          activityType: "strength",
+          activityType: resolveProviderActivityType("strength", "strength"),
           startedAt,
           endedAt,
           name: group.workoutName,

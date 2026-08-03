@@ -1,5 +1,6 @@
 import { formatDateShort, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import type { ActivityModality } from "@dofek/training/activity-types";
 import {
   formatVerticalAscentActivityTypeGroupLabel,
   getVerticalAscentActivityTypeGroup,
@@ -15,6 +16,7 @@ export interface VerticalAscentDataPoint {
   date: string;
   activityName: string;
   activityType: string;
+  modality: ActivityModality | null;
   verticalAscentRate: number;
   elevationGainMeters: number;
   elapsedMinutes: number;
@@ -73,7 +75,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   // Convert to display units
   const points = data.map((point) => ({
     ...point,
-    activityTypeGroup: getVerticalAscentActivityTypeGroup(point.activityType),
+    activityTypeGroup: getVerticalAscentActivityTypeGroup(point.modality),
     displayVam: units.convertElevation(point.verticalAscentRate),
     displayGain: units.convertElevation(point.elevationGainMeters),
     timestamp: new Date(point.date).getTime(),

@@ -470,7 +470,11 @@ describe("processFitFileImportJob", () => {
       sourceName: "Garmin Dump",
       activitySummary: {
         externalId: "12345",
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "cycling",
+          modality: null,
+        },
         startedAtIso: "2026-07-01T12:00:00.000Z",
         endedAtIso: "2026-07-01T12:30:00.000Z",
         name: "Morning Ride",
@@ -486,7 +490,11 @@ describe("processFitFileImportJob", () => {
       mockDb,
       expect.objectContaining({
         externalId: "12345",
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "cycling",
+          modality: null,
+        },
         startedAt: new Date("2026-07-01T12:00:00.000Z"),
         endedAt: new Date("2026-07-01T12:30:00.000Z"),
         name: "Morning Ride",
@@ -571,7 +579,9 @@ describe("processFitFileImportJob", () => {
     expect(mockFindUniqueProviderActivityByExactIdentity).toHaveBeenCalledWith(mockDb, {
       providerId: "garmin-dump",
       userId: "user-1",
-      activityType: "hiking",
+      canonicalType: "hiking",
+      providerType: "generic",
+      modality: null,
       startedAt: new Date("2022-05-17T17:23:08.000Z"),
       endedAt: new Date("2022-05-17T19:03:19.201Z"),
     });
@@ -615,7 +625,11 @@ describe("processFitFileImportJob", () => {
         deleteFileAfterImport: true,
         activitySummary: {
           externalId: "workout-42",
-          activityType: "cycling",
+          activityType: {
+            canonicalType: "cycling",
+            providerType: "cycling",
+            modality: null,
+          },
           startedAtIso: "2026-07-01T12:00:00.000Z",
           name: "Morning ride",
         },
@@ -765,7 +779,11 @@ describe("processFitFileImportJob", () => {
         sourceName: "Garmin Dump",
         activitySummary: {
           externalId: "12345",
-          activityType: "cycling",
+          activityType: {
+            canonicalType: "cycling",
+            providerType: "cycling",
+            modality: null,
+          },
           startedAtIso: "2026-07-01T12:00:00.000Z",
           endedAtIso: "2026-07-01T12:30:00.000Z",
           name: "Morning Ride",
@@ -807,7 +825,11 @@ describe("processFitFileImportJob", () => {
         sourceName: "Garmin Dump",
         activitySummary: {
           externalId: "12345",
-          activityType: "cycling",
+          activityType: {
+            canonicalType: "cycling",
+            providerType: "cycling",
+            modality: null,
+          },
           startedAtIso: "2026-07-01T12:00:00.000Z",
           endedAtIso: "2026-07-01T12:30:00.000Z",
           name: "Morning Ride",
@@ -893,7 +915,11 @@ describe("processFitFileImportJob", () => {
         sourceName: "Garmin Dump",
         activitySummary: {
           externalId: "12345",
-          activityType: "cycling",
+          activityType: {
+            canonicalType: "cycling",
+            providerType: "cycling",
+            modality: null,
+          },
           startedAtIso: "2026-07-01T12:00:00.000Z",
           endedAtIso: "2026-07-01T12:30:00.000Z",
           name: "Morning Ride",
@@ -959,16 +985,20 @@ describe("processFitFileImportJob", () => {
       mockDb,
       expect.objectContaining({
         externalId: expect.stringMatching(/^fit:[a-f0-9]{32}$/),
-        activityType: "indoor_cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "indoor_cycling",
+          modality: "indoor",
+        },
         startedAt: new Date("2026-07-01T12:00:00.000Z"),
         endedAt: new Date("2026-07-01T12:30:00.000Z"),
-        name: "FIT indoor cycling",
+        name: "FIT cycling",
         raw: {
           fitPath: "DI_CONNECT/asher@example.com_activity.fit",
           session: { sport: "cycling", sub_sport: "indoor_cycling" },
         },
       }),
-      expect.objectContaining({ name: "FIT indoor cycling" }),
+      expect.objectContaining({ name: "FIT cycling" }),
     );
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
@@ -1115,7 +1145,11 @@ describe("processFitFileImportJob", () => {
         externalId: "98765",
       }),
       expect.objectContaining({
-        activityType: "indoor_cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "indoor_cycling",
+          modality: "indoor",
+        },
       }),
     );
   });
@@ -1151,12 +1185,20 @@ describe("processFitFileImportJob", () => {
     expect(mockUpsertProviderActivity).toHaveBeenLastCalledWith(
       mockDb,
       expect.objectContaining({
-        activityType: "indoor_cycling",
-        name: "FIT indoor cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "virtualActivity",
+          modality: "indoor",
+        },
+        name: "FIT cycling",
       }),
       expect.objectContaining({
-        activityType: "indoor_cycling",
-        name: "FIT indoor cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "virtualActivity",
+          modality: "indoor",
+        },
+        name: "FIT cycling",
       }),
     );
 
@@ -1189,12 +1231,20 @@ describe("processFitFileImportJob", () => {
     expect(mockUpsertProviderActivity).toHaveBeenLastCalledWith(
       mockDb,
       expect.objectContaining({
-        activityType: "trail_running",
-        name: "FIT trail running",
+        activityType: {
+          canonicalType: "running",
+          providerType: "Trail  Running",
+          modality: "trail",
+        },
+        name: "FIT running",
       }),
       expect.objectContaining({
-        activityType: "trail_running",
-        name: "FIT trail running",
+        activityType: {
+          canonicalType: "running",
+          providerType: "Trail  Running",
+          modality: "trail",
+        },
+        name: "FIT running",
       }),
     );
 
@@ -1227,11 +1277,19 @@ describe("processFitFileImportJob", () => {
     expect(mockUpsertProviderActivity).toHaveBeenLastCalledWith(
       mockDb,
       expect.objectContaining({
-        activityType: "other",
+        activityType: {
+          canonicalType: "other",
+          providerType: "pickleball",
+          modality: null,
+        },
         name: "FIT other",
       }),
       expect.objectContaining({
-        activityType: "other",
+        activityType: {
+          canonicalType: "other",
+          providerType: "pickleball",
+          modality: null,
+        },
         name: "FIT other",
       }),
     );

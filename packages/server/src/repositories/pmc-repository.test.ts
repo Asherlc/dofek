@@ -163,7 +163,7 @@ describe("PmcRepository", () => {
         query,
         "CROSS JOIN user_baseline ub",
       );
-      expect(activityQuery).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
+      expect(activityQuery).toContain("has({activityTypes:Array(String)}, asum.canonical_type)");
       expect(activityParams).toMatchObject({
         userId: "user-1",
         timezone: "America/Los_Angeles",
@@ -175,7 +175,7 @@ describe("PmcRepository", () => {
         query,
         "normalized_power",
       );
-      expect(normalizedPowerQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+      expect(normalizedPowerQuery).toContain("has({activityTypes:Array(String)}, canonical_type)");
       expect(normalizedPowerParams).toMatchObject({ userId: "user-1", queryDays: 407 });
       expectCyclingOnlyActivityTypes(normalizedPowerParams.activityTypes);
     });
@@ -187,7 +187,7 @@ describe("PmcRepository", () => {
 
       const activityQuery = vi.mocked(query).mock.calls[0]?.[1];
       expect(activityQuery).toContain("SELECT maxIf(max_hr, max_hr > 0)");
-      expect(activityQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+      expect(activityQuery).toContain("has({activityTypes:Array(String)}, canonical_type)");
       expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[0]?.[2]?.activityTypes);
     });
 

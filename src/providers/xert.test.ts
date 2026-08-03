@@ -99,21 +99,21 @@ describe("XertProvider — rate-limit aware fetch wiring", () => {
 
 describe("mapXertSport — all types", () => {
   it("maps all known sports", () => {
-    expect(mapXertSport("Cycling")).toBe("cycling");
-    expect(mapXertSport("Running")).toBe("running");
-    expect(mapXertSport("Swimming")).toBe("swimming");
-    expect(mapXertSport("Walking")).toBe("walking");
-    expect(mapXertSport("Hiking")).toBe("hiking");
-    expect(mapXertSport("Rowing")).toBe("rowing");
-    expect(mapXertSport("Skiing")).toBe("skiing");
-    expect(mapXertSport("Virtual Cycling")).toBe("virtual_cycling");
-    expect(mapXertSport("Mountain Biking")).toBe("mountain_biking");
-    expect(mapXertSport("Trail Running")).toBe("trail_running");
-    expect(mapXertSport("Cross Country Skiing")).toBe("cross_country_skiing");
+    expect(mapXertSport("Cycling").canonicalType).toBe("cycling");
+    expect(mapXertSport("Running").canonicalType).toBe("running");
+    expect(mapXertSport("Swimming").canonicalType).toBe("swimming");
+    expect(mapXertSport("Walking").canonicalType).toBe("walking");
+    expect(mapXertSport("Hiking").canonicalType).toBe("hiking");
+    expect(mapXertSport("Rowing").canonicalType).toBe("rowing");
+    expect(mapXertSport("Skiing").canonicalType).toBe("skiing");
+    expect(mapXertSport("Virtual Cycling").canonicalType).toBe("cycling");
+    expect(mapXertSport("Mountain Biking").canonicalType).toBe("cycling");
+    expect(mapXertSport("Trail Running").canonicalType).toBe("running");
+    expect(mapXertSport("Cross Country Skiing").canonicalType).toBe("skiing");
   });
 
   it("returns other for unknown", () => {
-    expect(mapXertSport("Unknown")).toBe("other");
+    expect(mapXertSport("Unknown").canonicalType).toBe("other");
   });
 });
 
@@ -143,7 +143,7 @@ describe("parseXertActivity — edge cases", () => {
     };
 
     const parsed = parseXertActivity(raw);
-    expect(parsed.activityType).toBe("swimming");
+    expect(parsed.activityType.canonicalType).toBe("swimming");
     expect(parsed.raw.heartrateAvg).toBe(130);
     expect(parsed.raw.cadenceAvg).toBe(40);
     expect(parsed.raw.cadenceMax).toBe(50);

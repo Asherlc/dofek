@@ -106,9 +106,9 @@ async function insertActivity(
 ): Promise<void> {
   await testContext.db.execute(sql`
     INSERT INTO fitness.activity (
-      id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+      id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
     ) VALUES (
-      ${activityId}, 'test_provider', ${testUserId}, ${`${name}-${activityId}`}, 'cycling',
+      ${activityId}, 'test_provider', ${testUserId}, ${`${name}-${activityId}`}, 'cycling', 'cycling',
       ${startedAt}, ${endedAt}, ${name}
     )
     ON CONFLICT (id) DO NOTHING
@@ -443,7 +443,7 @@ describe("activity_power_curve read model", () => {
           WHERE activity_id != {activityId:UUID}
             AND ended_at IS NOT NULL
             AND power_sample_count > 1
-            AND activity_type IN (
+            AND canonical_type IN (
               'cycling',
               'road_cycling',
               'mountain_biking',

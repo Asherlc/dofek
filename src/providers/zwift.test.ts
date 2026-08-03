@@ -228,21 +228,21 @@ function makeMockDb(
 describe("Zwift Provider", () => {
   describe("mapZwiftSport", () => {
     it("maps cycling", () => {
-      expect(mapZwiftSport("CYCLING")).toBe("virtual_cycling");
+      expect(mapZwiftSport("CYCLING").canonicalType).toBe("cycling");
     });
 
     it("maps running", () => {
-      expect(mapZwiftSport("RUNNING")).toBe("running");
+      expect(mapZwiftSport("RUNNING").canonicalType).toBe("running");
     });
 
     it("maps unknown sports to other", () => {
-      expect(mapZwiftSport("ROWING")).toBe("other");
-      expect(mapZwiftSport("")).toBe("other");
+      expect(mapZwiftSport("ROWING").canonicalType).toBe("other");
+      expect(mapZwiftSport("").canonicalType).toBe("other");
     });
 
     it("is case-insensitive", () => {
-      expect(mapZwiftSport("cycling")).toBe("virtual_cycling");
-      expect(mapZwiftSport("Running")).toBe("running");
+      expect(mapZwiftSport("cycling").canonicalType).toBe("cycling");
+      expect(mapZwiftSport("Running").canonicalType).toBe("running");
     });
   });
 
@@ -251,7 +251,7 @@ describe("Zwift Provider", () => {
       const result = parseZwiftActivity(sampleActivity);
 
       expect(result.externalId).toBe("123456789");
-      expect(result.activityType).toBe("virtual_cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.name).toBe("Watopia Hilly Route");
       expect(result.startedAt).toEqual(new Date("2026-03-01T18:00:00.000Z"));
       expect(result.endedAt).toEqual(new Date("2026-03-01T19:00:00.000Z"));

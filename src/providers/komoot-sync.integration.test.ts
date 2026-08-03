@@ -147,12 +147,12 @@ describe("KomootProvider.sync() (integration)", () => {
 
     const hike = rows.find((r) => r.externalId === "7001");
     if (!hike) throw new Error("expected tour 7001");
-    expect(hike.activityType).toBe("hiking");
+    expect(hike.canonicalType).toBe("hiking");
     expect(hike.name).toBe("Mountain Hike");
 
     const run = rows.find((r) => r.externalId === "7002");
     if (!run) throw new Error("expected tour 7002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
   });
 
   it("handles page-based pagination", async () => {
@@ -188,10 +188,10 @@ describe("KomootProvider.sync() (integration)", () => {
 
     // Verify sport mapping
     const biking = rows.find((r) => r.externalId === "8001");
-    expect(biking?.activityType).toBe("cycling");
+    expect(biking?.canonicalType).toBe("cycling");
 
     const trail = rows.find((r) => r.externalId === "8002");
-    expect(trail?.activityType).toBe("trail_running");
+    expect(trail?.canonicalType).toBe("running");
   });
 
   it("syncs tours when optional elevation fields are null", async () => {
@@ -311,7 +311,9 @@ describe("KomootProvider.sync() (integration)", () => {
       providerId: "komoot",
       userId,
       externalId: "komoot-degraded-missing",
-      activityType: "hiking",
+      canonicalType: "hiking",
+      providerType: "HIKING",
+      modality: null,
       startedAt: new Date("2026-03-01T10:00:00Z"),
       endedAt: new Date("2026-03-01T11:00:00Z"),
     });

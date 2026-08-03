@@ -169,11 +169,11 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "1001");
     if (!ride) throw new Error("expected workout 1001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
 
     const run = rows.find((r) => r.externalId === "1002");
     if (!run) throw new Error("expected workout 1002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -299,7 +299,9 @@ describe("WahooProvider.sync() (integration)", () => {
       providerId: "wahoo",
       userId: "00000000-0000-0000-0000-000000000001",
       externalId: "9100",
-      activityType: "cycling",
+      canonicalType: "cycling",
+      providerType: "0",
+      modality: null,
       startedAt: new Date("2026-04-02T10:00:00Z"),
       name: "Missing Wahoo workout",
     });
@@ -354,7 +356,9 @@ describe("WahooProvider.sync() (integration)", () => {
       providerId: "wahoo",
       userId: "00000000-0000-0000-0000-000000000001",
       externalId: "9200",
-      activityType: "cycling",
+      canonicalType: "cycling",
+      providerType: "0",
+      modality: null,
       startedAt: new Date("2026-04-03T10:00:00Z"),
       name: "Removed Wahoo workout",
     });

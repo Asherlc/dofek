@@ -31,7 +31,7 @@ const mockLookup: ProviderLookup = (id: string) => {
 
 const fullRow: ActivityRow = {
   id: "abc-123",
-  activity_type: "cycling",
+  canonical_type: "cycling",
   started_at: "2026-03-01T10:00:00+00:00",
   ended_at: "2026-03-01T11:30:00+00:00",
   timezone: null,

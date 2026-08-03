@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -59,7 +63,7 @@ const komootToursResponseSchema = z.object({
 
 export interface ParsedKomootTour {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -70,7 +74,7 @@ export interface ParsedKomootTour {
 // Sport type mapping
 // ============================================================
 
-const KOMOOT_SPORT_MAP: Record<string, CanonicalActivityType> = {
+const KOMOOT_SPORT_MAP: Record<string, LegacyActivityType> = {
   BIKING: "cycling",
   E_BIKING: "e_bike_cycling",
   ROAD_CYCLING: "road_cycling",
@@ -90,8 +94,8 @@ const KOMOOT_SPORT_MAP: Record<string, CanonicalActivityType> = {
   INLINE_SKATING: "skating",
 };
 
-export function mapKomootSport(sport: string): CanonicalActivityType {
-  return KOMOOT_SPORT_MAP[sport] ?? "other";
+export function mapKomootSport(sport: string): ProviderActivityType {
+  return resolveProviderActivityType(sport, KOMOOT_SPORT_MAP[sport] ?? "other");
 }
 
 export function parseKomootTour(tour: KomootTour): ParsedKomootTour {

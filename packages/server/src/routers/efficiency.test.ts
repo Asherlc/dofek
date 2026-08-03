@@ -116,7 +116,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 190,
           date: "2024-01-15",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           avg_power_z2: 180,
           avg_hr_z2: 140,
@@ -162,7 +162,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 190,
           date: "2024-01-15",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Ride",
           avg_power_z2: 180,
           avg_hr_z2: 140,
@@ -189,7 +189,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 190,
           date: "2024-01-15",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Ride",
           avg_power_z2: 180,
           avg_hr_z2: 140,
@@ -219,7 +219,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 190,
           date: "2024-01-15",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Ride",
           avg_power_z2: 180,
           avg_hr_z2: 140,
@@ -243,7 +243,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 185,
           date: "2024-01-10",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Run A",
           avg_power_z2: 250,
           avg_hr_z2: 145,
@@ -253,7 +253,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 185,
           date: "2024-01-12",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Ride B",
           avg_power_z2: 190,
           avg_hr_z2: 138,
@@ -281,7 +281,7 @@ describe("efficiencyRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Long Run",
           first_half_ratio: 1.5,
           second_half_ratio: 1.3,
@@ -324,7 +324,7 @@ describe("efficiencyRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Long Run",
           first_half_ratio: 1.5,
           second_half_ratio: 1.3,

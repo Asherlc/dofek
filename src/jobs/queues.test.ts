@@ -98,6 +98,38 @@ describe("queues", () => {
     });
   });
 
+  describe("fitFileImportActivitySummarySchema", () => {
+    it("accepts the complete canonical activity summary", async () => {
+      const { fitFileImportActivitySummarySchema } = await import("./queues.ts");
+
+      expect(
+        fitFileImportActivitySummarySchema.safeParse({
+          externalId: "activity-1",
+          activityType: {
+            canonicalType: "cycling",
+            providerType: "cycling",
+            modality: null,
+          },
+          startedAtIso: "2026-01-01T00:00:00.000Z",
+          name: "Ride",
+        }).success,
+      ).toBe(true);
+    });
+
+    it("requires the canonical activity type fields", async () => {
+      const { fitFileImportActivitySummarySchema } = await import("./queues.ts");
+
+      expect(
+        fitFileImportActivitySummarySchema.safeParse({
+          externalId: "activity-1",
+          activityType: {},
+          startedAtIso: "2026-01-01T00:00:00.000Z",
+          name: "Ride",
+        }).success,
+      ).toBe(false);
+    });
+  });
+
   describe("providerDataDeletionJobDataSchema", () => {
     it("validates the complete resumable deletion payload", () => {
       const payload = {

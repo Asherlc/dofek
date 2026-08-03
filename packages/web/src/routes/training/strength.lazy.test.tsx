@@ -18,15 +18,10 @@ describe("strength route range plumbing", () => {
     await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
     expectRegistryInputs("strength", 30);
     expect(screen.getByText("Strength Workouts")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Selected 30-day range · Strength, strength training, functional strength, and functional fitness",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Selected 30-day range · Strength")).toBeTruthy();
     expect(state.recentActivitiesProps).toContainEqual({
-      activityTypes: ["strength", "strength_training", "functional_strength", "functional_fitness"],
-      emptyMessage:
-        "No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness.",
+      activityTypes: ["strength"],
+      emptyMessage: "No strength workouts in the selected 30-day range. Included types: strength.",
     });
 
     cleanup();
@@ -35,15 +30,10 @@ describe("strength route range plumbing", () => {
     state.days = null;
     await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
     expectRegistryInputs("strength", null);
-    expect(
-      screen.getByText(
-        "All recorded time · Strength, strength training, functional strength, and functional fitness",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("All recorded time · Strength")).toBeTruthy();
     expect(state.recentActivitiesProps).toContainEqual({
-      activityTypes: ["strength", "strength_training", "functional_strength", "functional_fitness"],
-      emptyMessage:
-        "No strength workouts across all recorded time. Included types: strength, strength training, functional strength, and functional fitness.",
+      activityTypes: ["strength"],
+      emptyMessage: "No strength workouts across all recorded time. Included types: strength.",
     });
   });
 });

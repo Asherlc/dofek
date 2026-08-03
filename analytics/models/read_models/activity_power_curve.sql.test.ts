@@ -7,7 +7,9 @@ describe("activity_power_curve model", () => {
   it("limits upstream activities to endurance types", () => {
     const activityBoundsSql = extractCteSql(modelSql, "activity_bounds");
 
-    expect(activityBoundsSql).toContain("activity_type IN ('cycling', 'road_cycling'");
+    expect(activityBoundsSql).toContain(
+      "canonical_type IN ('cycling', 'running', 'swimming', 'walking', 'hiking')",
+    );
     expect(activityBoundsSql).toContain("is_deleted = 0");
   });
 

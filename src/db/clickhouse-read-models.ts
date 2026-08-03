@@ -155,7 +155,9 @@ ranked AS (
     active_activity.provider_id AS provider_id,
     active_activity.user_id AS user_id,
     active_activity.external_id AS external_id,
-    active_activity.activity_type AS activity_type,
+    active_activity.canonical_type AS canonical_type,
+    active_activity.provider_type AS provider_type,
+    active_activity.modality AS modality,
     active_activity.started_at AS started_at,
     active_activity.ended_at AS ended_at,
     active_activity.source_name AS source_name,
@@ -178,7 +180,7 @@ tombstoned AS (
     activity.id AS id,
     activity.user_id AS user_id,
     activity.provider_id AS provider_id,
-    activity.activity_type AS activity_type,
+    activity.canonical_type AS canonical_type,
     activity.external_id AS external_id,
     activity.started_at AS started_at,
     activity.ended_at AS ended_at,
@@ -195,7 +197,7 @@ clusterable AS (
     ranked.id AS id,
     ranked.user_id AS user_id,
     ranked.provider_id AS provider_id,
-    ranked.activity_type AS activity_type,
+    ranked.canonical_type AS canonical_type,
     ranked.started_at AS started_at,
     coalesce(ranked.ended_at, ranked.started_at + INTERVAL 1 HOUR) AS ended_at
   FROM ranked
@@ -204,7 +206,7 @@ clusterable AS (
     tombstoned.id AS id,
     tombstoned.user_id AS user_id,
     tombstoned.provider_id AS provider_id,
-    tombstoned.activity_type AS activity_type,
+    tombstoned.canonical_type AS canonical_type,
     tombstoned.started_at AS started_at,
     coalesce(tombstoned.ended_at, tombstoned.started_at + INTERVAL 1 HOUR) AS ended_at
   FROM tombstoned
@@ -229,7 +231,7 @@ pairs AS (
       ), 0) > 0.8
       OR (
         left_activity.provider_id != right_activity.provider_id
-        AND left_activity.activity_type = right_activity.activity_type
+        AND left_activity.canonical_type = right_activity.canonical_type
         AND dateDiff(
           'second',
           greatest(left_activity.started_at, right_activity.started_at),
@@ -302,7 +304,9 @@ best AS (
       ranked.id AS canonical_id,
       ranked.provider_id AS provider_id,
       ranked.user_id AS user_id,
-      ranked.activity_type AS activity_type,
+      ranked.canonical_type AS canonical_type,
+      ranked.provider_type AS provider_type,
+      ranked.modality AS modality,
       ranked.started_at AS started_at,
       ranked.ended_at AS ended_at,
       ranked.source_name AS source_name,
@@ -323,7 +327,9 @@ merged AS (
     best.canonical_id AS id,
     any(best.provider_id) AS provider_id,
     any(best.user_id) AS user_id,
-    any(best.activity_type) AS activity_type,
+    any(best.canonical_type) AS canonical_type,
+    any(best.provider_type) AS provider_type,
+    any(best.modality) AS modality,
     any(best.started_at) AS started_at,
     any(best.ended_at) AS ended_at,
     any(best.source_name) AS source_name,
@@ -374,7 +380,9 @@ SELECT
   provider_id,
   user_id,
   id AS primary_activity_id,
-  activity_type,
+  canonical_type,
+  provider_type,
+  modality,
   started_at,
   ended_at,
   source_name,

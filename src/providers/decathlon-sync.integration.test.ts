@@ -137,12 +137,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "dec-act-1001");
     if (!run) throw new Error("expected activity dec-act-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Morning Run");
 
     const ride = rows.find((r) => r.externalId === "dec-act-1002");
     if (!ride) throw new Error("expected activity dec-act-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
   });
 
   it("handles cursor-based pagination", async () => {

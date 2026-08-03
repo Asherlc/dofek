@@ -26,10 +26,10 @@ export async function seedTraining(sql: Sql): Promise<void> {
     const providerId = activityType === "strength" ? "whoop" : "strava";
     const [{ id: activityId }] = await sql<ActivityRow[]>`
       INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, activity_type, started_at, ended_at,
+        provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at,
         name, notes, perceived_exertion, source_name, timezone
       ) VALUES (
-        ${providerId}, ${USER_ID}, ${`seed-activity-${daysAgo}`}, ${activityType},
+        ${providerId}, ${USER_ID}, ${`seed-activity-${daysAgo}`}, ${activityType}, ${activityType},
         ${startedAt}, ${endedAt}, ${activityName(activityType, daysAgo)},
         ${activityNotes(activityType, daysAgo)}, ${perceivedExertion(activityType, daysAgo)},
         ${providerId === "strava" ? "Strava Review Seed" : "WHOOP Strength Review Seed"},

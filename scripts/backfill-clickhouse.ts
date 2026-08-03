@@ -160,7 +160,7 @@ async function main() {
         "provider_id",
         "user_id",
         "external_id",
-        "activity_type",
+        "canonical_type",
         "started_at",
         "ended_at",
         "name",

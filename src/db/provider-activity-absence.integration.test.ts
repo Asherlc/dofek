@@ -22,19 +22,25 @@ describe("reconcileProviderActivityAbsence", () => {
       {
         providerId: "provider-absence-test",
         externalId: "present-activity",
-        activityType: "running",
+        canonicalType: "running",
+        providerType: "running",
+        modality: null,
         startedAt: new Date("2026-03-01T10:00:00Z"),
       },
       {
         providerId: "provider-absence-test",
         externalId: "missing-activity",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        modality: null,
         startedAt: new Date("2026-03-02T10:00:00Z"),
       },
       {
         providerId: "provider-absence-test",
         externalId: "outside-window",
-        activityType: "walking",
+        canonicalType: "walking",
+        providerType: "walking",
+        modality: null,
         startedAt: new Date("2026-02-01T10:00:00Z"),
       },
     ]);
@@ -63,7 +69,9 @@ describe("reconcileProviderActivityAbsence", () => {
     await ctx.db.insert(activity).values({
       providerId: "provider-absence-test",
       externalId: "restored-activity",
-      activityType: "running",
+      canonicalType: "running",
+      providerType: "running",
+      modality: null,
       startedAt: new Date("2026-03-04T10:00:00Z"),
       providerAbsentAt: new Date("2026-03-05T00:00:00Z"),
     });
@@ -92,7 +100,9 @@ describe("reconcileProviderActivityAbsence", () => {
     await ctx.db.insert(activity).values({
       providerId: "provider-absence-test",
       externalId: "empty-list-activity",
-      activityType: "running",
+      canonicalType: "running",
+      providerType: "running",
+      modality: null,
       startedAt: new Date("2026-03-06T10:00:00Z"),
     });
 
@@ -123,7 +133,9 @@ describe("reconcileProviderActivityAbsence", () => {
       {
         providerId: "apple_health",
         externalId: "hk:workout:old-strava-uuid",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        modality: null,
         startedAt: new Date("2026-03-06T10:00:00Z"),
         endedAt: new Date("2026-03-06T11:00:00Z"),
         raw: {
@@ -134,7 +146,9 @@ describe("reconcileProviderActivityAbsence", () => {
       {
         providerId: "apple_health",
         externalId: "hk:workout:new-strava-uuid",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        modality: null,
         startedAt: new Date("2026-03-06T10:00:00Z"),
         endedAt: new Date("2026-03-06T11:00:00Z"),
         raw: {
@@ -145,7 +159,9 @@ describe("reconcileProviderActivityAbsence", () => {
       {
         providerId: "apple_health",
         externalId: "hk:workout:missing-garmin-uuid",
-        activityType: "running",
+        canonicalType: "running",
+        providerType: "running",
+        modality: null,
         startedAt: new Date("2026-03-06T12:00:00Z"),
         endedAt: new Date("2026-03-06T13:00:00Z"),
         raw: {

@@ -22,7 +22,8 @@ import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 const activityListRowSchema = z.object({
   id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
+  modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   name: z.string().nullable(),
@@ -43,7 +44,8 @@ const activityListRowSchema = z.object({
 
 const activityListColumns = sql`
   a.id,
-  a.activity_type,
+  a.canonical_type,
+  a.modality::text AS modality,
   a.started_at::text AS started_at,
   a.ended_at::text AS ended_at,
   a.name,
@@ -64,7 +66,8 @@ const activityListColumns = sql`
 
 const activityDetailRowSchema = z.object({
   id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
+  modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   name: z.string().nullable(),
@@ -399,7 +402,7 @@ export class ActivityRepository extends BaseRepository {
   async countVisibleInWindow(input: CountVisibleInWindowInput): Promise<number> {
     const activityTypePredicate =
       input.activityTypes && input.activityTypes.length > 0
-        ? sql`AND activity_type IN (${sql.join(
+        ? sql`AND canonical_type IN (${sql.join(
             input.activityTypes.map((activityType) => sql`${activityType}`),
             sql`, `,
           )})`
@@ -491,13 +494,13 @@ export class ActivityRepository extends BaseRepository {
   ) {
     const typeFilter =
       activityTypes && activityTypes.length > 0
-        ? sql`AND a.activity_type IN (${sql.join(
+        ? sql`AND a.canonical_type IN (${sql.join(
             activityTypes.map((activityType) => sql`${activityType}`),
             sql`, `,
           )})`
         : sql``;
     const queryFilter = queryPattern
-      ? sql`AND (a.name ILIKE ${queryPattern} OR a.activity_type::text ILIKE ${queryPattern})`
+      ? sql`AND (a.name ILIKE ${queryPattern} OR a.canonical_type::text ILIKE ${queryPattern})`
       : sql``;
     const limitClause = limit == null ? sql`` : sql`LIMIT ${limit}`;
     return this.query(
@@ -519,7 +522,7 @@ export class ActivityRepository extends BaseRepository {
   #listRawRows(input: ListInput) {
     const typeFilter =
       input.activityTypes && input.activityTypes.length > 0
-        ? sql`AND a.activity_type IN (${sql.join(
+        ? sql`AND a.canonical_type IN (${sql.join(
             input.activityTypes.map((type) => sql`${type}`),
             sql`, `,
           )})`
@@ -557,7 +560,8 @@ export class ActivityRepository extends BaseRepository {
       activityDetailRowSchema,
       sql`SELECT
             a.id,
-            a.activity_type,
+            a.canonical_type,
+            a.modality::text AS modality,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
             a.name,
@@ -601,7 +605,8 @@ export class ActivityRepository extends BaseRepository {
       activityDetailRowSchema,
       sql`SELECT
             a.id,
-            a.activity_type,
+            a.canonical_type,
+            a.modality::text AS modality,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
             a.name,

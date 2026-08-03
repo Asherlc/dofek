@@ -268,11 +268,11 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     );
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, activity_type, started_at)
+            (provider_id, user_id, external_id, canonical_type, provider_type, started_at)
           VALUES
-            (${providerId}, ${userId}, 'activity-1', 'running', now()),
-            (${providerId}, ${secondUserId}, 'activity-2', 'cycling', now()),
-            (${retainedProviderId}, ${userId}, 'retained-activity', 'running', now())`,
+            (${providerId}, ${userId}, 'activity-1', 'running', 'running', now()),
+            (${providerId}, ${secondUserId}, 'activity-2', 'cycling', 'cycling', now()),
+            (${retainedProviderId}, ${userId}, 'retained-activity', 'running', 'running', now())`,
     );
     await testContext.db.execute(
       sql`INSERT INTO fitness.daily_metrics (provider_id, user_id, date)

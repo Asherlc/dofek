@@ -32,7 +32,7 @@ describe("countRawActivities", () => {
     const renderedQuery = renderedQueries[0];
     expect(renderedQuery?.sql).toContain("FROM fitness.v_activity");
     expect(renderedQuery?.sql).toContain("CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'");
-    expect(renderedQuery?.sql).toContain("activity_type IN ($3)");
+    expect(renderedQuery?.sql).toContain("canonical_type IN ($3)");
     expect(renderedQuery?.sql).toContain(
       "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
     );

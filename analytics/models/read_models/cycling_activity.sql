@@ -60,7 +60,9 @@ active_cycling AS (
         summary.user_id AS user_id,
         assumeNotNull(identity.provider_id) AS provider_id,
         identity.source_providers AS source_providers,
-        assumeNotNull(summary.activity_type) AS activity_type,
+        assumeNotNull(summary.canonical_type) AS canonical_type,
+        summary.provider_type AS provider_type,
+        summary.modality AS modality,
         summary.name AS activity_name,
         assumeNotNull(summary.started_at) AS started_at,
         summary.ended_at AS ended_at,
@@ -101,21 +103,9 @@ active_cycling AS (
         AND efficiency.is_deleted = 0
     WHERE summary.is_deleted = 0
         AND identity.provider_id IS NOT null
-        AND summary.activity_type IS NOT null
+        AND summary.canonical_type IS NOT null
         AND summary.started_at IS NOT null
-        AND summary.activity_type IN (
-            'cycling',
-            'road_cycling',
-            'indoor_cycling',
-            'mountain_biking',
-            'gravel_cycling',
-            'virtual_cycling',
-            'e_bike_cycling',
-            'cyclocross',
-            'track_cycling',
-            'bmx',
-            'hand_cycling'
-        )
+        AND summary.canonical_type = 'cycling'
 ),
 
 refresh_clock AS (
@@ -130,7 +120,9 @@ active_rows AS (
         active_cycling.user_id AS user_id,
         active_cycling.provider_id AS provider_id,
         active_cycling.source_providers AS source_providers,
-        active_cycling.activity_type AS activity_type,
+        active_cycling.canonical_type AS canonical_type,
+        active_cycling.provider_type AS provider_type,
+        active_cycling.modality AS modality,
         active_cycling.activity_name AS activity_name,
         active_cycling.started_at AS started_at,
         active_cycling.ended_at AS ended_at,
@@ -173,7 +165,9 @@ tombstone_rows AS (
         existing_rows.user_id AS user_id,
         existing_rows.provider_id AS provider_id,
         existing_rows.source_providers AS source_providers,
-        existing_rows.activity_type AS activity_type,
+        existing_rows.canonical_type AS canonical_type,
+        existing_rows.provider_type AS provider_type,
+        existing_rows.modality AS modality,
         existing_rows.activity_name AS activity_name,
         existing_rows.started_at AS started_at,
         existing_rows.ended_at AS ended_at,
@@ -212,7 +206,9 @@ SELECT
     user_id,
     provider_id,
     source_providers,
-    activity_type,
+    canonical_type,
+    provider_type,
+    modality,
     activity_name,
     started_at,
     ended_at,
@@ -242,7 +238,9 @@ SELECT
     user_id,
     provider_id,
     source_providers,
-    activity_type,
+    canonical_type,
+    provider_type,
+    modality,
     activity_name,
     started_at,
     ended_at,

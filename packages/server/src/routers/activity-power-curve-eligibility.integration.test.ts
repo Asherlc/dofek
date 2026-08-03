@@ -49,7 +49,7 @@ describe("activity power-curve eligibility", () => {
       query: `CREATE TABLE ${analyticsDatabase}.activity_summary_rows (
         activity_id UUID,
         user_id UUID,
-        activity_type String,
+        canonical_type String,
         started_at DateTime64(6, 'UTC'),
         ended_at Nullable(DateTime64(6, 'UTC')),
         is_deleted UInt8,

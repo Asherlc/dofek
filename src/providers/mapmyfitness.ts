@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -68,7 +72,7 @@ const mapMyFitnessCurrentUserSchema = z.object({
 
 export interface ParsedMapMyFitnessWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -80,17 +84,20 @@ export interface ParsedMapMyFitnessWorkout {
 // Parsing — pure functions
 // ============================================================
 
-export function mapMapMyFitnessActivityType(activityType: string): CanonicalActivityType {
+export function mapMapMyFitnessActivityType(activityType: string): ProviderActivityType {
   const lower = activityType.toLowerCase();
-  if (lower.includes("run")) return "running";
-  if (lower.includes("ride") || lower.includes("cycl") || lower.includes("bik")) return "cycling";
-  if (lower.includes("walk")) return "walking";
-  if (lower.includes("swim")) return "swimming";
-  if (lower.includes("hik")) return "hiking";
-  if (lower.includes("yoga")) return "yoga";
-  if (lower.includes("weight") || lower.includes("strength")) return "strength";
-  if (lower.includes("row")) return "rowing";
-  return "other";
+  let normalizedType: LegacyActivityType = "other";
+  if (lower.includes("run")) normalizedType = "running";
+  else if (lower.includes("ride") || lower.includes("cycl") || lower.includes("bik")) {
+    normalizedType = "cycling";
+  } else if (lower.includes("walk")) normalizedType = "walking";
+  else if (lower.includes("swim")) normalizedType = "swimming";
+  else if (lower.includes("hik")) normalizedType = "hiking";
+  else if (lower.includes("yoga")) normalizedType = "yoga";
+  else if (lower.includes("weight") || lower.includes("strength")) {
+    normalizedType = "strength";
+  } else if (lower.includes("row")) normalizedType = "rowing";
+  return resolveProviderActivityType(activityType.trim() || "other", normalizedType);
 }
 
 export function parseMapMyFitnessWorkout(workout: MapMyFitnessWorkout): ParsedMapMyFitnessWorkout {
@@ -101,7 +108,9 @@ export function parseMapMyFitnessWorkout(workout: MapMyFitnessWorkout): ParsedMa
 
   return {
     externalId,
-    activityType: mapMapMyFitnessActivityType(workout.activity_type ?? workout.name),
+    activityType: mapMapMyFitnessActivityType(
+      workout.activity_type?.trim() ? workout.activity_type : workout.name,
+    ),
     name: workout.name,
     startedAt,
     endedAt,

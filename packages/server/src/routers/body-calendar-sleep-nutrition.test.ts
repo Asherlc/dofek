@@ -101,7 +101,7 @@ describe("calendarRouter", () => {
           date: "2024-01-15",
           activity_count: 2,
           total_minutes: 120,
-          activity_types: ["cycling", "running"],
+          canonical_types: ["cycling", "running"],
         },
       ];
       const caller = makeCaller(calendarRouter, rows);

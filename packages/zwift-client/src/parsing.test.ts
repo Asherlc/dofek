@@ -8,32 +8,40 @@ import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 
 describe("mapZwiftSport", () => {
   it("maps CYCLING to virtual_cycling", () => {
-    expect(mapZwiftSport("CYCLING")).toBe("virtual_cycling");
+    expect(mapZwiftSport("CYCLING")).toEqual({
+      canonicalType: "cycling",
+      providerType: "CYCLING",
+      modality: "virtual",
+    });
   });
 
   it("maps RUNNING to running", () => {
-    expect(mapZwiftSport("RUNNING")).toBe("running");
+    expect(mapZwiftSport("RUNNING").canonicalType).toBe("running");
   });
 
   it("maps lowercase cycling to virtual_cycling", () => {
-    expect(mapZwiftSport("cycling")).toBe("virtual_cycling");
+    expect(mapZwiftSport("cycling").modality).toBe("virtual");
   });
 
   it("maps lowercase running to running", () => {
-    expect(mapZwiftSport("running")).toBe("running");
+    expect(mapZwiftSport("running").canonicalType).toBe("running");
   });
 
   it("maps mixed case to correct sport", () => {
-    expect(mapZwiftSport("Cycling")).toBe("virtual_cycling");
-    expect(mapZwiftSport("Running")).toBe("running");
+    expect(mapZwiftSport("Cycling").canonicalType).toBe("cycling");
+    expect(mapZwiftSport("Running").canonicalType).toBe("running");
   });
 
   it("maps unknown sport to other", () => {
-    expect(mapZwiftSport("SWIMMING")).toBe("other");
+    expect(mapZwiftSport("SWIMMING").canonicalType).toBe("other");
   });
 
   it("maps empty string to other", () => {
-    expect(mapZwiftSport("")).toBe("other");
+    expect(mapZwiftSport("")).toEqual({
+      canonicalType: "other",
+      providerType: "other",
+      modality: null,
+    });
   });
 });
 
@@ -71,7 +79,7 @@ describe("parseZwiftActivity", () => {
     const result = parseZwiftActivity(makeActivity());
 
     expect(result.externalId).toBe("123");
-    expect(result.activityType).toBe("virtual_cycling");
+    expect(result.activityType.canonicalType).toBe("cycling");
     expect(result.name).toBe("Watopia Ride");
     expect(result.startedAt).toEqual(new Date("2024-01-15T08:00:00Z"));
     expect(result.endedAt).toEqual(new Date("2024-01-15T09:30:00Z"));
@@ -98,12 +106,12 @@ describe("parseZwiftActivity", () => {
 
   it("maps running sport correctly", () => {
     const result = parseZwiftActivity(makeActivity({ sport: "RUNNING" }));
-    expect(result.activityType).toBe("running");
+    expect(result.activityType.canonicalType).toBe("running");
   });
 
   it("maps unknown sport to other", () => {
     const result = parseZwiftActivity(makeActivity({ sport: "SWIMMING" }));
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 });
 

@@ -1,4 +1,5 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
+import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { z } from "zod";
 import {
   baselineComparisonDirectionSchema,
@@ -296,7 +297,7 @@ export type MobileRecoveryTabResult = z.infer<typeof mobileRecoveryTabOutputSche
 
 const activitySchema = z.object({
   id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   name: z.string().nullable(),
   started_at: z.iso.datetime(),
   ended_at: z.iso.datetime().nullable(),
@@ -318,7 +319,7 @@ export const mobileTrainingTabOutputSchema = z.object({
   weeklyVolume: z.array(
     z.object({
       week: dateSchema,
-      activity_type: z.string(),
+      canonical_type: z.string(),
       count: z.number().int().nonnegative(),
       hours: nonnegativeNumberSchema,
     }),
@@ -329,6 +330,7 @@ export const mobileTrainingTabOutputSchema = z.object({
       date: dateSchema,
       activityName: z.string(),
       activityType: z.string(),
+      modality: z.enum(ACTIVITY_MODALITIES).nullable(),
       verticalAscentRate: nonnegativeNumberSchema,
       elevationGainMeters: nonnegativeNumberSchema,
       elapsedMinutes: nonnegativeNumberSchema,
@@ -612,16 +614,16 @@ export const mobileTrainingFixtureSchema = z
     const activityHours = new Map<string, number>();
     for (const activity of data.activities) {
       activityCounts.set(
-        activity.activity_type,
-        (activityCounts.get(activity.activity_type) ?? 0) + 1,
+        activity.canonical_type,
+        (activityCounts.get(activity.canonical_type) ?? 0) + 1,
       );
       if (activity.ended_at != null) {
         const hours =
           (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
           3_600_000;
         activityHours.set(
-          activity.activity_type,
-          (activityHours.get(activity.activity_type) ?? 0) + hours,
+          activity.canonical_type,
+          (activityHours.get(activity.canonical_type) ?? 0) + hours,
         );
       }
     }
@@ -629,8 +631,8 @@ export const mobileTrainingFixtureSchema = z
     const weeklyCounts = new Map<string, number>();
     const weeklyHours = new Map<string, number>();
     for (const row of data.weeklyVolume) {
-      weeklyCounts.set(row.activity_type, (weeklyCounts.get(row.activity_type) ?? 0) + row.count);
-      weeklyHours.set(row.activity_type, (weeklyHours.get(row.activity_type) ?? 0) + row.hours);
+      weeklyCounts.set(row.canonical_type, (weeklyCounts.get(row.canonical_type) ?? 0) + row.count);
+      weeklyHours.set(row.canonical_type, (weeklyHours.get(row.canonical_type) ?? 0) + row.hours);
     }
 
     const activityTypes = new Set([...activityCounts.keys(), ...weeklyCounts.keys()]);

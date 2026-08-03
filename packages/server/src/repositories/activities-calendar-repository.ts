@@ -99,7 +99,7 @@ export interface ActivityOverview {
 const activityRowSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   provider_id: z.string(),
@@ -147,7 +147,7 @@ const overviewRowSchema = z.object({
 });
 
 const activityTypeRowSchema = z.object({
-  activity_type: z.string(),
+  canonical_type: z.string(),
 });
 
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
@@ -235,7 +235,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT
             toString(activity.activity_id) AS id,
             activity.name AS name,
-            activity.activity_type AS activity_type,
+            activity.canonical_type AS canonical_type,
             toString(activity.started_at) AS started_at,
             toString(activity.ended_at) AS ended_at,
             activity.provider_id AS provider_id,
@@ -327,7 +327,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       const entry: CalendarActivityEntry = {
         id: row.id,
         name: row.name,
-        activityType: row.activity_type,
+        activityType: row.canonical_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),
@@ -379,7 +379,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       `SELECT
           toString(activity.id) AS id,
           activity.name AS name,
-          activity.activity_type AS activity_type,
+          activity.canonical_type AS canonical_type,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
           activity.provider_id AS provider_id,
@@ -467,7 +467,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       const entry: CalendarActivityEntry = {
         id: row.id,
         name: row.name,
-        activityType: row.activity_type,
+        activityType: row.canonical_type,
         startedAt: row.started_at,
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),
@@ -656,7 +656,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityTypeRowSchema,
         `WITH toDate(toTimeZone(activity.started_at, {timezone:String})) AS activity_date
           SELECT DISTINCT
-            activity.activity_type AS activity_type
+            activity.canonical_type AS canonical_type
           FROM analytics.deduped_activities AS activity FINAL
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
@@ -664,7 +664,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND activity.ended_at IS NOT NULL
             AND activity_date >= toDate({currentWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
-          ORDER BY activity_type ASC`,
+          ORDER BY canonical_type ASC`,
         typeQueryParams,
       ),
     ]);
@@ -687,7 +687,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return createActivityOverview(
       overviewPeriodFromRow(overview, "current"),
       overviewPeriodFromRow(overview, "previous"),
-      activityTypeRows.map((row) => row.activity_type),
+      activityTypeRows.map((row) => row.canonical_type),
       input.weeks,
     );
   }
@@ -911,7 +911,7 @@ function roundNullableMetric(value: number | null): number | null {
 }
 
 function activityTypeFilterSql(input: Pick<WeekListInput, "activityType">): string {
-  return input.activityType ? "AND activity.activity_type = {activityType:String}" : "";
+  return input.activityType ? "AND activity.canonical_type = {activityType:String}" : "";
 }
 
 function activitySummaryQueryParams(
@@ -937,7 +937,7 @@ function filterActivityRowsByType(
   activityType: string | undefined,
 ) {
   return activityType
-    ? activityRows.filter((activityRow) => activityRow.activity_type === activityType)
+    ? activityRows.filter((activityRow) => activityRow.canonical_type === activityType)
     : activityRows;
 }
 

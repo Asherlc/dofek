@@ -212,9 +212,23 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(
-      migrations.find((migration) => migration.id === "0069_account_erasure_fence"),
+      migrations.find((migration) => migration.id === "0069_canonical_activity_types"),
     ).toMatchObject({
-      id: "0069_account_erasure_fence",
+      id: "0069_canonical_activity_types",
+      statements: expect.arrayContaining([
+        expect.stringContaining(
+          "ALTER TABLE postgres_fitness.activity RENAME COLUMN activity_type TO canonical_type",
+        ),
+        expect.stringContaining(
+          "ALTER TABLE analytics.activity_summary_rows RENAME COLUMN activity_type TO canonical_type",
+        ),
+      ]),
+      run: expect.any(Function),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0070_account_erasure_fence"),
+    ).toMatchObject({
+      id: "0070_account_erasure_fence",
       statements: [
         expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.account_erasure_fence"),
         expect.stringContaining(

@@ -146,7 +146,7 @@ describe("streamHealthExport", () => {
 
     expect(result.workoutCount).toBe(1);
     expect(workouts).toHaveLength(1);
-    expect(workouts[0]?.activityType).toBe("running");
+    expect(workouts[0]?.activityType.canonicalType).toBe("running");
     // WorkoutStatistics should have been applied via enrichWorkoutFromStats
     expect(workouts[0]?.avgHeartRate).toBe(150);
     expect(workouts[0]?.maxHeartRate).toBe(180);
@@ -297,7 +297,7 @@ describe("streamHealthExport", () => {
     });
 
     expect(result.workoutCount).toBe(1);
-    expect(workouts[0]?.activityType).toBe("cycling");
+    expect(workouts[0]?.activityType.canonicalType).toBe("cycling");
   });
 });
 
@@ -308,7 +308,11 @@ describe("streamHealthExport", () => {
 describe("enrichWorkoutFromStats — additional scenarios", () => {
   it("enriches heart rate statistics", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -330,7 +334,11 @@ describe("enrichWorkoutFromStats — additional scenarios", () => {
 
   it("does not set avgHeartRate without average", () => {
     const workout: HealthWorkout = {
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "HKWorkoutActivityTypeCycling",
+        modality: null,
+      },
       sourceName: "Watch",
       durationSeconds: 3600,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -877,7 +885,7 @@ describe("importAppleHealthFile — full DB integration", () => {
 
   it("creates activity rows for workouts and publishes GPS metric stream events", async () => {
     const activities = await ctx.db.select().from(schema.activity);
-    const run = activities.find((a) => a.activityType === "running");
+    const run = activities.find((a) => a.canonicalType === "running");
     expect(run).toBeDefined();
     expect(run?.externalId).toContain("ah:workout:");
     expect(run?.raw).toMatchObject({

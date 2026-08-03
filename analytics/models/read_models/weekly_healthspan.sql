@@ -82,7 +82,7 @@ strength_by_week AS (
     SELECT
         user_id,
         toMonday(toDate(started_at)) AS week_start,
-        countIf(activity_type = 'strength') AS strength_sessions
+        countIf(canonical_type = 'strength') AS strength_sessions
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
         AND started_at IS NOT null

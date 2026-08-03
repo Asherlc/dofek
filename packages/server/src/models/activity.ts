@@ -24,6 +24,7 @@ export type {
 export interface ActivityDetail {
   id: string;
   activityType: string;
+  modality: string | null;
   startedAt: string;
   endedAt: string | null;
   name: string | null;
@@ -61,7 +62,8 @@ export interface ActivityDetail {
 
 export interface ActivityRow {
   id: string;
-  activity_type: string;
+  canonical_type: string;
+  modality: string | null;
   started_at: string;
   ended_at: string | null;
   name: string | null;
@@ -109,7 +111,11 @@ export class Activity {
   }
 
   get activityType(): string {
-    return String(this.#row.activity_type);
+    return String(this.#row.canonical_type);
+  }
+
+  get modality(): string | null {
+    return this.#row.modality;
   }
 
   get startedAt(): string {
@@ -211,6 +217,7 @@ export class Activity {
     return {
       id: this.id,
       activityType: this.activityType,
+      modality: this.modality,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
       name: this.name,

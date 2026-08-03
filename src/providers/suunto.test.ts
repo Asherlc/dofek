@@ -48,24 +48,24 @@ function createWebhookDb() {
 
 describe("mapSuuntoActivityType", () => {
   it("maps all known activity types", () => {
-    expect(mapSuuntoActivityType(2)).toBe("running");
-    expect(mapSuuntoActivityType(3)).toBe("cycling");
-    expect(mapSuuntoActivityType(4)).toBe("cross_country_skiing");
-    expect(mapSuuntoActivityType(11)).toBe("walking");
-    expect(mapSuuntoActivityType(12)).toBe("hiking");
-    expect(mapSuuntoActivityType(14)).toBe("strength");
-    expect(mapSuuntoActivityType(23)).toBe("yoga");
-    expect(mapSuuntoActivityType(27)).toBe("swimming");
-    expect(mapSuuntoActivityType(67)).toBe("trail_running");
-    expect(mapSuuntoActivityType(69)).toBe("rowing");
-    expect(mapSuuntoActivityType(82)).toBe("virtual_cycling");
-    expect(mapSuuntoActivityType(83)).toBe("running");
-    expect(mapSuuntoActivityType(1)).toBe("other");
-    expect(mapSuuntoActivityType(5)).toBe("other");
+    expect(mapSuuntoActivityType(2).canonicalType).toBe("running");
+    expect(mapSuuntoActivityType(3).canonicalType).toBe("cycling");
+    expect(mapSuuntoActivityType(4).canonicalType).toBe("skiing");
+    expect(mapSuuntoActivityType(11).canonicalType).toBe("walking");
+    expect(mapSuuntoActivityType(12).canonicalType).toBe("hiking");
+    expect(mapSuuntoActivityType(14).canonicalType).toBe("strength");
+    expect(mapSuuntoActivityType(23).canonicalType).toBe("yoga");
+    expect(mapSuuntoActivityType(27).canonicalType).toBe("swimming");
+    expect(mapSuuntoActivityType(67).canonicalType).toBe("running");
+    expect(mapSuuntoActivityType(69).canonicalType).toBe("rowing");
+    expect(mapSuuntoActivityType(82).canonicalType).toBe("cycling");
+    expect(mapSuuntoActivityType(83).canonicalType).toBe("running");
+    expect(mapSuuntoActivityType(1).canonicalType).toBe("other");
+    expect(mapSuuntoActivityType(5).canonicalType).toBe("other");
   });
 
   it("returns other for unknown", () => {
-    expect(mapSuuntoActivityType(999)).toBe("other");
+    expect(mapSuuntoActivityType(999).canonicalType).toBe("other");
   });
 });
 
@@ -90,7 +90,7 @@ describe("parseSuuntoWorkout", () => {
 
     const parsed = parseSuuntoWorkout(workout);
     expect(parsed.externalId).toBe("suunto-w-123");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Morning Ride");
     expect(parsed.startedAt).toEqual(new Date(1709290800000));
     expect(parsed.endedAt).toEqual(new Date(1709294400000));
@@ -257,7 +257,11 @@ describe("SuuntoProvider", () => {
       metricStreamPublisher,
       activitySummary: {
         externalId: "suunto-w-123",
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "3",
+          modality: null,
+        },
         startedAtIso: "2024-03-01T11:00:00.000Z",
         endedAtIso: "2024-03-01T12:00:00.000Z",
         name: "Morning Ride",
@@ -373,11 +377,19 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
       mockDb,
       expect.objectContaining({
         externalId: "suunto-w-123",
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "3",
+          modality: null,
+        },
         name: "Morning Ride",
       }),
       expect.objectContaining({
-        activityType: "cycling",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "3",
+          modality: null,
+        },
         name: "Morning Ride",
         startedAt: new Date("2024-03-01T11:00:00.000Z"),
         endedAt: new Date("2024-03-01T12:00:00.000Z"),
@@ -680,7 +692,7 @@ describe("parseSuuntoWorkout — precise raw object assertions", () => {
     const parsed = parseSuuntoWorkout(workout);
     expect(parsed.raw.avgHeartRate).toBe(150);
     expect(parsed.raw.maxHeartRate).toBe(180);
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Suunto cycling");
   });
 

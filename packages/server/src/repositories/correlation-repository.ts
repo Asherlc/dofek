@@ -765,7 +765,7 @@ export class CorrelationRepository {
            toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
            started_at,
            ended_at,
-           activity_type,
+           canonical_type,
            name
          FROM analytics.activity_summary
          WHERE user_id = {userId:UUID}
@@ -847,8 +847,8 @@ export class CorrelationRepository {
       );
       evidence.activities.push({
         id: row.activity_id,
-        activityType: row.activity_type,
-        label: row.name ?? row.activity_type,
+        activityType: row.canonical_type,
+        label: row.name ?? row.canonical_type,
       });
     }
     for (const row of nutrition) {

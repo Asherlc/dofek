@@ -21,7 +21,7 @@ function snakeToLabel(value: string): string {
 }
 
 export function formatFilterOptionLabel(columnKey: string, value: string): string {
-  if (columnKey === "activity_type") {
+  if (columnKey === "canonical_type") {
     return formatActivityTypeLabel(value);
   }
   return snakeToLabel(value);

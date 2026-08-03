@@ -34,7 +34,7 @@ const activityMetaHeartRateExpressions = {
 
 const weeklyVolumeRowSchema = z.object({
   week: dateStringSchema,
-  activity_type: z.string(),
+  canonical_type: z.string(),
   count: z.number(),
   hours: z.coerce.number(),
 });
@@ -62,7 +62,7 @@ export interface TrainingHrZonesResult {
 
 const activityStatsRowSchema = z.object({
   id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   name: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -152,7 +152,7 @@ export class TrainingRepository extends BaseRepository {
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, asum.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.canonical_type)
           ${activityRangeFilter}
           AND activity.is_deleted = 0
           AND up.max_hr > 0
@@ -268,7 +268,7 @@ export class TrainingRepository extends BaseRepository {
       activityStatsRowSchema,
       `SELECT
         toString(a.activity_id) AS id,
-        a.activity_type AS activity_type,
+        a.canonical_type AS canonical_type,
         a.name AS name,
         formatDateTime(a.started_at, '%Y-%m-%dT%H:%i:%SZ') AS started_at,
         formatDateTime(a.ended_at, '%Y-%m-%dT%H:%i:%SZ') AS ended_at,
@@ -308,7 +308,7 @@ export class TrainingRepository extends BaseRepository {
       weeklyVolumeRowSchema,
       `SELECT
         toString(toMonday(toDate(toTimeZone(asum.started_at, {timezone:String})))) AS week,
-        asum.activity_type,
+        asum.canonical_type,
         toInt32(count()) AS count,
         round(sum(dateDiff('second', asum.started_at, asum.ended_at)) / 3600, 2) AS hours
       FROM analytics.activity_summary asum
@@ -320,7 +320,7 @@ export class TrainingRepository extends BaseRepository {
         AND asum.ended_at IS NOT NULL
         AND activity.is_deleted = 0
         ${predicate}
-      GROUP BY week, activity_type
+      GROUP BY week, canonical_type
       ORDER BY week`,
       {
         userId: this.userId,
@@ -339,7 +339,7 @@ export class TrainingRepository extends BaseRepository {
   ): Promise<number> {
     const activityTypePredicate =
       activityTypes && activityTypes.length > 0
-        ? sql`AND activity_type IN (${sql.join(
+        ? sql`AND canonical_type IN (${sql.join(
             activityTypes.map((activityType) => sql`${activityType}`),
             sql`, `,
           )})`

@@ -57,9 +57,9 @@ function makeSleepRow(started_at: string, overrides: Partial<SleepRow> = {}): Sl
 function makeActivityRow(
   started_at: string,
   ended_at: string | null,
-  activity_type: string,
+  canonical_type: string,
 ): ActivityRow {
-  return { started_at, ended_at, activity_type };
+  return { started_at, ended_at, canonical_type };
 }
 
 function makeNutritionRow(date: string, overrides: Partial<NutritionRow> = {}): NutritionRow {
@@ -234,7 +234,7 @@ describe("joinByDate()", () => {
   it("classifies activity types into categories", () => {
     const metrics = [makeDailyRow("2025-01-01")];
     const activities = [
-      makeActivityRow("2025-01-01T08:00:00Z", "2025-01-01T09:00:00Z", "strength_training"),
+      makeActivityRow("2025-01-01T08:00:00Z", "2025-01-01T09:00:00Z", "strength"),
       makeActivityRow("2025-01-01T10:00:00Z", "2025-01-01T10:30:00Z", "yoga"),
       makeActivityRow("2025-01-01T11:00:00Z", "2025-01-01T12:00:00Z", "cycling"),
     ];
@@ -247,15 +247,7 @@ describe("joinByDate()", () => {
 
   it("classifies additional cardio types correctly", () => {
     const metrics = [makeDailyRow("2025-01-01")];
-    const cardioTypes = [
-      "walking",
-      "hiking",
-      "swimming",
-      "cross_country_skiing",
-      "downhill_skiing",
-      "tennis",
-      "climbing",
-    ];
+    const cardioTypes = ["walking", "hiking", "swimming", "skiing", "tennis", "climbing"];
     const activities = cardioTypes.map((type, index) =>
       makeActivityRow(
         `2025-01-01T${(8 + index).toString().padStart(2, "0")}:00:00Z`,
@@ -264,14 +256,14 @@ describe("joinByDate()", () => {
       ),
     );
     const result = joinByDate(metrics, [], activities, [], [], DEFAULT_CONFIG);
-    // All should be cardio: 7 activities * 30 min each
-    expect(result[0]?.cardio_minutes).toBe(210);
+    // All should be cardio: 6 activities * 30 min each
+    expect(result[0]?.cardio_minutes).toBe(180);
     expect(result[0]?.strength_minutes).toBe(0);
   });
 
   it("classifies strength types correctly", () => {
     const metrics = [makeDailyRow("2025-01-01")];
-    const strengthTypes = ["strength_training", "functional_strength", "strength"];
+    const strengthTypes = ["strength"];
     const activities = strengthTypes.map((type, index) =>
       makeActivityRow(
         `2025-01-01T${(8 + index).toString().padStart(2, "0")}:00:00Z`,
@@ -280,7 +272,7 @@ describe("joinByDate()", () => {
       ),
     );
     const result = joinByDate(metrics, [], activities, [], [], DEFAULT_CONFIG);
-    expect(result[0]?.strength_minutes).toBe(90);
+    expect(result[0]?.strength_minutes).toBe(30);
   });
 
   it("classifies flexibility types correctly", () => {
@@ -320,7 +312,7 @@ describe("joinByDate()", () => {
     const metrics = [makeDailyRow("2025-01-01")];
     const activities = [
       makeActivityRow("2025-01-01T08:00:00Z", "2025-01-01T09:00:00Z", "running"),
-      makeActivityRow("2025-01-01T17:00:00Z", "2025-01-01T18:00:00Z", "strength_training"),
+      makeActivityRow("2025-01-01T17:00:00Z", "2025-01-01T18:00:00Z", "strength"),
     ];
     const result = joinByDate(metrics, [], activities, [], [], DEFAULT_CONFIG);
     expect(result[0]?.exercise_minutes).toBe(120);
@@ -699,11 +691,7 @@ describe("computeInsights()", () => {
 
     // Varying exercise and body comp to trigger monthly insights
     const activities = dates.map((d, i) =>
-      makeActivityRow(
-        `${d}T10:00:00Z`,
-        `${d}T11:00:00Z`,
-        i % 2 === 0 ? "running" : "strength_training",
-      ),
+      makeActivityRow(`${d}T10:00:00Z`, `${d}T11:00:00Z`, i % 2 === 0 ? "running" : "strength"),
     );
 
     const bodyComp = dates.map((d, i) =>
@@ -764,7 +752,7 @@ describe("computeInsights()", () => {
       makeActivityRow(
         `${d}T10:00:00Z`,
         `${d}T${10 + (i % 3 === 0 ? 1 : 0)}:30:00Z`,
-        i % 3 === 0 ? "running" : i % 3 === 1 ? "cycling" : "strength_training",
+        i % 3 === 0 ? "running" : i % 3 === 1 ? "cycling" : "strength",
       ),
     );
 
@@ -1191,11 +1179,7 @@ describe("computeInsights()", () => {
     );
 
     const activities = dates.map((d, i) =>
-      makeActivityRow(
-        `${d}T10:00:00Z`,
-        `${d}T11:00:00Z`,
-        i % 2 === 0 ? "running" : "strength_training",
-      ),
+      makeActivityRow(`${d}T10:00:00Z`, `${d}T11:00:00Z`, i % 2 === 0 ? "running" : "strength"),
     );
 
     const bodyComp = dates.map((d, i) =>
@@ -1477,7 +1461,7 @@ describe("computeInsights()", () => {
 
     // Mix of cardio, strength, flexibility
     const activities = dates.map((d, i) => {
-      const types = ["running", "strength_training", "yoga", "cycling", "swimming"];
+      const types = ["running", "strength", "yoga", "cycling", "swimming"];
       const type = types[i % types.length] ?? "running";
       return makeActivityRow(`${d}T10:00:00Z`, `${d}T11:00:00Z`, type);
     });
@@ -1501,11 +1485,7 @@ describe("computeInsights()", () => {
     const metrics = dates.map((d) => makeDailyRow(d));
 
     const activities = dates.map((d, i) =>
-      makeActivityRow(
-        `${d}T10:00:00Z`,
-        `${d}T11:00:00Z`,
-        i % 3 === 0 ? "running" : "strength_training",
-      ),
+      makeActivityRow(`${d}T10:00:00Z`, `${d}T11:00:00Z`, i % 3 === 0 ? "running" : "strength"),
     );
 
     const bodyComp = dates.map((d, i) =>
@@ -1585,8 +1565,7 @@ describe("classifyActivity()", () => {
     "hiking",
     "running",
     "swimming",
-    "cross_country_skiing",
-    "downhill_skiing",
+    "skiing",
     "cardio",
     "cross_training",
     "tennis",
@@ -1595,11 +1574,7 @@ describe("classifyActivity()", () => {
     expect(classifyActivity(type)).toBe("cardio");
   });
 
-  it.each([
-    "strength_training",
-    "functional_strength",
-    "strength",
-  ])("classifies %s as strength", (type) => {
+  it.each(["strength"])("classifies %s as strength", (type) => {
     expect(classifyActivity(type)).toBe("strength");
   });
 

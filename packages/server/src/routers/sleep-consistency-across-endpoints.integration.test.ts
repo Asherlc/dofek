@@ -128,10 +128,10 @@ describe("sleep data consistency across endpoints", () => {
     // ClickHouse daily_strain-backed availability path.
     const loadActivityRows = await testCtx.db.execute<{ id: string; started_at: Date | string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
           ) VALUES (
             'whoop', ${TEST_USER_ID}, 'sleep-consistency-load-activity',
-            'cycling',
+            'cycling', 'cycling', NULL,
             (CURRENT_DATE - 2) + TIME '10:00:00',
             (CURRENT_DATE - 2) + TIME '10:30:00',
             'Sleep consistency load activity'

@@ -51,7 +51,7 @@ describe("ActivityList", () => {
       id: "1",
       started_at: "2026-03-18T07:00:00Z",
       ended_at: "2026-03-18T07:45:00Z",
-      activity_type: "running",
+      canonical_type: "running",
       name: "Morning Run",
       provider_id: "strava",
       source_providers: ["strava"],
@@ -145,7 +145,7 @@ describe("ActivityList", () => {
         id: "4",
         started_at: "2026-03-18T09:00:00Z",
         ended_at: "2026-03-18T09:45:00Z",
-        activity_type: "indoor_cycling",
+        canonical_type: "cycling",
         name: "Trainer Ride",
         provider_id: "strava",
         source_providers: ["strava"],
@@ -158,7 +158,7 @@ describe("ActivityList", () => {
 
     renderWithUnits(<ActivityList activities={activityWithoutLocation} />);
     expect(screen.getByTestId("activity-type-icon")).toBeDefined();
-    expect(screen.getByLabelText("Indoor Cycling activity")).toBeDefined();
+    expect(screen.getByLabelText("Cycling activity")).toBeDefined();
   });
 
   it("uses the exported map preview canvas for compact route thumbnails", () => {
@@ -256,7 +256,7 @@ describe("ActivityList", () => {
         id: "2",
         started_at: "2026-03-18T08:00:00Z",
         ended_at: "2026-03-18T08:30:00Z",
-        activity_type: "walking",
+        canonical_type: "walking",
         name: "Morning Walk",
         provider_id: "apple",
         source_providers: ["apple"],
@@ -276,7 +276,7 @@ describe("ActivityList", () => {
         id: "zero-distance",
         started_at: "2026-03-18T08:00:00Z",
         ended_at: "2026-03-18T08:30:00Z",
-        activity_type: "walking",
+        canonical_type: "walking",
         name: "Stationary Walk",
         provider_id: "apple",
         source_providers: ["apple"],
@@ -299,7 +299,7 @@ describe("ActivityList", () => {
         id: "3",
         started_at: "not-a-date",
         ended_at: "still-not-a-date",
-        activity_type: "running",
+        canonical_type: "running",
         name: "Bad Timestamps",
         provider_id: "strava",
         source_providers: ["strava"],

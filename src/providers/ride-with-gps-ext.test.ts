@@ -438,12 +438,20 @@ describe("parseTripToActivity — additional edge cases", () => {
     expect(result.endedAt).toBeUndefined();
   });
 
-  it("maps cyclocross to cyclocross", () => {
-    expect(mapActivityType("cyclocross")).toBe("cyclocross");
+  it("maps cyclocross to cycling with cyclocross modality", () => {
+    expect(mapActivityType("cyclocross")).toEqual({
+      canonicalType: "cycling",
+      providerType: "cyclocross",
+      modality: "cyclocross",
+    });
   });
 
-  it("maps track_cycling to track_cycling", () => {
-    expect(mapActivityType("track_cycling")).toBe("track_cycling");
+  it("maps track cycling to cycling with track modality", () => {
+    expect(mapActivityType("track_cycling")).toEqual({
+      canonicalType: "cycling",
+      providerType: "track_cycling",
+      modality: "track",
+    });
   });
 });
 
@@ -1060,7 +1068,9 @@ describe("RideWithGpsProvider — sync", () => {
       expect.objectContaining({
         target: expect.any(Array),
         set: expect.objectContaining({
-          activityType: "cycling",
+          canonicalType: "cycling",
+          providerType: "cycling",
+          modality: null,
           name: "Morning Ride",
         }),
       }),

@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import type {
   ConnectActivityDetail,
   ConnectActivitySummary,
@@ -15,7 +19,7 @@ import type {
 // Activity type mapping (internal typeKey → normalized)
 // ============================================================
 
-const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+const GARMIN_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
   running: "running",
   trail_running: "running",
   treadmill_running: "running",
@@ -52,8 +56,9 @@ const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   meditation: "meditation",
 };
 
-export function mapConnectActivityType(typeKey: string): CanonicalActivityType {
-  return GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other";
+export function mapConnectActivityType(typeKey: string): ProviderActivityType {
+  const providerType = typeKey.trim() || "other";
+  return resolveProviderActivityType(providerType, GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other");
 }
 
 // ============================================================
@@ -62,7 +67,7 @@ export function mapConnectActivityType(typeKey: string): CanonicalActivityType {
 
 export interface ParsedConnectActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;

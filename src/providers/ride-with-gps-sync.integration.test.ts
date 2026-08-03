@@ -215,12 +215,12 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "5001");
     if (!ride) throw new Error("expected trip 5001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Morning Ride 5001");
 
     const run = rows.find((r) => r.externalId === "5002");
     if (!run) throw new Error("expected trip 5002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify metric stream events (10 track points per trip)
     const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
@@ -270,7 +270,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5101"));
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.activityType).toBe("cycling");
+    expect(rows[0]?.canonicalType).toBe("cycling");
   });
 
   it("includes inventory trips exactly on sync window boundaries and excludes outside trips", async () => {
@@ -452,7 +452,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
         providerId: "ride-with-gps",
         userId,
         externalId: "5301",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        modality: null,
         startedAt: new Date("2026-04-01T08:00:00Z"),
         endedAt: new Date("2026-04-01T09:00:00Z"),
       },
@@ -460,7 +462,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
         providerId: "ride-with-gps",
         userId,
         externalId: "5302",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        modality: null,
         startedAt: new Date("2026-04-02T08:00:00Z"),
         endedAt: new Date("2026-04-02T09:00:00Z"),
       },

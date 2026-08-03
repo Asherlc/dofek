@@ -233,7 +233,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
         {
           id: "a1",
           name: "Morning Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-07-27T07:00:00.000Z",
           ended_at: "2026-07-27T08:30:00.000Z",
           avg_hr: 148,
@@ -249,7 +249,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
         {
           id: "a2",
           name: "Evening Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-07-26T18:00:00.000Z",
           ended_at: "2026-07-26T18:45:00.000Z",
           avg_hr: 155,
@@ -264,8 +264,8 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
         },
       ],
       weeklyVolume: [
-        { week: "2026-07-27", activity_type: "cycling", count: 1, hours: 1.5 },
-        { week: "2026-07-20", activity_type: "running", count: 1, hours: 0.75 },
+        { week: "2026-07-27", canonical_type: "cycling", count: 1, hours: 1.5 },
+        { week: "2026-07-20", canonical_type: "running", count: 1, hours: 0.75 },
       ],
       progressiveOverload: [],
       verticalAscent: [],
@@ -642,7 +642,7 @@ describe("mobileTrainingFixtureSchema", () => {
     const fixture = zeroClaimTrainingFixture();
     fixture.data.weeklyVolume.push({
       week: "2026-07-27",
-      activity_type: "walking",
+      canonical_type: "walking",
       count: 0,
       hours: 0,
     });
@@ -676,7 +676,7 @@ describe("mobileTrainingFixtureSchema", () => {
         fixture.data.activities.push({
           id: "positive-activity",
           name: "Short walk",
-          activity_type: "walking",
+          canonical_type: "walking",
           started_at: "2026-07-27T07:00:00.000Z",
           ended_at: null,
           avg_hr: null,
@@ -696,7 +696,7 @@ describe("mobileTrainingFixtureSchema", () => {
       (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
         fixture.data.weeklyVolume.push({
           week: "2026-07-27",
-          activity_type: "walking",
+          canonical_type: "walking",
           count: 1,
           hours: 0,
         });
@@ -707,7 +707,7 @@ describe("mobileTrainingFixtureSchema", () => {
       (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
         fixture.data.weeklyVolume.push({
           week: "2026-07-27",
-          activity_type: "walking",
+          canonical_type: "walking",
           count: 0,
           hours: 1,
         });
@@ -826,6 +826,7 @@ describe("mobileTrainingFixtureSchema", () => {
           date: "2026-06-27",
           activityName: "Hill repeats",
           activityType: "running",
+          modality: null,
           verticalAscentRate: 10,
           elevationGainMeters: 300,
           elapsedMinutes: 30,
@@ -909,7 +910,7 @@ describe("mobileTrainingFixtureSchema", () => {
       {
         id: "open-activity",
         name: "Open activity",
-        activity_type: "walking",
+        canonical_type: "walking",
         started_at: "2026-07-27T07:00:00.000Z",
         ended_at: null,
         avg_hr: null,
@@ -924,7 +925,7 @@ describe("mobileTrainingFixtureSchema", () => {
       },
     ];
     fixture.data.weeklyVolume = [
-      { week: "2026-07-27", activity_type: "walking", count: 1, hours: 0 },
+      { week: "2026-07-27", canonical_type: "walking", count: 1, hours: 0 },
     ];
 
     expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
@@ -946,7 +947,7 @@ describe("mobileTrainingFixtureSchema", () => {
     activityOnly.data.activities.push({
       id: "walk-1",
       name: "Walk",
-      activity_type: "walking",
+      canonical_type: "walking",
       started_at: "2026-07-27T09:00:00.000Z",
       ended_at: null,
       avg_hr: null,
@@ -968,7 +969,7 @@ describe("mobileTrainingFixtureSchema", () => {
     const weeklyOnly = validTrainingFixture();
     weeklyOnly.data.weeklyVolume.push({
       week: "2026-07-27",
-      activity_type: "swimming",
+      canonical_type: "swimming",
       count: 1,
       hours: 0,
     });

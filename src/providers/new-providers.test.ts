@@ -68,15 +68,15 @@ describe("Ultrahuman Provider", () => {
 describe("MapMyFitness Provider", () => {
   describe("mapMapMyFitnessActivityType", () => {
     it("maps common activity types", () => {
-      expect(mapMapMyFitnessActivityType("Run")).toBe("running");
-      expect(mapMapMyFitnessActivityType("Road Cycling")).toBe("cycling");
-      expect(mapMapMyFitnessActivityType("Walk")).toBe("walking");
-      expect(mapMapMyFitnessActivityType("Swimming")).toBe("swimming");
-      expect(mapMapMyFitnessActivityType("Hiking")).toBe("hiking");
+      expect(mapMapMyFitnessActivityType("Run").canonicalType).toBe("running");
+      expect(mapMapMyFitnessActivityType("Road Cycling").canonicalType).toBe("cycling");
+      expect(mapMapMyFitnessActivityType("Walk").canonicalType).toBe("walking");
+      expect(mapMapMyFitnessActivityType("Swimming").canonicalType).toBe("swimming");
+      expect(mapMapMyFitnessActivityType("Hiking").canonicalType).toBe("hiking");
     });
 
     it("returns other for unknown types", () => {
-      expect(mapMapMyFitnessActivityType("Circus")).toBe("other");
+      expect(mapMapMyFitnessActivityType("Circus").canonicalType).toBe("other");
     });
   });
 
@@ -99,7 +99,7 @@ describe("MapMyFitness Provider", () => {
 
       const result = parseMapMyFitnessWorkout(workout);
       expect(result.externalId).toBe("workout-123");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.name).toBe("Morning Run");
       expect(result.raw.distanceMeters).toBe(5000);
     });
@@ -113,14 +113,14 @@ describe("MapMyFitness Provider", () => {
 describe("Suunto Provider", () => {
   describe("mapSuuntoActivityType", () => {
     it("maps known activity IDs", () => {
-      expect(mapSuuntoActivityType(2)).toBe("running");
-      expect(mapSuuntoActivityType(3)).toBe("cycling");
-      expect(mapSuuntoActivityType(27)).toBe("swimming");
-      expect(mapSuuntoActivityType(12)).toBe("hiking");
+      expect(mapSuuntoActivityType(2).canonicalType).toBe("running");
+      expect(mapSuuntoActivityType(3).canonicalType).toBe("cycling");
+      expect(mapSuuntoActivityType(27).canonicalType).toBe("swimming");
+      expect(mapSuuntoActivityType(12).canonicalType).toBe("hiking");
     });
 
     it("returns other for unknown IDs", () => {
-      expect(mapSuuntoActivityType(999)).toBe("other");
+      expect(mapSuuntoActivityType(999).canonicalType).toBe("other");
     });
   });
 
@@ -145,7 +145,7 @@ describe("Suunto Provider", () => {
 
       const result = parseSuuntoWorkout(workout);
       expect(result.externalId).toBe("abc123def456");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.raw.avgHeartRate).toBe(155);
       expect(result.raw.totalDistance).toBe(10000);
     });
@@ -159,14 +159,14 @@ describe("Suunto Provider", () => {
 describe("COROS Provider", () => {
   describe("mapCorosSportType", () => {
     it("maps known sport modes", () => {
-      expect(mapCorosSportType(8)).toBe("running");
-      expect(mapCorosSportType(9)).toBe("cycling");
-      expect(mapCorosSportType(10)).toBe("swimming");
-      expect(mapCorosSportType(13)).toBe("strength");
+      expect(mapCorosSportType(8).canonicalType).toBe("running");
+      expect(mapCorosSportType(9).canonicalType).toBe("cycling");
+      expect(mapCorosSportType(10).canonicalType).toBe("swimming");
+      expect(mapCorosSportType(13).canonicalType).toBe("strength");
     });
 
     it("returns other for unknown modes", () => {
-      expect(mapCorosSportType(999)).toBe("other");
+      expect(mapCorosSportType(999).canonicalType).toBe("other");
     });
   });
 
@@ -189,7 +189,7 @@ describe("COROS Provider", () => {
 
       const result = parseCorosWorkout(workout);
       expect(result.externalId).toBe("coros-123");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.startedAt).toEqual(new Date(1709290800000));
       expect(result.raw.avgHeartRate).toBe(155);
     });
@@ -203,13 +203,13 @@ describe("COROS Provider", () => {
 describe("Concept2 Provider", () => {
   describe("mapConcept2Type", () => {
     it("maps machine types", () => {
-      expect(mapConcept2Type("rower")).toBe("rowing");
-      expect(mapConcept2Type("skierg")).toBe("skiing");
-      expect(mapConcept2Type("bikerg")).toBe("cycling");
+      expect(mapConcept2Type("rower").canonicalType).toBe("rowing");
+      expect(mapConcept2Type("skierg").canonicalType).toBe("skiing");
+      expect(mapConcept2Type("bikerg").canonicalType).toBe("cycling");
     });
 
     it("defaults to rowing for unknown types", () => {
-      expect(mapConcept2Type("unknown")).toBe("rowing");
+      expect(mapConcept2Type("unknown").canonicalType).toBe("rowing");
     });
   });
 
@@ -234,7 +234,7 @@ describe("Concept2 Provider", () => {
 
       const parsed = parseConcept2Result(result);
       expect(parsed.externalId).toBe("12345");
-      expect(parsed.activityType).toBe("rowing");
+      expect(parsed.activityType.canonicalType).toBe("rowing");
       expect(parsed.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
       // 4200 tenths of a second = 420 seconds = 7 minutes
       const expectedEnd = new Date(parsed.startedAt.getTime() + 420000);
@@ -252,15 +252,15 @@ describe("Concept2 Provider", () => {
 describe("Komoot Provider", () => {
   describe("mapKomootSport", () => {
     it("maps common Komoot sports", () => {
-      expect(mapKomootSport("BIKING")).toBe("cycling");
-      expect(mapKomootSport("RUNNING")).toBe("running");
-      expect(mapKomootSport("HIKING")).toBe("hiking");
-      expect(mapKomootSport("MT_BIKING")).toBe("mountain_biking");
-      expect(mapKomootSport("TRAIL_RUNNING")).toBe("trail_running");
+      expect(mapKomootSport("BIKING").canonicalType).toBe("cycling");
+      expect(mapKomootSport("RUNNING").canonicalType).toBe("running");
+      expect(mapKomootSport("HIKING").canonicalType).toBe("hiking");
+      expect(mapKomootSport("MT_BIKING").canonicalType).toBe("cycling");
+      expect(mapKomootSport("TRAIL_RUNNING").canonicalType).toBe("running");
     });
 
     it("returns other for unknown sports", () => {
-      expect(mapKomootSport("PARAGLIDING")).toBe("other");
+      expect(mapKomootSport("PARAGLIDING").canonicalType).toBe("other");
     });
   });
 
@@ -281,7 +281,7 @@ describe("Komoot Provider", () => {
 
       const parsed = parseKomootTour(tour);
       expect(parsed.externalId).toBe("456789");
-      expect(parsed.activityType).toBe("hiking");
+      expect(parsed.activityType.canonicalType).toBe("hiking");
       expect(parsed.name).toBe("Mountain Hike");
       expect(parsed.endedAt).toEqual(new Date("2026-03-01T13:00:00.000Z"));
       expect(parsed.raw.elevationUp).toBe(800);

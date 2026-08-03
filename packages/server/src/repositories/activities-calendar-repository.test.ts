@@ -50,7 +50,7 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
       Promise.resolve(
         rows.map((row) =>
           schema.parse(
-            "activity_type" in row && "started_at" in row
+            ("canonical_type" in row || "activity_type" in row) && "started_at" in row
               ? {
                   timezone: null,
                   start_utc_offset_minutes: null,
@@ -90,7 +90,7 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "activity-1",
     name: "Trainer Ride",
-    activity_type: "indoor_cycling",
+    canonical_type: "cycling",
     started_at: "2026-03-18T07:00:00.000Z",
     ended_at: "2026-03-18T08:00:00.000Z",
     provider_id: "wahoo",
@@ -132,7 +132,7 @@ function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | un
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
   expect(normalizedQueryText).toContain("toString(activity.activity_id) AS id");
   expect(normalizedQueryText).toContain("activity.name AS name");
-  expect(normalizedQueryText).toContain("activity.activity_type AS activity_type");
+  expect(normalizedQueryText).toContain("activity.canonical_type AS canonical_type");
   expect(normalizedQueryText).toContain("toString(activity.started_at) AS started_at");
   expect(normalizedQueryText).toContain("toString(activity.ended_at) AS ended_at");
 }
@@ -306,7 +306,7 @@ describe("ActivitiesCalendarRepository", () => {
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: 5000,
           elevation_gain_m: 125,
           centroid_lat: 90,
@@ -343,7 +343,7 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "00000000-0000-0000-0000-000000000001",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: 5000,
           elevation_gain_m: 125,
           centroid_lat: 37.7749,
@@ -394,13 +394,13 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "latitude-only",
-          activity_type: "running",
+          canonical_type: "running",
           centroid_lat: 37.8,
           centroid_lng: null,
         }),
         makeActivityRow({
           id: "longitude-only",
-          activity_type: "running",
+          canonical_type: "running",
           centroid_lat: null,
           centroid_lng: -122.4,
         }),
@@ -425,12 +425,12 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "ride",
-          activity_type: "indoor_cycling",
+          canonical_type: "cycling",
           local_date: "2026-03-18",
         }),
         makeActivityRow({
           id: "run",
-          activity_type: "running",
+          canonical_type: "running",
           local_date: "2026-03-19",
           avg_power: null,
         }),
@@ -455,7 +455,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("activity.activity_type = {activityType:String}"),
+      expect.stringContaining("activity.canonical_type = {activityType:String}"),
       expect.objectContaining({ activityType: "running" }),
     );
     const sqlObject = database.execute.mock.calls[0]?.[0];
@@ -593,7 +593,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: "0",
         },
       ],
-      [{ activity_type: "cycling" }, { activity_type: "running" }],
+      [{ canonical_type: "cycling" }, { canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -615,7 +615,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("activity.activity_type = {activityType:String}"),
+      expect.stringContaining("activity.canonical_type = {activityType:String}"),
       expect.objectContaining({
         activityIds: ["running-activity", "cycling-activity"],
         activityType: "running",
@@ -647,7 +647,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: "1",
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -720,7 +720,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -764,7 +764,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: "0",
         },
       ],
-      [{ activity_type: "walking" }],
+      [{ canonical_type: "walking" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -830,7 +830,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 2,
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -879,7 +879,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "running" }, { activity_type: "cycling" }],
+      [{ canonical_type: "running" }, { canonical_type: "cycling" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -919,7 +919,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "indoor_cycling" }, { activity_type: "running" }],
+      [{ canonical_type: "indoor_cycling" }, { canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -973,7 +973,7 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("uses empty aggregate rows to author an unavailable comparison", async () => {
     const database = makeDatabase([[{ id: "activity" }], [{ id: "activity" }]]);
-    const sensorStore = makeSensorStore([[], [{ activity_type: "running" }]]);
+    const sensorStore = makeSensorStore([[], [{ canonical_type: "running" }]]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     await expect(
@@ -1016,7 +1016,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
       [
         {
           current_activity_count: 0,
@@ -1033,7 +1033,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: 0,
         },
       ],
-      [{ activity_type: "running" }],
+      [{ canonical_type: "running" }],
     ]);
     const repository = new ActivitiesCalendarRepository(
       database,
@@ -1095,7 +1095,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: "0",
         },
       ],
-      [{ activity_type: "cycling" }],
+      [{ canonical_type: "cycling" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -1137,7 +1137,7 @@ describe("ActivitiesCalendarRepository", () => {
           previous_elevation_measurement_count: "0",
         },
       ],
-      [{ activity_type: "cycling" }],
+      [{ canonical_type: "cycling" }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -1158,19 +1158,19 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "indoor",
-          activity_type: "indoor_cycling",
+          canonical_type: "cycling",
           total_distance: null,
           elevation_gain_m: null,
         }),
         makeActivityRow({
           id: "outdoor-without-route",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: null,
           elevation_gain_m: null,
         }),
         makeActivityRow({
           id: "outdoor-with-route",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: 5000,
           elevation_gain_m: 125,
           centroid_lat: 37.8,
@@ -1218,7 +1218,7 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "indoor-zero",
-          activity_type: "indoor_cycling",
+          canonical_type: "indoor_cycling",
           total_distance: 0,
           elevation_gain_m: 0,
           centroid_lat: null,
@@ -1226,7 +1226,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({
           id: "route-less-missing",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -1267,7 +1267,7 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           id: "missing-route-measurements",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: 37.7749,
@@ -1275,7 +1275,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({
           id: "zero-route-measurements",
-          activity_type: "running",
+          canonical_type: "running",
           total_distance: 0,
           elevation_gain_m: 0,
           centroid_lat: 37.7749,
@@ -1568,7 +1568,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-1",
           name: "Hidden Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -1698,7 +1698,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "shared-id",
           name: "Hidden Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -1720,7 +1720,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-only",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-17T07:00:00.000Z",
           ended_at: "2026-03-17T08:00:00.000Z",
           duration_min: 45,
@@ -1781,7 +1781,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-outdoor",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -1885,7 +1885,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-power",
           name: "Hidden Ride",
-          activity_type: "indoor_cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -1927,7 +1927,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual({
       id: "hidden-power",
       name: "Hidden Ride",
-      activityType: "indoor_cycling",
+      activityType: "cycling",
       startedAt: "2026-03-18T07:00:00.000Z",
       endedAt: "2026-03-18T08:00:00.000Z",
       localTimeContext: {
@@ -1965,7 +1965,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-longitude-only",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2022,7 +2022,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-outdoor-route",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2089,7 +2089,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-outdoor-fallback",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2152,7 +2152,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-older",
           name: "Older Hidden",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-17T07:00:00.000Z",
           ended_at: "2026-03-17T08:00:00.000Z",
           duration_min: 45,
@@ -2170,7 +2170,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-newer",
           name: "Newer Hidden",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2219,7 +2219,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-1",
           name: "Hidden Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2264,7 +2264,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-1",
           name: "Hidden Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2315,7 +2315,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-latitude-only",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2366,7 +2366,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-early",
           name: "Early Hidden",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2384,7 +2384,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-late",
           name: "Late Hidden",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T10:00:00.000Z",
           ended_at: "2026-03-18T11:00:00.000Z",
           duration_min: 60,
@@ -2435,7 +2435,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-late",
           name: "Hidden Late",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T10:00:00.000Z",
           ended_at: "2026-03-18T11:00:00.000Z",
           duration_min: 60,
@@ -2483,7 +2483,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-run",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 45,
@@ -2515,12 +2515,12 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.id).toBe("hidden-run");
     const hiddenQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
     expect(normalizeSql(hiddenQueryText)).toContain(
-      "activity.activity_type = {activityType:String}",
+      "activity.canonical_type = {activityType:String}",
     );
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       3,
       expect.anything(),
-      expect.stringContaining("activity.activity_type = {activityType:String}"),
+      expect.stringContaining("activity.canonical_type = {activityType:String}"),
       expect.objectContaining({ activityType: "running" }),
     );
   });
@@ -2534,7 +2534,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-1",
           name: "Hidden Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
@@ -2590,7 +2590,7 @@ describe("ActivitiesCalendarRepository", () => {
         {
           id: "hidden-hr",
           name: "Hidden Run",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 45,

@@ -91,7 +91,7 @@ export class InsightsRepository {
         executeWithSchema(
           this.#db,
           activityRowSchema,
-          sql`SELECT started_at, ended_at, activity_type
+          sql`SELECT started_at, ended_at, canonical_type
             FROM fitness.v_activity
             WHERE user_id = ${this.#userId}
               ${timestampWindowStartPredicate(sql`started_at`, endDate, days)}

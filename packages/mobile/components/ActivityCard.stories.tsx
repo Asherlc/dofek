@@ -51,7 +51,7 @@ export const Cycling: Story = {
 export const Strength: Story = {
   args: {
     name: "Upper Body Power",
-    activityType: "strength_training",
+    activityType: "strength",
     startedAt: "2026-03-31T17:00:00Z",
     endedAt: "2026-03-31T18:00:00Z",
     avgHr: 115,

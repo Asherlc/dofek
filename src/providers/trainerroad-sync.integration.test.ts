@@ -142,12 +142,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "5001");
     if (!ride) throw new Error("expected activity 5001");
-    expect(ride.activityType).toBe("virtual_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Baxter");
 
     const run = rows.find((r) => r.externalId === "5002");
     if (!run) throw new Error("expected activity 5002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Morning Run");
   });
 
@@ -287,13 +287,13 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "trainerroad"));
 
     const outdoorRide = rows.find((r) => r.externalId === "7001");
-    expect(outdoorRide?.activityType).toBe("cycling");
+    expect(outdoorRide?.canonicalType).toBe("cycling");
 
     const virtualRide = rows.find((r) => r.externalId === "7002");
-    expect(virtualRide?.activityType).toBe("virtual_cycling");
+    expect(virtualRide?.canonicalType).toBe("cycling");
 
     const swim = rows.find((r) => r.externalId === "7003");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
   });
 
   it("surfaces a ProviderRateLimitError tagged with providerId when the API returns 429", async () => {

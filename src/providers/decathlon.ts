@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -57,7 +61,7 @@ const decathlonActivitiesResponseSchema = z.object({
 
 export interface ParsedDecathlonActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -69,7 +73,7 @@ export interface ParsedDecathlonActivity {
 // ============================================================
 
 // Decathlon sport IDs mapped to normalized activity types
-const DECATHLON_SPORT_MAP: Record<string, CanonicalActivityType> = {
+const DECATHLON_SPORT_MAP: Record<string, LegacyActivityType> = {
   "381": "running",
   "121": "cycling",
   "153": "mountain_biking",
@@ -92,10 +96,13 @@ const DECATHLON_SPORT_MAP: Record<string, CanonicalActivityType> = {
   "176": "strength_training",
 };
 
-export function mapDecathlonSport(sportUri: string): CanonicalActivityType {
+export function mapDecathlonSport(sportUri: string): ProviderActivityType {
   // Sport URI is like "/v2/sports/381" — extract the ID
-  const sportId = sportUri.split("/").pop() ?? "";
-  return DECATHLON_SPORT_MAP[sportId] ?? "other";
+  const sportId = sportUri.split("/").pop() ?? sportUri;
+  return resolveProviderActivityType(
+    sportUri.trim() || "other",
+    DECATHLON_SPORT_MAP[sportId] ?? "other",
+  );
 }
 
 export function parseDecathlonActivity(act: DecathlonActivity): ParsedDecathlonActivity {

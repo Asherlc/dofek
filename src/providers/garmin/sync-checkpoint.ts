@@ -9,7 +9,7 @@ const garminSyncStepSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("activity_detail"),
     activityId: z.number(),
-    activityType: z.string(),
+    activityModality: z.string().nullable(),
   }),
   z.object({ type: z.literal("activity_reconcile") }),
   z.object({ type: z.literal("sleep"), date: z.string() }),

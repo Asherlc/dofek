@@ -11,7 +11,9 @@ export function buildTestDedupedActivitiesSelectSql(
   id AS activity_id,
   provider_id,
   user_id,
-  activity_type,
+  canonical_type,
+  provider_type,
+  modality,
   started_at,
   ended_at,
   source_name,
@@ -482,7 +484,8 @@ export function buildTestHikingActivitySelectSql(databases: IsolatedClickHouseDa
   SELECT
     activity_id,
     user_id,
-    activity_type,
+    canonical_type,
+    modality,
     name,
     started_at,
     ended_at,
@@ -491,7 +494,8 @@ export function buildTestHikingActivitySelectSql(databases: IsolatedClickHouseDa
     coalesce(elevation_loss_m, 0) AS elevation_loss_m,
     avg_hr
   FROM ${databases.analytics}.activity_summary
-  WHERE activity_type IN ('walking', 'hiking', 'trail_running')
+  WHERE canonical_type IN ('walking', 'hiking')
+     OR (canonical_type = 'running' AND modality = 'trail')
 ),
 refresh_clock AS (
   SELECT
@@ -501,7 +505,7 @@ refresh_clock AS (
 SELECT
   activity_summary.activity_id AS activity_id,
   activity_summary.user_id AS user_id,
-  activity_summary.activity_type AS activity_type,
+  activity_summary.canonical_type AS canonical_type,
   activity_summary.name AS activity_name,
   activity_summary.started_at AS started_at,
   activity_summary.ended_at AS ended_at,

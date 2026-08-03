@@ -1,3 +1,4 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
@@ -190,7 +191,7 @@ function makeRecord(overrides: Partial<HealthRecord> & { type: string }): Health
 
 function makeWorkout(overrides: Partial<HealthWorkout> = {}): HealthWorkout {
   return {
-    activityType: "running",
+    activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
     sourceName: "Apple Watch",
     durationSeconds: 1800,
     startDate: new Date("2024-03-01T18:00:00Z"),
@@ -1401,7 +1402,10 @@ describe("upsertWorkoutBatch", () => {
     const workouts = [
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z") }),
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z"), sourceName: "iPhone" }),
-      makeWorkout({ startDate: new Date("2024-06-01T10:00:00Z"), activityType: "cycling" }),
+      makeWorkout({
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
+      }),
     ];
 
     const count = await upsertWorkoutBatch(db, "p1", workouts);
@@ -1414,7 +1418,12 @@ describe("upsertWorkoutBatch", () => {
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
-      makeWorkout({ startDate: start, endDate: end, activityType: "cycling", sourceName: "Wahoo" }),
+      makeWorkout({
+        startDate: start,
+        endDate: end,
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
+        sourceName: "Wahoo",
+      }),
     ]);
 
     expect(
@@ -1422,7 +1431,11 @@ describe("upsertWorkoutBatch", () => {
     ).toMatchObject({
       providerId: "p1",
       externalId: `ah:workout:${start.toISOString()}`,
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "HKWorkoutActivityTypeCycling",
+        modality: null,
+      },
       startedAt: start,
       endedAt: end,
       sourceName: "Wahoo",

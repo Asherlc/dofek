@@ -818,7 +818,7 @@ describe("WHOOP Provider — parsing", () => {
       const result = parseWorkout(sampleWorkout);
       expect(result).not.toBeNull();
       expect(result?.externalId).toBe("abc12345-6789-0def-1234-567890abcdef");
-      expect(result?.activityType).toBe("running");
+      expect(result?.activityType.canonicalType).toBe("running");
       expect(result?.avgHeartRate).toBe(155);
       expect(result?.maxHeartRate).toBe(185);
       expect(result?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
@@ -2143,7 +2143,10 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     );
     expect(activityInsert).toBeDefined();
     expect(activityInsert?.providerId).toBe("whoop");
-    expect(activityInsert?.activityType).toBe("running"); // sport_id 0 = running
+    expect(activityInsert?.activityType).toMatchObject({
+      canonicalType: "running",
+      providerType: "0",
+    });
     expect(activityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(activityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
     // Verify normalized raw data contains strain, HR, and duration
@@ -2158,7 +2161,10 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
 
     const activityUpdate = findUpsertUpdate((rec) => "activityType" in rec && "endedAt" in rec);
     expect(activityUpdate).toBeDefined();
-    expect(activityUpdate?.activityType).toBe("running");
+    expect(activityUpdate?.activityType).toMatchObject({
+      canonicalType: "running",
+      providerType: "0",
+    });
     expect(activityUpdate?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(activityUpdate?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
     expect(activityUpdate?.raw).toBeDefined();

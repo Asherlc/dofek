@@ -1,10 +1,10 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { mapVeloHeroSport } from "./sports.ts";
 import type { VeloHeroWorkout } from "./types.ts";
 
 export interface ParsedVeloHeroWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -55,7 +55,7 @@ export function parseVeloHeroWorkout(workout: VeloHeroWorkout): ParsedVeloHeroWo
   return {
     externalId: String(workout.id),
     activityType: mapVeloHeroSport(workout.sport_id),
-    name: workout.title || `${mapVeloHeroSport(workout.sport_id)} workout`,
+    name: workout.title || `${mapVeloHeroSport(workout.sport_id).canonicalType} workout`,
     startedAt,
     endedAt,
     raw: {

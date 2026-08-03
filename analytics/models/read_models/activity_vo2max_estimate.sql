@@ -30,26 +30,16 @@ current_activity AS (
     SELECT
         id AS activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         ended_at
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND provider_absent_at IS null
         AND deleted_at IS null
-        AND activity_type IN (
+        AND canonical_type IN (
             'cycling',
-            'road_cycling',
-            'mountain_biking',
-            'gravel_cycling',
-            'indoor_cycling',
-            'virtual_cycling',
-            'e_bike_cycling',
-            'cyclocross',
-            'track_cycling',
-            'bmx',
             'running',
-            'trail_running',
             'swimming',
             'walking',
             'hiking'
@@ -245,7 +235,7 @@ activity_bounds AS (
     SELECT
         current_activity.activity_id AS activity_id,
         current_activity.user_id AS user_id,
-        current_activity.activity_type AS activity_type,
+        current_activity.canonical_type AS canonical_type,
         current_activity.started_at AS started_at,
         current_activity.ended_at AS ended_at
     FROM current_activity
@@ -374,7 +364,7 @@ acsm_segments AS (
     INNER JOIN {{ ref('activity_sensor_sample') }} AS samples
         ON samples.activity_id = activity_bounds.activity_id
         AND samples.user_id = activity_bounds.user_id
-    WHERE activity_bounds.activity_type IN ('running', 'trail_running', 'walking', 'hiking')
+    WHERE activity_bounds.canonical_type IN ('running', 'walking', 'hiking')
         AND samples.channel IN ('speed', 'heart_rate', 'altitude')
         AND samples.scalar IS NOT null
         AND samples.is_deleted = 0

@@ -397,13 +397,13 @@ describe("OuraProvider.sync() (integration)", () => {
       .where(eq(activity.providerId, "oura"));
     const workout = activityRows.find((r) => r.externalId === "workout-001");
     expect(workout).toBeDefined();
-    expect(workout?.activityType).toBe("running");
+    expect(workout?.canonicalType).toBe("running");
     expect(workout?.name).toBe("Morning Run");
 
     // Verify sessions → activity table
     const session = activityRows.find((r) => r.externalId === "session-001");
     expect(session).toBeDefined();
-    expect(session?.activityType).toBe("meditation");
+    expect(session?.canonicalType).toBe("meditation");
 
     // Verify heart rate metric stream events
     const hrRows = metricStreamCapture.publishedMetricStreamRows;

@@ -1728,21 +1728,21 @@ describe("OuraClient", () => {
 
 describe("mapOuraActivityType", () => {
   it("maps known activity types", () => {
-    expect(mapOuraActivityType("walking")).toBe("walking");
-    expect(mapOuraActivityType("running")).toBe("running");
-    expect(mapOuraActivityType("cycling")).toBe("cycling");
-    expect(mapOuraActivityType("swimming")).toBe("swimming");
-    expect(mapOuraActivityType("strength_training")).toBe("strength");
+    expect(mapOuraActivityType("walking").canonicalType).toBe("walking");
+    expect(mapOuraActivityType("running").canonicalType).toBe("running");
+    expect(mapOuraActivityType("cycling").canonicalType).toBe("cycling");
+    expect(mapOuraActivityType("swimming").canonicalType).toBe("swimming");
+    expect(mapOuraActivityType("strength_training").canonicalType).toBe("strength");
   });
 
   it("handles case-insensitive input", () => {
-    expect(mapOuraActivityType("Walking")).toBe("walking");
-    expect(mapOuraActivityType("RUNNING")).toBe("running");
+    expect(mapOuraActivityType("Walking").canonicalType).toBe("walking");
+    expect(mapOuraActivityType("RUNNING").canonicalType).toBe("running");
   });
 
   it("returns other for unknown types", () => {
-    expect(mapOuraActivityType("kickboxing")).toBe("other");
-    expect(mapOuraActivityType("CrossFit")).toBe("other");
+    expect(mapOuraActivityType("kickboxing").canonicalType).toBe("other");
+    expect(mapOuraActivityType("CrossFit").canonicalType).toBe("other");
   });
 });
 
@@ -1896,9 +1896,14 @@ describe("OuraProvider.sync()", () => {
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
     const val = findUpsertValues(
-      (v) => v.externalId === "workout-001" && v.activityType === "running",
+      (v) =>
+        v.externalId === "workout-001" &&
+        typeof v.activityType === "object" &&
+        v.activityType !== null &&
+        Reflect.get(v.activityType, "canonicalType") === "running",
     );
     expect(val.providerId).toBe("oura");
+    expect(val.activityType).toMatchObject({ providerType: "running" });
     expect(val.name).toBe("Morning Run");
     expect(val.startedAt).toEqual(new Date("2026-03-01T08:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T08:30:00+00:00"));
@@ -1949,9 +1954,14 @@ describe("OuraProvider.sync()", () => {
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
     const val = findUpsertValues(
-      (v) => v.externalId === "session-001" && v.activityType === "meditation",
+      (v) =>
+        v.externalId === "session-001" &&
+        typeof v.activityType === "object" &&
+        v.activityType !== null &&
+        Reflect.get(v.activityType, "canonicalType") === "meditation",
     );
     expect(val.providerId).toBe("oura");
+    expect(val.activityType).toMatchObject({ providerType: "meditation" });
     expect(val.name).toBe("meditation");
     expect(val.startedAt).toEqual(new Date("2026-03-01T07:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T07:15:00+00:00"));
@@ -1971,7 +1981,7 @@ describe("OuraProvider.sync()", () => {
 
     expect(result.errors).toHaveLength(0);
     const value = findUpsertValues((record) => record.externalId === "session-breathing");
-    expect(value.activityType).toBe("breathwork");
+    expect(value.activityType).toMatchObject({ canonicalType: "breathwork" });
   });
 
   it("syncs heart rate data", async () => {
@@ -2806,7 +2816,7 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expectReasonableDuration(result.duration);
 
     const val = findUpsertValues((v) => v.externalId === "workout-001" && v.providerId === "oura");
-    expect(val.activityType).toBe("running");
+    expect(val.activityType).toMatchObject({ canonicalType: "running" });
     expect(val.name).toBe("Morning Run");
   });
 
@@ -2831,7 +2841,7 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expectReasonableDuration(result.duration);
 
     const val = findUpsertValues((v) => v.externalId === "session-001" && v.providerId === "oura");
-    expect(val.activityType).toBe("meditation");
+    expect(val.activityType).toMatchObject({ canonicalType: "meditation" });
     expect(val.name).toBe("meditation");
   });
 

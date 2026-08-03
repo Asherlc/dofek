@@ -164,7 +164,7 @@ describe("WgerProvider.sync() (integration)", () => {
 
     const session1 = activityRows.find((r) => r.externalId === "101");
     if (!session1) throw new Error("expected session 101");
-    expect(session1.activityType).toBe("strength");
+    expect(session1.canonicalType).toBe("strength");
     expect(session1.name).toBe("Morning strength session");
 
     const session2 = activityRows.find((r) => r.externalId === "102");

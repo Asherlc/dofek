@@ -530,7 +530,7 @@ describe("parseWorkout — edge cases", () => {
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("uuid-400");
-    expect(parsed?.activityType).toBe("running");
+    expect(parsed?.activityType.canonicalType).toBe("running");
     expect(parsed?.durationSeconds).toBe(3600);
     expect(parsed?.distanceMeters).toBeUndefined();
     expect(parsed?.avgHeartRate).toBeUndefined();
@@ -552,7 +552,7 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.activityType).toBe("other");
+    expect(parsed?.activityType.canonicalType).toBe("other");
   });
 
   it("handles score with zero kilojoule", () => {
@@ -569,7 +569,7 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.activityType).toBe("meditation");
+    expect(parsed?.activityType.canonicalType).toBe("meditation");
   });
 
   it("maps various sport IDs correctly", () => {
@@ -584,14 +584,14 @@ describe("parseWorkout — edge cases", () => {
       kilojoules: 1000,
     });
 
-    expect(parseWorkout(makeRecord(1))?.activityType).toBe("cycling");
-    expect(parseWorkout(makeRecord(33))?.activityType).toBe("swimming");
-    expect(parseWorkout(makeRecord(52))?.activityType).toBe("hiking");
-    expect(parseWorkout(makeRecord(63))?.activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45))?.activityType).toBe("strength");
-    expect(parseWorkout(makeRecord(18))?.activityType).toBe("rowing");
-    expect(parseWorkout(makeRecord(65))?.activityType).toBe("elliptical");
-    expect(parseWorkout(makeRecord(29))?.activityType).toBe("skiing");
+    expect(parseWorkout(makeRecord(1))?.activityType.canonicalType).toBe("cycling");
+    expect(parseWorkout(makeRecord(33))?.activityType.canonicalType).toBe("swimming");
+    expect(parseWorkout(makeRecord(52))?.activityType.canonicalType).toBe("hiking");
+    expect(parseWorkout(makeRecord(63))?.activityType.canonicalType).toBe("walking");
+    expect(parseWorkout(makeRecord(45))?.activityType.canonicalType).toBe("strength");
+    expect(parseWorkout(makeRecord(18))?.activityType.canonicalType).toBe("rowing");
+    expect(parseWorkout(makeRecord(65))?.activityType.canonicalType).toBe("elliptical");
+    expect(parseWorkout(makeRecord(29))?.activityType.canonicalType).toBe("skiing");
   });
 
   it("falls back to v2_activity type name when sport_id maps to other", () => {
@@ -607,10 +607,10 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // Without v2 type name → "other"
-    expect(parseWorkout(record)?.activityType).toBe("other");
+    expect(parseWorkout(record)?.activityType.canonicalType).toBe("other");
 
     // With v2 type name "walk" → "walking"
-    expect(parseWorkout(record, "walk")?.activityType).toBe("walking");
+    expect(parseWorkout(record, "walk")?.activityType.canonicalType).toBe("walking");
   });
 
   it("prefers sport_id mapping over v2_activity type when sport_id is known", () => {
@@ -626,33 +626,34 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // sport_id 63 → "walking" even if v2 type says something else
-    expect(parseWorkout(record, "run")?.activityType).toBe("walking");
+    expect(parseWorkout(record, "run")?.activityType.canonicalType).toBe("walking");
   });
 });
 
 describe("resolveActivityType", () => {
   it("returns sport_id mapping when it is not other", () => {
-    expect(resolveActivityType(63)).toBe("walking");
-    expect(resolveActivityType(0)).toBe("running");
-    expect(resolveActivityType(1)).toBe("cycling");
+    expect(resolveActivityType(63).canonicalType).toBe("walking");
+    expect(resolveActivityType(0).canonicalType).toBe("running");
+    expect(resolveActivityType(1).canonicalType).toBe("cycling");
   });
 
   it("falls back to v2 type name when sport_id maps to other", () => {
-    expect(resolveActivityType(9999, "walk")).toBe("walking");
-    expect(resolveActivityType(9999, "dog-walk")).toBe("walking");
-    expect(resolveActivityType(9999, "spin")).toBe("indoor_cycling");
-    expect(resolveActivityType(9999, "functional-fitness")).toBe("functional_fitness");
+    expect(resolveActivityType(9999, "walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "dog-walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "spin").canonicalType).toBe("cycling");
+    expect(resolveActivityType(9999, "functional-fitness").canonicalType).toBe("strength");
+    expect(resolveActivityType(9999, "functional-fitness").modality).toBe("functional");
   });
 
   it("returns other when both sport_id and v2 type are unknown", () => {
-    expect(resolveActivityType(9999)).toBe("other");
-    expect(resolveActivityType(9999, "unknown-activity")).toBe("other");
+    expect(resolveActivityType(9999).canonicalType).toBe("other");
+    expect(resolveActivityType(9999, "unknown-activity").canonicalType).toBe("other");
   });
 
   it("is case-insensitive for v2 type names", () => {
-    expect(resolveActivityType(9999, "Walk")).toBe("walking");
-    expect(resolveActivityType(9999, "WALK")).toBe("walking");
-    expect(resolveActivityType(9999, "Dog-Walk")).toBe("walking");
+    expect(resolveActivityType(9999, "Walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "WALK").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "Dog-Walk").canonicalType).toBe("walking");
   });
 });
 

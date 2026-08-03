@@ -1,3 +1,4 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -12,6 +13,8 @@ import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 const DOFEK_PROVIDER_NAME = "Dofek App";
+const FINGER_LOADING_ACTIVITY_TYPE = resolveProviderActivityType("finger_loading", "strength");
+const CLIMBING_ACTIVITY_TYPE = resolveProviderActivityType("rock_climbing", "climbing");
 
 export const fingerLoadingExerciseSchema = z.enum([
   "max_hang",
@@ -177,12 +180,15 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
         transaction,
         insertedIdSchema,
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name, source_name
+              provider_id, user_id, external_id, canonical_type, provider_type, modality,
+              started_at, ended_at, name, source_name
             ) VALUES (
               ${DOFEK_PROVIDER_ID},
               ${this.userId}::uuid,
               ${`manual:${crypto.randomUUID()}`},
-              'strength_training',
+              ${FINGER_LOADING_ACTIVITY_TYPE.canonicalType},
+              ${FINGER_LOADING_ACTIVITY_TYPE.providerType},
+              ${FINGER_LOADING_ACTIVITY_TYPE.modality},
               ${input.startedAt}::timestamptz,
               ${input.startedAt}::timestamptz,
               'Finger loading',
@@ -249,12 +255,15 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
         transaction,
         insertedIdSchema,
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name, source_name
+              provider_id, user_id, external_id, canonical_type, provider_type, modality,
+              started_at, ended_at, name, source_name
             ) VALUES (
               ${DOFEK_PROVIDER_ID},
               ${this.userId}::uuid,
               ${`manual:${crypto.randomUUID()}`},
-              'rock_climbing',
+              ${CLIMBING_ACTIVITY_TYPE.canonicalType},
+              ${CLIMBING_ACTIVITY_TYPE.providerType},
+              ${CLIMBING_ACTIVITY_TYPE.modality},
               ${input.startedAt}::timestamptz,
               ${input.endedAt}::timestamptz,
               'Climbing session',

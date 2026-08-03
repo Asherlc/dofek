@@ -70,40 +70,42 @@ describe("activity visibility consistency", () => {
     );
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
           (
-            ${AUTHORIZED_RUN_ID}, 'issue_2060', ${TEST_USER_ID}, 'authorized-run', 'running',
+            ${AUTHORIZED_RUN_ID}, 'issue_2060', ${TEST_USER_ID}, 'authorized-run', 'running', 'running',
             '2026-03-15T10:00:00Z', '2026-03-15T10:45:00Z', 'Authorized Run'
           ),
           (
-            ${AUTHORIZED_WALK_ID}, 'issue_2060', ${TEST_USER_ID}, 'authorized-walk', 'walking',
+            ${AUTHORIZED_WALK_ID}, 'issue_2060', ${TEST_USER_ID}, 'authorized-walk', 'walking', 'walking',
             '2026-03-16T10:00:00Z', '2026-03-16T10:30:00Z', 'Authorized Walk'
           ),
           (
-            ${MEASURED_ZERO_RUN_ID}, 'issue_2060', ${TEST_USER_ID}, 'measured-zero-run', 'running',
+            ${MEASURED_ZERO_RUN_ID}, 'issue_2060', ${TEST_USER_ID}, 'measured-zero-run', 'running', 'running',
             '2026-03-14T10:00:00Z', '2026-03-14T10:15:00Z', 'Measured Zero Run'
           ),
           (
             ${PREVIOUS_WINDOW_START_ID}, 'issue_2060', ${TEST_USER_ID}, 'previous-window-start', 'running',
+            'running',
             '2026-03-02T10:00:00Z', '2026-03-02T10:15:00Z', 'Previous Window Start'
           ),
           (
             ${CURRENT_WINDOW_START_ID}, 'issue_2060', ${TEST_USER_ID}, 'current-window-start', 'running',
+            'running',
             '2026-03-09T10:00:00Z', '2026-03-09T10:15:00Z', 'Current Window Start'
           ),
           (
-            ${UNAUTHORIZED_RIDE_ID}, 'issue_2060', ${TEST_USER_ID}, 'unauthorized-ride', 'cycling',
+            ${UNAUTHORIZED_RIDE_ID}, 'issue_2060', ${TEST_USER_ID}, 'unauthorized-ride', 'cycling', 'cycling',
             '2026-02-15T10:00:00Z', '2026-02-15T11:30:00Z', 'Unauthorized Ride'
           ),
           (
             ${BEFORE_LOCAL_ACCESS_ID}, 'issue_2060_boundary', ${BOUNDARY_USER_ID},
-            'before-local-access', 'running',
+            'before-local-access', 'running', 'running',
             '2026-03-10T06:30:00Z', '2026-03-10T06:45:00Z', 'Before Local Access'
           ),
           (
             ${BEFORE_LOCAL_END_ID}, 'issue_2060_boundary', ${BOUNDARY_USER_ID},
-            'before-local-end', 'running',
+            'before-local-end', 'running', 'running',
             '2026-03-17T06:30:00Z', '2026-03-17T06:45:00Z', 'Before Local End'
           )`,
     );
@@ -347,8 +349,8 @@ describe("activity visibility consistency", () => {
     expect(training.weeklyVolume).toHaveLength(2);
     expect(training.weeklyVolume).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ activity_type: "running", count: 2 }),
-        expect.objectContaining({ activity_type: "walking", count: 1 }),
+        expect.objectContaining({ canonical_type: "running", count: 2 }),
+        expect.objectContaining({ canonical_type: "walking", count: 1 }),
       ]),
     );
   });
@@ -473,7 +475,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       `INSERT INTO analytics.activity_summary (
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         name,
         started_at,
         ended_at,

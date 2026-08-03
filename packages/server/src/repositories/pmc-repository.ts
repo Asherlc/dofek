@@ -151,7 +151,7 @@ export class PmcRepository extends BaseRepository {
           coalesce(nullIf(up.max_hr, 0), (
             SELECT maxIf(max_hr, max_hr > 0) FROM analytics.activity_summary
             WHERE user_id = {userId:UUID}
-              AND has({activityTypes:Array(String)}, activity_type)
+              AND has({activityTypes:Array(String)}, canonical_type)
           )) AS global_max_hr,
           coalesce(nullIf(up.resting_hr, 0), (
             SELECT resting_hr FROM resting_heart_rate
@@ -176,7 +176,7 @@ export class PmcRepository extends BaseRepository {
       CROSS JOIN user_baseline ub
       WHERE asum.user_id = {userId:UUID}
         ${activityRangeFilter}
-        AND has({activityTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
         AND asum.ended_at IS NOT NULL
         AND coalesce(asum.hr_sample_count, 0) > 0`,
       {
@@ -205,7 +205,7 @@ export class PmcRepository extends BaseRepository {
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         ${queryRange.clickHouseTimestampAfter("started_at", "queryDays")}
-        AND has({activityTypes:Array(String)}, activity_type)
+        AND has({activityTypes:Array(String)}, canonical_type)
         AND normalized_power IS NOT NULL`,
       {
         userId: this.userId,

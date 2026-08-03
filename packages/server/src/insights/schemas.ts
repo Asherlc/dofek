@@ -28,7 +28,7 @@ export const activityRowSchema = z.object({
   date: dateStringSchema.optional(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
 });
 
 /** Zod schema for rows from fitness.v_nutrition_daily used by insights/correlation queries. */

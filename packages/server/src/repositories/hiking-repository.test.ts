@@ -227,7 +227,7 @@ describe("HikingRepository", () => {
           activity_id: "hike-2",
           date: "2024-01-15",
           activity_name: "Morning Hike",
-          activity_type: "hiking",
+          canonical_type: "hiking",
           distance_m: 5000,
           duration_seconds: 3600,
           elevation_gain_m: 300,

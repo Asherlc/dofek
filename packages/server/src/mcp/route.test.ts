@@ -489,9 +489,9 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_activity_summary").inputSchema).toMatchObject({
       properties: {
-        activity_types: { type: "array" },
+        canonical_types: { type: "array" },
         group_by: {
-          enum: ["activity_type", "week", "activity_type_and_week"],
+          enum: ["canonical_type", "week", "canonical_type_and_week"],
           type: "string",
         },
       },
@@ -613,7 +613,7 @@ describe("createMcpRouter", () => {
   it("searches activities and applies the query filter", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
-      items: [{ activity_type: "cycling", name: "Morning Ride" }],
+      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 1,
     });
 
@@ -628,7 +628,7 @@ describe("createMcpRouter", () => {
     });
 
     expect(parseToolCallText(response.text)).toEqual({
-      items: [{ activity_type: "cycling", name: "Morning Ride" }],
+      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 1,
     });
     expect(toolTestMocks.activityRepository).toHaveBeenCalledWith(
@@ -948,7 +948,7 @@ describe("createMcpRouter", () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
       {
-        activity_type: "cycling",
+        canonical_type: "cycling",
         avg_hr: 140,
         avg_power: 180,
         ended_at: "2026-05-18T11:00:00.000Z",
@@ -957,7 +957,7 @@ describe("createMcpRouter", () => {
         started_at: "2026-05-18T10:00:00.000Z",
       },
       {
-        activity_type: "cycling",
+        canonical_type: "cycling",
         avg_hr: 150,
         avg_power: 200,
         ended_at: "2026-05-19T10:30:00.000Z",
@@ -971,14 +971,14 @@ describe("createMcpRouter", () => {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_activity_summary", {
         end_date: "2026-05-19",
-        group_by: "activity_type_and_week",
+        group_by: "canonical_type_and_week",
         start_date: "2026-05-18",
       }),
     });
 
     expect(parseToolCallText(response.text)).toEqual([
       {
-        activity_type: "cycling",
+        canonical_type: "cycling",
         avg_duration_minutes: 45,
         avg_hr: 145,
         avg_power: 190,
@@ -996,7 +996,7 @@ describe("createMcpRouter", () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
       {
-        activity_type: "running",
+        canonical_type: "running",
         avg_hr: null,
         avg_power: null,
         ended_at: null,
@@ -1015,7 +1015,7 @@ describe("createMcpRouter", () => {
     });
     expect(parseToolCallText(activityTypeResponse.text)).toEqual([
       {
-        activity_type: "running",
+        canonical_type: "running",
         avg_duration_minutes: null,
         avg_hr: null,
         avg_power: null,
@@ -1198,8 +1198,8 @@ describe("createMcpRouter", () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
       items: [
-        { activity_type: "cycling", name: "Morning Ride" },
-        { activity_type: "swim", name: "Pool" },
+        { canonical_type: "cycling", name: "Morning Ride" },
+        { canonical_type: "swim", name: "Pool" },
       ],
       totalCount: 2,
     });
@@ -1213,8 +1213,8 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       items: [
-        { activity_type: "cycling", name: "Morning Ride" },
-        { activity_type: "swim", name: "Pool" },
+        { canonical_type: "cycling", name: "Morning Ride" },
+        { canonical_type: "swim", name: "Pool" },
       ],
       totalCount: 2,
     });
@@ -1223,7 +1223,7 @@ describe("createMcpRouter", () => {
   it("matches activity searches against activity names", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
-      items: [{ activity_type: "cycling", name: "Morning Ride" }],
+      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 2,
     });
 
@@ -1236,7 +1236,7 @@ describe("createMcpRouter", () => {
     });
 
     expect(parseToolCallText(response.text)).toEqual({
-      items: [{ activity_type: "cycling", name: "Morning Ride" }],
+      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 2,
     });
   });

@@ -12,7 +12,7 @@ WITH activity_bounds AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         name,
         started_at,
         ended_at
@@ -63,7 +63,7 @@ activity_meta AS (
     SELECT
         activity_bounds.activity_id AS activity_id,
         activity_bounds.user_id AS user_id,
-        activity_bounds.activity_type AS activity_type,
+        activity_bounds.canonical_type AS canonical_type,
         activity_bounds.name AS name,
         activity_bounds.started_at AS started_at,
         activity_bounds.ended_at AS ended_at,
@@ -82,7 +82,7 @@ z2_heart_rate_samples AS (
     SELECT
         am.activity_id AS activity_id,
         am.user_id AS user_id,
-        am.activity_type AS activity_type,
+        am.canonical_type AS canonical_type,
         am.name AS name,
         am.started_at AS started_at,
         am.ended_at AS ended_at,
@@ -126,7 +126,7 @@ z2_samples AS (
     SELECT
         hr.activity_id AS activity_id,
         hr.user_id AS user_id,
-        any(hr.activity_type) AS activity_type,
+        any(hr.canonical_type) AS canonical_type,
         any(hr.name) AS name,
         any(hr.started_at) AS started_at,
         any(hr.ended_at) AS ended_at,
@@ -159,7 +159,7 @@ refresh_clock AS (
 SELECT
     activity_keys.activity_id AS activity_id,
     activity_keys.user_id AS user_id,
-    z2_samples.activity_type AS activity_type,
+    z2_samples.canonical_type AS canonical_type,
     z2_samples.name AS name,
     z2_samples.started_at AS started_at,
     z2_samples.ended_at AS ended_at,

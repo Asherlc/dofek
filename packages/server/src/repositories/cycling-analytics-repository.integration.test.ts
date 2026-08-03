@@ -32,6 +32,8 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
         'wahoo',
         ['wahoo'],
         'cycling',
+        'cycling',
+        NULL,
         'Threshold Intervals',
         now64(6, 'UTC') - INTERVAL 2 DAY,
         now64(6, 'UTC') - INTERVAL 2 DAY + INTERVAL 1 HOUR,
@@ -59,7 +61,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       testContext,
       `INSERT INTO analytics.cycling_activity VALUES (
         toUUID('${ZERO_EFFICIENCY_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
-        'cycling', 'Ride Without Zone Two Data', now64(6, 'UTC') - INTERVAL 4 DAY,
+        'cycling', 'cycling', NULL, 'Ride Without Zone Two Data', now64(6, 'UTC') - INTERVAL 4 DAY,
         now64(6, 'UTC') - INTERVAL 4 DAY + INTERVAL 1 HOUR, 30000, 145, 175, 200,
         3600, 3600, 220, 250, 100, 3600, 0, 0, 0, 0, 0, 0, 1,
         now64(9, 'UTC')
@@ -181,13 +183,13 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       `INSERT INTO analytics.cycling_activity VALUES
         (
           toUUID('${RECENT_HEART_RATE_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
-          'cycling', 'Recent Heart Rate Ride', now64(6, 'UTC') - INTERVAL 3 DAY,
+          'cycling', 'cycling', NULL, 'Recent Heart Rate Ride', now64(6, 'UTC') - INTERVAL 3 DAY,
           now64(6, 'UTC') - INTERVAL 3 DAY + INTERVAL 1 HOUR, 30000, 150, 180, NULL,
           0, 3600, NULL, NULL, 100, 3600, 190, NULL, NULL, NULL, NULL, 0, 1, now64(9, 'UTC')
         ),
         (
           toUUID('${HISTORICAL_HIGH_HEART_RATE_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
-          'cycling', 'Historical Ride', now64(6, 'UTC') - INTERVAL 180 DAY,
+          'cycling', 'cycling', NULL, 'Historical Ride', now64(6, 'UTC') - INTERVAL 180 DAY,
           now64(6, 'UTC') - INTERVAL 180 DAY + INTERVAL 1 HOUR, 30000, 150, 240, NULL,
           0, 3600, NULL, NULL, 100, 3600, 250, NULL, NULL, NULL, NULL, 0, 1, now64(9, 'UTC')
         )`,

@@ -85,23 +85,23 @@ async function expectCorosRateLimitError(action: () => Promise<unknown>) {
 
 describe("mapCorosSportType", () => {
   it("maps known sport modes", () => {
-    expect(mapCorosSportType(8)).toBe("running");
-    expect(mapCorosSportType(9)).toBe("cycling");
-    expect(mapCorosSportType(10)).toBe("swimming");
-    expect(mapCorosSportType(13)).toBe("strength");
-    expect(mapCorosSportType(14)).toBe("walking");
-    expect(mapCorosSportType(15)).toBe("hiking");
-    expect(mapCorosSportType(17)).toBe("rowing");
-    expect(mapCorosSportType(18)).toBe("yoga");
-    expect(mapCorosSportType(22)).toBe("trail_running");
-    expect(mapCorosSportType(23)).toBe("skiing");
-    expect(mapCorosSportType(27)).toBe("triathlon");
-    expect(mapCorosSportType(100)).toBe("other");
+    expect(mapCorosSportType(8).canonicalType).toBe("running");
+    expect(mapCorosSportType(9).canonicalType).toBe("cycling");
+    expect(mapCorosSportType(10).canonicalType).toBe("swimming");
+    expect(mapCorosSportType(13).canonicalType).toBe("strength");
+    expect(mapCorosSportType(14).canonicalType).toBe("walking");
+    expect(mapCorosSportType(15).canonicalType).toBe("hiking");
+    expect(mapCorosSportType(17).canonicalType).toBe("rowing");
+    expect(mapCorosSportType(18).canonicalType).toBe("yoga");
+    expect(mapCorosSportType(22).canonicalType).toBe("running");
+    expect(mapCorosSportType(23).canonicalType).toBe("skiing");
+    expect(mapCorosSportType(27).canonicalType).toBe("triathlon");
+    expect(mapCorosSportType(100).canonicalType).toBe("other");
   });
 
   it("returns other for unknown sport modes", () => {
-    expect(mapCorosSportType(999)).toBe("other");
-    expect(mapCorosSportType(0)).toBe("other");
+    expect(mapCorosSportType(999).canonicalType).toBe("other");
+    expect(mapCorosSportType(0).canonicalType).toBe("other");
   });
 });
 
@@ -130,7 +130,7 @@ describe("parseCorosWorkout", () => {
     const parsed = parseCorosWorkout(sampleWorkout);
 
     expect(parsed.externalId).toBe("wk-001");
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
     expect(parsed.name).toBe("COROS running");
     expect(parsed.startedAt).toEqual(new Date(1740830400 * 1000));
     expect(parsed.endedAt).toEqual(new Date(1740834000 * 1000));
@@ -170,7 +170,7 @@ describe("parseCorosWorkout", () => {
 
     const parsed = parseCorosWorkout(workout);
     expect(parsed.externalId).toBe("coros-w-123");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("COROS cycling");
     expect(parsed.startedAt).toEqual(new Date(1709290800 * 1000));
     expect(parsed.endedAt).toEqual(new Date(1709294400 * 1000));
@@ -202,7 +202,7 @@ describe("parseCorosWorkout", () => {
     };
 
     const parsed = parseCorosWorkout(workout);
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
     expect(parsed.raw.avgCadence).toBeUndefined();
     expect(parsed.raw.avgPower).toBeUndefined();
   });
@@ -541,7 +541,11 @@ describe("CorosProvider", () => {
         metricStreamPublisher,
         activitySummary: {
           externalId: "w-1",
-          activityType: "running",
+          activityType: {
+            canonicalType: "running",
+            providerType: "8",
+            modality: null,
+          },
           startedAtIso: "2024-03-01T11:00:00.000Z",
           endedAtIso: "2024-03-01T12:00:00.000Z",
           name: "COROS running",

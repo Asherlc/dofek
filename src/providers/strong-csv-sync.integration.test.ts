@@ -235,7 +235,7 @@ describe("importStrongCsv() (integration)", () => {
       .where(and(eq(activity.providerId, STRONG_PROVIDER_ID), eq(activity.name, "Push Day")));
 
     expect(activities).toHaveLength(1);
-    expect(activities[0]?.activityType).toBe("strength");
+    expect(activities[0]?.canonicalType).toBe("strength");
     expect(activities[0]?.name).toBe("Push Day");
     expect(activities[0]?.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
   });

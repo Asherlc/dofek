@@ -90,7 +90,9 @@ const activityRowSchema = z.object({
   user_id: z.string(),
   user_name: z.string().nullable(),
   provider_id: z.string(),
-  activity_type: z.string().nullable(),
+  canonical_type: z.string().nullable(),
+  provider_type: z.string(),
+  modality: z.string().nullable(),
   name: z.string().nullable(),
   started_at: timestampStringSchema,
   duration_seconds: z.coerce.number().nullable(),
@@ -437,7 +439,8 @@ export const adminRouter = router({
         ctx.db,
         activityRowSchema,
         sql`SELECT a.id, a.user_id, up.name AS user_name, a.provider_id,
-                   a.activity_type, a.name, a.started_at::text,
+                   a.canonical_type, a.provider_type, a.modality::text AS modality,
+                   a.name, a.started_at::text,
                    EXTRACT(EPOCH FROM (a.ended_at - a.started_at))::text AS duration_seconds,
                    a.source_name
             FROM fitness.activity a

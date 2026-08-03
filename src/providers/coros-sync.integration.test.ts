@@ -203,11 +203,11 @@ describe("CorosProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "coros-w-1001");
     if (!run) throw new Error("expected workout coros-w-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     const ride = rows.find((r) => r.externalId === "coros-w-1002");
     if (!ride) throw new Error("expected workout coros-w-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
   });
 
   it("publishes FIT samples through scoped Redpanda replacement", async () => {

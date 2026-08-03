@@ -25,7 +25,9 @@ describe("planRideWithGpsActivityBackfill", () => {
       id: "activity-1",
       externalId: "trip-1",
       userId: "user-1",
-      activityType: "other",
+      canonicalType: "other",
+      providerType: "other",
+      modality: null,
       raw: {
         activity_type: "cycling:road",
         track_points: [
@@ -40,7 +42,11 @@ describe("planRideWithGpsActivityBackfill", () => {
       },
     });
 
-    expect(plan.activityType).toBe("road_cycling");
+    expect(plan.activityType).toEqual({
+      canonicalType: "cycling",
+      providerType: "cycling:road",
+      modality: "road",
+    });
     expect(plan.shouldUpdateActivityType).toBe(true);
     expect(plan.metricRows).toEqual([
       {
@@ -65,7 +71,9 @@ describe("planRideWithGpsActivityBackfill", () => {
       id: "activity-1",
       externalId: "trip-1",
       userId: "user-1",
-      activityType: "cycling",
+      canonicalType: "cycling",
+      providerType: "cycling:generic",
+      modality: null,
       raw: {
         activity_type: "cycling:generic",
         track_points: [
@@ -83,7 +91,11 @@ describe("planRideWithGpsActivityBackfill", () => {
       },
     });
 
-    expect(plan.activityType).toBe("cycling");
+    expect(plan.activityType).toEqual({
+      canonicalType: "cycling",
+      providerType: "cycling:generic",
+      modality: null,
+    });
     expect(plan.shouldUpdateActivityType).toBe(false);
     expect(plan.metricRows[0]).toMatchObject({
       heartRate: 145,
@@ -97,7 +109,9 @@ describe("planRideWithGpsActivityBackfill", () => {
       id: "activity-1",
       externalId: "trip-1",
       userId: "user-1",
-      activityType: "cycling",
+      canonicalType: "cycling",
+      providerType: "cycling:generic",
+      modality: null,
       raw: {
         activity_type: "cycling:generic",
         track_points: [],
@@ -112,7 +126,9 @@ describe("planRideWithGpsActivityBackfill", () => {
       id: "activity-1",
       externalId: "trip-1",
       userId: "user-1",
-      activityType: "cycling",
+      canonicalType: "cycling",
+      providerType: "cycling:generic",
+      modality: null,
       raw: {
         activity_type: "cycling:generic",
         track_points: [
@@ -141,7 +157,9 @@ describe("planRideWithGpsActivityBackfill", () => {
         id: "activity-1",
         externalId: "trip-1",
         userId: "user-1",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling:generic",
+        modality: null,
       }),
     ).toThrow();
   });
@@ -152,7 +170,9 @@ describe("planRideWithGpsActivityBackfill", () => {
         id: "activity-1",
         externalId: "trip-1",
         userId: "user-1",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling:generic",
+        modality: null,
         raw: {
           activity_type: "cycling:generic",
           track_points: "not-an-array",
@@ -167,7 +187,9 @@ describe("planRideWithGpsActivityBackfill", () => {
         id: "activity-1",
         externalId: "trip-1",
         userId: "user-1",
-        activityType: "cycling",
+        canonicalType: "cycling",
+        providerType: "cycling:generic",
+        modality: null,
         raw: {
           activity_type: "cycling:generic",
           track_points: [
@@ -188,7 +210,9 @@ describe("planRideWithGpsActivityBackfill", () => {
       id: "activity-1",
       externalId: "trip-1",
       userId: "user-1",
-      activityType: "cycling",
+      canonicalType: "cycling",
+      providerType: "cycling:generic",
+      modality: null,
       raw: {
         activity_type: "cycling:generic",
         track_points: [],
@@ -211,7 +235,9 @@ describe("planRideWithGpsActivityBackfill", () => {
       id: "activity-1",
       externalId: "trip-1",
       userId: "user-1",
-      activityType: "other",
+      canonicalType: "other",
+      providerType: "other",
+      modality: null,
       raw: {
         activity_type: "cycling:road",
         track_points: [
@@ -227,8 +253,9 @@ describe("planRideWithGpsActivityBackfill", () => {
     await applyRideWithGpsActivityBackfillPlan(db, plan);
 
     expect(db.execute).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("activity_type");
-    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("road_cycling");
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("canonical_type");
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("provider_type");
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("cycling:road");
     expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("activity-1");
     expect(replaceMetricStreamBatchMock).toHaveBeenCalledWith(
       db,

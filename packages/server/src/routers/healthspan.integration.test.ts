@@ -63,9 +63,9 @@ describe("healthspan zone time with variable-interval HR data", () => {
     // Last  300 seconds (60 samples): HR 175 (high intensity, above 162 threshold)
     const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'healthspan-apple-watch-hiit', 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'healthspan-apple-watch-hiit', 'cycling', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             (CURRENT_TIMESTAMP - INTERVAL '2 days') + INTERVAL '600 seconds',
             'Apple Watch HIIT'
@@ -298,9 +298,9 @@ describe("healthspan zone time with variable-interval HR data", () => {
   it("includes power zone high-intensity work when heart-rate samples are absent", async () => {
     const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'healthspan-power-zone-intervals', 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'healthspan-power-zone-intervals', 'cycling', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
             (CURRENT_TIMESTAMP - INTERVAL '1 day') + INTERVAL '600 seconds',
             'Power Zone Intervals'

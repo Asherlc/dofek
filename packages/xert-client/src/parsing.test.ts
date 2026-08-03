@@ -36,16 +36,16 @@ describe("mapXertSport", () => {
     ["Hiking", "hiking"],
     ["Rowing", "rowing"],
     ["Skiing", "skiing"],
-    ["Virtual Cycling", "virtual_cycling"],
-    ["Mountain Biking", "mountain_biking"],
-    ["Trail Running", "trail_running"],
-    ["Cross Country Skiing", "cross_country_skiing"],
+    ["Virtual Cycling", "cycling"],
+    ["Mountain Biking", "cycling"],
+    ["Trail Running", "running"],
+    ["Cross Country Skiing", "skiing"],
   ] as const)("maps %s to %s", (sport, expected) => {
-    expect(mapXertSport(sport)).toBe(expected);
+    expect(mapXertSport(sport).canonicalType).toBe(expected);
   });
 
   it("maps unknown sports to other", () => {
-    expect(mapXertSport("Juggling")).toBe("other");
+    expect(mapXertSport("Juggling").canonicalType).toBe("other");
   });
 });
 
@@ -55,7 +55,11 @@ describe("parseXertActivity", () => {
 
     expect(parsed).toEqual({
       externalId: "12345",
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "Cycling",
+        modality: null,
+      },
       name: "Morning Ride",
       startedAt: new Date(1_709_290_800_000),
       endedAt: new Date(1_709_294_400_000),

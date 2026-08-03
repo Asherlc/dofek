@@ -95,9 +95,9 @@ describe("Router data coverage", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, ${`training-ride-${actIdx}`}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`training-ride-${actIdx}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -230,9 +230,9 @@ describe("Router data coverage", () => {
     const runDurationSec = 1200; // 20 minutes
     const runResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'router-data-morning-run', 'running',
+            'test_provider', ${TEST_USER_ID}, 'router-data-morning-run', 'running', 'running',
             CURRENT_TIMESTAMP - INTERVAL '3 days',
             CURRENT_TIMESTAMP - INTERVAL '3 days' + ${runDurationSec}::int * INTERVAL '1 second',
             'Morning Run'
@@ -345,10 +345,10 @@ describe("Router data coverage", () => {
     for (let i = 0; i < 8; i++) {
       const workoutResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, started_at, name, activity_type
+              provider_id, user_id, external_id, started_at, name, canonical_type, provider_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID}, ${`sw-${i}`},
-              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session', 'strength'
+              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session', 'strength', 'strength'
             ) ON CONFLICT DO NOTHING RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;

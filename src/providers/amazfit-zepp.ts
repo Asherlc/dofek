@@ -1,5 +1,9 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { signInToZepp, ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -151,7 +155,7 @@ export interface ParsedZeppBandDay {
 
 interface ParsedZeppWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   startedAt: Date;
   endedAt: Date | null;
 }
@@ -189,7 +193,7 @@ function zeppSleepBoundaryToDate(date: string, boundary: number): Date {
   return dateAtUtcMinute(date, boundary);
 }
 
-const ZEPP_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
+const ZEPP_WORKOUT_TYPE_MAP: Record<number, LegacyActivityType> = {
   1: "running",
   6: "walking",
   8: "running",
@@ -200,9 +204,11 @@ const ZEPP_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
   92: "badminton",
 };
 
-function mapZeppWorkoutType(type: number | undefined): CanonicalActivityType {
-  if (type === undefined) return "other";
-  return ZEPP_WORKOUT_TYPE_MAP[type] ?? "other";
+function mapZeppWorkoutType(type: number | undefined): ProviderActivityType {
+  return resolveProviderActivityType(
+    type ?? "unknown",
+    ZEPP_WORKOUT_TYPE_MAP[type ?? -1] ?? "other",
+  );
 }
 
 function dateFromEpochSeconds(seconds: number): Date {

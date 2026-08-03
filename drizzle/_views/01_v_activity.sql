@@ -29,7 +29,7 @@ tombstoned AS (
     a.id,
     a.user_id,
     a.provider_id,
-    a.activity_type,
+    a.canonical_type,
     a.external_id,
     a.started_at,
     a.ended_at,
@@ -49,7 +49,7 @@ effective_tombstoned AS (
     t.id,
     t.user_id,
     t.provider_id,
-    t.activity_type,
+    t.canonical_type,
     t.external_id,
     t.started_at,
     t.ended_at,
@@ -62,7 +62,7 @@ effective_tombstoned AS (
     t.id,
     t.user_id,
     t.provider_id,
-    t.activity_type,
+    t.canonical_type,
     t.external_id,
     t.started_at,
     t.ended_at,
@@ -132,7 +132,7 @@ clusterable AS (
     r.id,
     r.user_id,
     r.provider_id,
-    r.activity_type,
+    r.canonical_type,
     r.started_at,
     COALESCE(r.ended_at, r.started_at + interval '1 hour') AS ended_at
   FROM ranked r
@@ -141,7 +141,7 @@ clusterable AS (
     t.id,
     t.user_id,
     t.provider_id,
-    t.activity_type,
+    t.canonical_type,
     t.started_at,
     COALESCE(t.ended_at, t.started_at + interval '1 hour') AS ended_at
   FROM effective_tombstoned t
@@ -152,8 +152,8 @@ pair_metrics AS (
     c2.id AS id2,
     c1.provider_id AS provider_id1,
     c2.provider_id AS provider_id2,
-    c1.activity_type AS activity_type1,
-    c2.activity_type AS activity_type2,
+    c1.canonical_type AS canonical_type1,
+    c2.canonical_type AS canonical_type2,
     EXTRACT(EPOCH FROM (
       LEAST(c1.ended_at, c2.ended_at) - GREATEST(c1.started_at, c2.started_at)
     )) AS overlap_seconds,
@@ -177,7 +177,7 @@ pairs AS (
   WHERE overlap_seconds / NULLIF(union_seconds, 0) > 0.8
     OR (
       provider_id1 <> provider_id2
-      AND activity_type1 = activity_type2
+      AND canonical_type1 = canonical_type2
       AND overlap_seconds / NULLIF(shorter_duration_seconds, 0) > 0.8
     )
 ),
@@ -205,7 +205,9 @@ best_per_group AS (
     r.id AS canonical_id,
     r.provider_id,
     r.user_id,
-    r.activity_type,
+    r.canonical_type,
+    r.provider_type,
+    r.modality,
     r.started_at,
     r.ended_at,
     r.source_name,
@@ -250,7 +252,9 @@ merged AS (
     b.canonical_id,
     b.provider_id,
     b.user_id,
-    b.activity_type,
+    b.canonical_type,
+    b.provider_type,
+    b.modality,
     bounds.started_at,
     bounds.ended_at,
     b.source_name,
@@ -322,7 +326,9 @@ SELECT
   m.provider_id,
   m.user_id,
   m.canonical_id AS primary_activity_id,
-  m.activity_type,
+  m.canonical_type,
+  m.provider_type,
+  m.modality,
   m.started_at,
   m.ended_at,
   m.source_name,

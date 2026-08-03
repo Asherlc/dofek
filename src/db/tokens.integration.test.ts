@@ -256,9 +256,9 @@ describe("Token storage (integration)", () => {
     });
     await ctx.db.execute(
       sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, activity_type, started_at)
+            (provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at)
           VALUES
-            (${providerId}, ${TEST_USER_ID}, 'retained-after-disconnect', 'running', now())`,
+            (${providerId}, ${TEST_USER_ID}, 'retained-after-disconnect', 'running', 'running', NULL, now())`,
     );
 
     await deleteProviderAuthorization(ctx.db, providerId, TEST_USER_ID);

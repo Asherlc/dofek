@@ -105,7 +105,15 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
   const excludedColumns = new Set(["raw", "user_id"]);
   const columns = Object.keys(rows[0] ?? {}).filter((col) => !excludedColumns.has(col));
-  const priorityCols = ["id", "name", "date", "started_at", "recorded_at", "activity_type", "type"];
+  const priorityCols = [
+    "id",
+    "name",
+    "date",
+    "started_at",
+    "recorded_at",
+    "canonical_type",
+    "type",
+  ];
   const sortedColumns = [
     ...priorityCols.filter((c) => columns.includes(c)),
     ...columns.filter((c) => !priorityCols.includes(c)),

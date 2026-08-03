@@ -683,11 +683,11 @@ describe("ActivityDetailScreen", () => {
     expect(enabled).toBe(false);
   });
 
-  it("shows the climbs attached to a merged rock-climbing activity", async () => {
+  it("shows the climbs attached to a canonical climbing activity", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
         ...baseCyclingActivity,
-        activityType: "rock_climbing",
+        activityType: "climbing",
         name: "Morning Rock Climb",
       },
       isLoading: false,
@@ -750,6 +750,23 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("35° · Crimp")).toBeTruthy();
     expect(screen.getByText("1: Technique")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
+  });
+
+  it("does not query climbing entries for a raw provider type synonym", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "rock_climbing",
+        name: "Morning Rock Climb",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(false);
   });
 
   it("shows Apple Health upstream app names when subsource is present", async () => {

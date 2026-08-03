@@ -7,7 +7,7 @@ const units = new UnitConverter("metric");
 const strengthActivity: ActivityCardData = {
   id: "strength-1",
   name: null,
-  activityType: "strength_training",
+  activityType: "strength",
   startedAt: "2026-07-14T08:46:00-07:00",
   localTimeContext: {
     timezone: "America/Los_Angeles",
