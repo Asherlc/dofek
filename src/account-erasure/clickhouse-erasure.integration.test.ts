@@ -11,6 +11,12 @@ import { eraseClickHouseAccount } from "./clickhouse-erasure.ts";
 
 const countRowsSchema = z.tuple([z.object({ count: z.coerce.number().int().nonnegative() })]);
 const partRowsSchema = z.array(z.object({ part_name: z.string().min(1) }));
+const queryLogRowsSchema = z.array(
+  z.object({
+    formatted_query: z.string(),
+    query: z.string(),
+  }),
+);
 const stringRowsSchema = z.array(z.object({ value: z.string() }));
 
 function databaseName(prefix: string): string {
@@ -922,18 +928,18 @@ describe("ClickHouse account erasure (integration)", () => {
         clickhouse_settings: { log_queries: 0 },
       });
 
-      await expect(
-        queryCount(
-          client,
-          `SELECT count() AS count
-            FROM system.query_log
-            WHERE position(query, {user_id:String}) > 0
-              OR position(query, {operation_id:String}) > 0
-              OR position(formatted_query, {user_id:String}) > 0
-              OR position(formatted_query, {operation_id:String}) > 0`,
-          { operation_id: operationId, user_id: userId },
-        ),
-      ).resolves.toBe(0);
+      const queryLogResult = await client.query({
+        query: `SELECT query, formatted_query
+          FROM system.query_log
+          WHERE position(query, {user_id:String}) > 0
+            OR position(query, {operation_id:String}) > 0
+            OR position(formatted_query, {user_id:String}) > 0
+            OR position(formatted_query, {operation_id:String}) > 0`,
+        query_params: { operation_id: operationId, user_id: userId },
+        format: "JSONEachRow",
+        clickhouse_settings: { log_queries: 0 },
+      });
+      expect(queryLogRowsSchema.parse(await queryLogResult.json())).toEqual([]);
       await expect(
         queryCount(
           client,

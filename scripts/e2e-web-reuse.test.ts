@@ -98,6 +98,13 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
             .startsWith("compose -- --project-suffix e2e -f docker-compose.e2e.yml"),
         ),
       ).toBe(true);
+      expect(
+        composeCommands.some(
+          (command) =>
+            command.arguments.includes("up") &&
+            command.arguments.includes("account-erasure-minio"),
+        ),
+      ).toBe(true);
       const composeServices = composeCommands.map((command) => command.arguments.at(-1));
       expect(composeServices).toHaveLength(22);
       expect(composeServices).toEqual([

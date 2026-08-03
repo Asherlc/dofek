@@ -221,10 +221,26 @@ describe("FoodEntryRepository inbound account-erasure fence (integration)", () =
       },
       async () => undefined,
     );
-    const initiationResult = expect(initiation).resolves.toEqual(
-      expect.objectContaining({ requestId: expect.any(String) }),
+    const initiationResult = initiation.then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ error, ok: false as const }),
     );
-    await snapshotStarted;
+    let coordinationError: unknown;
+    try {
+      await Promise.race([
+        snapshotStarted,
+        initiationResult.then((result) => {
+          if (!result.ok) throw result.error;
+        }),
+      ]);
+    } catch (error: unknown) {
+      coordinationError = error;
+    }
+    if (coordinationError) {
+      releaseSnapshot();
+      await initiationResult;
+      throw coordinationError;
+    }
 
     const pendingStore = new InMemoryPendingEntryStore();
     const repository = new FoodEntryRepository(context.db, pendingStore);
@@ -256,17 +272,38 @@ describe("FoodEntryRepository inbound account-erasure fence (integration)", () =
         });
       },
     );
-    const inboundWriteResult = expect(inboundWrite).rejects.toThrow(
-      "Account deletion is active for this user",
+    const inboundWriteResult = inboundWrite.then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ error, ok: false as const }),
     );
+    let observerError: unknown;
     try {
       await waitForAdvisoryLockWait(context.connectionString);
       expect(processorRan).toBe(false);
+    } catch (error: unknown) {
+      observerError = error;
     } finally {
       releaseSnapshot();
     }
-    await initiationResult;
-    await inboundWriteResult;
+
+    const [completedInitiation, completedInboundWrite] = await Promise.all([
+      initiationResult,
+      inboundWriteResult,
+    ]);
+    if (observerError) throw observerError;
+    expect(completedInitiation.ok).toBe(true);
+    if (!completedInitiation.ok) throw completedInitiation.error;
+    expect(completedInitiation.value).toEqual(
+      expect.objectContaining({ requestId: expect.any(String) }),
+    );
+    expect(completedInboundWrite.ok).toBe(false);
+    if (completedInboundWrite.ok) {
+      throw new Error("Inbound Slack write unexpectedly succeeded");
+    }
+    expect(completedInboundWrite.error).toHaveProperty(
+      "message",
+      expect.stringContaining("Account deletion is active for this user"),
+    );
     expect(processorRan).toBe(false);
     await expect(
       pendingStore.findIdsByMessage("C-FENCE-1994", "confirmation-fence-1994"),

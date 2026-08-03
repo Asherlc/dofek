@@ -7,6 +7,16 @@ if (typeof navigator !== "undefined") {
 }
 
 if (typeof window !== "undefined") {
+  const jsdomWindow = (globalThis as typeof globalThis & { jsdom?: { window: Window } }).jsdom?.window;
+  for (const storageName of ["localStorage", "sessionStorage"] as const) {
+    if (typeof window[storageName] === "undefined" && jsdomWindow) {
+      Object.defineProperty(window, storageName, {
+        configurable: true,
+        value: jsdomWindow[storageName],
+      });
+    }
+  }
+
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn((query: string) => ({
