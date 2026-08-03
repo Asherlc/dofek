@@ -108,4 +108,13 @@ describe("0062 account erasure migration (integration)", () => {
 
     expect(result.rows).toEqual([]);
   });
+
+  it("allows an ordinary Slack installation delete outside an active erasure", async () => {
+    await expect(
+      database.query(
+        `DELETE FROM fitness.slack_installation
+         WHERE team_id = 'T-LEGACY-NO-AUTH-1994'`,
+      ),
+    ).resolves.toMatchObject({ rowCount: 1 });
+  });
 });

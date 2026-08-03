@@ -533,7 +533,11 @@ BEGIN
     SELECT DISTINCT team_id
     FROM unnest(
       ARRAY[
-        NULLIF(to_jsonb(NEW) ->> 'team_id', ''),
+        CASE
+          WHEN TG_OP IN ('INSERT', 'UPDATE')
+          THEN NULLIF(to_jsonb(NEW) ->> 'team_id', '')
+          ELSE NULL
+        END,
         CASE
           WHEN TG_OP IN ('UPDATE', 'DELETE')
           THEN NULLIF(to_jsonb(OLD) ->> 'team_id', '')
