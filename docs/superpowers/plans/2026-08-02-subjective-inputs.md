@@ -25,7 +25,7 @@
 
 **Files:**
 - Modify: `src/db/schema/activity.ts`, `src/db/schema/events.ts`, `src/db/drizzle-schema.test.ts`
-- Create: `drizzle/0068_subjective_inputs.sql`, `src/db/subjective-inputs.integration.test.ts`
+- Create: `drizzle/0069_subjective_inputs.sql`, `src/db/subjective-inputs.integration.test.ts`
 
 **Interfaces:**
 - Produces: `bodyRegion`, `subjectiveCheckIn`, `subjectiveSymptom`, and `injuryEvent` Drizzle tables.
