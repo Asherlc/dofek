@@ -129,9 +129,7 @@ export function buildExperimentAnalysis(input: ExperimentAnalysisInput): Experim
   );
   const interventionValues = observedValues(
     observations,
-    (observation) =>
-      observation.phase === "intervention" &&
-      (observation.adherence === "adherent" || observation.adherence === "partial"),
+    (observation) => observation.adherence === "adherent" || observation.adherence === "partial",
   );
   const limitations = buildLimitations(observations, coverage);
 
@@ -153,9 +151,7 @@ export function buildExperimentAnalysis(input: ExperimentAnalysisInput): Experim
     const baseline = observedValues(sample, (observation) => observation.phase === "baseline");
     const intervention = observedValues(
       sample,
-      (observation) =>
-        observation.phase === "intervention" &&
-        (observation.adherence === "adherent" || observation.adherence === "partial"),
+      (observation) => observation.adherence === "adherent" || observation.adherence === "partial",
     );
     if (baseline.length < MIN_OUTCOME_COUNT || intervention.length < MIN_OUTCOME_COUNT) return null;
     return mean(intervention) - mean(baseline);
@@ -268,7 +264,7 @@ function buildLimitations(
     );
   }
   const confounderCount = observations.filter(
-    (observation) => observation.phase === "intervention" && observation.confounder !== null,
+    (observation) => observation.confounder !== null,
   ).length;
   if (confounderCount > 0) {
     limitations.push(

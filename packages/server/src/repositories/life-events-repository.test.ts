@@ -141,6 +141,60 @@ describe("LifeEventsRepository", () => {
       expect(execute).toHaveBeenCalledOnce();
     });
 
+    it("validates and preserves a linked personal experiment", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ id: "experiment-1" }])
+        .mockResolvedValueOnce([
+          {
+            id: "evt-linked",
+            user_id: "user-1",
+            label: "Travel",
+            started_at: "2025-06-01",
+            ended_at: null,
+            category: "lifestyle",
+            ongoing: false,
+            notes: null,
+            personal_experiment_id: "experiment-1",
+            created_at: "2025-06-01T00:00:00Z",
+          },
+        ]);
+      const repo = new LifeEventsRepository(
+        { execute },
+        "user-1",
+        "America/New_York",
+        makeSensorStore(),
+      );
+
+      const result = await repo.create({
+        label: "Travel",
+        startedAt: "2025-06-01",
+        personalExperimentId: "experiment-1",
+      });
+
+      expect(result.personal_experiment_id).toBe("experiment-1");
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("rejects malformed personal experiment ownership rows", async () => {
+      const execute = vi.fn().mockResolvedValueOnce([{ experiment_id: "experiment-1" }]);
+      const repo = new LifeEventsRepository(
+        { execute },
+        "user-1",
+        "America/New_York",
+        makeSensorStore(),
+      );
+
+      await expect(
+        repo.create({
+          label: "Travel",
+          startedAt: "2025-06-01",
+          personalExperimentId: "experiment-1",
+        }),
+      ).rejects.toThrow();
+      expect(execute).toHaveBeenCalledOnce();
+    });
+
     it("throws when insert returning produces no row", async () => {
       const { repo } = makeRepository([]);
 
@@ -183,6 +237,39 @@ describe("LifeEventsRepository", () => {
       const result = await repo.update("evt-1", { label: "Updated label" });
       expect(result).not.toBeNull();
       expect(result?.label).toBe("Updated label");
+    });
+
+    it("validates a linked personal experiment before updating", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ id: "experiment-1" }])
+        .mockResolvedValueOnce([
+          {
+            id: "evt-1",
+            user_id: "user-1",
+            label: "Travel",
+            started_at: "2025-01-15",
+            ended_at: null,
+            category: "lifestyle",
+            ongoing: false,
+            notes: null,
+            personal_experiment_id: "experiment-1",
+            created_at: "2025-01-15T10:00:00Z",
+          },
+        ]);
+      const repo = new LifeEventsRepository(
+        { execute },
+        "user-1",
+        "America/New_York",
+        makeSensorStore(),
+      );
+
+      const result = await repo.update("evt-1", {
+        personalExperimentId: "experiment-1",
+      });
+
+      expect(result?.personal_experiment_id).toBe("experiment-1");
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("returns null when the event is not found", async () => {

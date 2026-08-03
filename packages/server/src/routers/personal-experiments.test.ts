@@ -193,6 +193,20 @@ describe("personalExperimentsRouter", () => {
     expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalExperiments"]);
   });
 
+  it("returns NOT_FOUND when recording a check-in for a missing experiment", async () => {
+    const caller = makeCaller([]);
+
+    await expect(
+      caller.checkIn({
+        id: experimentId,
+        date: "2026-07-08",
+        adherence: "adherent",
+        confounder: null,
+        note: null,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("lists enriched experiments", async () => {
     const caller = makeCaller([sampleRow]);
     const result = await caller.list();
@@ -207,6 +221,14 @@ describe("personalExperimentsRouter", () => {
 
     const missingCaller = makeCaller([]);
     await expect(missingCaller.get({ id: experimentId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("returns NOT_FOUND when analyzing a missing experiment", async () => {
+    const caller = makeCaller([]);
+
+    await expect(caller.analysis({ id: experimentId })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
   });

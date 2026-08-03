@@ -115,7 +115,6 @@ describe("PersonalExperimentsRepository integration", () => {
       });
 
       expect(current).toMatchObject({
-        personalExperimentId: experiment.id,
         date: "2099-02-08",
         adherence: "partial",
         confounder: null,

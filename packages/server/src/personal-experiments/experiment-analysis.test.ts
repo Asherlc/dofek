@@ -12,6 +12,12 @@ describe("buildExperimentAnalysis", () => {
         interventionEndDate: "2026-08-12",
       },
       checkIns: [
+        {
+          date: "2026-08-03",
+          adherence: "partial",
+          confounder: "Baseline confounder",
+          note: "Baseline note",
+        },
         { date: "2026-08-06", adherence: "adherent", confounder: null, note: null },
         { date: "2026-08-07", adherence: "partial", confounder: "Late flight", note: null },
         { date: "2026-08-08", adherence: "not_adherent", confounder: null, note: "Missed bedtime" },
@@ -59,6 +65,12 @@ describe("buildExperimentAnalysis", () => {
         },
       },
     });
+    expect(result.coverage.baseline.adherenceCounts).toEqual({
+      adherent: 0,
+      partial: 0,
+      not_adherent: 0,
+      unknown: 0,
+    });
     expect(
       result.observations.find((observation) => observation.phaseDate === "2026-08-08"),
     ).toMatchObject({
@@ -77,9 +89,21 @@ describe("buildExperimentAnalysis", () => {
       outcomeDate: "2026-08-04",
       value: 14,
       adherence: null,
+      confounder: null,
+      note: null,
       sourceProviderIds: ["oura", "apple-health"],
     });
-    expect(result.uncertainty).toMatchObject({ availability: "available", level: 0.95 });
+    expect(result.uncertainty).toMatchObject({
+      availability: "available",
+      level: 0.95,
+      blockLength: 3,
+      attemptedReplicateCount: 9612,
+      validReplicateCount: 2_000,
+    });
+    if (result.uncertainty.availability === "available") {
+      expect(result.uncertainty.lower).toBeCloseTo(3.7333333333, 10);
+      expect(result.uncertainty.upper).toBeCloseTo(12, 10);
+    }
     expect(result.limitations).toContain(
       "This is an observational comparison, not a causal conclusion.",
     );
@@ -126,6 +150,158 @@ describe("buildExperimentAnalysis", () => {
     expect(result.limitations).toContain(
       "At least 5 observed baseline outcomes and 5 adherent or partial intervention outcomes are required.",
     );
+    expect(result.coverage.baseline).toMatchObject({
+      expectedDayCount: 4,
+      observedOutcomeDayCount: 4,
+      missingOutcomeDayCount: 0,
+      checkInCount: 0,
+    });
+    expect(result.coverage.intervention).toMatchObject({
+      expectedDayCount: 4,
+      observedOutcomeDayCount: 4,
+      missingOutcomeDayCount: 0,
+      checkInCount: 4,
+    });
+    expect(result.limitations).not.toContain(
+      "0 scheduled outcome days are missing from the canonical metric.",
+    );
+    expect(result.limitations).not.toContain("0 intervention days were marked not adherent.");
+    expect(result.limitations).not.toContain("0 intervention days have unknown adherence.");
+    expect(result.limitations).not.toContain("0 intervention days have no check-in.");
+    expect(result.limitations).not.toContain("0 linked confounders were recorded.");
+    expect(result.limitations).not.toContain(
+      "One or more outcome days include multiple provider sources.",
+    );
+  });
+
+  it("requires five adherent or partial intervention outcomes", () => {
+    const result = buildExperimentAnalysis({
+      lagDays: 0,
+      schedule: {
+        baselineStartDate: "2026-09-01",
+        baselineEndDate: "2026-09-05",
+        interventionStartDate: "2026-09-06",
+        interventionEndDate: "2026-09-10",
+      },
+      checkIns: [
+        { date: "2026-09-06", adherence: "adherent", confounder: null, note: null },
+        { date: "2026-09-07", adherence: "partial", confounder: null, note: null },
+        { date: "2026-09-08", adherence: "adherent", confounder: null, note: null },
+        { date: "2026-09-09", adherence: "partial", confounder: null, note: null },
+        { date: "2026-09-10", adherence: "not_adherent", confounder: null, note: null },
+      ],
+      outcomes: [
+        ...[10, 11, 12, 13, 14].map((value, index) => ({
+          date: `2026-09-0${index + 1}`,
+          value,
+          sourceProviderIds: ["oura"],
+        })),
+        ...[20, 21, 22, 23].map((value, index) => ({
+          date: `2026-09-0${index + 6}`,
+          value,
+          sourceProviderIds: ["oura"],
+        })),
+      ],
+    });
+
+    expect(result).toMatchObject({
+      availability: "insufficient",
+      effect: null,
+      coverage: {
+        baseline: { observedOutcomeDayCount: 5, missingOutcomeDayCount: 0 },
+        intervention: { observedOutcomeDayCount: 4, missingOutcomeDayCount: 1 },
+      },
+      uncertainty: { availability: "unavailable", reason: "insufficient_outcomes" },
+    });
+    expect(result.limitations).toContain(
+      "1 scheduled outcome day is missing from the canonical metric.",
+    );
+  });
+
+  it("requires five observed baseline outcomes", () => {
+    const result = buildExperimentAnalysis({
+      lagDays: 0,
+      schedule: {
+        baselineStartDate: "2026-09-11",
+        baselineEndDate: "2026-09-15",
+        interventionStartDate: "2026-09-16",
+        interventionEndDate: "2026-09-20",
+      },
+      checkIns: [
+        { date: "2026-09-16", adherence: "adherent", confounder: null, note: null },
+        { date: "2026-09-17", adherence: "partial", confounder: null, note: null },
+        { date: "2026-09-18", adherence: "adherent", confounder: null, note: null },
+        { date: "2026-09-19", adherence: "partial", confounder: null, note: null },
+        { date: "2026-09-20", adherence: "adherent", confounder: null, note: null },
+      ],
+      outcomes: [
+        ...[10, 11, 12, 13].map((value, index) => ({
+          date: `2026-09-1${index + 1}`,
+          value,
+          sourceProviderIds: ["oura"],
+        })),
+        ...[20, 21, 22, 23, 24].map((value, index) => ({
+          date: `2026-09-${index + 16}`,
+          value,
+          sourceProviderIds: ["oura"],
+        })),
+      ],
+    });
+
+    expect(result).toMatchObject({
+      availability: "insufficient",
+      effect: null,
+      coverage: {
+        baseline: { observedOutcomeDayCount: 4, missingOutcomeDayCount: 1 },
+        intervention: { observedOutcomeDayCount: 5, missingOutcomeDayCount: 0 },
+      },
+      uncertainty: { availability: "unavailable", reason: "insufficient_outcomes" },
+    });
+    expect(result.limitations).toContain(
+      "1 scheduled outcome day is missing from the canonical metric.",
+    );
+  });
+
+  it("reports singular and plural adherence, check-in, and missing-outcome limitations", () => {
+    const result = buildExperimentAnalysis({
+      lagDays: 0,
+      schedule: {
+        baselineStartDate: "2026-09-21",
+        baselineEndDate: "2026-09-25",
+        interventionStartDate: "2026-09-26",
+        interventionEndDate: "2026-10-02",
+      },
+      checkIns: [
+        { date: "2026-09-26", adherence: "adherent", confounder: null, note: null },
+        { date: "2026-09-27", adherence: "not_adherent", confounder: null, note: null },
+        { date: "2026-09-28", adherence: "not_adherent", confounder: null, note: null },
+        { date: "2026-09-29", adherence: "unknown", confounder: null, note: null },
+        { date: "2026-09-30", adherence: "unknown", confounder: null, note: null },
+      ],
+      outcomes: [
+        ...[10, 11, 12, 13].map((value, index) => ({
+          date: `2026-09-2${index + 1}`,
+          value,
+          sourceProviderIds: [],
+        })),
+        ...[20, 21, 22, 23, 24].map((value, index) => ({
+          date: `2026-09-${index + 26}`,
+          value,
+          sourceProviderIds: ["oura"],
+        })),
+        { date: "2026-10-01", value: 25, sourceProviderIds: ["oura"] },
+        { date: "2026-10-02", value: 26, sourceProviderIds: ["oura"] },
+      ],
+    });
+
+    expect(result.limitations).toEqual([
+      "This is an observational comparison, not a causal conclusion.",
+      "1 scheduled outcome day is missing from the canonical metric.",
+      "2 intervention days were marked not adherent.",
+      "2 intervention days have unknown adherence.",
+      "2 intervention days have no check-in.",
+      "At least 5 observed baseline outcomes and 5 adherent or partial intervention outcomes are required.",
+    ]);
   });
 
   it("uses a plural verb when multiple linked confounders are recorded", () => {
@@ -145,5 +321,13 @@ describe("buildExperimentAnalysis", () => {
     });
 
     expect(result.limitations).toContain("2 linked confounders were recorded.");
+    expect(result.observations.map((observation) => observation.sourceProviderIds)).toEqual([
+      [],
+      [],
+      [],
+    ]);
+    expect(result.limitations).toContain(
+      "3 scheduled outcome days are missing from the canonical metric.",
+    );
   });
 });
