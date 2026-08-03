@@ -82,7 +82,9 @@ type BodyWeightOptions = {
 };
 
 function endDateExpression(endDate: string): string {
-  return endDate === "now" ? "today()" : "toDate({endDate:String})";
+  return endDate === "now"
+    ? "toDate(toTimeZone(now(), {timezone:String}))"
+    : "toDate({endDate:String})";
 }
 
 function accessWindowDateClause(

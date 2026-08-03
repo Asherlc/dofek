@@ -100,6 +100,9 @@ describe("fetchBodyDecisionMeasurements", () => {
     expect(calls[0]?.query).toContain("weight_kg > 0");
     expect(calls[0]?.query).toContain("provider_id");
     expect(calls[0]?.query).toContain("recorded_at_local");
+    expect(calls[0]?.query).toContain(
+      "toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate(toTimeZone(now(), {timezone:String}))",
+    );
     expect(calls[0]?.params).toMatchObject({ userId: "user-1", timezone: "America/Los_Angeles" });
   });
 
@@ -191,10 +194,10 @@ describe("fetchBodyCompRows", () => {
       "formatDateTime(body_measurements.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at",
     );
     expect(queryText).toContain(
-      "AND toDate(toTimeZone(recorded_at, {timezone:String})) <= today()",
+      "AND toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate(toTimeZone(now(), {timezone:String}))",
     );
     expect(queryText).toContain(
-      "AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(today(), {days:UInt32})",
+      "AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(toDate(toTimeZone(now(), {timezone:String})), {days:UInt32})",
     );
     expect(queryText).toContain("ORDER BY body_measurements.recorded_at ASC");
     expect(calls[0]?.params).toEqual({
