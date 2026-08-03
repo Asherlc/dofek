@@ -20,9 +20,9 @@ describe("backfillClimbingAttemptCount integration", () => {
     await testContext.db.execute(sql`
       WITH inserted_activity AS (
         INSERT INTO fitness.activity (
-          provider_id, user_id, external_id, activity_type, started_at
+          provider_id, user_id, external_id, canonical_type, provider_type, started_at
         ) VALUES (
-          'kaya-export', ${TEST_USER_ID}, 'climbing-attempt-backfill', 'rock_climbing', NOW()
+          'kaya-export', ${TEST_USER_ID}, 'climbing-attempt-backfill', 'climbing', 'rock_climbing', NOW()
         )
         RETURNING id
       )

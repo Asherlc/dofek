@@ -30,8 +30,8 @@ const workout: PelotonWorkout = {
 
 describe("mapFitnessDiscipline", () => {
   it("maps Peloton's internal rowing name and unknown values", () => {
-    expect(mapFitnessDiscipline("caesar")).toBe("rowing");
-    expect(mapFitnessDiscipline("future-discipline")).toBe("other");
+    expect(mapFitnessDiscipline("caesar").canonicalType).toBe("rowing");
+    expect(mapFitnessDiscipline("future-discipline").canonicalType).toBe("other");
   });
 });
 
@@ -41,7 +41,11 @@ describe("parseWorkout", () => {
 
     expect(parsed).toEqual({
       externalId: "workout-1",
-      activityType: "indoor_cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "cycling",
+        modality: "indoor",
+      },
       name: "Power Zone Ride",
       timezone: "America/New_York",
       stravaId: "123",

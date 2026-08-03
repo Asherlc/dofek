@@ -1,4 +1,4 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 
 export interface PolarExercise {
   id: string;
@@ -62,7 +62,7 @@ export interface PolarNightlyRecharge {
 
 export interface ParsedPolarActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;

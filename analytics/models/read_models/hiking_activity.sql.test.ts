@@ -12,8 +12,9 @@ describe("hiking_activity model", () => {
 
     const activitySummarySql = extractCteSql(modelSql, "activity_summary");
 
+    expect(activitySummarySql).toContain("canonical_type IN ('walking', 'hiking')");
     expect(activitySummarySql).toContain(
-      "activity_type IN ('walking', 'hiking', 'trail_running')",
+      "canonical_type = 'running' AND modality = 'trail'",
     );
     expect(activitySummarySql).toContain("is_deleted = 0");
     expect(activitySummarySql).toContain("refreshed_at");

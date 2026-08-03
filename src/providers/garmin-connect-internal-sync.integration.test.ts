@@ -443,12 +443,12 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
 
     const run = activityRows.find((r) => r.externalId === "50001");
     if (!run) throw new Error("expected activity 50001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Morning Run");
 
     const ride = activityRows.find((r) => r.externalId === "50002");
     if (!ride) throw new Error("expected activity 50002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
 
     // Verify metric stream events from activity detail
     const metrics = metricStreamCapture.publishedMetricStreamRows;

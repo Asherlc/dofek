@@ -9,8 +9,8 @@ import {
 
 describe("formatFilterOptionLabel", () => {
   it("formats activity types with training labels", () => {
-    expect(formatFilterOptionLabel("activity_type", "road_cycling")).toBe("Road Cycling");
-    expect(formatFilterOptionLabel("activity_type", "bmx")).toBe("BMX");
+    expect(formatFilterOptionLabel("canonical_type", "road_cycling")).toBe("Road Cycling");
+    expect(formatFilterOptionLabel("canonical_type", "bmx")).toBe("BMX");
   });
 
   it("formats snake_case values for other columns", () => {
@@ -65,7 +65,7 @@ describe("toFilterOptions", () => {
       { value: "breakfast", label: "Breakfast" },
       { value: "dinner", label: "Dinner" },
     ]);
-    expect(toFilterOptions("activity_type", [{ value: "bmx" }])).toEqual([
+    expect(toFilterOptions("canonical_type", [{ value: "bmx" }])).toEqual([
       { value: "bmx", label: "BMX" },
     ]);
   });

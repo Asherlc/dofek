@@ -784,7 +784,6 @@ describe("Amazfit/Zepp provider", () => {
                     source: "watch",
                     end_time: String(thirdEndedAt.getTime() / 1000),
                     run_time: "3600",
-                    type: 999,
                     dis: "1000",
                     calorie: "120",
                     app_name: "Zepp",
@@ -849,13 +848,13 @@ describe("Amazfit/Zepp provider", () => {
         providerId: "amazfit-zepp",
         userId: TEST_USER_ID,
         externalId: String(startedAt.getTime() / 1000),
-        activityType: "running",
+        activityType: expect.objectContaining({ canonicalType: "running" }),
         startedAt,
         endedAt,
         sourceName: "Zepp",
       }),
       expect.objectContaining({
-        activityType: "running",
+        activityType: expect.objectContaining({ canonicalType: "running" }),
         startedAt,
         endedAt,
         sourceName: "Zepp",
@@ -864,21 +863,21 @@ describe("Amazfit/Zepp provider", () => {
     expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
-        activityType: "cycling",
+        activityType: expect.objectContaining({ canonicalType: "cycling" }),
         externalId: String(secondStartedAt.getTime() / 1000),
       }),
       expect.objectContaining({
-        activityType: "cycling",
+        activityType: expect.objectContaining({ canonicalType: "cycling" }),
       }),
     );
     expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
-        activityType: "other",
+        activityType: expect.objectContaining({ canonicalType: "other", providerType: "unknown" }),
         externalId: String(thirdStartedAt.getTime() / 1000),
       }),
       expect.objectContaining({
-        activityType: "other",
+        activityType: expect.objectContaining({ canonicalType: "other" }),
       }),
     );
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
@@ -937,12 +936,12 @@ describe("Amazfit/Zepp provider", () => {
     expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
-        activityType: "walking",
+        activityType: expect.objectContaining({ canonicalType: "walking" }),
         startedAt,
         endedAt: new Date("2026-02-06T15:00:00.000Z"),
       }),
       expect.objectContaining({
-        activityType: "walking",
+        activityType: expect.objectContaining({ canonicalType: "walking" }),
         startedAt,
         endedAt: new Date("2026-02-06T15:00:00.000Z"),
       }),
@@ -1017,7 +1016,7 @@ describe("Amazfit/Zepp provider", () => {
     expect(activityUpserts).toHaveLength(1);
     expect(activityUpserts[0]).toMatchObject({
       externalId: String(inWindowStartedAt.getTime() / 1000),
-      activityType: "cycling",
+      activityType: expect.objectContaining({ canonicalType: "cycling" }),
     });
     expect(onProgress).toHaveBeenCalledWith(100, "3/3 workouts");
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(

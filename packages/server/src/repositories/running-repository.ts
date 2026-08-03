@@ -12,7 +12,7 @@ import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repo
 // Constants
 // ---------------------------------------------------------------------------
 
-const RUNNING_TYPES = ["running", "trail_running"] as const;
+const RUNNING_TYPES = ["running"] as const;
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -211,7 +211,7 @@ export class RunningRepository {
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         ${rangeFilter}
-        AND activity_type IN {runningTypes:Array(String)}
+        AND canonical_type IN {runningTypes:Array(String)}
         AND avg_speed > 0
         AND avg_cadence > 0
       ORDER BY started_at`,
@@ -259,7 +259,7 @@ export class RunningRepository {
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         ${rangeFilter}
-        AND activity_type IN {runningTypes:Array(String)}
+        AND canonical_type IN {runningTypes:Array(String)}
         AND avg_speed > 0
         AND ended_at IS NOT NULL
       ORDER BY started_at`,

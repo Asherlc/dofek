@@ -100,7 +100,7 @@ const sleepRowSchema = z.object({
 const activityRowSchema = z.object({
   started_at: z.string(),
   ended_at: z.string().nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
 });
 
 const nutritionRowSchema = z.object({
@@ -115,7 +115,7 @@ const nutritionRowSchema = z.object({
 
 const activitySummaryRowSchema = z.object({
   activity_id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   started_at: z.string(),
   avg_hr: coerceNum,
   avg_power: coerceNum,
@@ -272,7 +272,7 @@ export class PredictionsRepository {
       activitySummaryRowSchema,
       `SELECT
         toString(activity_summary.activity_id) AS activity_id,
-        activity_type,
+        canonical_type,
         formatDateTime(activity_summary.started_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
         avg_hr,
         avg_power,
@@ -296,7 +296,7 @@ export class PredictionsRepository {
 
     const cardioActivities: CardioActivityRow[] = visibleActivityRows.map((row) => ({
       date: new Date(row.started_at).toISOString().slice(0, 10),
-      activityType: row.activity_type,
+      activityType: row.canonical_type,
       durationMin: row.duration_min ?? 0,
       avgHr: row.avg_hr,
       avgPower: row.avg_power,
@@ -328,7 +328,7 @@ export class PredictionsRepository {
           FROM fitness.v_activity a
           JOIN fitness.strength_set s ON s.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type = 'strength'
+            AND a.canonical_type = 'strength'
             AND a.started_at > CURRENT_DATE - ${days}::int
           GROUP BY a.id, a.started_at
           ORDER BY a.started_at ASC`,
@@ -419,7 +419,7 @@ export class PredictionsRepository {
     return executeWithSchema(
       this.#db,
       activityRowSchema,
-      sql`SELECT started_at, ended_at, activity_type
+      sql`SELECT started_at, ended_at, canonical_type
           FROM fitness.v_activity
           WHERE user_id = ${this.#userId}
             AND started_at > CURRENT_DATE - ${days}::int

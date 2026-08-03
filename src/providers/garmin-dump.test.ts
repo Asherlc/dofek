@@ -248,12 +248,36 @@ describe("Garmin dump provider", () => {
   });
 
   it("maps Garmin activity names to canonical activity types", () => {
-    expect(mapGarminDumpActivityType("cycling")).toBe("cycling");
-    expect(mapGarminDumpActivityType("virtual_ride")).toBe("indoor_cycling");
-    expect(mapGarminDumpActivityType(undefined, "HIKING")).toBe("hiking");
-    expect(mapGarminDumpActivityType("Trail  Running")).toBe("trail_running");
-    expect(mapGarminDumpActivityType("mountain-biking")).toBe("cycling");
-    expect(mapGarminDumpActivityType(undefined, undefined)).toBe("other");
+    expect(mapGarminDumpActivityType("cycling")).toEqual({
+      canonicalType: "cycling",
+      providerType: "cycling",
+      modality: null,
+    });
+    expect(mapGarminDumpActivityType("virtual_ride")).toEqual({
+      canonicalType: "cycling",
+      providerType: "virtual_ride",
+      modality: "indoor",
+    });
+    expect(mapGarminDumpActivityType(undefined, "HIKING")).toEqual({
+      canonicalType: "hiking",
+      providerType: "HIKING",
+      modality: null,
+    });
+    expect(mapGarminDumpActivityType("Trail  Running")).toEqual({
+      canonicalType: "running",
+      providerType: "Trail  Running",
+      modality: "trail",
+    });
+    expect(mapGarminDumpActivityType("mountain-biking")).toEqual({
+      canonicalType: "cycling",
+      providerType: "mountain-biking",
+      modality: null,
+    });
+    expect(mapGarminDumpActivityType(undefined, undefined)).toEqual({
+      canonicalType: "other",
+      providerType: "other",
+      modality: null,
+    });
   });
 
   it("parses summarized activities and nested uploaded FIT zip entries", async () => {
@@ -487,7 +511,11 @@ describe("Garmin dump provider", () => {
         data: expect.objectContaining({
           activitySummary: expect.objectContaining({
             externalId: "12345",
-            activityType: "cycling",
+            activityType: {
+              canonicalType: "cycling",
+              providerType: "cycling",
+              modality: null,
+            },
             name: "Morning Ride",
           }),
         }),
@@ -507,7 +535,14 @@ describe("Garmin dump provider", () => {
         endedAt: new Date("2026-07-01T12:30:00.000Z"),
         raw: expect.objectContaining({ activityId: 12345 }),
       }),
-      expect.objectContaining({ activityType: "cycling", name: "Morning Ride" }),
+      expect.objectContaining({
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "cycling",
+          modality: null,
+        },
+        name: "Morning Ride",
+      }),
     );
   });
 

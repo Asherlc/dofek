@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import type {
   FitbitActivity,
   FitbitDailySummary,
@@ -12,7 +16,7 @@ import type {
 
 export interface ParsedFitbitActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -57,7 +61,7 @@ export interface ParsedFitbitBodyMeasurement {
 // Activity type mapping
 // ============================================================
 
-const ACTIVITY_NAME_PATTERNS: Array<[RegExp, CanonicalActivityType]> = [
+const ACTIVITY_NAME_PATTERNS: Array<[RegExp, LegacyActivityType]> = [
   [/\brun\b|treadmill/i, "running"],
   [/\bbike\b|cycling|spinning/i, "cycling"],
   [/\bwalk\b/i, "walking"],
@@ -72,13 +76,13 @@ const ACTIVITY_NAME_PATTERNS: Array<[RegExp, CanonicalActivityType]> = [
 export function mapFitbitActivityType(
   activityName: string,
   _activityTypeId: number,
-): CanonicalActivityType {
+): ProviderActivityType {
   for (const [pattern, type] of ACTIVITY_NAME_PATTERNS) {
     if (pattern.test(activityName)) {
-      return type;
+      return resolveProviderActivityType(_activityTypeId, type);
     }
   }
-  return "other";
+  return resolveProviderActivityType(_activityTypeId, "other");
 }
 
 // ============================================================

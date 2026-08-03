@@ -614,7 +614,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const workout = rows.find((r) => r.externalId === "abc12345-6789-0def-1234-567890abcdef");
     if (!workout) throw new Error("expected workout abc12345-...");
-    expect(workout.activityType).toBe("running");
+    expect(workout.canonicalType).toBe("running");
     expect(workout.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(workout.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
     // Summary data stored in raw JSONB
@@ -670,11 +670,11 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const lift = rows.find((r) => r.externalId === "wl-2001-uuid");
     if (!lift) throw new Error("expected workout wl-2001-uuid");
-    expect(lift.activityType).toBe("strength");
+    expect(lift.canonicalType).toBe("strength");
 
     const ride = rows.find((r) => r.externalId === "cy-2002-uuid");
     if (!ride) throw new Error("expected workout cy-2002-uuid");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
   });
 
   it("syncs HR stream into Redpanda metric stream events", async () => {
@@ -749,7 +749,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       .values({
         providerId: "whoop",
         externalId: "whoop-missing-workout-uuid",
-        activityType: "running",
+        canonicalType: "running",
+        providerType: "0",
+        modality: null,
         startedAt: new Date("2026-03-10T10:00:00Z"),
       })
       .onConflictDoUpdate({
@@ -821,7 +823,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       .values({
         providerId: "whoop",
         externalId: "whoop-stale-bff-workout-uuid",
-        activityType: "running",
+        canonicalType: "running",
+        providerType: "0",
+        modality: null,
         startedAt: new Date("2026-03-10T10:00:00Z"),
       })
       .onConflictDoUpdate({
@@ -913,7 +917,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       .values({
         providerId: "whoop",
         externalId: "whoop-stale-strength-uuid",
-        activityType: "strength",
+        canonicalType: "strength",
+        providerType: "45",
+        modality: null,
         startedAt: new Date("2026-03-10T10:00:00Z"),
       })
       .onConflictDoUpdate({

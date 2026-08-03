@@ -57,7 +57,7 @@ const calendarRowSchema = z.object({
   date: dateStringSchema,
   activity_count: z.coerce.number(),
   total_minutes: z.coerce.number(),
-  activity_types: z.array(z.string()),
+  canonical_types: z.array(z.string()),
 });
 
 // ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ export class CalendarRepository {
           (a.started_at AT TIME ZONE ${this.#timezone})::date as date,
           COUNT(*)::int as activity_count,
           ROUND(SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::numeric) as total_minutes,
-          array_agg(DISTINCT a.activity_type::text) as activity_types
+          array_agg(DISTINCT a.canonical_type::text) as canonical_types
         FROM fitness.v_activity a
         WHERE a.user_id = ${this.#userId}
           ${rangeFilter}
@@ -101,7 +101,7 @@ export class CalendarRepository {
           date: row.date,
           activityCount: row.activity_count,
           totalMinutes: row.total_minutes,
-          activityTypes: row.activity_types,
+          activityTypes: row.canonical_types,
         }),
     );
   }

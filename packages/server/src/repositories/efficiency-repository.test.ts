@@ -164,7 +164,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         {
           max_hr: 190,
           date: "2025-06-01",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           avg_power_z2: 180,
           avg_hr_z2: 135,
@@ -191,7 +191,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         {
           max_hr: 190,
           date: "2025-06-01",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           avg_power_z2: 180,
           avg_hr_z2: 135,
@@ -280,7 +280,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         {
           max_hr: "190",
           date: "2025-06-01",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           avg_power_z2: "180.5",
           avg_hr_z2: "135.2",
@@ -399,7 +399,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       {
         max_hr: "190",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Morning Ride",
         avg_power_z2: "180.5",
         avg_hr_z2: "135.2",
@@ -427,7 +427,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       {
         max_hr: "190",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "180.5",
         avg_hr_z2: "135.2",
@@ -454,7 +454,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       {
         max_hr: "192",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "180",
         avg_hr_z2: "135",
@@ -472,7 +472,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       {
         max_hr: "185",
         date: "2025-06-01",
-        activity_type: "running",
+        canonical_type: "running",
         name: "Easy Run",
         avg_power_z2: "250",
         avg_hr_z2: "140",
@@ -482,7 +482,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       {
         max_hr: "185",
         date: "2025-06-02",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Zone 2 Ride",
         avg_power_z2: "175",
         avg_hr_z2: "130",
@@ -519,7 +519,7 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
     await repo.getAerobicDecoupling(ChartRange.fromDays(90));
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
+    expect(queryText).toContain("has({activityTypes:Array(String)}, asum.canonical_type)");
     expect(queryText).not.toContain("enduranceTypes");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
   });
@@ -548,7 +548,7 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
     const { repo } = makeRepository([
       {
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Long Ride",
         first_half_ratio: "1.350",
         second_half_ratio: "1.280",
@@ -574,7 +574,7 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
     const { repo } = makeRepository([
       {
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride A",
         first_half_ratio: "1.400",
         second_half_ratio: "1.350",
@@ -583,7 +583,7 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
       },
       {
         date: "2025-06-03",
-        activity_type: "running",
+        canonical_type: "running",
         name: "Run B",
         first_half_ratio: "1.200",
         second_half_ratio: "1.100",
@@ -642,7 +642,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     await repo.getPolarizationTrend(ChartRange.fromDays(90));
 
     const readModelQuery = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(readModelQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+    expect(readModelQuery).toContain("has({activityTypes:Array(String)}, canonical_type)");
     expect(readModelQuery).not.toContain("enduranceTypes");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
   });
@@ -823,7 +823,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () 
       {
         max_hr: "200",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "180",
         avg_hr_z2: "135",
@@ -847,7 +847,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (String conversions)", () =>
       {
         max_hr: "190",
         date: "2025-07-01",
-        activity_type: "running",
+        canonical_type: "running",
         name: "Tempo Run",
         avg_power_z2: "200",
         avg_hr_z2: "140",
@@ -875,7 +875,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
     const { repo } = makeRepository([
       {
         date: "2025-07-01",
-        activity_type: "running",
+        canonical_type: "running",
         name: "Easy Run",
         first_half_ratio: "1.250",
         second_half_ratio: "1.200",
@@ -897,7 +897,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
     const { repo } = makeRepository([
       {
         date: "2025-07-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         first_half_ratio: "1.333",
         second_half_ratio: "1.222",
@@ -970,7 +970,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
       {
         max_hr: "190",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "180",
         avg_hr_z2: "135",
@@ -997,7 +997,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
     const { repo } = makeRepository([
       {
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         first_half_ratio: "1.350",
         second_half_ratio: "1.280",
@@ -1090,7 +1090,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
       {
         max_hr: "190",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "200",
         avg_hr_z2: "140",
@@ -1112,7 +1112,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
       {
         max_hr: "190",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "180",
         avg_hr_z2: "135",
@@ -1135,7 +1135,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
     const { repo } = makeRepository([
       {
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         first_half_ratio: "1.500",
         second_half_ratio: "1.200",
@@ -1156,7 +1156,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
     const { repo } = makeRepository([
       {
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         first_half_ratio: "1.350",
         second_half_ratio: "1.280",
@@ -1219,7 +1219,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: maxHr ternary)", 
       {
         max_hr: "185",
         date: "2025-06-01",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride",
         avg_power_z2: "180",
         avg_hr_z2: "135",
@@ -1229,7 +1229,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: maxHr ternary)", 
       {
         max_hr: "190",
         date: "2025-06-02",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         name: "Ride 2",
         avg_power_z2: "175",
         avg_hr_z2: "132",

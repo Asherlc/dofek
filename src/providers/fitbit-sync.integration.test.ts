@@ -239,12 +239,12 @@ describe("FitbitProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "5001");
     if (!ride) throw new Error("expected activity 5001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Outdoor Bike Ride");
 
     const run = activityRows.find((r) => r.externalId === "5002");
     if (!run) throw new Error("expected activity 5002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify sleep
     const sleepRows = await ctx.db
@@ -521,49 +521,49 @@ describe("FitbitProvider.authSetup()", () => {
 
 describe("mapFitbitActivityType", () => {
   it("maps run/treadmill to running", () => {
-    expect(mapFitbitActivityType("Morning Run", 0)).toBe("running");
-    expect(mapFitbitActivityType("Treadmill Workout", 0)).toBe("running");
+    expect(mapFitbitActivityType("Morning Run", 0).canonicalType).toBe("running");
+    expect(mapFitbitActivityType("Treadmill Workout", 0).canonicalType).toBe("running");
   });
 
   it("maps bike/cycling to cycling", () => {
-    expect(mapFitbitActivityType("Outdoor Bike Ride", 0)).toBe("cycling");
-    expect(mapFitbitActivityType("Indoor Cycling Class", 0)).toBe("cycling");
-    expect(mapFitbitActivityType("Spinning", 0)).toBe("cycling");
+    expect(mapFitbitActivityType("Outdoor Bike Ride", 0).canonicalType).toBe("cycling");
+    expect(mapFitbitActivityType("Indoor Cycling Class", 0).canonicalType).toBe("cycling");
+    expect(mapFitbitActivityType("Spinning", 0).canonicalType).toBe("cycling");
   });
 
   it("maps walk to walking", () => {
-    expect(mapFitbitActivityType("Walk", 0)).toBe("walking");
+    expect(mapFitbitActivityType("Walk", 0).canonicalType).toBe("walking");
   });
 
   it("maps swim to swimming", () => {
-    expect(mapFitbitActivityType("Swimming Laps", 0)).toBe("swimming");
+    expect(mapFitbitActivityType("Swimming Laps", 0).canonicalType).toBe("swimming");
   });
 
   it("maps hike to hiking", () => {
-    expect(mapFitbitActivityType("Hike", 0)).toBe("hiking");
-    expect(mapFitbitActivityType("Hiking Trail", 0)).toBe("hiking");
+    expect(mapFitbitActivityType("Hike", 0).canonicalType).toBe("hiking");
+    expect(mapFitbitActivityType("Hiking Trail", 0).canonicalType).toBe("hiking");
   });
 
   it("maps yoga to yoga", () => {
-    expect(mapFitbitActivityType("Yoga", 0)).toBe("yoga");
+    expect(mapFitbitActivityType("Yoga", 0).canonicalType).toBe("yoga");
   });
 
   it("maps weight/strength to strength", () => {
-    expect(mapFitbitActivityType("Weight Lifting", 0)).toBe("strength");
-    expect(mapFitbitActivityType("Strength Training", 0)).toBe("strength");
+    expect(mapFitbitActivityType("Weight Lifting", 0).canonicalType).toBe("strength");
+    expect(mapFitbitActivityType("Strength Training", 0).canonicalType).toBe("strength");
   });
 
   it("maps elliptical to elliptical", () => {
-    expect(mapFitbitActivityType("Elliptical", 0)).toBe("elliptical");
+    expect(mapFitbitActivityType("Elliptical", 0).canonicalType).toBe("elliptical");
   });
 
   it("maps rowing to rowing", () => {
-    expect(mapFitbitActivityType("Rowing Machine", 0)).toBe("rowing");
+    expect(mapFitbitActivityType("Rowing Machine", 0).canonicalType).toBe("rowing");
   });
 
   it("maps unknown to other", () => {
-    expect(mapFitbitActivityType("Kickboxing Class", 0)).toBe("other");
-    expect(mapFitbitActivityType("Frisbee", 0)).toBe("other");
+    expect(mapFitbitActivityType("Kickboxing Class", 0).canonicalType).toBe("other");
+    expect(mapFitbitActivityType("Frisbee", 0).canonicalType).toBe("other");
   });
 });
 
@@ -716,7 +716,7 @@ describe("parseFitbitActivity — edge cases", () => {
     const parsed = parseFitbitActivity(act);
     expect(parsed.steps).toBeUndefined();
     expect(parsed.distanceKm).toBeUndefined();
-    expect(parsed.activityType).toBe("yoga");
+    expect(parsed.activityType.canonicalType).toBe("yoga");
   });
 });
 

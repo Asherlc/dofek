@@ -1,12 +1,13 @@
 import {
-  APPLE_HEALTH_WORKOUT_TYPE_MAP,
-  type CanonicalActivityType,
-} from "@dofek/training/training";
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { APPLE_HEALTH_WORKOUT_TYPE_MAP } from "@dofek/training/training";
 import { parseHealthDate } from "./dates.ts";
 import type { RouteLocation } from "./records.ts";
 
 export interface HealthWorkout {
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   sourceName: string | null;
   durationSeconds: number;
   distanceMeters?: number;
@@ -46,7 +47,7 @@ export function normalizeDistance(value: string, unit: string): number {
 
 export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
   const rawType = attrs.workoutActivityType ?? "HKWorkoutActivityTypeOther";
-  const activityType: CanonicalActivityType = WORKOUT_TYPE_MAP[rawType] ?? "other";
+  const activityType = resolveProviderActivityType(rawType, WORKOUT_TYPE_MAP[rawType] ?? "other");
 
   const durationSeconds = normalizeDuration(attrs.duration ?? "0", attrs.durationUnit ?? "min");
 

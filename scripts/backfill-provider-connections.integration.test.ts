@@ -41,8 +41,8 @@ describe("provider connection backfill", () => {
     );
     await client.query(
       `INSERT INTO fitness.activity (
-         provider_id, user_id, external_id, activity_type, started_at
-       ) VALUES ('child-owner-source', $1, 'child-source-activity', 'running', now())`,
+         provider_id, user_id, external_id, canonical_type, provider_type, started_at
+       ) VALUES ('child-owner-source', $1, 'child-source-activity', 'running', 'running', now())`,
       [secondUserId],
     );
 

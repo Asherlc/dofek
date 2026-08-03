@@ -83,8 +83,8 @@ describe("Data Export", () => {
     );
 
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.activity (id, provider_id, user_id, external_id, activity_type, started_at, name, raw)
-          VALUES ('11111111-1111-1111-1111-111111111111', 'test-provider', ${TEST_USER_ID}, 'export-test-1', 'cycling', '2024-01-15T10:00:00Z', 'Morning Ride', '{"source": "test"}'::jsonb)`,
+      sql`INSERT INTO fitness.activity (id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, name, raw)
+          VALUES ('11111111-1111-1111-1111-111111111111', 'test-provider', ${TEST_USER_ID}, 'export-test-1', 'cycling', 'cycling', '2024-01-15T10:00:00Z', 'Morning Ride', '{"source": "test"}'::jsonb)`,
     );
 
     const session = await createSession(testCtx.db, TEST_USER_ID);

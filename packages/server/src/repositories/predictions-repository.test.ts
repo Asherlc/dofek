@@ -1396,7 +1396,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     // CH calls: resting HR, sleep, body comp, exercise minutes, cardio activity summary (5)
     const cardioRow = {
       activity_id: "act-1",
-      activity_type: "cycling",
+      canonical_type: "cycling",
       started_at: "2025-06-15T10:00:00Z",
       avg_hr: 150,
       avg_power: 200,
@@ -1419,7 +1419,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
   it("cardio predict maps durationMin with ?? 0 fallback when duration_min is null", async () => {
     const cardioRow = {
       activity_id: "act-2",
-      activity_type: "running",
+      canonical_type: "running",
       started_at: "2025-06-15T08:00:00Z",
       avg_hr: 160,
       avg_power: 250,
@@ -1529,7 +1529,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
   it("cardio predict maps date from started_at using toISOString slice", async () => {
     const cardioRow = {
       activity_id: "act-date",
-      activity_type: "cycling",
+      canonical_type: "cycling",
       started_at: "2025-12-25T18:30:00Z",
       avg_hr: 140,
       avg_power: 180,

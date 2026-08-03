@@ -197,7 +197,7 @@ describe("ProviderDetailRepository", () => {
 
     it("returns rows from the database", async () => {
       const { repo } = makeRepository([
-        { id: "act-1", name: "Morning Run", activity_type: "running" },
+        { id: "act-1", name: "Morning Run", canonical_type: "running" },
       ]);
       const result = await repo.getRecords("strava", "activities", 20, 0);
       expect(result).toHaveLength(1);
@@ -628,9 +628,9 @@ describe("ProviderDetailRepository", () => {
         "id",
         "name",
         "started_at",
-        "activity_type",
+        "canonical_type",
         "external_id",
-        "ended_at",
+        "provider_type",
       ]);
       expect(getRecordDisplayColumns("metricStream")).toHaveLength(6);
       expect(getRecordDisplayColumns("metricStream")).not.toContain("scalar");
@@ -770,8 +770,8 @@ describe("ProviderDetailRepository", () => {
 
       const result = await repo.getRecordFilterOptions("strava", "activities");
 
-      expect(getRecordSelectFilterColumns("activities")).toContain("activity_type");
-      expect(result.activity_type).toEqual([{ value: "running" }, { value: "cycling" }]);
+      expect(getRecordSelectFilterColumns("activities")).toContain("canonical_type");
+      expect(result.canonical_type).toEqual([{ value: "running" }, { value: "cycling" }]);
       expect(result.source_name).toEqual([{ value: "running" }, { value: "cycling" }]);
       expect(execute).toHaveBeenCalledTimes(getRecordSelectFilterColumns("activities").length);
     });

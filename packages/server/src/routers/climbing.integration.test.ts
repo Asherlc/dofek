@@ -37,12 +37,13 @@ describe("climbing router integration", () => {
       testContext.db,
       activityIdRowSchema,
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
           (
             'kaya-export',
             ${TEST_USER_ID},
             'climbing-router-boulder-session',
+            'climbing',
             'rock_climbing',
             '2026-07-06T10:00:00Z'::timestamptz,
             '2026-07-06T11:30:00Z'::timestamptz,
@@ -52,6 +53,7 @@ describe("climbing router integration", () => {
             'kaya-export',
             ${TEST_USER_ID},
             'climbing-router-route-session',
+            'climbing',
             'rock_climbing',
             '2026-07-07T10:00:00Z'::timestamptz,
             '2026-07-07T11:30:00Z'::timestamptz,
@@ -61,6 +63,7 @@ describe("climbing router integration", () => {
             'strava',
             ${TEST_USER_ID},
             'climbing-router-strava-overlap',
+            'climbing',
             'rock_climbing',
             '2026-07-06T10:00:00Z'::timestamptz,
             '2026-07-06T11:30:00Z'::timestamptz,

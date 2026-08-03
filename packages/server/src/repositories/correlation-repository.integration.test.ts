@@ -49,7 +49,7 @@ describe("CorrelationRepository observations", () => {
       `INSERT INTO analytics.activity_summary (
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
         name,
         started_at,
         ended_at

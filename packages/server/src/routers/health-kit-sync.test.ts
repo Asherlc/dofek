@@ -2793,8 +2793,12 @@ describe("healthKitSyncRouter", () => {
 
       // Workouts upsert through ProviderActivityListSync instead of raw SQL inserts.
       expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ activityType: "cycling" }),
-        expect.objectContaining({ activityType: "cycling" }),
+        expect.objectContaining({
+          activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+        }),
+        expect.objectContaining({
+          activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+        }),
       );
     });
 

@@ -83,7 +83,7 @@ export class PowerRepository {
        AND activity_summary.user_id = power_curve.user_id
       WHERE power_curve.user_id = {userId:UUID}
         AND power_curve.is_deleted = 0
-        AND has({activityTypes:Array(String)}, activity_summary.activity_type)
+        AND has({activityTypes:Array(String)}, activity_summary.canonical_type)
         ${range.clickHouseTimestampAfter("power_curve.started_at")}
       ORDER BY power_curve.duration_seconds`,
       {
@@ -170,7 +170,7 @@ export class PowerRepository {
       WHERE user_id = {userId:UUID}
         ${range.clickHouseTimestampAfter("started_at")}
         AND normalized_power IS NOT NULL
-        AND has({activityTypes:Array(String)}, activity_type)
+        AND has({activityTypes:Array(String)}, canonical_type)
       ORDER BY started_at`,
       {
         userId: this.#userId,

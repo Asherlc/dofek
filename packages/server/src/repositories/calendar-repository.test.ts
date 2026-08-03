@@ -46,7 +46,7 @@ describe("CalendarRepository", () => {
 
   it("returns CalendarDay instances", async () => {
     const { repo } = makeRepository([
-      { date: "2024-06-15", activity_count: 2, total_minutes: 90, activity_types: ["cycling"] },
+      { date: "2024-06-15", activity_count: 2, total_minutes: 90, canonical_types: ["cycling"] },
     ]);
     const result = await repo.getCalendarData(365);
     expect(result).toHaveLength(1);

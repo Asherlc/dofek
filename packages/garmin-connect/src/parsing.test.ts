@@ -26,33 +26,33 @@ import type {
 
 describe("mapConnectActivityType", () => {
   it("maps running types", () => {
-    expect(mapConnectActivityType("running")).toBe("running");
-    expect(mapConnectActivityType("trail_running")).toBe("running");
-    expect(mapConnectActivityType("treadmill_running")).toBe("running");
+    expect(mapConnectActivityType("running").canonicalType).toBe("running");
+    expect(mapConnectActivityType("trail_running").canonicalType).toBe("running");
+    expect(mapConnectActivityType("treadmill_running").canonicalType).toBe("running");
   });
 
   it("maps cycling types", () => {
-    expect(mapConnectActivityType("cycling")).toBe("cycling");
-    expect(mapConnectActivityType("mountain_biking")).toBe("mountain_biking");
-    expect(mapConnectActivityType("indoor_cycling")).toBe("indoor_cycling");
-    expect(mapConnectActivityType("gravel_cycling")).toBe("gravel_cycling");
+    expect(mapConnectActivityType("cycling").canonicalType).toBe("cycling");
+    expect(mapConnectActivityType("mountain_biking").canonicalType).toBe("cycling");
+    expect(mapConnectActivityType("indoor_cycling").canonicalType).toBe("cycling");
+    expect(mapConnectActivityType("gravel_cycling").canonicalType).toBe("cycling");
   });
 
   it("maps swimming types", () => {
-    expect(mapConnectActivityType("swimming")).toBe("swimming");
-    expect(mapConnectActivityType("lap_swimming")).toBe("swimming");
-    expect(mapConnectActivityType("open_water_swimming")).toBe("swimming");
+    expect(mapConnectActivityType("swimming").canonicalType).toBe("swimming");
+    expect(mapConnectActivityType("lap_swimming").canonicalType).toBe("swimming");
+    expect(mapConnectActivityType("open_water_swimming").canonicalType).toBe("swimming");
   });
 
   it("maps strength and cardio", () => {
-    expect(mapConnectActivityType("strength_training")).toBe("strength");
-    expect(mapConnectActivityType("indoor_cardio")).toBe("cardio");
-    expect(mapConnectActivityType("yoga")).toBe("yoga");
+    expect(mapConnectActivityType("strength_training").canonicalType).toBe("strength");
+    expect(mapConnectActivityType("indoor_cardio").canonicalType).toBe("cardio");
+    expect(mapConnectActivityType("yoga").canonicalType).toBe("yoga");
   });
 
   it("returns 'other' for unknown types", () => {
-    expect(mapConnectActivityType("unknown_sport")).toBe("other");
-    expect(mapConnectActivityType("")).toBe("other");
+    expect(mapConnectActivityType("unknown_sport").canonicalType).toBe("other");
+    expect(mapConnectActivityType("").canonicalType).toBe("other");
   });
 });
 
@@ -84,7 +84,7 @@ describe("parseConnectActivity", () => {
 
   it("maps activity type from typeKey", () => {
     const parsed = parseConnectActivity(sampleActivity);
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
   });
 
   it("preserves activity name", () => {

@@ -162,12 +162,12 @@ describe("SuuntoProvider.sync() (integration)", () => {
 
     const cycling = rows.find((r) => r.externalId === "suunto-w1");
     if (!cycling) throw new Error("expected workout suunto-w1");
-    expect(cycling.activityType).toBe("cycling");
+    expect(cycling.canonicalType).toBe("cycling");
     expect(cycling.name).toBe("Morning Cycle");
 
     const running = rows.find((r) => r.externalId === "suunto-w2");
     if (!running) throw new Error("expected workout suunto-w2");
-    expect(running.activityType).toBe("running");
+    expect(running.canonicalType).toBe("running");
   });
 
   it("publishes FIT samples through scoped Redpanda replacement", async () => {
@@ -266,16 +266,16 @@ describe("SuuntoProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "suunto"));
 
     const walk = rows.find((r) => r.externalId === "suunto-walk");
-    expect(walk?.activityType).toBe("walking");
+    expect(walk?.canonicalType).toBe("walking");
 
     const hike = rows.find((r) => r.externalId === "suunto-hike");
-    expect(hike?.activityType).toBe("hiking");
+    expect(hike?.canonicalType).toBe("hiking");
 
     const swim = rows.find((r) => r.externalId === "suunto-swim");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
 
     const unknown = rows.find((r) => r.externalId === "suunto-unknown");
-    expect(unknown?.activityType).toBe("other");
+    expect(unknown?.canonicalType).toBe("other");
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

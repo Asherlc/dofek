@@ -302,12 +302,12 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "100001");
     if (!ride) throw new Error("expected activity 100001");
-    expect(ride.activityType).toBe("virtual_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Watopia Hilly Route");
 
     const run = activityRows.find((r) => r.externalId === "100002");
     if (!run) throw new Error("expected activity 100002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify metric stream events were published from fitness data
     const metrics = metricStreamCapture.publishedMetricStreamRows;

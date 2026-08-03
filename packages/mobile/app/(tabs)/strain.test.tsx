@@ -509,7 +509,7 @@ describe("StrainScreen recent activity navigation", () => {
         {
           id: 42,
           name: "Morning Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-28T07:00:00.000Z",
           ended_at: "2026-03-28T08:00:00.000Z",
           avg_hr: 150,
@@ -538,7 +538,7 @@ describe("StrainScreen recent activity navigation", () => {
         {
           id: 42,
           name: "Morning Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-28T07:00:00.000Z",
           ended_at: "2026-03-28T08:00:00.000Z",
           avg_hr: 150,
@@ -705,7 +705,7 @@ describe("StrainScreen recent activity navigation", () => {
         {
           id: 42,
           name: "Morning Ride",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2026-03-28T07:00:00.000Z",
           ended_at: "2026-03-28T08:00:00.000Z",
           avg_hr: 150,

@@ -1,10 +1,14 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 
 /**
  * Garmin Connect activity type key → normalized sport type.
  * Sourced from the activityType.typeKey field in activity search results.
  */
-export const GARMIN_CONNECT_SPORT_MAP: Record<string, CanonicalActivityType> = {
+export const GARMIN_CONNECT_SPORT_MAP: Record<string, LegacyActivityType> = {
   // Running
   running: "running",
   trail_running: "running",
@@ -104,6 +108,7 @@ export const GARMIN_CONNECT_SPORT_MAP: Record<string, CanonicalActivityType> = {
 /**
  * Map a Garmin Connect activityType.typeKey to a normalized sport type.
  */
-export function mapGarminConnectSport(typeKey: string): CanonicalActivityType {
-  return GARMIN_CONNECT_SPORT_MAP[typeKey] ?? "other";
+export function mapGarminConnectSport(typeKey: string): ProviderActivityType {
+  const providerType = typeKey.trim() || "other";
+  return resolveProviderActivityType(providerType, GARMIN_CONNECT_SPORT_MAP[typeKey] ?? "other");
 }

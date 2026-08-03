@@ -170,12 +170,12 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "mmf-1001");
     if (!run) throw new Error("expected workout mmf-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Morning Run");
 
     const bike = rows.find((r) => r.externalId === "mmf-1002");
     if (!bike) throw new Error("expected workout mmf-1002");
-    expect(bike.activityType).toBe("cycling");
+    expect(bike.canonicalType).toBe("cycling");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -322,7 +322,9 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       providerId: "mapmyfitness",
       userId,
       externalId: "mmf-reconcile-missing",
-      activityType: "running",
+      canonicalType: "running",
+      providerType: "Run",
+      modality: null,
       startedAt: new Date("2026-04-01T08:00:00Z"),
       endedAt: new Date("2026-04-01T09:00:00Z"),
     });
@@ -372,7 +374,9 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       providerId: "mapmyfitness",
       userId,
       externalId: "mmf-degraded-missing",
-      activityType: "running",
+      canonicalType: "running",
+      providerType: "Run",
+      modality: null,
       startedAt: new Date("2026-04-01T08:00:00Z"),
       endedAt: new Date("2026-04-01T09:00:00Z"),
     });
@@ -563,16 +567,16 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       .where(eq(activity.providerId, "mapmyfitness"));
 
     const walk = rows.find((r) => r.externalId === "mmf-walk");
-    expect(walk?.activityType).toBe("walking");
+    expect(walk?.canonicalType).toBe("walking");
 
     const swim = rows.find((r) => r.externalId === "mmf-swim");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
 
     const hike = rows.find((r) => r.externalId === "mmf-hike");
-    expect(hike?.activityType).toBe("hiking");
+    expect(hike?.canonicalType).toBe("hiking");
 
     const yoga = rows.find((r) => r.externalId === "mmf-yoga");
-    expect(yoga?.activityType).toBe("yoga");
+    expect(yoga?.canonicalType).toBe("yoga");
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

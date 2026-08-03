@@ -356,7 +356,7 @@ describe("ClimbingRepository", () => {
       const text = queryText(execute.mock.calls[0]?.[0]);
       expect(text).toContain("fitness.v_activity");
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
-      expect(text).toContain("a.activity_type IN ('climbing', 'rock_climbing')");
+      expect(text).toContain("a.canonical_type = 'climbing'");
       expect(text).toContain("IS NOT NULL");
       expect(text).toContain("SUM(attempt_count) AS attempts");
       expect(text).not.toContain("SUM(attempt_count)::int AS attempts");

@@ -4,7 +4,9 @@ export function buildActivitySummaryRowsTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows (
   activity_id UUID,
   user_id UUID,
-  activity_type Nullable(String),
+  canonical_type Nullable(String),
+  provider_type Nullable(String),
+  modality Nullable(String),
   name Nullable(String),
   started_at Nullable(DateTime64(6, 'UTC')),
   ended_at Nullable(DateTime64(6, 'UTC')),
@@ -54,7 +56,9 @@ export function buildActivitySummaryViewSql(): string {
 SELECT
   activity_id,
   user_id,
-  assumeNotNull(activity_type) AS activity_type,
+  assumeNotNull(canonical_type) AS canonical_type,
+  provider_type,
+  modality,
   name,
   assumeNotNull(started_at) AS started_at,
   ended_at,

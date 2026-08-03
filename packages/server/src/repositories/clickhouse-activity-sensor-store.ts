@@ -230,7 +230,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
+            AND has({enduranceActivityTypes:Array(String)}, activity.canonical_type)
         ),
         sample_rate AS (
           SELECT
@@ -318,7 +318,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
+            AND has({enduranceActivityTypes:Array(String)}, activity.canonical_type)
         ),
         sample_rate AS (
           SELECT

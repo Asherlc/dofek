@@ -30,8 +30,8 @@ describe("escapeLikePattern", () => {
 describe("buildPostgresFilterConditions", () => {
   it("ignores empty values and unknown columns", () => {
     const conditions = buildPostgresFilterConditions(
-      { status: "  ", unknown: "x", activity_type: "run" },
-      ["activity_type"],
+      { status: "  ", unknown: "x", canonical_type: "run" },
+      ["canonical_type"],
     );
     expect(conditions).toHaveLength(1);
   });

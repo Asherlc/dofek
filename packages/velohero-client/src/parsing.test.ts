@@ -76,7 +76,7 @@ describe("parseVeloHeroWorkout", () => {
     const result = parseVeloHeroWorkout(makeWorkout());
 
     expect(result.externalId).toBe("1001");
-    expect(result.activityType).toBe("cycling");
+    expect(result.activityType.canonicalType).toBe("cycling");
     expect(result.name).toBe("Morning ride");
     expect(result.startedAt).toEqual(new Date("2024-01-15T08:00:00"));
     expect(result.endedAt).toEqual(new Date("2024-01-15T09:30:00"));
@@ -180,13 +180,13 @@ describe("parseVeloHeroWorkout", () => {
   it("maps unknown sport_id to other", () => {
     const result = parseVeloHeroWorkout(makeWorkout({ sport_id: "999" }));
 
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("maps running sport", () => {
     const result = parseVeloHeroWorkout(makeWorkout({ sport_id: "2" }));
 
-    expect(result.activityType).toBe("running");
+    expect(result.activityType.canonicalType).toBe("running");
   });
 
   it("converts distance km to meters with rounding", () => {

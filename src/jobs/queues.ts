@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
+import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
@@ -44,7 +44,11 @@ export interface FileUploadImportQueue {
 
 export const fitFileImportActivitySummarySchema = z.object({
   externalId: z.string(),
-  activityType: z.enum(CANONICAL_ACTIVITY_TYPES),
+  activityType: z.object({
+    canonicalType: z.enum(CANONICAL_ACTIVITY_TYPES),
+    providerType: z.string().min(1),
+    modality: z.enum(ACTIVITY_MODALITIES).nullable(),
+  }),
   startedAtIso: z.string(),
   endedAtIso: z.string().optional(),
   name: z.string(),

@@ -13,6 +13,7 @@ const state = vi.hoisted<{
     activityTypes?: readonly string[];
     emptyMessage?: string;
   }>;
+  recentActivityTypes: readonly string[] | undefined;
   routeComponents: Record<string, ComponentType>;
   trainingVolumeQuery: {
     data: unknown;
@@ -28,6 +29,7 @@ const state = vi.hoisted<{
   days: 90,
   queryCalls: [],
   recentActivitiesProps: [],
+  recentActivityTypes: undefined,
   routeComponents: {},
   trainingVolumeQuery: { data: [], isLoading: false, error: null },
   trainingHrZonesQuery: {
@@ -99,6 +101,7 @@ vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
     emptyMessage?: string;
   }) => {
     state.recentActivitiesProps.push(props);
+    state.recentActivityTypes = props.activityTypes;
     return <div>Recent activities</div>;
   },
 }));
@@ -223,6 +226,7 @@ export function resetRangePlumbingState() {
   state.days = 90;
   state.queryCalls.length = 0;
   state.recentActivitiesProps.length = 0;
+  state.recentActivityTypes = undefined;
   state.trainingVolumeQuery = { data: [], isLoading: false, error: null };
   state.trainingHrZonesQuery = {
     data: {

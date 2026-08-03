@@ -189,7 +189,7 @@ describe("PowerRepository", () => {
       expect(queryText).toContain("INNER JOIN analytics.activity_summary AS activity_summary");
       expect(queryText).not.toContain("analytics.activity_summary AS activity_summary FINAL");
       expect(queryText).toContain(
-        "has({activityTypes:Array(String)}, activity_summary.activity_type)",
+        "has({activityTypes:Array(String)}, activity_summary.canonical_type)",
       );
 
       const fiveMinutePoint = result.points.find((point) => point.durationSeconds === 300);

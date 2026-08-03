@@ -1,10 +1,10 @@
 import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
-import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
-  type CanonicalActivityType,
-  createActivityTypeMapper,
-  STRAVA_ACTIVITY_TYPE_MAP,
-} from "@dofek/training/training";
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -128,8 +128,10 @@ const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
  * When sport_type is "Ride" and trainer is true, override to indoor_cycling
  * (covers spin bikes and other stationary trainers recorded via Strava).
  */
-export function mapStravaActivityType(sportType: string, trainer = false): CanonicalActivityType {
-  if (sportType === "Ride" && trainer) return "indoor_cycling";
+export function mapStravaActivityType(sportType: string, trainer = false): ProviderActivityType {
+  if (sportType === "Ride" && trainer) {
+    return resolveProviderActivityType(sportType, "indoor_cycling");
+  }
   return mapStravaType(sportType);
 }
 
@@ -139,7 +141,7 @@ export function mapStravaActivityType(sportType: string, trainer = false): Canon
 
 export interface ParsedStravaActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -182,7 +184,7 @@ export function stravaStreamsToMetricStream(
   providerId: string,
   activityId: string,
   startedAt: Date,
-  activityType?: string,
+  activityType?: ProviderActivityType,
 ): MetricStreamSourceRow[] {
   // Scalar streams contain number[], latlng contains [number, number][]
   function isScalarArray(data: number[] | [number, number][]): data is number[] {
@@ -233,7 +235,8 @@ export function stravaStreamsToMetricStream(
       heartRate: heartrates?.[i],
       power: watts?.[i],
       cadence: cadences?.[i],
-      speed: activityType && isIndoorCycling(activityType) ? undefined : speeds?.[i],
+      speed:
+        activityType && isIndoorCyclingModality(activityType.modality) ? undefined : speeds?.[i],
       lat: latlng?.[0],
       lng: latlng?.[1],
       altitude: altitudes?.[i],

@@ -234,12 +234,12 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const run = activityRows.find((r) => r.externalId === "ex-1001");
     if (!run) throw new Error("expected exercise ex-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Running");
 
     const ride = activityRows.find((r) => r.externalId === "ex-1002");
     if (!ride) throw new Error("expected exercise ex-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
 
     // Verify sleep
     const sleepRows = await ctx.db

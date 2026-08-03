@@ -3,10 +3,11 @@ import {
   resolveTimestampOffsetLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import {
-  type CanonicalActivityType,
-  createActivityTypeMapper,
-  OURA_ACTIVITY_TYPE_MAP,
-} from "@dofek/training/training";
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import type {
   OuraDailyActivity,
   OuraDailyReadiness,
@@ -141,12 +142,13 @@ export function parseOuraDailyMetrics(
 
 const mapOuraType = createActivityTypeMapper(OURA_ACTIVITY_TYPE_MAP);
 
-export function mapOuraActivityType(ouraActivity: string): CanonicalActivityType {
+export function mapOuraActivityType(ouraActivity: string): ProviderActivityType {
   const key = ouraActivity.toLowerCase();
-  return mapOuraType(key);
+  const normalized = mapOuraType(key);
+  return { ...normalized, providerType: ouraActivity };
 }
 
-const OURA_SESSION_TYPE_MAP: Record<string, CanonicalActivityType> = {
+const OURA_SESSION_TYPE_MAP: Record<string, LegacyActivityType> = {
   meditation: "meditation",
   breathing: "breathwork",
   nap: "other",
@@ -155,6 +157,6 @@ const OURA_SESSION_TYPE_MAP: Record<string, CanonicalActivityType> = {
   body_status: "other",
 };
 
-export function mapOuraSessionType(sessionType: string): CanonicalActivityType {
-  return OURA_SESSION_TYPE_MAP[sessionType] ?? "other";
+export function mapOuraSessionType(sessionType: string): ProviderActivityType {
+  return resolveProviderActivityType(sessionType, OURA_SESSION_TYPE_MAP[sessionType] ?? "other");
 }

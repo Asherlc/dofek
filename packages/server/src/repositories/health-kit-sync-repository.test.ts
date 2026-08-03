@@ -902,8 +902,12 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       },
     ]);
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ activityType: "running" }),
-      expect.objectContaining({ activityType: "running" }),
+      expect.objectContaining({
+        activityType: { providerType: "37", canonicalType: "running", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "37", canonicalType: "running", modality: null },
+      }),
     );
   });
 
@@ -922,8 +926,12 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       },
     ]);
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ activityType: "cycling" }),
-      expect.objectContaining({ activityType: "cycling" }),
+      expect.objectContaining({
+        activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+      }),
     );
   });
 
@@ -942,8 +950,12 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       },
     ]);
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ activityType: "hiking" }),
-      expect.objectContaining({ activityType: "hiking" }),
+      expect.objectContaining({
+        activityType: { providerType: "24", canonicalType: "hiking", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "24", canonicalType: "hiking", modality: null },
+      }),
     );
   });
 
@@ -962,8 +974,12 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       },
     ]);
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ activityType: "swimming" }),
-      expect.objectContaining({ activityType: "swimming" }),
+      expect.objectContaining({
+        activityType: { providerType: "46", canonicalType: "swimming", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "46", canonicalType: "swimming", modality: null },
+      }),
     );
   });
 
@@ -982,8 +998,12 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       },
     ]);
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ activityType: "other" }),
-      expect.objectContaining({ activityType: "other" }),
+      expect.objectContaining({
+        activityType: { providerType: "9999", canonicalType: "other", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "9999", canonicalType: "other", modality: null },
+      }),
     );
   });
 });

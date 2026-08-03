@@ -245,10 +245,10 @@ describe("sleep-need router integration", () => {
     loadActivityEndedAt.setUTCMinutes(loadActivityEndedAt.getUTCMinutes() + 30);
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+            id, provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
           ) VALUES (
             ${loadActivityId}::uuid, ${fixtureProviderId}, ${TEST_USER_ID},
-            ${`sleep-need-load-${fixtureId}`}, 'running',
+            ${`sleep-need-load-${fixtureId}`}, 'running', 'running', NULL,
             ${loadActivityStartedAt}, ${loadActivityEndedAt}, 'Sleep need load fixture'
           )`,
     );

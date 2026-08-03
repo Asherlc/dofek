@@ -42,7 +42,7 @@ export interface ActivityRow {
   date?: string | Date;
   started_at: string;
   ended_at: string | null;
-  activity_type: string;
+  canonical_type: string;
 }
 
 export interface NutritionRow {

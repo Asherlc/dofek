@@ -13,7 +13,7 @@ WITH source_records AS (
         activity_id,
         provider_id,
         user_id,
-        activity_type,
+        canonical_type,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ ref('activity_source_records') }} FINAL
@@ -25,7 +25,7 @@ tombstoned_records AS (
         activity.id AS activity_id,
         activity.user_id AS user_id,
         activity.provider_id AS provider_id,
-        activity.activity_type AS activity_type,
+        activity.canonical_type AS canonical_type,
         activity.started_at AS started_at,
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
@@ -63,7 +63,7 @@ active_duplicate_matches AS (
             ), 0) > 0.8
             OR (
                 left_activity.provider_id != right_activity.provider_id
-                AND left_activity.activity_type = right_activity.activity_type
+                AND left_activity.canonical_type = right_activity.canonical_type
                 AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
                 AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
                 AND dateDiff(
@@ -111,7 +111,7 @@ active_to_tombstoned_matches AS (
             ), 0) > 0.8
             OR (
                 left_activity.provider_id != right_activity.provider_id
-                AND left_activity.activity_type = right_activity.activity_type
+                AND left_activity.canonical_type = right_activity.canonical_type
                 AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
                 AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
                 AND dateDiff(

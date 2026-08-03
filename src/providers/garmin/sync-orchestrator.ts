@@ -14,7 +14,7 @@ import {
   parseStressTimeSeries,
 } from "@dofek/garmin-connect/parsing";
 import type { GarminTokens } from "@dofek/garmin-connect/types";
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
@@ -235,7 +235,7 @@ async function runActivitiesListStep(
       detailSteps.push({
         type: "activity_detail",
         activityId: raw.activityId,
-        activityType: parsed.activityType,
+        activityModality: parsed.activityType.modality,
       });
     } else {
       recordsSynced++;
@@ -321,7 +321,7 @@ async function runActivityDetailStep(
               : sample.directBikeCadence !== null
                 ? sample.directBikeCadence
                 : undefined,
-          speed: isIndoorCycling(step.activityType)
+          speed: isIndoorCyclingModality(step.activityModality)
             ? undefined
             : sample.directSpeed !== null
               ? sample.directSpeed

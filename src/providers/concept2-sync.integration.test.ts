@@ -164,11 +164,11 @@ describe("Concept2Provider.sync() (integration)", () => {
 
     const rower = rows.find((r) => r.externalId === "5001");
     if (!rower) throw new Error("expected result 5001");
-    expect(rower.activityType).toBe("rowing");
+    expect(rower.canonicalType).toBe("rowing");
 
     const skierg = rows.find((r) => r.externalId === "5002");
     if (!skierg) throw new Error("expected result 5002");
-    expect(skierg.activityType).toBe("skiing");
+    expect(skierg.canonicalType).toBe("skiing");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -242,7 +242,9 @@ describe("Concept2Provider.sync() (integration)", () => {
       providerId: "concept2",
       userId,
       externalId: "concept2-degraded-missing",
-      activityType: "rowing",
+      canonicalType: "rowing",
+      providerType: "rower",
+      modality: null,
       startedAt: new Date("2026-04-01T10:00:00Z"),
       endedAt: new Date("2026-04-01T11:00:00Z"),
     });

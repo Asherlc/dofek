@@ -95,7 +95,7 @@ describe("TrainingInsightsPanel range plumbing", () => {
 
   it("keeps cached training data visible with background query failures", () => {
     state.trainingVolumeQuery = {
-      data: [{ week: "2026-07-20", activity_type: "cycling", count: 1, hours: 2 }],
+      data: [{ week: "2026-07-20", canonical_type: "cycling", count: 1, hours: 2 }],
       isLoading: false,
       error: new Error("Weekly volume refresh failed"),
     };

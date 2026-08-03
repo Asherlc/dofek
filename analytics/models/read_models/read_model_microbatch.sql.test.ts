@@ -582,7 +582,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("stale_activity_dirty_keys");
     expect(normalizedSql).toContain("FROM current_activity CROSS JOIN target_state");
     expect(normalizedSql).not.toContain(
-      "current_activity AS ( SELECT id AS activity_id, user_id, activity_type, name, started_at, ended_at FROM {{ source('postgres_fitness', 'activity') }} FINAL",
+      "current_activity AS ( SELECT id AS activity_id, user_id, canonical_type, name, started_at, ended_at FROM {{ source('postgres_fitness', 'activity') }} FINAL",
     );
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample')");
@@ -709,8 +709,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("postgres_fitness.user_profile_current");
     expect(sql).toContain("argMax(resting.resting_hr, resting.ended_at)");
     expect(sql).toContain("nullIf(user_profile.resting_hr, 0)");
-    expect(sql).toContain("activity_type IN (");
-    expect(sql).toContain("'road_cycling'");
+    expect(sql).toContain("canonical_type IN (");
+    expect(sql).toContain("'cycling'");
+    expect(sql).not.toContain("'road_cycling'");
     expect(compactWhitespace(sql)).toContain("if( max_hr > resting_hr");
     expect(sql).toContain("0.64 * exp(1.92 * intensity)");
     expect(sql).toContain("training_load");

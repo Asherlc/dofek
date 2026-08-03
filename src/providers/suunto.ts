@@ -1,5 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -87,7 +91,7 @@ const suuntoWorkoutSchema = z.object({
 
 export interface ParsedSuuntoWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -98,7 +102,7 @@ export interface ParsedSuuntoWorkout {
 // Activity type mapping
 // ============================================================
 
-const SUUNTO_ACTIVITY_MAP: Record<number, CanonicalActivityType> = {
+const SUUNTO_ACTIVITY_MAP: Record<number, LegacyActivityType> = {
   1: "other",
   2: "running",
   3: "cycling",
@@ -115,15 +119,16 @@ const SUUNTO_ACTIVITY_MAP: Record<number, CanonicalActivityType> = {
   83: "running",
 };
 
-export function mapSuuntoActivityType(activityId: number): CanonicalActivityType {
-  return SUUNTO_ACTIVITY_MAP[activityId] ?? "other";
+export function mapSuuntoActivityType(activityId: number): ProviderActivityType {
+  return resolveProviderActivityType(activityId, SUUNTO_ACTIVITY_MAP[activityId] ?? "other");
 }
 
 export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout {
   return {
     externalId: workout.workoutKey,
     activityType: mapSuuntoActivityType(workout.activityId),
-    name: workout.workoutName ?? `Suunto ${mapSuuntoActivityType(workout.activityId)}`,
+    name:
+      workout.workoutName ?? `Suunto ${mapSuuntoActivityType(workout.activityId).canonicalType}`,
     startedAt: new Date(workout.startTime),
     endedAt: new Date(workout.stopTime),
     raw: {

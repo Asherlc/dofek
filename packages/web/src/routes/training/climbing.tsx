@@ -24,7 +24,7 @@ export const Route = createFileRoute("/training/climbing")({
   component: ClimbingTab,
 });
 
-const CLIMBING_ACTIVITY_TYPES = ["climbing", "rock_climbing"] as const;
+const CLIMBING_ACTIVITY_TYPES = ["climbing"] as const;
 
 function climbingRangeInput(days: number | null): { days?: number } {
   return days === null ? {} : { days };

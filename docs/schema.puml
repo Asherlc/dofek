@@ -133,7 +133,9 @@ entity "activity" {
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
   external_id : text
-  activity_type : activity_type
+  canonical_type : canonical_activity_type
+  provider_type : text
+  modality : activity_modality
   started_at : timestamp
   ended_at : timestamp
   name : text

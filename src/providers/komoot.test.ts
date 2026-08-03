@@ -28,27 +28,27 @@ async function expectKomootRateLimitError(action: () => Promise<unknown>) {
 
 describe("mapKomootSport", () => {
   it("maps all known sport types", () => {
-    expect(mapKomootSport("BIKING")).toBe("cycling");
-    expect(mapKomootSport("E_BIKING")).toBe("e_bike_cycling");
-    expect(mapKomootSport("ROAD_CYCLING")).toBe("road_cycling");
-    expect(mapKomootSport("MT_BIKING")).toBe("mountain_biking");
-    expect(mapKomootSport("E_MT_BIKING")).toBe("mountain_biking");
-    expect(mapKomootSport("GRAVEL_BIKING")).toBe("gravel_cycling");
-    expect(mapKomootSport("E_BIKE_TOURING")).toBe("e_bike_cycling");
-    expect(mapKomootSport("RUNNING")).toBe("running");
-    expect(mapKomootSport("TRAIL_RUNNING")).toBe("trail_running");
-    expect(mapKomootSport("HIKING")).toBe("hiking");
-    expect(mapKomootSport("WALKING")).toBe("walking");
-    expect(mapKomootSport("CLIMBING")).toBe("climbing");
-    expect(mapKomootSport("SKIING")).toBe("skiing");
-    expect(mapKomootSport("CROSS_COUNTRY_SKIING")).toBe("cross_country_skiing");
-    expect(mapKomootSport("SNOWSHOEING")).toBe("snowshoeing");
-    expect(mapKomootSport("PADDLING")).toBe("paddling");
-    expect(mapKomootSport("INLINE_SKATING")).toBe("skating");
+    expect(mapKomootSport("BIKING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("E_BIKING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("ROAD_CYCLING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("MT_BIKING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("E_MT_BIKING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("GRAVEL_BIKING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("E_BIKE_TOURING").canonicalType).toBe("cycling");
+    expect(mapKomootSport("RUNNING").canonicalType).toBe("running");
+    expect(mapKomootSport("TRAIL_RUNNING").canonicalType).toBe("running");
+    expect(mapKomootSport("HIKING").canonicalType).toBe("hiking");
+    expect(mapKomootSport("WALKING").canonicalType).toBe("walking");
+    expect(mapKomootSport("CLIMBING").canonicalType).toBe("climbing");
+    expect(mapKomootSport("SKIING").canonicalType).toBe("skiing");
+    expect(mapKomootSport("CROSS_COUNTRY_SKIING").canonicalType).toBe("skiing");
+    expect(mapKomootSport("SNOWSHOEING").canonicalType).toBe("snowshoeing");
+    expect(mapKomootSport("PADDLING").canonicalType).toBe("paddling");
+    expect(mapKomootSport("INLINE_SKATING").canonicalType).toBe("skating");
   });
 
   it("returns other for unknown", () => {
-    expect(mapKomootSport("UNKNOWN")).toBe("other");
+    expect(mapKomootSport("UNKNOWN").canonicalType).toBe("other");
   });
 });
 
@@ -69,7 +69,7 @@ describe("parseKomootTour", () => {
 
     const parsed = parseKomootTour(tour);
     expect(parsed.externalId).toBe("12345");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Morning Ride");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date(new Date("2026-03-01T08:00:00Z").getTime() + 3600000));

@@ -124,7 +124,9 @@ function listColumnNames(
         "id",
         "provider_id",
         "external_id",
-        "activity_type",
+        "canonical_type",
+        "provider_type",
+        "modality",
         "started_at",
         "ended_at",
         "name",
@@ -247,7 +249,7 @@ const RECORD_DISPLAY_PRIORITY = [
   "date",
   "started_at",
   "recorded_at",
-  "activity_type",
+  "canonical_type",
   "type",
 ] as const;
 const RECORD_DISPLAY_PRIORITY_SET = new Set<string>(RECORD_DISPLAY_PRIORITY);
@@ -280,7 +282,7 @@ export const SYNC_LOG_FILTER_OPTION_FIELDS = {
 export function getRecordSelectFilterColumns(dataType: DataType): readonly string[] {
   switch (dataType) {
     case "activities":
-      return ["activity_type", "source_name"];
+      return ["canonical_type", "provider_type", "modality", "source_name"];
     case "dailyMetrics":
       return ["source_name"];
     case "sleepSessions":

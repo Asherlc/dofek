@@ -425,7 +425,7 @@ describe("parseCyclingAnalyticsRide — edge cases", () => {
 
     const parsed = parseCyclingAnalyticsRide(ride);
     expect(parsed.externalId).toBe("1");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Quick Spin");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));

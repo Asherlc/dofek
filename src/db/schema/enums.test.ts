@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  activityTypeEnum,
+  activityModalityEnum,
+  canonicalActivityTypeEnum,
   foodCategoryEnum,
   labResultStatusEnum,
   mealEnum,
@@ -43,18 +44,14 @@ describe("schema enums", () => {
     expect(sleepStageNameEnum.enumValues).toEqual(["deep", "light", "rem", "awake"]);
   });
 
-  it("defines broad activity type values", () => {
-    expect(activityTypeEnum.enumName).toBe("activity_type");
-    expect(activityTypeEnum.enumValues).toEqual(
-      expect.arrayContaining([
-        "cycling",
-        "running",
-        "strength_training",
-        "yoga",
-        "swimming",
-        "other",
-      ]),
+  it("defines canonical activity types and orthogonal modalities", () => {
+    expect(canonicalActivityTypeEnum.enumName).toBe("canonical_activity_type");
+    expect(canonicalActivityTypeEnum.enumValues).toEqual(
+      expect.arrayContaining(["cycling", "running", "strength", "yoga", "swimming", "other"]),
     );
-    expect(activityTypeEnum.enumValues.length).toBeGreaterThan(100);
+    expect(activityModalityEnum.enumName).toBe("activity_modality");
+    expect(activityModalityEnum.enumValues).toEqual(
+      expect.arrayContaining(["road", "mountain", "indoor", "virtual", "trail"]),
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { parseClimbingGrade } from "@dofek/training/climbing-grades";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -165,7 +166,10 @@ class KayaExportImporter {
         providerId: KAYA_PROVIDER_ID,
         userId: this.#userId,
         externalId: kayaActivity.externalId,
-        activityType: kayaActivity.activityType,
+        activityType: resolveProviderActivityType(
+          kayaActivity.activityType,
+          kayaActivity.activityType,
+        ),
         startedAt: kayaActivity.startedAt,
         endedAt: kayaActivity.endedAt,
         name: kayaActivity.name,
@@ -176,7 +180,10 @@ class KayaExportImporter {
         },
       },
       {
-        activityType: kayaActivity.activityType,
+        activityType: resolveProviderActivityType(
+          kayaActivity.activityType,
+          kayaActivity.activityType,
+        ),
         startedAt: kayaActivity.startedAt,
         endedAt: kayaActivity.endedAt,
         name: kayaActivity.name,

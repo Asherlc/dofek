@@ -11,7 +11,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
   return {
     id: "activity-1",
     name: null,
-    activityType: "strength_training",
+    activityType: "strength",
     startedAt: "2026-07-14T08:46:00.000Z",
     localTimeContext: {
       timezone: null,

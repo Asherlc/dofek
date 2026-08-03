@@ -1,3 +1,4 @@
+import { resolveRawProviderActivityType } from "@dofek/training/activity-types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -73,19 +74,22 @@ export class ActivityRecordingRepository {
 
     const activityStartedAt = canonicalizeTimestampForExternalId(input.startedAt);
     const externalId = `dofek:${activityStartedAt}:${this.#userId}`;
+    const activityType = resolveRawProviderActivityType(input.activityType);
 
     const rows = await executeWithSchema(
       this.#db,
       activityIdRowSchema,
       sql`INSERT INTO fitness.activity (
-              user_id, provider_id, external_id, activity_type,
+              user_id, provider_id, external_id, canonical_type, provider_type, modality,
               started_at, ended_at, name, notes, source_name
             )
             VALUES (
               ${this.#userId},
               ${PROVIDER_ID},
               ${externalId},
-              ${input.activityType},
+              ${activityType.canonicalType},
+              ${activityType.providerType},
+              ${activityType.modality},
               ${input.startedAt}::timestamptz,
               ${input.endedAt}::timestamptz,
               ${input.name},
@@ -93,7 +97,9 @@ export class ActivityRecordingRepository {
               ${input.sourceName}
             )
             ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
-              activity_type = EXCLUDED.activity_type,
+              canonical_type = EXCLUDED.canonical_type,
+              provider_type = EXCLUDED.provider_type,
+              modality = EXCLUDED.modality,
               started_at = EXCLUDED.started_at,
               ended_at = EXCLUDED.ended_at,
               name = EXCLUDED.name,

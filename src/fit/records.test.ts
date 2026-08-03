@@ -18,7 +18,7 @@ describe("fitRecordsToSensorSamples", () => {
       },
     } satisfies ParsedFitRecord;
 
-    const [row] = fitRecordsToSensorSamples([record], "wahoo", "activity-1", "cycling");
+    const [row] = fitRecordsToSensorSamples([record], "wahoo", "activity-1", null);
 
     expect(row?.raw).toEqual({
       timestamp: "2026-01-19T12:58:55.000Z",

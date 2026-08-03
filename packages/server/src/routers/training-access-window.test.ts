@@ -126,7 +126,7 @@ describe("trainingRouter access window gating", () => {
       [
         {
           id: "activity-1",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Morning Run",
           started_at: "2026-05-19T14:00:00.000Z",
           ended_at: "2026-05-19T15:00:00.000Z",
@@ -157,7 +157,7 @@ describe("trainingRouter access window gating", () => {
     await expect(caller.activityStats({ days: 30 })).resolves.toEqual([
       {
         id: "activity-1",
-        activity_type: "running",
+        canonical_type: "running",
         name: "Morning Run",
         started_at: "2026-05-19T14:00:00.000Z",
         ended_at: "2026-05-19T15:00:00.000Z",

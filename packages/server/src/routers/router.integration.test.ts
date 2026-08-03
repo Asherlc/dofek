@@ -121,9 +121,9 @@ describe("Router coverage", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, ${`stress-ride-${actIdx}`}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`stress-ride-${actIdx}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -204,13 +204,14 @@ describe("Router coverage", () => {
         const daysAgo = weekIdx * 7 + dayIdx * 3 + 1;
         const workoutResult = await testCtx.db.execute<{ id: string }>(
           sql`INSERT INTO fitness.activity (
-                provider_id, user_id, external_id, started_at, ended_at, name, activity_type
+                provider_id, user_id, external_id, started_at, ended_at, name, canonical_type, provider_type
               ) VALUES (
                 'test_provider', ${TEST_USER_ID},
                 ${`sw-cov-${weekIdx}-${dayIdx}`},
                 NOW() - ${daysAgo}::int * INTERVAL '1 day',
                 NOW() - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '1 hour',
                 'Full Body Workout',
+                'strength',
                 'strength'
               ) ON CONFLICT DO NOTHING
               RETURNING id`,
@@ -1202,7 +1203,7 @@ describe("Router coverage", () => {
   describe("activity", () => {
     it("list returns recent activities", async () => {
       const result = await query<{
-        items: { id: string; activity_type: string }[];
+        items: { id: string; canonical_type: string }[];
         totalCount: number;
       }>("activity.list", {
         days: 90,

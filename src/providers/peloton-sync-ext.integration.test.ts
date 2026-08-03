@@ -309,7 +309,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       .from(activity)
       .where(eq(activity.externalId, "ext-meditation"));
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.activityType).toBe("meditation");
+    expect(rows[0]?.canonicalType).toBe("meditation");
 
     // No metric stream events for this activity (empty metrics)
     const activityId = rows[0]?.id;

@@ -58,8 +58,7 @@ export function classifyActivity(type: string): "cardio" | "strength" | "flexibi
       "hiking",
       "running",
       "swimming",
-      "cross_country_skiing",
-      "downhill_skiing",
+      "skiing",
       "cardio",
       "cross_training",
       "tennis",
@@ -67,8 +66,7 @@ export function classifyActivity(type: string): "cardio" | "strength" | "flexibi
     ].includes(typeLower)
   )
     return "cardio";
-  if (["strength_training", "functional_strength", "strength"].includes(typeLower))
-    return "strength";
+  if (typeLower === "strength") return "strength";
   if (["yoga", "stretching", "preparation_and_recovery"].includes(typeLower)) return "flexibility";
   return "other";
 }
@@ -114,7 +112,7 @@ export function joinByDate(
     };
     const dur = (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000;
     existing.minutes += dur;
-    const cat = classifyActivity(a.activity_type);
+    const cat = classifyActivity(a.canonical_type);
     if (cat === "cardio") existing.cardio += dur;
     else if (cat === "strength") existing.strength += dur;
     else if (cat === "flexibility") existing.flexibility += dur;

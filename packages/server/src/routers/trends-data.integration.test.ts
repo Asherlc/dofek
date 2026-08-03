@@ -46,9 +46,9 @@ describe("Trends router — trend data tests", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, ${`trend-ride-${day}`}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`trend-ride-${day}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${day}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${day}::int * INTERVAL '1 day' + ${durationMin}::int * INTERVAL '1 minute',
               'Daily Ride'

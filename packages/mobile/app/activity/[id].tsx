@@ -44,15 +44,12 @@ import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
 import { styles } from "./styles";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
-const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
-const CLIMBING_ACTIVITY_TYPES = new Set(["climbing", "rock_climbing"]);
-
 function isStrengthActivityType(activityType: string): boolean {
-  return STRENGTH_ACTIVITY_TYPES.has(activityType);
+  return activityType === "strength";
 }
 
 function isClimbingActivityType(activityType: string): boolean {
-  return CLIMBING_ACTIVITY_TYPES.has(activityType);
+  return activityType === "climbing";
 }
 
 function activityIcon(type: string): string {

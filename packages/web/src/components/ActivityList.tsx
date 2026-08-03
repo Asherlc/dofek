@@ -22,7 +22,7 @@ export interface Activity {
   id: string;
   started_at: string;
   ended_at: string | null;
-  activity_type: string;
+  canonical_type: string;
   name: string | null;
   provider_id: string;
   source_providers: string[] | null;
@@ -142,7 +142,7 @@ export function ActivityList({
     renderCell: (activity) => (
       <input
         type="checkbox"
-        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.activity_type)}`}
+        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.canonical_type)}`}
         checked={selectedActivityIds.has(activity.id)}
         onChange={() => toggleSelected(activity.id)}
         onClick={(event) => event.stopPropagation()}
@@ -159,7 +159,7 @@ export function ActivityList({
       cellClassName: "py-2 pr-4 whitespace-nowrap",
       renderCell: (activity) => {
         if (!activity.location) {
-          return <ActivityTypeIcon activityType={activity.activity_type} variant="compact" />;
+          return <ActivityTypeIcon activityType={activity.canonical_type} variant="compact" />;
         }
         const { mapPreview } = activity.location;
 
@@ -206,7 +206,7 @@ export function ActivityList({
       label: "Type",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 whitespace-nowrap",
-      renderCell: (activity) => formatActivityTypeLabel(activity.activity_type),
+      renderCell: (activity) => formatActivityTypeLabel(activity.canonical_type),
     },
     {
       key: "name",

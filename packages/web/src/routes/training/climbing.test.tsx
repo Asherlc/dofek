@@ -130,7 +130,7 @@ describe("ClimbingTab", () => {
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(sessionSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
-    expect(sectionProps.activityTypes).toEqual(["climbing", "rock_climbing"]);
+    expect(sectionProps.activityTypes).toEqual(["climbing"]);
     expect(sectionProps.additionalColumns.map((column: { key: string }) => column.key)).toEqual([
       "attempts",
       "sends",

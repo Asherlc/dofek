@@ -133,7 +133,7 @@ describe("insertStepsAfterCurrent", () => {
       }),
     );
     const next = insertStepsAfterCurrent(checkpoint, [
-      { type: "activity_detail", activityId: 123, activityType: "running" },
+      { type: "activity_detail", activityId: 123, activityModality: null },
       { type: "activity_reconcile" },
     ]);
     expect(next.steps.map((step) => step.type)).toEqual([

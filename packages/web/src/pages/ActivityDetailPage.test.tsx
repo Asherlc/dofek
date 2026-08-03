@@ -38,6 +38,7 @@ const mockActivity: ActivityDetail = {
   sampleCountState: { status: "missing", reason: "Sample Count not recorded" },
   name: "Morning Run",
   activityType: "running",
+  modality: null,
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
   localTimeContext: {
@@ -1058,6 +1059,19 @@ describe("ActivityDetailPage", () => {
     it("disables strength exercises query for non-strength activities", async () => {
       const originalData = { ...mockActivity };
       Object.assign(mockActivity, { activityType: "running" });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(false);
+
+      Object.assign(mockActivity, originalData);
+    });
+
+    it("does not treat a raw provider type synonym as a canonical strength activity", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "strength_training" });
 
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
