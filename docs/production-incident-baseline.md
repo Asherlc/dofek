@@ -131,11 +131,21 @@ and zero unmapped live ClickHouse activity rows.
 ### Remaining Risk
 
 No deploy-blocking risk remains from this incident. Separate post-deploy
-observations require follow-up: `dofek_ota` was `0/1` because its image lacked
-`EXPO_APP_ID`, and worker post-sync logs reported ClickHouse
-`UNKNOWN_IDENTIFIER` errors for `activity_type`; neither condition blocked the
-deploy workflow or was changed as part of this root-cause fix. The local
-Docker/ClickHouse validation gap also remains for a future integration run.
+observations require follow-up. Sentry issue
+[DOFEK-SERVER-5T](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5T)
+appeared on the new release immediately after rollout, but its underlying
+ClickHouse error was `REQUIRED_PASSWORD`: the existing analytics-worker
+environment policy supplies only Sentry keys while dbt's production profile
+reads `CLICKHOUSE_PASSWORD`; `runAnalyticsBuild` then reported a secondary
+missing-artifact `ENOENT`. Neither the analytics build code nor that policy was
+changed in this incident branch, so this is a separate configuration follow-up,
+not a regression attributable to these fixes. Sentry also recorded a transient
+Postgres lock timeout and a pre-existing Peloton payload regression. `dofek_ota`
+was `0/1` because its image lacked `EXPO_APP_ID`, and worker post-sync logs
+reported ClickHouse `UNKNOWN_IDENTIFIER` errors for `activity_type`; none of
+these conditions blocked the deploy workflow or was changed as part of this
+root-cause fix. The local Docker/ClickHouse validation gap also remains for a
+future integration run.
 
 ## 2026-08-02: Local integration validation hit Compose and Redpanda host limits
 
