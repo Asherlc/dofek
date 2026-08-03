@@ -413,7 +413,7 @@ function ExperimentLearningCard({
       {analysisQuery.isError && result === undefined ? (
         <QueryStatePanel error={analysisQuery.error} height={72} />
       ) : null}
-      {analysisQuery.isLoading || result === undefined ? (
+      {!analysisQuery.isError && (analysisQuery.isLoading || result === undefined) ? (
         <QueryStatePanel variant="loading" height={72} />
       ) : null}
       {result !== undefined ? (
@@ -509,8 +509,11 @@ function ExperimentLearningCard({
               {result.analysis.observations.map((observation) => (
                 <li key={`${observation.phase}-${observation.phaseDate}`}>
                   {observation.phaseDate} → {observation.outcomeDate}:{" "}
-                  {observation.value ?? "Missing"}; {observation.adherence ?? "baseline"}; sources:{" "}
-                  {observation.sourceProviderIds.join(", ") || "none reported"}
+                  {observation.value ?? "Missing"};{" "}
+                  {observation.phase === "baseline"
+                    ? "baseline"
+                    : (observation.adherence ?? "no check-in")}
+                  ; sources: {observation.sourceProviderIds.join(", ") || "none reported"}
                 </li>
               ))}
             </ul>

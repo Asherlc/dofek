@@ -1,9 +1,17 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { LifeEventsRepository } from "./life-events-repository.ts";
 import { PersonalExperimentsRepository } from "./personal-experiments-repository.ts";
+
+const checkInRowSchema = z.object({
+  adherence: z.enum(["adherent", "partial", "not_adherent", "unknown"]),
+  confounder: z.string().nullable(),
+  note: z.string().nullable(),
+});
 
 describe("PersonalExperimentsRepository integration", () => {
   let testContext: TestContext;
@@ -113,7 +121,9 @@ describe("PersonalExperimentsRepository integration", () => {
         confounder: null,
         note: "Updated entry",
       });
-      const checkIns = await testContext.db.execute(
+      const checkIns = await executeWithSchema(
+        testContext.db,
+        checkInRowSchema,
         sql`SELECT adherence, confounder, note
             FROM fitness.personal_experiment_check_in
             WHERE personal_experiment_id = ${experiment.id} AND date = '2099-02-08'::date`,

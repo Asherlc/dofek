@@ -291,7 +291,7 @@ describe("ExperimentsScreen", () => {
             phaseDate: "2026-07-10",
             outcomeDate: "2026-07-10",
             value: null,
-            adherence: "partial",
+            adherence: null,
             confounder: "Late flight",
             note: null,
             sourceProviderIds: [],
@@ -341,7 +341,7 @@ describe("ExperimentsScreen", () => {
     expect(screen.getByText("Baseline: 5 of 7 outcome days observed")).toBeTruthy();
     expect(screen.getByText("Travel: Different time zone")).toBeTruthy();
     expect(
-      screen.getByText(/2026-07-10 → 2026-07-10: Missing; partial; sources: none reported/),
+      screen.getByText(/2026-07-10 → 2026-07-10: Missing; no check-in; sources: none reported/),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText("Partial"));

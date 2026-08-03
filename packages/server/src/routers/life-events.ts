@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import {
   LifeEventsRepository,
@@ -32,6 +33,7 @@ export const lifeEventsRouter = router({
         await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
         return event;
       } catch (error) {
+        captureException(error, { tags: { trpcPath: "lifeEvents.create" } });
         if (error instanceof PersonalExperimentAssociationError) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
         }
@@ -62,6 +64,7 @@ export const lifeEventsRouter = router({
         }
         return event;
       } catch (error) {
+        captureException(error, { tags: { trpcPath: "lifeEvents.update" } });
         if (error instanceof PersonalExperimentAssociationError) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
         }

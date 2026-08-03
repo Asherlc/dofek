@@ -348,8 +348,7 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
           message={getQueryErrorMessage(analysisQuery.error)}
           minHeight={72}
         />
-      ) : null}
-      {analysisQuery.isLoading || result === undefined ? (
+      ) : analysisQuery.isLoading || result === undefined ? (
         <QueryStatePanel variant="loading" minHeight={72} />
       ) : (
         <>
@@ -450,7 +449,7 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
               key={`${observation.phase}-${observation.phaseDate}`}
               style={styles.experimentMeta}
             >
-              {`${observation.phaseDate} → ${observation.outcomeDate}: ${observation.value ?? "Missing"}; ${observation.adherence ?? "baseline"}; sources: ${observation.sourceProviderIds.join(", ") || "none reported"}`}
+              {`${observation.phaseDate} → ${observation.outcomeDate}: ${observation.value ?? "Missing"}; ${observation.phase === "baseline" ? "baseline" : (observation.adherence ?? "no check-in")}; sources: ${observation.sourceProviderIds.join(", ") || "none reported"}`}
             </Text>
           ))}
 

@@ -24,6 +24,7 @@ interface TestState {
   checkInInput: Record<string, unknown> | null;
   annotationInput: Record<string, unknown> | null;
   analysisData: Record<string, unknown> | undefined;
+  analysisError: Error | null;
   createError: Error | null;
 }
 
@@ -43,6 +44,7 @@ const state = vi.hoisted<TestState>(() => ({
   checkInInput: null,
   annotationInput: null,
   analysisData: undefined,
+  analysisError: null,
   createError: null,
 }));
 
@@ -149,8 +151,8 @@ vi.mock("../lib/trpc.ts", () => ({
         useQuery: () => ({
           data: state.analysisData,
           isLoading: false,
-          isError: false,
-          error: null,
+          isError: state.analysisError !== null,
+          error: state.analysisError,
         }),
       },
     },
@@ -185,6 +187,7 @@ describe("PersonalExperimentsPage", () => {
     state.checkInInput = null;
     state.annotationInput = null;
     state.analysisData = undefined;
+    state.analysisError = null;
     state.createError = null;
   });
 
@@ -277,6 +280,39 @@ describe("PersonalExperimentsPage", () => {
     expect(screen.getByText("Database unavailable. Try again shortly.")).toBeTruthy();
   });
 
+  it("does not show analysis loading alongside an analysis error", async () => {
+    state.listData = [
+      {
+        id: "exp-1",
+        hypothesis: "Does earlier bedtime improve HRV?",
+        intervention: "Lights out by 10pm",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 1,
+        baselineDays: 7,
+        interventionDays: 14,
+        startDate: "2026-07-01",
+        status: "active",
+        stoppedAt: null,
+        phase: "intervention",
+        phaseLabel: "Intervention",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-07",
+          interventionStartDate: "2026-07-08",
+          interventionEndDate: "2026-07-21",
+          scheduleSummary: "Day 3 of intervention (12 days remaining)",
+        },
+      },
+    ];
+    state.analysisError = new Error("Analysis unavailable. Try again shortly.");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Analysis unavailable. Try again shortly.")).toBeTruthy();
+    expect(screen.queryByText("Loading")).toBeNull();
+  });
+
   it("records raw check-in context and renders server-derived evidence with linked annotations", async () => {
     state.listData = [
       {
@@ -320,7 +356,18 @@ describe("PersonalExperimentsPage", () => {
       ],
       analysis: {
         availability: "available",
-        observations: [],
+        observations: [
+          {
+            phase: "intervention",
+            phaseDate: "2026-07-10",
+            outcomeDate: "2026-07-10",
+            value: null,
+            adherence: null,
+            confounder: null,
+            note: null,
+            sourceProviderIds: [],
+          },
+        ],
         coverage: {
           baseline: {
             expectedDayCount: 5,
@@ -363,6 +410,9 @@ describe("PersonalExperimentsPage", () => {
 
     expect(screen.getByText("Outcome evidence")).toBeTruthy();
     expect(screen.getByText(/5 of 7 intervention outcomes observed/)).toBeTruthy();
+    expect(
+      screen.getByText(/2026-07-10 → 2026-07-10: Missing; no check-in; sources: none reported/),
+    ).toBeTruthy();
     expect(
       screen.getByText("This is an observational comparison, not a causal conclusion."),
     ).toBeTruthy();

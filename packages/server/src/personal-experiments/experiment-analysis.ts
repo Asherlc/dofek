@@ -272,7 +272,7 @@ function buildLimitations(
   ).length;
   if (confounderCount > 0) {
     limitations.push(
-      `${confounderCount} linked ${pluralize(confounderCount, "confounder")} was recorded.`,
+      `${confounderCount} linked ${pluralize(confounderCount, "confounder")} ${confounderCount === 1 ? "was" : "were"} recorded.`,
     );
   }
   if (observations.some((observation) => observation.sourceProviderIds.length > 1)) {

@@ -127,4 +127,23 @@ describe("buildExperimentAnalysis", () => {
       "At least 5 observed baseline outcomes and 5 adherent or partial intervention outcomes are required.",
     );
   });
+
+  it("uses a plural verb when multiple linked confounders are recorded", () => {
+    const result = buildExperimentAnalysis({
+      lagDays: 0,
+      schedule: {
+        baselineStartDate: "2026-08-01",
+        baselineEndDate: "2026-08-01",
+        interventionStartDate: "2026-08-02",
+        interventionEndDate: "2026-08-03",
+      },
+      checkIns: [
+        { date: "2026-08-02", adherence: "adherent", confounder: "Travel", note: null },
+        { date: "2026-08-03", adherence: "partial", confounder: "Late meal", note: null },
+      ],
+      outcomes: [],
+    });
+
+    expect(result.limitations).toContain("2 linked confounders were recorded.");
+  });
 });
