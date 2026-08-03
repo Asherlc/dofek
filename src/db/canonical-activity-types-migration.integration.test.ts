@@ -652,7 +652,11 @@ describe("canonical activity types Postgres migration", () => {
       `,
       );
       expect(everyLegacyType).toEqual(
-        ([...LEGACY_ACTIVITY_TYPES, "future_vendor_activity"] as const)
+        (
+          [...LEGACY_ACTIVITY_TYPES, "future_vendor_activity"] as Array<
+            (typeof LEGACY_ACTIVITY_TYPES)[number] | "future_vendor_activity"
+          >
+        )
           .sort()
           .map((providerType) =>
             providerType === "future_vendor_activity"
