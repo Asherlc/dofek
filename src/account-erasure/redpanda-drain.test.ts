@@ -108,6 +108,75 @@ describe("account erasure Redpanda drain", () => {
     expect(admin.fetchTopicOffsets).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["an unknown resource", "metric-stream-v1.quarantine.other", 2],
+    ["a non-topic resource", "metric-stream-v1.quarantine.v1", 1],
+  ])("fails when Redpanda returns %s", async (_label, resourceName, resourceType) => {
+    const admin = {
+      describeConfigs: vi.fn(async () => ({
+        resources: [
+          {
+            configEntries: [],
+            errorCode: 0,
+            errorMessage: null,
+            resourceName,
+            resourceType,
+          },
+        ],
+      })),
+      fetchOffsets: vi.fn(),
+      fetchTopicOffsets: vi.fn(),
+    };
+
+    await expect(
+      captureAccountErasureQuarantineHighWatermarks(admin, "metric-stream-v1"),
+    ).rejects.toThrow("could not verify quarantine topic");
+  });
+
+  it("reports a broker error when the quarantine resource is unhealthy", async () => {
+    const admin = {
+      describeConfigs: vi.fn(async () => ({
+        resources: [
+          {
+            configEntries: [],
+            errorCode: 42,
+            errorMessage: null,
+            resourceName: "metric-stream-v1.quarantine.v1",
+            resourceType: 2,
+          },
+        ],
+      })),
+      fetchOffsets: vi.fn(),
+      fetchTopicOffsets: vi.fn(),
+    };
+
+    await expect(
+      captureAccountErasureQuarantineHighWatermarks(admin, "metric-stream-v1"),
+    ).rejects.toThrow("broker error 42");
+  });
+
+  it("reports missing quarantine configuration entries explicitly", async () => {
+    const admin = {
+      describeConfigs: vi.fn(async () => ({
+        resources: [
+          {
+            configEntries: [{ configName: "cleanup.policy", configValue: "delete" }],
+            errorCode: 0,
+            errorMessage: null,
+            resourceName: "metric-stream-v1.quarantine.v1",
+            resourceType: 2,
+          },
+        ],
+      })),
+      fetchOffsets: vi.fn(),
+      fetchTopicOffsets: vi.fn(),
+    };
+
+    await expect(
+      captureAccountErasureQuarantineHighWatermarks(admin, "metric-stream-v1"),
+    ).rejects.toThrow("retention.ms must be 604800000; found missing");
+  });
+
   it("requires every serving and archive consumer offset to reach the fence", async () => {
     const fetchOffsets = vi.fn(async ({ groupId }: { groupId: string }) => [
       {
@@ -149,6 +218,37 @@ describe("account erasure Redpanda drain", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("rejects an uncommitted partition when records exist after the fence", async () => {
+    const admin = {
+      fetchOffsets: vi.fn(async () => [
+        {
+          topic: "metric-stream-v1",
+          partitions: [{ partition: 4, offset: "-1" }],
+        },
+      ]),
+      fetchTopicOffsets: vi.fn(),
+    };
+
+    await expect(
+      assertAccountErasureConsumersDrained(admin, "metric-stream-v1", [
+        { partition: 4, offset: "12", low: "2" },
+      ]),
+    ).rejects.toThrow("partition(s): 4");
+  });
+
+  it("rejects when the consumer response omits a topic", async () => {
+    const admin = {
+      fetchOffsets: vi.fn(async () => []),
+      fetchTopicOffsets: vi.fn(),
+    };
+
+    await expect(
+      assertAccountErasureConsumersDrained(admin, "metric-stream-v1", [
+        { partition: 0, offset: "12", low: "2" },
+      ]),
+    ).rejects.toThrow("partition(s): 0");
+  });
+
   it("rejects finalization while any captured record remains in the replay log", async () => {
     const admin = {
       fetchOffsets: vi.fn(),
@@ -183,6 +283,19 @@ describe("account erasure Redpanda drain", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("rejects finalization when the current topic omits a captured partition", async () => {
+    const admin = {
+      fetchOffsets: vi.fn(),
+      fetchTopicOffsets: vi.fn(async () => []),
+    };
+
+    await expect(
+      assertAccountErasureReplayExpired(admin, "metric-stream-v1", [
+        { partition: 0, offset: "10", low: "2" },
+      ]),
+    ).rejects.toThrow("replay data remains in partition(s): 0");
+  });
+
   it("blocks final retention verification while a pre-boundary quarantine payload remains", async () => {
     const admin = {
       describeConfigs: vi.fn(async () => ({
@@ -210,6 +323,36 @@ describe("account erasure Redpanda drain", () => {
         { partition: 0, offset: "12", low: "4" },
       ]),
     ).rejects.toThrow("quarantine data remains in partition(s): 0");
+  });
+
+  it("retains the replay failure as the cause of quarantine verification errors", async () => {
+    const admin = {
+      describeConfigs: vi.fn(async () => ({
+        resources: [
+          {
+            configEntries: [
+              { configName: "cleanup.policy", configValue: "delete" },
+              { configName: "retention.ms", configValue: "604800000" },
+              { configName: "retention.bytes", configValue: "1073741824" },
+            ],
+            errorCode: 0,
+            errorMessage: null,
+            resourceName: "metric-stream-v1.quarantine.v1",
+            resourceType: 2,
+          },
+        ],
+      })),
+      fetchOffsets: vi.fn(),
+      fetchTopicOffsets: vi.fn(async () => [{ partition: 0, offset: "15", high: "15", low: "11" }]),
+    };
+
+    const verification = assertAccountErasureQuarantineExpired(admin, "metric-stream-v1", [
+      { partition: 0, offset: "12", low: "4" },
+    ]);
+    const error = await verification.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    if (!(error instanceof Error)) throw error;
+    expect(error.cause).toBeInstanceOf(Error);
   });
 
   it("proves every pre-boundary quarantine payload is physically absent", async () => {

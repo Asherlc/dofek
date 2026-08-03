@@ -110,6 +110,19 @@ describe("PeerDB account-erasure proof", () => {
   });
 
   it.each([
+    "not-a-lsn",
+    "0/",
+    "0/xyz",
+    "xyz/100",
+  ])("rejects an invalid Postgres WAL boundary: %s", async (walLsn) => {
+    const database = {
+      execute: vi.fn(async () => [{ wal_lsn: walLsn }]),
+    };
+
+    await expect(captureAccountErasurePostgresWalLsn(database)).rejects.toThrow();
+  });
+
+  it.each([
     ["inactive", { active: false }],
     ["lost", { wal_status: "lost" }],
     ["without a confirmed flush LSN", { confirmed_flush_lsn: null }],
@@ -238,6 +251,83 @@ describe("PeerDB account-erasure proof", () => {
         options.query.includes("FROM `postgres_fitness`"),
       ),
     ).toHaveLength(5);
+  });
+
+  it("does not infer user ownership from an id column on another table", async () => {
+    const database = { execute: vi.fn(async () => drainedSlotRows) };
+    const clickHouse = clickHouseClient(0, [
+      {
+        database: "postgres_fitness",
+        engine: "ReplacingMergeTree",
+        has_id: true,
+        name: "id_only_table",
+      },
+    ]);
+
+    await expect(
+      assertPeerDbAccountErasureDrained(database, clickHouse, "0/100", {
+        activityIds: [],
+        operationIds: [],
+        sleepSessionIds: [],
+        userId,
+      }),
+    ).resolves.toBeUndefined();
+    expect(clickHouse.query).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not query supported tables when no matching identifiers were captured", async () => {
+    const database = { execute: vi.fn(async () => drainedSlotRows) };
+    const clickHouse = clickHouseClient(0, [
+      {
+        database: "postgres_fitness",
+        engine: "ReplacingMergeTree",
+        has_activity_id: true,
+        name: "activity_links",
+      },
+      {
+        database: "postgres_fitness",
+        engine: "ReplacingMergeTree",
+        has_operation_id: true,
+        name: "operation_links",
+      },
+      {
+        database: "postgres_fitness",
+        engine: "ReplacingMergeTree",
+        has_session_id: true,
+        name: "session_links",
+      },
+      {
+        database: "postgres_fitness",
+        engine: "ReplacingMergeTree",
+        has_sleep_session_id: true,
+        name: "sleep_links",
+      },
+    ]);
+
+    await expect(
+      assertPeerDbAccountErasureDrained(database, clickHouse, "0/100", {
+        activityIds: [],
+        operationIds: [],
+        sleepSessionIds: [],
+        userId,
+      }),
+    ).resolves.toBeUndefined();
+    expect(clickHouse.query).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails when a managed mirror slot is missing from the verification result", async () => {
+    const database = {
+      execute: vi.fn(async () => drainedSlotRows.slice(1)),
+    };
+
+    await expect(
+      assertPeerDbAccountErasureDrained(database, clickHouseClient(), "0/100", {
+        activityIds: [],
+        operationIds: [],
+        sleepSessionIds: [],
+        userId,
+      }),
+    ).rejects.toThrow("missing managed mirror slot");
   });
 
   it("fails closed when a managed PeerDB mirror has not acknowledged the deletion boundary", async () => {

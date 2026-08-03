@@ -179,6 +179,29 @@ describe("R2AccountErasureRestoreLedger", () => {
     );
   });
 
+  it.each([
+    null,
+    "not-an-error",
+    {},
+    { $metadata: null },
+    { $metadata: { httpStatusCode: 503 } },
+  ])("does not classify a non-412 write failure as an idempotent conflict: %s", async (error) => {
+    const client = makeClient(async () => {
+      throw error;
+    });
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(
+      ledger.recordIntent({
+        keyId: "test-v1",
+        requestId,
+        requestedAt: "2026-07-26T12:00:00.000Z",
+        statusToken,
+        userHash,
+      }),
+    ).rejects.toBeDefined();
+  });
+
   it("returns null for each supported R2 not-found error shape", async () => {
     const errors: unknown[] = [
       Object.assign(new Error("missing"), { name: "NoSuchKey" }),
@@ -195,6 +218,23 @@ describe("R2AccountErasureRestoreLedger", () => {
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).resolves.toBeNull();
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).resolves.toBeNull();
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).resolves.toBeNull();
+  });
+
+  it.each([
+    null,
+    "not-an-error",
+    {},
+    { $metadata: null },
+    { $metadata: { httpStatusCode: 403 } },
+  ])("does not classify a non-404 read failure as not found: %s", async (error) => {
+    const client = makeClient(async () => {
+      throw error;
+    });
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(
+      ledger.findIntent({ keyId: "test-v1", requestId, userHash }),
+    ).rejects.toBeDefined();
   });
 
   it("rejects an object without a body and malformed sealed intent JSON", async () => {
@@ -236,6 +276,32 @@ describe("R2AccountErasureRestoreLedger", () => {
       requestedAt: "2026-07-26T12:00:00.000Z",
       statusToken,
       userHash: "b".repeat(64),
+    };
+    const client = makeClient(async () => ({
+      response: {
+        body: Readable.from(JSON.stringify(sealAccountErasureRestoreIntent(intent))),
+        headers: { "content-type": "application/json" },
+        statusCode: 200,
+      },
+    }));
+    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+
+    await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).rejects.toThrow(
+      "does not match its key",
+    );
+  });
+
+  it.each([
+    ["keyId", { keyId: "test-v0" }],
+    ["requestId", { requestId: "20000000-0000-4000-8000-000000001994" }],
+  ])("rejects an intent whose %s does not match its object key", async (_field, difference) => {
+    const intent = {
+      keyId: "test-v1",
+      requestId,
+      requestedAt: "2026-07-26T12:00:00.000Z",
+      statusToken,
+      userHash,
+      ...difference,
     };
     const client = makeClient(async () => ({
       response: {
@@ -378,6 +444,34 @@ describe("R2AccountErasureRestoreLedger", () => {
     await expect(
       new R2AccountErasureRestoreLedger(truncatedClient, "erasure-ledger").listIntentReferences(),
     ).rejects.toThrow("truncated without a continuation token");
+  });
+
+  it("handles an empty page and rejects objects without keys", async () => {
+    const emptyClient = makeClient(async () => ({
+      response: {
+        body: Readable.from(
+          '<?xml version="1.0"?><ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>',
+        ),
+        headers: { "content-type": "application/xml" },
+        statusCode: 200,
+      },
+    }));
+    await expect(
+      new R2AccountErasureRestoreLedger(emptyClient, "erasure-ledger").listIntentReferences(),
+    ).resolves.toEqual([]);
+
+    const missingKeyClient = makeClient(async () => ({
+      response: {
+        body: Readable.from(
+          '<?xml version="1.0"?><ListBucketResult><IsTruncated>false</IsTruncated><Contents><Size>1</Size></Contents></ListBucketResult>',
+        ),
+        headers: { "content-type": "application/xml" },
+        statusCode: 200,
+      },
+    }));
+    await expect(
+      new R2AccountErasureRestoreLedger(missingKeyClient, "erasure-ledger").listIntentReferences(),
+    ).rejects.toThrow("object without a key");
   });
 
   it.each([

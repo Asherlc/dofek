@@ -151,6 +151,79 @@ describe("handleSlackCallback", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects a missing Slack OAuth state after deleting the state token", async () => {
+    const res = response();
+
+    await handleSlackCallback(mockOf<Request>({}), res, "code", "state", null);
+
+    expect(mocks.oauthStateDelete).toHaveBeenCalledWith("state");
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith("Unknown or expired Slack OAuth state");
+  });
+
+  it.each([
+    ["not ok", { ok: false, error: "invalid_code" }],
+    ["without a bot token", { ok: true, team: { id: "T1" }, authed_user: { id: "U1" } }],
+    ["without a team", { ok: true, access_token: "xoxb-token", authed_user: { id: "U1" } }],
+    ["without an installer", { ok: true, access_token: "xoxb-token", team: { id: "T1" } }],
+  ])("returns a controlled failure for a Slack response %s", async (_label, tokenResponse) => {
+    const fetchMock = vi.fn(async () => Response.json(tokenResponse));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = response();
+
+    await handleSlackCallback(mockOf<Request>({}), res, "code", "state", slackState);
+
+    expect(mocks.repositoryUpsert).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith("Slack OAuth failed");
+  });
+
+  it("persists optional Slack installation fields as null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          access_token: "xoxb-token",
+          authed_user: { id: "U1" },
+          ok: true,
+          team: { id: "T1" },
+        }),
+      ),
+    );
+
+    await handleSlackCallback(mockOf<Request>({}), response(), "code", "state", slackState);
+
+    expect(mocks.repositoryUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appId: null,
+        botId: null,
+        botUserId: null,
+        installerSlackUserId: "U1",
+        teamName: null,
+      }),
+    );
+  });
+
+  it("does not migrate entries when the existing Slack link already belongs to the user", async () => {
+    mocks.executeWithSchema.mockResolvedValueOnce([{ user_id: "user-1" }]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          access_token: "xoxb-token",
+          authed_user: { id: "U1" },
+          ok: true,
+          team: { id: "T1", name: "Workspace" },
+        }),
+      ),
+    );
+
+    await handleSlackCallback(mockOf<Request>({}), response(), "code", "state", slackState);
+
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(mocks.invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+  });
+
   it("does not send fenced Slack OAuth identity or payload data to logs or Sentry", async () => {
     const privateValues = [
       "user-private-fence-2001",
@@ -230,6 +303,22 @@ describe("handleSlackCallback", () => {
     });
   });
 
+  it.each([
+    new mocks.AccountErasureIdentityFencedError(),
+    new mocks.AccountErasureUserFencedError(),
+  ])("does not report account-erasure fence failures to Sentry", async (fenceError) => {
+    mocks.withUserWriteFence.mockRejectedValueOnce(fenceError);
+
+    await expect(
+      handleSlackCallback(mockOf<Request>({}), response(), "code", "state", slackState),
+    ).rejects.toBe(fenceError);
+
+    expect(mocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.loggerWarn).toHaveBeenCalledWith(
+      "[auth] Slack OAuth rejected by account-erasure fence",
+    );
+  });
+
   it("revokes a newly issued bot token when durable persistence fails", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input instanceof Request ? input.url : input.toString();
@@ -298,6 +387,34 @@ describe("handleSlackCallback", () => {
       "https://slack.com/api/auth.revoke",
       expect.objectContaining({
         headers: { Authorization: "Bearer xoxb-orphan" },
+      }),
+    );
+  });
+
+  it("reports a failed orphan-token revocation without masking the persistence error", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/oauth.v2.access")) {
+        return Response.json({
+          access_token: "xoxb-orphan",
+          ok: true,
+          team: { id: "T1" },
+          authed_user: { id: "U1" },
+        });
+      }
+      if (url.endsWith("/auth.revoke")) return Response.json({ ok: false });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mocks.repositoryUpsert.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(
+      handleSlackCallback(mockOf<Request>({}), response(), "code", "state", slackState),
+    ).rejects.toThrow("database unavailable");
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: { operation: "revoke-orphan-bot-token", source: "slack-oauth" },
       }),
     );
   });
