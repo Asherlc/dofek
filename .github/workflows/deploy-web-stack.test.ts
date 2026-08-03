@@ -191,6 +191,19 @@ const STABLE_OBSERVATION = {
 } satisfies ServiceObservation;
 
 describe("deploy-web-stack workflow contract", () => {
+  it("quiesces the migration-running worker before the dependency stack apply", () => {
+    const stepStart = workflowText.indexOf(
+      "      - name: Apply dependency stack before migrations",
+    );
+    const stepEnd = workflowText.indexOf("\n      - name: Wait for Postgres writable", stepStart);
+
+    expect(stepStart).toBeGreaterThanOrEqual(0);
+    expect(stepEnd).toBeGreaterThan(stepStart);
+    expect(workflowText.slice(stepStart, stepEnd)).toContain(
+      "-c deploy/stack.migration-quiesce.yml",
+    );
+  });
+
   it("keeps ClickHouse consumers quiesced when CDC configuration fails", () => {
     expect(workflowText).toContain(
       `      - name: Deploy ClickHouse consumer services

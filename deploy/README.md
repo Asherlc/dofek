@@ -337,18 +337,21 @@ terminated:
       path such as `/mnt/dofek-data/redis` is missing. See
       [Docker's bind-mount constraints and syntax](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
    7. Apply the stack configuration before migrations with a non-prune,
-      detached `docker stack deploy` and the temporary ClickHouse-consumer
-      quiesce overlay. On existing stacks this uses the currently deployed app
-      image tag, so database, ClickHouse, network, config, and resource-limit
-      changes are applied before migrations without rolling new app code ahead
-      of schema changes. The overlay keeps analytics-worker and the metric-stream
-      ClickHouse sink at zero replicas during the migration and CDC setup window.
-      On clean-slate hosts the stack apply uses the deploy image tag so the DB
-      service and overlay network exist before readiness checks. After migrations,
-      the workflow deploys the requested app image with the consumer-quiesce
-      overlay still applied. The deploy workflow waits explicitly for Postgres
-      and ClickHouse instead of keeping a long-lived Docker-over-SSH stack-deploy
-      wait open while the single-node host restarts services.
+      detached `docker stack deploy`, the temporary ClickHouse-consumer
+      quiesce overlay, and the migration quiesce overlay. On existing stacks
+      this uses the currently deployed app image tag, so database, ClickHouse,
+      network, config, and resource-limit changes are applied before migrations
+      without rolling new app code ahead of schema changes. The overlays keep
+      `analytics-worker`, the metric-stream ClickHouse sink, and the
+      migration-running `worker` at zero replicas during the migration window;
+      see the [worker entrypoint](../entrypoint.sh). On clean-slate hosts the
+      stack apply uses the deploy image tag so the DB service and overlay network
+      exist before readiness checks. After migrations, the workflow deploys the
+      requested app image with only the consumer-quiesce overlay still applied,
+      which restores `worker` using the same image that ran the migrations. The
+      deploy workflow waits explicitly for Postgres and ClickHouse instead of
+      keeping a long-lived Docker-over-SSH stack-deploy wait open while the
+      single-node host restarts services.
    8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
       ClickHouse answers `/ping`.
    9. Run the requested image's tracked Postgres and ClickHouse migrations in a
@@ -361,7 +364,7 @@ terminated:
        the deployment change record. They must not be replayed on every deploy.
        Ordinary integration setup creates the current schema directly and does
        not replay either historical scan.
-   11. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
+   11. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The migration-only overlay is used only by the pre-migration apply to keep the old worker from starting against a newer migration journal. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    13. After every requested app service converges, wait for Postgres to be
        writable and run the resumable `provider-connection-cutover` one-shot
@@ -532,9 +535,12 @@ before migrations:
 
 - On existing stacks, the pre-migration deploy uses the currently running app
   image tag so infrastructure/config changes are applied while app code remains
-  on the old release.
+  on the old release. The migration quiesce overlay sets `worker` to zero so
+  that old release cannot run its startup migration against a database that the
+  requested image will advance.
 - On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
-  because there is no old release to preserve.
+  because there is no old release to preserve; the migration quiesce overlay
+  still keeps `worker` stopped until the one-shot migration completes.
 - After the pre-migration stack apply, the workflow waits for Postgres and
   ClickHouse, runs migrations, and then performs the pruned deploy with the
   requested image tag while the ClickHouse consumers remain quiesced.

@@ -544,7 +544,9 @@ jobs:
           echo "Applying dependency changes with app image ${pre_migration_image_tag} before migrations."
           IMAGE_TAG="$pre_migration_image_tag" \
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml \
+            docker stack deploy $STACK_FILE_FLAGS \
+              -c deploy/stack.cdc-quiesce.yml \
+              -c deploy/stack.migration-quiesce.yml \
               --with-registry-auth --detach=true "$STACK_NAME"
 
       - name: Wait for Postgres writable
