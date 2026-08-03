@@ -23,6 +23,7 @@ describe("SleepPerformanceCard", () => {
           providerId: "whoop",
           sourceName: "WHOOP 4.0",
           sourceProviders: ["whoop"],
+          summaryDateContext: { effectiveDate: "2026-04-02", timezone: "UTC" },
         }}
       />,
     );
