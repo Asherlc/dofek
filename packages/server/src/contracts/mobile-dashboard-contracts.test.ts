@@ -426,6 +426,19 @@ describe("mobileRecoveryFixtureSchema", () => {
     );
   });
 
+  it("rejects an out-of-window decision-context measurement date", () => {
+    const fixture = validRecoveryFixture();
+    const latestMeasurement = fixture.data.decisionContext?.latestMeasurement;
+    if (!latestMeasurement) throw new Error("Missing decision-context measurement fixture");
+    latestMeasurement.date = "2026-07-28";
+
+    expectIssue(
+      mobileRecoveryFixtureSchema.safeParse(fixture),
+      [],
+      "Fixture date 2026-07-28 is outside 2026-06-28..2026-07-27",
+    );
+  });
+
   it("rejects calendar-invalid dates even when they sort inside the selected window", () => {
     const fixture = validRecoveryFixture();
     const firstHrv = fixture.data.hrvVariability[0];

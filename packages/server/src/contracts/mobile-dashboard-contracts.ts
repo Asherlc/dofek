@@ -502,6 +502,9 @@ export const mobileRecoveryFixtureSchema = z
         ...data.stress.daily.map((row) => row.date),
         ...data.dailyMetrics.map((row) => row.date),
         ...data.weight.map((row) => row.date),
+        ...(data.decisionContext?.latestMeasurement
+          ? [data.decisionContext.latestMeasurement.date]
+          : []),
       ],
       context,
     );
