@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { dedupedActivitiesTableSql } from "./clickhouse-migrations/0024_create_dbt_serving_read_model_tables.ts";
 
 const activityId = "00000000-0000-0000-0000-000000000101";
 const linkedActivityId = "00000000-0000-0000-0000-000000000102";
@@ -181,7 +180,7 @@ async function seedMissingSourceNameFixture(
     createActivitySourceRecordsTableSql(targetSchema),
     createActivityDuplicateGroupsTableSql(targetSchema),
     createSourceActivityTableSql(targetSchema),
-    dedupedActivitiesTableSql.replaceAll("analytics.", `${targetSchema}.`),
+    createDedupedActivitiesTableSql(targetSchema),
     insertActivitySourceRecordSql(targetSchema),
     insertActivityDuplicateGroupSql(targetSchema),
   ]);
@@ -197,7 +196,7 @@ async function seedSpecificActivityTypeFixture(
     createActivitySourceRecordsTableSql(targetSchema),
     createActivityDuplicateGroupsTableSql(targetSchema),
     createSourceActivityTableSql(targetSchema),
-    dedupedActivitiesTableSql.replaceAll("analytics.", `${targetSchema}.`),
+    createDedupedActivitiesTableSql(targetSchema),
     insertActivitySourceRecordSql(targetSchema, "cardio"),
     `INSERT INTO ${targetSchema}.activity_source_records VALUES (
   '${linkedActivityId}',
@@ -205,6 +204,8 @@ async function seedSpecificActivityTypeFixture(
   '${testUserId}',
   'whoop-rock-climbing-workout',
   'rock_climbing',
+  'rock_climbing',
+  CAST(NULL, 'Nullable(String)'),
   toDateTime64('2026-07-05 16:00:00', 6, 'UTC'),
   toDateTime64('2026-07-05 17:00:00', 6, 'UTC'),
   CAST(NULL, 'Nullable(String)'),
@@ -245,6 +246,8 @@ function createActivitySourceRecordsTableSql(targetSchema: string): string {
   user_id Nullable(UUID),
   external_id Nullable(String),
   canonical_type Nullable(String),
+  provider_type Nullable(String),
+  modality Nullable(String),
   started_at Nullable(DateTime64(6, 'UTC')),
   ended_at Nullable(DateTime64(6, 'UTC')),
   source_name Nullable(String),
@@ -263,6 +266,38 @@ function createActivitySourceRecordsTableSql(targetSchema: string): string {
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY activity_id`;
+}
+
+function createDedupedActivitiesTableSql(targetSchema: string): string {
+  return `CREATE TABLE ${targetSchema}.deduped_activities (
+  activity_id UUID,
+  provider_id String,
+  user_id UUID,
+  primary_activity_id UUID,
+  canonical_type String,
+  provider_type String,
+  modality Nullable(String),
+  started_at DateTime64(6, 'UTC'),
+  ended_at Nullable(DateTime64(6, 'UTC')),
+  source_name Nullable(String),
+  name Nullable(String),
+  notes Nullable(String),
+  timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
+  raw Nullable(String),
+  source_synced_at DateTime64(9, 'UTC'),
+  source_providers Array(String),
+  source_external_ids Array(Map(String, String)),
+  absent_source_external_ids Array(Map(String, String)),
+  member_activity_ids Array(UUID),
+  refresh_version UInt64,
+  is_deleted UInt8,
+  refreshed_at DateTime64(9, 'UTC')
+)
+ENGINE = ReplacingMergeTree(refresh_version)
+ORDER BY (user_id, activity_id)`;
 }
 
 function createActivityDuplicateGroupsTableSql(targetSchema: string): string {
@@ -299,6 +334,8 @@ function insertActivitySourceRecordSql(targetSchema: string, activityType = "cyc
   '${testUserId}',
   'peloton-workout-without-source-name',
   '${activityType}',
+  '${activityType}',
+  CAST(NULL, 'Nullable(String)'),
   toDateTime64('2026-07-05 16:00:00', 6, 'UTC'),
   toDateTime64('2026-07-05 17:00:00', 6, 'UTC'),
   CAST(NULL, 'Nullable(String)'),
