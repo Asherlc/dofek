@@ -451,7 +451,7 @@ BEGIN
         join_predicate := join_predicate || ' AND ';
       END IF;
       join_predicate := join_predicate || format(
-        'to_jsonb(account_erasure_parent) ->> %L = %L',
+        'account_erasure_parent.%I = %L',
         relationship.parent_columns[column_index],
         child_value
       );
