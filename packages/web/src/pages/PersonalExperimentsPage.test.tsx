@@ -21,6 +21,10 @@ interface TestState {
   metricsError: Error | null;
   createInput: Record<string, unknown> | null;
   stopInput: { id: string } | null;
+  checkInInput: Record<string, unknown> | null;
+  annotationInput: Record<string, unknown> | null;
+  analysisData: Record<string, unknown> | undefined;
+  analysisError: Error | null;
   createError: Error | null;
 }
 
@@ -37,6 +41,10 @@ const state = vi.hoisted<TestState>(() => ({
   metricsError: null,
   createInput: null,
   stopInput: null,
+  checkInInput: null,
+  annotationInput: null,
+  analysisData: undefined,
+  analysisError: null,
   createError: null,
 }));
 
@@ -88,7 +96,9 @@ vi.mock("../lib/trpc.ts", () => ({
     useUtils: () => ({
       personalExperiments: {
         list: { invalidate: vi.fn() },
+        analysis: { invalidate: vi.fn() },
       },
+      lifeEvents: { list: { invalidate: vi.fn() } },
     }),
     personalExperiments: {
       list: {
@@ -128,6 +138,34 @@ vi.mock("../lib/trpc.ts", () => ({
           variables: null,
         }),
       },
+      checkIn: {
+        useMutation: () => ({
+          mutate: (input: Record<string, unknown>) => {
+            state.checkInInput = input;
+          },
+          isPending: false,
+          error: null,
+        }),
+      },
+      analysis: {
+        useQuery: () => ({
+          data: state.analysisData,
+          isLoading: false,
+          isError: state.analysisError !== null,
+          error: state.analysisError,
+        }),
+      },
+    },
+    lifeEvents: {
+      create: {
+        useMutation: () => ({
+          mutate: (input: Record<string, unknown>) => {
+            state.annotationInput = input;
+          },
+          isPending: false,
+          error: null,
+        }),
+      },
     },
   },
 }));
@@ -146,6 +184,10 @@ describe("PersonalExperimentsPage", () => {
     state.metricsError = null;
     state.createInput = null;
     state.stopInput = null;
+    state.checkInInput = null;
+    state.annotationInput = null;
+    state.analysisData = undefined;
+    state.analysisError = null;
     state.createError = null;
   });
 
@@ -236,5 +278,167 @@ describe("PersonalExperimentsPage", () => {
     const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
     render(<PersonalExperimentsPage search={state.search} />);
     expect(screen.getByText("Database unavailable. Try again shortly.")).toBeTruthy();
+  });
+
+  it("does not show analysis loading alongside an analysis error", async () => {
+    state.listData = [
+      {
+        id: "exp-1",
+        hypothesis: "Does earlier bedtime improve HRV?",
+        intervention: "Lights out by 10pm",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 1,
+        baselineDays: 7,
+        interventionDays: 14,
+        startDate: "2026-07-01",
+        status: "active",
+        stoppedAt: null,
+        phase: "intervention",
+        phaseLabel: "Intervention",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-07",
+          interventionStartDate: "2026-07-08",
+          interventionEndDate: "2026-07-21",
+          scheduleSummary: "Day 3 of intervention (12 days remaining)",
+        },
+      },
+    ];
+    state.analysisError = new Error("Analysis unavailable. Try again shortly.");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Analysis unavailable. Try again shortly.")).toBeTruthy();
+    expect(screen.queryByText("Loading")).toBeNull();
+  });
+
+  it("records raw check-in context and renders server-derived evidence with linked annotations", async () => {
+    state.listData = [
+      {
+        id: "exp-1",
+        hypothesis: "Does earlier bedtime improve HRV?",
+        intervention: "Lights out by 10pm",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 1,
+        baselineDays: 5,
+        interventionDays: 7,
+        startDate: "2026-07-01",
+        status: "active",
+        stoppedAt: null,
+        phase: "intervention",
+        phaseLabel: "Intervention",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-05",
+          interventionStartDate: "2026-07-06",
+          interventionEndDate: "2026-07-12",
+          scheduleSummary: "Day 2 of intervention (6 days remaining)",
+        },
+      },
+    ];
+    state.analysisData = {
+      outcomeMetricId: "hrv",
+      outcomeMetricLabel: "Heart Rate Variability",
+      checkIns: [],
+      annotations: [
+        {
+          id: "event-1",
+          label: "Late flight",
+          startedAt: "2026-07-09",
+          endedAt: null,
+          category: "lifestyle",
+          ongoing: false,
+          notes: "Arrived after midnight",
+          createdAt: "2026-07-09T10:00:00.000Z",
+        },
+      ],
+      analysis: {
+        availability: "available",
+        observations: [
+          {
+            phase: "intervention",
+            phaseDate: "2026-07-10",
+            outcomeDate: "2026-07-10",
+            value: null,
+            adherence: null,
+            confounder: null,
+            note: null,
+            sourceProviderIds: [],
+          },
+        ],
+        coverage: {
+          baseline: {
+            expectedDayCount: 5,
+            observedOutcomeDayCount: 5,
+            missingOutcomeDayCount: 0,
+            checkInCount: 0,
+            adherenceCounts: { adherent: 0, partial: 0, not_adherent: 0, unknown: 0 },
+          },
+          intervention: {
+            expectedDayCount: 7,
+            observedOutcomeDayCount: 5,
+            missingOutcomeDayCount: 2,
+            checkInCount: 5,
+            adherenceCounts: { adherent: 3, partial: 2, not_adherent: 1, unknown: 1 },
+          },
+        },
+        effect: {
+          baselineMean: 14,
+          interventionMean: 22,
+          differenceInMeans: 8,
+          baselineSampleCount: 5,
+          interventionSampleCount: 5,
+        },
+        uncertainty: {
+          availability: "available",
+          method: "circular_moving_block_bootstrap",
+          level: 0.95,
+          blockLength: 3,
+          requestedReplicateCount: 2000,
+          attemptedReplicateCount: 2000,
+          validReplicateCount: 2000,
+          lower: 4,
+          upper: 12,
+        },
+        limitations: ["This is an observational comparison, not a causal conclusion."],
+      },
+    };
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Outcome evidence")).toBeTruthy();
+    expect(screen.getByText(/5 of 7 intervention outcomes observed/)).toBeTruthy();
+    expect(
+      screen.getByText(/2026-07-10 → 2026-07-10: Missing; no check-in; sources: none reported/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("This is an observational comparison, not a causal conclusion."),
+    ).toBeTruthy();
+    expect(screen.getByText("Late flight")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Adherence"), { target: { value: "partial" } });
+    fireEvent.change(screen.getByLabelText("Confounder"), { target: { value: "Late flight" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record today's check-in" }));
+
+    expect(state.checkInInput).toMatchObject({
+      id: "exp-1",
+      date: "2026-07-26",
+      adherence: "partial",
+      confounder: "Late flight",
+      note: null,
+    });
+
+    fireEvent.change(screen.getByLabelText("Annotation label"), {
+      target: { value: "Late flight" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save annotation" }));
+
+    expect(state.annotationInput).toMatchObject({
+      label: "Late flight",
+      startedAt: "2026-07-26",
+      personalExperimentId: "exp-1",
+    });
   });
 });

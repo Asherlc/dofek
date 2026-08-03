@@ -35,6 +35,14 @@ type ExperimentView = {
   };
 };
 
+const adherenceValues = ["adherent", "partial", "not_adherent", "unknown"] as const;
+
+type Adherence = (typeof adherenceValues)[number];
+
+function isAdherence(value: string): value is Adherence {
+  return adherenceValues.some((adherence) => adherence === value);
+}
+
 export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExperimentsSearch }) {
   const listQuery = trpc.personalExperiments.list.useQuery();
   const metricsQuery = trpc.personalExperiments.metrics.useQuery();
@@ -265,6 +273,9 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
                   experiment={experiment}
                   onStop={() => stopMutation.mutate({ id: experiment.id })}
                   stopping={stopMutation.isPending && stopMutation.variables?.id === experiment.id}
+                  outcomeUnit={
+                    metrics?.find((metric) => metric.id === experiment.outcomeMetricId)?.unit
+                  }
                   stopError={
                     stopMutation.variables?.id === experiment.id ? stopMutation.error : null
                   }
@@ -290,11 +301,13 @@ function ExperimentCard({
   experiment,
   onStop,
   stopping,
+  outcomeUnit,
   stopError,
 }: {
   experiment: ExperimentView;
   onStop: () => void;
   stopping: boolean;
+  outcomeUnit: string | undefined;
   stopError: { message: string } | null;
 }) {
   return (
@@ -335,6 +348,8 @@ function ExperimentCard({
         </div>
       </dl>
 
+      <ExperimentLearningCard experiment={experiment} outcomeUnit={outcomeUnit} />
+
       {experiment.status === "active" ? (
         <button
           type="button"
@@ -350,5 +365,205 @@ function ExperimentCard({
 
       {stopError ? <QueryStatePanel error={stopError} height={64} /> : null}
     </article>
+  );
+}
+
+function ExperimentLearningCard({
+  experiment,
+  outcomeUnit,
+}: {
+  experiment: ExperimentView;
+  outcomeUnit: string | undefined;
+}) {
+  const analysisQuery = trpc.personalExperiments.analysis.useQuery({ id: experiment.id });
+  const utils = trpc.useUtils();
+  const [adherence, setAdherence] = useState<Adherence>("adherent");
+  const [confounder, setConfounder] = useState("");
+  const [note, setNote] = useState("");
+  const [annotationLabel, setAnnotationLabel] = useState("");
+  const [annotationNotes, setAnnotationNotes] = useState("");
+  const today = formatDateYmd();
+  const checkInMutation = trpc.personalExperiments.checkIn.useMutation({
+    meta: locallyReportedErrorMeta,
+    onSuccess: async () => {
+      await Promise.all([
+        utils.personalExperiments.analysis.invalidate({ id: experiment.id }),
+        utils.personalExperiments.list.invalidate(),
+      ]);
+    },
+    onError: (error) => captureException(error, { context: "personal-experiments-check-in" }),
+  });
+  const annotationMutation = trpc.lifeEvents.create.useMutation({
+    meta: locallyReportedErrorMeta,
+    onSuccess: async () => {
+      setAnnotationLabel("");
+      setAnnotationNotes("");
+      await Promise.all([
+        utils.personalExperiments.analysis.invalidate({ id: experiment.id }),
+        utils.lifeEvents.list.invalidate(),
+      ]);
+    },
+    onError: (error) => captureException(error, { context: "personal-experiments-annotation" }),
+  });
+  const result = analysisQuery.data;
+
+  return (
+    <section className="space-y-3 border-t border-border pt-3">
+      <h4 className="text-xs font-medium uppercase tracking-wider text-muted">Outcome evidence</h4>
+      {analysisQuery.isError && result === undefined ? (
+        <QueryStatePanel error={analysisQuery.error} height={72} />
+      ) : null}
+      {!analysisQuery.isError && (analysisQuery.isLoading || result === undefined) ? (
+        <QueryStatePanel variant="loading" height={72} />
+      ) : null}
+      {result !== undefined ? (
+        <>
+          <div className="rounded border border-border bg-surface-solid p-3 space-y-2">
+            <label className="block text-xs text-subtle" htmlFor={`adherence-${experiment.id}`}>
+              Adherence
+            </label>
+            <select
+              id={`adherence-${experiment.id}`}
+              aria-label="Adherence"
+              value={adherence}
+              onChange={(event) => {
+                if (isAdherence(event.target.value)) setAdherence(event.target.value);
+              }}
+              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
+            >
+              <option value="adherent">Adherent</option>
+              <option value="partial">Partial</option>
+              <option value="not_adherent">Not adherent</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <input
+              aria-label="Confounder"
+              value={confounder}
+              onChange={(event) => setConfounder(event.target.value)}
+              placeholder="Confounder (optional)"
+              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
+            />
+            <input
+              aria-label="Check-in note"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Note (optional)"
+              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
+            />
+            <button
+              type="button"
+              disabled={checkInMutation.isPending}
+              onClick={() =>
+                checkInMutation.mutate({
+                  id: experiment.id,
+                  date: today,
+                  adherence,
+                  confounder: confounder.trim() || null,
+                  note: note.trim() || null,
+                })
+              }
+              className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-on-accent disabled:opacity-50"
+            >
+              {checkInMutation.isPending ? "Saving..." : "Record today's check-in"}
+            </button>
+            {checkInMutation.error ? (
+              <QueryStatePanel error={checkInMutation.error} height={72} />
+            ) : null}
+          </div>
+          <p className="text-xs text-dim">
+            {result.analysis.coverage.baseline.observedOutcomeDayCount} of{" "}
+            {result.analysis.coverage.baseline.expectedDayCount} baseline outcomes observed ·{" "}
+            {result.analysis.coverage.intervention.observedOutcomeDayCount} of{" "}
+            {result.analysis.coverage.intervention.expectedDayCount} intervention outcomes observed
+          </p>
+          {result.analysis.availability === "available" ? (
+            <p className="text-sm text-foreground">
+              Observed difference: {result.analysis.effect.differenceInMeans.toFixed(1)}
+              {outcomeUnit ? ` ${outcomeUnit}` : ""} ({result.analysis.effect.baselineSampleCount}{" "}
+              baseline, {result.analysis.effect.interventionSampleCount} intervention outcomes)
+            </p>
+          ) : (
+            <p className="text-sm text-muted">
+              More outcome observations are needed before estimating an effect.
+            </p>
+          )}
+          {result.analysis.uncertainty.availability === "available" ? (
+            <p className="text-xs text-dim">
+              95% circular moving-block interval: {result.analysis.uncertainty.lower.toFixed(1)} to{" "}
+              {result.analysis.uncertainty.upper.toFixed(1)}
+              {outcomeUnit ? ` ${outcomeUnit}` : ""}
+            </p>
+          ) : (
+            <p className="text-xs text-dim">
+              Uncertainty unavailable: {result.analysis.uncertainty.reason.replaceAll("_", " ")}.
+            </p>
+          )}
+          <ul className="list-disc space-y-1 pl-4 text-xs text-dim">
+            {result.analysis.limitations.map((limitation) => (
+              <li key={limitation}>{limitation}</li>
+            ))}
+          </ul>
+          <details className="text-xs text-dim">
+            <summary>Outcome observations</summary>
+            <ul className="mt-2 space-y-1">
+              {result.analysis.observations.map((observation) => (
+                <li key={`${observation.phase}-${observation.phaseDate}`}>
+                  {observation.phaseDate} → {observation.outcomeDate}:{" "}
+                  {observation.value ?? "Missing"};{" "}
+                  {observation.phase === "baseline"
+                    ? "baseline"
+                    : (observation.adherence ?? "no check-in")}
+                  ; sources: {observation.sourceProviderIds.join(", ") || "none reported"}
+                </li>
+              ))}
+            </ul>
+          </details>
+          <div className="space-y-2 rounded border border-border p-3">
+            <h5 className="text-xs font-medium text-muted">Experiment annotations</h5>
+            {result.annotations.map((annotation) => (
+              <p key={annotation.id} className="text-xs text-dim">
+                <span className="text-foreground">{annotation.label}</span> · {annotation.startedAt}
+                {annotation.notes ? ` · ${annotation.notes}` : ""}
+              </p>
+            ))}
+            <input
+              aria-label="Annotation label"
+              value={annotationLabel}
+              onChange={(event) => setAnnotationLabel(event.target.value)}
+              placeholder="Add a life event"
+              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
+            />
+            <input
+              aria-label="Annotation note"
+              value={annotationNotes}
+              onChange={(event) => setAnnotationNotes(event.target.value)}
+              placeholder="Notes (optional)"
+              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
+            />
+            <button
+              type="button"
+              disabled={!annotationLabel.trim() || annotationMutation.isPending}
+              onClick={() =>
+                annotationMutation.mutate({
+                  label: annotationLabel.trim(),
+                  startedAt: today,
+                  endedAt: null,
+                  category: null,
+                  ongoing: false,
+                  notes: annotationNotes.trim() || null,
+                  personalExperimentId: experiment.id,
+                })
+              }
+              className="rounded border border-border px-3 py-1.5 text-xs text-foreground disabled:opacity-50"
+            >
+              Save annotation
+            </button>
+            {annotationMutation.error ? (
+              <QueryStatePanel error={annotationMutation.error} height={72} />
+            ) : null}
+          </div>
+        </>
+      ) : null}
+    </section>
   );
 }

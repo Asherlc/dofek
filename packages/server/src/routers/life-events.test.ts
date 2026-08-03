@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockCachedProtectedQuery, mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
-  mockCachedProtectedQuery: vi.fn(),
-  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockCachedProtectedQuery, mockCaptureException, mockInvalidateUserQueryDomains } =
+  vi.hoisted(() => ({
+    mockCachedProtectedQuery: vi.fn(),
+    mockCaptureException: vi.fn(),
+    mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+  }));
 
 vi.mock("dofek/lib/cache", () => ({
   invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: mockCaptureException,
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -89,6 +95,7 @@ function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: un
 
 describe("lifeEventsRouter", () => {
   beforeEach(() => {
+    mockCaptureException.mockClear();
     mockInvalidateUserQueryDomains.mockClear();
   });
 
@@ -180,6 +187,31 @@ describe("lifeEventsRouter", () => {
       expect(result.notes).toBe("Knee sprain");
     });
 
+    it("returns a nullable association to the personal experiment that owns an annotation", async () => {
+      const caller = makeCaller([
+        {
+          id: "evt-experiment",
+          label: "Late flight",
+          started_at: "2026-08-08",
+          ended_at: null,
+          category: "lifestyle",
+          ongoing: false,
+          notes: "Arrived after midnight",
+          personal_experiment_id: "11111111-1111-4111-8111-111111111111",
+          created_at: "2026-08-08T10:00:00Z",
+          user_id: "user-1",
+        },
+      ]);
+
+      const result = await caller.create({
+        label: "Late flight",
+        startedAt: "2026-08-08",
+        personalExperimentId: "11111111-1111-4111-8111-111111111111",
+      });
+
+      expect(result.personal_experiment_id).toBe("11111111-1111-4111-8111-111111111111");
+    });
+
     it("uses default values for optional fields", async () => {
       const insertedRow = {
         id: "evt-3",
@@ -204,6 +236,27 @@ describe("lifeEventsRouter", () => {
       expect(result.ended_at).toBeNull();
       expect(result.category).toBeNull();
       expect(result.notes).toBeNull();
+    });
+
+    it("returns a precondition error when the linked experiment is unavailable", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.create({
+          label: "Travel",
+          startedAt: "2026-03-15",
+          personalExperimentId: "11111111-1111-4111-8111-111111111111",
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "Choose one of your own experiments to link this annotation.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Choose one of your own experiments to link this annotation.",
+        }),
+        { tags: { trpcPath: "lifeEvents.create" } },
+      );
     });
   });
 
@@ -239,6 +292,26 @@ describe("lifeEventsRouter", () => {
 
       expect(result).toBeNull();
       expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+    });
+
+    it("returns a precondition error when the linked experiment is unavailable", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.update({
+          id: "00000000-0000-0000-0000-000000000001",
+          personalExperimentId: "11111111-1111-4111-8111-111111111111",
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "Choose one of your own experiments to link this annotation.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Choose one of your own experiments to link this annotation.",
+        }),
+        { tags: { trpcPath: "lifeEvents.update" } },
+      );
     });
   });
 

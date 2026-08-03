@@ -40,6 +40,63 @@ const activeExperiment = {
   },
 };
 
+const activeExperimentAnalysis = {
+  outcomeMetricId: "hrv",
+  outcomeMetricLabel: "Heart Rate Variability",
+  checkIns: [],
+  annotations: [
+    {
+      id: "22222222-2222-4222-8222-222222222222",
+      label: "Travel",
+      startedAt: "2026-07-03",
+      endedAt: null,
+      category: null,
+      ongoing: false,
+      notes: "Different time zone",
+      createdAt: "2026-07-03T00:00:00.000Z",
+    },
+  ],
+  analysis: {
+    availability: "available",
+    observations: [],
+    coverage: {
+      baseline: {
+        expectedDayCount: 7,
+        observedOutcomeDayCount: 5,
+        missingOutcomeDayCount: 2,
+        checkInCount: 0,
+        adherenceCounts: { adherent: 0, partial: 0, not_adherent: 0, unknown: 0 },
+      },
+      intervention: {
+        expectedDayCount: 14,
+        observedOutcomeDayCount: 12,
+        missingOutcomeDayCount: 2,
+        checkInCount: 5,
+        adherenceCounts: { adherent: 4, partial: 1, not_adherent: 0, unknown: 0 },
+      },
+    },
+    effect: {
+      baselineMean: 50,
+      interventionMean: 55,
+      differenceInMeans: 5,
+      baselineSampleCount: 5,
+      interventionSampleCount: 5,
+    },
+    uncertainty: {
+      availability: "available",
+      method: "circular_moving_block_bootstrap",
+      level: 0.95,
+      lower: 1,
+      upper: 8,
+      requestedReplicateCount: 2000,
+      attemptedReplicateCount: 2000,
+      validReplicateCount: 2000,
+      blockLength: 2,
+    },
+    limitations: ["2 outcome days are missing during baseline."],
+  },
+};
+
 function createMockLink(scenario: ExperimentScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
@@ -61,6 +118,11 @@ function createMockObservable(
         observer.next?.({
           result: { data: scenario === "active" ? [activeExperiment] : [] },
         });
+        observer.complete?.();
+        return { unsubscribe() {} };
+      }
+      if (path === "personalExperiments.analysis") {
+        observer.next?.({ result: { data: activeExperimentAnalysis } });
         observer.complete?.();
         return { unsubscribe() {} };
       }
