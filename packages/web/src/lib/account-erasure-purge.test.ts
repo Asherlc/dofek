@@ -392,7 +392,7 @@ describe("purgeWebAccountState", () => {
     const clearLocalStorage = vi.fn(() => {
       throw new Error("local storage unavailable");
     });
-    const failingLocalStorage = Object.create<Storage>(localStorage);
+    const failingLocalStorage: Storage = Object.create(localStorage);
     Object.defineProperties(failingLocalStorage, {
       clear: { configurable: true, value: clearLocalStorage },
       getItem: { configurable: true, value: (key: string) => localStorage.getItem(key) },
