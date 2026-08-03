@@ -21,8 +21,10 @@ describe("subjective input persistence (integration)", () => {
       `INSERT INTO fitness.provider (id, name) VALUES ('subjective-fixture', 'Subjective Fixture')`,
     );
     await client.query(
-      `INSERT INTO fitness.activity (id, user_id, provider_id, external_id, activity_type, started_at)
-       VALUES ($1, $2, 'subjective-fixture', 'activity-2247', 'running', NOW())`,
+      `INSERT INTO fitness.activity (
+         id, user_id, provider_id, external_id, provider_type, canonical_type, started_at
+       )
+       VALUES ($1, $2, 'subjective-fixture', 'activity-2247', 'running', 'running', NOW())`,
       [ACTIVITY_ID, USER_ID],
     );
   }, 120_000);
