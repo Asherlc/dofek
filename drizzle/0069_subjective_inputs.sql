@@ -1,7 +1,4 @@
 ALTER TABLE fitness.activity
-ADD COLUMN perceived_exertion real;
-
-ALTER TABLE fitness.activity
 ADD CONSTRAINT activity_perceived_exertion_range
 CHECK (perceived_exertion IS NULL OR perceived_exertion BETWEEN 0 AND 10)
 NOT VALID;
