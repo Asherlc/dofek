@@ -70,6 +70,10 @@ export default defineConfig({
     ],
     exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
     setupFiles: ["packages/web/test-setup.ts", "packages/mobile/test-setup.ts"],
+    environmentMatchGlobs: [
+      ["packages/mobile/**", "jsdom"],
+      ["packages/web/**", "jsdom"],
+    ],
   },
   resolve: {
     alias: {

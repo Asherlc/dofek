@@ -167,7 +167,6 @@ vi.mock("dofek/db", () => ({
 
 import type { AddressInfo } from "node:net";
 import * as Sentry from "@sentry/node";
-import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import {
@@ -213,7 +212,6 @@ import { registerWebhookForProvider } from "./webhooks.ts";
 function createTestApp() {
   const fakeDb = createDatabaseFromEnv();
   const app = express();
-  app.use(cookieParser());
   app.use(createAuthRouter(fakeDb));
   return { app, fakeDb };
 }

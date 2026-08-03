@@ -27,6 +27,7 @@ export function createR2Client(config = readR2ClientConfig()): S3Client {
       secretAccessKey: config.secretAccessKey,
     },
     endpoint: config.endpoint,
+    forcePathStyle: config.endpoint.startsWith("http://"),
     region: "auto",
   });
 }

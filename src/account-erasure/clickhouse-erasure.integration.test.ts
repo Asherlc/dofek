@@ -117,7 +117,12 @@ describe("ClickHouse account erasure (integration)", () => {
           changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
         )
         ENGINE = AggregatingMergeTree
-        ORDER BY (user_id, provider_id)`,
+        ORDER BY (user_id, provider_id)
+        SETTINGS
+          old_parts_lifetime = 1,
+          cleanup_delay_period = 1,
+          cleanup_delay_period_random_add = 0,
+          max_cleanup_delay_period = 1`,
       clickhouse_settings: { log_queries: 0 },
     });
     await client.command({
@@ -127,7 +132,12 @@ describe("ClickHouse account erasure (integration)", () => {
           changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
         )
         ENGINE = AggregatingMergeTree
-        ORDER BY (user_id, recorded_date)`,
+        ORDER BY (user_id, recorded_date)
+        SETTINGS
+          old_parts_lifetime = 1,
+          cleanup_delay_period = 1,
+          cleanup_delay_period_random_add = 0,
+          max_cleanup_delay_period = 1`,
       clickhouse_settings: { log_queries: 0 },
     });
     await client.command({
@@ -151,7 +161,12 @@ describe("ClickHouse account erasure (integration)", () => {
           refreshed_at DateTime64(9, 'UTC')
         )
         ENGINE = ReplacingMergeTree(refresh_version)
-        ORDER BY (user_id, sleep_id)`,
+        ORDER BY (user_id, sleep_id)
+        SETTINGS
+          old_parts_lifetime = 1,
+          cleanup_delay_period = 1,
+          cleanup_delay_period_random_add = 0,
+          max_cleanup_delay_period = 1`,
       clickhouse_settings: { log_queries: 0 },
     });
 

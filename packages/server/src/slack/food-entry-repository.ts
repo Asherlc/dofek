@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import {
+  AccountErasureIdentityFencedError,
   AccountErasureUserFencedError,
   lockAndAssertAccountErasureIdentityWriteFence,
 } from "dofek/db/account-erasure";
@@ -434,7 +435,11 @@ export class FoodEntryRepository {
         });
       });
     } catch (error: unknown) {
-      if (isAccountErasureDatabaseFenceError(error)) {
+      if (
+        error instanceof AccountErasureIdentityFencedError ||
+        error instanceof AccountErasureUserFencedError ||
+        isAccountErasureDatabaseFenceError(error)
+      ) {
         throw new AccountErasureUserFencedError();
       }
       throw error;
