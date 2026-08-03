@@ -207,6 +207,7 @@ describe("eraseMetricStreamArchive", () => {
       1,
     );
     const matchingDelete = createMetricStreamDeletedEvent({ activityId }, "1");
+    const matchingAccountDelete = createMetricStreamDeletedEvent({ userId: deletingUserId }, "1");
     const otherDelete = createMetricStreamDeletedEvent(
       {
         activityId: "60000000-0000-4000-8000-000000001994",
@@ -221,6 +222,7 @@ describe("eraseMetricStreamArchive", () => {
       matchingBatch,
       otherBatch,
       matchingDelete,
+      matchingAccountDelete,
       otherDelete,
       matchingActivity,
       nullActivity,
@@ -235,11 +237,161 @@ describe("eraseMetricStreamArchive", () => {
         operationIds: new Set([operationId]),
         userId: deletingUserId,
       }),
-    ).resolves.toMatchObject({ recordsRemoved: 3, objectsRewritten: 1 });
+    ).resolves.toMatchObject({ recordsRemoved: 4, objectsRewritten: 1 });
 
     expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
       `${JSON.stringify(otherBatch)}\n${JSON.stringify(otherDelete)}\n${JSON.stringify(nullActivity)}\n`,
     );
+  });
+
+  it("skips blank archive lines while rewriting", async () => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-16-16.jsonl.gz";
+    const preservedEvent = metricEvent(otherUserId, "90000000-0000-4000-8000-000000001994");
+    storage.objects.set(
+      key,
+      gzipSync(
+        `\n${JSON.stringify(metricEvent(deletingUserId, "a0000000-0000-4000-8000-000000001994"))}\n\n${JSON.stringify(preservedEvent)}\n`,
+      ),
+    );
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        activityIds: new Set(),
+        operationIds: new Set(),
+        userId: deletingUserId,
+      }),
+    ).resolves.toMatchObject({ recordsRemoved: 1, objectsRewritten: 1 });
+    expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
+      `${JSON.stringify(preservedEvent)}\n`,
+    );
+  });
+
+  it("aborts a multipart rewrite when uploading a part fails", async () => {
+    class UploadFailureStorage extends MemoryArchiveStorage {
+      override async uploadPart(
+        _key: string,
+        _uploadId: string,
+        _partNumber: number,
+        _body: Buffer,
+      ): Promise<string> {
+        throw new Error("part upload failed");
+      }
+    }
+    const storage = new UploadFailureStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-17-17.jsonl.gz";
+    storage.objects.set(
+      key,
+      gzipSync(
+        `${JSON.stringify(metricEvent(deletingUserId, "b0000000-0000-4000-8000-000000001994"))}\n`,
+      ),
+    );
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        activityIds: new Set(),
+        operationIds: new Set(),
+        userId: deletingUserId,
+      }),
+    ).rejects.toThrow("part upload failed");
+    expect(storage.uploads).toEqual(new Map());
+  });
+
+  it("aborts a multipart rewrite when completion fails", async () => {
+    class CompletionFailureStorage extends MemoryArchiveStorage {
+      override async completeMultipart(
+        _key: string,
+        _uploadId: string,
+        _parts: readonly { etag: string; partNumber: number }[],
+      ): Promise<string> {
+        throw new Error("multipart completion failed");
+      }
+    }
+    const storage = new CompletionFailureStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-18-18.jsonl.gz";
+    storage.objects.set(
+      key,
+      gzipSync(
+        `${JSON.stringify(metricEvent(deletingUserId, "c0000000-0000-4000-8000-000000001994"))}\n`,
+      ),
+    );
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        activityIds: new Set(),
+        operationIds: new Set(),
+        userId: deletingUserId,
+      }),
+    ).rejects.toThrow("multipart completion failed");
+    expect(storage.uploads).toEqual(new Map());
+  });
+
+  it("reports aggregate failure when staging cleanup also fails", async () => {
+    class CleanupFailureStorage extends MemoryArchiveStorage {
+      override async commitStagedObject(
+        _stagingKey: string,
+        _targetKey: string,
+        _stagingEtag: string,
+        _expectedTargetEtag: string,
+      ): Promise<void> {
+        throw new Error("conditional commit failed");
+      }
+
+      override async deleteObject(key: string): Promise<void> {
+        if (key.startsWith("account-erasure-staging/")) {
+          throw new Error("staging cleanup failed");
+        }
+        await super.deleteObject(key);
+      }
+    }
+    const storage = new CleanupFailureStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-19-19.jsonl.gz";
+    storage.objects.set(
+      key,
+      gzipSync(
+        `${JSON.stringify(metricEvent(deletingUserId, "d0000000-0000-4000-8000-000000001994"))}\n`,
+      ),
+    );
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        activityIds: new Set(),
+        operationIds: new Set(),
+        userId: deletingUserId,
+      }),
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof AggregateError && error.message.includes("cleanup"),
+    );
+  });
+
+  it("detects a source change during the rewrite even when its ETag is unchanged", async () => {
+    class BodyRaceStorage extends MemoryArchiveStorage {
+      reads = 0;
+
+      override async getObject(_key: string): Promise<MetricStreamArchiveObject> {
+        this.reads += 1;
+        const body =
+          this.reads === 1
+            ? gzipSync(
+                `${JSON.stringify(metricEvent(deletingUserId, "e0000000-0000-4000-8000-000000001994"))}\n`,
+              )
+            : gzipSync(
+                `${JSON.stringify(metricEvent(otherUserId, "f0000000-0000-4000-8000-000000001994"))}\n`,
+              );
+        return { body: Readable.from(body), etag: '"same-etag"', metadata: {} };
+      }
+    }
+    const storage = new BodyRaceStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-20-20.jsonl.gz";
+    storage.objects.set(key, Buffer.alloc(0));
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        activityIds: new Set(),
+        operationIds: new Set(),
+        userId: deletingUserId,
+      }),
+    ).rejects.toThrow("changed during account erasure rewrite");
   });
 
   it("fails closed without replacing an object that contains malformed JSON", async () => {
@@ -663,6 +815,25 @@ describe("R2MetricStreamArchiveStorage listing", () => {
       }
     }).rejects.toThrow("R2 archive listing repeated a continuation token");
     expect(requests).toBe(2);
+  });
+
+  it("fails closed when R2 truncates a listing without a continuation token", async () => {
+    const client = makeR2Client(async () => ({
+      response: {
+        body: Readable.from(
+          '<?xml version="1.0"?><ListBucketResult><IsTruncated>true</IsTruncated><Contents><Key>metric-stream/v1/a</Key></Contents></ListBucketResult>',
+        ),
+        headers: { "content-type": "application/xml" },
+        statusCode: 200,
+      },
+    }));
+    const storage = new R2MetricStreamArchiveStorage(client, "metric-archive");
+
+    await expect(async () => {
+      for await (const _key of storage.listObjectKeys()) {
+        // The fixture is intentionally truncated without a continuation token.
+      }
+    }).rejects.toThrow("R2 archive listing was truncated without a continuation token");
   });
 
   it("fails closed when an archive listing exceeds the bounded page limit", async () => {

@@ -476,4 +476,181 @@ describe("purgeAccountRedisState", () => {
       }),
     ).rejects.toThrow("Redis RDB persistence did not complete successfully");
   });
+
+  it("reads BullMQ event streams across the exact page boundary", async () => {
+    const redis = new FakeRedis();
+    redis.streams.set(
+      "bull:post-sync:events",
+      Array.from({ length: 501 }, (_, index) => [
+        `${index + 1}-0`,
+        ["event", "waiting", "jobId", index === 500 ? "job-erased" : "job-other"],
+      ]),
+    );
+
+    const result = await purgeAccountRedisState(identifiers, redis, {
+      sleep: async () => undefined,
+    });
+
+    expect(result.deletedStreamEntries).toBe(1);
+    expect(redis.streams.get("bull:post-sync:events")).toHaveLength(500);
+  });
+
+  it("rejects a BullMQ events key with the wrong Redis type", async () => {
+    const redis = new FakeRedis();
+    redis.sets.set("bull:post-sync:events", new Set(["not-a-stream"]));
+
+    await expect(
+      purgeAccountRedisState(identifiers, redis, {
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow(
+      "Account erasure expected stream values in the BullMQ events Redis namespace",
+    );
+  });
+
+  it("handles a Redis SCAN that returns more than one page", async () => {
+    class TwoPageScanRedis extends FakeRedis {
+      readonly pageCounts = new Map<string, number>();
+
+      override async scan(
+        cursor: string,
+        matchKeyword: "MATCH",
+        pattern: string,
+        countKeyword: "COUNT",
+        count: string,
+      ): Promise<[string, string[]]> {
+        if (cursor === "0") {
+          const [, keys] = await super.scan(cursor, matchKeyword, pattern, countKeyword, count);
+          this.pageCounts.set(pattern, (this.pageCounts.get(pattern) ?? 0) + 1);
+          return ["next-page", keys];
+        }
+        return ["0", []];
+      }
+    }
+
+    const redis = new TwoPageScanRedis();
+    redis.strings.set(`provider-rate-limit:garmin:user:${userId}`, "{}");
+
+    const result = await purgeAccountRedisState(identifiers, redis, {
+      sleep: async () => undefined,
+    });
+
+    expect(result.deletedKeys).toBe(1);
+    expect(redis.pageCounts.get(`provider-rate-limit:*:user:${userId}`)).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["rewrite count", { aofRewrites: 0 }],
+    ["rewrite in progress", { aofRewriteInProgress: true }],
+    ["rewrite scheduled", { aofRewriteScheduled: true }],
+    ["rewrite status", { aofLastRewriteStatus: "err" }],
+    ["write status", { aofLastWriteStatus: "err" }],
+  ])("rejects an incomplete AOF persistence operation when %s", async (_name, failure) => {
+    const initial = persistenceInfo({ aofEnabled: 1, aofRewrites: 3 });
+    const redis = new FixedPersistenceInfoRedis([
+      initial,
+      persistenceInfo({ aofEnabled: 1, aofRewrites: 3, ...failure }),
+    ]);
+
+    await expect(
+      purgeAccountRedisState(identifiers, redis, {
+        persistencePollLimit: 1,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("Redis AOF persistence did not complete successfully");
+  });
+
+  it.each([
+    ["save count", { rdbSaves: 4 }],
+    ["save in progress", { rdbSaveInProgress: true }],
+    ["save status", { rdbLastSaveStatus: "err" }],
+  ])("rejects an incomplete RDB persistence operation when %s", async (_name, failure) => {
+    const redis = new FixedPersistenceInfoRedis([
+      persistenceInfo({ rdbSaves: 4 }),
+      persistenceInfo({ rdbSaves: 4, ...failure }),
+    ]);
+
+    await expect(
+      purgeAccountRedisState(identifiers, redis, {
+        persistencePollLimit: 1,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("Redis RDB persistence did not complete successfully");
+  });
+
+  it("rejects malformed Redis persistence metadata", async () => {
+    class MalformedPersistenceRedis extends FakeRedis {
+      override async info(_section: "persistence"): Promise<string> {
+        return "# Persistence\nrdb_saves:not-a-number";
+      }
+    }
+
+    await expect(
+      purgeAccountRedisState(identifiers, new MalformedPersistenceRedis(), {
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("fails when cleanup remains attributable at the pass limit", async () => {
+    class PersistentKeyRedis extends FakeRedis {
+      override async del(...keys: string[]): Promise<number> {
+        this.deletedKeys += keys.length;
+        return keys.length;
+      }
+    }
+    const redis = new PersistentKeyRedis();
+    redis.strings.set(`provider-rate-limit:garmin:user:${userId}`, "{}");
+
+    await expect(
+      purgeAccountRedisState(identifiers, redis, {
+        maxScanPasses: 1,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("continued changing after the bounded cleanup passes");
+  });
 });
+
+function persistenceInfo(
+  overrides: Partial<{
+    aofEnabled: number;
+    aofLastRewriteStatus: string;
+    aofLastWriteStatus: string;
+    aofRewriteInProgress: boolean;
+    aofRewriteScheduled: boolean;
+    aofRewrites: number;
+    rdbLastSaveStatus: string;
+    rdbSaveInProgress: boolean;
+    rdbSaves: number;
+  }> = {},
+): string {
+  return [
+    "# Persistence",
+    `rdb_bgsave_in_progress:${overrides.rdbSaveInProgress ? 1 : 0}`,
+    `rdb_last_bgsave_status:${overrides.rdbLastSaveStatus ?? "ok"}`,
+    `rdb_saves:${overrides.rdbSaves ?? 4}`,
+    `aof_enabled:${overrides.aofEnabled ?? 0}`,
+    `aof_rewrite_in_progress:${overrides.aofRewriteInProgress ? 1 : 0}`,
+    `aof_rewrite_scheduled:${overrides.aofRewriteScheduled ? 1 : 0}`,
+    `aof_last_bgrewrite_status:${overrides.aofLastRewriteStatus ?? "ok"}`,
+    `aof_last_write_status:${overrides.aofLastWriteStatus ?? "ok"}`,
+    `aof_rewrites:${overrides.aofRewrites ?? 0}`,
+  ].join("\r\n");
+}
+
+class FixedPersistenceInfoRedis extends FakeRedis {
+  #infoPayloads: readonly string[];
+  #infoIndex = 0;
+
+  constructor(infoPayloads: readonly string[]) {
+    super();
+    this.#infoPayloads = infoPayloads;
+  }
+
+  override async info(_section: "persistence"): Promise<string> {
+    const payload = this.#infoPayloads[Math.min(this.#infoIndex, this.#infoPayloads.length - 1)];
+    this.#infoIndex += 1;
+    if (!payload) throw new Error("Missing persistence fixture");
+    return payload;
+  }
+}

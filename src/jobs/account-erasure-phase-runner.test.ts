@@ -490,4 +490,70 @@ describe("createAccountErasurePhaseRunner", () => {
       "Identifying account-erasure phase postgres_erasure requires live request PII",
     );
   });
+
+  it("executes every verification-only phase and records its proof", async () => {
+    const deps = dependencies();
+    const runner = createAccountErasurePhaseRunner(deps);
+    const ingestCheckpoint = {
+      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
+    };
+
+    await expect(runner.runPhase("work_purge", execution())).resolves.toEqual({ verified: false });
+    await expect(runner.runPhase("work_verification", execution())).resolves.toEqual({
+      verified: true,
+    });
+    await expect(
+      runner.runPhase(
+        "consumer_drain_verification",
+        execution({ loadCheckpointDetails: vi.fn(async () => ingestCheckpoint) }),
+      ),
+    ).resolves.toEqual({ drained: true, replayExpired: true });
+    await expect(runner.runPhase("remote_revocation_verification", execution())).resolves.toEqual({
+      dispositions: [{ disposition: "remote_revoked", providerId: "strava" }],
+      verified: true,
+    });
+    await expect(runner.runPhase("clickhouse_verification", execution())).resolves.toEqual({
+      verified: true,
+    });
+    await expect(
+      runner.runPhase(
+        "processor_erasure_verification",
+        execution({
+          loadCheckpointDetails: vi.fn(async (phase) =>
+            phase === "processor_erasure" ? { posthogPersonUuids: [] } : null,
+          ),
+        }),
+      ),
+    ).resolves.toEqual({ processors: 2, verified: true });
+
+    expect(deps.assertReplayExpired).toHaveBeenCalledWith(ingestCheckpoint.highWatermarks);
+    expect(deps.verifyProcessors).toHaveBeenCalledWith(
+      snapshot,
+      { posthogPersonUuids: [] },
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    ["missing user id", { ...request, userId: null }],
+    ["missing encrypted snapshot", { ...request, encryptedRemoteSnapshot: null }],
+    ["already scrubbed", { ...request, piiScrubbedAt: new Date() }],
+  ])("rejects an identifying phase with %s", async (_label, invalidRequest) => {
+    const runner = createAccountErasurePhaseRunner(dependencies());
+
+    await expect(
+      runner.runPhase("stripe_erasure", execution({ request: invalidRequest })),
+    ).rejects.toThrow("Identifying account-erasure phase stripe_erasure requires live request PII");
+  });
+
+  it("requires a pseudonymous request for retention verification", async () => {
+    const runner = createAccountErasurePhaseRunner(dependencies());
+
+    await expect(
+      runner.runPhase(
+        "retention_verification",
+        execution({ request: { ...request, encryptedRemoteSnapshot: null, piiScrubbedAt: null } }),
+      ),
+    ).rejects.toThrow("Account-erasure retention verification requires a pseudonymous request");
+  });
 });

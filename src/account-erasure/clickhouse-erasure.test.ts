@@ -1,10 +1,51 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { ClickHouseCommandClient } from "../db/clickhouse.ts";
-import { eraseClickHouseAccount } from "./clickhouse-erasure.ts";
+import {
+  ACCOUNT_ERASURE_FENCE_TABLE,
+  ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
+} from "../metric-stream/clickhouse-table.ts";
+import { eraseClickHouseAccount, fenceClickHouseAccount } from "./clickhouse-erasure.ts";
 
 const userId = "10000000-0000-4000-8000-000000001994";
 const operationId = "20000000-0000-4000-8000-000000001994";
+type ColumnDefinition = readonly [string, string];
+
+const schemaDriftCases = [
+  ["user_id", [["user_id", "String"]], "user_id has type String"],
+  ["activity_id", [["activity_id", "String"]], "activity_id has type String"],
+  [
+    "member_activity_ids",
+    [["member_activity_ids", "Array(String)"]],
+    "member_activity_ids has type Array(String)",
+  ],
+  ["group_id", [["group_id", "Array(UUID)"]], "group_id has type Array(UUID)"],
+  ["unmapped ownership", [["owner_id", "UUID"]], "owner_id is not mapped"],
+  ["strong personal data", [["email", "String"]], "without an ownership relation"],
+] satisfies readonly (readonly [string, readonly ColumnDefinition[], string])[];
+
+const stagingSchemaDriftCases = [
+  [
+    "staging has an extra ownership column",
+    [
+      ["user_id", "UUID"],
+      ["activity_id", "UUID"],
+    ],
+    [["user_id", "UUID"]],
+  ],
+  [
+    "canonical has an extra ownership column",
+    [["user_id", "UUID"]],
+    [
+      ["user_id", "UUID"],
+      ["activity_id", "UUID"],
+    ],
+  ],
+] satisfies readonly (readonly [
+  string,
+  readonly ColumnDefinition[],
+  readonly ColumnDefinition[],
+])[];
 
 interface QueryOptions {
   clickhouse_settings?: Record<string, string | number | boolean>;
@@ -352,6 +393,49 @@ describe("eraseClickHouseAccount", () => {
     );
   });
 
+  it.each(
+    schemaDriftCases,
+  )("rejects schema drift in %s before deleting rows", async (_label, columns, message) => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables([managedTable("schema_drift", columns)]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow(message);
+    expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ACCOUNT_ERASURE_FENCE_TABLE,
+    ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
+  ])("does not validate the protected %s table as application data", async (tableKey) => {
+    const [database, name] = tableKey.split(".");
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables([
+      {
+        age_milliseconds: 1_000_000,
+        columns: [["user_id", "String"]],
+        database,
+        engine: "ReplacingMergeTree",
+        name,
+      },
+    ]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it("skips the schema-verified non-personal heart-rate cutover TinyLog table", async () => {
     const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
     const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
@@ -483,6 +567,257 @@ describe("eraseClickHouseAccount", () => {
     ).rejects.toThrow("dbt staging table name");
     expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
       false,
+    );
+  });
+
+  it("fails closed for an orphaned or mismatched dbt staging table", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const stagingName = "daily_sleep__dbt_new_data_60000000_0000_4000_8000_000000001994";
+    const query = queryReturningTables([managedTable(stagingName, [["user_id", "UUID"]])]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("without a canonical match");
+
+    const mismatchQuery = queryReturningTables([
+      managedTable("daily_sleep", [["user_id", "UUID"]]),
+      managedTable(stagingName, [["user_id", "Nullable(UUID)"]]),
+    ]);
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query: mismatchQuery },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("schema mismatch");
+  });
+
+  it("rejects a young dbt staging table even when no active query is running", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const stagingName = "daily_sleep__dbt_new_data_60000000_0000_4000_8000_000000001994";
+    const query = vi.fn(async (options: QueryOptions) => {
+      if (options.query.includes("FROM system.tables")) {
+        return {
+          json: async () => [
+            managedTable("daily_sleep", [["user_id", "UUID"]]),
+            { ...managedTable(stagingName, [["user_id", "UUID"]]), age_milliseconds: 1_000 },
+          ],
+        };
+      }
+      if (options.query.includes("FROM system.processes"))
+        return { json: async () => [{ count: "0" }] };
+      return { json: async () => [{ count: "0" }] };
+    });
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("active dbt staging table");
+  });
+
+  it.each(
+    stagingSchemaDriftCases,
+  )("rejects dbt ownership schema drift when %s", async (_label, stagingColumns, canonicalColumns) => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const stagingName = "daily_sleep__dbt_new_data_60000000_0000_4000_8000_000000001994";
+    const query = queryReturningTables([
+      managedTable("daily_sleep", canonicalColumns),
+      managedTable(stagingName, stagingColumns),
+    ]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("schema mismatch");
+  });
+
+  it("rejects active and malformed ownership schemas before mutation", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const stagingName = "daily_sleep__dbt_new_data_60000000_0000_4000_8000_000000001994";
+    const activeQuery = vi.fn(async (options: QueryOptions) => {
+      if (options.query.includes("FROM system.tables")) {
+        return {
+          json: async () => [
+            managedTable("daily_sleep", [["user_id", "UUID"]]),
+            managedTable(stagingName, [["user_id", "UUID"]]),
+          ],
+        };
+      }
+      if (options.query.includes("FROM system.processes")) {
+        return { json: async () => [{ count: "1" }] };
+      }
+      return { json: async () => [{ count: "0" }] };
+    });
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query: activeQuery },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("active dbt staging table");
+
+    const badRelationQuery = queryReturningTables([
+      managedTable("bad_relation", [["activity_id", "String"]]),
+    ]);
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query: badRelationQuery },
+        {
+          activityIds: ["30000000-0000-4000-8000-000000001994"],
+          operationIds: [],
+          sleepSessionIds: [],
+          userId,
+        },
+      ),
+    ).rejects.toThrow("has type String");
+  });
+
+  it("does not treat a near-match cutover table as safe", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables([
+      {
+        age_milliseconds: 1_000_000,
+        columns: [["cutover_at", "DateTime"]],
+        database: "analytics",
+        engine: "TinyLog",
+        name: "sleep_heart_rate_cutover",
+      },
+    ]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("Unsupported ClickHouse physical storage engine");
+  });
+
+  it("fences an operation directly and requires insert support", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+
+    await expect(
+      fenceClickHouseAccount({ command, query: queryReturningTables([]) }, userId, [operationId]),
+    ).rejects.toThrow("requires insert support");
+    expect(command).toHaveBeenCalledOnce();
+  });
+
+  it("fences newly discovered operations and fails when fence insertion is unavailable", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const discoveredOperationId = "60000000-0000-4000-8000-000000001994";
+    const query = queryReturningTables(
+      [managedTable("daily_sleep", [["user_id", "UUID"]])],
+      [
+        {
+          activity_ids: [],
+          operation_ids: [discoveredOperationId],
+          record_ids: [],
+          sleep_ids: [],
+          string_relation_ids: [],
+        },
+      ],
+    );
+
+    await eraseClickHouseAccount(
+      { command, insert, query },
+      { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+    );
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        values: [
+          { operation_hash: createHash("sha256").update(discoveredOperationId).digest("hex") },
+        ],
+      }),
+    );
+
+    await expect(
+      eraseClickHouseAccount(
+        { command: vi.fn(async () => undefined), query },
+        { activityIds: [], operationIds: [operationId], sleepSessionIds: [], userId },
+      ),
+    ).rejects.toThrow("requires insert support");
+  });
+
+  it("fails when identifier expansion does not converge within its configured bound", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables(
+      [managedTable("daily_sleep", [["user_id", "UUID"]])],
+      [
+        {
+          activity_ids: ["30000000-0000-4000-8000-000000001994"],
+          operation_ids: [],
+          record_ids: [],
+          sleep_ids: [],
+          string_relation_ids: [],
+        },
+      ],
+    );
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+        { identifierExpansionMaximumPasses: 1 },
+      ),
+    ).rejects.toThrow("identifier expansion did not converge");
+  });
+
+  it("captures empty relation families without creating a physical target", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables([managedTable("activity_only", [["activity_id", "UUID"]])]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+      ),
+    ).resolves.toBeUndefined();
+    expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
+      false,
+    );
+  });
+
+  it("retains nullable user rows related through scalar and array identifiers", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables([
+      managedTable("relation_rows", [
+        ["user_id", "Nullable(UUID)"],
+        ["activity_id", "UUID"],
+        ["member_activity_ids", "Array(Nullable(UUID))"],
+      ]),
+    ]);
+
+    await eraseClickHouseAccount(
+      { command, insert, query },
+      {
+        activityIds: ["30000000-0000-4000-8000-000000001994"],
+        operationIds: [],
+        sleepSessionIds: [],
+        userId,
+      },
+    );
+
+    const mutation = command.mock.calls.find(([options]) => options.query.includes("ALTER TABLE"));
+    expect(mutation?.[0].query).toContain("user_id IS NULL");
+    expect(mutation?.[0].query).toContain("arrayMap(identifier_value");
+    expect(mutation?.[0].query_params).toEqual(
+      expect.objectContaining({
+        activity_ids_hashes: expect.any(Array),
+        user_hash: expect.any(String),
+      }),
     );
   });
 });

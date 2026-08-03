@@ -228,6 +228,64 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     vi.restoreAllMocks();
   });
 
+  it("handles callback requests before provider resolution", async () => {
+    const bare = createMockReqRes();
+    await handleOAuth2Callback(bare.req, bare.res);
+    expect(bare.res.send).toHaveBeenCalledWith("OK");
+
+    const denied = createMockReqRes({ error: "access_denied" });
+    await handleOAuth2Callback(denied.req, denied.res);
+    expect(denied.res.status).toHaveBeenCalledWith(400);
+    expect(denied.res.send).toHaveBeenCalledWith("Authorization denied");
+
+    const incomplete = createMockReqRes({ code: "only-code" });
+    await handleOAuth2Callback(incomplete.req, incomplete.res);
+    expect(incomplete.res.status).toHaveBeenCalledWith(400);
+    expect(incomplete.res.send).toHaveBeenCalledWith("Missing code or state parameter");
+  });
+
+  it("rejects unknown or unsupported OAuth state entries", async () => {
+    mockOauthStateStore.get.mockResolvedValueOnce(null);
+    const unknownState = createMockReqRes({ code: "code", state: "expired" });
+    await handleOAuth2Callback(unknownState.req, unknownState.res);
+    expect(unknownState.res.status).toHaveBeenCalledWith(400);
+    expect(unknownState.res.send).toHaveBeenCalledWith(
+      expect.stringContaining("Unknown or expired"),
+    );
+
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      providerId: "unsupported",
+      returnTo: undefined,
+      userId: "user-1",
+    });
+    mockGetAllProviders.mockReturnValueOnce([]);
+    const unknownProvider = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(unknownProvider.req, unknownProvider.res);
+    expect(unknownProvider.res.status).toHaveBeenCalledWith(404);
+    expect(unknownProvider.res.send).toHaveBeenCalledWith("Unknown provider");
+
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      providerId: "unsupported",
+      returnTo: undefined,
+      userId: "user-1",
+    });
+    mockGetAllProviders.mockReturnValueOnce([
+      { id: "unsupported", name: "Unsupported", authSetup: () => ({}) },
+    ]);
+    const unsupportedProvider = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(unsupportedProvider.req, unsupportedProvider.res);
+    expect(unsupportedProvider.res.status).toHaveBeenCalledWith(400);
+    expect(unsupportedProvider.res.send).toHaveBeenCalledWith(
+      "Provider does not support OAuth code exchange",
+    );
+  });
+
   it("exchanges and persists a successful Wahoo reconnect without revocation", async () => {
     const events: string[] = [];
     mockLoadTokens.mockImplementation(async () => {

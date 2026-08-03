@@ -102,6 +102,17 @@ describe("accountErasureProcessorConfigFromEnv", () => {
     });
   });
 
+  it("uses the default PostHog host for an empty configured host", () => {
+    expect(
+      accountErasureProcessorConfigFromEnv({
+        BREVO_API_KEY: "brevo-key",
+        POSTHOG_API_HOST: "  ",
+        POSTHOG_PERSONAL_API_KEY: "posthog-key",
+        POSTHOG_PROJECT_ID: "12345",
+      }),
+    ).toMatchObject({ posthogApiHost: "https://us.posthog.com" });
+  });
+
   it("searches for legacy Zoho tickets when the snapshot has no recorded Zoho effects", async () => {
     const fetchFn: typeof globalThis.fetch = async (input, init) => {
       const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
@@ -306,5 +317,318 @@ describe("accountErasureProcessorConfigFromEnv", () => {
         { fetchFn },
       ),
     ).rejects.toThrow("PostHog deletion is still pending");
+  });
+
+  it("filters non-Zoho external effects and deduplicates sorted PostHog identities", async () => {
+    const firstPerson = "80000000-0000-4000-8000-000000001994";
+    const secondPerson = "90000000-0000-4000-8000-000000001994";
+    const snapshot: AccountErasureRemoteSnapshot = {
+      ...snapshotWithoutZohoEffects,
+      externalEffects: [
+        {
+          contactEmail: null,
+          externalId: "not-zoho",
+          resourceType: "customer",
+          system: "stripe",
+        },
+        {
+          contactEmail: "zoho@example.com",
+          externalId: "zoho-ticket",
+          resourceType: "ticket",
+          system: "zoho_desk",
+        },
+      ],
+    };
+    mocks.listTicketIdsByDofekUserId.mockResolvedValue(["zoho-ticket"]);
+    const requests: Request[] = [];
+    const fetchFn: typeof globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const requestUrl = new URL(request.url);
+      if (requestUrl.pathname.endsWith("/persons/")) {
+        return Response.json({
+          next: null,
+          results: [{ uuid: secondPerson }, { uuid: firstPerson }],
+        });
+      }
+      if (requestUrl.pathname.endsWith("/bulk_delete/")) {
+        expect(request.headers.get("authorization")).toBe("Bearer posthog-key");
+        expect(request.headers.get("content-type")).toBe("application/json");
+        return Response.json(
+          {
+            deletion_errors: [],
+            events_queued_for_deletion: true,
+            recordings_queued_for_deletion: true,
+          },
+          { status: 202 },
+        );
+      }
+      throw new Error(`Unexpected ${request.method} ${request.url}`);
+    };
+    const savedPersonUuids: string[][] = [];
+
+    await expect(
+      eraseAccountProcessors(
+        snapshot,
+        config,
+        {
+          knownPosthogPersonUuids: [secondPerson],
+          savePosthogPersonUuids: async (personUuids) => {
+            savedPersonUuids.push([...personUuids]);
+          },
+        },
+        { fetchFn },
+      ),
+    ).resolves.toMatchObject({
+      posthogPersonUuids: [firstPerson, secondPerson],
+      posthogQueued: true,
+      zohoTicketIds: ["zoho-ticket"],
+    });
+    expect(savedPersonUuids).toEqual([[firstPerson, secondPerson]]);
+    expect(mocks.deleteTicket).toHaveBeenCalledWith("zoho-ticket");
+    expect(mocks.deleteTicket).not.toHaveBeenCalledWith("not-zoho");
+    expect(requests).toHaveLength(2);
+  });
+
+  it.each([
+    [
+      "not found",
+      500,
+      {
+        deletion_errors: [],
+        events_queued_for_deletion: true,
+        recordings_queued_for_deletion: true,
+      },
+      "PostHog bulk deletion failed",
+    ],
+    [
+      "deletion errors",
+      202,
+      {
+        deletion_errors: [{ error: "failed" }],
+        events_queued_for_deletion: true,
+        recordings_queued_for_deletion: true,
+      },
+      "returned 1 error",
+    ],
+    [
+      "events not queued",
+      202,
+      {
+        deletion_errors: [],
+        events_queued_for_deletion: false,
+        recordings_queued_for_deletion: true,
+      },
+      "did not acknowledge",
+    ],
+    [
+      "recordings not queued",
+      202,
+      {
+        deletion_errors: [],
+        events_queued_for_deletion: true,
+        recordings_queued_for_deletion: false,
+      },
+      "did not acknowledge",
+    ],
+  ])("rejects an invalid PostHog bulk deletion response: %s", async (_name, status, body, message) => {
+    const personUuid = "80000000-0000-4000-8000-000000001994";
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+      if (requestUrl.pathname.endsWith("/persons/")) {
+        return Response.json({ next: null, results: [{ uuid: personUuid }] });
+      }
+      if (requestUrl.pathname.endsWith("/bulk_delete/")) {
+        return Response.json(body, { status });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    };
+
+    await expect(
+      eraseAccountProcessors(snapshotWithoutZohoEffects, config, processorProgress(), { fetchFn }),
+    ).rejects.toThrow(message);
+  });
+
+  it.each([
+    [
+      "Brevo HTTP failure",
+      async () => new Response(null, { status: 500 }),
+      "Brevo transactional-log deletion failed",
+    ],
+    [
+      "PostHog HTTP failure",
+      async (input: RequestInfo | URL) => {
+        const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+        if (requestUrl.pathname.endsWith("/persons/")) return new Response(null, { status: 503 });
+        return Response.json({ process_id: 1 });
+      },
+      "PostHog person lookup failed",
+    ],
+  ])("fails closed on a processor lookup error: %s", async (_name, fetchFn, message) => {
+    const snapshot: AccountErasureRemoteSnapshot = {
+      ...snapshotWithoutZohoEffects,
+      processorEmails: ["first@example.com"],
+    };
+
+    await expect(
+      eraseAccountProcessors(snapshot, config, processorProgress(), { fetchFn }),
+    ).rejects.toThrow(message);
+  });
+
+  it("rejects a PostHog result that unexpectedly has another page", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      Response.json({
+        next: "https://posthog.test/next",
+        results: [],
+      });
+
+    await expect(
+      eraseAccountProcessors(snapshotWithoutZohoEffects, config, processorProgress(), { fetchFn }),
+    ).rejects.toThrow("unexpectedly exceeded one 1000-person page");
+  });
+
+  it("rejects a non-completed Brevo process and residual transactional logs", async () => {
+    let deleteAttempts = 0;
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+      if (requestUrl.pathname.endsWith("/processes/123")) {
+        return Response.json({ status: "pending" });
+      }
+      if (requestUrl.pathname.endsWith("/smtp/emails")) {
+        deleteAttempts += 1;
+        return Response.json({ count: 1, transactionalEmails: [] });
+      }
+      if (requestUrl.pathname.endsWith("/log/first%40example.com")) {
+        return new Response(null, { status: 404 });
+      }
+      if (requestUrl.pathname.endsWith("/persons/")) {
+        return Response.json({ next: null, results: [] });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    };
+
+    await expect(
+      verifyAccountProcessors(
+        snapshotWithoutZohoEffects,
+        {
+          brevoProcesses: [{ email: "first@example.com", processId: 123 }],
+          posthogPersonUuids: [],
+          posthogQueued: false,
+          zohoTicketIds: [],
+        },
+        config,
+        processorProgress(),
+        { fetchFn },
+      ),
+    ).rejects.toThrow("Brevo transactional-log deletion is pending");
+    expect(deleteAttempts).toBe(0);
+  });
+
+  it("rejects residual Brevo logs after a completed deletion process", async () => {
+    let emailLookupCount = 0;
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+      if (requestUrl.pathname.endsWith("/processes/123"))
+        return Response.json({ status: "completed" });
+      if (requestUrl.pathname.endsWith("/smtp/emails")) {
+        emailLookupCount += 1;
+        return Response.json({ count: emailLookupCount === 1 ? 1 : 0, transactionalEmails: [] });
+      }
+      if (requestUrl.pathname.endsWith("/log/first%40example.com")) {
+        return new Response(null, { status: 404 });
+      }
+      if (requestUrl.pathname.endsWith("/persons/")) {
+        return Response.json({ next: null, results: [] });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    };
+
+    await expect(
+      verifyAccountProcessors(
+        snapshotWithoutZohoEffects,
+        {
+          brevoProcesses: [{ email: "first@example.com", processId: 123 }],
+          posthogPersonUuids: [],
+          posthogQueued: false,
+          zohoTicketIds: [],
+        },
+        config,
+        processorProgress(),
+        { fetchFn },
+      ),
+    ).rejects.toThrow("Brevo still returns transactional logs");
+    expect(emailLookupCount).toBe(1);
+  });
+
+  it("rejects missing PostHog deletion status and a failed status lookup", async () => {
+    const checkpoint = {
+      brevoProcesses: [],
+      posthogPersonUuids: ["80000000-0000-4000-8000-000000001994"],
+      posthogQueued: true,
+      zohoTicketIds: [],
+    };
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+      if (requestUrl.pathname.endsWith("/persons/")) {
+        return Response.json({ next: null, results: [] });
+      }
+      if (requestUrl.pathname.endsWith("/deletion_status/")) {
+        return Response.json({ results: [] });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    };
+
+    await expect(
+      verifyAccountProcessors(snapshotWithoutZohoEffects, checkpoint, config, processorProgress(), {
+        fetchFn,
+      }),
+    ).rejects.toThrow("did not include the queued person");
+  });
+
+  it("requeues PostHog people that remain after verification", async () => {
+    const personUuid = "80000000-0000-4000-8000-000000001994";
+    let personLookupCount = 0;
+    let bulkDeleteCount = 0;
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+      if (requestUrl.pathname.endsWith("/persons/")) {
+        personLookupCount += 1;
+        return Response.json({
+          next: null,
+          results: personLookupCount === 1 ? [{ uuid: personUuid }] : [{ uuid: personUuid }],
+        });
+      }
+      if (requestUrl.pathname.endsWith("/deletion_status/")) {
+        return Response.json({ results: [{ person_uuid: personUuid, status: "completed" }] });
+      }
+      if (requestUrl.pathname.endsWith("/bulk_delete/")) {
+        bulkDeleteCount += 1;
+        return Response.json(
+          {
+            deletion_errors: [],
+            events_queued_for_deletion: true,
+            recordings_queued_for_deletion: true,
+          },
+          { status: 202 },
+        );
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    };
+
+    await expect(
+      verifyAccountProcessors(
+        snapshotWithoutZohoEffects,
+        {
+          brevoProcesses: [],
+          posthogPersonUuids: [personUuid],
+          posthogQueued: true,
+          zohoTicketIds: [],
+        },
+        config,
+        processorProgress(),
+        { fetchFn },
+      ),
+    ).rejects.toThrow("still returns 1 person record");
+    expect(bulkDeleteCount).toBe(2);
   });
 });
