@@ -249,7 +249,7 @@ export const bodyRegion = fitness.table(
     }),
     label: text("label").notNull(),
     kind: text("kind").notNull(),
-    sortOrder: integer("sort_order").notNull().default(0),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
   },
   (table) => [
     index("body_region_parent_sort_idx").on(table.parentId, table.sortOrder, table.id),
@@ -290,7 +290,7 @@ export const subjectiveSymptom = fitness.table(
       .notNull()
       .references(() => bodyRegion.id, { onDelete: "restrict" }),
     kind: text("kind").notNull(),
-    score: integer("score").notNull(),
+    score: bigint("score", { mode: "number" }).notNull(),
   },
   (table) => [
     unique("subjective_symptom_unique_kind").on(table.checkInId, table.bodyRegionId, table.kind),
@@ -316,7 +316,7 @@ export const injuryEvent = fitness.table(
       .references(() => bodyRegion.id, { onDelete: "restrict" }),
     onsetDate: date("onset_date").notNull(),
     resolvedDate: date("resolved_date"),
-    severity: integer("severity"),
+    severity: bigint("severity", { mode: "number" }),
     description: text("description").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
