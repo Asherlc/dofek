@@ -2,7 +2,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 export const subjectiveKindSchema = z.enum(["soreness", "stiffness", "tenderness"]);
 export const injuryKindSchema = z.enum(["injury", "niggle"]);
@@ -17,9 +17,9 @@ const regionRowSchema = z.object({
 
 const checkInRowSchema = z.object({
   id: z.string(),
-  date: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  date: dateStringSchema,
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
 });
 
 const symptomRowSchema = z.object({
@@ -34,12 +34,12 @@ const injuryRowSchema = z.object({
   id: z.string(),
   kind: injuryKindSchema,
   body_region_id: z.string(),
-  onset_date: z.string(),
-  resolved_date: z.string().nullable(),
+  onset_date: dateStringSchema,
+  resolved_date: dateStringSchema.nullable(),
   severity: z.coerce.number().int().min(0).max(10),
   description: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
 });
 
 export type SubjectiveRegion = z.infer<typeof regionRowSchema>;

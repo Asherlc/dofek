@@ -26,6 +26,7 @@ const toolTestMocks = vi.hoisted(() => {
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
+    subjectiveTimeline: vi.fn(),
   };
   return {
     ...mocks,
@@ -38,6 +39,7 @@ const toolTestMocks = vi.hoisted(() => {
       list: mocks.dailyMetricsList,
       listRange: mocks.dailyMetricsListRange,
     })),
+    subjectiveRepository: vi.fn(() => ({ timeline: mocks.subjectiveTimeline })),
   };
 });
 
@@ -82,6 +84,10 @@ vi.mock("../repositories/sync-repository.ts", () => ({
     getLastSyncTimes: toolTestMocks.getLastSyncTimes,
     getLatestErrors: toolTestMocks.getLatestErrors,
   })),
+}));
+
+vi.mock("../repositories/subjective-repository.ts", () => ({
+  SubjectiveRepository: toolTestMocks.subjectiveRepository,
 }));
 
 vi.mock("../routers/sync-helpers.ts", async (importOriginal) => {
@@ -301,6 +307,7 @@ describe("createMcpRouter", () => {
     });
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
+    toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
   });
 
   it("returns 401 with a bearer challenge when Authorization is missing", async () => {
@@ -533,6 +540,32 @@ describe("createMcpRouter", () => {
       required: ["providerId"],
       type: "object",
     });
+  });
+
+  it("uses an explicitly requested timezone for subjective timelines", async () => {
+    authorizeMcpToken();
+    toolTestMocks.subjectiveTimeline.mockResolvedValue({
+      checkIns: [],
+      injuries: [],
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_subjective_timeline", {
+        end_date: "2026-05-20",
+        start_date: "2026-05-01",
+        timezone: "America/New_York",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(parseToolCallText(response.text)).toEqual({ checkIns: [], injuries: [] });
+    expect(toolTestMocks.subjectiveRepository).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-id",
+      "America/New_York",
+    );
+    expect(toolTestMocks.subjectiveTimeline).toHaveBeenCalledWith("2026-05-01", "2026-05-20");
   });
 
   it("returns daily health summaries from the metrics repository", async () => {

@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
   boolean,
@@ -243,7 +244,9 @@ export const bodyRegion = fitness.table(
   "body_region",
   {
     id: text("id").primaryKey(),
-    parentId: text("parent_id"),
+    parentId: text("parent_id").references((): AnyPgColumn => bodyRegion.id, {
+      onDelete: "restrict",
+    }),
     label: text("label").notNull(),
     kind: text("kind").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),

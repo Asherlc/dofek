@@ -617,10 +617,14 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         timezone: z.string().optional(),
       },
     },
-    async ({ start_date, end_date }) => {
+    async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
       assertDateRange(start_date, end_date);
-      const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
+      const repository = new SubjectiveRepository(
+        context.db,
+        context.userId,
+        timezone ?? context.timezone,
+      );
       return jsonContent(await repository.timeline(start_date, end_date));
     },
   );

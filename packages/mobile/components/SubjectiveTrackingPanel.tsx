@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
@@ -15,6 +15,9 @@ export function SubjectiveTrackingPanel() {
   const [regionId, setRegionId] = useState("");
   const [kind, setKind] = useState<"soreness" | "stiffness" | "tenderness">("soreness");
   const [score, setScore] = useState(1);
+  const [injuryKind, setInjuryKind] = useState<"injury" | "niggle">("niggle");
+  const [injurySeverity, setInjurySeverity] = useState(0);
+  const [injuryDescription, setInjuryDescription] = useState("");
   const [savedSymptoms, setSavedSymptoms] = useState<
     Array<{ bodyRegionId: string; kind: "soreness" | "stiffness" | "tenderness"; score: number }>
   >([]);
@@ -24,6 +27,14 @@ export function SubjectiveTrackingPanel() {
       void utils.subjective.timeline.invalidate();
     },
     onError: (error) => captureException(error, { operation: "subjective.saveCheckIn" }),
+  });
+  const createInjury = trpc.subjective.createInjury.useMutation({
+    onSuccess: () => {
+      setInjuryDescription("");
+      void utils.subjective.injuries.invalidate();
+      void utils.subjective.timeline.invalidate();
+    },
+    onError: (error) => captureException(error, { operation: "subjective.createInjury" }),
   });
 
   useEffect(() => {
@@ -109,6 +120,52 @@ export function SubjectiveTrackingPanel() {
       </View>
       {save.error ? <Text style={styles.error}>{save.error.message}</Text> : null}
       <Text style={styles.timelineTitle}>Injuries and niggles</Text>
+      <View style={styles.injuryForm}>
+        <View style={styles.row}>
+          <Pressable
+            style={styles.control}
+            onPress={() => setInjuryKind(injuryKind === "niggle" ? "injury" : "niggle")}
+            accessibilityLabel="Choose injury type"
+          >
+            <Text style={styles.controlText}>{injuryKind}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.score}
+            onPress={() => setInjurySeverity(injurySeverity === 10 ? 0 : injurySeverity + 1)}
+            accessibilityLabel="Choose injury severity"
+          >
+            <Text style={styles.controlText}>{injurySeverity}/10</Text>
+          </Pressable>
+        </View>
+        <TextInput
+          accessibilityLabel="Injury description"
+          onChangeText={setInjuryDescription}
+          placeholder="Describe an injury or niggle"
+          placeholderTextColor={colors.textSecondary}
+          style={styles.descriptionInput}
+          value={injuryDescription}
+        />
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => {
+            if (!regionId || !injuryDescription.trim()) return;
+            createInjury.mutate({
+              bodyRegionId: regionId,
+              description: injuryDescription.trim(),
+              kind: injuryKind,
+              onsetDate: date,
+              resolvedDate: null,
+              severity: injurySeverity,
+            });
+          }}
+          disabled={!regionId || !injuryDescription.trim() || createInjury.isPending}
+          accessibilityRole="button"
+          accessibilityLabel="Add injury"
+        >
+          <Text style={styles.secondaryText}>Add injury</Text>
+        </Pressable>
+      </View>
+      {createInjury.error ? <Text style={styles.error}>{createInjury.error.message}</Text> : null}
       {injuries.data?.length ? (
         injuries.data.map((injury) => (
           <Text key={injury.id} style={styles.injury}>
@@ -161,4 +218,15 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontSize: 12, marginTop: 8 },
   timelineTitle: { color: colors.text, fontSize: 14, fontWeight: "600", marginTop: 16 },
   injury: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },
+  injuryForm: { gap: 8, marginTop: 8 },
+  descriptionInput: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.text,
+    minHeight: 40,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
 });

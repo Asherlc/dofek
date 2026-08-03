@@ -8,8 +8,14 @@ type SymptomDraft = {
   score: number;
 };
 
+type InjuryKind = "injury" | "niggle";
+
 function isSymptomKind(value: string): value is SymptomDraft["kind"] {
   return value === "soreness" || value === "stiffness" || value === "tenderness";
+}
+
+function isInjuryKind(value: string): value is InjuryKind {
+  return value === "injury" || value === "niggle";
 }
 
 function today(): string {
@@ -32,6 +38,8 @@ export function SubjectiveTrackingPanel() {
   const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedKind, setSelectedKind] = useState<SymptomDraft["kind"]>("soreness");
   const [selectedScore, setSelectedScore] = useState(1);
+  const [selectedInjuryKind, setSelectedInjuryKind] = useState<InjuryKind>("niggle");
+  const [selectedInjurySeverity, setSelectedInjurySeverity] = useState(0);
   const [injuryDescription, setInjuryDescription] = useState("");
   const save = trpc.subjective.saveCheckIn.useMutation({
     onSuccess: () => {
@@ -175,7 +183,33 @@ export function SubjectiveTrackingPanel() {
 
       <div className="card p-4 space-y-3">
         <h3 className="font-medium">Injury and niggle timeline</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-end">
+          <label className="text-xs text-muted">
+            Event type
+            <select
+              aria-label="Injury type"
+              className="block mt-1 rounded border border-border bg-surface px-2 py-1 text-sm"
+              value={selectedInjuryKind}
+              onChange={(event) => {
+                if (isInjuryKind(event.target.value)) setSelectedInjuryKind(event.target.value);
+              }}
+            >
+              <option value="niggle">Niggle</option>
+              <option value="injury">Injury</option>
+            </select>
+          </label>
+          <label className="text-xs text-muted">
+            Severity (0–10)
+            <input
+              aria-label="Injury severity"
+              className="block mt-1 w-20 rounded border border-border bg-surface px-2 py-1 text-sm"
+              type="number"
+              min={0}
+              max={10}
+              value={selectedInjurySeverity}
+              onChange={(event) => setSelectedInjurySeverity(Number(event.target.value))}
+            />
+          </label>
           <input
             aria-label="Injury description"
             className="flex-1 rounded border border-border bg-surface px-2 py-1 text-sm"
@@ -189,16 +223,16 @@ export function SubjectiveTrackingPanel() {
             disabled={!injuryDescription.trim() || !selectedRegion || createInjury.isPending}
             onClick={() =>
               createInjury.mutate({
-                kind: "niggle",
+                kind: selectedInjuryKind,
                 bodyRegionId: selectedRegion,
                 onsetDate: date,
                 resolvedDate: null,
-                severity: selectedScore,
+                severity: selectedInjurySeverity,
                 description: injuryDescription.trim(),
               })
             }
           >
-            Add niggle
+            Add {selectedInjuryKind}
           </button>
         </div>
         {createInjury.error && <p className="text-sm text-red-400">{createInjury.error.message}</p>}

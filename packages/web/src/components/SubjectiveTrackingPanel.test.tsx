@@ -88,7 +88,26 @@ describe("SubjectiveTrackingPanel", () => {
         bodyRegionId: "left_hand",
         description: "Morning tenderness",
         kind: "niggle",
+        severity: 0,
       }),
+    );
+  });
+
+  it("creates an injury with its own kind and zero severity", () => {
+    render(<SubjectiveTrackingPanel />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
+      target: { value: "left_hand" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Injury type" }), {
+      target: { value: "injury" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Injury description" }), {
+      target: { value: "Resolved strain" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
+
+    expect(mocks.createInjury).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "injury", severity: 0, description: "Resolved strain" }),
     );
   });
 });

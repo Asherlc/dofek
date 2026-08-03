@@ -42,4 +42,14 @@ describe("ActivityPerceivedExertion", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(mocks.mutate).toHaveBeenLastCalledWith({ id: "activity-1", value: null });
   });
+
+  it("saves an unset slider as zero without changing clear semantics", () => {
+    render(<ActivityPerceivedExertion activityId="activity-1" value={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: "activity-1", value: 0 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(mocks.mutate).toHaveBeenLastCalledWith({ id: "activity-1", value: null });
+  });
 });
