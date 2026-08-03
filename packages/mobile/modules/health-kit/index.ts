@@ -218,6 +218,12 @@ export function teardownBackgroundObservers(): number {
   return HealthKitModule.teardownBackgroundObservers();
 }
 
+/** Clear Dofek-owned observer, anchor, and background-delivery state.
+ * This does not delete HealthKit samples owned by iOS or other apps. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return HealthKitModule.purgeAccountState(deviceErasureCutoff);
+}
+
 /** Listen for HealthKit sample update events from background observers.
  * Returns a subscription that can be removed with `.remove()`. */
 export function addSampleUpdateListener(

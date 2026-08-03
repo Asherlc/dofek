@@ -18,6 +18,7 @@ const {
   mockVeloHeroProvider,
   mockCachedProtectedQuery,
   mockProtectedQueryCache,
+  mockWithUserWriteFence,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -40,6 +41,7 @@ const {
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
+  mockWithUserWriteFence: vi.fn(),
 }));
 
 function oauthAuthSetup(authUrl: string) {
@@ -171,6 +173,10 @@ vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
+}));
+
 // Mock the dynamic provider imports used in doRegisterProviders
 vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
@@ -264,6 +270,14 @@ describe("syncRouter", () => {
       delayed: 0,
       failed: 0,
     });
+    mockWithUserWriteFence.mockReset();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: MockAdminDb,
+        _userId: string,
+        operation: (database: MockAdminDb) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   describe("ensureProvidersRegistered", () => {
@@ -763,6 +777,27 @@ describe("syncRouter", () => {
           deduplication: { id: "sync:full:wahoo:user-1" },
         }),
       );
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+        expect.any(Object),
+        "user-1",
+        expect.any(Function),
+      );
+    });
+
+    it("does not enqueue a manual sync when the account-erasure fence rejects the user", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "strava", name: "Strava", validate: () => null }]);
+      mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.triggerSync({ providerId: "strava" })).rejects.toThrow(
+        "Account erasure is active",
+      );
+
+      expect(mockAdd).not.toHaveBeenCalled();
     });
 
     it("returns per-provider outcomes when one sync-all provider is rate limited", async () => {

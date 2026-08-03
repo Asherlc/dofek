@@ -318,9 +318,25 @@ export class SuuntoProvider implements WebhookProvider {
     const config = suuntoOAuthConfig(options?.host);
     if (!config) throw new Error("SUUNTO_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
+    const revokeAuthorization = async (tokens: TokenSet): Promise<void> => {
+      const url = new URL("https://cloudapi-oauth.suunto.com/oauth/deauthorize");
+      url.searchParams.set("client_id", config.clientId);
+      const response = await fetchFn(url, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${tokens.accessToken}`,
+        },
+        method: "GET",
+      });
+      if (response.status !== 200) {
+        throw new Error(`Suunto authorization revocation failed (${response.status})`);
+      }
+    };
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      revokeExistingTokens: revokeAuthorization,
+      revokeTokensForAccountErasure: revokeAuthorization,
       apiBaseUrl: SUUNTO_API_BASE,
     };
   }

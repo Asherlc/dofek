@@ -25,6 +25,7 @@ vi.mock("./clickhouse.ts", () => ({
 }));
 
 import {
+  createPeerDbMirrorApiClient,
   type PeerDbMirrorApiClient,
   type PeerDbTableMapping,
   setupClickHouseCdc,
@@ -101,6 +102,9 @@ function createConfiguredPeerDbMirrorApiClient(): PeerDbMirrorApiClient {
                 },
               ],
       };
+    },
+    async listMirrors() {
+      return [];
     },
     async changeMirrorState() {
       throw new Error("Configured PeerDB mirrors must not be edited");
@@ -181,6 +185,47 @@ describe("PeerDB ClickHouse CDC setup", () => {
     "sensor_device_priority",
     "user_profile",
   ];
+
+  it("lists every mirror identity and destination type through the Flow API", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            mirrors: [
+              {
+                destinationType: "CLICKHOUSE",
+                isCdc: true,
+                name: "dofek_fitness_raw_analytics",
+              },
+              {
+                destinationType: "POSTGRES",
+                isCdc: true,
+                name: "unrelated_postgres_mirror",
+              },
+            ],
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createPeerDbMirrorApiClient("http://peerdb-flow-api:8113/v1", undefined).listMirrors(),
+    ).resolves.toEqual([
+      {
+        destinationType: "CLICKHOUSE",
+        isCdc: true,
+        name: "dofek_fitness_raw_analytics",
+      },
+      {
+        destinationType: "POSTGRES",
+        isCdc: true,
+        name: "unrelated_postgres_mirror",
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith("http://peerdb-flow-api:8113/v1/mirrors/list", {
+      headers: {},
+    });
+  });
   const originalDatabaseUrl = process.env.DATABASE_URL;
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
   const originalPostgresPassword = process.env.POSTGRES_PASSWORD;
@@ -544,6 +589,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const peerDbMirrorApiClient: PeerDbMirrorApiClient = {
       getMirrorStatus,
       changeMirrorState,
+      async listMirrors() {
+        return [];
+      },
     };
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
@@ -1930,6 +1978,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
           async getMirrorStatus() {
             return { currentFlowState: "STATUS_PAUSED", tableMappings: [] };
           },
+          async listMirrors() {
+            return [];
+          },
           changeMirrorState,
         },
         peerDbClient: createExistingFitnessMirrorPeerDbClient(),
@@ -1968,6 +2019,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
               return { currentFlowState: "STATUS_RUNNING", tableMappings: [] };
             }
             throw new Error("PeerDB status unavailable");
+          },
+          async listMirrors() {
+            return [];
           },
           changeMirrorState,
         },

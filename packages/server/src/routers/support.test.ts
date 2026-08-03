@@ -7,6 +7,8 @@ const {
   mockCreateTicket,
   mockLoggerError,
   mockLoggerInfo,
+  mockWithUserWriteFence,
+  MockAccountErasureUserFencedError,
 } = vi.hoisted(() => {
   class MockPostHogConversationsError extends Error {
     readonly status: number;
@@ -18,14 +20,28 @@ const {
     }
   }
 
+  class MockAccountErasureUserFencedError extends Error {
+    constructor(cause?: unknown) {
+      super("Account deletion is active for this user.", { cause });
+      this.name = "AccountErasureUserFencedError";
+    }
+  }
+
   return {
     MockPostHogConversationsError,
     mockCaptureException: vi.fn(),
     mockCreateTicket: vi.fn(),
     mockLoggerError: vi.fn(),
     mockLoggerInfo: vi.fn(),
+    mockWithUserWriteFence: vi.fn(),
+    MockAccountErasureUserFencedError,
   };
 });
+
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureUserFencedError: MockAccountErasureUserFencedError,
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockWithUserWriteFence(...args),
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -158,6 +174,14 @@ describe("supportRouter", () => {
     mockCreateTicket.mockReset();
     mockLoggerError.mockReset();
     mockLoggerInfo.mockReset();
+    mockWithUserWriteFence.mockReset();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (database: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   afterEach(() => {
@@ -185,6 +209,29 @@ describe("supportRouter", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[support] ticket created userId=user-1 ticketId=ticket-1",
     );
+  });
+
+  it("returns a conflict when account erasure fences ticket creation", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "widget-session-1" });
+    mockCreateTicket.mockResolvedValue({ ticketId: "ticket-1" });
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (database: unknown) => Promise<unknown>,
+      ) => {
+        await operation(database);
+        throw new MockAccountErasureUserFencedError();
+      },
+    );
+
+    await expect(
+      makeCaller({ name: "Support User", email: "user@example.com" }).createTicket(ticketInput),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Account deletion is active for this user.",
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it.each(statusCases)("maps PostHog status $status to $code", async ({

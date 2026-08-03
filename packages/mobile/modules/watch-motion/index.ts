@@ -47,6 +47,11 @@ export async function requestWatchRecording(): Promise<boolean> {
   return WatchMotionModule.requestWatchRecording();
 }
 
+/** Re-enable Watch recording and transfer only after a new account authenticates. */
+export async function enableAccountSync(): Promise<boolean> {
+  return WatchMotionModule.enableAccountSync();
+}
+
 function isSafePendingFileName(fileName: string): boolean {
   if (!fileName) return false;
   if (fileName.includes("..")) return false;
@@ -94,4 +99,9 @@ export function deleteWatchFile(fileName: string): void {
     throw new Error(`Invalid pending watch file name: ${fileName}`);
   }
   WatchMotionModule.deleteWatchFile(fileName);
+}
+
+/** Delete iPhone-side pending files, disable account sync, and request Watch-side purge. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return WatchMotionModule.purgeAccountState(deviceErasureCutoff);
 }

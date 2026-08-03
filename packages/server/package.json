@@ -52,7 +52,6 @@
     "express-rate-limit": "8.5.2",
     "qrcode": "1.5.4",
     "simple-statistics": "7.9.3",
-    "stripe": "22.1.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

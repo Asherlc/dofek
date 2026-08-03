@@ -9,6 +9,18 @@ import {
 } from "./background-whoop-ble-sync.ts";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 
+const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
+  mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),
+}));
+
+vi.mock("./device-erasure-cutoff", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./device-erasure-cutoff")>();
+  return {
+    ...actual,
+    loadDeviceErasureCutoff: mockLoadDeviceErasureCutoff,
+  };
+});
+
 function makeMockDeps(): WhoopBleSyncDeps {
   return {
     isBluetoothAvailable: vi.fn().mockReturnValue(true),
@@ -79,6 +91,7 @@ describe("background-whoop-ble-sync", () => {
   let trpcClient: InertialMeasurementUnitUploadClient;
 
   beforeEach(() => {
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     appStateCallback = null;
@@ -324,7 +337,7 @@ describe("background-whoop-ble-sync", () => {
 
     // getBufferedSamples should only be called once for the foreground events
     // (the second call was skipped due to the syncing guard)
-    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1));
 
     // Resolve so cleanup doesn't hang
     resolveBuffered?.();
@@ -535,6 +548,61 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(1);
+  });
+
+  it("discards old-account IMU and realtime samples at the durable cutoff", async () => {
+    const cutoff = "2026-03-27T10:00:00.000Z";
+    mockLoadDeviceErasureCutoff.mockResolvedValue(cutoff);
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce([
+      {
+        timestamp: cutoff,
+        x: 1,
+        y: 2,
+        z: 3,
+      },
+      {
+        timestamp: "2026-03-27T10:00:01.000Z",
+        x: 4,
+        y: 5,
+        z: 6,
+      },
+    ]);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce([
+      {
+        timestamp: cutoff,
+        rrIntervalMs: 900,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "old",
+      },
+      {
+        timestamp: "2026-03-27T10:00:01.000Z",
+        rrIntervalMs: 800,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "new",
+      },
+    ]);
+    const realtimeClient = makeMockRealtimeClient();
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        samples: [expect.objectContaining({ timestamp: "2026-03-27T10:00:01.000Z" })],
+      }),
+    );
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        samples: [expect.objectContaining({ timestamp: "2026-03-27T10:00:01.000Z" })],
+      }),
+    );
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(2);
+    expect(whoopDeps.confirmRealtimeDataDrain).toHaveBeenCalledWith(2);
   });
 
   it("groups buffered IMU samples by captured device id before upload", async () => {

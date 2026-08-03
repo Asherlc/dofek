@@ -3,6 +3,7 @@ import {
   ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
+import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -12,6 +13,7 @@ import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
   type ProcessingDatasetKey,
   processingDatasetKeysForOutputPath,
@@ -26,6 +28,7 @@ import {
   createProcessingOperation,
   getProcessingOutputManifest,
   recordMetricStreamBatchPublished,
+  recordMetricStreamBatchPublishedInTransaction,
   recordRelationalCanonicalCommits,
 } from "../processing/processing-event-store.ts";
 import {
@@ -40,6 +43,7 @@ import {
   syncOperationsTotal,
   syncRecordsTotal,
 } from "../sync-metrics.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import { enqueueSyncJob, scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
@@ -222,20 +226,26 @@ function shouldReportProviderError(error: unknown): boolean {
 }
 
 async function scheduleRateLimitRetry(
+  db: SyncDatabase,
   job: SyncJob,
   error: ProviderRateLimitError,
   since: Date,
   until: Date,
 ): Promise<string> {
   const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
-  return scheduleDelayedSyncJob(
-    {
-      ...job.data,
-      providerId: error.providerId,
-      sinceIso: since.toISOString(),
-      untilIso: until.toISOString(),
-    },
-    cooldown,
+  return withAccountErasureUserWriteFence(
+    requireTransactionalSyncDatabase(db),
+    job.data.userId,
+    async () =>
+      scheduleDelayedSyncJob(
+        {
+          ...job.data,
+          providerId: error.providerId,
+          sinceIso: since.toISOString(),
+          untilIso: until.toISOString(),
+        },
+        cooldown,
+      ),
   );
 }
 
@@ -308,14 +318,19 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       job.data.userId,
     );
     if (activeCooldown) {
-      const retryAt = await scheduleDelayedSyncJob(
-        {
-          ...job.data,
-          providerId: provider.id,
-          sinceIso: since.toISOString(),
-          untilIso: until.toISOString(),
-        },
-        activeCooldown,
+      const retryAt = await withAccountErasureUserWriteFence(
+        requireTransactionalSyncDatabase(db),
+        job.data.userId,
+        async () =>
+          scheduleDelayedSyncJob(
+            {
+              ...job.data,
+              providerId: provider.id,
+              sinceIso: since.toISOString(),
+              untilIso: until.toISOString(),
+            },
+            activeCooldown,
+          ),
       );
       completedCount++;
       providerStatus[provider.id] = {
@@ -356,14 +371,23 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
             operationId: processingOperation.id,
             datasetKeys: emittedMetricStreamDatasetKeys,
-            recordPublishedBatch: (batch) =>
-              recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch),
+            recordPublishedBatch: (batch) => {
+              const transaction = currentMetricStreamWriteDatabase();
+              return transaction
+                ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
+                : recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch);
+            },
           })
         : undefined;
 
     const syncStart = Date.now();
 
     try {
+      if (
+        !(await accountErasureAllowsQueuedUserWork(db, job.data.userId, `${provider.name} sync`))
+      ) {
+        return;
+      }
       logger.info(`[worker] Starting ${provider.name}...`);
       const result = await runWithTokenUser(job.data.userId, () =>
         provider.sync(
@@ -381,18 +405,33 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
             metricStreamPublisher,
             checkpoint: createCheckpointStore(job),
             enqueueSyncContinuation: async (checkpoint) => {
-              await enqueueSyncJob(provider.id, {
-                ...job.data,
-                providerId: provider.id,
-                sinceIso: since.toISOString(),
-                untilIso: until.toISOString(),
-                checkpoint,
-              });
+              await withAccountErasureUserWriteFence(
+                requireTransactionalSyncDatabase(db),
+                job.data.userId,
+                async () => {
+                  await enqueueSyncJob(provider.id, {
+                    ...job.data,
+                    providerId: provider.id,
+                    sinceIso: since.toISOString(),
+                    untilIso: until.toISOString(),
+                    checkpoint,
+                  });
+                },
+              );
             },
           }),
         ),
       );
       if (result.recordsSynced > 0) {
+        if (
+          !(await accountErasureAllowsQueuedUserWork(
+            db,
+            job.data.userId,
+            "sync cache invalidation",
+          ))
+        ) {
+          return;
+        }
         await invalidateAllUserQueries(job.data.userId);
       }
       if (result.continued) {
@@ -499,7 +538,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
     } catch (err: unknown) {
       if (err instanceof ProviderRateLimitError) {
-        const retryAt = await scheduleRateLimitRetry(job, err, since, until);
+        const retryAt = await scheduleRateLimitRetry(db, job, err, since, until);
         const message = `Rate limited; retry scheduled for ${retryAt}`;
         completedCount++;
         providerStatus[provider.id] = { status: "running", message };
@@ -593,7 +632,13 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
   try {
     const { enqueueDebouncedUserRefit } = await import("./queues.ts");
-    await enqueueDebouncedUserRefit(job.data.userId);
+    await withAccountErasureUserWriteFence(
+      requireTransactionalSyncDatabase(db),
+      job.data.userId,
+      async () => {
+        await enqueueDebouncedUserRefit(job.data.userId);
+      },
+    );
   } catch (err) {
     logger.error(`[worker] Failed to enqueue user refit: ${err}`);
     captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });

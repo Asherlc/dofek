@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
@@ -497,11 +498,10 @@ describe("SuuntoProvider — precise webhook assertions", () => {
   });
 
   it("verifyWebhookSignature with correct HMAC-SHA256 returns true", () => {
-    const { createHmac } = require("node:crypto");
     const provider = new SuuntoProvider(async () => new Response());
 
     const body = Buffer.from('{"type":"WORKOUT_CREATED","username":"test"}');
-    const secret = "my-signing-secret";
+    const secret = randomBytes(32).toString("hex");
     const hmac = createHmac("sha256", secret);
     hmac.update(body);
     const validSig = hmac.digest("hex");
@@ -512,16 +512,19 @@ describe("SuuntoProvider — precise webhook assertions", () => {
   });
 
   it("verifyWebhookSignature with wrong secret returns false", () => {
-    const { createHmac } = require("node:crypto");
     const provider = new SuuntoProvider(async () => new Response());
 
     const body = Buffer.from("test");
-    const hmac = createHmac("sha256", "correct-secret");
+    const hmac = createHmac("sha256", randomBytes(32));
     hmac.update(body);
     const sig = hmac.digest("hex");
 
     expect(
-      provider.verifyWebhookSignature(body, { "x-hmac-sha256-signature": sig }, "wrong-secret"),
+      provider.verifyWebhookSignature(
+        body,
+        { "x-hmac-sha256-signature": sig },
+        randomBytes(32).toString("hex"),
+      ),
     ).toBe(false);
   });
 
@@ -783,6 +786,52 @@ describe("SuuntoProvider.authSetup — apiBaseUrl", () => {
     const provider = new SuuntoProvider();
     const setup = provider.authSetup();
     expect(setup.exchangeCode).toBeTypeOf("function");
+  });
+
+  it("replays the documented deauthorization request", async () => {
+    process.env.SUUNTO_CLIENT_ID = "suunto-client";
+    process.env.SUUNTO_CLIENT_SECRET = "suunto-secret";
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const revoke = new SuuntoProvider(fetchFn).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "suunto-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      refreshToken: "suunto-refresh",
+      scopes: "workout",
+    };
+
+    await revoke(tokens);
+    await revoke(tokens);
+
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    for (const [input, init] of fetchFn.mock.calls) {
+      const url = new URL(String(input));
+      expect(url.origin + url.pathname).toBe("https://cloudapi-oauth.suunto.com/oauth/deauthorize");
+      expect(url.searchParams.get("client_id")).toBe("suunto-client");
+      expect(init?.method).toBe("GET");
+      expect(init?.headers).toEqual({
+        Accept: "application/json",
+        Authorization: "Bearer suunto-access",
+      });
+    }
+  });
+
+  it("accepts only Suunto's documented 200 deauthorization response", async () => {
+    process.env.SUUNTO_CLIENT_ID = "suunto-client";
+    process.env.SUUNTO_CLIENT_SECRET = "suunto-secret";
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 400 }));
+    const revoke = new SuuntoProvider(fetchFn).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+
+    await expect(
+      revoke({
+        accessToken: "suunto-access",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+        refreshToken: "suunto-refresh",
+        scopes: "workout",
+      }),
+    ).rejects.toThrow("Suunto authorization revocation failed (400)");
   });
 
   it("throws when env vars are missing", () => {

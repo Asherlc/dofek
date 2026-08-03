@@ -13,8 +13,10 @@ import {
 export function createProviderDataDeletionDependencies(
   database: Database,
   clickHouseClient: ProviderDataDeletionClickHouseClient,
+  accountErasureAllowsWork: ProviderDataDeletionDependencies["accountErasureAllowsWork"],
 ): ProviderDataDeletionDependencies {
   return {
+    accountErasureAllowsWork,
     clickHouseClient,
     enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
     enqueueContinuation(data) {

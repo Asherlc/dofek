@@ -1,6 +1,7 @@
 import { type AuthUser, AuthUserSchema, type ConfiguredProviders } from "@dofek/auth/auth";
 import { z } from "zod";
 import { captureException } from "./telemetry.ts";
+import { withWebAccountStateLockWhenAvailable } from "./web-account-state-lock.ts";
 
 export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek/auth/auth";
 
@@ -32,27 +33,29 @@ async function submitPasswordAuth(
   path: "/auth/login/password" | "/auth/register",
   body: Record<string, string | undefined>,
 ): Promise<{ redirect: string; isNewUser: boolean }> {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
+  return withWebAccountStateLockWhenAvailable(async () => {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
 
-  const data: unknown = await res.json().catch(() => null);
-  const parsed = passwordAuthResponseSchema.safeParse(data);
-  if (!res.ok) {
-    throw new Error(
-      parsed.success && parsed.data.error ? parsed.data.error : "Authentication failed",
-    );
-  }
-  if (!parsed.success) {
-    throw new Error("Authentication failed");
-  }
-  return { redirect: parsed.data.redirect, isNewUser: parsed.data.isNewUser };
+    const data: unknown = await res.json().catch(() => null);
+    const parsed = passwordAuthResponseSchema.safeParse(data);
+    if (!res.ok) {
+      throw new Error(
+        parsed.success && parsed.data.error ? parsed.data.error : "Authentication failed",
+      );
+    }
+    if (!parsed.success) {
+      throw new Error("Authentication failed");
+    }
+    return { redirect: parsed.data.redirect, isNewUser: parsed.data.isNewUser };
+  });
 }
 
 /** Fetch the currently authenticated user, or null if not logged in. */

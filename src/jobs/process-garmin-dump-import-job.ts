@@ -1,6 +1,7 @@
 import { WaitingChildrenError } from "bullmq";
 import { z } from "zod";
-import type { SyncDatabase } from "../db/index.ts";
+import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
@@ -43,6 +44,21 @@ export interface GarminDumpImportJob {
   extendLock(durationMs: number): Promise<void>;
   updateProgress(data: object): Promise<void>;
   log(message: string): Promise<void>;
+}
+
+function hasTransaction(
+  database: SyncDatabase,
+): database is SyncDatabase & Pick<Database, "transaction"> {
+  return "transaction" in database && typeof database.transaction === "function";
+}
+
+function requireTransactionalDatabase(
+  database: SyncDatabase,
+): SyncDatabase & Pick<Database, "transaction"> {
+  if (!hasTransaction(database)) {
+    throw new Error("Garmin import flow dispatch requires a transactional database");
+  }
+  return database;
 }
 
 async function logGarminImportPhase(job: GarminDumpImportJob, message: string): Promise<void> {
@@ -152,9 +168,15 @@ export async function processGarminDumpImportJob(
       job,
       `[phase] Prepared Garmin dump batch ${checkpoint.batchId} with ${fitFileLabel(checkpoint.totalFitFiles)}`,
     );
-    await attachGarminFitImportFlow(
-      { ...preparedImport, tempDirectories },
-      { id: job.id, queue: job.queueQualifiedName },
+    await withAccountErasureUserWriteFence(
+      requireTransactionalDatabase(db),
+      job.data.userId,
+      async () => {
+        await attachGarminFitImportFlow(
+          { ...preparedImport, tempDirectories },
+          { id: job.id, queue: job.queueQualifiedName },
+        );
+      },
     );
     const batchCount = Math.ceil(preparedImport.totalFitFiles / FLOW_BATCH_SIZE);
     const batchIds = Array.from({ length: batchCount }, (_, i) => createBatchId(preparedImport, i));
@@ -203,8 +225,8 @@ export async function processGarminDumpImportJob(
     job,
     `[phase] Finalized Garmin dump batch ${checkpoint.batchId}: ${result.recordsSynced} activities, ${result.errors.length} error groups`,
   );
-  // Report one Sentry event per unique error cause from the finalized result so
-  // operators can observe failures without flooding Sentry per file.
+  // Report one event per unique error cause from the finalized result so
+  // operators can observe failures without flooding telemetry per file.
   for (const error of result.errors) {
     captureException(
       new Error(`Garmin dump import batch ${checkpoint.batchId}: ${error.message}`),

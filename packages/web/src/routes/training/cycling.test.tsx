@@ -336,6 +336,7 @@ describe("CyclingTab", () => {
     state.invalidatedQueries = [];
     state.queryCalls.length = 0;
     state.selectedDays = 90;
+    window.localStorage.clear();
   });
 
   afterEach(() => {

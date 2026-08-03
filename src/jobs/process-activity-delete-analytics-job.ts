@@ -6,9 +6,11 @@ import {
   waitForPeerDbProviderDeletes,
 } from "../analytics/activity-read-model-build.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import type { Database } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import type { ActivityAnalyticsJobData } from "./queues.ts";
 
 export interface ActivityAnalyticsJob {
@@ -29,36 +31,84 @@ async function updateActivityAnalyticsProgress(
 
 async function rebuildActivityAnalytics(
   job: ActivityAnalyticsJob,
+  database: Pick<Database, "execute">,
   userId: string,
   logMessage: string,
 ): Promise<void> {
+  if (
+    !(await accountErasureAllowsQueuedUserWork(database, userId, "activity read-model rebuild"))
+  ) {
+    return;
+  }
   await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
   await runActivityReadModelBuild();
+  if (
+    !(await accountErasureAllowsQueuedUserWork(
+      database,
+      userId,
+      "activity analytics cache invalidation",
+    ))
+  ) {
+    return;
+  }
   await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
   await invalidateAllUserQueries(userId);
   logger.info(logMessage);
   await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
 }
 
-export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJob): Promise<void> {
+export async function processActivityDeleteAnalyticsJob(
+  job: ActivityAnalyticsJob,
+  database: Pick<Database, "execute">,
+): Promise<void> {
   const { userId } = job.data;
+  if (!(await accountErasureAllowsQueuedUserWork(database, userId, "activity analytics refresh"))) {
+    return;
+  }
   const client = createClickHouseClientFromEnv();
 
   try {
     await updateActivityAnalyticsProgress(job, 0, "Starting activity analytics refresh...");
     if (job.data.type === "provider-delete-analytics-refresh") {
+      if (
+        !(await accountErasureAllowsQueuedUserWork(
+          database,
+          userId,
+          "provider deletion analytics wait",
+        ))
+      ) {
+        return;
+      }
       await updateActivityAnalyticsProgress(
         job,
         20,
         "Waiting for provider records to reach analytics...",
       );
       await waitForPeerDbProviderDeletes(client, userId, job.data.providerId);
+      if (
+        !(await accountErasureAllowsQueuedUserWork(
+          database,
+          userId,
+          "provider deletion read-model rebuild",
+        ))
+      ) {
+        return;
+      }
       await updateActivityAnalyticsProgress(job, 60, "Rebuilding provider analytics...");
       await runProviderDeleteReadModelBuild();
+      if (
+        !(await accountErasureAllowsQueuedUserWork(
+          database,
+          userId,
+          "provider deletion analytics cache invalidation",
+        ))
+      ) {
+        return;
+      }
       await updateActivityAnalyticsProgress(job, 90, "Invalidating provider analytics cache...");
       await invalidateAllUserQueries(userId);
       logger.info(
-        `[provider-delete-analytics] Refreshed all read models after deleting provider ${job.data.providerId} for user ${userId}`,
+        `[provider-delete-analytics] Refreshed all read models after deleting provider ${job.data.providerId}`,
       );
       await updateActivityAnalyticsProgress(job, 100, "Provider analytics refresh complete.");
       return;
@@ -67,13 +117,23 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
     if (job.data.type === "activity-recompute-analytics-refresh") {
       await rebuildActivityAnalytics(
         job,
+        database,
         userId,
-        `[activity-recompute-analytics] Refreshed activity read models for ${activityIds.length} activities for user ${userId}`,
+        `[activity-recompute-analytics] Refreshed activity read models for ${activityIds.length} activities`,
       );
       return;
     }
 
     if (job.data.type === "activity-restore-analytics-refresh") {
+      if (
+        !(await accountErasureAllowsQueuedUserWork(
+          database,
+          userId,
+          "activity restore analytics wait",
+        ))
+      ) {
+        return;
+      }
       await updateActivityAnalyticsProgress(
         job,
         20,
@@ -82,12 +142,22 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
       await waitForPeerDbActivityRestores(client, activityIds);
       await rebuildActivityAnalytics(
         job,
+        database,
         userId,
-        `[activity-restore-analytics] Refreshed activity read models after restoring ${activityIds.length} activities for user ${userId}`,
+        `[activity-restore-analytics] Refreshed activity read models after restoring ${activityIds.length} activities`,
       );
       return;
     }
 
+    if (
+      !(await accountErasureAllowsQueuedUserWork(
+        database,
+        userId,
+        "activity deletion analytics wait",
+      ))
+    ) {
+      return;
+    }
     await updateActivityAnalyticsProgress(
       job,
       20,
@@ -96,8 +166,9 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
     await waitForPeerDbActivityDeletes(client, activityIds);
     await rebuildActivityAnalytics(
       job,
+      database,
       userId,
-      `[activity-delete-analytics] Refreshed activity read models after deleting ${activityIds.length} activities for user ${userId}`,
+      `[activity-delete-analytics] Refreshed activity read models after deleting ${activityIds.length} activities`,
     );
   } finally {
     await client.close?.();

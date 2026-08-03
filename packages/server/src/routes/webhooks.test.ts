@@ -6,9 +6,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
-const { mockEnqueueSyncJob } = vi.hoisted(() => ({
+const {
+  MockAccountErasureUserFencedError,
+  mockEnqueueSyncJob,
+  mockLogger,
+  mockWithUserWriteFence,
+} = vi.hoisted(() => ({
+  MockAccountErasureUserFencedError: class MockAccountErasureUserFencedError extends Error {},
   mockEnqueueSyncJob: vi.fn(async () => ({ id: "job-1" })),
+  mockLogger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+  mockWithUserWriteFence: vi.fn(),
 }));
+const mockFenceTransaction = { execute: vi.fn(async () => []) };
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -17,6 +30,11 @@ vi.mock("@sentry/node", () => ({
 
 vi.mock("dofek/jobs/enqueue-sync-job", () => ({
   enqueueSyncJob: (...args: unknown[]) => mockEnqueueSyncJob(...args),
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureUserFencedError: MockAccountErasureUserFencedError,
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
 }));
 
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
@@ -39,9 +57,7 @@ vi.mock("../lib/typed-sql.ts", () => ({
   executeWithSchema: (...args: unknown[]) => mockExecuteWithSchema(...args),
 }));
 
-vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-}));
+vi.mock("../logger.ts", () => ({ logger: mockLogger }));
 
 vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({
@@ -151,6 +167,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetAllProviders.mockReturnValue([]);
   mockExecuteWithSchema.mockResolvedValue([]);
+  mockWithUserWriteFence.mockImplementation(
+    async (
+      _database: unknown,
+      _userId: string,
+      operation: (database: typeof mockFenceTransaction) => Promise<unknown>,
+    ) => operation(mockFenceTransaction),
+  );
 });
 
 describe("GET /api/webhooks/:providerName — validation challenges", () => {
@@ -569,6 +592,42 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
       sinceDays: 1,
       userId: "user-1",
     });
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+      expect.any(Object),
+      "user-1",
+      expect.any(Function),
+    );
+  });
+
+  it("does not enqueue when the resolved user's account-erasure fence rejects", async () => {
+    const events: WebhookEvent[] = [
+      { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
+    ];
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => events),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema
+      .mockResolvedValueOnce([
+        {
+          id: "sub-1",
+          provider_id: "prov-1",
+          verify_token: "tok",
+          signing_secret: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ provider_id: "prov-1", user_id: "user-1" }]);
+    mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+
+    const response = await request(
+      createTestApp(),
+      "post",
+      "/api/webhooks/test-provider",
+      '{"x":1}',
+    );
+
+    expect(response.status).toBe(503);
+    expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
   });
 
   it("calls syncWebhookEvent for targeted sync when available", async () => {
@@ -637,7 +696,6 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "targeted sync failed" }),
       {
-        extra: { ownerExternalId: "ext-1" },
         tags: {
           provider: "test-provider",
           webhookEventType: "create",
@@ -706,7 +764,6 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "DB error on first event" }),
       {
-        extra: { ownerExternalId: "ext-1" },
         tags: {
           provider: "test-provider",
           webhookEventType: "create",
@@ -762,7 +819,6 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Redis unavailable" }),
       {
-        extra: { ownerExternalId: "ext-1" },
         tags: {
           provider: "test-provider",
           webhookEventType: "create",
@@ -771,6 +827,48 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
         },
       },
     );
+  });
+
+  it("acknowledges a fenced account without emitting stable identifiers", async () => {
+    const events: WebhookEvent[] = [
+      {
+        ownerExternalId: "stable-external-account-id",
+        eventType: "create",
+        objectType: "activity",
+      },
+    ];
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => events),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    let callCount = 0;
+    mockExecuteWithSchema.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return [{ id: "subscription-secret-id", provider_id: "provider-row", verify_token: "tok" }];
+      }
+      return [{ provider_id: "provider-row", user_id: "stable-user-id" }];
+    });
+    mockWithUserWriteFence.mockRejectedValueOnce(new MockAccountErasureUserFencedError());
+
+    const res = await request(
+      createTestApp(),
+      "post",
+      "/api/webhooks/test-provider",
+      '{"message":"private workout details"}',
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    const emittedLogs = JSON.stringify(
+      Object.values(mockLogger).flatMap((mock) => mock.mock.calls),
+    );
+    expect(emittedLogs).not.toContain("stable-external-account-id");
+    expect(emittedLogs).not.toContain("stable-user-id");
+    expect(emittedLogs).not.toContain("subscription-secret-id");
+    expect(emittedLogs).not.toContain("private workout details");
   });
 
   it("enqueues sync job with exact shape (providerId, sinceDays, userId)", async () => {
@@ -1000,5 +1098,21 @@ describe("registerWebhookForProvider", () => {
 
     await registerWebhookForProvider(db, provider, "user-1");
     expect(db.execute).toHaveBeenCalled();
+  });
+
+  it("unregisters a remote webhook when subscription persistence fails", async () => {
+    const db = getMockDb();
+    vi.mocked(db.execute).mockRejectedValueOnce(new Error("database unavailable"));
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "orphan-sub" })),
+      unregisterWebhook: vi.fn(async () => undefined),
+    });
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "database unavailable",
+    );
+
+    expect(provider.unregisterWebhook).toHaveBeenCalledWith("orphan-sub");
   });
 });

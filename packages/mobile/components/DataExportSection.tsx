@@ -1,9 +1,13 @@
 import { formatDateMedium } from "@dofek/format/format";
-import { File as ExpoFile, Paths } from "expo-file-system";
+import { File as ExpoFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
+import {
+  createMobileExportCacheFile,
+  deleteMobileExportCacheFile,
+} from "../lib/mobile-export-cache";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
 
@@ -183,8 +187,10 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
 
     setDownloadingExportId(dataExport.id);
     setExportMessage("Downloading...");
+    let file: ReturnType<typeof createMobileExportCacheFile> | undefined;
+    let operationFailed = false;
     try {
-      const file = new ExpoFile(Paths.cache, getExportCacheFilename(dataExport));
+      file = createMobileExportCacheFile(getExportCacheFilename(dataExport));
       await ExpoFile.downloadFileAsync(`${serverUrl}/api/export/download/${dataExport.id}`, file, {
         headers: getAuthHeaders(usableSessionToken),
         idempotent: true,
@@ -197,11 +203,27 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
         dialogTitle: "Save Health Data Export",
       });
     } catch (error: unknown) {
+      operationFailed = true;
       captureException(error, { context: "data-export-download" });
       if (!isMounted.current) return;
       setExportState("error");
       setExportMessage(error instanceof Error ? error.message : "Failed to download export");
     } finally {
+      if (file) {
+        try {
+          deleteMobileExportCacheFile(file);
+        } catch {
+          captureException(new Error("Health export cache cleanup failed."), {
+            source: "data-export-cache-cleanup",
+          });
+          if (!operationFailed) {
+            setExportState("error");
+            setExportMessage(
+              "The health export was shared, but its temporary file could not be removed.",
+            );
+          }
+        }
+      }
       if (isMounted.current) {
         setDownloadingExportId(null);
       }

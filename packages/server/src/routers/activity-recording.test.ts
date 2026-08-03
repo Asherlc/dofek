@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
@@ -49,7 +49,7 @@ function makeExecute() {
 function makeCaller(execute: ReturnType<typeof makeExecute>) {
   const metricStreamPublisher = makeMetricStreamPublisher();
   const caller = createCaller({
-    db: { execute },
+    db: makeTransactionalTestDatabase({ execute }),
     metricStreamPublisher,
     userId: "user-1",
   });
@@ -95,7 +95,7 @@ describe("activityRecordingRouter", () => {
       const result = await caller.save(makeValidInput());
 
       expect(result).toEqual({ activityId: expect.any(String) });
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(6);
     });
@@ -208,7 +208,7 @@ describe("activityRecordingRouter", () => {
       const result = await caller.save(makeValidInput({ samples }));
 
       expect(result).toEqual({ activityId: expect.any(String) });
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(execute).toHaveBeenCalledTimes(6);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(1500);
       expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(300);

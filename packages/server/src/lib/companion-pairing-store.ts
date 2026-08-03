@@ -141,6 +141,31 @@ redis.call("PSETEX", KEYS[2], remainingTtlMs, updatedPayload)
 redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
 return updatedPayload
 `;
+const DELETE_CLAIMED_CHALLENGE_SCRIPT = `
+local id = redis.call("GET", KEYS[1])
+if not id or id ~= ARGV[1] then
+  return 0
+end
+
+local payload = redis.call("GET", KEYS[2])
+if not payload then
+  redis.call("DEL", KEYS[1])
+  return 0
+end
+
+local decodedOk, challenge = pcall(cjson.decode, payload)
+if not decodedOk or type(challenge) ~= "table" then
+  redis.call("DEL", KEYS[1], KEYS[2])
+  return 0
+end
+
+if challenge["userId"] ~= ARGV[2] or challenge["companionToken"] ~= ARGV[3] then
+  return 0
+end
+
+redis.call("DEL", KEYS[1], KEYS[2])
+return 1
+`;
 const CONSUME_CLAIM_ATTEMPT_SCRIPT = `
 local count = redis.call("INCR", KEYS[1])
 local remainingTtlMs = redis.call("PTTL", KEYS[1])
@@ -208,6 +233,11 @@ export interface CompanionPairingStore {
     shortCode: string;
     userId: string;
   }): Promise<CompanionPairingChallenge | null>;
+  deleteClaimedChallenge(params: {
+    shortCode: string;
+    userId: string;
+    companionToken: string;
+  }): Promise<boolean>;
 }
 
 function pairingKey(id: string): string {
@@ -398,6 +428,23 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
     return releasedChallenge;
   }
 
+  async deleteClaimedChallenge({
+    shortCode,
+    userId,
+    companionToken,
+  }: {
+    shortCode: string;
+    userId: string;
+    companionToken: string;
+  }): Promise<boolean> {
+    const challenge = await this.getByShortCode(shortCode);
+    if (!challenge || challenge.userId !== userId || challenge.companionToken !== companionToken) {
+      return false;
+    }
+    this.#delete(challenge);
+    return true;
+  }
+
   #save(challenge: CompanionPairingChallenge): void {
     this.#byId.set(challenge.id, challenge);
     this.#idByShortCode.set(challenge.shortCode, challenge.id);
@@ -562,6 +609,32 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
+  }
+
+  async deleteClaimedChallenge({
+    shortCode,
+    userId,
+    companionToken,
+  }: {
+    shortCode: string;
+    userId: string;
+    companionToken: string;
+  }): Promise<boolean> {
+    const normalizedShortCode = normalizePairingCode(shortCode);
+    const client = await this.#getRedisClient();
+    const shortCodeKey = pairingCodeKey(normalizedShortCode);
+    const id = await client.get(shortCodeKey);
+    if (!id) return false;
+    const deleted = await client.eval(
+      DELETE_CLAIMED_CHALLENGE_SCRIPT,
+      2,
+      shortCodeKey,
+      pairingKey(id),
+      id,
+      userId,
+      companionToken,
+    );
+    return deleted === 1;
   }
 
   async releaseClaimedChallengeTokenIssuance({

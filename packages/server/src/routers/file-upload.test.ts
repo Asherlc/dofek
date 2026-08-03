@@ -62,6 +62,7 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
 }
 
 function setup(currentUpload = upload()) {
+  const transaction = { execute: vi.fn(), select: vi.fn() };
   const storage: ImportUploadStorage = {
     abortMultipartUpload: vi.fn(async () => undefined),
     authorizeUploadPart: vi.fn(async ({ partNumber }) => ({
@@ -96,11 +97,27 @@ function setup(currentUpload = upload()) {
     recordCompletionParts: vi.fn(async () => currentUpload),
     rateAllowed: vi.fn(async () => true),
   };
-  const caller = createTestCallerFactory(createFileUploadRouter({ repository, storage }))({
+  const withUserWriteFence = vi.fn(
+    async (
+      _database,
+      _userId,
+      operation: (database: {
+        execute: ReturnType<typeof vi.fn>;
+        select: ReturnType<typeof vi.fn>;
+      }) => Promise<unknown>,
+    ) => operation(transaction),
+  );
+  const caller = createTestCallerFactory(
+    createFileUploadRouter({
+      repository,
+      storage,
+      withUserWriteFence,
+    }),
+  )({
     db: {},
     userId: currentUpload.userId,
   });
-  return { caller, repository, storage };
+  return { caller, repository, storage, transaction, withUserWriteFence };
 }
 
 interface InitiationInput {
@@ -222,15 +239,15 @@ describe("fileUploadRouter", () => {
   it("initiates a new multipart upload with normalized metadata", async () => {
     const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
     const uploading = upload();
-    const { caller, repository, storage } = setup(initiated);
+    const { caller, repository, storage, transaction } = setup(initiated);
     repository.find.mockResolvedValueOnce(null);
     repository.markUploading.mockResolvedValueOnce(uploading);
 
     const result = await caller.initiate(initiationInput({ contentType: "APPLICATION/ZIP" }));
 
-    expect(repository.rateAllowed).toHaveBeenCalledWith({}, initiated.userId, "initiate");
+    expect(repository.rateAllowed).toHaveBeenCalledWith(transaction, initiated.userId, "initiate");
     expect(repository.create).toHaveBeenCalledWith(
-      {},
+      transaction,
       expect.objectContaining({
         id: initiated.id,
         userId: initiated.userId,
@@ -245,7 +262,7 @@ describe("fileUploadRouter", () => {
       initiated.contentType,
     );
     expect(repository.markUploading).toHaveBeenCalledWith(
-      {},
+      transaction,
       initiated.id,
       initiated.userId,
       "multipart-1",
@@ -262,6 +279,40 @@ describe("fileUploadRouter", () => {
     });
   });
 
+  it("holds the account-erasure fence across multipart creation and ownership persistence", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const uploading = upload();
+    const { caller, repository, storage, transaction, withUserWriteFence } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null);
+    repository.markUploading.mockResolvedValueOnce(uploading);
+
+    await caller.initiate(initiationInput());
+
+    expect(withUserWriteFence).toHaveBeenCalledWith({}, initiated.userId, expect.any(Function));
+    expect(repository.create).toHaveBeenCalledWith(transaction, expect.any(Object));
+    expect(storage.createMultipartUpload).toHaveBeenCalledOnce();
+    expect(repository.markUploading).toHaveBeenCalledWith(
+      transaction,
+      initiated.id,
+      initiated.userId,
+      "multipart-1",
+    );
+  });
+
+  it("aborts the multipart upload when the fenced transaction fails to commit", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const { caller, storage, transaction, withUserWriteFence } = setup(initiated);
+    withUserWriteFence.mockImplementationOnce(
+      async (_database, _userId, operation: (database: typeof transaction) => Promise<unknown>) => {
+        await operation(transaction);
+        throw new Error("commit failed");
+      },
+    );
+
+    await expect(caller.initiate(initiationInput())).rejects.toThrow("commit failed");
+    expect(storage.abortMultipartUpload).toHaveBeenCalledWith(initiated.objectKey, "multipart-1");
+  });
+
   it("uses a seven-day window for incremental Apple Health imports", async () => {
     const initiated = upload({
       importType: "apple-health",
@@ -270,7 +321,7 @@ describe("fileUploadRouter", () => {
       state: "initiated",
       r2MultipartUploadId: null,
     });
-    const { caller, repository } = setup(initiated);
+    const { caller, repository, transaction } = setup(initiated);
     repository.find.mockResolvedValueOnce(null);
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-19T00:00:00Z").getTime());
 
@@ -284,7 +335,7 @@ describe("fileUploadRouter", () => {
     });
 
     expect(repository.create).toHaveBeenCalledWith(
-      {},
+      transaction,
       expect.objectContaining({ since: new Date("2026-07-12T00:00:00Z") }),
     );
   });
@@ -297,7 +348,7 @@ describe("fileUploadRouter", () => {
       contentType: "application/xml",
       since: persistedSince,
     });
-    const { caller, repository } = setup(existing);
+    const { caller, repository, transaction } = setup(existing);
     repository.find.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
     const dateNow = vi.spyOn(Date, "now");
     const input = {
@@ -317,7 +368,7 @@ describe("fileUploadRouter", () => {
 
       expect(repository.create).toHaveBeenNthCalledWith(
         2,
-        {},
+        transaction,
         expect.objectContaining({ since: persistedSince }),
       );
     } finally {
@@ -344,7 +395,7 @@ describe("fileUploadRouter", () => {
       fullSync: true,
     });
     expect(appleSetup.repository.create).toHaveBeenCalledWith(
-      {},
+      appleSetup.transaction,
       expect.objectContaining({ since: new Date(0), weightUnit: undefined }),
     );
 
@@ -366,7 +417,7 @@ describe("fileUploadRouter", () => {
       sha256: strong.expectedSha256,
     });
     expect(strongSetup.repository.create).toHaveBeenCalledWith(
-      {},
+      strongSetup.transaction,
       expect.objectContaining({ weightUnit: "kg" }),
     );
   });
@@ -435,7 +486,7 @@ describe("fileUploadRouter", () => {
     vi.mocked(storage.abortMultipartUpload).mockRejectedValueOnce(new Error("R2 abort failed"));
 
     await expect(caller.initiate(initiationInput())).rejects.toThrow("state changed");
-    expect(storage.abortMultipartUpload).toHaveBeenCalledOnce();
+    expect(storage.abortMultipartUpload).toHaveBeenCalledTimes(2);
     expect(sentry.captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { source: "file-upload-initiate", operation: "abortMultipartUpload" },
       extra: { uploadId: initiated.id, multipartUploadId: "multipart-1" },
@@ -592,7 +643,10 @@ describe("fileUploadRouter", () => {
     });
 
     expect(repository.recordCompletionParts).toHaveBeenCalledWith(
-      {},
+      expect.objectContaining({
+        execute: expect.any(Function),
+        select: expect.any(Function),
+      }),
       upload().id,
       upload().userId,
       [
@@ -608,10 +662,18 @@ describe("fileUploadRouter", () => {
         { partNumber: 2, etag: '"etag-2"' },
       ],
     );
-    expect(repository.queue).toHaveBeenCalledWith({}, upload().id, upload().userId, {
-      importJobId: `file-import-${upload().id}`,
-      objectSizeBytes: upload().expectedSizeBytes,
-    });
+    expect(repository.queue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        execute: expect.any(Function),
+        select: expect.any(Function),
+      }),
+      upload().id,
+      upload().userId,
+      {
+        importJobId: `file-import-${upload().id}`,
+        objectSizeBytes: upload().expectedSizeBytes,
+      },
+    );
     expect(metrics.bytes).toHaveBeenCalledWith(upload().expectedSizeBytes, {
       import_type: "garmin-dump",
     });
@@ -649,6 +711,69 @@ describe("fileUploadRouter", () => {
         ],
       }),
     ).rejects.toThrow("NoSuchUpload");
+  });
+
+  it("deletes the completed object when durable upload persistence fails", async () => {
+    const { caller, repository, storage } = setup();
+    repository.markUploaded.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(
+      caller.complete({
+        uploadId: upload().id,
+        parts: [
+          { partNumber: 1, etag: "etag-1" },
+          { partNumber: 2, etag: "etag-2" },
+        ],
+      }),
+    ).rejects.toThrow("database unavailable");
+
+    expect(storage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
+    expect(repository.queue).not.toHaveBeenCalled();
+  });
+
+  it("deletes the completed object when the fenced transaction fails to commit", async () => {
+    const { caller, storage, transaction, withUserWriteFence } = setup();
+    withUserWriteFence.mockImplementationOnce(
+      async (_database, _userId, operation: (database: typeof transaction) => Promise<unknown>) => {
+        await operation(transaction);
+        throw new Error("commit failed");
+      },
+    );
+
+    await expect(
+      caller.complete({
+        uploadId: upload().id,
+        parts: [
+          { partNumber: 1, etag: "etag-1" },
+          { partNumber: 2, etag: "etag-2" },
+        ],
+      }),
+    ).rejects.toThrow("commit failed");
+    expect(storage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
+  });
+
+  it("reports failed completed-object compensation without hiding the persistence error", async () => {
+    const { caller, repository, storage } = setup();
+    const persistenceError = new Error("database unavailable");
+    const cleanupError = new Error("R2 delete unavailable");
+    repository.queue.mockRejectedValueOnce(persistenceError);
+    vi.mocked(storage.deleteObject).mockRejectedValueOnce(cleanupError);
+
+    await expect(
+      caller.complete({
+        uploadId: upload().id,
+        parts: [
+          { partNumber: 1, etag: "etag-1" },
+          { partNumber: 2, etag: "etag-2" },
+        ],
+      }),
+    ).rejects.toThrow("database unavailable");
+
+    expect(storage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
+    expect(sentry.captureException).toHaveBeenCalledWith(cleanupError, {
+      tags: { source: "file-upload-complete", operation: "deleteCompletedObject" },
+      extra: { uploadId: upload().id, objectKey: upload().objectKey },
+    });
   });
 
   it("aborts active uploads and records cancellation", async () => {

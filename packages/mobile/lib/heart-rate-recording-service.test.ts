@@ -5,6 +5,18 @@ import {
   type HeartRateRecordingServiceDeps,
 } from "./heart-rate-recording-service.ts";
 
+const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
+  mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),
+}));
+
+vi.mock("./device-erasure-cutoff", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./device-erasure-cutoff")>();
+  return {
+    ...actual,
+    loadDeviceErasureCutoff: mockLoadDeviceErasureCutoff,
+  };
+});
+
 const START = "2026-03-30T11:00:00.000Z";
 const END = "2026-03-30T13:00:00.000Z";
 
@@ -42,6 +54,7 @@ describe("createHeartRateRecordingService", () => {
   let deps: HeartRateRecordingServiceDeps;
 
   beforeEach(() => {
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     deps = makeDeps();
   });
 
@@ -151,6 +164,23 @@ describe("createHeartRateRecordingService", () => {
         samples: [inWindow],
       });
       // Both pre-window and in-window are consumed from the buffer.
+      expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
+    });
+
+    it("drains old-account samples and uploads only samples strictly after the cutoff", async () => {
+      const cutoff = "2026-03-30T12:00:00.000Z";
+      const retained = sampleAt("2026-03-30T12:00:01.000Z", 141);
+      mockLoadDeviceErasureCutoff.mockResolvedValue(cutoff);
+      vi.mocked(deps.ble.peekBufferedSamples)
+        .mockResolvedValueOnce([sampleAt(cutoff, 60), retained])
+        .mockResolvedValue([]);
+
+      await createHeartRateRecordingService(deps).syncForTimeRange(START, END);
+
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
+        deviceId: "Polar H10",
+        samples: [retained],
+      });
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
     });
 

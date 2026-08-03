@@ -38,6 +38,7 @@ public class HealthKitModule: Module {
     private let anchoredQueryCoordinator = HealthKitAnchoredQueryCoordinator(
         anchorStore: HealthKitAnchorStore(userDefaults: .standard)
     )
+    private let accountStateStore = HealthKitAccountStateStore(userDefaults: .standard)
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private var observerSyncInProgress = false
     private let observerStateLock = NSLock()
@@ -68,6 +69,25 @@ public class HealthKitModule: Module {
         observerUpdateCoordinatorInstance()
     }
     private var observerQueries: [HKObserverQuery] = []
+
+    private func effectiveStartDate(_ requestedStartDate: Date) -> Date {
+        guard let cutoff = accountStateStore.deviceErasureCutoff else {
+            return requestedStartDate
+        }
+        return max(requestedStartDate, cutoff)
+    }
+
+    private func effectiveDailyStartDate(_ requestedStartDate: Date) -> Date {
+        guard let cutoff = accountStateStore.deviceErasureCutoff,
+              let dayAfterCutoff = Calendar.current.date(
+                  byAdding: .day,
+                  value: 1,
+                  to: Calendar.current.startOfDay(for: cutoff)
+              ) else {
+            return requestedStartDate
+        }
+        return max(requestedStartDate, dayAfterCutoff)
+    }
 
     private func markObserverSyncInProgress() {
         observerStateLock.lock()
@@ -163,7 +183,9 @@ public class HealthKitModule: Module {
         /// one-time migration that checks write-type authorization status for users who
         /// authorized before this flag was introduced.
         Function("hasEverAuthorized") {
-            if UserDefaults.standard.bool(forKey: self.hasEverAuthorizedKey) {
+            if UserDefaults.standard.bool(
+                forKey: HealthKitAccountStateStore.hasEverAuthorizedKey
+            ) {
                 return true
             }
             // Migration: check if any write type was previously authorized.
@@ -173,7 +195,10 @@ public class HealthKitModule: Module {
             for writeType in writeTypes {
                 let status = self.healthStore.authorizationStatus(for: writeType)
                 if status == .sharingAuthorized || status == .sharingDenied {
-                    UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
+                    UserDefaults.standard.set(
+                        true,
+                        forKey: HealthKitAccountStateStore.hasEverAuthorizedKey
+                    )
                     return true
                 }
             }
@@ -190,7 +215,10 @@ public class HealthKitModule: Module {
                     let status = try await self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes)
                     switch status {
                     case .unnecessary:
-                        UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
+                        UserDefaults.standard.set(
+                            true,
+                            forKey: HealthKitAccountStateStore.hasEverAuthorizedKey
+                        )
                         promise.resolve("unnecessary")
                     case .shouldRequest:
                         promise.resolve("shouldRequest")
@@ -216,7 +244,10 @@ public class HealthKitModule: Module {
             Task {
                 do {
                     try await self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
-                    UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
+                    UserDefaults.standard.set(
+                        true,
+                        forKey: HealthKitAccountStateStore.hasEverAuthorizedKey
+                    )
                     promise.resolve(true)
                 } catch {
                     if isUserCanceledHealthKitAuthorization(error) {
@@ -252,8 +283,16 @@ public class HealthKitModule: Module {
                 )
                 return
             }
+            let queryStartDate = self.effectiveStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
+            }
 
-            let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+            let predicate = HealthKitQueries.datePredicate(
+                start: queryStartDate,
+                end: endDate
+            )
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
             let queryLimit = limit > 0 ? limit : HKObjectQueryNoLimit
 
@@ -274,7 +313,11 @@ public class HealthKitModule: Module {
                     )
                     return
                 }
-                let samples = (results as? [HKQuantitySample])?.map { sample -> [String: Any] in
+                let samples = (results as? [HKQuantitySample])?
+                    .filter {
+                        self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                    }
+                    .map { sample -> [String: Any] in
                     let unit = HealthKitQueries.preferredUnit(for: sampleType)
                     return [
                         "type": typeIdentifier,
@@ -302,8 +345,16 @@ public class HealthKitModule: Module {
                 )
                 return
             }
+            let queryStartDate = self.effectiveStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
+            }
 
-            let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+            let predicate = HealthKitQueries.datePredicate(
+                start: queryStartDate,
+                end: endDate
+            )
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
             let query = HKSampleQuery(
@@ -323,7 +374,11 @@ public class HealthKitModule: Module {
                     )
                     return
                 }
-                let workouts = (results as? [HKWorkout])?.map { workout -> [String: Any] in
+                let workouts = (results as? [HKWorkout])?
+                    .filter {
+                        self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                    }
+                    .map { workout -> [String: Any] in
                     var dict: [String: Any] = [
                         "uuid": workout.uuid.uuidString,
                         "workoutType": String(describing: workout.workoutActivityType.rawValue),
@@ -411,8 +466,16 @@ public class HealthKitModule: Module {
                 )
                 return
             }
+            let queryStartDate = self.effectiveStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
+            }
 
-            let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+            let predicate = HealthKitQueries.datePredicate(
+                start: queryStartDate,
+                end: endDate
+            )
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
             let query = HKSampleQuery(
@@ -432,7 +495,11 @@ public class HealthKitModule: Module {
                     )
                     return
                 }
-                let samples = (results as? [HKCategorySample])?.map { sample -> [String: Any] in
+                let samples = (results as? [HKCategorySample])?
+                    .filter {
+                        self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                    }
+                    .map { sample -> [String: Any] in
                     let valueStr: String
                     if #available(iOS 16.0, *) {
                         switch sample.value {
@@ -482,8 +549,16 @@ public class HealthKitModule: Module {
                 )
                 return
             }
+            let queryStartDate = self.effectiveStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
+            }
 
-            let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+            let predicate = HealthKitQueries.datePredicate(
+                start: queryStartDate,
+                end: endDate
+            )
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
             let query = HKSampleQuery(
@@ -499,7 +574,11 @@ public class HealthKitModule: Module {
                     )
                     return
                 }
-                let samples = (results as? [HKCategorySample])?.map { sample -> [String: Any] in
+                let samples = (results as? [HKCategorySample])?
+                    .filter {
+                        self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                    }
+                    .map { sample -> [String: Any] in
                     return [
                         "uuid": sample.uuid.uuidString,
                         "type": typeIdentifier,
@@ -658,12 +737,23 @@ public class HealthKitModule: Module {
                         typeIdentifier: typeIdentifier
                     ) { anchor in
                         try await withCheckedThrowingContinuation { continuation in
-                            let predicate = anchor == nil
-                                ? HealthKitQueries.datePredicate(
-                                    start: initialStartDate,
+                            let erasureCutoff = self.accountStateStore.deviceErasureCutoff
+                            let predicate: NSPredicate?
+                            if anchor == nil {
+                                let startDate = max(initialStartDate, erasureCutoff ?? initialStartDate)
+                                predicate = HealthKitQueries.datePredicate(
+                                    start: startDate,
                                     end: Date()
                                 )
-                                : nil
+                            } else {
+                                predicate = erasureCutoff.map {
+                                    HKQuery.predicateForSamples(
+                                        withStart: $0,
+                                        end: nil,
+                                        options: .strictStartDate
+                                    )
+                                }
+                            }
                             let query = HKAnchoredObjectQuery(
                                 type: sampleType,
                                 predicate: predicate,
@@ -689,7 +779,11 @@ public class HealthKitModule: Module {
                     }
                     let objects: HealthKitAnchoredObjects = queryResult.result
 
-                    let samples = (objects.added as? [HKQuantitySample])?.map { sample -> [String: Any] in
+                    let samples = (objects.added as? [HKQuantitySample])?
+                        .filter {
+                            self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                        }
+                        .map { sample -> [String: Any] in
                         let unit = HealthKitQueries.preferredUnit(for: sampleType)
                         return [
                             "type": typeIdentifier,
@@ -769,11 +863,19 @@ public class HealthKitModule: Module {
 
             let calendar = Calendar.current
             let interval = DateComponents(day: 1)
-            let anchorDate = calendar.startOfDay(for: startDate)
+            let queryStartDate = self.effectiveDailyStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
+            }
+            let anchorDate = calendar.startOfDay(for: queryStartDate)
 
             let query = HKStatisticsCollectionQuery(
                 quantityType: quantityType,
-                quantitySamplePredicate: HealthKitQueries.datePredicate(start: startDate, end: endDate),
+                quantitySamplePredicate: HealthKitQueries.datePredicate(
+                    start: queryStartDate,
+                    end: endDate
+                ),
                 options: .cumulativeSum,
                 anchorDate: anchorDate,
                 intervalComponents: interval
@@ -810,7 +912,7 @@ public class HealthKitModule: Module {
                 dateFormatter.timeZone = .current
 
                 var dailyValues: [[String: Any]] = []
-                results.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                results.enumerateStatistics(from: queryStartDate, to: endDate) { statistics, _ in
                     if let sum = statistics.sumQuantity() {
                         dailyValues.append([
                             "date": dateFormatter.string(from: statistics.startDate),
@@ -826,7 +928,9 @@ public class HealthKitModule: Module {
         }
 
         Function("isBackgroundDeliveryEnabled") {
-            return UserDefaults.standard.bool(forKey: "healthkit_background_delivery_enabled")
+            return UserDefaults.standard.bool(
+                forKey: HealthKitAccountStateStore.backgroundDeliveryEnabledKey
+            )
         }
 
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
@@ -842,7 +946,10 @@ public class HealthKitModule: Module {
             Task {
                 do {
                     try await self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly)
-                    UserDefaults.standard.set(true, forKey: "healthkit_background_delivery_enabled")
+                    UserDefaults.standard.set(
+                        true,
+                        forKey: HealthKitAccountStateStore.backgroundDeliveryEnabledKey
+                    )
                     promise.resolve(true)
                 } catch {
                     self.rejectHealthKitError(
@@ -971,6 +1078,52 @@ public class HealthKitModule: Module {
             return self.stopBackgroundObservers()
         }
 
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
+            guard let cutoff = HealthKitQueries.parseDate(cutoffString) else {
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_ERASURE_CUTOFF",
+                    reason: "Invalid device erasure cutoff"
+                )
+                return
+            }
+
+            _ = self.stopBackgroundObservers()
+            self.accountStateStore.purge(at: cutoff)
+            self.anchoredQueryCoordinator.invalidatePendingQueries()
+            self.healthStore.disableAllBackgroundDelivery { succeeded, error in
+                if let error {
+                    SentrySDK.capture(error: error)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "purgeAccountState.disableAllBackgroundDelivery",
+                        fallbackCode: "BG_DELIVERY_DISABLE_ERROR",
+                        error: error
+                    )
+                    return
+                }
+                guard succeeded else {
+                    let error = NSError(
+                        domain: "com.dofek.healthkit-account-erasure",
+                        code: 1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "HealthKit did not disable background delivery",
+                        ]
+                    )
+                    SentrySDK.capture(error: error)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "purgeAccountState.disableAllBackgroundDelivery",
+                        fallbackCode: "BG_DELIVERY_DISABLE_ERROR",
+                        error: error
+                    )
+                    return
+                }
+                promise.resolve(true)
+            }
+        }
+
         // ============================================================
         // Workout Route (GPS) queries
         // ============================================================
@@ -1010,6 +1163,12 @@ public class HealthKitModule: Module {
                     promise.resolve([])
                     return
                 }
+                guard self.accountStateStore.shouldInclude(
+                    sampleDate: workout.startDate
+                ) else {
+                    promise.resolve([])
+                    return
+                }
 
                 // Query routes associated with this workout
                 let routePredicate = HKQuery.predicateForObjects(from: workout)
@@ -1046,6 +1205,11 @@ public class HealthKitModule: Module {
                             // Process locations if available (even when there's an error on this batch)
                             if let locations = locations {
                                 for location in locations {
+                                    guard self.accountStateStore.shouldInclude(
+                                        sampleDate: location.timestamp
+                                    ) else {
+                                        continue
+                                    }
                                     var dict: [String: Any] = [
                                         "date": HealthKitQueries.formatDate(location.timestamp),
                                         "lat": location.coordinate.latitude,
@@ -1172,7 +1336,15 @@ public class HealthKitModule: Module {
             }
             if #available(iOS 26.0, *) {
                 let doseEventType = HKObjectType.medicationDoseEventType()
-                let predicate = HealthKitQueries.datePredicate(start: startDate, end: endDate)
+                let queryStartDate = self.effectiveStartDate(startDate)
+                guard queryStartDate < endDate else {
+                    promise.resolve([])
+                    return
+                }
+                let predicate = HealthKitQueries.datePredicate(
+                    start: queryStartDate,
+                    end: endDate
+                )
                 let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
                 let query = HKSampleQuery(
@@ -1188,7 +1360,13 @@ public class HealthKitModule: Module {
                         )
                         return
                     }
-                    let samples = (results as? [HKMedicationDoseEvent])?.map { event -> [String: Any] in
+                    let samples = (results as? [HKMedicationDoseEvent])?
+                        .filter {
+                            self.accountStateStore.shouldInclude(
+                                sampleDate: $0.startDate
+                            )
+                        }
+                        .map { event -> [String: Any] in
                         var dict: [String: Any] = [
                             "uuid": event.uuid.uuidString,
                             "startDate": HealthKitQueries.formatDate(event.startDate),

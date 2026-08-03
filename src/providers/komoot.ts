@@ -167,9 +167,32 @@ export class KomootProvider implements SyncProvider {
     const config = komootOAuthConfig(options?.host);
     if (!config) throw new Error("KOMOOT_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
+    const revokeAuthorization = async (tokens: TokenSet): Promise<void> => {
+      if (!tokens.refreshToken) {
+        throw new Error(
+          "Reconnect Komoot before deleting your account so Dofek can durably revoke the Komoot authorization.",
+        );
+      }
+      const url = new URL(
+        `https://auth-api.main.komoot.net/v1/clients/${encodeURIComponent(config.clientId)}/refresh_tokens/`,
+      );
+      url.searchParams.set("refresh_token", tokens.refreshToken);
+      const response = await fetchFn(url, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`,
+        },
+        method: "DELETE",
+      });
+      if (response.status !== 200) {
+        throw new Error(`Komoot authorization revocation failed (${response.status})`);
+      }
+    };
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      revokeExistingTokens: revokeAuthorization,
+      revokeTokensForAccountErasure: revokeAuthorization,
       apiBaseUrl: KOMOOT_API_BASE,
     };
   }

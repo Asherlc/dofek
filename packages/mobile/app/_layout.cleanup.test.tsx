@@ -1,5 +1,6 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockHttpBatchLink = vi.fn((options: unknown) => ({ type: "batch", options }));
@@ -16,6 +17,13 @@ const mockTeardownBackgroundWatchSync = vi.fn();
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
 const mockRefreshRemove = vi.fn();
+const mockLoadStatusCapability = vi.fn();
+const mockLoadPreparation = vi.fn();
+let rootAppStateCallback: ((state: AppStateStatus) => void) | null = null;
+const { mockPathname, mockRouterReplace } = vi.hoisted(() => ({
+  mockPathname: { value: "/" },
+  mockRouterReplace: vi.fn(),
+}));
 const {
   mockFinishStartupPhase,
   mockMarkAppInteractive,
@@ -30,6 +38,8 @@ const {
   mockSetTelemetryRoute: vi.fn(),
 }));
 interface MockAuthStateValue {
+  accountErasureCleanupInProgress?: boolean;
+  accountSessionOwnerNonce?: string | null;
   user: { id: string } | null;
   serverUrl: string;
   isLoading: boolean;
@@ -44,6 +54,7 @@ const { mockAuthState, mockLogout, mockRetryBootstrap } = vi.hoisted(() => {
   const retryBootstrap = vi.fn(async () => undefined);
   const authState: { value: MockAuthStateValue } = {
     value: {
+      accountSessionOwnerNonce: "11111111-1111-4111-8111-111111111111",
       user: { id: "user-1" },
       serverUrl: "https://dofek.test",
       isLoading: false,
@@ -85,8 +96,8 @@ vi.mock("expo-router", async () => {
 
   return {
     Stack,
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
-    usePathname: () => "/settings",
+    usePathname: () => mockPathname.value,
+    useRouter: () => ({ push: vi.fn(), replace: mockRouterReplace, back: vi.fn() }),
   };
 });
 
@@ -99,6 +110,19 @@ vi.mock("../lib/auth-context", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
   useAuth: () => mockAuthState.value,
 }));
+
+vi.mock("../lib/account-erasure-storage", () => ({
+  loadAnyMobileAccountErasurePreparation: (...args: unknown[]) => mockLoadPreparation(...args),
+  loadMobileAccountErasureStatusCapability: (...args: unknown[]) =>
+    mockLoadStatusCapability(...args),
+}));
+
+vi.mock("../components/AccountDeletionStatusScreen", async () => {
+  const React = await import("react");
+  return {
+    AccountDeletionStatusScreen: () => React.createElement("div", null, "Account deletion status"),
+  };
+});
 
 vi.mock("../lib/background-health-kit-sync", () => ({
   initBackgroundHealthKitSync: (...args: unknown[]) => mockInitBackgroundHealthKitSync(...args),
@@ -209,7 +233,7 @@ vi.mock("../modules/health-kit", async () => {
 });
 
 vi.mock("./login", () => ({
-  default: () => null,
+  default: () => "Sign in",
 }));
 
 mockCreateClient.mockImplementation(() => ({
@@ -244,6 +268,7 @@ describe("RootLayout background cleanup", () => {
     mockHasEverAuthorized.mockReturnValue(false);
     mockRequestPermissions.mockResolvedValue(true);
     mockAuthState.value = {
+      accountSessionOwnerNonce: "11111111-1111-4111-8111-111111111111",
       user: { id: "user-1" },
       serverUrl: "https://dofek.test",
       isLoading: false,
@@ -252,6 +277,14 @@ describe("RootLayout background cleanup", () => {
       logout: mockLogout,
       retryBootstrap: mockRetryBootstrap,
     };
+    mockPathname.value = "/settings";
+    mockLoadStatusCapability.mockResolvedValue(null);
+    mockLoadPreparation.mockResolvedValue(null);
+    rootAppStateCallback = null;
+    vi.mocked(AppState.addEventListener).mockImplementation((_event, callback) => {
+      rootAppStateCallback = callback;
+      return { remove: vi.fn() };
+    });
   });
 
   it("keeps the native splash screen visible until the root layout can render", async () => {
@@ -368,6 +401,138 @@ describe("RootLayout background cleanup", () => {
     fireEvent.click(rendered.getByText("Try again"));
 
     expect(mockRetryBootstrap).toHaveBeenCalledOnce();
+  });
+
+  it("shows the public deletion-status screen after a cold restart with a saved capability", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    mockLoadStatusCapability.mockResolvedValue({
+      cleanupOwnerNonce: "11111111-1111-4111-8111-111111111111",
+      requestId: "11111111-1111-4111-8111-111111111111",
+      statusToken: "s".repeat(43),
+    });
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Account deletion status")).toBeTruthy();
+    expect(rendered.queryByText("Sign in")).toBeNull();
+  });
+
+  it("allows direct unauthenticated access to the public deletion-status route", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    mockPathname.value = "/account-deletion";
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Account deletion status")).toBeTruthy();
+  });
+
+  it("does not expose sign-in while accepted deletion cleanup is still running", async () => {
+    mockAuthState.value = {
+      accountErasureCleanupInProgress: true,
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Finishing account deletion cleanup…")).toBeTruthy();
+    expect(rendered.queryByText("Sign in")).toBeNull();
+    expect(mockInitBackgroundHealthKitSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
+    expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+  });
+
+  it("blocks a later authenticated account and all producers while cleanup is pending", async () => {
+    mockLoadStatusCapability.mockResolvedValue({
+      cleanupOwnerNonce: "11111111-1111-4111-8111-111111111111",
+      localCleanupPending: true,
+      requestId: "11111111-1111-4111-8111-111111111111",
+      statusToken: "s".repeat(43),
+    });
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Account deletion status")).toBeTruthy();
+    expect(mockInitBackgroundHealthKitSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
+    expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps producers gated after a locked restore and retries cleanup state on foreground", async () => {
+    mockLoadStatusCapability
+      .mockRejectedValueOnce(new Error("User interaction is not allowed"))
+      .mockResolvedValue({
+        cleanupOwnerNonce: "11111111-1111-4111-8111-111111111111",
+        localCleanupPending: true,
+        requestId: "11111111-1111-4111-8111-111111111111",
+        statusToken: "s".repeat(43),
+      });
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+
+    await waitFor(() => expect(mockLoadStatusCapability).toHaveBeenCalledOnce());
+    expect(mockInitBackgroundHealthKitSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
+    rootAppStateCallback?.("active");
+
+    expect(await rendered.findByText("Account deletion status")).toBeTruthy();
+    expect(mockInitBackgroundHealthKitSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
+    expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+  });
+
+  it("does not let an old account cleanup gate or purge a later session generation", async () => {
+    mockAuthState.value = {
+      accountSessionOwnerNonce: "22222222-2222-4222-8222-222222222222",
+      user: { id: "user-2" },
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: "user-2-session",
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    mockLoadStatusCapability.mockResolvedValue({
+      cleanupOwnerNonce: "11111111-1111-4111-8111-111111111111",
+      localCleanupPending: true,
+      requestId: "11111111-1111-4111-8111-111111111111",
+      statusToken: "s".repeat(43),
+    });
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+
+    await waitFor(() => expect(mockLoadStatusCapability).toHaveBeenCalled());
+    expect(rendered.queryByText("Account deletion status")).toBeNull();
+    await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalled());
   });
 
   it("tears down background HealthKit sync on unmount", async () => {

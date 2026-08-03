@@ -1,3 +1,4 @@
+import { SYSTEM_SEEDED_EXERCISE_DEFINITIONS } from "../../src/db/exercise-provenance.ts";
 import { addMinutes, daysBefore, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
 type ActivityType = "cycling" | "running" | "hiking" | "walking" | "strength";
@@ -49,26 +50,31 @@ export async function seedTraining(sql: Sql): Promise<void> {
 }
 
 async function seedExercises(sql: Sql): Promise<string[]> {
-  const exercises = [
-    ["Back Squat", "legs", "barbell", "strength"],
-    ["Bench Press", "chest", "barbell", "strength"],
-    ["Deadlift", "posterior_chain", "barbell", "strength"],
-    ["Pull Up", "back", "bodyweight", "strength"],
-    ["Romanian Deadlift", "hamstrings", "barbell", "strength"],
-    ["Overhead Press", "shoulders", "barbell", "strength"],
-  ] as const;
-
   const ids: string[] = [];
-  for (const [name, muscleGroup, equipment, exerciseType] of exercises) {
+  for (const definition of SYSTEM_SEEDED_EXERCISE_DEFINITIONS) {
     const [{ id }] = await sql<ExerciseRow[]>`
       INSERT INTO fitness.exercise (name, muscle_group, muscle_groups, equipment, exercise_type, movement)
-      VALUES (${name}, ${muscleGroup}, ARRAY[${muscleGroup}], ${equipment}, ${exerciseType}, 'compound')
+      VALUES (
+        ${definition.name},
+        ${definition.muscleGroup},
+        ${[...definition.muscleGroups]},
+        ${definition.equipment},
+        ${definition.exerciseType},
+        ${definition.movement}
+      )
       ON CONFLICT (name, equipment) DO UPDATE
         SET muscle_group = EXCLUDED.muscle_group,
             muscle_groups = EXCLUDED.muscle_groups,
             exercise_type = EXCLUDED.exercise_type,
             movement = EXCLUDED.movement
       RETURNING id
+    `;
+    await sql`
+      INSERT INTO fitness.exercise_source (
+        exercise_id, source_kind, user_id, provider_id
+      )
+      VALUES (${id}, ${definition.sourceKind}, NULL, NULL)
+      ON CONFLICT (exercise_id) WHERE source_kind = 'system' DO NOTHING
     `;
     ids.push(id);
   }

@@ -18,6 +18,16 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   [metric-stream retirement record](../docs/metric-stream-postgres-retirement.md).
   - Usage: `pnpm review:seed-clickhouse`
 - `migrate-raw.mjs`: Utility for running raw SQL migrations or manual data fixes.
+- `backfill-exercise-provenance.ts`: Idempotently reconstructs user/provider
+  ownership for exercises and provider aliases from historical strength sets,
+  in bounded batches, then verifies that no attributable rows were missed.
+  - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
+- `backfill-slack-team-memberships.ts`: Verifies every stored Slack bot token
+  against its recorded workspace, uses team-qualified Slack API responses to
+  reconstruct legacy Dofek memberships, and fails before writing on missing
+  scopes or ambiguous identities. It defaults to a dry run.
+  - Dry run: `DATABASE_URL=... pnpm backfill:slack-team-memberships`
+  - Execute: `DATABASE_URL=... pnpm backfill:slack-team-memberships -- --execute`
 
 ## Environment & Secrets
 
@@ -104,6 +114,20 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   overrides for local and preview checks.
   - Usage: `pnpm check:mobile-update`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+- `validate-deploy-env.ts`: Validates the rendered production dotenv and calls
+  the same account-erasure keyring parser used by web and worker startup.
+  - Usage: `pnpm tsx scripts/validate-deploy-env.ts <rendered-dotenv-path>`
+- `render-deploy-service-env.ts`: Converts the validated Infisical export into
+  mode-`0600`, allowlisted environment files for each production service and
+  one-shot database, CDC, and R2 operation. Docker applies `env_file` per service:
+  <https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/>.
+  - Usage: `pnpm tsx scripts/render-deploy-service-env.ts <rendered-dotenv-path> <output-directory>`
+- `sweep-expired-r2-backups.ts`: Deletes database-backup objects beyond the
+  configured age, checks every per-object delete result, and performs a bounded
+  paginated verification sweep. This directly enforces retention because R2
+  lifecycle expiration can take additional time after an object becomes
+  eligible, as documented in [Cloudflare R2 object lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
+  - Usage: `pnpm tsx scripts/sweep-expired-r2-backups.ts --env-file <path> --bucket <name> --retention-days <days>`
 - `e2e-web.ts`: Starts the isolated web E2E stack, runs Cypress, and always
   tears the stack down. Setup or Cypress failures remain the command's exit
   status after cleanup.

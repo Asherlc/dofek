@@ -62,3 +62,53 @@ HTTP `400`.
 The first sync slice reads `/v1/data/band_data.json` and stores decoded daily steps, distance, sleep sessions, and minute-level heart rate samples.
 
 **Note:** Zepp accounts signed in via Xiaomi or Google SSO cannot authenticate with email/password login.
+
+## Polar
+
+Polar's OAuth token response includes the stable `x_user_id`, and AccessLink
+access tokens do not expire unless a partner or user explicitly revokes them.
+Dofek encrypts that account identifier alongside the OAuth credential so
+account-erasure retries can address the same AccessLink registration without
+rediscovering it through a revoked token. Existing Polar connections created
+before this metadata was stored must reconnect before account erasure begins.
+[Polar AccessLink authentication](https://www.polar.com/accesslink-api/#authentication).
+
+Account-erasure revocation first checks the exact `/v3/users/{user-id}`
+registration. Polar documents `204` as absent for that check and `204` as
+successful deregistration for `DELETE`; other statuses fail closed. A replay
+also accepts only a `401` response carrying the exact Bearer
+`error="invalid_token"` challenge defined by OAuth, because Polar documents
+these access tokens as non-expiring unless explicitly revoked. Normal Polar
+reconnect remains stricter and requires confirmed deregistration.
+[Polar AccessLink users](https://www.polar.com/accesslink-api/#users),
+[OAuth 2.0 Bearer `invalid_token`](https://www.rfc-editor.org/rfc/rfc6750#section-3.1).
+
+## OAuth authorization erasure
+
+MapMyFitness stores the numeric user ID returned by the authenticated
+`/v7.1/user/self/` resource with the encrypted OAuth credential. Account
+erasure sends `DELETE /v7.1/oauth2/connection/?user_id=...&client_id=...` and
+accepts only the documented `204` response. Connections created before the
+user ID was stored must reconnect before erasure starts.
+[MapMyFitness User resource](https://developer.mapmyfitness.com/docs/v71_User/),
+[MapMyFitness OAuth 2 Revoke](https://developer.mapmyfitness.com/docs/v71_OAuth2ConnectionRevokeResource/).
+
+Komoot account erasure deletes the user's refresh token through
+`/v1/clients/{client_id}/refresh_tokens/` using HTTP Basic client
+authentication and accepts only the documented `200` response. A legacy
+connection without a refresh token must reconnect before erasure starts.
+[Komoot OAuth 2 partner documentation](https://static.komoot.de/doc/auth/oauth2.html#v1_clients__client_id__refresh_tokens_).
+
+Suunto account erasure calls the Authorization API's
+`GET /oauth/deauthorize?client_id=...` operation with the user's Bearer token
+and accepts only the documented `200` response.
+[Suunto Authorization API](https://apizone.suunto.com/api-details#api=oauth2-api&operation=deauthorize).
+
+COROS and Decathlon connections fail account-erasure activation while they
+remain linked because their current public integration documentation does not
+provide a server-side grant-revocation operation that Dofek can verify.
+COROS users must first disconnect Dofek under the documented third-party app
+settings, and Decathlon users must manually unlink Dofek; both must then
+disconnect the provider in Dofek before starting erasure.
+[COROS third-party app disconnection](https://support.coros.com/hc/en-us/articles/360040256591-Syncing-with-3rd-Party-Apps),
+[Decathlon login logout documentation](https://login-doc.decathlon.com/logout.html).

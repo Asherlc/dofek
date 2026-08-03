@@ -2,6 +2,7 @@ import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
@@ -157,12 +158,12 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     where: vi.fn().mockResolvedValue(undefined),
   };
 
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 
   return { db, capture };
 }

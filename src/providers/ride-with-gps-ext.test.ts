@@ -12,6 +12,7 @@ import {
 } from "./ride-with-gps.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
@@ -664,7 +665,7 @@ function createSyncMockDb(
     where: vi.fn().mockResolvedValue(undefined),
   });
   db.execute = vi.fn().mockResolvedValue([]);
-  return db;
+  return makeTransactionalTestDatabase(db);
 }
 
 const emptyTripInventoryResponse: RideWithGpsTripListResponse = {
@@ -1115,7 +1116,7 @@ describe("RideWithGpsProvider — sync", () => {
       providerId: "ride-with-gps",
       sourceType: "api",
     });
-    expect(db.execute).toHaveBeenCalledTimes(2);
+    expect(db.execute).toHaveBeenCalledTimes(3);
     expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("provider_absent_at = NULL");
     expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("42");
   });

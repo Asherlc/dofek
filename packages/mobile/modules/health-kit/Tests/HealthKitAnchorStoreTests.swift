@@ -103,6 +103,26 @@ final class HealthKitAnchorStoreTests: XCTestCase {
         )
     }
 
+    func testInvalidatingPendingQueriesPreventsCompletionFromSavingAnAnchor() async throws {
+        let coordinator = HealthKitAnchoredQueryCoordinator(
+            anchorStore: HealthKitAnchorStore(userDefaults: defaults)
+        )
+        let result = try await coordinator.run(typeIdentifier: "heart-rate") { _ in
+            ((), HKQueryAnchor(fromValue: 19))
+        }
+
+        coordinator.invalidatePendingQueries()
+
+        XCTAssertThrowsError(
+            try coordinator.complete(
+                typeIdentifier: "heart-rate",
+                queryId: try XCTUnwrap(result.queryId),
+                succeeded: true
+            )
+        )
+        XCTAssertNil(defaults.object(forKey: HealthKitAnchorStore.key(for: "heart-rate")))
+    }
+
     func testCompleteWithUnknownQueryIdThrows() {
         let coordinator = HealthKitAnchoredQueryCoordinator(
             anchorStore: HealthKitAnchorStore(userDefaults: defaults)

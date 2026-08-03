@@ -15,9 +15,17 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
   upsertProviderActivity: vi.fn().mockResolvedValue(undefined),
 }));
 
+const exerciseProvenanceMocks = vi.hoisted(() => ({
+  resolveUserExerciseWithProvenance: vi.fn().mockResolvedValue("exercise-1"),
+}));
+
 vi.mock("../../db/provider-activity-sync.ts", () => ({
   finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
   upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+}));
+
+vi.mock("../../db/exercise-provenance.ts", () => ({
+  resolveUserExerciseWithProvenance: exerciseProvenanceMocks.resolveUserExerciseWithProvenance,
 }));
 
 function makeDb(selectedRows: unknown[] = []) {
@@ -156,6 +164,8 @@ beforeEach(() => {
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
   providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
   providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
+  exerciseProvenanceMocks.resolveUserExerciseWithProvenance.mockClear();
+  exerciseProvenanceMocks.resolveUserExerciseWithProvenance.mockResolvedValue("exercise-1");
 });
 
 describe("WHOOP workout sync helpers", () => {
@@ -372,6 +382,14 @@ describe("WHOOP workout sync helpers", () => {
     });
 
     await expect(syncWhoopStrengthForActivity(context, "workout-1")).resolves.toBe(1);
+    expect(exerciseProvenanceMocks.resolveUserExerciseWithProvenance).toHaveBeenCalledWith(
+      db.db,
+      expect.objectContaining({
+        providerExerciseId: "BENCHPRESS",
+        providerId: "whoop",
+        userId: "user-1",
+      }),
+    );
     expect(db.delete).toHaveBeenCalled();
     expect(db.chain.values).toHaveBeenCalledWith([
       expect.objectContaining({

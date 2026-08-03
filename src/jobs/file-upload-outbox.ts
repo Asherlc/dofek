@@ -1,8 +1,12 @@
 import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "../db/account-erasure.ts";
+import {
   listPendingFileUploadOutboxRequests,
   markFileUploadOutboxDispatched,
 } from "../db/file-upload.ts";
-import type { Database } from "../db/typed-sql.ts";
+import type { Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { enqueueFileUploadImport, type FileUploadImportQueue } from "./queues.ts";
@@ -11,16 +15,24 @@ const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
 export async function dispatchFileUploadOutbox(
-  database: Database,
+  database: Pick<Database, "execute" | "transaction">,
   queue: FileUploadImportQueue,
   limit = DEFAULT_BATCH_SIZE,
 ): Promise<number> {
   const requests = await listPendingFileUploadOutboxRequests(database, limit);
+  let dispatched = 0;
   for (const request of requests) {
-    await enqueueFileUploadImport(request, queue);
-    await markFileUploadOutboxDispatched(database, request.uploadId);
+    try {
+      await withAccountErasureUserWriteFence(database, request.userId, async (transaction) => {
+        await enqueueFileUploadImport(request, queue);
+        await markFileUploadOutboxDispatched(transaction, request.uploadId);
+      });
+      dispatched++;
+    } catch (error: unknown) {
+      if (!(error instanceof AccountErasureUserFencedError)) throw error;
+    }
   }
-  return requests.length;
+  return dispatched;
 }
 
 export interface FileUploadOutboxDispatcher {
@@ -28,7 +40,7 @@ export interface FileUploadOutboxDispatcher {
 }
 
 export function startFileUploadOutboxDispatcher(
-  database: Database,
+  database: Pick<Database, "execute" | "transaction">,
   queue: FileUploadImportQueue,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 ): FileUploadOutboxDispatcher {

@@ -1,5 +1,9 @@
 import { PasswordLoginRequestSchema } from "@dofek/auth/auth";
 import type { Database } from "dofek/db";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import { z } from "zod";
@@ -7,11 +11,12 @@ import { authenticatePasswordUser, InvalidCredentialsError } from "../auth/passw
 import { companionConnectionTypeSchema } from "../companion/connection-type.ts";
 import {
   getActiveCompanionTokenByToken,
-  regenerateCompanionToken,
+  regenerateCompanionTokenInTransaction,
   revokeCompanionTokenByToken,
 } from "../companion/token-repository.ts";
 import { companionConnectionOperationsTotal } from "../lib/metrics.ts";
 import { logger } from "../logger.ts";
+import { authRateLimiter } from "./auth/shared.ts";
 
 const companionPasswordLoginSchema = PasswordLoginRequestSchema.and(
   z.object({ connectionType: companionConnectionTypeSchema }),
@@ -31,7 +36,7 @@ function readBearerToken(req: import("express").Request): string | null {
 export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
   const router = Router();
 
-  router.post("/password-login", express.json(), async (req, res) => {
+  router.post("/password-login", authRateLimiter, express.json(), async (req, res) => {
     const parsed = companionPasswordLoginSchema.safeParse(req.body);
     if (!parsed.success) {
       const missingConnectionType =
@@ -53,10 +58,11 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
         parsed.data.email,
         parsed.data.password,
       );
-      const companionToken = await regenerateCompanionToken(
+      const companionToken = await withAccountErasureUserWriteFence(
         deps.db,
         userId,
-        parsed.data.connectionType,
+        (transaction) =>
+          regenerateCompanionTokenInTransaction(transaction, userId, parsed.data.connectionType),
       );
       if (!companionToken.token) {
         throw new Error("Companion token was regenerated without returning a token");
@@ -65,6 +71,10 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
     } catch (error: unknown) {
       if (error instanceof InvalidCredentialsError) {
         sendJson(res, 401, { error: error.message });
+        return;
+      }
+      if (error instanceof AccountErasureUserFencedError) {
+        sendJson(res, 409, { error: error.message });
         return;
       }
       captureException(error);

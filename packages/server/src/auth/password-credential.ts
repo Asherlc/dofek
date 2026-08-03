@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -31,8 +32,9 @@ export interface RegisterPasswordUserResult {
 }
 
 export async function registerPasswordUser(
-  db: Database,
+  db: Pick<Database, "execute">,
   input: RegisterPasswordUserInput,
+  options?: { newUserId?: string },
 ): Promise<RegisterPasswordUserResult> {
   const email = normalizeEmail(input.email);
   validatePassword(input.password);
@@ -67,8 +69,12 @@ export async function registerPasswordUser(
   const newUser = await executeWithSchema(
     db,
     z.object({ id: z.string() }),
-    sql`INSERT INTO fitness.user_profile (name, email)
-        VALUES (${displayName}, ${email})
+    sql`INSERT INTO fitness.user_profile (id, name, email)
+        VALUES (
+          COALESCE(${options?.newUserId ?? null}::uuid, gen_random_uuid()),
+          ${displayName},
+          ${email}
+        )
         RETURNING id`,
   );
   const newUserRow = newUser[0];
@@ -152,7 +158,7 @@ export async function setPasswordForUser(
   input: SetPasswordForUserInput,
 ): Promise<PasswordCredentialStatus> {
   validatePassword(input.newPassword);
-  return db.transaction(async (tx) => {
+  return withAccountErasureUserWriteFence(db, userId, async (tx) => {
     const credentialRows = await executeWithSchema(
       tx,
       z.object({ email: z.string(), password_hash: z.string() }),

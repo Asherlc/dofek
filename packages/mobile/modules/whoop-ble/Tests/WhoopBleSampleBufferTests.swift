@@ -84,136 +84,6 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 2)
     }
 
-    // MARK: - Timestamp clamping
-
-    func testRealtimeDrainClampsFutureTimestamp() {
-        // Timestamp in year 2105 = well beyond the clamp threshold
-        let sample = WhoopRealtimeDataSample(
-            timestampSeconds: 4294967295, // UInt32.max = Feb 2106
-            subSeconds: 0,
-            heartRate: 72,
-            rrIntervalMs: 800,
-            quaternionW: 1.0, quaternionX: 0, quaternionY: 0, quaternionZ: 0,
-            opticalBytes: Data(count: 18)
-        )
-        buffer.appendRealtimeData([sample])
-
-        let drained = buffer.drainRealtimeData()
-        XCTAssertEqual(drained.count, 1)
-
-        let timestamp = try? XCTUnwrap(drained[0]["timestamp"] as? String)
-        XCTAssertNotNil(timestamp)
-        // Should be clamped to now+5min, not year 2106
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: timestamp!)
-        XCTAssertNotNil(date)
-        let fiveMinFromNow = Date().addingTimeInterval(300)
-        XCTAssertGreaterThan(fiveMinFromNow.timeIntervalSince1970, date!.timeIntervalSince1970 - 1)
-    }
-
-    func testRealtimeDrainClampsPreEpochTimestamp() {
-        // Timestamp before year 2000
-        let sample = WhoopRealtimeDataSample(
-            timestampSeconds: 100000, // Jan 2 1970
-            subSeconds: 0,
-            heartRate: 72,
-            rrIntervalMs: 800,
-            quaternionW: 1.0, quaternionX: 0, quaternionY: 0, quaternionZ: 0,
-            opticalBytes: Data(count: 18)
-        )
-        buffer.appendRealtimeData([sample])
-
-        let drained = buffer.drainRealtimeData()
-        XCTAssertEqual(drained.count, 1)
-
-        let timestamp = try? XCTUnwrap(drained[0]["timestamp"] as? String)
-        XCTAssertNotNil(timestamp)
-        // Should be clamped to year 2000, not 1970
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: timestamp!)
-        XCTAssertNotNil(date)
-        let year2000 = Date(timeIntervalSince1970: 946684800)
-        XCTAssertGreaterThanOrEqual(date!, year2000)
-    }
-
-    func testImuDrainClampsFutureTimestamp() {
-        // IMU sample with timestamp in year 2105
-        let sample = WhoopImuSample(
-            timestampSeconds: 4294967295,
-            subSeconds: 0,
-            sampleIndex: 0,
-            samplesInFrame: 1,
-            accelerometerX: 0.1, accelerometerY: 0, accelerometerZ: 1.0,
-            gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
-        )
-        buffer.appendImuSamples([sample])
-
-        let drained = buffer.drainImuSamples()
-        XCTAssertEqual(drained.count, 1)
-
-        let timestamp = try? XCTUnwrap(drained[0]["timestamp"] as? String)
-        XCTAssertNotNil(timestamp)
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: timestamp!)
-        XCTAssertNotNil(date)
-        let fiveMinFromNow = Date().addingTimeInterval(300)
-        XCTAssertGreaterThan(fiveMinFromNow.timeIntervalSince1970, date!.timeIntervalSince1970 - 1)
-    }
-
-    func testValidTimestampPassesThroughUnchanged() {
-        let timestampSeconds: UInt32 = 1711000000 // March 2024
-        let sub: UInt16 = 500
-        let sample = WhoopRealtimeDataSample(
-            timestampSeconds: timestampSeconds,
-            subSeconds: sub,
-            heartRate: 72,
-            rrIntervalMs: 800,
-            quaternionW: 1.0, quaternionX: 0, quaternionY: 0, quaternionZ: 0,
-            opticalBytes: Data(count: 18)
-        )
-        buffer.appendRealtimeData([sample])
-
-        let drained = buffer.drainRealtimeData()
-        XCTAssertEqual(drained.count, 1)
-
-        let timestamp = try? XCTUnwrap(drained[0]["timestamp"] as? String)
-        XCTAssertNotNil(timestamp)
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: timestamp!)
-        XCTAssertNotNil(date)
-        let expected = Date(timeIntervalSince1970: TimeInterval(timestampSeconds) + TimeInterval(sub) / 1000.0)
-        XCTAssertEqual(date, expected)
-    }
-
-    func testDrainRealtimeDataSerializesCorrectFields() {
-        let sample = WhoopRealtimeDataSample(
-            timestampSeconds: 1711000000,
-            subSeconds: 0,
-            heartRate: 72,
-            rrIntervalMs: 833,
-            quaternionW: 1.0,
-            quaternionX: 0.0,
-            quaternionY: 0.0,
-            quaternionZ: 0.0,
-            opticalBytes: Data(count: 18)
-        )
-        buffer.appendRealtimeData([sample])
-
-        let drained = buffer.drainRealtimeData()
-        XCTAssertEqual(drained.count, 1)
-
-        let dict = drained[0]
-        XCTAssertNotNil(dict["timestamp"] as? String)
-        XCTAssertNil(dict["heartRate"])
-        XCTAssertEqual(dict["rrIntervalMs"] as? Int, 833)
-        XCTAssertEqual(dict["quaternionW"] as? Double, 1.0)
-        XCTAssertNotNil(dict["opticalRawHex"] as? String)
-    }
-
     func testPeekRealtimeDataSerializesCapturedDeviceId() {
         buffer.appendRealtimeData(makeRealtimeSamples(count: 1), deviceId: "whoop-a")
         XCTAssertEqual(buffer.peekRealtimeData()[0]["deviceId"] as? String, "whoop-a")
@@ -413,6 +283,49 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 0)
     }
 
+    func testErasureCutoffDropsExistingAndFutureSamplesAtOrBeforeBoundary() {
+        let cutoff = Date(timeIntervalSince1970: 1_711_000_001)
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_001),
+        ])
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_001),
+        ])
+
+        buffer.advanceErasureCutoff(to: cutoff)
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_001),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+        ])
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_000),
+            makeRealtimeSample(timestampSeconds: 1_711_000_002),
+        ])
+
+        XCTAssertEqual(buffer.imuSampleCount, 1)
+        XCTAssertEqual(buffer.realtimeSampleCount, 1)
+        XCTAssertTrue(
+            (buffer.peekImuSamples()[0]["timestamp"] as? String)?
+                .contains("2024-03-21T05:46:42") == true
+        )
+    }
+
+    func testErasureCutoffAdvancesPeekCursorOnlyForRemovedHeadSamples() {
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_003),
+        ])
+        XCTAssertEqual(buffer.peekImuSamples(maxCount: 4).count, 4)
+
+        buffer.advanceErasureCutoff(to: Date(timeIntervalSince1970: 1_711_000_001))
+        buffer.confirmImuDrain(count: 4)
+
+        XCTAssertEqual(buffer.imuSampleCount, 0)
+    }
+
     // MARK: - Helpers
 
     private func makeImuSamples(count: Int) -> [WhoopImuSample] {
@@ -430,6 +343,35 @@ final class WhoopBleSampleBufferTests: XCTestCase {
                 gyroscopeZ: 0
             )
         }
+    }
+
+    private func makeImuSample(timestampSeconds: UInt32) -> WhoopImuSample {
+        WhoopImuSample(
+            timestampSeconds: timestampSeconds,
+            subSeconds: 0,
+            sampleIndex: 0,
+            samplesInFrame: 1,
+            accelerometerX: 0,
+            accelerometerY: 0,
+            accelerometerZ: 1,
+            gyroscopeX: 0,
+            gyroscopeY: 0,
+            gyroscopeZ: 0
+        )
+    }
+
+    private func makeRealtimeSample(timestampSeconds: UInt32) -> WhoopRealtimeDataSample {
+        WhoopRealtimeDataSample(
+            timestampSeconds: timestampSeconds,
+            subSeconds: 0,
+            heartRate: 60,
+            rrIntervalMs: 1_000,
+            quaternionW: 1,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+            opticalBytes: Data(count: 18)
+        )
     }
 
     private func makeRealtimeSamples(count: Int) -> [WhoopRealtimeDataSample] {

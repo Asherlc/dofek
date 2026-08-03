@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   validateArchive: vi.fn(),
   checksumMismatch: vi.fn(),
   lifecycle: vi.fn(),
+  accountErasureAllowsQueuedUserWork: vi.fn(),
 }));
 
 vi.mock("../db/file-upload.ts", () => ({
@@ -34,6 +35,9 @@ vi.mock("./validate-import-archive.ts", () => ({ validateImportArchive: mocks.va
 vi.mock("../file-upload-metrics.ts", () => ({
   fileUploadChecksumMismatchesTotal: { add: mocks.checksumMismatch },
   fileUploadLifecycleTotal: { add: mocks.lifecycle },
+}));
+vi.mock("./account-erasure-work-guard.ts", () => ({
+  accountErasureAllowsQueuedUserWork: mocks.accountErasureAllowsQueuedUserWork,
 }));
 
 const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
@@ -118,6 +122,7 @@ describe("processFileUploadImportJob", () => {
     process.env.JOB_FILES_DIR = jobFilesDirectory;
     mocks.claim.mockResolvedValue(upload());
     mocks.processImport.mockResolvedValue(undefined);
+    mocks.accountErasureAllowsQueuedUserWork.mockResolvedValue(true);
   });
 
   afterEach(async () => {
@@ -134,6 +139,59 @@ describe("processFileUploadImportJob", () => {
     expect(mocks.complete).toHaveBeenCalledWith(database, uploadId, digest);
     expect(storage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
     expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
+  });
+
+  it("does not download when erasure activates after the upload is claimed", async () => {
+    mocks.accountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
+    const storage = storageWithBody();
+
+    await processFileUploadImportJob(job(), database, storage);
+
+    expect(storage.getObjectStream).not.toHaveBeenCalled();
+    expect(mocks.processImport).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("does not import a verified object when erasure activates before import", async () => {
+    mocks.accountErasureAllowsQueuedUserWork
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    await processFileUploadImportJob(job(), database, storageWithBody());
+
+    expect(mocks.processImport).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("does not complete an import when erasure activates before completion", async () => {
+    mocks.accountErasureAllowsQueuedUserWork
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    await processFileUploadImportJob(job(), database, storageWithBody());
+
+    expect(mocks.processImport).toHaveBeenCalledOnce();
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.lifecycle).not.toHaveBeenCalled();
+  });
+
+  it("does not delete the object when erasure activates after completion", async () => {
+    mocks.accountErasureAllowsQueuedUserWork
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const storage = storageWithBody();
+
+    await processFileUploadImportJob(job(), database, storage);
+
+    expect(mocks.complete).toHaveBeenCalledWith(database, uploadId, digest);
+    expect(mocks.lifecycle).toHaveBeenCalledWith(1, {
+      state: "completed",
+      import_type: "strong-csv",
+    });
+    expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 
   it("publishes the retained upload file only after download verification", async () => {

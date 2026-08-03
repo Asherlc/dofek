@@ -1,8 +1,12 @@
 import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "../db/account-erasure.ts";
+import type { Database } from "../db/index.ts";
+import {
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionDispatched,
 } from "../db/provider-data-deletion.ts";
-import type { Database } from "../db/typed-sql.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { enqueueProviderDataDeletion, type ProviderDataDeletionQueue } from "./queues.ts";
@@ -11,16 +15,24 @@ const DEFAULT_OUTBOX_BATCH_SIZE = 100;
 const DEFAULT_OUTBOX_POLL_INTERVAL_MS = 5_000;
 
 export async function dispatchProviderDataDeletionOutbox(
-  database: Database,
+  database: Pick<Database, "execute" | "transaction">,
   queue: ProviderDataDeletionQueue,
   limit = DEFAULT_OUTBOX_BATCH_SIZE,
 ): Promise<number> {
   const requests = await listPendingProviderDataDeletionRequests(database, limit);
+  let dispatched = 0;
   for (const request of requests) {
-    await enqueueProviderDataDeletion(request, queue);
-    await markProviderDataDeletionDispatched(database, request.eventId);
+    try {
+      await withAccountErasureUserWriteFence(database, request.userId, async (transaction) => {
+        await enqueueProviderDataDeletion(request, queue);
+        await markProviderDataDeletionDispatched(transaction, request.eventId);
+      });
+      dispatched++;
+    } catch (error: unknown) {
+      if (!(error instanceof AccountErasureUserFencedError)) throw error;
+    }
   }
-  return requests.length;
+  return dispatched;
 }
 
 export interface ProviderDataDeletionOutboxDispatcher {
@@ -28,7 +40,7 @@ export interface ProviderDataDeletionOutboxDispatcher {
 }
 
 export function startProviderDataDeletionOutboxDispatcher(
-  database: Database,
+  database: Pick<Database, "execute" | "transaction">,
   queue: ProviderDataDeletionQueue,
   pollIntervalMs = DEFAULT_OUTBOX_POLL_INTERVAL_MS,
 ): ProviderDataDeletionOutboxDispatcher {

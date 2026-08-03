@@ -4,6 +4,7 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { userSettings } from "../db/schema/account.ts";
 import { activity } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -156,6 +157,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
   beforeEach(() => {
     metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
 
   afterEach(() => {
@@ -757,12 +759,17 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
   });
 
   it("handles track points without timestamps", async () => {
-    await saveTokens(ctx.db, "ride-with-gps", {
-      accessToken: "valid-token",
-      refreshToken: "valid-refresh",
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
-      scopes: "user",
-    });
+    await saveTokens(
+      ctx.db,
+      "ride-with-gps",
+      {
+        accessToken: "valid-token",
+        refreshToken: "valid-refresh",
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+        scopes: "user",
+      },
+      TEST_USER_ID,
+    );
 
     // Trip with track points that have no timestamp
     const noTimestampTrip = fakeTripDetail(8001, {
@@ -783,11 +790,13 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       new SyncRun({
         db: ctx.db,
         window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        userId: TEST_USER_ID,
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
 
     expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
 
     // Activity should exist but no metric stream events (no timestamps)
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "8001"));
@@ -797,6 +806,44 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       (row) => row.activityId === activities[0]?.id,
     );
     expect(metrics).toHaveLength(0);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toEqual([
+      { activityId: activities[0]?.id, userId: TEST_USER_ID },
+    ]);
+  });
+
+  it("replaces an empty track with the scoped user ID", async () => {
+    await saveTokens(
+      ctx.db,
+      "ride-with-gps",
+      {
+        accessToken: "valid-token",
+        refreshToken: "valid-refresh",
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+        scopes: "user",
+      },
+      TEST_USER_ID,
+    );
+
+    const trip = fakeTripDetail(8002, { track_points: [] });
+    server.use(...rwgpsHandlers(fakeSyncResponse([{ item_id: 8002 }]), new Map([[8002, trip]])));
+
+    const result = await new RideWithGpsProvider().sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        userId: TEST_USER_ID,
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "8002"));
+    expect(activities).toHaveLength(1);
+    expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(0);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toEqual([
+      { activityId: activities[0]?.id, userId: TEST_USER_ID },
+    ]);
   });
 
   it("handles sync endpoint failure and returns early with error (lines 308-319)", async () => {

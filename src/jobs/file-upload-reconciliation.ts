@@ -41,7 +41,22 @@ export async function reconcileFileUploads(
         upload.expiresAt < new Date()
       ) {
         if (upload.r2MultipartUploadId) {
-          await storage.abortMultipartUpload(upload.objectKey, upload.r2MultipartUploadId);
+          try {
+            await storage.abortMultipartUpload(upload.objectKey, upload.r2MultipartUploadId);
+          } catch (abortError: unknown) {
+            captureException(abortError, {
+              tags: {
+                source: "file-upload-reconciliation",
+                repairKind: "completed_multipart",
+              },
+              extra: { uploadId: upload.id },
+            });
+            await storage.headObject(upload.objectKey);
+            await storage.deleteObject(upload.objectKey);
+            fileUploadReconciliationTotal.add(1, {
+              repair: "completed_multipart_object",
+            });
+          }
         }
         if (await expireFileUpload(database, upload.id)) {
           fileUploadLifecycleTotal.add(1, { state: "expired", import_type: upload.importType });

@@ -66,8 +66,10 @@ function PrivacyPage() {
               <li>Provide training load, recovery, and performance analysis</li>
             </ul>
             <p className="mt-3">
-              We do not sell, share, or distribute your data to any third parties. Your data is
-              never used for advertising or marketing purposes.
+              We do not sell your health data or use it for advertising. We disclose data only to
+              service providers needed to operate Dofek, such as infrastructure, observability,
+              product analytics, email, and payment processors, or when required by law. Those
+              providers process data under their own applicable terms and retention obligations.
             </p>
           </section>
 
@@ -112,9 +114,9 @@ function PrivacyPage() {
               <p>
                 When you connect your Garmin account, your activity, sleep, daily health, and body
                 composition data is transferred from Garmin to Dofek. By connecting your Garmin
-                account, you expressly consent to this data transfer. Your data is used solely to
-                power your Dofek dashboard and is never sold or shared with third parties. For
-                details on how Garmin handles your data, see the{" "}
+                account, you expressly consent to this data transfer. Garmin data powers Dofek.
+                Garmin data is not sold and is disclosed only to the service providers described
+                above or when required by law. For details on how Garmin handles your data, see the{" "}
                 <a
                   href="https://www.garmin.com/privacy/connect"
                   target="_blank"
@@ -133,11 +135,66 @@ function PrivacyPage() {
               6. Data Retention and Deletion
             </h2>
             <p>
-              Your data is retained for as long as your account is active. You may disconnect any
-              provider at any time. Disconnecting removes its saved authorization and stops future
-              syncing, but data already imported into Dofek remains. You may delete one
-              provider&apos;s imported data with Delete All Data, or request complete deletion of
-              your account and all associated data by contacting us at the email below.
+              Your data is retained while your account is active. Settings provides a two-step
+              account deletion flow. Confirmation immediately blocks new account writes, revokes the
+              session, and starts a durable deletion request. Dofek deletes active application data
+              as the workflow advances and verifies its active application stores after the
+              seven-day replay window has elapsed. Logs, processor records, and backups then age
+              through a separate retention window. Final retained-data verification is due no later
+              than 30 days after the request. A missed deadline does not cancel the request;
+              deletion continues automatically, support is alerted, and the public status page shows
+              retry or support guidance.
+            </p>
+            <p className="mt-3">
+              To prevent a later database restore from forgetting a deletion request, Dofek retains
+              an immutable encrypted deletion-ledger record indefinitely. That narrow record
+              contains a random deletion-request identifier and timestamp, a keyed pseudonymous
+              account digest, a key identifier, and the encrypted status capability. It does not
+              contain a raw account or provider identifier, email address, health data, or provider
+              credential. Cloudflare documents that its{" "}
+              <a
+                href="https://developers.cloudflare.com/r2/buckets/bucket-locks/"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                R2 bucket locks
+              </a>{" "}
+              can retain protected objects indefinitely.
+            </p>
+            <p className="mt-3">
+              Dofek clears its application caches and deletes nutrition samples that the Dofek app
+              wrote to HealthKit. HealthKit and Core Motion source records remain controlled by iOS,
+              and users manage those records through Apple&apos;s settings and Health app. Apple
+              documents that an app can delete only HealthKit objects it previously saved in the{" "}
+              <a
+                href="https://developer.apple.com/documentation/healthkit/hkhealthstore/delete(_:withcompletion:)-17hzm"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                HealthKit deletion API
+              </a>
+              .
+            </p>
+            <p className="mt-3">
+              Payment providers may retain legally required transaction, fraud-prevention, and
+              compliance records beyond Dofek&apos;s 30-day application-data window. See the{" "}
+              <a
+                href="https://stripe.com/legal/privacy-center"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Stripe Privacy Center
+              </a>{" "}
+              for Stripe&apos;s retention disclosures.
+            </p>
+            <p className="mt-3">
+              <a href="/account-deletion" className="text-accent underline">
+                Track an account deletion request
+              </a>
+              .
             </p>
           </section>
 
@@ -167,8 +224,12 @@ function PrivacyPage() {
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-3">9. Contact</h2>
             <p>
-              For questions about this privacy policy or to exercise your data rights, contact the
-              administrator of this instance.
+              For questions about this privacy policy, account deletion, or to exercise your data
+              rights,{" "}
+              <a href="mailto:asherlc@asherlc.com" className="text-accent underline">
+                contact the Dofek administrator
+              </a>
+              .
             </p>
           </section>
         </div>

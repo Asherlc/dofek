@@ -3,6 +3,8 @@ export const METRIC_STREAM_TABLE = `${INGEST_DATABASE}.metric_stream`;
 export const METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_delete_acknowledgement`;
 export const METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_processing_acknowledgement`;
 export const PROVIDER_DATA_GENERATION_TABLE = `${INGEST_DATABASE}.provider_data_generation`;
+export const ACCOUNT_ERASURE_FENCE_TABLE = `${INGEST_DATABASE}.account_erasure_fence`;
+export const ACCOUNT_ERASURE_OPERATION_FENCE_TABLE = `${INGEST_DATABASE}.account_erasure_operation_fence`;
 export const LEGACY_METRIC_STREAM_TABLE = "postgres_fitness.metric_stream";
 export const METRIC_STREAM_ORDER_BY = "(user_id, activity_id, channel, recorded_at, id)";
 export const METRIC_STREAM_PROVIDER_GENERATION_PROJECTION = "by_provider_generation";
@@ -140,4 +142,22 @@ export function buildProviderDataGenerationTableSql(): string {
 )
 ENGINE = ReplacingMergeTree(generation)
 ORDER BY (user_id, provider_id)`;
+}
+
+export function buildAccountErasureFenceTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS ${ACCOUNT_ERASURE_FENCE_TABLE} (
+  user_hash FixedString(64),
+  erased_at DateTime64(9) DEFAULT now64(9)
+)
+ENGINE = ReplacingMergeTree(erased_at)
+ORDER BY user_hash`;
+}
+
+export function buildAccountErasureOperationFenceTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS ${ACCOUNT_ERASURE_OPERATION_FENCE_TABLE} (
+  operation_hash FixedString(64),
+  erased_at DateTime64(9) DEFAULT now64(9)
+)
+ENGINE = ReplacingMergeTree(erased_at)
+ORDER BY operation_hash`;
 }

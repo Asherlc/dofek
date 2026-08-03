@@ -126,6 +126,9 @@ importers:
       '@opentelemetry/auto-instrumentations-node':
         specifier: 0.79.0
         version: 0.79.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.9.0)(supports-color@10.2.2)
+      '@opentelemetry/core':
+        specifier: 2.9.0
+        version: 2.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-logs-otlp-http':
         specifier: 0.221.0
         version: 0.221.0(@opentelemetry/api@1.9.1)
@@ -204,6 +207,9 @@ importers:
       sax:
         specifier: 1.6.0
         version: 1.6.0
+      stripe:
+        specifier: 22.3.2
+        version: 22.3.2(@types/node@22.19.15)
       winston:
         specifier: 3.19.0
         version: 3.19.0
@@ -492,6 +498,9 @@ importers:
       expo-camera:
         specifier: 57.0.3
         version: 57.0.3(@types/emscripten@1.41.5)(expo@57.0.9)(react-native-web@0.21.2)(react-native@0.86.2)(react@19.2.3)
+      expo-crypto:
+        specifier: 57.0.1
+        version: 57.0.1(expo@57.0.9)
       expo-dev-client:
         specifier: 57.0.10
         version: 57.0.10(expo@57.0.9)(react-native@0.86.2)
@@ -766,9 +775,6 @@ importers:
       simple-statistics:
         specifier: 7.9.3
         version: 7.9.3
-      stripe:
-        specifier: 22.1.0
-        version: 22.1.0(@types/node@26.1.1)
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -10602,6 +10608,11 @@ packages:
       expo: '*'
       react-native: '*'
 
+  expo-crypto@57.0.1:
+    resolution: {integrity: sha512-xwegXQw3ATgeL1ZuqbSNrGzOeG+zNeh6Z6DSJk825Qpa3TEQQ1kG3ioE1p3g/SNF373BAVz2iBKUTSytlIbBRA==}
+    peerDependencies:
+      expo: '*'
+
   expo-dev-client@57.0.10:
     resolution: {integrity: sha512-aY6PVbD1R+XwIcrOucRnB/yJfB6qVHIHqgRV6F8LwOzo7DwZaa/ixs+O2itHH7BNbUiwkS8tFjtbzJ4vDx/ulw==}
     peerDependencies:
@@ -15197,8 +15208,8 @@ packages:
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
 
-  stripe@22.1.0:
-    resolution: {integrity: sha512-w/xHyJGxXWnLPbNHG13sz/fae0MrFGC80Oz7YbICQymbfpqfEcsoG+6yG+9BWb81PWc4rrkeSO4wmTcmefmbLw==}
+  stripe@22.3.2:
+    resolution: {integrity: sha512-O13QOvgEIQvDlTy6Ubb5kB980wpbhmoZNsgCXKILjCMZS67f+bW+6w99k3gnSi/N1lkryoj1WYdpGT5Wc5edjg==}
     engines: {node: '>=18'}
     peerDependencies:
       '@types/node': '>=18'
@@ -27748,6 +27759,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  expo-crypto@57.0.1(expo@57.0.9):
+    dependencies:
+      expo: 57.0.9(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.8)(expo-router@57.0.9)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@10.2.2)(typescript@6.0.3)
+
   expo-dev-client@57.0.10(expo@57.0.9)(react-native@0.86.2):
     dependencies:
       expo: 57.0.9(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.8)(expo-router@57.0.9)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@10.2.2)(typescript@6.0.3)
@@ -33294,9 +33309,9 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  stripe@22.1.0(@types/node@26.1.1):
+  stripe@22.3.2(@types/node@22.19.15):
     optionalDependencies:
-      '@types/node': 26.1.1
+      '@types/node': 22.19.15
 
   strnum@2.3.0: {}
 

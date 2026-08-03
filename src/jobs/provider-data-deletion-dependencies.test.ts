@@ -39,8 +39,13 @@ describe("createProviderDataDeletionDependencies", () => {
         lastId: "10000000-0000-4000-8000-000000000001",
       },
     } satisfies ProviderDataDeletionContinuationJobData;
+    const accountErasureAllowsWork = vi.fn(async () => true);
 
-    const dependencies = createProviderDataDeletionDependencies(database, clickHouseClient);
+    const dependencies = createProviderDataDeletionDependencies(
+      database,
+      clickHouseClient,
+      accountErasureAllowsWork,
+    );
     await dependencies.enqueueContinuation(continuation);
     await dependencies.markCompleted(continuation.eventId);
 
@@ -48,6 +53,7 @@ describe("createProviderDataDeletionDependencies", () => {
     expect(enqueueProviderDataDeletionContinuation).toHaveBeenCalledWith(continuation, queue);
     expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(database, continuation.eventId);
     expect(dependencies.clickHouseClient).toBe(clickHouseClient);
+    expect(dependencies.accountErasureAllowsWork).toBe(accountErasureAllowsWork);
     expect(dependencies.enqueueAnalyticsRefresh).toBe(enqueueProviderDeleteAnalyticsRefresh);
   });
 });

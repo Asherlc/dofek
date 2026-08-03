@@ -1,3 +1,8 @@
+import { TRPCError } from "@trpc/server";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { z } from "zod";
 import {
   companionConnectionTypeSchema,
@@ -6,7 +11,7 @@ import {
 import {
   createOrGetCompanionToken,
   listActiveCompanionTokens,
-  regenerateCompanionToken,
+  regenerateCompanionTokenInTransaction,
   revokeCompanionToken,
 } from "../companion/token-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -35,11 +40,20 @@ export const companionTokenRouter = router({
     .input(z.object({ connectionType: companionConnectionTypeSchema }).optional())
     .output(companionTokenOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      return regenerateCompanionToken(
-        ctx.db,
-        ctx.userId,
-        input?.connectionType ?? DEFAULT_COMPANION_CONNECTION_TYPE,
-      );
+      try {
+        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, (transaction) =>
+          regenerateCompanionTokenInTransaction(
+            transaction,
+            ctx.userId,
+            input?.connectionType ?? DEFAULT_COMPANION_CONNECTION_TYPE,
+          ),
+        );
+      } catch (error: unknown) {
+        if (error instanceof AccountErasureUserFencedError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
     }),
 
   list: protectedProcedure

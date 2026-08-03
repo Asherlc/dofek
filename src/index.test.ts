@@ -25,6 +25,16 @@ const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []
 const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
 const mockProcessSyncJob = vi.fn();
 const mockProcessFitFileImportJob = vi.fn();
+const mockCloseAccountErasureWorkLockPool = vi.fn(() => Promise.resolve());
+const mockRunQueuedUserWorkUnlessAccountErasing = vi.fn(
+  async (
+    _workLockPool: unknown,
+    _database: unknown,
+    _userId: string,
+    _workKind: string,
+    work: () => Promise<unknown>,
+  ) => work(),
+);
 const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
 const mockCreateDatabaseFromEnv = vi.fn(() => ({
   execute: mockDbExecute,
@@ -63,6 +73,13 @@ vi.mock("./jobs/process-sync-job.ts", () => ({
 
 vi.mock("./jobs/process-fit-file-import-job.ts", () => ({
   processFitFileImportJob: mockProcessFitFileImportJob,
+}));
+
+vi.mock("./jobs/account-erasure-work-guard.ts", () => ({
+  createAccountErasureWorkLockPoolFromEnv: vi.fn(() => ({
+    close: mockCloseAccountErasureWorkLockPool,
+  })),
+  runQueuedUserWorkUnlessAccountErasing: mockRunQueuedUserWorkUnlessAccountErasing,
 }));
 
 vi.mock("./providers/index.ts", () => ({
@@ -218,7 +235,7 @@ describe("handleSyncCommand", () => {
     // Verify the callback calls processSyncJob by invoking the captured callback
     const capturedWorkerCallback = capturedWorkerCallbacks.get("sync");
     expect(capturedWorkerCallback).toBeDefined();
-    const fakeJob = { id: "123" };
+    const fakeJob = { data: { userId: "test-user" }, id: "123" };
     await capturedWorkerCallback?.(fakeJob);
     expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
   });
@@ -232,9 +249,17 @@ describe("handleSyncCommand", () => {
     });
     const capturedFitWorkerCallback = capturedWorkerCallbacks.get("fit-file-import");
     expect(capturedFitWorkerCallback).toBeDefined();
-    const fakeJob = { id: "fit-123" };
+    const fakeJob = { data: { userId: "test-user" }, id: "fit-123" };
     await capturedFitWorkerCallback?.(fakeJob);
     expect(mockProcessFitFileImportJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
+  });
+
+  it("closes the queued-work lock pool after temporary workers stop", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+
+    expect(mockCloseAccountErasureWorkLockPool).toHaveBeenCalledOnce();
   });
 
   it("creates QueueEvents with connection", async () => {

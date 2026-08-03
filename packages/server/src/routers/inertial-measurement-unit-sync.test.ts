@@ -1,6 +1,6 @@
 import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
@@ -62,6 +62,10 @@ function makeExecute() {
   return vi.fn(async () => []);
 }
 
+function makeDatabase(execute = makeExecute()) {
+  return makeTransactionalTestDatabase({ execute });
+}
+
 function makeMetricStreamPublisher() {
   return {
     publishRows: vi.fn(async (rows: readonly unknown[]) =>
@@ -109,7 +113,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -129,7 +133,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       nowSpy.mockRestore();
 
       expect(result.inserted).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(mockStartActiveSpan).toHaveBeenCalledWith(
         "imu.pushSamples",
@@ -183,7 +187,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         ),
       };
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "00000000-0000-0000-0000-000000000001",
       });
@@ -213,7 +217,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -233,7 +237,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
     it("handles empty samples array by returning zero inserted", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
 
       const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
@@ -257,7 +261,11 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const metricStreamPublisher = {
         publishRows: vi.fn(async () => []),
       };
-      const caller = createCaller({ db: { execute }, metricStreamPublisher, userId: "user-1" });
+      const caller = createCaller({
+        db: makeDatabase(execute),
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
@@ -270,7 +278,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
     it("rejects samples with missing required fields", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
 
       const invalidSample = { timestamp: "2026-03-25T10:00:00Z", x: 0.1 };
       await expect(
@@ -284,7 +292,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
     it("rejects when deviceId is empty", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
 
       await expect(
         caller.pushSamples({
@@ -300,7 +308,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       vi.setSystemTime(new Date("2026-03-25T10:00:00.000Z"));
 
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
 
       try {
         const result = await caller.pushSamples({
@@ -325,7 +333,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
     it("filters out malformed sample timestamps", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
 
       const result = await caller.pushSamples({
         deviceId: "WHOOP Strap",
@@ -342,7 +350,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -360,7 +368,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(7500);
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(5);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(5000);
       expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(2500);
@@ -370,7 +378,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -388,7 +396,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(getPublishedRows(metricStreamPublisher)).toContainEqual(
         expect.objectContaining({
           channel: "imu",
@@ -402,7 +410,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -422,7 +430,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       const publishedRows = getPublishedRows(metricStreamPublisher);
       expect(publishedRows).toEqual(
         expect.arrayContaining([
@@ -454,7 +462,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -478,7 +486,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -520,7 +528,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = vi.fn().mockRejectedValue(dbError);
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -554,7 +562,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       };
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -583,7 +591,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       };
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });
@@ -607,7 +615,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = vi.fn().mockRejectedValue(stringError);
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         metricStreamPublisher,
         userId: "user-1",
       });

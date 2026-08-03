@@ -5,6 +5,7 @@ import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
 import {
@@ -19,6 +20,7 @@ import { logger } from "./logger.ts";
 import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
 
 export interface Context {
+  accountErasureRestoreLedger: AccountErasureRestoreLedger;
   db: Database;
   sensorStore: ActivitySensorStore;
   metricStreamPublisher?: MetricStreamEventPublisher;
@@ -29,6 +31,8 @@ export interface Context {
   appVersion?: string;
   /** Client asset/update identifier, if provided (e.g. Expo updateId). */
   assetsVersion?: string;
+  /** Time this login session was created; destructive account changes require it to be recent. */
+  authenticatedAt?: Date;
   /** Billing-derived read access window for authenticated users. */
   accessWindow?: AccessWindow;
   /** Internal cache warmer mode: recompute and overwrite without reading the current value. */
@@ -329,7 +333,7 @@ function cached(policy: CachePolicy) {
     if (dbDurationMs > 500) {
       trpcSlowQueriesTotal.inc({ procedure: path, type });
       logger.warn(
-        `[trpc] Slow query procedure=${path} type=${type} user_id=${ctx.userId ?? "anon"} db_duration_ms=${Math.round(dbDurationMs)} total_duration_ms=${Math.round(totalDurationMs)} cache_hit=false app_version=${ctx.appVersion ?? "unknown"} assets_version=${ctx.assetsVersion ?? "unknown"}`,
+        `[trpc] Slow query procedure=${path} type=${type} authenticated=${ctx.userId !== null} db_duration_ms=${Math.round(dbDurationMs)} total_duration_ms=${Math.round(totalDurationMs)} cache_hit=false app_version=${ctx.appVersion ?? "unknown"} assets_version=${ctx.assetsVersion ?? "unknown"}`,
       );
     }
 

@@ -23,8 +23,17 @@ import {
   getImportQueue,
 } from "dofek/jobs/queues";
 import { captureException } from "dofek/lib/error-reporting";
+import { getAllProviders } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import express from "express";
+import { validateAccountErasureLedgerKeyring } from "../../../src/account-erasure/identity.ts";
+import { createEncryptedAccountErasureSnapshot } from "../../../src/account-erasure/remote-snapshot.ts";
+import {
+  type AccountErasureRestoreLedger,
+  createAccountErasureRestoreLedgerFromEnv,
+  createLazyAccountErasureRestoreLedger,
+} from "../../../src/account-erasure/restore-ledger.ts";
+import { reconcileAccountErasureRestoreIntents } from "../../../src/account-erasure/restore-reconciliation.ts";
 import {
   getDefaultMetricStreamEventPublisher,
   type MetricStreamEventPublisher,
@@ -43,6 +52,7 @@ import { createMcpRouter } from "./mcp/route.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
+import { ensureProvidersRegistered } from "./routers/sync-helpers.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { authRateLimiter } from "./routes/auth/shared.ts";
@@ -86,6 +96,7 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 
 /** Create the Express app with all routes. */
 export interface CreateAppOptions {
+  accountErasureRestoreLedger?: AccountErasureRestoreLedger;
   metricStreamPublisher?: MetricStreamEventPublisher;
   mcpAuthRateLimit?: McpAuthRateLimitOptions;
 }
@@ -97,6 +108,8 @@ export function createApp(
 ): express.Express {
   initSentry();
   const app = express();
+  const accountErasureRestoreLedger =
+    options.accountErasureRestoreLedger ?? createLazyAccountErasureRestoreLedger();
   app.set("trust proxy", 1);
   const limitedSensorStore = new LimitedActivitySensorStore(sensorStore);
 
@@ -110,7 +123,7 @@ export function createApp(
     res.status(result.status === "ok" ? 200 : 503).json(result);
   });
 
-  setupRoutes(app, db, limitedSensorStore, options);
+  setupRoutes(app, db, limitedSensorStore, options, accountErasureRestoreLedger);
   // Catch malformed percent-encoded URL params (e.g. %C0) before Sentry sees them.
   // These come from scanners/bots and are not application errors.
   app.use(
@@ -132,6 +145,7 @@ function setupRoutes(
   db: import("dofek/db").Database,
   sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore,
   options: CreateAppOptions,
+  accountErasureRestoreLedger: AccountErasureRestoreLedger,
 ) {
   // ── Compression + Cookies ──
   // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
@@ -237,7 +251,6 @@ function setupRoutes(
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);
   app.use("/api/companion-pairing", createCompanionPairingRouter({ db }));
-  app.use("/api/companion-token/password-login", authRateLimiter);
   app.use("/api/companion-token", createCompanionTokenHttpRouter({ db }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
@@ -279,10 +292,12 @@ function setupRoutes(
           ? await getAccessWindowForUser(db, session.userId, timezone)
           : undefined;
         return {
+          accountErasureRestoreLedger,
           db,
           sensorStore,
           metricStreamPublisher: options.metricStreamPublisher,
           userId: session?.userId ?? null,
+          authenticatedAt: session?.authenticatedAt,
           timezone,
           appVersion,
           assetsVersion,
@@ -353,6 +368,7 @@ export function runStartupTasks(
 
 /** Validate env, create app, and start listening. */
 export async function main() {
+  initSentry();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");
@@ -361,12 +377,24 @@ export async function main() {
   if (!clickHouseUrl) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
-  const metricStreamPublisher = await getDefaultMetricStreamEventPublisher();
+  validateAccountErasureLedgerKeyring();
+  const accountErasureRestoreLedger = createAccountErasureRestoreLedgerFromEnv();
   const db = createDatabaseFromEnv();
+  await ensureProvidersRegistered();
+  await reconcileAccountErasureRestoreIntents({
+    createEncryptedRemoteSnapshot: (transaction, userId) =>
+      createEncryptedAccountErasureSnapshot(transaction, userId, getAllProviders()),
+    database: db,
+    ledger: accountErasureRestoreLedger,
+  });
+  const metricStreamPublisher = await getDefaultMetricStreamEventPublisher();
   const clickHouseClient = createClickHouseClientFromEnv();
   await bootstrapClickHouseFromEnv(clickHouseClient);
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
-  const app = createApp(db, sensorStore, { metricStreamPublisher });
+  const app = createApp(db, sensorStore, {
+    accountErasureRestoreLedger,
+    metricStreamPublisher,
+  });
 
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
@@ -383,6 +411,9 @@ if (isDirectRun) {
   process.on("unhandledRejection", onUnhandledRejection);
   main().catch((err: unknown) => {
     logger.error(`[web] Failed to start: ${err}`);
+    captureException(err, {
+      tags: { serverStartupStep: "main" },
+    });
     process.exit(1);
   });
 }

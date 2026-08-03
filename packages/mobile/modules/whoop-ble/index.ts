@@ -247,6 +247,11 @@ export function disconnect(): void {
   WhoopBleModule.disconnect();
 }
 
+/** Disconnect and clear every account-owned IMU/realtime buffer and parser state. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return WhoopBleModule.purgeAccountState(deviceErasureCutoff);
+}
+
 /** Connection state change event from the native BLE module. */
 export interface ConnectionStateEvent {
   state: string;

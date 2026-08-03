@@ -12,6 +12,7 @@ import {
   queryWorkouts,
   requestPermissions,
 } from "../modules/health-kit";
+import { loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   type HealthKitAdapter,
   type SyncOptions,
@@ -136,15 +137,18 @@ export class AppleHealthAuthorizationService {
 export class AppleHealthSyncService {
   #trpcClient: AppleHealthTrpcClient;
   #healthKit: HealthKitAdapter;
+  #loadDeviceErasureCutoff: () => Promise<string | null>;
   #syncFunction: AppleHealthSyncFunction;
 
   constructor(input: {
     trpcClient: AppleHealthTrpcClient;
     healthKit?: HealthKitAdapter;
+    loadDeviceErasureCutoff?: () => Promise<string | null>;
     syncFunction?: AppleHealthSyncFunction;
   }) {
     this.#trpcClient = input.trpcClient;
     this.#healthKit = input.healthKit ?? defaultAppleHealthAdapter;
+    this.#loadDeviceErasureCutoff = input.loadDeviceErasureCutoff ?? loadDeviceErasureCutoff;
     this.#syncFunction = input.syncFunction ?? syncHealthKitToServer;
   }
 
@@ -153,10 +157,12 @@ export class AppleHealthSyncService {
     onProgress?: (message: string) => void;
     onStage?: SyncOptions["onStage"];
   }): Promise<SyncResult> {
+    const minimumSampleDate = await this.#loadDeviceErasureCutoff();
     return this.#syncFunction({
       trpcClient: this.#trpcClient,
       healthKit: this.#healthKit,
       syncRangeDays: options.syncRangeDays,
+      minimumSampleDate,
       onProgress: options.onProgress,
       onStage: options.onStage,
     });
@@ -166,9 +172,11 @@ export class AppleHealthSyncService {
     typeIdentifiers: readonly string[];
     onStage?: SyncOptions["onStage"];
   }): Promise<SyncResult> {
+    const minimumSampleDate = await this.#loadDeviceErasureCutoff();
     return syncHealthKitObserverChanges({
       trpcClient: this.#trpcClient,
       healthKit: this.#healthKit,
+      minimumSampleDate,
       typeIdentifiers: options.typeIdentifiers,
       onStage: options.onStage,
     });

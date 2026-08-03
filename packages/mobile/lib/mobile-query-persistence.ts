@@ -17,6 +17,14 @@ function queryCacheKey(userId: string) {
   return `dofek-query-cache:${userId}`;
 }
 
+const QUERY_CACHE_KEY_PREFIX = "dofek-query-cache:";
+
+function reportQueryPersistenceFailure(source: string): void {
+  captureException(new Error("Mobile query persistence operation failed."), {
+    source,
+  });
+}
+
 function createBoundedAsyncStorage() {
   return {
     getItem: (key: string) => AsyncStorage.getItem(key),
@@ -35,8 +43,8 @@ export function createMobileQueryPersister(userId: string) {
   return createAsyncStoragePersister({
     storage: createBoundedAsyncStorage(),
     key: queryCacheKey(userId),
-    retry: ({ error }) => {
-      captureException(error, { source: "mobile-query-cache-persist-write", userId });
+    retry: () => {
+      reportQueryPersistenceFailure("mobile-query-cache-persist-write");
       return undefined;
     },
   });
@@ -46,7 +54,25 @@ export async function removeMobileQueryCache(userId: string) {
   try {
     await AsyncStorage.removeItem(queryCacheKey(userId));
   } catch (error: unknown) {
-    captureException(error, { source: "mobile-query-cache-clear", userId });
+    captureException(new Error("Mobile query persistence operation failed."), {
+      source: "mobile-query-cache-clear",
+    });
+    throw error;
+  }
+}
+
+export async function removeAllMobileQueryCaches(): Promise<void> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const accountCacheKeys = keys.filter((key) => key.startsWith(QUERY_CACHE_KEY_PREFIX));
+    if (accountCacheKeys.length > 0) {
+      await AsyncStorage.multiRemove(accountCacheKeys);
+    }
+  } catch (error: unknown) {
+    captureException(new Error("Mobile query persistence operation failed."), {
+      source: "mobile-query-cache-clear-all",
+    });
+    throw error;
   }
 }
 
@@ -71,10 +97,7 @@ export function MobileQueryPersistenceProvider({
         buster: mobileQueryCacheBuster(userId),
       },
       onError: () => {
-        captureException(new Error("Failed to restore persisted query cache"), {
-          source: "mobile-query-cache-persist",
-          userId,
-        });
+        reportQueryPersistenceFailure("mobile-query-cache-persist");
       },
     },
     children,

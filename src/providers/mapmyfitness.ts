@@ -3,6 +3,7 @@ import {
   type ProviderActivityType,
   resolveProviderActivityType,
 } from "@dofek/training/activity-types";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -58,6 +59,12 @@ interface MapMyFitnessWorkoutListResponse {
   };
   total_count: number;
 }
+
+const mapMyFitnessCurrentUserSchema = z.object({
+  id: z
+    .union([z.number().int().nonnegative(), z.string().trim().regex(/^\d+$/)])
+    .transform((value) => String(value)),
+});
 
 // ============================================================
 // Parsed types
@@ -195,6 +202,11 @@ export class MapMyFitnessClient {
     });
     return this.#get<MapMyFitnessWorkoutListResponse>(`/v7.1/workout/?${params.toString()}`);
   }
+
+  async getCurrentUserId(): Promise<string> {
+    const response = await this.#get<unknown>("/v7.1/user/self/");
+    return mapMyFitnessCurrentUserSchema.parse(response).id;
+  }
 }
 
 // ============================================================
@@ -228,10 +240,41 @@ export class MapMyFitnessProvider implements SyncProvider {
     const config = mapMyFitnessOAuthConfig(options?.host);
     if (!config) throw new Error("MAPMYFITNESS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
+    const revokeAuthorization = async (tokens: TokenSet): Promise<void> => {
+      if (!tokens.providerAccountId) {
+        throw new Error(
+          "Reconnect MapMyFitness before deleting your account so Dofek can durably revoke the MapMyFitness authorization.",
+        );
+      }
+      const url = new URL(`${MAPMYFITNESS_API_BASE}/v7.1/oauth2/connection/`);
+      url.searchParams.set("user_id", tokens.providerAccountId);
+      url.searchParams.set("client_id", config.clientId);
+      const response = await fetchFn(url, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${tokens.accessToken}`,
+          "Api-Key": config.clientId,
+        },
+        method: "DELETE",
+      });
+      if (response.status !== 204) {
+        throw new Error(`MapMyFitness authorization revocation failed (${response.status})`);
+      }
+    };
 
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      exchangeCode: async (code, _codeVerifier, onTokensIssued) => {
+        const tokens = await exchangeCodeForTokens(config, code, fetchFn);
+        onTokensIssued?.(tokens);
+        const client = new MapMyFitnessClient(tokens.accessToken, config.clientId, fetchFn);
+        return {
+          ...tokens,
+          providerAccountId: await client.getCurrentUserId(),
+        };
+      },
+      revokeExistingTokens: revokeAuthorization,
+      revokeTokensForAccountErasure: revokeAuthorization,
       apiBaseUrl: MAPMYFITNESS_API_BASE,
     };
   }
@@ -269,8 +312,7 @@ export class MapMyFitnessProvider implements SyncProvider {
     const presentActivityExternalIds = new Set<string>();
     const degradations: SyncDegradation[] = [];
 
-    // Extract user ID from token scopes or use "-" for self
-    const userId = tokens.scopes?.match(/user_id:(\S+)/)?.[1] ?? "-";
+    const userId = tokens.providerAccountId ?? "-";
 
     try {
       const activityCount = await withSyncLog(

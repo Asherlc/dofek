@@ -5,6 +5,7 @@ const mockLoggerError = vi.fn();
 const mockDrizzleReturn = {
   query: {},
   execute: vi.fn(),
+  transaction: vi.fn(),
   $client: { end: vi.fn() },
 };
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
@@ -43,6 +44,7 @@ describe("db/index", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDrizzleReturn.execute = vi.fn();
+    mockDrizzleReturn.transaction = vi.fn();
     mockDrizzleReturn.$client = { end: vi.fn() };
     delete process.env.DATABASE_URL;
   });

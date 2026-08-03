@@ -7,16 +7,24 @@ const {
   mockClaimChallenge,
   mockSetClaimedChallengeToken,
   mockReleaseClaimedChallengeTokenIssuance,
+  mockDeleteClaimedChallenge,
   mockRegenerateCompanionToken,
   mockCaptureException,
+  mockWithUserWriteFence,
 } = vi.hoisted(() => ({
   mockGetByShortCode: vi.fn(),
   mockConsumeClaimAttempt: vi.fn(),
   mockClaimChallenge: vi.fn(),
   mockSetClaimedChallengeToken: vi.fn(),
   mockReleaseClaimedChallengeTokenIssuance: vi.fn(),
+  mockDeleteClaimedChallenge: vi.fn(),
   mockRegenerateCompanionToken: vi.fn(),
   mockCaptureException: vi.fn(),
+  mockWithUserWriteFence: vi.fn(),
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockWithUserWriteFence(...args),
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -38,6 +46,7 @@ vi.mock("../lib/companion-pairing-store.ts", () => ({
     setClaimedChallengeToken: (...args: unknown[]) => mockSetClaimedChallengeToken(...args),
     releaseClaimedChallengeTokenIssuance: (...args: unknown[]) =>
       mockReleaseClaimedChallengeTokenIssuance(...args),
+    deleteClaimedChallenge: (...args: unknown[]) => mockDeleteClaimedChallenge(...args),
   }),
   parsePairingCodeInput: (code: string) => {
     const normalizedCode = code.replace(/[\s-]/g, "").trim().toUpperCase();
@@ -46,21 +55,31 @@ vi.mock("../lib/companion-pairing-store.ts", () => ({
 }));
 
 vi.mock("../companion/token-repository.ts", () => ({
-  regenerateCompanionToken: (...args: unknown[]) => mockRegenerateCompanionToken(...args),
+  regenerateCompanionTokenInTransaction: (...args: unknown[]) =>
+    mockRegenerateCompanionToken(...args),
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 const { companionPairingRouter } = await import("./companion-pairing.ts");
 
 const createCaller = createTestCallerFactory(companionPairingRouter);
+const transaction = { execute: vi.fn() };
 
 describe("companionPairingRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConsumeClaimAttempt.mockResolvedValue(true);
+    mockDeleteClaimedChallenge.mockResolvedValue(true);
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof transaction) => Promise<unknown>,
+      ) => operation(transaction),
+    );
   });
 
   it("claims an active pairing code", async () => {
@@ -106,7 +125,11 @@ describe("companionPairingRouter", () => {
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
     expect(mockConsumeClaimAttempt).toHaveBeenCalledWith("user-1");
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1", "zepp-workout");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(
+      transaction,
+      "user-1",
+      "zepp-workout",
+    );
     expect(mockRegenerateCompanionToken).toHaveBeenCalledTimes(1);
     expect(mockClaimChallenge).toHaveBeenCalledWith({
       shortCode: "ABC234",
@@ -168,7 +191,7 @@ describe("companionPairingRouter", () => {
     expect(results[1]).toMatchObject({ status: "rejected" });
     expect(results[2]).toMatchObject({ status: "rejected" });
     expect(mockRegenerateCompanionToken).toHaveBeenCalledOnce();
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1", "zepp-main");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(transaction, "user-1", "zepp-main");
     expect(mockSetClaimedChallengeToken).toHaveBeenCalledOnce();
   });
 
@@ -394,7 +417,11 @@ describe("companionPairingRouter", () => {
     await expect(winner.claim({ code: "ABC234" })).resolves.toMatchObject({ state: "claimed" });
 
     expect(mockRegenerateCompanionToken).toHaveBeenCalledTimes(2);
-    expect(mockRegenerateCompanionToken).toHaveBeenLastCalledWith({}, "user-1", "zepp-main");
+    expect(mockRegenerateCompanionToken).toHaveBeenLastCalledWith(
+      transaction,
+      "user-1",
+      "zepp-main",
+    );
     expect(mockSetClaimedChallengeToken).toHaveBeenCalledOnce();
   });
 
@@ -422,5 +449,68 @@ describe("companionPairingRouter", () => {
       shortCode: "ABC234",
       userId: "user-1",
     });
+  });
+
+  it("removes the Redis claim when the fenced token transaction fails to commit", async () => {
+    mockGetByShortCode.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+    });
+    mockClaimChallenge.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+      claimedAt: "2026-07-12T00:01:00.000Z",
+      userId: "user-1",
+      tokenIssuing: true,
+    });
+    mockRegenerateCompanionToken.mockResolvedValue({
+      id: "token-1",
+      token: "dofek_companion_test",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      revokedAt: null,
+    });
+    mockSetClaimedChallengeToken.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+      claimedAt: "2026-07-12T00:01:00.000Z",
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+    });
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof transaction) => Promise<unknown>,
+      ) => {
+        await operation(transaction);
+        throw new Error("commit failed");
+      },
+    );
+    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.claim({ code: "ABC234" })).rejects.toThrow("commit failed");
+
+    expect(mockDeleteClaimedChallenge).toHaveBeenCalledWith({
+      shortCode: "ABC234",
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+    });
+  });
+
+  it("does not mutate Redis when account erasure rejects the claim", async () => {
+    mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.claim({ code: "ABC234" })).rejects.toThrow("Account erasure is active");
+
+    expect(mockConsumeClaimAttempt).not.toHaveBeenCalled();
+    expect(mockClaimChallenge).not.toHaveBeenCalled();
+    expect(mockRegenerateCompanionToken).not.toHaveBeenCalled();
   });
 });

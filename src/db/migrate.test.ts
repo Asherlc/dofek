@@ -10,6 +10,21 @@ const migratorMocks = vi.hoisted(() => ({
 
 vi.mock("./postgres-migrator.ts", () => migratorMocks);
 
+const accountErasureCoverageMocks = vi.hoisted(() => ({
+  assert: vi.fn().mockResolvedValue(undefined),
+  database: { execute: vi.fn().mockResolvedValue([{ installed: false }]) },
+  refresh: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("drizzle-orm/node-postgres", () => ({
+  drizzle: vi.fn(() => accountErasureCoverageMocks.database),
+}));
+
+vi.mock("../account-erasure/postgres-erasure.ts", () => ({
+  assertPostgresAccountErasureCoverage: accountErasureCoverageMocks.assert,
+  refreshPostgresAccountErasureWriteFences: accountErasureCoverageMocks.refresh,
+}));
+
 const loggerMocks = vi.hoisted(() => ({
   info: vi.fn(),
   warn: vi.fn(),
@@ -63,6 +78,7 @@ describe("runMigrations", () => {
       folderMillis: 1_773_118_304_010,
       hash: "baseline-content-hash",
     });
+    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: false }]);
     mockDatabaseState();
   });
 
@@ -158,6 +174,52 @@ describe("runMigrations", () => {
 
     expect(lockCallOrder).toBeLessThan(migrationCallOrder ?? 0);
     expect(migrationCallOrder).toBeLessThan(unlockCallOrder ?? 0);
+  });
+
+  it("refreshes and asserts account-erasure coverage after migrations while holding the lock", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState();
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ count: "0" }] });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [{ has_tables: false }] });
+      }
+      if (query.includes("to_regprocedure")) {
+        return Promise.resolve({ rows: [{ installed: true }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: true }]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(accountErasureCoverageMocks.refresh).toHaveBeenCalledWith(
+      accountErasureCoverageMocks.database,
+    );
+    expect(accountErasureCoverageMocks.assert).toHaveBeenCalledWith(
+      accountErasureCoverageMocks.database,
+    );
+    const migrationCallOrder = migratorMocks.runDrizzleMigrations.mock.invocationCallOrder[0];
+    const refreshCallOrder = accountErasureCoverageMocks.refresh.mock.invocationCallOrder[0];
+    const assertCallOrder = accountErasureCoverageMocks.assert.mock.invocationCallOrder[0];
+    const unlockCall = postgresMocks.query.mock.calls.findIndex(([query]) =>
+      String(query).includes("pg_advisory_unlock"),
+    );
+    const unlockCallOrder = postgresMocks.query.mock.invocationCallOrder[unlockCall];
+    expect(migrationCallOrder).toBeLessThan(refreshCallOrder ?? 0);
+    expect(refreshCallOrder).toBeLessThan(assertCallOrder ?? 0);
+    expect(assertCallOrder).toBeLessThan(unlockCallOrder ?? 0);
+  });
+
+  it("skips the account-erasure coverage hook before its migration is installed", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(accountErasureCoverageMocks.refresh).not.toHaveBeenCalled();
+    expect(accountErasureCoverageMocks.assert).not.toHaveBeenCalled();
   });
 
   it("runs a custom migration folder without a baseline against an existing schema", async () => {

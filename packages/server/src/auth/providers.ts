@@ -1,5 +1,7 @@
 import type { OAuth2Tokens } from "arctic";
 import { Apple, decodeIdToken, Google, generateCodeVerifier, generateState } from "arctic";
+import { createAppleClientSecret, decodePemToDer } from "dofek/auth/apple-client-secret";
+import { getApplePrivateKey, hasApplePrivateKey } from "dofek/auth/apple-private-key";
 import { z } from "zod";
 
 const googleClaimsSchema = z.object({
@@ -26,6 +28,12 @@ export interface IdentityUser {
   emailVerified: boolean;
   name: string | null;
   groups: string[] | null;
+}
+
+export interface AppleRevocationCredential {
+  accessToken: string;
+  clientId: string;
+  refreshToken: string | null;
 }
 
 export interface IdentityProvider {
@@ -73,24 +81,8 @@ function initGoogle(): IdentityProvider {
   };
 }
 
-/** Strip PEM headers/footers and base64-decode to raw PKCS#8 DER bytes. */
-export function decodePemToDer(pem: string): Uint8Array {
-  const base64 = pem
-    // Strip surrounding quotes that Dokploy or shell escaping may add
-    .replace(/^["']|["']$/g, "")
-    // Strip PEM headers (PKCS#8 and SEC1/EC formats)
-    .replace(/-----BEGIN (?:EC )?PRIVATE KEY-----/g, "")
-    .replace(/-----END (?:EC )?PRIVATE KEY-----/g, "")
-    // Remove literal escape sequences from secret managers (\r\n, \r, \n)
-    .replace(/\\r/g, "")
-    .replace(/\\n/g, "")
-    // Remove real whitespace (newlines, spaces, tabs)
-    .replace(/\s/g, "");
-  return new Uint8Array(Buffer.from(base64, "base64"));
-}
-
 function initApple(): IdentityProvider {
-  const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
+  const privateKeyPem = getApplePrivateKey();
   const derBytes = decodePemToDer(privateKeyPem);
   if (derBytes.length === 0) {
     throw new Error(
@@ -152,7 +144,9 @@ const requiredEnvKeys: Record<IdentityProviderName, string[]> = {
 
 /** Check if all required env vars for a provider are set. */
 export function isProviderConfigured(name: IdentityProviderName): boolean {
-  return requiredEnvKeys[name].every((key) => !!process.env[key]);
+  return requiredEnvKeys[name].every((key) =>
+    key === "APPLE_PRIVATE_KEY" ? hasApplePrivateKey() : !!process.env[key],
+  );
 }
 
 /** Required env vars for native iOS Apple Sign In (uses Bundle ID, not Services ID). */
@@ -165,7 +159,9 @@ const nativeAppleRequiredEnvKeys = [
 
 /** Check if native iOS Apple Sign In is configured. */
 export function isNativeAppleConfigured(): boolean {
-  return nativeAppleRequiredEnvKeys.every((key) => !!process.env[key]);
+  return nativeAppleRequiredEnvKeys.every((key) =>
+    key === "APPLE_PRIVATE_KEY" ? hasApplePrivateKey() : !!process.env[key],
+  );
 }
 
 /** Get a configured identity provider. Throws if env vars are missing. */
@@ -189,42 +185,10 @@ export function getConfiguredProviders(): IdentityProviderName[] {
 const appleTokenEndpoint = "https://appleid.apple.com/auth/token";
 
 const appleTokenResponseSchema = z.object({
+  access_token: z.string(),
   id_token: z.string(),
+  refresh_token: z.string().optional(),
 });
-
-/** Create the ES256 client_secret JWT that Apple requires for token exchange. */
-async function createAppleClientSecret(
-  teamId: string,
-  keyId: string,
-  pkcs8PrivateKey: Uint8Array,
-  clientId: string,
-): Promise<string> {
-  const privateKey = await crypto.subtle.importKey(
-    "pkcs8",
-    pkcs8PrivateKey.slice().buffer,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"],
-  );
-  const now = Math.floor(Date.now() / 1000);
-  const header = Buffer.from(JSON.stringify({ alg: "ES256", kid: keyId, typ: "JWT" })).toString(
-    "base64url",
-  );
-  const payload = Buffer.from(
-    JSON.stringify({
-      iss: teamId,
-      iat: now,
-      exp: now + 5 * 60,
-      aud: "https://appleid.apple.com",
-      sub: clientId,
-    }),
-  ).toString("base64url");
-  const signingInput = new TextEncoder().encode(`${header}.${payload}`);
-  const signature = Buffer.from(
-    await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, signingInput),
-  ).toString("base64url");
-  return `${header}.${payload}.${signature}`;
-}
 
 /**
  * Exchange a native iOS Apple Sign In authorization code for user info.
@@ -235,11 +199,11 @@ async function createAppleClientSecret(
  */
 export async function validateNativeAppleCallback(
   authorizationCode: string,
-): Promise<{ user: IdentityUser }> {
+): Promise<{ revocationCredential: AppleRevocationCredential; user: IdentityUser }> {
   const bundleId = getEnvRequired("APPLE_BUNDLE_ID");
   const teamId = getEnvRequired("APPLE_TEAM_ID");
   const keyId = getEnvRequired("APPLE_KEY_ID");
-  const privateKeyPem = getEnvRequired("APPLE_PRIVATE_KEY");
+  const privateKeyPem = getApplePrivateKey();
   const derBytes = decodePemToDer(privateKeyPem);
 
   const clientSecret = await createAppleClientSecret(teamId, keyId, derBytes, bundleId);
@@ -266,10 +230,16 @@ export async function validateNativeAppleCallback(
   }
 
   const data: unknown = await response.json();
-  const { id_token: idToken } = appleTokenResponseSchema.parse(data);
+  const parsedTokens = appleTokenResponseSchema.parse(data);
+  const idToken = parsedTokens.id_token;
   const claims = appleClaimsSchema.parse(decodeIdToken(idToken));
 
   return {
+    revocationCredential: {
+      accessToken: parsedTokens.access_token,
+      clientId: bundleId,
+      refreshToken: parsedTokens.refresh_token ?? null,
+    },
     user: {
       sub: claims.sub,
       email: claims.email ?? null,
@@ -280,4 +250,16 @@ export async function validateNativeAppleCallback(
   };
 }
 
+export function appleRevocationCredentialFromTokens(
+  tokens: OAuth2Tokens,
+  clientId: string,
+): AppleRevocationCredential {
+  return {
+    accessToken: tokens.accessToken(),
+    clientId,
+    refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : null,
+  };
+}
+
+export { decodePemToDer };
 export { generateCodeVerifier, generateState };

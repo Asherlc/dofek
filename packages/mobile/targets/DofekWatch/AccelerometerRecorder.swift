@@ -47,6 +47,7 @@ final class AccelerometerRecorder: ObservableObject {
     /// Safe to call from any thread — @Published updates are dispatched to main.
     func startRecording() {
         guard Self.isAvailable else { return }
+        guard WatchAccountStateStore().isSyncEnabled else { return }
 
         sensorRecorder.recordAccelerometer(forDuration: Self.maxDurationSeconds)
         defaults.set(true, forKey: recordingActiveKey)
@@ -79,11 +80,10 @@ final class AccelerometerRecorder: ObservableObject {
         // Use 2.9 days to leave margin and avoid edge-case NSExceptions.
         let maxLookback = now.addingTimeInterval(-2.9 * 24 * 3600)
         let fromDate: Date
-        if let cursor = transferCursor.confirmedBoundary {
-            fromDate = max(cursor, maxLookback)
-        } else {
-            fromDate = maxLookback
-        }
+        let retainedCutoff = WatchAccountStateStore().deviceErasureCutoff
+        fromDate = [transferCursor.confirmedBoundary, retainedCutoff]
+            .compactMap { $0 }
+            .reduce(maxLookback, max)
 
         // Don't query if fromDate is in the future or too close to now
         guard fromDate < now.addingTimeInterval(-1) else { return nil }
@@ -167,5 +167,15 @@ final class AccelerometerRecorder: ObservableObject {
     func markTransferComplete() {
         defaults.set(Date(), forKey: lastTransferKey)
         samplesSinceLastTransfer = 0
+    }
+
+    func purgeAccountState() {
+        defaults.removeObject(forKey: recordingActiveKey)
+        defaults.removeObject(forKey: lastTransferKey)
+        transferCursor.purge()
+        DispatchQueue.main.async {
+            self.isRecording = false
+            self.samplesSinceLastTransfer = 0
+        }
     }
 }

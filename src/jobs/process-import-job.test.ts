@@ -12,6 +12,24 @@ const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
+const mockWithUserWriteFence = vi.fn(
+  async (
+    database: unknown,
+    _userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => operation(database),
+);
+vi.mock("../db/account-erasure.ts", () => ({
+  withAccountErasureUserWriteFence: (
+    database: unknown,
+    userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => mockWithUserWriteFence(database, userId, operation),
+}));
+const mockIsAccountErasureActive = vi.fn(async (..._args: unknown[]) => false);
+vi.mock("../db/account-erasure-processing.ts", () => ({
+  isAccountErasureActive: (...args: unknown[]) => mockIsAccountErasureActive(...args),
+}));
 let realUnlink: typeof import("node:fs/promises").unlink;
 const mockUnlink = vi.fn<(path: string) => Promise<void>>();
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -248,6 +266,13 @@ describe("processImportJob", () => {
     mockRecordMetricStreamBatchPublished.mockClear();
     mockRecordRelationalCanonicalCommits.mockClear();
     mockMetricStreamPublishRows.mockClear();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -961,6 +986,7 @@ describe("processImportJob", () => {
       expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
     });
     it("retains the upload and skips terminal side effects while waiting for children", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
@@ -1017,6 +1043,23 @@ describe("processImportJob", () => {
       expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    });
+
+    it("does not convert a terminal import failure into success when erasure starts afterward", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+      mockIsAccountErasureActive.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      mockProcessGarminDumpImportJob.mockResolvedValueOnce({
+        provider: "garmin-dump",
+        batchId: "garmin-fit-batch-1",
+        totalFitFiles: 1,
+        recordsSynced: 0,
+        errors: [{ message: "invalid activity.fit" }],
+        duration: 100,
+      });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: "UnrecoverableError",
+      });
     });
   });
 
@@ -1085,6 +1128,23 @@ describe("processImportJob", () => {
     });
   });
   describe("file cleanup", () => {
+    it("records a terminal skipped stage when erasure starts before ingest", async () => {
+      mockIsAccountErasureActive.mockResolvedValueOnce(true);
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "skipped",
+        errorMessage: "Import skipped because account deletion is active.",
+        idempotencyKey: "worker-skipped-account-erasure",
+      });
+      expect(mockImportAppleHealthFile).not.toHaveBeenCalled();
+      await expect(access(tempFilePath)).rejects.toThrow();
+    });
+
     it("cleans up uploaded file after successful import", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);

@@ -26,6 +26,14 @@ export interface Ref {
   toCol: string;
 }
 
+export function normalizeGeneratedDbml(dbml: string): string {
+  return `${dbml
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trimEnd()}\n`;
+}
+
 /** Extract table blocks from DBML by tracking brace depth */
 export function extractTables(input: string): Array<{ name: string; body: string }> {
   const result: Array<{ name: string; body: string }> = [];
@@ -143,7 +151,8 @@ export function buildPlantUml(tables: Table[], refs: Ref[]): string {
 function main() {
   // Generate DBML from Drizzle schema (also writes the .dbml file)
   pgGenerate({ schema, out: dbmlPath, relational: false });
-  const dbml = readFileSync(dbmlPath, "utf-8");
+  const dbml = normalizeGeneratedDbml(readFileSync(dbmlPath, "utf-8"));
+  writeFileSync(dbmlPath, dbml);
 
   const tables = parseTables(dbml);
   const refs = parseRefs(dbml, tables);

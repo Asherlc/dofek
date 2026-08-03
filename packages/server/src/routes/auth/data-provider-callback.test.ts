@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { Request, Response } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +17,11 @@ const {
   mockValidateSession,
   mockPersistProviderConnection,
   mockIssuePendingEmailSignup,
+  mockFindExistingUserId,
+  mockIdentityWriteFence,
+  mockLockIdentityFence,
+  mockWithUserWriteFence,
+  MockAccountErasureUserFencedError,
 } = vi.hoisted(() => ({
   mockRevokeToken: vi.fn(),
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -29,13 +35,34 @@ const {
   mockValidateSession: vi.fn(),
   mockPersistProviderConnection: vi.fn(),
   mockIssuePendingEmailSignup: vi.fn(),
+  mockFindExistingUserId: vi.fn(),
+  mockIdentityWriteFence: vi.fn(),
+  mockLockIdentityFence: vi.fn(),
+  mockWithUserWriteFence: vi.fn(),
+  MockAccountErasureUserFencedError: class MockAccountErasureUserFencedError extends Error {
+    constructor(cause?: unknown) {
+      super("Account deletion is active for this user.", { cause });
+    }
+  },
 }));
 
 vi.mock("dofek/auth/oauth", () => ({
   revokeToken: (...args: unknown[]) => mockRevokeToken(...args),
 }));
 
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureIdentityFencedError: class AccountErasureIdentityFencedError extends Error {},
+  AccountErasureUserFencedError: MockAccountErasureUserFencedError,
+  lockAndAssertAccountErasureIdentityWriteFence: mockLockIdentityFence,
+  withAccountErasureUserAndIdentityWriteFence: mockIdentityWriteFence,
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
+}));
+
 vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
@@ -47,6 +74,7 @@ vi.mock("dofek/lib/cache", () => ({
 
 vi.mock("../../auth/account-linking.ts", () => ({
   MissingEmailForSignupError: class extends Error {},
+  findExistingUserId: (...args: unknown[]) => mockFindExistingUserId(...args),
   resolveOrCreateUser: (...args: unknown[]) => mockResolveOrCreateUser(...args),
 }));
 
@@ -135,6 +163,23 @@ describe("handleOAuth2Callback — revocation fallback", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof mockDb) => Promise<unknown>,
+      ) => operation(mockDb),
+    );
+    mockIdentityWriteFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        _identities: unknown,
+        operation: (database: typeof mockDb) => Promise<unknown>,
+      ) => operation(mockDb),
+    );
+    mockLockIdentityFence.mockResolvedValue(undefined);
+    mockFindExistingUserId.mockResolvedValue("user-1");
 
     // Set up: state store returns a valid entry
     mockOauthStateStore.get.mockResolvedValue({
@@ -181,6 +226,64 @@ describe("handleOAuth2Callback — revocation fallback", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("handles callback requests before provider resolution", async () => {
+    const bare = createMockReqRes();
+    await handleOAuth2Callback(bare.req, bare.res);
+    expect(bare.res.send).toHaveBeenCalledWith("OK");
+
+    const denied = createMockReqRes({ error: "access_denied" });
+    await handleOAuth2Callback(denied.req, denied.res);
+    expect(denied.res.status).toHaveBeenCalledWith(400);
+    expect(denied.res.send).toHaveBeenCalledWith("Authorization denied");
+
+    const incomplete = createMockReqRes({ code: "only-code" });
+    await handleOAuth2Callback(incomplete.req, incomplete.res);
+    expect(incomplete.res.status).toHaveBeenCalledWith(400);
+    expect(incomplete.res.send).toHaveBeenCalledWith("Missing code or state parameter");
+  });
+
+  it("rejects unknown or unsupported OAuth state entries", async () => {
+    mockOauthStateStore.get.mockResolvedValueOnce(null);
+    const unknownState = createMockReqRes({ code: "code", state: "expired" });
+    await handleOAuth2Callback(unknownState.req, unknownState.res);
+    expect(unknownState.res.status).toHaveBeenCalledWith(400);
+    expect(unknownState.res.send).toHaveBeenCalledWith(
+      expect.stringContaining("Unknown or expired"),
+    );
+
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      providerId: "unsupported",
+      returnTo: undefined,
+      userId: "user-1",
+    });
+    mockGetAllProviders.mockReturnValueOnce([]);
+    const unknownProvider = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(unknownProvider.req, unknownProvider.res);
+    expect(unknownProvider.res.status).toHaveBeenCalledWith(404);
+    expect(unknownProvider.res.send).toHaveBeenCalledWith("Unknown provider");
+
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      providerId: "unsupported",
+      returnTo: undefined,
+      userId: "user-1",
+    });
+    mockGetAllProviders.mockReturnValueOnce([
+      { id: "unsupported", name: "Unsupported", authSetup: () => ({}) },
+    ]);
+    const unsupportedProvider = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(unsupportedProvider.req, unsupportedProvider.res);
+    expect(unsupportedProvider.res.status).toHaveBeenCalledWith(400);
+    expect(unsupportedProvider.res.send).toHaveBeenCalledWith(
+      "Provider does not support OAuth code exchange",
+    );
   });
 
   it("exchanges and persists a successful Wahoo reconnect without revocation", async () => {
@@ -285,6 +388,37 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     );
   });
 
+  it("rejects a known-user callback before exchanging remote credentials when erasure is active", async () => {
+    mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+    const { req, res } = createMockReqRes({ code: "code-1", state: "state-1" });
+
+    await handleOAuth2Callback(req, res);
+
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it("revokes newly issued credentials when durable persistence fails", async () => {
+    mockLoadTokens.mockResolvedValue(null);
+    mockPersistProviderConnection.mockRejectedValueOnce(new Error("commit failed"));
+    const { req, res } = createMockReqRes({
+      code: "code-1",
+      state: "state-1",
+    });
+
+    await handleOAuth2Callback(req, res);
+
+    expect(mockRevokeExistingTokens).toHaveBeenCalledWith({
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "user_read",
+    });
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
   it("preserves local credentials when token-limit deauthorization fails", async () => {
     mockLoadTokens.mockResolvedValue({
       accessToken: "existing-access",
@@ -311,6 +445,23 @@ describe("handleOAuth2Callback — revocation fallback", () => {
   });
 
   it("preserves an existing connection when exchange fails for a safe reconnect", async () => {
+    const transactionEvents: string[] = [];
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof mockDb) => Promise<unknown>,
+      ) => {
+        try {
+          const result = await operation(mockDb);
+          transactionEvents.push("commit");
+          return result;
+        } catch (error: unknown) {
+          transactionEvents.push("rollback");
+          throw error;
+        }
+      },
+    );
     mockGetAllProviders.mockReturnValue([
       {
         id: "ride-with-gps",
@@ -341,7 +492,10 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       accessToken: "working-access",
       refreshToken: "working-refresh",
     });
-    mockExchangeCode.mockRejectedValue(new Error("provider unavailable"));
+    mockExchangeCode.mockImplementation(async () => {
+      transactionEvents.push("exchange-failed");
+      throw new Error("provider unavailable");
+    });
 
     const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
     await handleOAuth2Callback(req, res);
@@ -349,6 +503,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockExchangeCode).toHaveBeenCalledOnce();
     expect(mockRevokeToken).not.toHaveBeenCalled();
     expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(transactionEvents).toEqual(["exchange-failed", "rollback"]);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(
       expect.stringContaining("existing connection is still active"),
@@ -585,6 +740,38 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     );
   });
 
+  it("rejects a fenced user without emitting the user or database error to telemetry", async () => {
+    const sensitiveUserId = "10000000-0000-4000-8000-000000001994";
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "wahoo",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: sensitiveUserId,
+      returnTo: undefined,
+    });
+    mockWithUserWriteFence.mockRejectedValueOnce(
+      new MockAccountErasureUserFencedError(
+        new Error(`Account erasure is active for user ${sensitiveUserId}`),
+      ),
+    );
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.send).toHaveBeenCalledWith("Account deletion is active for this user.");
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(
+      JSON.stringify([
+        ...mockLogger.info.mock.calls,
+        ...mockLogger.warn.mock.calls,
+        ...mockLogger.error.mock.calls,
+      ]),
+    ).not.toContain(sensitiveUserId);
+  });
+
   it("does not load data-connection tokens for an account-link callback", async () => {
     mockOauthStateStore.get.mockResolvedValue({
       providerId: "ride-with-gps",
@@ -634,6 +821,23 @@ describe("handleOAuth2Callback — revocation fallback", () => {
   });
 
   it("clears confirmed revoked credentials when a destructive exchange fails", async () => {
+    const transactionEvents: string[] = [];
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof mockDb) => Promise<unknown>,
+      ) => {
+        try {
+          const result = await operation(mockDb);
+          transactionEvents.push("commit");
+          return result;
+        } catch (error: unknown) {
+          transactionEvents.push("rollback");
+          throw error;
+        }
+      },
+    );
     mockGetAllProviders.mockReturnValue([
       {
         id: "wahoo",
@@ -658,7 +862,13 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       refreshToken: "working-refresh",
     });
     mockRevokeExistingTokens.mockResolvedValue(undefined);
-    mockExchangeCode.mockRejectedValue(new Error("token endpoint unavailable"));
+    mockDeleteProviderAuthorization.mockImplementation(async () => {
+      transactionEvents.push("delete");
+    });
+    mockExchangeCode.mockImplementation(async () => {
+      transactionEvents.push("exchange-failed");
+      throw new Error("token endpoint unavailable");
+    });
 
     const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
     await handleOAuth2Callback(req, res);
@@ -667,6 +877,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+    expect(transactionEvents).toEqual(["exchange-failed", "commit", "delete"]);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(
       expect.stringContaining("previous Wahoo authorization was removed"),

@@ -21,7 +21,7 @@ function resolveUserId(userId?: string): string {
 function oauthTokenContext(
   scopedUserId: string,
   providerId: string,
-  columnName: "access_token" | "refresh_token",
+  columnName: "access_token" | "provider_account_id" | "refresh_token",
 ): {
   tableName: string;
   columnName: string;
@@ -107,6 +107,15 @@ export async function saveTokens(
         oauthTokenContext(scopedUserId, providerId, "refresh_token"),
       )
     : null;
+  if (tokens.providerAccountId !== undefined && tokens.providerAccountId.trim() === "") {
+    throw new Error("OAuth provider account ID must not be empty");
+  }
+  const encryptedProviderAccountId = tokens.providerAccountId
+    ? await encryptCredentialValue(
+        tokens.providerAccountId,
+        oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
+      )
+    : undefined;
   await db
     .insert(oauthToken)
     .values({
@@ -114,6 +123,7 @@ export async function saveTokens(
       providerId,
       accessToken: encryptedAccessToken,
       refreshToken: encryptedRefreshToken,
+      providerAccountId: encryptedProviderAccountId ?? null,
       expiresAt: tokens.expiresAt,
       scopes: tokens.scopes,
       updatedAt: new Date(),
@@ -123,6 +133,10 @@ export async function saveTokens(
       set: {
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
+        providerAccountId:
+          encryptedProviderAccountId === undefined
+            ? sql`${oauthToken.providerAccountId}`
+            : encryptedProviderAccountId,
         expiresAt: tokens.expiresAt,
         scopes: tokens.scopes,
         updatedAt: new Date(),
@@ -203,7 +217,7 @@ export async function deleteProviderAuthorization(
  * Load stored tokens for a provider scoped to a user. Returns null if none exist.
  */
 export async function loadTokens(
-  db: SyncDatabase,
+  db: Pick<SyncDatabase, "select">,
   providerId: string,
   userId?: string,
 ): Promise<TokenSet | null> {
@@ -228,10 +242,21 @@ export async function loadTokens(
         oauthTokenContext(scopedUserId, providerId, "refresh_token"),
       )
     : null;
+  const decryptedProviderAccountId = row.providerAccountId
+    ? await decryptCredentialValue(
+        row.providerAccountId,
+        oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
+      )
+    : undefined;
   return {
     accessToken: decryptedAccessToken,
     refreshToken: decryptedRefreshToken,
     expiresAt: row.expiresAt,
+    ...(decryptedProviderAccountId
+      ? {
+          providerAccountId: decryptedProviderAccountId,
+        }
+      : {}),
     scopes: row.scopes ?? null,
   };
 }

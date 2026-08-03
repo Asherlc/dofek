@@ -60,6 +60,12 @@ vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
+import * as Sentry from "@sentry/node";
+import { AccountErasureUserFencedError } from "dofek/db/account-erasure";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
@@ -179,6 +185,12 @@ describe("bot.ts — registerHandlers", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(FoodEntryRepository.prototype, "withInboundNutritionWriteFence").mockImplementation(
+      async function (input, operation) {
+        const user = await this.lookupOrCreateUserId(input.slackUserId, input.slackClient);
+        return operation({ repository: this, ...user });
+      },
+    );
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
@@ -344,6 +356,121 @@ describe("bot.ts — registerHandlers", () => {
       );
     });
 
+    it("omits Slack identifiers and message content from fence-rejection telemetry", async () => {
+      const db = createMockDb();
+      const sensitiveValues = [
+        "U-FENCE-SECRET",
+        "T-FENCE-SECRET",
+        "C-FENCE-SECRET",
+        "1700000000.123456",
+        "private meal details",
+        "10000000-0000-4000-8000-00000000feed",
+        "raw-provider-payload-secret",
+      ];
+      const fenceError = new AccountErasureUserFencedError(
+        new Error(`${sensitiveValues[5]} ${sensitiveValues[6]}`),
+      );
+      vi.spyOn(
+        FoodEntryRepository.prototype,
+        "withInboundNutritionWriteFence",
+      ).mockRejectedValueOnce(fenceError);
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+
+      await messageHandler({
+        body: { team_id: sensitiveValues[1] },
+        message: {
+          user: sensitiveValues[0],
+          text: sensitiveValues[4],
+          ts: sensitiveValues[3],
+          channel: sensitiveValues[2],
+        },
+        say,
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn() },
+        },
+      });
+
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Inbound Slack nutrition processing rejected by account-erasure fence",
+          name: "AccountErasureFenceRejection",
+        }),
+        {
+          contexts: {
+            slack: {
+              eventType: "message",
+              operation: "account_erasure_fence_rejection",
+            },
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "account_erasure_fence_rejection",
+          },
+        },
+      );
+      const { logger } = await import("../logger.ts");
+      const telemetry = JSON.stringify({
+        logger: {
+          debug: vi.mocked(logger.debug).mock.calls,
+          error: vi.mocked(logger.error).mock.calls,
+          info: vi.mocked(logger.info).mock.calls,
+          warn: vi.mocked(logger.warn).mock.calls,
+        },
+        sentry: vi.mocked(captureException).mock.calls,
+      });
+      for (const sensitiveValue of sensitiveValues) {
+        expect(telemetry).not.toContain(sensitiveValue);
+      }
+      expect(say).toHaveBeenCalledWith({
+        text: expect.stringContaining("Nothing was saved"),
+        thread_ts: sensitiveValues[3],
+      });
+    });
+
+    it("reports a sanitized error when the account-erasure fence reply cannot be sent", async () => {
+      const db = createMockDb();
+      const sensitiveTransportDetail = "reply transport leaked C-FENCE-PRIVATE";
+      vi.spyOn(
+        FoodEntryRepository.prototype,
+        "withInboundNutritionWriteFence",
+      ).mockRejectedValueOnce(new AccountErasureUserFencedError());
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        body: { team_id: "T-FENCE-PRIVATE" },
+        message: {
+          user: "U-FENCE-PRIVATE",
+          text: "private meal details",
+          ts: "1700000000.654321",
+          channel: "C-FENCE-PRIVATE",
+        },
+        say: vi.fn().mockRejectedValueOnce(new Error(sensitiveTransportDetail)),
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn() },
+        },
+      });
+
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Slack account-erasure fence reply failed",
+          name: "AccountErasureFenceReplyError",
+        }),
+        expect.objectContaining({
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "account_erasure_fence_reply",
+          },
+        }),
+      );
+      expect(JSON.stringify(vi.mocked(captureException).mock.calls)).not.toContain(
+        sensitiveTransportDetail,
+      );
+    });
+
     it("skips messages with subtype, no text, or from bots", async () => {
       const db = createMockDb();
       const { messageHandler } = setupHandlers(db);
@@ -452,7 +579,8 @@ describe("bot.ts — registerHandlers", () => {
 
       const { messageHandler } = setupHandlers(db);
 
-      const say = vi.fn().mockRejectedValue(new Error("say failed"));
+      const sayError = new Error("say failed");
+      const say = vi.fn().mockRejectedValue(sayError);
       const client = {
         users: { info: vi.fn().mockRejectedValue(new Error("API down")) },
         chat: { postMessage: vi.fn() },
@@ -471,6 +599,15 @@ describe("bot.ts — registerHandlers", () => {
           client,
         }),
       ).resolves.not.toThrow();
+      expect(captureException).toHaveBeenCalledWith(
+        sayError,
+        expect.objectContaining({
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "error_reply",
+          },
+        }),
+      );
     });
 
     it("skips duplicate message events by event_id", async () => {
@@ -1081,6 +1218,67 @@ describe("bot.ts — registerHandlers", () => {
       loadSpy.mockRestore();
       deleteSpy.mockRestore();
       saveSpy.mockRestore();
+    });
+
+    it("reports a failed attempt to retire the previous confirmation", async () => {
+      const db = createMockDb();
+      getMockExecute(db).mockResolvedValueOnce([{ user_id: "user-123" }]);
+      vi.spyOn(FoodEntryRepository.prototype, "loadForRefinement").mockResolvedValueOnce([
+        makeFoodItem(),
+      ]);
+      vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed").mockResolvedValueOnce(undefined);
+      vi.spyOn(FoodEntryRepository.prototype, "saveUnconfirmed").mockResolvedValueOnce([
+        "new-entry-id",
+      ]);
+      mockRefine.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+      const retireError = new Error("Slack update failed");
+      const chatUpdate = vi.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(retireError);
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        body: { team_id: "T1" },
+        message: {
+          user: "U1",
+          text: "actually lower the calories",
+          ts: "2000.000",
+          thread_ts: "1000.000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: {
+          users: { info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }) },
+          conversations: {
+            replies: vi.fn().mockResolvedValue({
+              messages: [
+                {
+                  bot_id: "B123",
+                  ts: "old-confirm-ts",
+                  blocks: [
+                    {
+                      type: "actions",
+                      elements: [{ action_id: "confirm_food", value: "old-id" }],
+                    },
+                  ],
+                },
+              ],
+            }),
+          },
+          chat: {
+            postMessage: vi.fn().mockResolvedValue({ ts: "refine-thinking-ts" }),
+            update: chatUpdate,
+          },
+        },
+      });
+
+      expect(captureException).toHaveBeenCalledWith(
+        retireError,
+        expect.objectContaining({
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "retire_superseded_confirmation",
+          },
+        }),
+      );
     });
 
     it("sends error via say() when refinement throws", async () => {
@@ -4679,7 +4877,16 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("[slack] Could not fetch Slack profile for U1: 42"),
+        "[slack] Could not fetch Slack profile; using fallback identity data",
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Slack profile lookup failed",
+          name: "SlackProfileLookupError",
+        }),
+        {
+          tags: { slack_operation: "profile_lookup" },
+        },
       );
     });
   });

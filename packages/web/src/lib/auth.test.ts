@@ -16,6 +16,8 @@ import {
   registerWithPassword,
   requestPasswordReset,
 } from "./auth.ts";
+import { installTestWebAccountStateLocks } from "./web-account-state-lock.test-helpers.ts";
+import { acquireWebAccountStateLock } from "./web-account-state-lock.ts";
 
 function mockResponse(props: Partial<Response>): Response {
   return {
@@ -219,6 +221,33 @@ describe("loginWithPassword", () => {
         return_to: "/dashboard",
       }),
     });
+  });
+
+  it("does not start a later account login until account deletion releases its lock", async () => {
+    vi.stubGlobal("navigator", {});
+    installTestWebAccountStateLocks();
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ redirect: "/dashboard" }),
+      }),
+    );
+    const cleanupLock = await acquireWebAccountStateLock();
+
+    const login = loginWithPassword({
+      email: "user@example.com",
+      password: "password123",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fetch).not.toHaveBeenCalled();
+
+    cleanupLock.release();
+    await expect(login).resolves.toEqual({
+      redirect: "/dashboard",
+      isNewUser: false,
+    });
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("throws server error message when login fails", async () => {

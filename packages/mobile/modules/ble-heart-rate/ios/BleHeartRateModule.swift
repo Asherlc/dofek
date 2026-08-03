@@ -8,6 +8,7 @@ import Foundation
 /// as Expo functions/events to the JS layer. Live measurements are emitted for
 /// the UI; every measurement is also buffered for batched upload.
 public class BleHeartRateModule: Module {
+    private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
     private let connectionManager = BleHeartRateConnectionManager()
     private let sampleBuffer = BleHeartRateSampleBuffer()
 
@@ -24,6 +25,11 @@ public class BleHeartRateModule: Module {
 
         OnCreate {
             self.connectionManager.delegate = self
+            if let cutoff = UserDefaults.standard.object(
+                forKey: Self.deviceErasureCutoffKey
+            ) as? Date {
+                self.sampleBuffer.advanceErasureCutoff(to: cutoff)
+            }
         }
 
         Function("isBluetoothAvailable") { () -> Bool in
@@ -61,6 +67,36 @@ public class BleHeartRateModule: Module {
         Function("disconnect") {
             self.connectionManager.disconnect()
         }
+
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
+            guard let cutoff = self.parseIsoDate(cutoffString) else {
+                promise.reject(
+                    "BLE_HEART_RATE_INVALID_ERASURE_CUTOFF",
+                    "Invalid device erasure cutoff"
+                )
+                return
+            }
+            let retainedCutoff =
+                (UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date)
+                .map { max($0, cutoff) } ?? cutoff
+            UserDefaults.standard.set(
+                retainedCutoff,
+                forKey: Self.deviceErasureCutoffKey
+            )
+            self.connectionManager.disconnect()
+            self.sampleBuffer.advanceErasureCutoff(to: retainedCutoff)
+            promise.resolve(true)
+        }
+    }
+
+    private func parseIsoDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: value) {
+            return parsed
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     private func resolveConnect(

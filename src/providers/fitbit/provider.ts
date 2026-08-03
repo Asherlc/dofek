@@ -58,6 +58,7 @@ export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
     clientSecret,
     authorizeUrl: "https://www.fitbit.com/oauth2/authorize",
     tokenUrl: `${FITBIT_API_BASE}/oauth2/token`,
+    revokeUrl: `${FITBIT_API_BASE}/oauth2/revoke`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: [
       "activity",
@@ -69,6 +70,7 @@ export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
       "respiratory_rate",
       "temperature",
     ],
+    tokenAuthMethod: "basic",
     usePkce: true,
   };
 }

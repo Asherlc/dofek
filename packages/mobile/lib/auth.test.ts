@@ -13,6 +13,7 @@ import {
   createProviderHandoffCode,
   fetchConfiguredProviders,
   fetchCurrentUser,
+  getOrCreateSessionOwnerNonce,
   getSessionToken,
   isNativeAppleSignInAvailable,
   loginWithPassword,
@@ -20,6 +21,7 @@ import {
   registerWithPassword,
   requestPasswordReset,
   resetSessionTokenCacheForTests,
+  rotateSessionOwnerNonce,
   saveSessionToken,
   startNativeAppleSignIn,
   startOAuthLogin,
@@ -34,6 +36,9 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
+}));
+vi.mock("expo-crypto", () => ({
+  randomUUID: vi.fn(() => "11111111-1111-4111-8111-111111111111"),
 }));
 const { mockIsAvailableAsync, mockSignInAsync } = vi.hoisted(() => ({
   mockIsAvailableAsync: vi.fn(),
@@ -634,9 +639,13 @@ describe("session token storage", () => {
   let SecureStore: typeof import("expo-secure-store");
 
   beforeEach(async () => {
-    vi.clearAllMocks();
-    resetSessionTokenCacheForTests();
     SecureStore = await import("expo-secure-store");
+    await clearSessionToken();
+    vi.clearAllMocks();
+    vi.mocked(SecureStore.getItemAsync).mockReset();
+    vi.mocked(SecureStore.setItemAsync).mockReset();
+    vi.mocked(SecureStore.deleteItemAsync).mockReset();
+    resetSessionTokenCacheForTests();
   });
 
   it("saveSessionToken stores with AFTER_FIRST_UNLOCK accessibility", async () => {
@@ -644,6 +653,37 @@ describe("session token storage", () => {
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("dofek_session_token", "my-token", {
       keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
     });
+  });
+
+  it.each([
+    "stale-restored-token",
+    "new-login-token",
+  ])("deletes a deferred %s write after cleanup starts", async (token) => {
+    let resolveWrite: (() => void) | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    const save = saveSessionToken(token);
+    await vi.waitFor(() => expect(SecureStore.setItemAsync).toHaveBeenCalledOnce());
+
+    const clear = clearSessionToken();
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+
+    resolveWrite?.();
+    await save;
+    await clear;
+
+    const tokenWriteOrder = vi.mocked(SecureStore.setItemAsync).mock.invocationCallOrder[0];
+    const tokenDeleteCall = vi
+      .mocked(SecureStore.deleteItemAsync)
+      .mock.calls.findIndex(([key]) => key === "dofek_session_token");
+    expect(tokenDeleteCall).toBeGreaterThanOrEqual(0);
+    expect(
+      vi.mocked(SecureStore.deleteItemAsync).mock.invocationCallOrder[tokenDeleteCall],
+    ).toBeGreaterThan(tokenWriteOrder ?? 0);
   });
 
   it("getSessionToken reads from the correct key", async () => {
@@ -659,6 +699,26 @@ describe("session token storage", () => {
     await getSessionToken();
 
     expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache a deferred token read that cleanup invalidates", async () => {
+    let resolveRead: ((token: string) => void) | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+    const read = getSessionToken();
+    await vi.waitFor(() => expect(SecureStore.getItemAsync).toHaveBeenCalledOnce());
+
+    const clear = clearSessionToken();
+    resolveRead?.("stale-token");
+
+    await expect(read).resolves.toBeNull();
+    await clear;
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(null);
+    await expect(getSessionToken()).resolves.toBeNull();
   });
 
   it("getSessionToken throws when SecureStore is inaccessible", async () => {
@@ -687,6 +747,47 @@ describe("session token storage", () => {
   it("clearSessionToken deletes the correct key", async () => {
     await clearSessionToken();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_owner_nonce_v1");
+  });
+
+  it("rotates an opaque owner nonce for each adopted session", async () => {
+    await expect(rotateSessionOwnerNonce()).resolves.toBe("11111111-1111-4111-8111-111111111111");
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+      "dofek_session_owner_nonce_v1",
+      "11111111-1111-4111-8111-111111111111",
+      expect.any(Object),
+    );
+  });
+
+  it("restores the persisted owner nonce after an app restart", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(
+      "11111111-1111-4111-8111-111111111111",
+    );
+
+    await expect(getOrCreateSessionOwnerNonce()).resolves.toBe(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("deletes a deferred owner-nonce write after cleanup starts", async () => {
+    let resolveWrite: (() => void) | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    const rotate = rotateSessionOwnerNonce();
+    await vi.waitFor(() => expect(SecureStore.setItemAsync).toHaveBeenCalledOnce());
+
+    const clear = clearSessionToken();
+    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+
+    resolveWrite?.();
+    await rotate;
+    await clear;
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_owner_nonce_v1");
   });
 });
 

@@ -26,6 +26,7 @@ const toolTestMocks = vi.hoisted(() => {
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
+    withUserWriteFence: vi.fn(),
   };
   return {
     ...mocks,
@@ -111,6 +112,11 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: (...args: unknown[]) =>
+    toolTestMocks.withUserWriteFence(...args),
+}));
+
 vi.mock("./tools.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./tools.ts")>();
   return {
@@ -169,7 +175,13 @@ async function request(
 
 function createTestApp(sensorStore = undefined) {
   const app = express();
-  app.use("/api/mcp", createMcpRouter({ db: { execute: vi.fn(), select: vi.fn() }, sensorStore }));
+  app.use(
+    "/api/mcp",
+    createMcpRouter({
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      sensorStore,
+    }),
+  );
   return app;
 }
 
@@ -295,6 +307,13 @@ describe("createMcpRouter", () => {
     });
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
+    toolTestMocks.withUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   it("returns 401 with a bearer challenge when Authorization is missing", async () => {
@@ -1413,6 +1432,11 @@ describe("createMcpRouter", () => {
       }),
       { skipWhenRateLimited: true },
     );
+    expect(toolTestMocks.withUserWriteFence).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-id",
+      expect.any(Function),
+    );
     expect(toolTestMocks.getProviderSyncQueue).toHaveBeenCalledWith("wahoo");
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
@@ -1432,6 +1456,27 @@ describe("createMcpRouter", () => {
       queueName: "sync-wahoo",
       status: "queued",
     });
+  });
+
+  it("rejects provider sync dispatch before queueing when account erasure is active", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getAllProviders.mockReturnValue([
+      { id: "wahoo", name: "Wahoo", validate: () => null },
+    ]);
+    toolTestMocks.withUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("start_provider_sync", {
+        providerId: "wahoo",
+        sinceDays: 7,
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("Account erasure is active");
+    expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
   });
 
   it("returns a tool error when sync enqueue is skipped for rate-limit cooldown", async () => {

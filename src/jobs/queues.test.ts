@@ -321,6 +321,7 @@ describe("queues", () => {
           outputExtension: "fit2",
           maxBytes: 1024,
           nestedArchiveMaxBytes: 2048,
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       ).toEqual({
         archivePath: "/tmp/export.zip",
@@ -328,6 +329,7 @@ describe("queues", () => {
         outputExtension: "fit2",
         maxBytes: 1024,
         nestedArchiveMaxBytes: 2048,
+        userId: "00000000-0000-4000-8000-000000000001",
       });
     });
 
@@ -339,6 +341,7 @@ describe("queues", () => {
           archivePath: "/tmp/export.zip",
           entryPath: [],
           outputExtension: "fit",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       ).toThrow();
       expect(() =>
@@ -346,6 +349,7 @@ describe("queues", () => {
           archivePath: "/tmp/export.zip",
           entryPath: ["activity.fit"],
           outputExtension: "fit.gz",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       ).toThrow();
       expect(() =>
@@ -353,6 +357,7 @@ describe("queues", () => {
           archivePath: "/tmp/export.zip",
           entryPath: ["activity.fit"],
           outputExtension: ".fit",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       ).toThrow();
     });

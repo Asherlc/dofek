@@ -8,6 +8,12 @@ vi.mock("@sentry/node", () => ({
 
 const mockRefitAllParams = vi.fn();
 const mockInvalidateByPrefix = vi.fn();
+const mockAccountErasureAllowsQueuedUserWork = vi.fn();
+
+vi.mock("./account-erasure-work-guard.ts", () => ({
+  accountErasureAllowsQueuedUserWork: (database: unknown, userId: string, workKind: string) =>
+    mockAccountErasureAllowsQueuedUserWork(database, userId, workKind),
+}));
 
 vi.mock("../personalization/refit.ts", () => ({
   refitAllParams: (...args: unknown[]) => mockRefitAllParams(...args),
@@ -51,6 +57,7 @@ describe("processPostSyncJob", () => {
     vi.clearAllMocks();
     refreshBodyMeasurements.mockResolvedValue(undefined);
     mockInvalidateByPrefix.mockResolvedValue(undefined);
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
   });
 
   it("runs only global maintenance operations for a global maintenance job", async () => {
@@ -104,6 +111,26 @@ describe("processPostSyncJob", () => {
     );
 
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
+  });
+
+  it("discards a refit when deletion activates after dequeue but before its first side effect", async () => {
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
+
+    await processPostSyncJob(
+      makeUserRefitJob("user-1"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
+
+    expect(mockAccountErasureAllowsQueuedUserWork).toHaveBeenCalledWith(
+      fakeDb,
+      "user-1",
+      "post-sync body measurement refresh",
+    );
+    expect(refreshBodyMeasurements).not.toHaveBeenCalled();
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
   });
 
   it("reports per-user refit progress", async () => {

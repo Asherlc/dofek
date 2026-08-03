@@ -7,6 +7,106 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-02: Local integration validation hit Compose and Redpanda host limits
+
+### Symptoms
+
+The first `pnpm test:integration` attempt failed while starting the workspace
+dependencies. A later attempt also reported that Docker's predefined address
+pools were exhausted. After the workspace network was created explicitly,
+Redpanda repeatedly restarted and the integration runner could not use the
+normal Compose startup path.
+
+### User Impact
+
+No production user impact was identified. Local integration validation was
+blocked until the workspace was isolated from the stale Docker state and the
+tests were run against the healthy dependencies that did not require Redpanda.
+
+### Evidence
+
+The first test-run fatal line was `Connection terminated unexpectedly`. The
+Redpanda fatal line was:
+`The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536. Set /proc/sys/fs/aio-max-nr to at least 1.`
+The Linux kernel documents `fs.aio-max-nr` as the system-wide limit for
+available asynchronous I/O events: [Linux fs sysctl documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html).
+
+### Root Cause
+
+The host had exhausted Docker's default network address pools from existing
+workspace networks. Once the current workspace network was isolated, the host
+kernel's asynchronous-I/O event limit was below the Redpanda container's
+startup requirement. The Compose test wrapper also attempted to run Vitest
+before every dependency had reached a healthy state.
+
+### Fix or Mitigation
+
+Only the current workspace's Compose resources were removed and recreated. The
+Redpanda container was stopped for the direct database-backed tests; Postgres,
+ClickHouse, and Redis were healthy. Running the four affected integration
+suites directly with the workspace environment passed all 13 tests, and the
+workspace containers, network, and named volumes were removed afterward. No
+production retry, timeout, or fallback was added.
+
+### Remaining Risk
+
+The repository's normal integration wrapper still needs a health-readiness
+preflight and a documented host AIO check for Redpanda-backed suites. A future
+workspace with the same stale networks or kernel limit may fail before tests
+start.
+
+## 2026-08-01: ClickHouse account-erasure proof tracked unrelated inactive parts
+
+### Symptoms
+
+The ClickHouse account-erasure integration retried the provider/read-model
+case and timed out while waiting for 33, then 42, then 57 physical parts.
+
+### User Impact
+
+No production user impact was identified. The issue blocked the account-
+erasure implementation's physical-deletion validation.
+
+### Evidence
+
+The first fatal line was
+`ClickHouse account erasure timed out waiting for 33 physical part(s) to be removed`.
+The corresponding `system.mutations` rows were `is_done = 1`, had
+`parts_to_do = 0`, and no failure reason. `system.parts` showed the retained
+parts were inactive historical merge/mutation outputs, and `system.part_log`
+showed their block and lineage chains. ClickHouse documents inactive parts as
+parts awaiting cleanup and exposes merge/mutation ancestry through its system
+tables: [system.parts](https://clickhouse.com/docs/reference/system-tables/parts)
+and [system.part_log](https://clickhouse.com/docs/reference/system-tables/part_log).
+
+### Root Cause
+
+The proof added every inactive part in each managed table to the account's
+physical reference set, so unrelated historical parts from previous mutation
+attempts could keep an otherwise completed erasure waiting.
+
+### Fix or Mitigation
+
+The proof now seeds references from active parts matching the account
+predicate, follows their `MergeParts`/`MutatePart` ancestry, and adds the
+completed mutation's part lineage after `mutations_sync = 2`. It does not add
+timeouts, retries, or cleanup workarounds.
+
+### Validation
+
+The new lineage unit tests, focused account-erasure unit suites, root/server/
+web/mobile typechecks, and the Docker-free unit/mobile run completed their
+relevant checks; the full unit/mobile run reached 14,842 passing tests but
+reported one Vitest worker timeout in the existing Compose-environment test.
+The ClickHouse integration rerun remains unavailable while the local Docker
+daemon does not answer `docker info` and the repository Compose wrapper cannot
+start its dependencies.
+
+### Remaining Risk
+
+The real ClickHouse regression and full account-erasure integration file must
+pass on a responsive ClickHouse instance before merge. The physical proof
+continues to fail closed when detached parts remain.
 ## 2026-08-02: Mobile Metro CI validation blocked by Infisical network timeout
 
 ### Symptoms
@@ -19453,6 +19553,125 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   previously observed rejection window and resolves DOFEK-SERVER-47 without a
   401 recurrence.
 
+## 2026-07-26 — Account-Deletion Control Did Not Delete the Account
+
+- **Status:** Root cause fixed and direct storage/client tests pass locally;
+  full CI, production credentials, deployment, and post-deploy observation are
+  pending.
+- **Symptoms:** Production promised account deletion on the landing page and
+  in the privacy policy, but Settings exposed only `Delete All User Data`.
+  Confirming that action reported success while the account and authenticated
+  session remained active. The privacy policy referred users to an email
+  address that was not present.
+- **User impact:** A user could reasonably believe their account had been
+  deleted even though identity, credentials, sessions, billing relationships,
+  queued work, analytics rows, and client-side health data could remain.
+- **Evidence:** The exact production action was the Settings `Delete All User
+  Data` mutation. Its success state was `All user data has been deleted`, while
+  the same browser session remained authenticated and no account-deletion
+  route or mutation existed in the audited source. Repository-wide ownership
+  discovery subsequently identified personal state in PostgreSQL,
+  ClickHouse, Redis/BullMQ, R2, Stripe, identity providers, support/analytics
+  processors, browsers, iOS, and watchOS.
+- **Root cause:** The product treated deletion as a synchronous data-row
+  cleanup rather than a durable, fail-closed account-erasure workflow, and its
+  public copy promised a capability that the server and clients did not
+  implement.
+- **Fix / mitigation:** Replace the misleading action with a recent-auth,
+  prepare/confirm erasure flow. Atomically revoke sessions and install write
+  fences, durably process independent storage and external-processor phases,
+  wait through replay and backup windows, verify physical removal, retain only
+  a pseudonymous completion proof, and expose a token-protected public status
+  page after local authentication is removed. The workflow follows providers'
+  documented deletion primitives, including [Stripe customer
+  deletion](https://docs.stripe.com/api/customers/delete) and [Cloudflare R2
+  object lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
+- **Validation:** Real-PostgreSQL request-to-completion tests prove initiation,
+  fencing, storage erasure, PII scrubbing, pseudonymous completion, and both
+  retention waits. Real-ClickHouse tests prove logical deletion and physical
+  part removal. MinIO-backed tests prove restore-ledger and staging-object
+  lifecycle behavior. Focused web, mobile, Swift, and unit suites prove the
+  public status flow, cleanup retry, monotonic device cutoffs, and post-cutoff
+  sample rejection without fallback success states.
+- **Remaining risk / follow-up:** Do not merge or deploy until Infisical
+  contains a Brevo REST API key, a PostHog personal API key and project ID, and
+  a Sentry token with organization read/delete scope. Then pass full CI,
+  deploy, run the documented canary, verify no phase exceeds 30 days, and
+  confirm alert delivery and backup-expiry sweeps in production.
+
+## 2026-07-27 — Account-Erasure Retention Prerequisites Were Not Enforced
+
+- **Status:** Deployment remains blocked; the Axiom setting was corrected, but
+  backup expiry, processor credentials, and historical Sentry deletion proof
+  remain unresolved.
+- **Symptoms:** The production Axiom dataset retained events for 30 days, the
+  database-backup R2 bucket still contained May and June objects older than the
+  intended 21-day ceiling, and the available production credentials could not
+  perform the Brevo, PostHog, or Sentry deletion proofs required by the new
+  erasure coordinator.
+- **User impact:** The durable account-erasure workflow cannot truthfully
+  report final completion or be deployed while these proofs fail closed. The
+  existing misleading deletion control remains the user-facing incident until
+  the replacement ships.
+- **Evidence:** The Axiom dataset API reported a 30-day retention period before
+  it was updated and re-read as 29 days. Listing the backup bucket showed
+  current July backups alongside objects from May and June. Infisical did not
+  contain `BREVO_API_KEY`, `POSTHOG_PERSONAL_API_KEY`, or
+  `POSTHOG_PROJECT_ID`; the available Sentry token lacked the organization and
+  project permissions needed for retention and deletion evidence. Axiom
+  documents dataset retention through its
+  [dataset API](https://axiom.co/docs/restapi/endpoints/updateDataset),
+  Cloudflare documents that R2 lifecycle rules apply to existing and new
+  objects but deletion may occur after the configured expiration in its
+  [lifecycle behavior](https://developers.cloudflare.com/r2/buckets/object-lifecycles/#behavior),
+  and Sentry documents organization inspection through its
+  [organization API](https://docs.sentry.io/api/organizations/retrieve-an-organization/).
+- **Root cause:** Public deletion copy was introduced without provisioning and
+  continuously verifying the storage lifecycles, API credentials, and
+  processor-side deletion capabilities needed to satisfy that promise.
+- **Fix / mitigation:** Corrected Axiom retention through the authoritative API
+  and added fail-fast deployment/runtime validation for every required
+  credential and retention proof. No backup objects or processor records were
+  manually deleted, and no warn-and-continue path was added.
+- **Validation:** The Axiom API returned the corrected setting. Local
+  account-erasure tests prove missing credentials, inaccessible retention
+  configuration, and overdue backup objects prevent completion.
+- **Remaining risk / follow-up:** Configure and apply the exact 21-day backup
+  lifecycle, obtain the required Brevo/PostHog/Sentry credentials and deletion
+  evidence, run the bounded backup sweeper, and re-list every affected store
+  before enabling account erasure in production.
+
+## 2026-07-27 — Shared Docker Storage Blocked Account-Erasure Validation
+
+- **Status:** Local Docker-backed validation is blocked; no product behavior
+  change or resilience workaround was made.
+- **Symptoms:** The first fresh integration attempt failed while Docker wrote
+  image metadata with `no space left on device`. After removing only this
+  workspace's disposable Compose state, ClickHouse started but failed writes
+  with `Cannot reserve 1.00 MiB, not enough space`, followed by errno 28 while
+  writing under `/var/lib/clickhouse`.
+- **User impact:** Issue #1994's focused unit, mobile, typecheck, and formatting
+  validation passes, but its complete real-ClickHouse and real-PostgreSQL
+  integration validation cannot finish locally until Docker storage is
+  available. No production service was affected by this local incident.
+- **Evidence:** `docker system df` showed approximately 20 GiB of reclaimable
+  named-volume data belonging primarily to other workspaces. Pruning the
+  rebuildable builder cache and unused images reclaimed 0 bytes because the
+  remaining images were active. A retry after the scoped cleanup reproduced
+  the ClickHouse disk-reservation failure; the RideWithGPS integration suite
+  still completed 22/22 tests before the run was stopped.
+- **Root cause:** The shared Docker VM was full, while project isolation meant
+  the safely removable state owned by this workspace was insufficient to
+  recover enough capacity. Docker documents that Compose `down --volumes`
+  removes named volumes declared by that Compose project:
+  <https://docs.docker.com/reference/cli/docker/compose/down/>.
+- **Fix / mitigation:** Removed only issue #1994's test containers, network,
+  and four disposable named volumes through the repository Compose wrapper.
+  Running containers and named volumes belonging to other workspaces were
+  preserved. No timeout, retry, or application fallback was added.
+- **Remaining risk / follow-up:** Complete the account-erasure ClickHouse and
+  PostgreSQL integration suites after an operator either removes confirmed
+  unused volumes from other workspaces or expands Docker's disk allocation.
 ## 2026-07-27 — Activity sensor membership join timeout (DOFEK-SERVER-5A)
 
 - **Status:** Historical intermediate update; superseded by the final resolved

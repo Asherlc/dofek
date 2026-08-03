@@ -270,7 +270,40 @@ table fitness.exercise_alias {
   provider_exercise_name text [not null]
 
   indexes {
+    (id, exercise_id) [name: 'exercise_alias_id_exercise_idx', unique]
     (provider_id, provider_exercise_name) [name: 'exercise_alias_provider_name_idx', unique]
+  }
+}
+
+table fitness.exercise_alias_source {
+  alias_id uuid [not null]
+  source_id uuid [not null]
+  exercise_id uuid [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (alias_id, source_id) [pk]
+
+
+    exercise_id [name: 'exercise_alias_source_exercise_idx']
+    source_id [name: 'exercise_alias_source_source_idx']
+  }
+}
+
+table fitness.exercise_source {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  exercise_id uuid [not null]
+  source_kind text [not null]
+  user_id uuid
+  provider_id text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+    (id, exercise_id) [name: 'exercise_source_id_exercise_idx', unique]
+    exercise_id [name: 'exercise_source_system_idx', unique]
+    (exercise_id, user_id, provider_id) [name: 'exercise_source_user_provider_idx', unique]
+    user_id [name: 'exercise_source_user_idx']
   }
 }
 
@@ -279,14 +312,16 @@ table fitness.oauth_token {
   provider_id text [not null]
   access_token text [not null]
   refresh_token text
+  provider_account_id text
   expires_at "timestamp with time zone" [not null]
   scopes text
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
+
     (user_id, provider_id) [pk]
-    
+
     provider_id [name: 'oauth_token_provider_idx']
     user_id [name: 'oauth_token_user_idx']
   }
@@ -392,7 +427,7 @@ table fitness.webhook_subscription {
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     provider_name [name: 'webhook_subscription_app_provider_name_idx', unique]
     (user_id, provider_id) [name: 'webhook_subscription_user_provider_idx', unique]
     provider_name [name: 'webhook_subscription_provider_name_idx']
@@ -426,7 +461,7 @@ table fitness.activity {
   indexes {
     (user_id, provider_id, external_id) [name: 'activity_provider_external_idx', unique]
     (user_id, provider_id) [name: 'activity_user_provider_idx']
-    
+
   }
 }
 
@@ -457,9 +492,9 @@ table fitness.climbing_attempt {
   indexes {
     climbing_entry_id [name: 'climbing_attempt_entry_idx']
     (climbing_entry_id, attempt_index) [name: 'climbing_attempt_entry_index_idx', unique]
-    
-    
-    
+
+
+
   }
 }
 
@@ -484,14 +519,6 @@ table fitness.climbing_entry {
     activity_id [name: 'climbing_entry_activity_idx']
     (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
     (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
-    
-    
-    
-    
-    
-    
-    
-    
   }
 }
 
@@ -570,13 +597,13 @@ table fitness.finger_loading_entry {
 
   indexes {
     activity_id [name: 'finger_loading_entry_activity_idx']
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
   }
 }
 
@@ -610,7 +637,7 @@ table fitness.sleep_session {
   indexes {
     (user_id, provider_id, external_id) [name: 'sleep_session_provider_external_idx', unique]
     (user_id, provider_id) [name: 'sleep_session_user_provider_idx']
-    
+
   }
 }
 
@@ -754,13 +781,13 @@ table fitness.supplement_definition {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     (id, supplement_id) [name: 'supplement_definition_identity_key', unique]
     supersedes_definition_id [name: 'supplement_definition_supersedes_key', unique]
     supplement_id [name: 'supplement_definition_active_idx', unique]
     (supplement_id, effective_from, effective_to) [name: 'supplement_definition_effective_idx']
-    
-    
+
+
   }
 }
 
@@ -791,16 +818,16 @@ table fitness.supplement_dose_event {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
-    
-    
+
+
+
     (id, user_id, supplement_id, definition_id, scheduled_date) [name: 'supplement_dose_event_slot_identity_key', unique]
     supersedes_event_id [name: 'supplement_dose_event_successor_key', unique]
     (user_id, supplement_id, scheduled_date) [name: 'supplement_dose_event_root_key', unique]
     (user_id, provider_id, external_id) [name: 'supplement_dose_event_provider_external_idx', unique]
     (user_id, scheduled_date) [name: 'supplement_dose_event_user_date_idx']
     supplement_id [name: 'supplement_dose_event_supplement_idx']
-    
+
   }
 }
 
@@ -969,6 +996,92 @@ table fitness.medication_dose_event {
   }
 }
 
+table fitness.account_erasure_checkpoint {
+  request_id uuid [not null]
+  phase text [not null]
+  details jsonb
+  completed_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (request_id, phase) [pk]
+  }
+}
+
+table fitness.account_erasure_identity_fence {
+  request_id uuid [not null]
+  identity_kind text [not null]
+  key_id text [not null]
+  identity_hash text [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+    (identity_kind, key_id, identity_hash) [pk]
+    request_id [name: 'account_erasure_identity_fence_request_idx']
+  }
+}
+
+table fitness.account_erasure_outbox {
+  request_id uuid [pk, not null]
+  status text [not null, default: 'pending']
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  dispatched_at "timestamp with time zone"
+
+  indexes {
+
+    (status, created_at) [name: 'account_erasure_outbox_pending_idx']
+  }
+}
+
+table fitness.account_erasure_preparation {
+  user_id uuid [pk, not null]
+  request_id uuid [not null]
+  preparation_token_hash text [not null]
+  expires_at "timestamp with time zone" [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    request_id [name: 'account_erasure_preparation_request_idx', unique]
+    preparation_token_hash [name: 'account_erasure_preparation_token_idx', unique]
+  }
+}
+
+table fitness.account_erasure_request {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid
+  user_hash text [not null]
+  user_hash_key_id text [not null]
+  write_fence_hash text [not null]
+  preparation_token_hash text
+  status_token_hash text [not null]
+  status text [not null, default: 'pending']
+  current_phase text
+  encrypted_remote_snapshot text
+  requested_at "timestamp with time zone" [not null, default: `now()`]
+  replay_retained_until "timestamp with time zone" [not null]
+  completion_deadline "timestamp with time zone" [not null]
+  retry_at "timestamp with time zone"
+  lease_owner text
+  lease_expires_at "timestamp with time zone"
+  phase_progress jsonb [not null, default: `{}`]
+  failure_count bigint [not null, default: 0]
+  recovered_from_restore "timestamp with time zone"
+  started_at "timestamp with time zone"
+  pii_scrubbed_at "timestamp with time zone"
+  completed_at "timestamp with time zone"
+  last_error text
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+    user_id [name: 'account_erasure_request_active_user_idx', unique]
+    write_fence_hash [name: 'account_erasure_request_write_fence_idx', unique]
+    preparation_token_hash [name: 'account_erasure_request_preparation_token_idx', unique]
+    status_token_hash [name: 'account_erasure_request_status_token_idx', unique]
+    (status, retry_at) [name: 'account_erasure_request_status_retry_idx']
+  }
+}
+
 table fitness.auth_account {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -977,6 +1090,9 @@ table fitness.auth_account {
   email text
   name text
   groups text[]
+  revocation_access_token text
+  revocation_refresh_token text
+  revocation_client_id text
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
@@ -994,7 +1110,7 @@ table fitness.companion_token {
   revoked_at "timestamp with time zone"
 
   indexes {
-    
+
     (user_id, connection_type) [name: 'companion_token_user_connection_type_idx', unique]
   }
 }
@@ -1080,7 +1196,7 @@ table fitness.mcp_oauth_refresh_token {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     (client_id, revoked_at, expires_at) [name: 'mcp_oauth_refresh_token_active_idx']
     parent_refresh_token_id [name: 'mcp_oauth_refresh_token_parent_idx']
   }
@@ -1116,6 +1232,20 @@ table fitness.slack_installation {
   }
 }
 
+table fitness.slack_team_membership {
+  team_id text [not null]
+  user_id uuid [not null]
+  slack_user_id text [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (team_id, user_id) [pk]
+    (team_id, slack_user_id) [name: 'slack_team_membership_identity_idx', unique]
+    user_id [name: 'slack_team_membership_user_idx']
+  }
+}
+
 table fitness.stripe_webhook_event {
   event_id text [pk, not null]
   event_created bigint [not null]
@@ -1137,6 +1267,22 @@ table fitness.user_billing {
   indexes {
     stripe_customer_id [name: 'user_billing_stripe_customer_idx']
     stripe_subscription_id [name: 'user_billing_stripe_subscription_idx']
+  }
+}
+
+table fitness.user_external_effect {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  system text [not null]
+  resource_type text [not null]
+  external_id text [not null]
+  contact_email text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+    (system, resource_type, external_id) [name: 'user_external_effect_resource_idx', unique]
+    user_id [name: 'user_external_effect_user_idx']
   }
 }
 
@@ -1176,9 +1322,9 @@ table fitness.breathwork_session {
   indexes {
     user_id [name: 'breathwork_session_user_idx']
     started_at [name: 'breathwork_session_started_at_idx']
-    
-    
-    
+
+
+
   }
 }
 
@@ -1268,14 +1414,14 @@ table fitness.file_upload {
     import_job_id [name: 'file_upload_import_job_id_key', unique]
     (user_id, updated_at) [name: 'file_upload_owner_updated_idx']
     (state, expires_at, updated_at) [name: 'file_upload_reconcile_idx']
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
   }
 }
 
@@ -1294,7 +1440,7 @@ table fitness.file_upload_outbox {
     upload_id [name: 'file_upload_outbox_upload_id_key', unique]
     import_job_id [name: 'file_upload_outbox_import_job_id_key', unique]
     (status, created_at) [name: 'file_upload_outbox_dispatch_idx']
-    
+
   }
 }
 
@@ -1396,14 +1542,14 @@ table fitness.personal_experiment {
   indexes {
     (user_id, created_at) [name: 'personal_experiment_user_created_idx']
     (user_id, status) [name: 'personal_experiment_user_status_idx']
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
   }
 }
 
@@ -1418,9 +1564,9 @@ table fitness.personal_experiment_check_in {
 
   indexes {
     (personal_experiment_id, date) [name: 'personal_experiment_check_in_experiment_date_unique', unique]
-    
-    
-    
+
+
+
   }
 }
 
@@ -1438,8 +1584,8 @@ table fitness.provider_data_deletion_outbox {
 
   indexes {
     (status, created_at) [name: 'provider_data_deletion_outbox_dispatch_idx']
-    
-    
+
+
   }
 }
 
@@ -1451,7 +1597,7 @@ table fitness.provider_data_generation {
 
   indexes {
     (user_id, provider_id) [pk]
-    
+
   }
 }
 
@@ -1499,7 +1645,7 @@ table fitness.processing_flow_marker {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     (operation_id, dataset_key, flow_name, batch_key) [name: 'processing_flow_marker_operation_dataset_flow', unique]
     source_watermark [name: 'processing_flow_marker_watermark_idx']
   }
@@ -1514,10 +1660,10 @@ table fitness.processing_metric_stream_batch {
   published_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     (operation_id, batch_id) [name: 'processing_metric_stream_batch_key', unique]
-    
-    
+
+
   }
 }
 
@@ -1531,11 +1677,11 @@ table fitness.processing_operation {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     (user_id, kind, external_correlation_key) [name: 'processing_operation_correlation_key', unique]
     (user_id, created_at, id) [name: 'processing_operation_user_created_idx']
-    
-    
+
+
   }
 }
 
@@ -1547,9 +1693,9 @@ table fitness.processing_operation_output {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    
+
     (operation_id, dataset_key, output_path) [name: 'processing_operation_output_key', unique]
-    
+
   }
 }
 
@@ -1563,10 +1709,10 @@ table fitness.processing_queue_outbox {
   dispatched_at "timestamp with time zone"
 
   indexes {
-    
+
     (queue_name, job_id) [name: 'processing_queue_outbox_job_key', unique]
     (status, created_at) [name: 'processing_queue_outbox_dispatch_idx']
-    
+
   }
 }
 
@@ -1591,21 +1737,31 @@ table fitness.processing_stage_event {
   idempotency_key text [not null]
 
   indexes {
-    
+
     (operation_id, stage, dataset_key, output_path, model_name, status, idempotency_key) [name: 'processing_stage_event_idempotency_key', unique]
     (operation_id, sequence) [name: 'processing_stage_event_operation_sequence_idx']
     (dataset_key, sequence) [name: 'processing_stage_event_dataset_sequence_idx']
-    
-    
-    
-    
-    
+
+
+
+
+
   }
 }
 
 ref exercise_alias_exercise_id_exercise_id_fk: fitness.exercise_alias.exercise_id > fitness.exercise.id [delete: cascade, update: no action]
 
 ref exercise_alias_provider_id_provider_id_fk: fitness.exercise_alias.provider_id > fitness.provider.id [delete: cascade, update: no action]
+
+ref exercise_alias_source_alias_fkey: fitness.exercise_alias_source.(alias_id, exercise_id) > fitness.exercise_alias.(id, exercise_id) [delete: cascade, update: no action]
+
+ref exercise_alias_source_source_fkey: fitness.exercise_alias_source.(source_id, exercise_id) > fitness.exercise_source.(id, exercise_id) [delete: cascade, update: no action]
+
+ref exercise_source_exercise_id_exercise_id_fk: fitness.exercise_source.exercise_id > fitness.exercise.id [delete: cascade, update: no action]
+
+ref exercise_source_user_id_user_profile_id_fk: fitness.exercise_source.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref exercise_source_provider_id_provider_id_fk: fitness.exercise_source.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref oauth_token_user_id_user_profile_id_fk: fitness.oauth_token.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
@@ -1713,6 +1869,12 @@ ref medication_dose_event_provider_id_provider_id_fk: fitness.medication_dose_ev
 
 ref medication_dose_event_user_id_user_profile_id_fk: fitness.medication_dose_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
+ref account_erasure_checkpoint_request_id_account_erasure_request_id_fk: fitness.account_erasure_checkpoint.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
+
+ref account_erasure_identity_fence_request_id_account_erasure_request_id_fk: fitness.account_erasure_identity_fence.request_id > fitness.account_erasure_request.id [delete: restrict, update: no action]
+
+ref account_erasure_outbox_request_id_account_erasure_request_id_fk: fitness.account_erasure_outbox.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
+
 ref auth_account_user_id_user_profile_id_fk: fitness.auth_account.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref companion_token_user_id_user_profile_id_fk: fitness.companion_token.user_id > fitness.user_profile.id [delete: cascade, update: no action]
@@ -1731,7 +1893,13 @@ ref mcp_oauth_refresh_token_parent_fk: fitness.mcp_oauth_refresh_token.parent_re
 
 ref session_user_id_user_profile_id_fk: fitness.session.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
+ref slack_team_membership_team_id_slack_installation_team_id_fk: fitness.slack_team_membership.team_id > fitness.slack_installation.team_id [delete: cascade, update: no action]
+
+ref slack_team_membership_user_id_user_profile_id_fk: fitness.slack_team_membership.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
 ref user_billing_user_id_user_profile_id_fk: fitness.user_billing.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref user_external_effect_user_id_user_profile_id_fk: fitness.user_external_effect.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref user_password_credential_user_id_user_profile_id_fk: fitness.user_password_credential.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

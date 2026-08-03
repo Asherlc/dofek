@@ -169,14 +169,46 @@ export class PolarClient {
       },
     });
 
-    // 204 = success, 404 = already deregistered — both are fine
-    if (response.status === 204 || response.status === 404) return;
+    if (response.status === 204) return;
 
-    if (!response.ok) {
+    throw new Error(
+      `Polar user deregistration failed (${response.status}): ${await this.#readErrorBody(response)}`,
+    );
+  }
+
+  /**
+   * Deregister during durable account erasure.
+   *
+   * Polar documents GET 204 as absent and DELETE 204 as successfully
+   * deregistered. A precise RFC 6750 invalid_token challenge is terminal
+   * because Polar access tokens do not expire unless explicitly revoked.
+   *
+   * @see https://www.polar.com/accesslink-api/#get-user-information
+   * @see https://www.polar.com/accesslink-api/#delete-user
+   * @see https://www.rfc-editor.org/rfc/rfc6750#section-3.1
+   */
+  async deregisterUserForAccountErasure(polarUserId: string): Promise<void> {
+    const userUrl = `${POLAR_API_BASE}/users/${polarUserId}`;
+    const headers = {
+      Authorization: `Bearer ${this.#accessToken}`,
+      Accept: "application/json",
+    };
+    const registration = await this.#fetchFn(userUrl, { headers });
+    if (registration.status === 204 || hasInvalidTokenChallenge(registration)) return;
+    if (registration.status !== 200) {
       throw new Error(
-        `Polar user deregistration failed (${response.status}): ${await this.#readErrorBody(response)}`,
+        `Polar user registration check failed (${registration.status}): ${await this.#readErrorBody(registration)}`,
       );
     }
+
+    const deregistration = await this.#fetchFn(userUrl, {
+      method: "DELETE",
+      headers,
+    });
+    if (deregistration.status === 204 || hasInvalidTokenChallenge(deregistration)) return;
+    throw new Error(
+      `Polar user deregistration failed (${deregistration.status}): ${await this.#readErrorBody(deregistration)}`,
+    );
   }
 
   async #readErrorBody(response: Response): Promise<string> {
@@ -200,6 +232,14 @@ export class PolarClient {
 
     return response.text();
   }
+}
+
+function hasInvalidTokenChallenge(response: Response): boolean {
+  if (response.status !== 401) return false;
+  const challenge = response.headers.get("www-authenticate")?.trim();
+  if (!challenge || !/^Bearer(?:\s|$)/i.test(challenge)) return false;
+  const parameters = challenge.slice("Bearer".length).trim();
+  return /(?:^|,\s*)error\s*=\s*"invalid_token"(?:\s*,|$)/.test(parameters);
 }
 
 function formatPolarApiErrorBody(contentType: string, textBody: string): string {

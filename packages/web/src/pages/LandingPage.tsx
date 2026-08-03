@@ -920,6 +920,9 @@ function Footer() {
           <Link to="/privacy" className="transition-colors hover:text-foreground">
             Privacy
           </Link>
+          <Link to="/account-deletion" className="transition-colors hover:text-foreground">
+            Account deletion
+          </Link>
           <Link to="/terms" className="transition-colors hover:text-foreground">
             Terms
           </Link>

@@ -25,6 +25,7 @@ the exact section.
 - [exercise-metadata.md](exercise-metadata.md): Free Exercise DB source file, Dofek exercise metadata overrides, and update workflow.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
+- [account-erasure-runbook.md](account-erasure-runbook.md): durable account deletion, retention proof, restore reconciliation, and incident response.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
   experiments, goals, and trust roadmap.
 - [personal-experiments.md](personal-experiments.md): N-of-1 experiment setup and schedule slice.
@@ -97,6 +98,7 @@ Cross-provider reverse-engineering references:
 | [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the Redpanda sink and ClickHouse analytics layers. |
 | [sleep-quality-backfill-runbook.md](sleep-quality-backfill-runbook.md) | Conservatively repairing historical sleep stage availability and sentinel-zero fields in bounded windows. |
 | [processing-status-runbook.md](processing-status-runbook.md) | Deploying and diagnosing provider/import processing across Postgres, Redpanda, PeerDB, ClickHouse, dbt, and cache refresh. |
+| [account-erasure-runbook.md](account-erasure-runbook.md) | Operating durable account deletion across write fences, remote processors, Postgres, ClickHouse, R2, backups, clients, and restore reconciliation. |
 | [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Current Redpanda ingest and R2 archive health, plus the unimplemented bounded-replay gap. |
 | [metric-stream-postgres-retirement.md](metric-stream-postgres-retirement.md) | Completed Postgres metric-stream retirement and current ownership boundaries. |
 | [provider-data-deletion-runbook.md](provider-data-deletion-runbook.md) | Generation-fenced provider deletion, transactional outbox delivery, BullMQ checkpoints, and ClickHouse tombstone verification. |

@@ -6,6 +6,11 @@ process.env.JOB_FILES_DIR = "/app/job-files";
 
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
+const mockAccountErasureAllowsQueuedUserWork = vi.fn().mockResolvedValue(true);
+vi.mock("./account-erasure-work-guard.ts", () => ({
+  accountErasureAllowsQueuedUserWork: (database: unknown, userId: string, workKind: string) =>
+    mockAccountErasureAllowsQueuedUserWork(database, userId, workKind),
+}));
 vi.mock("../logger.ts", () => ({
   logger: {
     info: vi.fn(),
@@ -78,6 +83,7 @@ describe("processExportJob", () => {
     mockCreateSignedExportDownloadUrl.mockResolvedValue("https://example.test/export");
     mockSendExportReadyEmail.mockResolvedValue(undefined);
     mockUnlink.mockResolvedValue(undefined);
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
     vi.mocked(mockDb.execute).mockReset();
     vi.mocked(mockDb.execute)
       .mockResolvedValueOnce([])
@@ -98,6 +104,41 @@ describe("processExportJob", () => {
       expect.any(Function),
     );
     expect(mockMkdir).toHaveBeenCalledWith("/app/job-files", { recursive: true });
+  });
+
+  it("does not generate or upload when erasure activates after dequeue", async () => {
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
+
+    await processExportJob(createMockJob(), mockDb);
+
+    expect(mockGenerateExport).not.toHaveBeenCalled();
+    expect(mockUploadExportFileToR2).not.toHaveBeenCalled();
+    expect(mockSendExportReadyEmail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [2, "file generation", "upload"],
+    [3, "object upload", "signed URL"],
+    [4, "delivery", "email"],
+    [5, "notification", "completion"],
+    [6, "completion", "completion update"],
+  ])("stops before %s when erasure activates during %s", async (blockedCall, _blockedStage, forbiddenEffect) => {
+    for (let call = 1; call < blockedCall; call++) {
+      mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(true);
+    }
+    mockAccountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
+
+    await processExportJob(createMockJob(), mockDb);
+
+    if (forbiddenEffect === "upload") {
+      expect(mockUploadExportFileToR2).not.toHaveBeenCalled();
+    } else if (forbiddenEffect === "signed URL") {
+      expect(mockCreateSignedExportDownloadUrl).not.toHaveBeenCalled();
+    } else if (forbiddenEffect === "email") {
+      expect(mockSendExportReadyEmail).not.toHaveBeenCalled();
+    } else {
+      expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(2);
+    }
   });
 
   it("uploads the export to R2, marks completion, and emails the user", async () => {

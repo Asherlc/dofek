@@ -103,6 +103,7 @@ final class HealthKitAnchoredQueryCoordinator {
     private let anchorStore: HealthKitAnchorStore
     private let pendingLock = NSLock()
     private var pendingAnchors: [String: PendingAnchor] = [:]
+    private var generation: UInt64 = 0
 
     init(anchorStore: HealthKitAnchorStore) {
         self.anchorStore = anchorStore
@@ -113,19 +114,29 @@ final class HealthKitAnchoredQueryCoordinator {
         query: (HKQueryAnchor?) async throws -> (result: Result, newAnchor: HKQueryAnchor?)
     ) async throws -> HealthKitPendingAnchoredQuery<Result> {
         let anchor = try anchorStore.load(typeIdentifier: typeIdentifier)
+        let queryGeneration = pendingLock.withLock { generation }
         let queryResult = try await query(anchor)
         guard let newAnchor = queryResult.newAnchor else {
             return HealthKitPendingAnchoredQuery(result: queryResult.result, queryId: nil)
         }
 
         let queryId = UUID().uuidString
-        pendingLock.withLock {
+        let pendingQueryId = pendingLock.withLock { () -> String? in
+            guard generation == queryGeneration else { return nil }
             pendingAnchors[queryId] = PendingAnchor(
                 anchor: newAnchor,
                 typeIdentifier: typeIdentifier
             )
+            return queryId
         }
-        return HealthKitPendingAnchoredQuery(result: queryResult.result, queryId: queryId)
+        return HealthKitPendingAnchoredQuery(result: queryResult.result, queryId: pendingQueryId)
+    }
+
+    func invalidatePendingQueries() {
+        pendingLock.withLock {
+            generation &+= 1
+            pendingAnchors.removeAll()
+        }
     }
 
     func complete(typeIdentifier: String, queryId: String, succeeded: Bool) throws {
