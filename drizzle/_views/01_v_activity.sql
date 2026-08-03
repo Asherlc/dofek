@@ -284,14 +284,15 @@ merged AS (
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
      ORDER BY r.prio ASC LIMIT 1) AS local_time_source,
-    (SELECT jsonb_object_agg(key, value)
+    (SELECT jsonb_object_agg(sub.key, sub.value)
      FROM (
-       SELECT key, value, ROW_NUMBER() OVER (PARTITION BY key ORDER BY r.prio ASC) AS rn
+       SELECT raw_entry.key, raw_entry.value,
+              ROW_NUMBER() OVER (PARTITION BY raw_entry.key ORDER BY r.prio ASC) AS rn
        FROM final_groups fg2
        JOIN ranked r ON r.id = fg2.activity_id,
-       LATERAL jsonb_each(COALESCE(r.raw, '{}'::jsonb))
+       LATERAL jsonb_each(COALESCE(r.raw, '{}'::jsonb)) AS raw_entry (key, value)
        WHERE fg2.group_id = b.group_id
-     ) sub WHERE rn = 1
+     ) sub WHERE sub.rn = 1
     ) AS raw,
     (SELECT array_agg(DISTINCT r.provider_id ORDER BY r.provider_id)
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
