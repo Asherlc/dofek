@@ -7,6 +7,146 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-03: Production deploy blocked by migration rollout and runtime compatibility
+
+### Symptoms
+
+The [original Deploy Web run](https://github.com/Asherlc/dofek/actions/runs/30807158839)
+first failed in the deploy-stack job before any Docker stack deployment because
+the rendered production dotenv did not contain the four account-erasure
+processor and retention prerequisites `BREVO_API_KEY`,
+`POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, and `SENTRY_ORG`. After those
+secrets were provisioned, successive corrected-image deploys exposed several
+independent rollout defects: tombstones were validated as live ClickHouse
+rows, the web service was missing metric-stream environment keys, the
+Postgres migration journal had stale ordering, a rebuild-task table lacked an
+account-erasure policy, an old worker restarted after migrations, and the
+account-erasure Redpanda drain used an invalid native-ESM import from KafkaJS.
+The corrected [Deploy Web run](https://github.com/Asherlc/dofek/actions/runs/30832943322)
+completed successfully.
+
+### User Impact
+
+The release was delayed through several failed deploy attempts. Intermediate
+runs did update some production services and migration state, but no confirmed
+user-facing impact was identified; the final run converged the requested web
+and worker image and completed all deploy gates.
+
+### Evidence
+
+The first fatal line in [the original job 91665420690](https://github.com/Asherlc/dofek/actions/runs/30807158839/job/91665420690)
+was `Error: Rendered Infisical dotenv is missing required keys:
+BREVO_API_KEY, POSTHOG_PERSONAL_API_KEY, POSTHOG_PROJECT_ID, SENTRY_ORG`, from
+[`scripts/validate-deploy-env.ts`](../scripts/validate-deploy-env.ts). The
+preceding production-deploy eligibility, target-resolution, and Terraform jobs
+passed. An authenticated Infisical project inspection showed that the CI
+machine identity has the project-level Viewer role, while all four names were
+absent from the Production environment (and also absent from Development and
+Staging). The GitHub OIDC machine-identity export therefore could not render
+them.
+
+The next migration attempt passed Infisical export, required-secret validation,
+dotenv rendering, stack validation, image pulls, and backup checks, then failed at
+[`Run migrations` in job 91725065218](https://github.com/Asherlc/dofek/actions/runs/30807158839/job/91725065218)
+with `Canonical activity type backfill left unmapped rows`. A read-only query
+of production ClickHouse found 761 empty-type rows; every one had
+`_peerdb_is_deleted=1` and default epoch activity fields, while the live rows
+passed the same validation when filtered with `_peerdb_is_deleted=0`.
+
+The following deploy attempts supplied additional evidence. The web container
+failed with `METRIC_STREAM_TOPIC is required` because the least-privilege web
+environment policy omitted the metric-stream keys consumed unconditionally by
+the server. The Postgres migration journal also placed
+`0062_account_erasure` before later migrations; the repair moved it after
+`0068` and made journal parsing reject non-increasing timestamps. Coverage then
+failed on `fitness.metric_stream_rebuild_task`; production catalog inspection
+showed that it contains only shared rebuild metadata and no user ownership, so
+it was classified as shared-system state.
+
+After those fixes, the pre-migration stack intentionally left the worker on an
+older image. That worker runs migrations during startup and rejected the newer
+database history (`Integrity check failed: migration tracked at ...`). The
+workflow therefore needed a migration-only worker-quiesce overlay so that the
+one-shot migration container was the only app process advancing the schema.
+The next image reached worker startup but failed with:
+`SyntaxError: The requested module 'kafkajs' does not provide an export named
+'ConfigResourceTypes'`. KafkaJS is loaded as a CommonJS package in the image;
+the fix uses its default import and accesses the type namespace through that
+default export in [`src/account-erasure/redpanda-drain.ts`](../src/account-erasure/redpanda-drain.ts).
+
+The first build attempt also hit a registry-cache-only failure:
+`403 Forbidden` while exporting the E2E Docker cache to GHCR. The unchanged
+[build run 30832396382](https://github.com/Asherlc/dofek/actions/runs/30832396382)
+passed on its second attempt, including both Docker jobs.
+
+### Root Cause
+
+The incident combined missing production secret configuration with a chain of
+independent rollout defects. The original migration validation incorrectly
+treated deleted PeerDB tombstones as live data; the deploy environment policy
+omitted runtime metric-stream keys; the migration journal was not strictly
+ordered; the rebuild-task table had no explicit shared-system classification;
+the pre-migration worker was allowed to restart against newer migration state;
+and the Redpanda drain imported named KafkaJS exports that are unavailable from
+the image's CommonJS package under native ESM. The CI machine identity's Viewer
+role was sufficient to read project secrets, so the first failure was missing
+secret configuration rather than GitHub Actions permissions.
+
+### Fix or Mitigation
+
+No repository workaround, fallback, or weakened validation was added. The four
+credentials were provisioned in Infisical Production. The fixes were:
+
+- migration `0069_canonical_activity_types` validates only live rows
+  (`_peerdb_is_deleted = 0`);
+- the web and worker environment policies include the metric-stream runtime
+  keys;
+- the migration journal is ordered and strictly validated;
+- `fitness.metric_stream_rebuild_task` is classified as shared-system state;
+- the migration-only stack overlay quiesces the worker before migrations; and
+- the KafkaJS drain uses the package's CommonJS-compatible default import.
+
+The required credential contract and migration rollout sequence are documented
+in [`deploy/README.md`](../deploy/README.md).
+
+### Validation
+
+The focused migration and deploy-policy tests passed, the native-ESM regression
+passed 20/20, `pnpm typecheck` and Biome checks passed, and the full local unit
+run passed 1,104 test files and 16,629 tests. The local ClickHouse integration
+test and analytics lint remained unavailable because the local Docker daemon
+and its ClickHouse endpoint were not running; the production deploy exercised
+the real databases successfully.
+
+Build run [30832396382](https://github.com/Asherlc/dofek/actions/runs/30832396382)
+passed on attempt two. Deploy run
+[30832943322](https://github.com/Asherlc/dofek/actions/runs/30832943322)
+passed all steps, including migrations, stack rollout, consumer stability,
+backup freshness, and Sentry release recording. Read-only production checks
+then confirmed web `2/2` and worker `1/1` on
+`ghcr.io/asherlc/dofek:sha-55f7171`, Postgres relations
+`fitness.account_erasure_request` and `fitness.metric_stream_rebuild_task`,
+and zero unmapped live ClickHouse activity rows.
+
+### Remaining Risk
+
+No deploy-blocking risk remains from this incident. Separate post-deploy
+observations require follow-up. Sentry issue
+[DOFEK-SERVER-5T](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5T)
+appeared on the new release immediately after rollout, but its underlying
+ClickHouse error was `REQUIRED_PASSWORD`: the existing analytics-worker
+environment policy supplies only Sentry keys while dbt's production profile
+reads `CLICKHOUSE_PASSWORD`; `runAnalyticsBuild` then reported a secondary
+missing-artifact `ENOENT`. Neither the analytics build code nor that policy was
+changed in this incident branch, so this is a separate configuration follow-up,
+not a regression attributable to these fixes. Sentry also recorded a transient
+Postgres lock timeout and a pre-existing Peloton payload regression. `dofek_ota`
+was `0/1` because its image lacked `EXPO_APP_ID`, and worker post-sync logs
+reported ClickHouse `UNKNOWN_IDENTIFIER` errors for `activity_type`; none of
+these conditions blocked the deploy workflow or was changed as part of this
+root-cause fix. The local Docker/ClickHouse validation gap also remains for a
+future integration run.
+
 ## 2026-08-02: Local integration validation hit Compose and Redpanda host limits
 
 ### Symptoms

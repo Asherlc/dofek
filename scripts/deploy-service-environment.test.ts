@@ -124,6 +124,8 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
   "SENTRY_ORG",
 ] as const;
 
+const METRIC_STREAM_ENVIRONMENT_KEYS = ["METRIC_STREAM_TOPIC", "REDPANDA_BROKERS"] as const;
+
 function makeTemporaryDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), "dofek-deploy-service-env-"));
   temporaryDirectories.push(directory);
@@ -168,7 +170,11 @@ describe("renderDeployServiceEnvironmentFiles", () => {
 
     const web = parseEnv(readFileSync(paths.web, "utf8"));
     expect(Object.keys(web).sort()).toEqual(
-      [...APPLICATION_ENVIRONMENT_KEYS, ...WEB_ONLY_ENVIRONMENT_KEYS].sort(),
+      [
+        ...APPLICATION_ENVIRONMENT_KEYS,
+        ...WEB_ONLY_ENVIRONMENT_KEYS,
+        ...METRIC_STREAM_ENVIRONMENT_KEYS,
+      ].sort(),
     );
     expect(web).not.toHaveProperty("BREVO_API_KEY");
     expect(web).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
@@ -227,7 +233,19 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     ).toThrow("worker deploy environment is missing required keys: POSTHOG_PERSONAL_API_KEY");
   });
 
-  it("fails before worker startup when the metric-stream contract is incomplete", () => {
+  it("fails before worker startup when a worker-only contract is incomplete", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.SENTRY_AUTH_TOKEN;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("worker deploy environment is missing required keys: SENTRY_AUTH_TOKEN");
+  });
+
+  it("fails before web startup when the metric-stream contract is incomplete", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment = completeDeployEnvironment();
@@ -238,7 +256,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow(
-      "worker deploy environment is missing required keys: METRIC_STREAM_TOPIC, REDPANDA_BROKERS",
+      "web deploy environment is missing required keys: METRIC_STREAM_TOPIC, REDPANDA_BROKERS",
     );
   });
 

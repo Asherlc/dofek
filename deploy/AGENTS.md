@@ -8,12 +8,18 @@
 - **Secrets via Infisical**: Never hardcode secrets in `.tf` files or `stack.yml`. CI fetches deploy-tagged single-line secrets into an `env_file` for stack deploy; multiline secrets must be injected as Docker Swarm secrets.
 - **Zero-Downtime via Swarm**: `deploy.update_config` on `web`/`worker` uses `order: start-first` + healthcheck-gated `monitor` + `failure_action: rollback`. Never bypass the canonical workflow with `docker service rm`, `docker service update`, or a manual stack deploy.
 - **Deterministic Migrations**: CI first applies the stack with the
-  ClickHouse-consumer quiesce overlay without pruning, waits for Postgres and
-  ClickHouse, runs the requested image's one-shot migrations, and then deploys
-  that image with pruning while the consumers remain quiesced. Only after the
-  app converges does CI run the provider-connection cutover, post-deploy
-  readiness and CDC gates, and the final deploy that restores the consumers.
-  Do not run migrations inside `web` startup or reorder these phases.
+  ClickHouse-consumer and migration quiesce overlays without pruning, waits for
+  Postgres and ClickHouse, runs the requested image's one-shot migrations, and
+  then deploys that image with pruning while the consumers remain quiesced.
+  The migration overlay keeps `worker` at zero because its
+  [entrypoint](../entrypoint.sh) runs migrations on worker startup; the
+  requested image is the only app image allowed to start after the migration
+  phase. Only after the app converges does CI run the provider-connection
+  cutover, post-deploy readiness and CDC gates, and the final deploy that
+  restores the consumers. Do not run migrations inside `web` startup or reorder
+  these phases. Docker documents the overlay merge behavior used by
+  `docker stack deploy`:
+  [stack deploy](https://docs.docker.com/reference/cli/docker/stack/deploy/).
 - **No Server-Side Deploy Scripts**: The server only runs `dockerd` + swarm. All deploy logic lives in CI and talks to the remote Docker API over SSH. Do not add bash helpers to `/opt/dofek`.
 - **DNS Consistency**: Every domain added to `stack.yml` MUST have a corresponding `cloudflare_dns_record` in `dns.tf`. `scripts/check-dns-records.sh` enforces this in CI.
 

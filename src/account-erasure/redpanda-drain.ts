@@ -1,4 +1,4 @@
-import { ConfigResourceTypes, Kafka } from "kafkajs";
+import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
 import { z } from "zod";
 import {
   METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
@@ -76,14 +76,15 @@ async function assertQuarantineTopicConfiguration(
         {
           configNames: [...expectedConfig.keys()],
           name: quarantineTopic,
-          type: ConfigResourceTypes.TOPIC,
+          type: kafkaJs.ConfigResourceTypes.TOPIC,
         },
       ],
     }),
   );
   const resource = response.resources.find(
     (entry) =>
-      entry.resourceName === quarantineTopic && entry.resourceType === ConfigResourceTypes.TOPIC,
+      entry.resourceName === quarantineTopic &&
+      entry.resourceType === kafkaJs.ConfigResourceTypes.TOPIC,
   );
   if (!resource) {
     throw new Error(`Account erasure could not verify quarantine topic ${quarantineTopic}`);
@@ -229,7 +230,7 @@ export function createAccountErasureRedpandaAdminFromEnv(
   if (!brokers || brokers.length === 0) {
     throw new Error("REDPANDA_BROKERS is required for account erasure");
   }
-  const admin = new Kafka({
+  const admin = new kafkaJs.Kafka({
     brokers,
     clientId: "dofek-account-erasure",
   }).admin();

@@ -26,7 +26,8 @@ describe("0069_canonical_activity_types migration", () => {
     await client.command({
       query: `CREATE TABLE ${database}.activity (
         id UUID,
-        activity_type String
+        activity_type String,
+        _peerdb_is_deleted UInt8 DEFAULT 0
       )
       ENGINE = MergeTree
       ORDER BY id`,
@@ -41,8 +42,9 @@ describe("0069_canonical_activity_types migration", () => {
     });
     await client.command({
       query: `INSERT INTO ${database}.activity VALUES
-        (generateUUIDv4(), 'road_cycling'),
-        (generateUUIDv4(), 'rock_climbing')`,
+        (generateUUIDv4(), 'road_cycling', 0),
+        (generateUUIDv4(), 'rock_climbing', 0),
+        (generateUUIDv4(), '', 1)`,
     });
     await client.command({
       query: `INSERT INTO ${database}.activity_summary_rows VALUES
@@ -82,6 +84,7 @@ describe("0069_canonical_activity_types migration", () => {
     const result = await client.query({
       query: `SELECT canonical_type, provider_type, modality
         FROM ${database}.activity
+        WHERE _peerdb_is_deleted = 0
         ORDER BY provider_type`,
       format: "JSONEachRow",
     });

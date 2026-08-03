@@ -167,6 +167,19 @@ describe("postgres migrator", () => {
     );
   });
 
+  it("rejects migration journals whose timestamps are not strictly increasing", async () => {
+    setMigrationHistory([
+      { hash: "first-current-hash", tag: "0001_first", when: 202 },
+      { hash: "second-current-hash", tag: "0002_second", when: 201 },
+    ]);
+    const { client } = makeClient([]);
+
+    await expect(runDrizzleMigrations(client, "/migrations")).rejects.toThrow(
+      "Migration journal timestamps must be strictly increasing: 0002_second follows 0001_first",
+    );
+    expect(mocks.migrate).not.toHaveBeenCalled();
+  });
+
   it("reconciles legacy rows and delegates migration execution to Drizzle", async () => {
     setMigrationHistory([
       { hash: "first-current-hash", tag: "0001_first", when: 101 },
