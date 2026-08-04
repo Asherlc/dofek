@@ -113,14 +113,33 @@ required `react-native-gesture-handler` `~3.1.0` against a `2.32.0` pin, which
 no workspace source imports directly. pnpm documents
 [overrides in the workspace file](https://pnpm.io/settings#overrides).
 
-**Unresolved:** the `Publish Mobile Preview OTA` workflow fails its healthcheck
-against `https://ota.dofek.asherlc.com/hc`, which returns `404` on all five
-attempts, so the job exits before reaching `eoas publish`. This is the same
-condition as the `dofek_ota` service sitting at `0/1` for a missing
-`EXPO_APP_ID`, recorded in the 2026-08-03 entry below. It is a production
-service state rather than a repository defect, and the remedy is provisioning
-that variable and restoring the service — not further retries or timeouts in
-the workflow, which already retries five times.
+The `Publish Mobile Preview OTA` workflow also failed here, with its healthcheck
+against `https://ota.dofek.asherlc.com/hc` returning `404` on all five attempts
+so the job exited before reaching `eoas publish`. The `dofek_ota` service had
+been recorded as `0/1` for a missing `EXPO_APP_ID` in the 2026-08-03 entry
+below, and that variable was present in Infisical — but the `ota` service in
+[`deploy/stack.yml`](../deploy/stack.yml) never referenced `${EXPO_APP_ID}`, so
+it was never interpolated into the container and `expo-open-ota` kept starting
+without it. A secret in Infisical only reaches a service that names it: the
+dotenv template renders every secret at the project root, and `docker stack
+deploy` runs with that dotenv loaded, so the gap was purely the missing
+reference. The `ota` environment block now sets
+`EXPO_APP_ID: ${EXPO_APP_ID:?EXPO_APP_ID is required}`, and `EXPO_APP_ID` was
+added to `REQUIRED_DEPLOY_KEYS` in
+[`scripts/validate-deploy-env.ts`](../scripts/validate-deploy-env.ts) so a
+missing value fails the deploy with a named key instead of surfacing later as a
+healthcheck `404`. That closes the "add fail-fast deploy validation for OTA-only
+runtime requirements" follow-up left open by the earlier staging entry. The
+service itself recovers on the next deploy, not from this commit alone.
+
+**Unresolved:** the remaining `ota` interpolations — `OTA_JWT_SECRET`,
+`OTA_PRIVATE_KEY_B64`, `OTA_PUBLIC_KEY_B64` — still carry neither a default nor
+a `:?` marker, so an absent value renders as an empty string and the container
+starts misconfigured rather than failing loudly. They were left unchanged here
+because their presence in Infisical could not be confirmed from this
+environment, and adding `:?` to a genuinely absent key converts a silent
+misconfiguration into a hard deploy failure. Confirm them in Infisical, then add
+the markers.
 
 ## 2026-08-03: Production deploy blocked by migration rollout and runtime compatibility
 
