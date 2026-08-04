@@ -22423,3 +22423,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The shared Docker host had exhausted its automatic bridge-network address pools; Docker documents these pools as the source for automatically allocated subnets ([address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
 - **Fix / mitigation:** No repository retry, timeout, skip, or fallback was added. Focused unit tests, typechecks, and migration-policy validation remain available; the database-backed test needs a host with an available isolated network pool.
 - **Remaining risk / follow-up:** Re-run the integration test through `pnpm test:integration` after workspace-scoped Docker network capacity is restored.
+
+## 2026-08-03 — Dependency audit blocked CI on newly published advisories
+
+- **Status:** Fixed in the workspace; the dependency-audit workflow needs a
+  fresh run from the resulting commit.
+- **Symptoms:** [CI run 30837222551](https://github.com/Asherlc/dofek/actions/runs/30837222551), job [91765508011](https://github.com/Asherlc/dofek/actions/runs/30837222551/job/91765508011), failed in `Test / Dependency Audit`.
+- **User impact:** No production users were affected. The CI gate was blocked
+  until the production dependency graph passed its high-severity audit.
+- **Evidence:** The first fatal command was
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors`; it reported
+  `brace-expansion` `5.0.8` as affected by
+  [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895),
+  which is patched in `5.0.9`. After that update exposed the next first
+  failure, `fast-uri` `3.1.4` was affected by
+  [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7),
+  which is patched in `3.1.5`.
+- **Root cause:** The workspace security overrides pinned two transitive
+  packages below newly published patched versions, so the frozen production
+  graph failed the audit even though no application source changed.
+- **Fix / mitigation:** Updated the existing overrides to
+  `brace-expansion@5.0.9` and `fast-uri@3.1.5`, then regenerated the frozen
+  lockfile. No audit ignore, retry, timeout, or warn-and-continue behavior was
+  added.
+- **Validation:** Frozen install, offline frozen-install verification, exact
+  dependency-version policy, the exact production audit, and the production
+  license scan all passed. The audit now reports only the pre-existing low and
+  moderate findings.
+- **Remaining risk / follow-up:** Newly published advisories can invalidate a
+  previously green lockfile; rerun the CI dependency-audit job after the
+  change is committed and pushed, then address the remaining findings through
+  their own root-cause updates if the audit threshold changes.
+
+## 2026-08-03 — Shared Docker network pools blocked local PR validation
+
+- **Status:** Unresolved local validation environment issue; no production
+  impact.
+- **Symptoms:** The analytics phase of `pnpm lint` could not connect to
+  ClickHouse because the workspace Compose stack was not running.
+- **User impact:** Docker-free lint policy checks and root/server/web
+  typechecks completed; only local ClickHouse-backed lint and Docker-backed
+  tests remain unvalidated.
+- **Evidence:** `pnpm compose:up` first failed with
+  `all predefined address pools have been fully subnetted`. This workspace
+  owned no network or container, while the Docker host contained networks from
+  other workspaces.
+- **Root cause:** The shared Docker daemon had exhausted its automatic
+  user-defined bridge-network address pools before it could create this
+  workspace's isolated Compose network.
+- **Fix / mitigation:** No other-workspace network, container, volume, or
+  daemon setting was changed. The normal workspace Compose wrapper remains the
+  required startup path.
+- **Validation:** `pnpm lint:sandbox`, root TypeScript, server TypeScript, and
+  web TypeScript passed. Analytics SQL lint and Docker-backed tests require a
+  host with an available isolated network pool.
+- **Remaining risk / follow-up:** Re-run the full lint and test commands after
+  the shared Docker network pool is repaired or an approved workspace-local
+  network is available; hosted CI is the next validation environment.
