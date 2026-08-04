@@ -22470,7 +22470,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   other workspaces.
 - **Root cause:** The shared Docker daemon had exhausted its automatic
   user-defined bridge-network address pools before it could create this
-  workspace's isolated Compose network.
+  workspace's isolated Compose network ([Docker address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
 - **Fix / mitigation:** No other-workspace network, container, volume, or
   daemon setting was changed. The normal workspace Compose wrapper remains the
   required startup path.
@@ -22525,3 +22525,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Newly published advisories can invalidate a
   previously green lockfile; rerun the hosted dependency-audit job and address
   any newly surfaced high-severity package through the same root-cause process.
+
+## 2026-08-03 — PR 2420 mobile Metro validation rejected a stale gesture handler
+
+- **Status:** Fixed in the workspace; a fresh CI run is required from the
+  updated commit.
+- **Symptoms:** [Build Mobile / Metro Bundle job 91876683733](https://github.com/Asherlc/dofek/actions/runs/30872272113/job/91876683733) failed before bundling in `Verify dependencies match Expo SDK`.
+- **Evidence:** The first fatal line was `react-native-gesture-handler@2.32.0 - expected version: ~3.1.0`, followed by `Found outdated dependencies`; this is Expo CLI's dependency-validation check ([documentation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Root cause:** Expo SDK 57's expected React Native dependency range had advanced, but the mobile manifest still pinned `react-native-gesture-handler` to `2.32.0`.
+- **Fix / mitigation:** Updated the exact manifest and lockfile version to the current stable `3.1.0`. No workflow bypass or check relaxation was added.
+- **Validation:** The exact Expo compatibility check, mobile TypeScript, iOS Metro export, and OTA export-path validation all pass locally with the required Sentry configuration supplied.
+- **Remaining risk / follow-up:** Confirm the next hosted CI run completes the remaining native and mobile jobs before merge.
