@@ -97,6 +97,31 @@ from `modality` — notably `hiking_activity`, which admits
 `canonical_type = 'running' AND modality = 'trail'` — will not reclassify
 historical activities until those models are refreshed.
 
+Two CI failures surfaced while validating this change and were fixed alongside
+it, because both tripped fail-fast and cancelled the unit, integration, and E2E
+jobs, leaving the migration unexercised. `pnpm audit --prod --audit-level=high`
+reported three high advisories in transitive dependencies, resolved by advancing
+the existing `pnpm-workspace.yaml` overrides to `brace-expansion` 5.0.9
+([GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895)),
+`fast-uri` 3.1.5
+([GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7)), and
+`ip-address` 10.4.0
+([GHSA-mwp4-54f8-5fhr](https://github.com/advisories/GHSA-mwp4-54f8-5fhr)).
+Note that pnpm 10+ reads `overrides` from `pnpm-workspace.yaml`; the same block
+placed in `package.json` is silently ignored. `expo install --check` also
+required `react-native-gesture-handler` `~3.1.0` against a `2.32.0` pin, which
+no workspace source imports directly. pnpm documents
+[overrides in the workspace file](https://pnpm.io/settings#overrides).
+
+**Unresolved:** the `Publish Mobile Preview OTA` workflow fails its healthcheck
+against `https://ota.dofek.asherlc.com/hc`, which returns `404` on all five
+attempts, so the job exits before reaching `eoas publish`. This is the same
+condition as the `dofek_ota` service sitting at `0/1` for a missing
+`EXPO_APP_ID`, recorded in the 2026-08-03 entry below. It is a production
+service state rather than a repository defect, and the remedy is provisioning
+that variable and restoring the service — not further retries or timeouts in
+the workflow, which already retries five times.
+
 ## 2026-08-03: Production deploy blocked by migration rollout and runtime compatibility
 
 ### Symptoms
