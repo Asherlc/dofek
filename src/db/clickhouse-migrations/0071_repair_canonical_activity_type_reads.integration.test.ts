@@ -44,7 +44,7 @@ const provenanceRowsSchema = z.array(
 const outdoorActivityId = "11111111-1111-4111-8111-111111111111";
 const indoorActivityId = "22222222-2222-4222-8222-222222222222";
 const tombstonedActivityId = "33333333-3333-4333-8333-333333333333";
-const unreplicatedActivityId = "44444444-4444-4444-8444-444444444444";
+const absentFromReplicaActivityId = "44444444-4444-4444-8444-444444444444";
 
 const provenanceServingTables = [
   "activity_source_records",
@@ -131,7 +131,7 @@ ORDER BY activity_id`);
         ('${outdoorActivityId}', '${outdoorActivityId}', 'cycling', NULL, NULL, 0),
         ('${indoorActivityId}', '${indoorActivityId}', 'cycling', NULL, NULL, 0),
         ('${tombstonedActivityId}', '${tombstonedActivityId}', 'running', NULL, NULL, 1),
-        ('${unreplicatedActivityId}', '${unreplicatedActivityId}', 'walking', NULL, NULL, 0)`,
+        ('${absentFromReplicaActivityId}', '${absentFromReplicaActivityId}', 'walking', NULL, NULL, 0)`,
     });
   });
 
@@ -197,10 +197,10 @@ ORDER BY activity_id`);
       ]);
     });
 
-    it("records provenance for an unreplicated activity as null, not an empty string", async () => {
-      expect(await readProvenance(unreplicatedActivityId)).toEqual([
+    it("records provenance for an activity missing from the replica as null, not an empty string", async () => {
+      expect(await readProvenance(absentFromReplicaActivityId)).toEqual([
         {
-          activity_id: unreplicatedActivityId,
+          activity_id: absentFromReplicaActivityId,
           provider_type: null,
           modality: null,
           is_deleted: 0,

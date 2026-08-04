@@ -80,7 +80,7 @@ The migration's declared statements are exercised against a real ClickHouse in
 `0071_repair_canonical_activity_type_reads.integration.test.ts`, which
 reconstructs the stale view, asserts the pre-repair read fails, and then asserts
 the repaired read and the backfilled provenance, including tombstoned and
-unreplicated rows. Unit coverage asserts statement ordering and the guarded
+rows missing from the replica. Unit coverage asserts statement ordering and the
 runner.
 
 ### Remaining Risk
