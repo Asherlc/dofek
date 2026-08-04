@@ -22589,6 +22589,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The new deploy-environment regression test fails before the
   validator change and passes after it; stack configuration validation and the
   hosted OTA preview remain pending the canonical production rollout.
+- **Deployment evidence:** The first canonical rollout attempt
+  ([run 30874553043](https://github.com/Asherlc/dofek/actions/runs/30874553043))
+  stopped before any stack mutation in `Pull deploy images` because the
+  checked-out PR commit did not match the old production image's
+  `SENTRY_RELEASE`. This was the deploy integrity guard working as designed;
+  no production state changed.
 - **Remaining risk / follow-up:** A production deploy must apply the updated
   stack and confirm `dofek_ota` is continuously `1/1`, the healthcheck returns
   HTTP 200, and the PR preview workflow succeeds. Until then, OTA preview
