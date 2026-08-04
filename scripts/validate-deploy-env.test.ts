@@ -13,6 +13,9 @@ function validEnvironment(): Record<string, string> {
     BREVO_API_KEY: "brevo-token",
     CREDENTIAL_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 3).toString("base64"),
     EXPO_APP_ID: "expo-project-id",
+    OTA_JWT_SECRET: "ota-jwt-secret",
+    OTA_PRIVATE_KEY_B64: "ota-private-key",
+    OTA_PUBLIC_KEY_B64: "ota-public-key",
     POSTHOG_PERSONAL_API_KEY: "posthog-token",
     POSTHOG_PROJECT_ID: "12345",
     R2_ACCESS_KEY_ID: "r2-access",
@@ -61,6 +64,19 @@ describe("validateDeployEnvironment", () => {
 
     expect(() => validateDeployEnvironment(environment)).toThrow(
       "Rendered Infisical dotenv is missing required keys: EXPO_APP_ID",
+    );
+  });
+
+  it("requires the OTA server JWT and signing key secrets", () => {
+    const environment: Record<string, string | undefined> = {
+      ...validEnvironment(),
+      OTA_JWT_SECRET: undefined,
+      OTA_PRIVATE_KEY_B64: undefined,
+      OTA_PUBLIC_KEY_B64: undefined,
+    };
+
+    expect(() => validateDeployEnvironment(environment)).toThrow(
+      "Rendered Infisical dotenv is missing required keys: OTA_JWT_SECRET, OTA_PRIVATE_KEY_B64, OTA_PUBLIC_KEY_B64",
     );
   });
 

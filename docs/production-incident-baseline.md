@@ -7,6 +7,142 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-04: Stale ClickHouse views broke activity reads after the canonical type rename
+
+### Symptoms
+
+Sentry issue
+[DOFEK-SERVER-53](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-53)
+regressed on release `55f7171` with
+``Error: Unknown expression or function identifier `activity_type` in scope
+SELECT activity_id, user_id, assumeNotNull(activity_type) AS activity_type, ...
+FROM analytics.activity_summary_rows FINAL WHERE is_deleted = 0``. The tagged
+`trpcPath` was `calendar.weekList`, and the culprit frame was the ClickHouse
+client's `parseError`. This is the same condition recorded as an open follow-up
+in the 2026-08-03 entry below, where worker post-sync logs reported ClickHouse
+`UNKNOWN_IDENTIFIER` errors for `activity_type`.
+
+### User Impact
+
+Every server read of `analytics.activity_summary` failed. That view backs
+roughly fifteen server repositories, so activity-derived dashboard, calendar,
+cycling, efficiency, power, and report routes returned errors rather than data
+for the affected users. Sentry recorded 14 events with 0 users attributed
+because the failures were raised on unauthenticated-attributed spans.
+
+### Evidence
+
+`analytics.activity_summary` and `analytics.v_activity` are created through
+[`standardViewHeader()`](../src/db/clickhouse-sql-helpers.ts), which emits
+`CREATE VIEW IF NOT EXISTS`. ClickHouse stores the query text a view was created
+with and resolves it only at read time.
+[`0069_canonical_activity_types`](../src/db/clickhouse-migrations/0069_canonical_activity_types.ts)
+renamed `activity_type` to `canonical_type` on `postgres_fitness.activity` and
+on the `analytics` serving tables, and
+[PR #2416](https://github.com/Asherlc/dofek/pull/2416) updated both view bodies
+in the same change. Because neither view was dropped first, the recreate was a
+no-op against the existing production objects and their stored bodies kept
+selecting the renamed column. The error text quotes the pre-rename body, which
+is what identifies the stored definition rather than the deployed source as the
+failing artifact.
+
+The same migration added `provider_type` and `modality` to
+`analytics.activity_source_records`, `analytics.activity_summary_rows`,
+`analytics.cycling_activity`, and `analytics.deduped_activities` as nullable
+columns and backfilled only `canonical_type`. The dbt models that own those
+tables select dirty keys from `postgres_fitness.activity._peerdb_synced_at`,
+which an `ALTER TABLE ... UPDATE` mutation does not advance, so historical rows
+would have kept a null `provider_type` and `modality` until an explicit model
+refresh or a later source update made them dirty again.
+
+### Root Cause
+
+`CREATE VIEW IF NOT EXISTS` cannot update a view that already exists, so a
+column rename applied underneath such a view leaves its stored body pointing at
+a column that is gone. The rename migration changed the tables without dropping
+and recreating the dependent views.
+
+### Fix or Mitigation
+
+[`0071_repair_canonical_activity_type_reads`](../src/db/clickhouse-migrations/0071_repair_canonical_activity_type_reads.ts)
+drops and recreates `analytics.v_activity`, `analytics.v_activity_members`, and
+`analytics.activity_summary` from the current builders, then backfills
+`provider_type` and `modality` on the four serving tables from the replicated
+`postgres_fitness.activity` rows through a temporary
+`Join(ANY, LEFT, activity_id)` lookup and `joinGet`, bounded to live rows that
+are still missing provenance. The lookup is dropped once the backfill
+completes. ClickHouse documents the
+[Join table engine](https://clickhouse.com/docs/en/engines/table-engines/special/join)
+and [ALTER TABLE ... UPDATE mutations](https://clickhouse.com/docs/en/sql-reference/statements/alter/update).
+
+### Validation
+
+The migration's declared statements are exercised against a real ClickHouse in
+`0071_repair_canonical_activity_type_reads.integration.test.ts`, which
+reconstructs the stale view, asserts the pre-repair read fails, and then asserts
+the repaired read and the backfilled provenance on eligible rows. Because the
+backfill targets only live rows with missing provenance, the same test asserts
+that tombstoned rows and rows missing from the replica come out unchanged, and
+that reapplying the whole migration is idempotent. Unit coverage asserts
+statement ordering and the guarded runner.
+
+### Remaining Risk
+
+`standardViewHeader()` still emits `CREATE VIEW IF NOT EXISTS`, so the next
+column rename under a view needs its own drop-and-recreate migration; moving the
+helper to `CREATE OR REPLACE VIEW` would remove that class of defect and was
+deliberately left out of this change. The backfill corrects the two columns but
+does not advance `refreshed_at`, so downstream models that derive membership
+from `modality` — notably `hiking_activity`, which admits
+`canonical_type = 'running' AND modality = 'trail'` — will not reclassify
+historical activities until those models are refreshed.
+
+Two fail-fast CI gate failures surfaced while validating this change and were
+fixed alongside it, because both tripped fail-fast and cancelled the unit,
+integration, and E2E jobs, leaving the migration unexercised. `pnpm audit --prod --audit-level=high`
+reported three high advisories in transitive dependencies, resolved by advancing
+the existing `pnpm-workspace.yaml` overrides to `brace-expansion` 5.0.9
+([GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895)),
+`fast-uri` 3.1.5
+([GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7)), and
+`ip-address` 10.4.0
+([GHSA-mwp4-54f8-5fhr](https://github.com/advisories/GHSA-mwp4-54f8-5fhr)).
+Note that pnpm 10+ reads `overrides` from `pnpm-workspace.yaml`; the same block
+placed in `package.json` is silently ignored. `expo install --check` also
+required `react-native-gesture-handler` `~3.1.0` against a `2.32.0` pin, which
+no workspace source imports directly. pnpm documents
+[overrides in the workspace file](https://pnpm.io/settings#overrides).
+
+The `Publish Mobile Preview OTA` workflow also failed here, with its healthcheck
+against `https://ota.dofek.asherlc.com/hc` returning `404` on all five attempts
+so the job exited before reaching `eoas publish`. The `dofek_ota` service had
+been recorded as `0/1` for a missing `EXPO_APP_ID` in the 2026-08-03 entry
+below, and that variable was present in Infisical — but the `ota` service in
+[`deploy/stack.yml`](../deploy/stack.yml) never referenced `${EXPO_APP_ID}`, so
+it was never interpolated into the container and `expo-open-ota` kept starting
+without it. A secret in Infisical only reaches a service that names it: the
+dotenv template renders every secret at the project root, and `docker stack
+deploy` runs with that dotenv loaded, so the gap was purely the missing
+reference. The `ota` environment block now sets
+`EXPO_APP_ID: ${EXPO_APP_ID:?EXPO_APP_ID is required}`, and `EXPO_APP_ID` was
+added to `REQUIRED_DEPLOY_KEYS` in
+[`scripts/validate-deploy-env.ts`](../scripts/validate-deploy-env.ts) so a
+missing value fails the deploy with a named key instead of surfacing later as a
+healthcheck `404`. That closes the "add fail-fast deploy validation for OTA-only
+runtime requirements" follow-up left open by the earlier staging entry. The
+service itself recovers on the next deploy, not from this commit alone.
+
+The remaining `ota` interpolations — `OTA_JWT_SECRET`, `OTA_PRIVATE_KEY_B64`,
+`OTA_PUBLIC_KEY_B64` — previously carried neither a default nor a `:?` marker,
+so an absent value would render as an empty string and the container would
+start misconfigured rather than fail loudly. They were left unchanged in the
+initial fix because their presence in Infisical could not be confirmed from
+this environment, and adding `:?` to a genuinely absent key converts a silent
+misconfiguration into a hard deploy failure. The repository owner confirmed
+all three are populated in Infisical, so the `ota` environment block now sets
+`:?` guards on all three and they were added to `REQUIRED_DEPLOY_KEYS` in
+[`scripts/validate-deploy-env.ts`](../scripts/validate-deploy-env.ts).
+
 ## 2026-08-03: Production deploy blocked by migration rollout and runtime compatibility
 
 ### Symptoms

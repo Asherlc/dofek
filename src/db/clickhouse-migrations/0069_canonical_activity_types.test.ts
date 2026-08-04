@@ -1,31 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { createMigration } from "./0069_canonical_activity_types.ts";
-
-type QueryOptions = Parameters<NonNullable<ClickHouseCommandClient["query"]>>[0];
-
-function makeFakeClient(columnCounts: Record<string, number> = {}) {
-  const commands: string[] = [];
-  const client: ClickHouseCommandClient = {
-    command: async ({ query }) => {
-      commands.push(query);
-    },
-    query: async <TRow extends object>({ query_params }: QueryOptions) => ({
-      json: async (): Promise<TRow[]> =>
-        JSON.parse(
-          JSON.stringify([
-            {
-              column_count:
-                columnCounts[
-                  `${String(query_params?.database)}.${String(query_params?.table)}.${String(query_params?.column)}`
-                ] ?? 0,
-            },
-          ]),
-        ),
-    }),
-  };
-  return { client, commands };
-}
+import { makeFakeClickHouseMigrationClient as makeFakeClient } from "./test-helpers.ts";
 
 describe("0069_canonical_activity_types", () => {
   it("migrates the replicated activity source before rebuilding serving models", () => {
@@ -85,7 +61,7 @@ describe("0069_canonical_activity_types", () => {
 
     if (!migration.run) throw new Error("Expected custom migration runner");
     await expect(migration.run(client, "")).rejects.toThrow(
-      "Canonical activity type migration requires a query-capable client",
+      "ClickHouse migrations require a query-capable client",
     );
   });
 
