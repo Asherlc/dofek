@@ -22429,7 +22429,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Status:** Fixed in the workspace; the dependency-audit workflow needs a
   fresh run from the resulting commit.
 - **Symptoms:** [CI run 30837222551](https://github.com/Asherlc/dofek/actions/runs/30837222551), job [91765508011](https://github.com/Asherlc/dofek/actions/runs/30837222551/job/91765508011), failed in `Test / Dependency Audit`.
-- **User impact:** No production users were affected. The CI gate was blocked
+- **User impact:** No production impact was observed. The CI gate was blocked
   until the production dependency graph passed its high-severity audit.
 - **Evidence:** The first fatal command was
   `pnpm audit --prod --audit-level=high --ignore-registry-errors`; it reported
@@ -22513,6 +22513,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Symptoms:** The exact production audit reported high-severity advisory
   [GHSA-mwp4-54f8-5fhr](https://github.com/advisories/GHSA-mwp4-54f8-5fhr) for
   `ip-address` `10.2.0` through `express-rate-limit` and the MCP SDK.
+- **Evidence:** The exact command
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors` first reported
+  `ip-address` `10.2.0`: `Address4 decodes leading-zero octets as decimal while
+  resolvers decode them as octal, allowing SSRF and trust-boundary bypass`.
 - **Root cause:** The existing workspace override pinned `ip-address` below
   the patched range, so the production dependency graph remained vulnerable
   after the earlier audit fixes.
@@ -22525,6 +22529,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Newly published advisories can invalidate a
   previously green lockfile; rerun the hosted dependency-audit job and address
   any newly surfaced high-severity package through the same root-cause process.
+
+## 2026-08-03 — Full local Vitest run exposed an upload test flake
+
+- **Status:** Unresolved local validation flake; no production impact was
+  observed.
+- **Symptoms:** `pnpm test` failed only `src/upload-server.test.ts`; 1,109 test
+  files and 16,690 tests passed, while `GET /health` returned 404 instead of
+  200.
+- **Evidence:** The exact command was `pnpm test`; the first fatal assertion was
+  `src/upload-server.test.ts:123:26 — expected 404 to be 200`. The focused
+  command `pnpm exec vitest --project unit src/upload-server.test.ts --run`
+  passed all 15 tests.
+- **Root cause:** Not identified; the failure did not reproduce when the
+  unchanged upload-server test was run in isolation.
+- **Fix / mitigation:** No production or test-code workaround was added. The
+  focused test and all other completed tests remain valid; hosted CI is the
+  next full-suite validation environment.
+- **Remaining risk / follow-up:** If hosted CI reproduces the same 404, capture
+  the worker/test ordering and first server request evidence before changing
+  the handler or test.
 
 ## 2026-08-03 — PR 2420 mobile Metro validation rejected a stale gesture handler
 
