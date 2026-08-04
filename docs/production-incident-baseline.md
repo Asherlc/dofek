@@ -132,14 +132,16 @@ healthcheck `404`. That closes the "add fail-fast deploy validation for OTA-only
 runtime requirements" follow-up left open by the earlier staging entry. The
 service itself recovers on the next deploy, not from this commit alone.
 
-**Unresolved:** the remaining `ota` interpolations — `OTA_JWT_SECRET`,
-`OTA_PRIVATE_KEY_B64`, `OTA_PUBLIC_KEY_B64` — still carry neither a default nor
-a `:?` marker, so an absent value renders as an empty string and the container
-starts misconfigured rather than failing loudly. They were left unchanged here
-because their presence in Infisical could not be confirmed from this
-environment, and adding `:?` to a genuinely absent key converts a silent
-misconfiguration into a hard deploy failure. Confirm them in Infisical, then add
-the markers.
+The remaining `ota` interpolations — `OTA_JWT_SECRET`, `OTA_PRIVATE_KEY_B64`,
+`OTA_PUBLIC_KEY_B64` — previously carried neither a default nor a `:?` marker,
+so an absent value would render as an empty string and the container would
+start misconfigured rather than fail loudly. They were left unchanged in the
+initial fix because their presence in Infisical could not be confirmed from
+this environment, and adding `:?` to a genuinely absent key converts a silent
+misconfiguration into a hard deploy failure. The repository owner confirmed
+all three are populated in Infisical, so the `ota` environment block now sets
+`:?` guards on all three and they were added to `REQUIRED_DEPLOY_KEYS` in
+[`scripts/validate-deploy-env.ts`](../scripts/validate-deploy-env.ts).
 
 ## 2026-08-03: Production deploy blocked by migration rollout and runtime compatibility
 

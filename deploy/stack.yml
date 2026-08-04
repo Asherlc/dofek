@@ -663,10 +663,10 @@ services:
       CACHE_MODE: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${OTA_JWT_SECRET}
+      JWT_SECRET: ${OTA_JWT_SECRET:?OTA_JWT_SECRET is required}
       KEYS_STORAGE_TYPE: environment
-      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
-      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
+      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64:?OTA_PRIVATE_KEY_B64 is required}
+      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64:?OTA_PUBLIC_KEY_B64 is required}
       PORT: 3000
     deploy:
       labels:
