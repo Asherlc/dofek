@@ -22563,9 +22563,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-08-03 — PR 2420 OTA preview was blocked by an OTA service crash loop
 
-- **Status:** Root cause identified and the repository fix is in this PR; the
-  canonical production deployment must roll out the stack change before the
-  preview healthcheck can pass.
+- **Status:** Fixed and deployed through the canonical
+  [Deploy Web Stack run 30875219422](https://github.com/Asherlc/dofek/actions/runs/30875219422).
 - **Symptoms:** `Publish Mobile Preview OTA` failed in
   [job 91880380676](https://github.com/Asherlc/dofek/actions/runs/30873596536/job/91880380676)
   because `https://ota.dofek.asherlc.com/hc` returned HTTP 404 after five
@@ -22586,16 +22585,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Added the required `EXPO_APP_ID` interpolation to the
   OTA service and added it to rendered deploy-environment validation. No
   healthcheck relaxation or retry increase was added.
-- **Validation:** The new deploy-environment regression test fails before the
-  validator change and passes after it; stack configuration validation and the
-  hosted OTA preview remain pending the canonical production rollout.
+- **Validation:** The new deploy-environment regression test failed before the
+  validator change and passes after it. The canonical deployment completed
+  successfully; post-deploy checks report `dofek_ota` at `1/1` and `/hc` at
+  HTTP 200. The rerun of the PR preview job
+  ([91887286676](https://github.com/Asherlc/dofek/actions/runs/30874702981/job/91887286676))
+  also completed successfully.
 - **Deployment evidence:** The first canonical rollout attempt
   ([run 30874553043](https://github.com/Asherlc/dofek/actions/runs/30874553043))
   stopped before any stack mutation in `Pull deploy images` because the
   checked-out PR commit did not match the old production image's
   `SENTRY_RELEASE`. This was the deploy integrity guard working as designed;
   no production state changed.
-- **Remaining risk / follow-up:** A production deploy must apply the updated
-  stack and confirm `dofek_ota` is continuously `1/1`, the healthcheck returns
-  HTTP 200, and the PR preview workflow succeeds. Until then, OTA preview
-  publication remains blocked.
+- **Remaining risk / follow-up:** No deploy-blocking risk remains from this
+  incident. Continue monitoring the OTA service's replica stability and
+  healthcheck during subsequent releases.
