@@ -22560,3 +22560,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Updated the exact manifest and lockfile version to the current stable `3.1.0`. No workflow bypass or check relaxation was added.
 - **Validation:** The exact Expo compatibility check, mobile TypeScript, iOS Metro export, and OTA export-path validation all pass locally with the required Sentry configuration supplied.
 - **Remaining risk / follow-up:** Confirm the next hosted CI run completes the remaining native and mobile jobs before merge.
+
+## 2026-08-03 — PR 2420 OTA preview was blocked by an OTA service crash loop
+
+- **Status:** Root cause identified and the repository fix is in this PR; the
+  canonical production deployment must roll out the stack change before the
+  preview healthcheck can pass.
+- **Symptoms:** `Publish Mobile Preview OTA` failed in
+  [job 91880380676](https://github.com/Asherlc/dofek/actions/runs/30873596536/job/91880380676)
+  because `https://ota.dofek.asherlc.com/hc` returned HTTP 404 after five
+  attempts. The service was unavailable for PR OTA publication; no impact to
+  active app sessions was observed in the available read-only checks.
+- **Evidence:** The first fatal workflow output was
+  `OTA server not ready yet (status 404), retrying...`, followed by
+  `OTA server healthcheck failed with status 404 after 5 attempts`. The
+  production `dofek_ota` service was `0/1` and its first fatal container log
+  line was `EXPO_APP_ID not set`. The deployed service spec routed the host to
+  port 3000, so the 404 was the crash-looping service's unavailable route, not
+  a missing DNS or Traefik rule. The upstream OTA server requires
+  `EXPO_APP_ID` when loading its flat environment configuration
+  ([xprem app configuration](https://github.com/mercuretechnologies/xprem/blob/main/config/apps.go)).
+- **Root cause:** `deploy/stack.yml` passed the OTA access token and signing
+  configuration but omitted the existing Infisical `EXPO_APP_ID` value, so
+  the OTA container exited during startup.
+- **Fix / mitigation:** Added the required `EXPO_APP_ID` interpolation to the
+  OTA service and added it to rendered deploy-environment validation. No
+  healthcheck relaxation or retry increase was added.
+- **Validation:** The new deploy-environment regression test fails before the
+  validator change and passes after it; stack configuration validation and the
+  hosted OTA preview remain pending the canonical production rollout.
+- **Remaining risk / follow-up:** A production deploy must apply the updated
+  stack and confirm `dofek_ota` is continuously `1/1`, the healthcheck returns
+  HTTP 200, and the PR preview workflow succeeds. Until then, OTA preview
+  publication remains blocked.
