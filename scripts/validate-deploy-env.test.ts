@@ -54,8 +54,10 @@ describe("validateDeployEnvironment", () => {
   });
 
   it("requires the OTA server application identifier", () => {
-    const environment = validEnvironment();
-    delete environment.EXPO_APP_ID;
+    const environment: Record<string, string | undefined> = {
+      ...validEnvironment(),
+      EXPO_APP_ID: undefined,
+    };
 
     expect(() => validateDeployEnvironment(environment)).toThrow(
       "Rendered Infisical dotenv is missing required keys: EXPO_APP_ID",

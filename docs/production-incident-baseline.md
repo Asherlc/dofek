@@ -22568,8 +22568,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Symptoms:** `Publish Mobile Preview OTA` failed in
   [job 91880380676](https://github.com/Asherlc/dofek/actions/runs/30873596536/job/91880380676)
   because `https://ota.dofek.asherlc.com/hc` returned HTTP 404 after five
-  attempts. The service was unavailable for PR OTA publication; no impact to
-  active app sessions was observed in the available read-only checks.
+  attempts. The service was unavailable for PR OTA publication. The available
+  read-only checks in [Deploy Web Stack run
+  30875219422](https://github.com/Asherlc/dofek/actions/runs/30875219422)
+  confirmed the OTA service recovered to `1/1` and `/hc` returned HTTP 200;
+  they did not measure impact to active app sessions.
 - **Evidence:** The first fatal workflow output was
   `OTA server not ready yet (status 404), retrying...`, followed by
   `OTA server healthcheck failed with status 404 after 5 attempts`. The
