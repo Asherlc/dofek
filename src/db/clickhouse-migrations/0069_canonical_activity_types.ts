@@ -1,11 +1,8 @@
 import { LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS } from "@dofek/training/activity-types";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
+import { hasClickHouseColumn } from "./column-introspection.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
-
-interface ColumnCountRow {
-  column_count: number | string;
-}
 
 function canonicalCase(): string {
   return classificationCase("canonicalType", "canonical_type");
@@ -47,35 +44,18 @@ function classificationCase(
   return `CASE canonical_type\n      ${cases}\n      ELSE ${nullExpression}\n    END`;
 }
 
-async function hasColumn(
-  client: ClickHouseCommandClient,
-  database: string,
-  table: string,
-  column: string,
-): Promise<boolean> {
-  if (!client.query) {
-    throw new Error("Canonical activity type migration requires a query-capable client");
-  }
-  const result = await client.query<ColumnCountRow>({
-    query: `SELECT count() AS column_count
-FROM system.columns
-WHERE database = {database:String}
-  AND table = {table:String}
-  AND name = {column:String}`,
-    format: "JSONEachRow",
-    query_params: { database, table, column },
-  });
-  const rows = await result.json();
-  return Number(rows[0]?.column_count ?? 0) > 0;
-}
-
 async function runStatement(client: ClickHouseCommandClient, statement: string): Promise<void> {
   await runClickHouseMigrationStatement(client, statement);
 }
 
 async function migrateReplicatedActivity(client: ClickHouseCommandClient): Promise<void> {
-  const hasLegacyColumn = await hasColumn(client, "postgres_fitness", "activity", "activity_type");
-  let hasCanonicalColumn = await hasColumn(
+  const hasLegacyColumn = await hasClickHouseColumn(
+    client,
+    "postgres_fitness",
+    "activity",
+    "activity_type",
+  );
+  let hasCanonicalColumn = await hasClickHouseColumn(
     client,
     "postgres_fitness",
     "activity",
@@ -95,7 +75,7 @@ async function migrateReplicatedActivity(client: ClickHouseCommandClient): Promi
   }
 
   const providerSource = hadBothColumns ? "activity_type" : "canonical_type";
-  const hasProviderColumn = await hasColumn(
+  const hasProviderColumn = await hasClickHouseColumn(
     client,
     "postgres_fitness",
     "activity",
@@ -157,8 +137,13 @@ WHERE _peerdb_is_deleted = 0`,
 
 async function migrateServingTables(client: ClickHouseCommandClient): Promise<void> {
   for (const table of servingTables) {
-    const hasLegacyColumn = await hasColumn(client, "analytics", table, "activity_type");
-    const hasCanonicalColumn = await hasColumn(client, "analytics", table, "canonical_type");
+    const hasLegacyColumn = await hasClickHouseColumn(client, "analytics", table, "activity_type");
+    const hasCanonicalColumn = await hasClickHouseColumn(
+      client,
+      "analytics",
+      table,
+      "canonical_type",
+    );
     if (hasLegacyColumn && !hasCanonicalColumn) {
       await runStatement(
         client,
@@ -184,7 +169,7 @@ async function migrateServingTables(client: ClickHouseCommandClient): Promise<vo
     "activity_summary_rows",
     "cycling_activity",
   ]) {
-    if (await hasColumn(client, "analytics", table, "canonical_type")) {
+    if (await hasClickHouseColumn(client, "analytics", table, "canonical_type")) {
       await runStatement(
         client,
         `ALTER TABLE analytics.${table}

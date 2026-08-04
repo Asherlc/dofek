@@ -236,6 +236,18 @@ describe("clickHouseMigrations", () => {
         ),
       ],
     });
+    expect(
+      migrations.find((migration) => migration.id === "0071_repair_canonical_activity_type_reads"),
+    ).toMatchObject({
+      id: "0071_repair_canonical_activity_type_reads",
+      statements: expect.arrayContaining([
+        "DROP VIEW IF EXISTS analytics.v_activity",
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        expect.stringContaining("ENGINE = Join(ANY, LEFT, activity_id)"),
+        expect.stringContaining("ALTER TABLE analytics.activity_summary_rows"),
+      ]),
+      run: expect.any(Function),
+    });
   });
 
   it("rejects duplicate migration ids", async () => {
