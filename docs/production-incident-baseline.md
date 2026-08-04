@@ -52,7 +52,8 @@ The same migration added `provider_type` and `modality` to
 columns and backfilled only `canonical_type`. The dbt models that own those
 tables select dirty keys from `postgres_fitness.activity._peerdb_synced_at`,
 which an `ALTER TABLE ... UPDATE` mutation does not advance, so historical rows
-would have kept a null `provider_type` and `modality` indefinitely.
+would have kept a null `provider_type` and `modality` until an explicit model
+refresh or a later source update made them dirty again.
 
 ### Root Cause
 
@@ -79,9 +80,11 @@ and [ALTER TABLE ... UPDATE mutations](https://clickhouse.com/docs/en/sql-refere
 The migration's declared statements are exercised against a real ClickHouse in
 `0071_repair_canonical_activity_type_reads.integration.test.ts`, which
 reconstructs the stale view, asserts the pre-repair read fails, and then asserts
-the repaired read and the backfilled provenance, including tombstoned and
-rows missing from the replica. Unit coverage asserts statement ordering and the
-runner.
+the repaired read and the backfilled provenance on eligible rows. Because the
+backfill targets only live rows with missing provenance, the same test asserts
+that tombstoned rows and rows missing from the replica come out unchanged, and
+that reapplying the whole migration is idempotent. Unit coverage asserts
+statement ordering and the guarded runner.
 
 ### Remaining Risk
 

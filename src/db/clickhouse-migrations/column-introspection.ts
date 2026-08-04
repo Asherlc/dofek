@@ -1,8 +1,10 @@
+import { z } from "zod";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 
-interface ColumnCountRow {
-  column_count: number | string;
-}
+/** ClickHouse serializes 64-bit integers as strings in JSON output formats. */
+const columnCountRowsSchema = z.array(
+  z.object({ column_count: z.union([z.number(), z.string()]) }),
+);
 
 /**
  * Reports whether a ClickHouse column exists. Migrations use this to distinguish a
@@ -17,7 +19,7 @@ export async function hasClickHouseColumn(
   if (!client.query) {
     throw new Error("ClickHouse migrations require a query-capable client");
   }
-  const result = await client.query<ColumnCountRow>({
+  const result = await client.query({
     query: `SELECT count() AS column_count
 FROM system.columns
 WHERE database = {database:String}
@@ -26,6 +28,6 @@ WHERE database = {database:String}
     format: "JSONEachRow",
     query_params: { database, table, column },
   });
-  const rows = await result.json();
+  const rows = columnCountRowsSchema.parse(await result.json());
   return Number(rows[0]?.column_count ?? 0) > 0;
 }

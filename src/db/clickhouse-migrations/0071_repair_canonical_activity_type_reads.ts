@@ -54,6 +54,14 @@ WHERE _peerdb_is_deleted = 0`,
 /**
  * `joinGet` yields the column default for an activity the lookup does not cover, so a
  * missing provider type arrives as an empty string and is stored as null instead.
+ *
+ * `provider_type` alone marks a row as un-backfilled. It is `String` on
+ * `postgres_fitness.activity`, so every live activity has one, whereas a null `modality`
+ * is a legitimate resting state — `LEGACY_ACTIVITY_TYPE_CLASSIFICATIONS` maps many
+ * canonical types to a null modality. Widening the filter to `modality IS NULL` would
+ * therefore match those correct rows on every run, rewriting whole parts without ever
+ * converging. 0069 added both columns in one statement, so a row missing `provider_type`
+ * is missing `modality` too and no populated modality can be overwritten here.
  */
 function buildActivityProvenanceBackfillStatement(table: string): string {
   return `ALTER TABLE analytics.${table}
