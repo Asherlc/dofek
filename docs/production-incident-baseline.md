@@ -22480,3 +22480,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Re-run the full lint and test commands after
   the shared Docker network pool is repaired or an approved workspace-local
   network is available; hosted CI is the next validation environment.
+
+## 2026-08-03 — Local Redpanda restart loop interrupted full Vitest validation
+
+- **Status:** Resolved for the Docker-free validation tier; no production
+  impact.
+- **Symptoms:** The first `pnpm test` run finished its assertions but exited 1
+  on an unhandled Vitest worker `onTaskUpdate` timeout while
+  `scripts/compose-env.test.ts` was retrying.
+- **Evidence:** The first fatal workspace container log line was
+  `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds
+  the capacity in /proc/sys/fs/aio-max-nr 65536`; Linux documents this AIO
+  capacity under its filesystem sysctls
+  ([kernel documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html)).
+  The isolated compose-env test passed 2 tests, and after stopping only this
+  workspace's restarting Redpanda container, the full unit/mobile tier passed
+  1,110 files and 16,691 tests.
+- **Root cause:** The local Redpanda process could not initialize asynchronous
+  I/O under the Docker host's AIO limit and entered a restart loop; concurrent
+  Compose port lookups then exceeded the Vitest worker update window.
+- **Fix / mitigation:** Stopped only the failed current-workspace Redpanda
+  service. No repository retry, timeout, fallback, or workflow relaxation was
+  added.
+- **Remaining risk / follow-up:** Redpanda-backed integration validation still
+  requires a host whose AIO capacity supports the pinned image; treat any
+  hosted CI failure as a new first-fatal-line investigation.
