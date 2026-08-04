@@ -22505,3 +22505,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Redpanda-backed integration validation still
   requires a host whose AIO capacity supports the pinned image; treat any
   hosted CI failure as a new first-fatal-line investigation.
+
+## 2026-08-03 — Dependency audit exposed an additional `ip-address` advisory
+
+- **Status:** Fixed in the workspace; the dependency-audit workflow needs a
+  fresh run from the updated commit.
+- **Symptoms:** The exact production audit reported high-severity advisory
+  [GHSA-mwp4-54f8-5fhr](https://github.com/advisories/GHSA-mwp4-54f8-5fhr) for
+  `ip-address` `10.2.0` through `express-rate-limit` and the MCP SDK.
+- **Root cause:** The existing workspace override pinned `ip-address` below
+  the patched range, so the production dependency graph remained vulnerable
+  after the earlier audit fixes.
+- **Fix / mitigation:** Updated the existing override to the current stable
+  `ip-address` `10.4.0` and regenerated the lockfile. No audit ignore,
+  retry, timeout, or warn-and-continue behavior was added.
+- **Validation:** Frozen install and
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors` pass; the
+  audit reports only low and moderate findings.
+- **Remaining risk / follow-up:** Newly published advisories can invalidate a
+  previously green lockfile; rerun the hosted dependency-audit job and address
+  any newly surfaced high-severity package through the same root-cause process.
