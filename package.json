@@ -283,7 +283,7 @@
     "@size-limit/file": "12.0.1",
     "@stryker-mutator/core": "9.6.1",
     "@stryker-mutator/vitest-runner": "9.6.1",
-    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "16.3.2",
     "@types/archiver": "8.0.0",
     "@types/node": "22.19.15",
