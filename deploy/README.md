@@ -514,6 +514,9 @@ Required Infisical keys for mobile pipelines:
 - `SENTRY_AUTH_TOKEN` (Sentry sourcemap upload for native and OTA mobile releases: [iOS](../.github/workflows/deploy-ios.yml), [OTA](../.github/workflows/deploy-ota.yml))
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_TOKEN` (OTA publish workflows)
+- `EXPO_APP_ID` (OTA server application configuration; the upstream OTA
+  server requires this identifier when loading its flat environment
+  configuration: [xprem app configuration](https://github.com/mercuretechnologies/xprem/blob/main/config/apps.go))
 - `APP_STORE_CONNECT_KEY_ID` (TestFlight deploy)
 - `APP_STORE_CONNECT_ISSUER_ID` (TestFlight deploy)
 - `APP_STORE_CONNECT_KEY_BASE64` (TestFlight deploy)

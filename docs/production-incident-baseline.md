@@ -22557,3 +22557,183 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The shared Docker host had exhausted its automatic bridge-network address pools; Docker documents these pools as the source for automatically allocated subnets ([address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
 - **Fix / mitigation:** No repository retry, timeout, skip, or fallback was added. Focused unit tests, typechecks, and migration-policy validation remain available; the database-backed test needs a host with an available isolated network pool.
 - **Remaining risk / follow-up:** Re-run the integration test through `pnpm test:integration` after workspace-scoped Docker network capacity is restored.
+
+## 2026-08-03 — Dependency audit blocked CI on newly published advisories
+
+- **Status:** Fixed in the workspace; the dependency-audit workflow needs a
+  fresh run from the resulting commit.
+- **Symptoms:** [CI run 30837222551](https://github.com/Asherlc/dofek/actions/runs/30837222551), job [91765508011](https://github.com/Asherlc/dofek/actions/runs/30837222551/job/91765508011), failed in `Test / Dependency Audit`.
+- **User impact:** No production impact was observed. The CI gate was blocked
+  until the production dependency graph passed its high-severity audit.
+- **Evidence:** The first fatal command was
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors`; it reported
+  `brace-expansion` `5.0.8` as affected by
+  [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895),
+  which is patched in `5.0.9`. After that update exposed the next first
+  failure, `fast-uri` `3.1.4` was affected by
+  [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7),
+  which is patched in `3.1.5`.
+- **Root cause:** The workspace security overrides pinned two transitive
+  packages below newly published patched versions, so the frozen production
+  graph failed the audit even though no application source changed.
+- **Fix / mitigation:** Updated the existing overrides to
+  `brace-expansion@5.0.9` and `fast-uri@3.1.5`, then regenerated the frozen
+  lockfile. No audit ignore, retry, timeout, or warn-and-continue behavior was
+  added.
+- **Validation:** Frozen install, offline frozen-install verification, exact
+  dependency-version policy, the exact production audit, and the production
+  license scan all passed. The audit now reports only the pre-existing low and
+  moderate findings.
+- **Remaining risk / follow-up:** Newly published advisories can invalidate a
+  previously green lockfile; rerun the CI dependency-audit job after the
+  change is committed and pushed, then address the remaining findings through
+  their own root-cause updates if the audit threshold changes.
+
+## 2026-08-03 — Shared Docker network pools blocked local PR validation
+
+- **Status:** Unresolved local validation environment issue; no production
+  impact.
+- **Symptoms:** The analytics phase of `pnpm lint` could not connect to
+  ClickHouse because the workspace Compose stack was not running.
+- **User impact:** Docker-free lint policy checks and root/server/web
+  typechecks completed; only local ClickHouse-backed lint and Docker-backed
+  tests remain unvalidated.
+- **Evidence:** `pnpm compose:up` first failed with
+  `all predefined address pools have been fully subnetted`. This workspace
+  owned no network or container, while the Docker host contained networks from
+  other workspaces.
+- **Root cause:** The shared Docker daemon had exhausted its automatic
+  user-defined bridge-network address pools before it could create this
+  workspace's isolated Compose network ([Docker address pool configuration](https://docs.docker.com/engine/network/address-pools/)).
+- **Fix / mitigation:** No other-workspace network, container, volume, or
+  daemon setting was changed. The normal workspace Compose wrapper remains the
+  required startup path.
+- **Validation:** `pnpm lint:sandbox`, root TypeScript, server TypeScript, and
+  web TypeScript passed. Analytics SQL lint and Docker-backed tests require a
+  host with an available isolated network pool.
+- **Remaining risk / follow-up:** Re-run the full lint and test commands after
+  the shared Docker network pool is repaired or an approved workspace-local
+  network is available; hosted CI is the next validation environment.
+
+## 2026-08-03 — Local Redpanda restart loop interrupted full Vitest validation
+
+- **Status:** Resolved for the Docker-free validation tier; no production
+  impact.
+- **Symptoms:** The first `pnpm test` run finished its assertions but exited 1
+  on an unhandled Vitest worker `onTaskUpdate` timeout while
+  `scripts/compose-env.test.ts` was retrying.
+- **Evidence:** The first fatal workspace container log line was
+  `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds
+  the capacity in /proc/sys/fs/aio-max-nr 65536`; Linux documents this AIO
+  capacity under its filesystem sysctls
+  ([kernel documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html)).
+  The isolated compose-env test passed 2 tests, and after stopping only this
+  workspace's restarting Redpanda container, the full unit/mobile tier passed
+  1,110 files and 16,691 tests.
+- **Root cause:** The local Redpanda process could not initialize asynchronous
+  I/O under the Docker host's AIO limit and entered a restart loop; concurrent
+  Compose port lookups then exceeded the Vitest worker update window.
+- **Fix / mitigation:** Stopped only the failed current-workspace Redpanda
+  service. No repository retry, timeout, fallback, or workflow relaxation was
+  added.
+- **Remaining risk / follow-up:** Redpanda-backed integration validation still
+  requires a host whose AIO capacity supports the pinned image; treat any
+  hosted CI failure as a new first-fatal-line investigation.
+
+## 2026-08-03 — Dependency audit exposed an additional `ip-address` advisory
+
+- **Status:** Fixed in the workspace; the dependency-audit workflow needs a
+  fresh run from the updated commit.
+- **Symptoms:** The exact production audit reported high-severity advisory
+  [GHSA-mwp4-54f8-5fhr](https://github.com/advisories/GHSA-mwp4-54f8-5fhr) for
+  `ip-address` `10.2.0` through `express-rate-limit` and the MCP SDK.
+- **Evidence:** The exact command
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors` first reported
+  `ip-address` `10.2.0`: `Address4 decodes leading-zero octets as decimal while
+  resolvers decode them as octal, allowing SSRF and trust-boundary bypass`.
+- **Root cause:** The existing workspace override pinned `ip-address` below
+  the patched range, so the production dependency graph remained vulnerable
+  after the earlier audit fixes.
+- **Fix / mitigation:** Updated the existing override to the current stable
+  `ip-address` `10.4.0` and regenerated the lockfile. No audit ignore,
+  retry, timeout, or warn-and-continue behavior was added.
+- **Validation:** Frozen install and
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors` pass; the
+  audit reports only low and moderate findings.
+- **Remaining risk / follow-up:** Newly published advisories can invalidate a
+  previously green lockfile; rerun the hosted dependency-audit job and address
+  any newly surfaced high-severity package through the same root-cause process.
+
+## 2026-08-03 — Full local Vitest run exposed an upload test flake
+
+- **Status:** Unresolved local validation flake; no production impact was
+  observed.
+- **Symptoms:** `pnpm test` failed only `src/upload-server.test.ts`; 1,109 test
+  files and 16,690 tests passed, while `GET /health` returned 404 instead of
+  200.
+- **Evidence:** The exact command was `pnpm test`; the first fatal assertion was
+  `src/upload-server.test.ts:123:26 — expected 404 to be 200`. The focused
+  command `pnpm exec vitest --project unit src/upload-server.test.ts --run`
+  passed all 15 tests.
+- **Root cause:** Not identified; the failure did not reproduce when the
+  unchanged upload-server test was run in isolation.
+- **Fix / mitigation:** No production or test-code workaround was added. The
+  focused test and all other completed tests remain valid; hosted CI is the
+  next full-suite validation environment.
+- **Remaining risk / follow-up:** If hosted CI reproduces the same 404, capture
+  the worker/test ordering and first server request evidence before changing
+  the handler or test.
+
+## 2026-08-03 — PR 2420 mobile Metro validation rejected a stale gesture handler
+
+- **Status:** Fixed in the workspace; a fresh CI run is required from the
+  updated commit.
+- **Symptoms:** [Build Mobile / Metro Bundle job 91876683733](https://github.com/Asherlc/dofek/actions/runs/30872272113/job/91876683733) failed before bundling in `Verify dependencies match Expo SDK`.
+- **Evidence:** The first fatal line was `react-native-gesture-handler@2.32.0 - expected version: ~3.1.0`, followed by `Found outdated dependencies`; this is Expo CLI's dependency-validation check ([documentation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Root cause:** Expo SDK 57's expected React Native dependency range had advanced, but the mobile manifest still pinned `react-native-gesture-handler` to `2.32.0`.
+- **Fix / mitigation:** Updated the exact manifest and lockfile version to the current stable `3.1.0`. No workflow bypass or check relaxation was added.
+- **Validation:** The exact Expo compatibility check, mobile TypeScript, iOS Metro export, and OTA export-path validation all pass locally with the required Sentry configuration supplied.
+- **Remaining risk / follow-up:** Confirm the next hosted CI run completes the remaining native and mobile jobs before merge.
+
+## 2026-08-03 — PR 2420 OTA preview was blocked by an OTA service crash loop
+
+- **Status:** Fixed and deployed through the canonical
+  [Deploy Web Stack run 30875219422](https://github.com/Asherlc/dofek/actions/runs/30875219422).
+- **Symptoms:** `Publish Mobile Preview OTA` failed in
+  [job 91880380676](https://github.com/Asherlc/dofek/actions/runs/30873596536/job/91880380676)
+  because `https://ota.dofek.asherlc.com/hc` returned HTTP 404 after five
+  attempts. The service was unavailable for PR OTA publication. The available
+  read-only checks in [Deploy Web Stack run
+  30875219422](https://github.com/Asherlc/dofek/actions/runs/30875219422)
+  confirmed the OTA service recovered to `1/1` and `/hc` returned HTTP 200;
+  they did not measure impact to active app sessions.
+- **Evidence:** The first fatal workflow output was
+  `OTA server not ready yet (status 404), retrying...`, followed by
+  `OTA server healthcheck failed with status 404 after 5 attempts`. The
+  production `dofek_ota` service was `0/1` and its first fatal container log
+  line was `EXPO_APP_ID not set`. The deployed service spec routed the host to
+  port 3000, so the 404 was the crash-looping service's unavailable route, not
+  a missing DNS or Traefik rule. The upstream OTA server requires
+  `EXPO_APP_ID` when loading its flat environment configuration
+  ([xprem app configuration](https://github.com/mercuretechnologies/xprem/blob/main/config/apps.go)).
+- **Root cause:** `deploy/stack.yml` passed the OTA access token and signing
+  configuration but omitted the existing Infisical `EXPO_APP_ID` value, so
+  the OTA container exited during startup.
+- **Fix / mitigation:** Added the required `EXPO_APP_ID` interpolation to the
+  OTA service and added it to rendered deploy-environment validation. No
+  healthcheck relaxation or retry increase was added.
+- **Validation:** The new deploy-environment regression test failed before the
+  validator change and passes after it. The canonical deployment completed
+  successfully; post-deploy checks report `dofek_ota` at `1/1` and `/hc` at
+  HTTP 200. The rerun of the PR preview job
+  ([91887286676](https://github.com/Asherlc/dofek/actions/runs/30874702981/job/91887286676))
+  also completed successfully.
+- **Deployment evidence:** The first canonical rollout attempt
+  ([run 30874553043](https://github.com/Asherlc/dofek/actions/runs/30874553043))
+  stopped before any stack mutation in `Pull deploy images` because the
+  checked-out PR commit did not match the old production image's
+  `SENTRY_RELEASE`. This was the deploy integrity guard working as designed;
+  no production state changed.
+- **Remaining risk / follow-up:** No deploy-blocking risk remains from this
+  incident. Continue monitoring the OTA service's replica stability and
+  healthcheck during subsequent releases.

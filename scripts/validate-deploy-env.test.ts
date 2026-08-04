@@ -12,7 +12,7 @@ function validEnvironment(): Record<string, string> {
     AXIOM_API_TOKEN: "axiom-token",
     BREVO_API_KEY: "brevo-token",
     CREDENTIAL_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 3).toString("base64"),
-    EXPO_APP_ID: "expo-app-id",
+    EXPO_APP_ID: "expo-project-id",
     POSTHOG_PERSONAL_API_KEY: "posthog-token",
     POSTHOG_PROJECT_ID: "12345",
     R2_ACCESS_KEY_ID: "r2-access",
@@ -53,9 +53,11 @@ describe("validateDeployEnvironment", () => {
     );
   });
 
-  it("requires the OTA app id the update server reads at startup", () => {
-    const environment = validEnvironment();
-    delete environment.EXPO_APP_ID;
+  it("requires the OTA server application identifier", () => {
+    const environment: Record<string, string | undefined> = {
+      ...validEnvironment(),
+      EXPO_APP_ID: undefined,
+    };
 
     expect(() => validateDeployEnvironment(environment)).toThrow(
       "Rendered Infisical dotenv is missing required keys: EXPO_APP_ID",

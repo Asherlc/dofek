@@ -651,8 +651,8 @@ services:
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
     environment:
-      EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}
       EXPO_APP_ID: ${EXPO_APP_ID:?EXPO_APP_ID is required}
+      EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}
       BASE_URL: ${OTA_BASE_URL:-https://ota.dofek.asherlc.com}
       STORAGE_MODE: s3
       S3_BUCKET_NAME: dofek-ota
