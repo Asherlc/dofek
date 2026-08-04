@@ -97,9 +97,9 @@ from `modality` — notably `hiking_activity`, which admits
 `canonical_type = 'running' AND modality = 'trail'` — will not reclassify
 historical activities until those models are refreshed.
 
-Two CI failures surfaced while validating this change and were fixed alongside
-it, because both tripped fail-fast and cancelled the unit, integration, and E2E
-jobs, leaving the migration unexercised. `pnpm audit --prod --audit-level=high`
+Two fail-fast CI gate failures surfaced while validating this change and were
+fixed alongside it, because both tripped fail-fast and cancelled the unit,
+integration, and E2E jobs, leaving the migration unexercised. `pnpm audit --prod --audit-level=high`
 reported three high advisories in transitive dependencies, resolved by advancing
 the existing `pnpm-workspace.yaml` overrides to `brace-expansion` 5.0.9
 ([GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895)),
