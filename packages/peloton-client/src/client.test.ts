@@ -126,7 +126,7 @@ describe("PelotonClient", () => {
           created_at: 1_709_280_000,
           start_time: 1_709_280_000,
           end_time: null,
-          total_work: 0,
+          total_work: null,
           is_total_work_personal_record: false,
           metrics_type: null,
           peloton_id: null,

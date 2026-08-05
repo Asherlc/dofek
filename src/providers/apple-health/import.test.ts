@@ -71,6 +71,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
 import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
+  AppleHealthImportValidationError,
   buildSourceNameMap,
   defaultConsoleProgress,
   extractExportXml,
@@ -1619,7 +1620,12 @@ describe("extractExportXml", () => {
     const zipPath = join(tmpDir, "no-xml.zip");
     execSync(`cd "${dir}" && zip -r "${zipPath}" other.txt`);
 
-    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml found");
+    const error = await extractExportXml(zipPath).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AppleHealthImportValidationError);
+    expect(error).toMatchObject({
+      message:
+        "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    });
   });
 
   it("rejects when zip file does not exist", async () => {

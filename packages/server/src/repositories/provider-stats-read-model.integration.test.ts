@@ -32,6 +32,10 @@ function renderProviderStatsSql(
       `${ingestDatabase}.metric_stream_day_change`,
     )
     .replace(
+      /\{\{\s*source\('analytics',\s*'body_measurement_sample'\)\s*\}\}/g,
+      `${ingestDatabase}.body_measurement_sample`,
+    )
+    .replace(
       /\{\{\s*ref\('provider_metric_stream_daily'\)\s*\}\}/g,
       `${ingestDatabase}.provider_metric_stream_daily`,
     )
@@ -79,20 +83,20 @@ function renderDirtyProviderSelectionSql(
     ),`
     : "";
 
-  return `WITH current_provider_state AS materialized (
+  return `WITH current_provider_state AS (
     ${currentProviderStateSql}
   ),
   ${existingProviderStateSql}
   source_dirty_providers AS materialized (
     ${sourceDirtyProvidersSql}
   ),
-  metric_stream_daily_source_state AS materialized (
+  metric_stream_daily_source_state AS (
     ${metricStreamDailySourceStateSql}
   ),
-  metric_stream_daily_target_state AS materialized (
+  metric_stream_daily_target_state AS (
     ${metricStreamDailyTargetStateSql}
   ),
-  metric_stream_daily_dirty_providers AS materialized (
+  metric_stream_daily_dirty_providers AS (
     ${metricStreamDailyDirtyProvidersSql}
   ),
   candidate_dirty_providers AS (
@@ -607,6 +611,157 @@ describe("provider stats read model", () => {
     } finally {
       await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
       await client.command({ query: `DROP TABLE IF EXISTS ${watermarkTable}` });
+    }
+  });
+
+  it("executes the full provider stats model with a materialized dirty-provider set", async () => {
+    const userId = randomUUID();
+    const watermarkTable = `${ingestDatabase}.provider_change_watermark_full_model`;
+    const rawTableDefinitions = [
+      {
+        name: "activity",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          provider_absent_at Nullable(DateTime64(9, 'UTC')),
+          deleted_at Nullable(DateTime64(9, 'UTC')),
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "daily_metrics",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "sleep_session",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "food_entry",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          date Date,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "health_event",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "lab_panel",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "lab_result",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "journal_entry",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+      {
+        name: "body_measurement_sample",
+        columns: `
+          user_id UUID,
+          provider_id String,
+          channel String,
+          external_id Nullable(String),
+          recorded_at DateTime64(9, 'UTC'),
+          device_id Nullable(String),
+          _peerdb_is_deleted Int8,
+          _peerdb_version Int64`,
+      },
+    ];
+    const rawTableNames = rawTableDefinitions.map(({ name }) => `${ingestDatabase}.${name}`);
+
+    await client.command({
+      query: `CREATE TABLE ${watermarkTable} (
+        user_id UUID,
+        provider_id String,
+        changed_at DateTime64(9, 'UTC'),
+        refresh_version UInt64,
+        refreshed_at DateTime64(9, 'UTC')
+      ) ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, provider_id)`,
+    });
+    for (const { name, columns } of rawTableDefinitions) {
+      await client.command({
+        query: `CREATE TABLE ${ingestDatabase}.${name} (${columns})
+          ENGINE = ReplacingMergeTree(_peerdb_version)
+          ORDER BY (user_id, provider_id)`,
+      });
+    }
+
+    try {
+      await client.command({
+        query: `INSERT INTO ${watermarkTable}
+          VALUES ({userId:UUID}, 'test_provider', '2026-08-02 10:00:00', 1, '2026-08-02 10:00:00')`,
+        query_params: { userId },
+      });
+
+      const modelSql = `${renderProviderStatsSql(
+        `${ingestDatabase}.provider_stats_full_model`,
+        watermarkTable,
+        ingestDatabase,
+        false,
+      )}
+        SETTINGS join_use_nulls = 1, enable_materialized_cte = 1, max_threads = 1`;
+      const result = await client.query({ query: modelSql, format: "JSONEachRow" });
+      const rows = await result.json();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        provider_id: "test_provider",
+        activities: 0,
+        daily_metrics: 0,
+        sleep_sessions: 0,
+        body_measurements: 0,
+        food_entries: 0,
+        health_events: 0,
+        metric_stream: 0,
+        nutrition_daily: 0,
+        lab_panels: 0,
+        lab_results: 0,
+        journal_entries: 0,
+        is_deleted: 1,
+      });
+
+      const explainResult = await client.query({
+        query: `EXPLAIN PIPELINE compact = 1 ${modelSql}`,
+        format: "JSONEachRow",
+      });
+      const pipelineRows = await explainResult.json();
+      const pipelineText = pipelineRows.map((row) => JSON.stringify(row)).join("\n");
+      expect(pipelineText).toContain("MaterializingCTEs");
+    } finally {
+      for (const tableName of [watermarkTable, ...rawTableNames]) {
+        await client.command({ query: `DROP TABLE IF EXISTS ${tableName}` });
+      }
     }
   });
 });

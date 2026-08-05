@@ -22,6 +22,20 @@ class WorkerReadinessError extends Error {
   }
 }
 
+class WorkerReadinessTimeoutError extends Error {
+  readonly code = "WORKER_READINESS_TIMEOUT" as const;
+  constructor() {
+    super(`Worker readiness timed out after ${WORKER_READINESS_TIMEOUT_MS}ms`);
+  }
+}
+
+class WorkerReadinessInProgressError extends Error {
+  readonly code = "WORKER_READINESS_IN_PROGRESS" as const;
+  constructor() {
+    super("Worker readiness check is already in progress");
+  }
+}
+
 const WORKER_READINESS_TIMEOUT_MS = 2_500;
 const CONNECTION_STATUS_RETRIES = 3;
 const CONNECTION_STATUS_RETRY_DELAY_MS = 200;
@@ -69,7 +83,7 @@ async function checkWorkerReadinessWithTimeout(readinessCheck: Promise<void>): P
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timeoutId = setTimeout(
-      () => reject(new Error(`Worker readiness timed out after ${WORKER_READINESS_TIMEOUT_MS}ms`)),
+      () => reject(new WorkerReadinessTimeoutError()),
       WORKER_READINESS_TIMEOUT_MS,
     );
   });
@@ -91,7 +105,7 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
 
   function waitUntilReady(): Promise<void> {
     if (readinessCheck) {
-      return Promise.reject(new Error("Worker readiness check is already in progress"));
+      return Promise.reject(new WorkerReadinessInProgressError());
     }
     const currentCheck = checkWorkerReadiness(workers);
     readinessCheck = currentCheck;
@@ -115,7 +129,11 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
       .then(() => sendJson(response, 200, { status: "ok", workers: workers.length }))
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        if (error instanceof WorkerReadinessError) {
+        if (
+          error instanceof WorkerReadinessError ||
+          error instanceof WorkerReadinessTimeoutError ||
+          error instanceof WorkerReadinessInProgressError
+        ) {
           logger.warn(`[worker] Readiness check failed: ${message}`);
         } else {
           captureException(error);

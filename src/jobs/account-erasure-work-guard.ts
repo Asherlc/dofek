@@ -12,6 +12,33 @@ import { logger } from "../logger.ts";
 const ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE = 4;
 const advisoryUnlockRowSchema = z.object({ unlocked: z.boolean() });
 
+class AsyncPermitPool {
+  #available: number;
+  readonly #waiters: Array<() => void> = [];
+
+  constructor(size: number) {
+    this.#available = size;
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.#available > 0) {
+      this.#available -= 1;
+      return () => this.#release();
+    }
+    await new Promise<void>((resolve) => this.#waiters.push(resolve));
+    return () => this.#release();
+  }
+
+  #release(): void {
+    const next = this.#waiters.shift();
+    if (next) {
+      next();
+      return;
+    }
+    this.#available += 1;
+  }
+}
+
 type WorkOutcome<T> =
   | {
       status: "completed";
@@ -29,6 +56,7 @@ export interface AccountErasureWorkLockPool {
 
 class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
   readonly #pool: Pool;
+  readonly #connectionPermits = new AsyncPermitPool(ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE);
 
   constructor(pool: Pool) {
     this.#pool = pool;
@@ -39,65 +67,70 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
   }
 
   async runWithSharedUserLock<T>(userId: string, work: () => Promise<T>): Promise<T> {
-    const client = await this.#pool.connect();
-    const database = drizzle(client);
+    const releaseConnectionPermit = await this.#connectionPermits.acquire();
     try {
-      await executeWithSchema(
-        database,
-        z.object({}),
-        sql`SELECT pg_advisory_lock_shared(
-              hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
-            )`,
-      );
-    } catch (error: unknown) {
-      client.release(true);
-      Sentry.captureException(error, {
-        tags: {
-          accountErasureWorkLockStep: "acquire",
-          source: "account-erasure-work-lock",
-        },
-      });
-      throw error;
-    }
-
-    const outcome: WorkOutcome<T> = await Promise.resolve()
-      .then(work)
-      .then(
-        (value): WorkOutcome<T> => ({ status: "completed", value }),
-        (error: unknown): WorkOutcome<T> => ({ error, status: "failed" }),
-      );
-
-    try {
-      const unlockRows = await executeWithSchema(
-        database,
-        advisoryUnlockRowSchema,
-        sql`SELECT pg_advisory_unlock_shared(
-              hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
-            ) AS unlocked`,
-      );
-      const unlockRow = unlockRows[0];
-      if (!unlockRow?.unlocked) {
-        throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
+      const client = await this.#pool.connect();
+      const database = drizzle(client);
+      try {
+        await executeWithSchema(
+          database,
+          z.object({}),
+          sql`SELECT pg_advisory_lock_shared(
+                hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
+              )`,
+        );
+      } catch (error: unknown) {
+        client.release(true);
+        Sentry.captureException(error, {
+          tags: {
+            accountErasureWorkLockStep: "acquire",
+            source: "account-erasure-work-lock",
+          },
+        });
+        throw error;
       }
-    } catch (error: unknown) {
-      client.release(true);
-      Sentry.captureException(error, {
-        tags: {
-          accountErasureWorkLockStep: "release",
-          source: "account-erasure-work-lock",
-        },
-      });
+
+      const outcome: WorkOutcome<T> = await Promise.resolve()
+        .then(work)
+        .then(
+          (value): WorkOutcome<T> => ({ status: "completed", value }),
+          (error: unknown): WorkOutcome<T> => ({ error, status: "failed" }),
+        );
+
+      try {
+        const unlockRows = await executeWithSchema(
+          database,
+          advisoryUnlockRowSchema,
+          sql`SELECT pg_advisory_unlock_shared(
+                hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
+              ) AS unlocked`,
+        );
+        const unlockRow = unlockRows[0];
+        if (!unlockRow?.unlocked) {
+          throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
+        }
+      } catch (error: unknown) {
+        client.release(true);
+        Sentry.captureException(error, {
+          tags: {
+            accountErasureWorkLockStep: "release",
+            source: "account-erasure-work-lock",
+          },
+        });
+        if (outcome.status === "failed") {
+          throw outcome.error;
+        }
+        throw error;
+      }
+      client.release();
+
       if (outcome.status === "failed") {
         throw outcome.error;
       }
-      throw error;
+      return outcome.value;
+    } finally {
+      releaseConnectionPermit();
     }
-    client.release();
-
-    if (outcome.status === "failed") {
-      throw outcome.error;
-    }
-    return outcome.value;
   }
 }
 

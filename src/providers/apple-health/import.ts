@@ -142,6 +142,14 @@ function hasDuplicateMedicationDoseConflictKeys(
  * Extract export.xml from an Apple Health export ZIP file.
  * Returns the path to the extracted XML file in a temp directory.
  */
+export class AppleHealthImportValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AppleHealthImportValidationError";
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 export function extractExportXml(zipPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const outDir = join(tmpdir(), `apple-health-import-${Date.now()}`);
@@ -168,7 +176,11 @@ export function extractExportXml(zipPath: string): Promise<string> {
       });
 
       zipfile.on("end", () => {
-        reject(new Error("No export.xml found in ZIP file"));
+        reject(
+          new AppleHealthImportValidationError(
+            "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+          ),
+        );
       });
       zipfile.on("error", reject);
     });

@@ -77,6 +77,145 @@ describe("PostgreSQL queued-work lock pool", () => {
     expect(mocks.pool.end).toHaveBeenCalledOnce();
   });
 
+  it("queues lock work before asking PostgreSQL for a fifth session", async () => {
+    let releaseStartedWork: (() => void) | undefined;
+    const allWorkStarted = new Promise<void>((resolve) => {
+      releaseStartedWork = resolve;
+    });
+    const releaseWork: Array<() => void> = [];
+    let startedWork = 0;
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+
+    const activeWork = Array.from({ length: 4 }, (_, index) =>
+      workLockPool.runWithSharedUserLock(`user-${index}`, () => {
+        startedWork++;
+        if (startedWork === 4) releaseStartedWork?.();
+        return new Promise<void>((resolve) => releaseWork.push(resolve));
+      }),
+    );
+    await allWorkStarted;
+
+    const fifthWork = workLockPool.runWithSharedUserLock("user-5", async () => "fifth");
+    await Promise.resolve();
+
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(4);
+
+    for (const release of releaseWork) release();
+    await expect(Promise.all(activeWork)).resolves.toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    await vi.waitFor(() => expect(mocks.pool.connect).toHaveBeenCalledTimes(5));
+    await expect(fifthWork).resolves.toBe("fifth");
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(5);
+  });
+
+  it("reports PostgreSQL lock-acquisition failures and releases the client", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    const failure = new Error("database unavailable");
+    mocks.poolClient.query.mockRejectedValueOnce(failure);
+
+    await expect(
+      workLockPool.runWithSharedUserLock("user-1", async () => "must-not-run"),
+    ).rejects.toMatchObject({ cause: failure });
+
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ cause: failure }),
+      {
+        tags: {
+          accountErasureWorkLockStep: "acquire",
+          source: "account-erasure-work-lock",
+        },
+      },
+    );
+  });
+
+  it("fails closed when PostgreSQL reports that the shared lock was not held", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    mocks.poolClient.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ unlocked: false }] });
+
+    await expect(
+      workLockPool.runWithSharedUserLock("user-1", async () => "completed"),
+    ).rejects.toThrow("Queued user work advisory lock was not held by its PostgreSQL session");
+
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: {
+        accountErasureWorkLockStep: "release",
+        source: "account-erasure-work-lock",
+      },
+    });
+  });
+
+  it("fails closed when PostgreSQL returns no advisory unlock row", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    mocks.poolClient.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+
+    const error = await workLockPool
+      .runWithSharedUserLock("user-1", async () => "completed")
+      .catch((failure: unknown) => failure);
+
+    expect(error).toMatchObject({
+      message: "Queued user work advisory lock was not held by its PostgreSQL session",
+    });
+    expect(mocks.captureException).toHaveBeenCalledWith(error, {
+      tags: {
+        accountErasureWorkLockStep: "release",
+        source: "account-erasure-work-lock",
+      },
+    });
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+  });
+
+  it("preserves a callback failure when PostgreSQL cannot release the shared lock", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    const workFailure = new Error("job failed");
+    const releaseFailure = new Error("unlock failed");
+    mocks.poolClient.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(releaseFailure);
+
+    await expect(
+      workLockPool.runWithSharedUserLock("user-1", async () => {
+        throw workFailure;
+      }),
+    ).rejects.toBe(workFailure);
+
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ cause: releaseFailure }),
+      {
+        tags: {
+          accountErasureWorkLockStep: "release",
+          source: "account-erasure-work-lock",
+        },
+      },
+    );
+  });
+
+  it("restores permit capacity after work completes without queued callers", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+
+    for (const [userId, result] of [
+      ["user-1", "first"],
+      ["user-2", "second"],
+      ["user-3", "third"],
+      ["user-4", "fourth"],
+      ["user-5", "fifth"],
+    ] as const) {
+      await expect(workLockPool.runWithSharedUserLock(userId, async () => result)).resolves.toBe(
+        result,
+      );
+    }
+
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(5);
+  });
+
   it("holds and releases the same session lock around the complete job callback", async () => {
     const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
     const work = vi.fn(async () => {
