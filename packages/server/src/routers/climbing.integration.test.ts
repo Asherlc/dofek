@@ -23,6 +23,9 @@ describe("climbing router integration", () => {
   let routeActivityId: string;
 
   beforeAll(async () => {
+    const dayInMilliseconds = 24 * 60 * 60 * 1_000;
+    const boulderStartedAt = new Date(Date.now() - 2 * dayInMilliseconds).toISOString();
+    const routeStartedAt = new Date(Date.now() - dayInMilliseconds).toISOString();
     testContext = await setupTestDatabase();
 
     await testContext.db.execute(
@@ -45,8 +48,8 @@ describe("climbing router integration", () => {
             'climbing-router-boulder-session',
             'climbing',
             'rock_climbing',
-            '2026-07-06T10:00:00Z'::timestamptz,
-            '2026-07-06T11:30:00Z'::timestamptz,
+            ${boulderStartedAt}::timestamptz,
+            (${boulderStartedAt}::timestamptz + INTERVAL '90 minutes'),
             'Kaya climbing at Touchstone Pacific Pipe'
           ),
           (
@@ -55,8 +58,8 @@ describe("climbing router integration", () => {
             'climbing-router-route-session',
             'climbing',
             'rock_climbing',
-            '2026-07-07T10:00:00Z'::timestamptz,
-            '2026-07-07T11:30:00Z'::timestamptz,
+            ${routeStartedAt}::timestamptz,
+            (${routeStartedAt}::timestamptz + INTERVAL '90 minutes'),
             'Kaya climbing at Mission Cliffs'
           ),
           (
@@ -65,8 +68,8 @@ describe("climbing router integration", () => {
             'climbing-router-strava-overlap',
             'climbing',
             'rock_climbing',
-            '2026-07-06T10:00:00Z'::timestamptz,
-            '2026-07-06T11:30:00Z'::timestamptz,
+            ${boulderStartedAt}::timestamptz,
+            (${boulderStartedAt}::timestamptz + INTERVAL '90 minutes'),
             'Morning Rock Climb'
           )
           RETURNING id, external_id`,
