@@ -49,7 +49,7 @@
     "dofek": "workspace:*",
     "entities": "6.0.1",
     "express": "5.2.1",
-    "express-rate-limit": "8.5.2",
+    "express-rate-limit": "8.6.1",
     "qrcode": "1.5.4",
     "simple-statistics": "7.9.3",
     "zod": "4.4.3"
