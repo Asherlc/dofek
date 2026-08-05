@@ -22797,3 +22797,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   production release has no new events for these issue IDs, and monitor the
   provider-stats build duration and lock-pool wait behavior under normal worker
   concurrency.
+
+## 2026-08-04 — Production activity lookup failed after a skipped migration
+
+- **Status:** Fixed and deployed in [PR #2436](https://github.com/Asherlc/dofek/pull/2436); [Deploy Web run 30976998483](https://github.com/Asherlc/dofek/actions/runs/30976998483) completed successfully.
+- **Symptoms / impact:** Sentry [DOFEK-SERVER-5W](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5W) reported that activity-by-ID queries failed because `fitness.v_activity` did not expose `perceived_exertion`.
+- **Evidence / root cause:** The exact database error was `column a.perceived_exertion does not exist`. Production's migration ledger contained `0068` followed by `0062`, but no `0069`; the live view and the four subjective-input tables created by `0069_subjective_inputs` were absent. Migration `0069` was ordered before an already-applied migration, so the existing production database skipped it while deployed code expected its schema.
+- **Fix / mitigation:** Added idempotent forward migration `0070_repair_subjective_inputs` and a real integration regression that recreates the stale production state before applying the repair. Production now records migration `0070`, exposes `fitness.v_activity.perceived_exertion`, and has healthy web, worker, and ClickHouse consumers.
+- **Validation:** The focused database integration test, migration policy check, Biome check, and TypeScript check passed locally; [CI run 30976234508](https://github.com/Asherlc/dofek/actions/runs/30976234508) and the production deployment passed. Direct production checks confirmed the repaired schema and healthy services.
+- **Remaining risk / follow-up:** Monitor `5W` for recurrence after deployment. New unresolved Sentry issue [DOFEK-SERVER-5X](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5X) is queued separately for investigation.
