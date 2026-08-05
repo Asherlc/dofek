@@ -1,6 +1,10 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { runMigrations } from "./migrate.ts";
+import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
 const USER_ID = "10000000-0000-4000-8000-000000002247";
 const ACTIVITY_ID = "20000000-0000-4000-8000-000000002247";
@@ -98,5 +102,97 @@ describe("subjective input persistence (integration)", () => {
         [USER_ID],
       ),
     ).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("repairs a database that skipped the subjective-input migration", async () => {
+    const migrationDirectory = mkdtempSync(join(tmpdir(), "subjective-input-repair-"));
+    const migrationFile = "0070_repair_subjective_inputs.sql";
+    const migrationContent = readFileSync(
+      resolve(import.meta.dirname, "../../drizzle", migrationFile),
+      "utf8",
+    );
+
+    try {
+      await client.query(
+        readFileSync(
+          resolve(import.meta.dirname, "../../drizzle/_views/01_v_activity.sql"),
+          "utf8",
+        ),
+      );
+      await client.query("DROP TABLE IF EXISTS health.stale_v_activity");
+      await client.query(`
+        CREATE TABLE health.stale_v_activity AS
+        SELECT
+          id,
+          provider_id,
+          user_id,
+          primary_activity_id,
+          canonical_type,
+          provider_type,
+          modality,
+          started_at,
+          ended_at,
+          source_name,
+          name,
+          notes,
+          timezone,
+          raw,
+          source_providers,
+          source_external_ids,
+          member_activity_ids,
+          absent_source_external_ids,
+          start_utc_offset_minutes,
+          end_utc_offset_minutes,
+          local_time_source
+        FROM fitness.v_activity
+      `);
+      await client.query("DROP VIEW fitness.v_activity CASCADE");
+      await client.query(`CREATE VIEW fitness.v_activity AS SELECT * FROM health.stale_v_activity`);
+      await client.query(
+        "DROP TABLE fitness.injury_event, fitness.subjective_symptom, fitness.subjective_check_in, fitness.body_region",
+      );
+      await client.query(
+        "ALTER TABLE fitness.activity DROP CONSTRAINT IF EXISTS activity_perceived_exertion_range",
+      );
+
+      writeTestMigrationFiles(migrationDirectory, [
+        { content: migrationContent, file: migrationFile, when: 1785770820000 },
+      ]);
+
+      await expect(runMigrations(context.connectionString, migrationDirectory)).resolves.toBe(1);
+
+      const viewColumns = await client.query<{ column_name: string }>(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'fitness' AND table_name = 'v_activity'
+         ORDER BY ordinal_position`,
+      );
+      expect(viewColumns.rows.at(-1)).toEqual({ column_name: "perceived_exertion" });
+
+      await client.query("UPDATE fitness.activity SET perceived_exertion = 7.5 WHERE id = $1", [
+        ACTIVITY_ID,
+      ]);
+      const activity = await client.query<{ perceived_exertion: number }>(
+        "SELECT perceived_exertion FROM fitness.v_activity WHERE id = $1",
+        [ACTIVITY_ID],
+      );
+      expect(activity.rows).toEqual([{ perceived_exertion: 7.5 }]);
+
+      const restoredTables = await client.query<{ table_name: string }>(
+        `SELECT table_name
+         FROM information_schema.tables
+         WHERE table_schema = 'fitness'
+           AND table_name IN ('body_region', 'subjective_check_in', 'subjective_symptom', 'injury_event')
+         ORDER BY table_name`,
+      );
+      expect(restoredTables.rows).toEqual([
+        { table_name: "body_region" },
+        { table_name: "injury_event" },
+        { table_name: "subjective_check_in" },
+        { table_name: "subjective_symptom" },
+      ]);
+    } finally {
+      rmSync(migrationDirectory, { force: true, recursive: true });
+    }
   });
 });
