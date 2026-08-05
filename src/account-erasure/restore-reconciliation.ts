@@ -100,8 +100,11 @@ export async function reconcileAccountErasureRestoreIntents(
   dependencies: AccountErasureRestoreReconciliationDependencies,
 ): Promise<AccountErasureRestoreReconciliationResult> {
   const keyring = readAccountErasureLedgerKeyring();
-  const [references, profiles, requests] = await Promise.all([
-    dependencies.ledger.listIntentReferences(),
+  // Capture the local state before listing the remote ledger. Concurrent
+  // startup reconcilers must make their local snapshots before either one can
+  // begin recovery; otherwise one reconciler can observe the other's newly
+  // committed request and report a different result for the same intent.
+  const [profiles, requests] = await Promise.all([
     executeWithSchema(
       dependencies.database,
       profileRowSchema,
@@ -121,6 +124,7 @@ export async function reconcileAccountErasureRestoreIntents(
           WHERE status <> 'completed'`,
     ),
   ]);
+  const references = await dependencies.ledger.listIntentReferences();
   const configuredKeyIds = new Set(Object.keys(keyring.keys));
   for (const reference of references) {
     if (!configuredKeyIds.has(reference.keyId)) {
