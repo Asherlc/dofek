@@ -33,7 +33,7 @@ services:
       retries: 10
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.6.1.1193-alpine
+    image: clickhouse/clickhouse-server:26.7.1.1315-alpine
     restart: unless-stopped
     mem_limit: 1536m
     environment:
