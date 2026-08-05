@@ -25,6 +25,7 @@ import {
 } from "../processing/processing-event-store.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
+import { createAppleHealthImportValidationError } from "./import-validation-error.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
@@ -177,38 +178,48 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       await runWithTokenUser(userId, async () => {
         if (importType === "apple-health") {
           await reportImportProgress(job, 0, "Starting Apple Health import...");
-          const { importAppleHealthFile } = await import("../providers/apple-health/import.ts");
+          const { AppleHealthImportValidationError, importAppleHealthFile } = await import(
+            "../providers/apple-health/import.ts"
+          );
           let lastLoggedPercentage = 0;
           // Scale streaming progress to 0-90% — remaining 10% is for post-import steps
-          const result = await importAppleHealthFile(
-            db,
-            filePath,
-            sinceDate,
-            (info) => {
-              const scaledPercentage = Math.floor(info.percentage * 0.9);
-              const counts = [
-                info.recordCount > 0 ? `${info.recordCount.toLocaleString()} records` : "",
-                info.workoutCount > 0 ? `${info.workoutCount} workouts` : "",
-                info.sleepCount > 0 ? `${info.sleepCount} sleep sessions` : "",
-              ]
-                .filter(Boolean)
-                .join(", ");
-              const message = counts
-                ? `Importing health data (${counts})...`
-                : "Importing health data...";
-              job
-                .updateProgress({ percentage: scaledPercentage, message })
-                .catch((error: unknown) => {
-                  logger.warn("Failed to update import progress: %s", error);
-                  captureException(error, { tags: { phase: "import-progress-update" } });
-                });
-              if (info.percentage >= lastLoggedPercentage + 10) {
-                logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
-                lastLoggedPercentage = info.percentage;
-              }
-            },
-            metricStreamPublisher,
-          );
+          let result: Awaited<ReturnType<typeof importAppleHealthFile>>;
+          try {
+            result = await importAppleHealthFile(
+              db,
+              filePath,
+              sinceDate,
+              (info) => {
+                const scaledPercentage = Math.floor(info.percentage * 0.9);
+                const counts = [
+                  info.recordCount > 0 ? `${info.recordCount.toLocaleString()} records` : "",
+                  info.workoutCount > 0 ? `${info.workoutCount} workouts` : "",
+                  info.sleepCount > 0 ? `${info.sleepCount} sleep sessions` : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+                const message = counts
+                  ? `Importing health data (${counts})...`
+                  : "Importing health data...";
+                job
+                  .updateProgress({ percentage: scaledPercentage, message })
+                  .catch((error: unknown) => {
+                    logger.warn("Failed to update import progress: %s", error);
+                    captureException(error, { tags: { phase: "import-progress-update" } });
+                  });
+                if (info.percentage >= lastLoggedPercentage + 10) {
+                  logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
+                  lastLoggedPercentage = info.percentage;
+                }
+              },
+              metricStreamPublisher,
+            );
+          } catch (error: unknown) {
+            if (error instanceof AppleHealthImportValidationError) {
+              throw createAppleHealthImportValidationError(error.message);
+            }
+            throw error;
+          }
           importedRecordCount = result.recordsSynced;
 
           await logImportCompletion(
@@ -401,7 +412,10 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       stage: "ingest",
       status: "failed",
       errorCode: "file_import_failed",
-      errorMessage: "The file could not be imported. Check the file and try again.",
+      errorMessage:
+        importError instanceof UnrecoverableError
+          ? importError.message
+          : "The file could not be imported. Check the file and try again.",
       idempotencyKey: "worker-failed",
     });
     await invalidateAllUserQueries(userId);

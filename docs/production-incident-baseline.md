@@ -22739,3 +22739,61 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** No deploy-blocking risk remains from this
   incident. Continue monitoring the OTA service's replica stability and
   healthcheck during subsequent releases.
+
+## 2026-08-04 — Sentry triage found recurring analytics, import, and worker failures
+
+- **Status:** Root causes fixed in this change; production confirmation remains
+  pending the next release. The stale activity view issue
+  ([DOFEK-SERVER-53](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-53))
+  was already repaired by the `0071_repair_canonical_activity_type_reads`
+  migration present on `origin/main`.
+- **Symptoms / impact:** Open Sentry issues reported missing dbt artifacts
+  ([5T](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5T)), Peloton
+  workouts rejected when `total_work` was null
+  ([5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E)), invalid
+  Apple Health archives retried as transient failures
+  ([5V](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5V)), provider
+  stats ClickHouse materialized-CTE gate errors and timeouts
+  ([5R](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5R),
+  [5Q](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Q)), account
+  erasure work-lock pool connection timeouts
+  ([5S](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5S)), and
+  expected readiness timeouts reported as errors
+  ([4P](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4P)). These
+  caused analytics runs to fail or lose their original error, rejected valid
+  upstream payloads, retried user-invalid uploads, delayed queued work, and
+  added false-positive readiness events.
+- **Evidence / root cause:** Sentry event traces mapped the failures to
+  `scripts/run-analytics-build.ts`, the Peloton Zod response schema,
+  `src/providers/apple-health/import.ts`, the `provider_stats` dbt model,
+  `src/jobs/account-erasure-work-guard.ts`, and
+  `src/jobs/worker-readiness.ts`. The analytics runner read dbt artifacts before
+  checking dbt's exit code; Peloton's schema rejected a documented observed
+  nullable field; malformed Apple Health ZIPs raised an untyped validation
+  error; the provider-stats query materialized a dependent CTE graph while
+  repeatedly scanning source tables; more worker concurrency could call a
+  four-session PostgreSQL lock pool than the pool could serve; and the
+  readiness timeout used the same generic error path as unexpected failures.
+- **Fix / mitigation:** Missing dbt artifacts now become typed
+  `AnalyticsBuildError` failures without recording fabricated model results;
+  Peloton accepts `total_work: null`; malformed Apple Health ZIPs raise a
+  typed validation error and become unrecoverable, user-actionable import
+  failures; the shared dirty-provider set and final bounded provider batch are
+  materialized CTEs while downstream provider-state CTEs remain ordinary;
+  account-erasure lock work waits on an in-process four-permit queue before
+  acquiring PostgreSQL sessions; and readiness timeouts are logged as expected
+  unavailable health checks while unexpected failures still report to Sentry.
+  No timeout, retry, pool-size, or generic failure-suppression workaround was
+  added.
+- **Validation:** The new regression tests fail against the pre-fix behavior
+  and pass after the fixes. Focused unit tests pass for the changed worker/import
+  paths; the provider-stats ClickHouse integration suite passes all 8 tests,
+  including the full model query and `EXPLAIN PIPELINE`; the full unit/mobile
+  suite passes 1,112 files and 16,717 tests (21 skipped); root and package
+  TypeScript checks pass; Biome and analytics policy checks pass. Full SQLFluff
+  still emits an existing `LT08` exception in several models, but the touched
+  provider-stats model has no remaining lint violation.
+- **Remaining risk / follow-up:** Deploy the merged change, verify the next
+  production release has no new events for these issue IDs, and monitor the
+  provider-stats build duration and lock-pool wait behavior under normal worker
+  concurrency.

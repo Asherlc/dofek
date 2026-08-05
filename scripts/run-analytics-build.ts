@@ -26,6 +26,31 @@ interface RunAnalyticsBuildInput {
   }): Promise<{ datasets: number; failed: number }>;
 }
 
+function isMissingArtifactError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+async function readDbtArtifact(
+  readArtifact: RunAnalyticsBuildInput["readArtifact"],
+  name: "manifest.json" | "run_results.json",
+  exitCode: number,
+): Promise<unknown> {
+  try {
+    return await readArtifact(name);
+  } catch (error: unknown) {
+    if (!isMissingArtifactError(error)) throw error;
+    throw new AnalyticsBuildError(exitCode, [
+      {
+        modelName: "dbt",
+        status: "failed",
+        errorCode: "dbt_artifact_missing",
+        message: `dbt did not produce ${name}`,
+        category: "unknown",
+      },
+    ]);
+  }
+}
+
 export async function runAnalyticsBuild({
   selectedModels,
   artifactDirectory,
@@ -54,8 +79,8 @@ export async function runAnalyticsBuild({
   ];
   const exitCode = await runDbt(commandArguments);
   const artifacts = parseDbtRunArtifacts({
-    manifest: await readArtifact("manifest.json"),
-    runResults: await readArtifact("run_results.json"),
+    manifest: await readDbtArtifact(readArtifact, "manifest.json", exitCode),
+    runResults: await readDbtArtifact(readArtifact, "run_results.json", exitCode),
     sources: {
       metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/sources/v3.json" },
       results: [],

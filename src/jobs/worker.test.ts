@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
 
 // All mock dependencies live inside vi.hoisted() so they are guaranteed to exist
 // before vi.mock() factories resolve and before the static import of worker.ts.
@@ -1040,6 +1041,20 @@ describe("worker module", () => {
     const job = { id: "fit-child-1", parentKey: "bull:fit-batch:batch-1" };
     const error = new UnrecoverableError("invalid FIT file");
     getFitWorkerFailedHandler()(job, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("suppresses Sentry for invalid Apple Health import archives", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const error = new UnrecoverableError(
+      "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    );
+    error.name = APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME;
+    getWorkerFailedHandler("import-queue")({ id: "apple-health-import-1" }, error);
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });

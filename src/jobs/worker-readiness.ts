@@ -22,6 +22,13 @@ class WorkerReadinessError extends Error {
   }
 }
 
+class WorkerReadinessTimeoutError extends Error {
+  readonly code = "WORKER_READINESS_TIMEOUT" as const;
+  constructor() {
+    super(`Worker readiness timed out after ${WORKER_READINESS_TIMEOUT_MS}ms`);
+  }
+}
+
 const WORKER_READINESS_TIMEOUT_MS = 2_500;
 const CONNECTION_STATUS_RETRIES = 3;
 const CONNECTION_STATUS_RETRY_DELAY_MS = 200;
@@ -69,7 +76,7 @@ async function checkWorkerReadinessWithTimeout(readinessCheck: Promise<void>): P
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timeoutId = setTimeout(
-      () => reject(new Error(`Worker readiness timed out after ${WORKER_READINESS_TIMEOUT_MS}ms`)),
+      () => reject(new WorkerReadinessTimeoutError()),
       WORKER_READINESS_TIMEOUT_MS,
     );
   });
@@ -115,7 +122,7 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
       .then(() => sendJson(response, 200, { status: "ok", workers: workers.length }))
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        if (error instanceof WorkerReadinessError) {
+        if (error instanceof WorkerReadinessError || error instanceof WorkerReadinessTimeoutError) {
           logger.warn(`[worker] Readiness check failed: ${message}`);
         } else {
           captureException(error);

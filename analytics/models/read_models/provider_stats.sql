@@ -14,7 +14,7 @@
     }
 ) }}
 
-WITH current_provider_state AS materialized (
+WITH current_provider_state AS (
     SELECT
         user_id,
         provider_id,
@@ -49,7 +49,7 @@ source_dirty_providers AS materialized (
     {% endif %}
 ),
 
-metric_stream_daily_source_state AS materialized (
+metric_stream_daily_source_state AS (
     SELECT
         user_id,
         provider_id,
@@ -65,7 +65,7 @@ metric_stream_daily_source_state AS materialized (
     GROUP BY user_id, provider_id, recorded_date
 ),
 
-metric_stream_daily_target_state AS materialized (
+metric_stream_daily_target_state AS (
     SELECT
         user_id,
         provider_id,
@@ -81,7 +81,7 @@ metric_stream_daily_target_state AS materialized (
     GROUP BY user_id, provider_id, recorded_date
 ),
 
-metric_stream_daily_dirty_providers AS materialized (
+metric_stream_daily_dirty_providers AS (
     SELECT
         metric_stream_daily_source_state.user_id AS user_id,
         metric_stream_daily_source_state.provider_id AS provider_id
@@ -127,13 +127,13 @@ providers AS materialized (
             toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
         ) ASC,
         candidate_dirty_providers.source_changed_at ASC,
-        candidate_dirty_providers.user_id,
-        candidate_dirty_providers.provider_id
+        candidate_dirty_providers.user_id ASC,
+        candidate_dirty_providers.provider_id ASC
     {% else %}
     ORDER BY
         candidate_dirty_providers.source_changed_at ASC,
-        candidate_dirty_providers.user_id,
-        candidate_dirty_providers.provider_id
+        candidate_dirty_providers.user_id ASC,
+        candidate_dirty_providers.provider_id ASC
     {% endif %}
     LIMIT {{ provider_dirty_key_batch_size }}
 ),

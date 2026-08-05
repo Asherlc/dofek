@@ -279,8 +279,9 @@ describe("createWorkerReadinessServer", () => {
     const response = await responsePromise;
 
     expect(response.status).toBe(503);
-    expect(captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "Worker readiness timed out after 2500ms" }),
+    expect(captureException).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[worker] Readiness check failed: Worker readiness timed out after 2500ms",
     );
   }, 1_000);
 

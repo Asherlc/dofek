@@ -172,6 +172,41 @@ describe("runAnalyticsBuild", () => {
     expect(recordRun).toHaveBeenCalledOnce();
   });
 
+  it("reports a missing dbt artifact as an analytics build failure", async () => {
+    const artifactError = Object.assign(new Error("no such file or directory"), {
+      code: "ENOENT",
+    });
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
+
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: ["provider_stats"],
+        artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        runDbt: async () => 1,
+        readArtifact: async () => {
+          throw artifactError;
+        },
+        recordRun,
+      }),
+    ).rejects.toMatchObject({
+      constructor: AnalyticsBuildError,
+      exitCode: 1,
+      reason: "process-failed",
+      failures: [
+        {
+          modelName: "dbt",
+          status: "failed",
+          errorCode: "dbt_artifact_missing",
+          message: "dbt did not produce manifest.json",
+          category: "unknown",
+        },
+      ],
+    });
+
+    expect(recordRun).not.toHaveBeenCalled();
+  });
+
   it("preserves processing failures when dbt artifacts are incomplete", async () => {
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 2 }));
 

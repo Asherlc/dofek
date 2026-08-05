@@ -25,7 +25,7 @@ export const pelotonWorkoutSchema = z.object({
   created_at: z.number(),
   start_time: z.number(),
   end_time: z.number().nullable(),
-  total_work: z.number(),
+  total_work: z.number().nullable(),
   is_total_work_personal_record: z.boolean(),
   metrics_type: z.string().nullish(),
   device_type: z.string().optional(),

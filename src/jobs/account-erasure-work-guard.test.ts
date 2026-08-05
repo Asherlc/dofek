@@ -77,6 +77,40 @@ describe("PostgreSQL queued-work lock pool", () => {
     expect(mocks.pool.end).toHaveBeenCalledOnce();
   });
 
+  it("queues lock work before asking PostgreSQL for a fifth session", async () => {
+    let releaseStartedWork: (() => void) | undefined;
+    const allWorkStarted = new Promise<void>((resolve) => {
+      releaseStartedWork = resolve;
+    });
+    const releaseWork: Array<() => void> = [];
+    let startedWork = 0;
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+
+    const activeWork = Array.from({ length: 4 }, (_, index) =>
+      workLockPool.runWithSharedUserLock(`user-${index}`, () => {
+        startedWork++;
+        if (startedWork === 4) releaseStartedWork?.();
+        return new Promise<void>((resolve) => releaseWork.push(resolve));
+      }),
+    );
+    await allWorkStarted;
+
+    const fifthWork = workLockPool.runWithSharedUserLock("user-5", async () => "fifth");
+    await Promise.resolve();
+
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(4);
+
+    for (const release of releaseWork) release();
+    await expect(Promise.all(activeWork)).resolves.toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    await expect(fifthWork).resolves.toBe("fifth");
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(5);
+  });
+
   it("holds and releases the same session lock around the complete job callback", async () => {
     const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
     const work = vi.fn(async () => {
