@@ -1006,7 +1006,9 @@ describe("extractExportXml", () => {
     const zipPath = join(tmpDir, "no-export.zip");
     execSync(`cd "${tmpDir}" && zip "${zipPath}" other.txt`);
 
-    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml");
+    await expect(extractExportXml(zipPath)).rejects.toThrow(
+      "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    );
   });
 });
 
