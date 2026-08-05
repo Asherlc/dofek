@@ -138,6 +138,7 @@ function completeDeployEnvironment(): Record<string, string> {
     ...WEB_ONLY_ENVIRONMENT_KEYS,
     ...CDC_ENVIRONMENT_KEYS,
     ...WORKER_ONLY_ENVIRONMENT_KEYS,
+    "CLICKHOUSE_PASSWORD",
     "CREDENTIAL_ENCRYPTION_KEY_BASE64",
   ]);
   return {
@@ -192,6 +193,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(worker).not.toHaveProperty("SLACK_CLIENT_SECRET");
 
     expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).toEqual({
+      CLICKHOUSE_PASSWORD: "clickhouse_password-value",
       SENTRY_DSN: "sentry_dsn-value",
       SENTRY_DSN_unencrypted: "sentry_dsn_unencrypted-value",
     });
@@ -231,6 +233,18 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow("worker deploy environment is missing required keys: POSTHOG_PERSONAL_API_KEY");
+  });
+
+  it("fails before analytics startup when the ClickHouse password is missing", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.CLICKHOUSE_PASSWORD;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("analyticsWorker deploy environment is missing required keys: CLICKHOUSE_PASSWORD");
   });
 
   it("fails before worker startup when a worker-only contract is incomplete", () => {

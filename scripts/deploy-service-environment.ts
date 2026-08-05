@@ -141,8 +141,8 @@ const COMMON_APPLICATION_REQUIRED_KEYS = [
 
 const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
   analyticsWorker: {
-    allowedKeys: ["SENTRY_DSN", "SENTRY_DSN_unencrypted"],
-    requiredKeys: [],
+    allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
+    requiredKeys: ["CLICKHOUSE_PASSWORD"],
   },
   cdcHealth: {
     allowedKeys: [...CDC_ENVIRONMENT_KEYS, "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
