@@ -221,7 +221,7 @@ current_providers AS (
     SELECT DISTINCT
         user_id,
         provider_id
-    FROM analytics.body_measurement_sample FINAL
+    FROM {{ source('analytics', 'body_measurement_sample') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND channel IN (
             'body_weight',
@@ -373,7 +373,7 @@ body_measurement_counts AS (
             external_id,
             concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', COALESCE(device_id, ''))
         )) AS count
-    FROM analytics.body_measurement_sample FINAL
+    FROM {{ source('analytics', 'body_measurement_sample') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND channel IN (
             'body_weight',

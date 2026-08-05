@@ -76,6 +76,17 @@ interface ImportProgressInfo {
   message: string;
 }
 
+const PROCESSING_EVENT_ERROR_MESSAGE_MAX_LENGTH = 500;
+const GENERIC_IMPORT_FAILURE_MESSAGE =
+  "The file could not be imported. Check the file and try again.";
+
+function importFailureErrorMessage(error: unknown): string {
+  const message = error instanceof UnrecoverableError ? error.message.trim() : "";
+  if (message.length === 0) return GENERIC_IMPORT_FAILURE_MESSAGE;
+  if (message.length <= PROCESSING_EVENT_ERROR_MESSAGE_MAX_LENGTH) return message;
+  return `${message.slice(0, PROCESSING_EVENT_ERROR_MESSAGE_MAX_LENGTH - 1)}…`;
+}
+
 async function updateImportJobProgress(job: ImportJob, info: ImportProgressInfo): Promise<void> {
   await job.updateProgress(info).catch((error: unknown) => {
     logger.warn("Failed to update import progress: %s", error);
@@ -414,8 +425,8 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       errorCode: "file_import_failed",
       errorMessage:
         importError instanceof UnrecoverableError
-          ? importError.message
-          : "The file could not be imported. Check the file and try again.",
+          ? importFailureErrorMessage(importError)
+          : GENERIC_IMPORT_FAILURE_MESSAGE,
       idempotencyKey: "worker-failed",
     });
     await invalidateAllUserQueries(userId);

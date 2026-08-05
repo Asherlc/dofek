@@ -32,11 +32,14 @@ function renderProviderStatsSql(
       `${ingestDatabase}.metric_stream_day_change`,
     )
     .replace(
+      /\{\{\s*source\('analytics',\s*'body_measurement_sample'\)\s*\}\}/g,
+      `${ingestDatabase}.body_measurement_sample`,
+    )
+    .replace(
       /\{\{\s*ref\('provider_metric_stream_daily'\)\s*\}\}/g,
       `${ingestDatabase}.provider_metric_stream_daily`,
     )
     .replace(/\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g, `${ingestDatabase}.$1`)
-    .replaceAll("analytics.body_measurement_sample", `${ingestDatabase}.body_measurement_sample`)
     .replace(/\{\{\s*this\s*\}\}/g, targetTable);
 }
 
@@ -752,7 +755,9 @@ describe("provider stats read model", () => {
         query: `EXPLAIN PIPELINE compact = 1 ${modelSql}`,
         format: "JSONEachRow",
       });
-      expect(await explainResult.json()).not.toHaveLength(0);
+      const pipelineRows = await explainResult.json();
+      const pipelineText = pipelineRows.map((row) => JSON.stringify(row)).join("\n");
+      expect(pipelineText).toContain("MaterializingCTEs");
     } finally {
       for (const tableName of [watermarkTable, ...rawTableNames]) {
         await client.command({ query: `DROP TABLE IF EXISTS ${tableName}` });

@@ -1142,7 +1142,7 @@ describe("processImportJob", () => {
 
       await runImportJob(job, mockDb);
 
-      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+      expect(mockAppendProcessingStageEvent).toHaveBeenLastCalledWith(mockDb, {
         operationId: processingOperationId,
         stage: "ingest",
         status: "skipped",
@@ -1191,6 +1191,58 @@ describe("processImportJob", () => {
         status: "failed",
         errorCode: "file_import_failed",
         errorMessage: message,
+        idempotencyKey: "worker-failed",
+      });
+    });
+    it("bounds unrecoverable import messages before recording the failed stage", async () => {
+      const message = "x".repeat(600);
+      mockImportAppleHealthFile.mockRejectedValueOnce(
+        new MockAppleHealthImportValidationError(message),
+      );
+      mockAppendProcessingStageEvent.mockImplementation(
+        async (_database: unknown, input: unknown) => {
+          if (
+            typeof input === "object" &&
+            input !== null &&
+            "errorMessage" in input &&
+            typeof input.errorMessage === "string" &&
+            input.errorMessage.length > 500
+          ) {
+            throw new Error("processing event error message is too long");
+          }
+        },
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+        message,
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenLastCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_import_failed",
+        errorMessage: `${"x".repeat(499)}…`,
+        idempotencyKey: "worker-failed",
+      });
+    });
+    it("uses the generic processing message when an unrecoverable message is blank", async () => {
+      mockImportAppleHealthFile.mockRejectedValueOnce(
+        new MockAppleHealthImportValidationError("   "),
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+        message: "   ",
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenLastCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_import_failed",
+        errorMessage: "The file could not be imported. Check the file and try again.",
         idempotencyKey: "worker-failed",
       });
     });
