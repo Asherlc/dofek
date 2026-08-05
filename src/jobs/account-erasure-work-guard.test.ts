@@ -201,21 +201,19 @@ describe("PostgreSQL queued-work lock pool", () => {
   it("restores permit capacity after work completes without queued callers", async () => {
     const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
 
-    await expect(workLockPool.runWithSharedUserLock("user-1", async () => "first")).resolves.toBe(
-      "first",
-    );
-    await expect(workLockPool.runWithSharedUserLock("user-2", async () => "second")).resolves.toBe(
-      "second",
-    );
+    for (const [userId, result] of [
+      ["user-1", "first"],
+      ["user-2", "second"],
+      ["user-3", "third"],
+      ["user-4", "fourth"],
+      ["user-5", "fifth"],
+    ] as const) {
+      await expect(workLockPool.runWithSharedUserLock(userId, async () => result)).resolves.toBe(
+        result,
+      );
+    }
 
-    const thirdWork = workLockPool.runWithSharedUserLock("user-3", async () => "third");
-    const result = await Promise.race([
-      thirdWork,
-      new Promise<"timed out">((resolve) => setTimeout(() => resolve("timed out"), 100)),
-    ]);
-
-    expect(result).toBe("third");
-    expect(mocks.pool.connect).toHaveBeenCalledTimes(3);
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(5);
   });
 
   it("holds and releases the same session lock around the complete job callback", async () => {
