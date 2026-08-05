@@ -437,8 +437,8 @@ importers:
         specifier: 5.3.9
         version: 5.3.9
       '@formatjs/intl-numberformat':
-        specifier: 9.3.13
-        version: 9.3.13
+        specifier: 9.3.14
+        version: 9.3.14
       '@formatjs/intl-pluralrules':
         specifier: 6.3.12
         version: 6.3.12
@@ -2881,8 +2881,11 @@ packages:
   '@formatjs/intl-localematcher@0.8.12':
     resolution: {integrity: sha512-5H3r5ZJ2jZqHEv9K343lvHmeMDKMxssawAVD2H4J9xtu0ZXb6MlNxwLqdwBxJSHFU0C24KSZnffgmAi+59mK4A==}
 
-  '@formatjs/intl-numberformat@9.3.13':
-    resolution: {integrity: sha512-xJ3itWsqligfqorbMLCROYr1P6mG/r5LzLpexgpZhlL6CgQWt9TUcoZHrvXdkubgl2uGB1f7cCoVT7XFrZalmA==}
+  '@formatjs/intl-localematcher@0.8.13':
+    resolution: {integrity: sha512-kHEAFOkeJSPNi7c5PaKaRjxcBrJwzzt81ifUu+8uve1EDW/VJl83KsxmqgqNZLzcFEhSliZGvx3+pk/RH0IOmg==}
+
+  '@formatjs/intl-numberformat@9.3.14':
+    resolution: {integrity: sha512-Fk6Bg6pEHNXGcnHNl+JoqoJMqkN2J8sw55flwH8aIloTIsCbiICPmyxf/6mQVrxCEuQXJK5geXlLJW2511JFBw==}
 
   '@formatjs/intl-pluralrules@6.3.12':
     resolution: {integrity: sha512-MurVhCc7dYMX/mDA+asdV/GeNiZE+BH0SLktOsd84X+fJZFjJCgqVvFVLKzqkLVMze9FbNqO7n9xaCty/cHCHQ==}
@@ -18841,10 +18844,14 @@ snapshots:
     dependencies:
       '@formatjs/fast-memoize': 3.1.7
 
-  '@formatjs/intl-numberformat@9.3.13':
+  '@formatjs/intl-localematcher@0.8.13':
+    dependencies:
+      '@formatjs/fast-memoize': 3.1.7
+
+  '@formatjs/intl-numberformat@9.3.14':
     dependencies:
       '@formatjs/bigdecimal': 0.2.7
-      '@formatjs/intl-localematcher': 0.8.12
+      '@formatjs/intl-localematcher': 0.8.13
 
   '@formatjs/intl-pluralrules@6.3.12':
     dependencies:
