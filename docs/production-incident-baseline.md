@@ -7,6 +7,57 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-05: Node 26.7 exposed an incomplete HTTP test double
+
+### Symptoms
+
+The [Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/31070810907/job/92518327828)
+failed 16 tests in `ingest-zos-health.test.ts` with
+`TypeError: Cannot read properties of undefined (reading 'removeListener')`.
+
+### User Impact
+
+The pull-request CI gate was blocked. There was no production impact because
+the failure was confined to the in-process HTTP test harness.
+
+### Evidence
+
+The job passed 935 unit test files and failed only the 17-test
+`ingest-zos-health.test.ts` file. The same focused test passed on Node 26.5.0
+and reproduced on Node 26.7.0 before the test-double fix.
+
+### Root Cause
+
+Node 26.7 added an abort-signal cleanup call to the HTTP server response-finish
+path ([`_http_server.js`](https://github.com/nodejs/node/blob/v26.7.0/lib/_http_server.js#L1117-L1142))
+and implemented that lifecycle on [`IncomingMessage`](https://github.com/nodejs/node/blob/v26.7.0/lib/_http_incoming.js#L203-L235).
+The test supplied a plain `Readable` as the request, so it did not model the
+request object expected by the supported Node runtime.
+
+### Fix or Mitigation
+
+The test request now extends Node's `IncomingMessage` and receives a real
+in-process `net.Socket`; the response continues to use its separate writable
+test socket. This keeps the test harness aligned with the HTTP object contract
+without changing production code.
+
+### Validation
+
+The focused test passes on Node 26.7.0 with the normal Vitest retry settings.
+The CI-equivalent unit command passes with 936 test files and 15,251 tests
+passing (two files and 21 tests skipped); the server package typecheck and
+Biome check also pass.
+
+### Remaining Risk
+
+No production behavior changed. Future Node HTTP lifecycle changes may require
+the test double to track the corresponding public request/response types.
+
+### Follow-up Work
+
+- Keep in-process HTTP tests based on `node:http` request and response types so
+  runtime lifecycle changes fail at the test boundary rather than in production.
+
 ## 2026-08-05: npm versioning blocked by stale tags from a rejected release
 
 ### Symptoms
