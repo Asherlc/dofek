@@ -50,10 +50,14 @@ migration and the [CDC health runbook](clickhouse-cdc-health-runbook.md).
 ### Root Cause
 
 The canonical activity-type migration changed the schema of the
-PeerDB-managed ClickHouse activity target while the CDC flow was active. CDC
-continued ingesting source batches, but activity normalization stopped at the
-last batch before the rename; the other tables in the same mirror continued
-advancing.
+PeerDB-managed ClickHouse activity target while the CDC flow was active.
+PeerDB documents that a CDC mirror performs an initial load before continuous
+WAL-based synchronization in its [Postgres-to-ClickHouse CDC
+flow](https://docs.peerdb.io/mirror/cdc-pg-clickhouse), and recommends a
+[mirror resync](https://docs.peerdb.io/features/resync-mirror) when a schema
+change breaks an existing mirror. In this incident, CDC continued ingesting
+source batches, but activity normalization stopped at the last batch before
+the rename; the other tables in the same mirror continued advancing.
 
 ### Fix or Mitigation
 
@@ -66,9 +70,13 @@ destinations; it logged `initial copy completed for peer flow`, recreated the
 slot, and resumed the mirror. The analytics worker was then restored to `1/1`.
 
 The first mirror recreation selected CDC-only because stale destination rows
-made the setup reconciliation choose `initialCopy = false`. That recreation
-was dropped before the explicit destination truncation and second canonical
-setup, which performed the required initial snapshot.
+made the [canonical setup reconciliation](../src/db/setup-clickhouse-cdc.ts)
+choose `initialCopy = false`. PeerDB's [mirror command
+documentation](https://docs.peerdb.io/sql/commands/create-mirror) defines
+`do_initial_copy = true` as the initial snapshot path and `false` as the
+CDC-only path. That recreation was dropped before the explicit destination
+truncation and second canonical setup, which performed the required initial
+snapshot.
 
 ### Validation
 
