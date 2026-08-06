@@ -7,6 +7,108 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-05: Activity CDC normalization stalled after the canonical type migration
+
+### Symptoms
+
+The activity list stopped receiving new rows after 2026-08-03. The raw
+Postgres source continued to receive activities, but the ClickHouse activity
+mirror and every downstream activity model remained capped at the Aug 3
+snapshot.
+
+### User Impact
+
+Activity calendar/list reads served stale data. This affected all providers
+whose new rows were present in Postgres but had not reached ClickHouse. Wahoo,
+Strava, Peloton, and Garmin also had separate provider-sync errors during the
+window, so reauthorizing those providers is a distinct follow-up and does not
+repair the stale activity read path.
+
+### Evidence
+
+Production Postgres had WHOOP activities created through 2026-08-06 00:00 UTC
+and a Strava activity created at 2026-08-05 16:00 UTC. The corresponding
+`postgres_fitness.activity` table stopped at `_peerdb_synced_at =
+2026-08-03 07:06:02 UTC`, while `postgres_fitness.sleep_session` continued to
+2026-08-06 00:31 UTC. The dbt-owned `analytics.deduped_activities` model was
+refreshing at 2026-08-06 00:35 UTC but its newest activity was still the Aug 3
+row, proving the refresh worker was current while its source was stale.
+
+The PeerDB flow remained `STATUS_RUNNING`; the required replication slots were
+active with only 56 bytes of retained WAL. Its global batch checkpoint reached
+7801, and `sleep_session` reached batch 7799, but the per-table checkpoint for
+`activity` remained at batch 7106. Batch 7106 completed at 07:06:02 UTC. The
+`0069_canonical_activity_types` migration renamed the PeerDB-managed target
+column at 07:06:13 UTC, and its live-row validation failed with ClickHouse
+error 395 at 07:06:14 UTC. This is the first point at which the activity
+normalizer stopped advancing; the timing and table-specific checkpoint isolate
+the failure to the activity target rather than Postgres ingestion or the
+replication slot. See the
+[`0069_canonical_activity_types`](../src/db/clickhouse-migrations/0069_canonical_activity_types.ts)
+migration and the [CDC health runbook](clickhouse-cdc-health-runbook.md).
+
+### Root Cause
+
+The canonical activity-type migration changed the schema of the
+PeerDB-managed ClickHouse activity target while the CDC flow was active.
+PeerDB documents that a CDC mirror performs an initial load before continuous
+WAL-based synchronization in its [Postgres-to-ClickHouse CDC
+flow](https://docs.peerdb.io/mirror/cdc-pg-clickhouse), and recommends a
+[mirror resync](https://docs.peerdb.io/features/resync-mirror) when a schema
+change breaks an existing mirror. In this incident, CDC continued ingesting
+source batches, but activity normalization stopped at the last batch before
+the rename; the other tables in the same mirror continued advancing.
+
+### Fix or Mitigation
+
+The controlled flow-worker replacement did not advance the activity
+checkpoint. With `dofek_analytics-worker` paused, the affected
+`dofek_fitness_raw_analytics` mirror was dropped and allowed to finish
+deleting, then only its ten resnapshot-safe `postgres_fitness` destination
+tables were truncated. The canonical CDC setup was rerun against the empty
+destinations; it logged `initial copy completed for peer flow`, recreated the
+slot, and resumed the mirror. The analytics worker was then restored to `1/1`.
+
+The first mirror recreation selected CDC-only because stale destination rows
+made the [canonical setup reconciliation](../src/db/setup-clickhouse-cdc.ts)
+choose `initialCopy = false`. PeerDB's [mirror command
+documentation](https://docs.peerdb.io/sql/commands/create-mirror) defines
+`do_initial_copy = true` as the initial snapshot path and `false` as the
+CDC-only path. That recreation was dropped before the explicit destination
+truncation and second canonical setup, which performed the required initial
+snapshot.
+
+### Validation
+
+Post-recovery, Postgres and `postgres_fitness.activity` both report 2,775 rows
+with the newest activity at `2026-08-05 23:54:00 UTC`; the raw mirror's newest
+`_peerdb_synced_at` is `2026-08-06 01:11:03 UTC`. All three PeerDB flows report
+status `1`, all three replication slots are active with `wal_status = reserved`
+and 288 bytes of retained WAL, and the activity read models report the same
+newest activity. The dbt worker completed `PASS=39 WARN=0 ERROR=0`, and its
+health endpoint reports `status=ok` with a successful run at
+`2026-08-06 01:12:56 UTC`.
+
+The `cdc-health` state subsequently returned to
+`consecutiveFailures = 0`, with its latest successful check at
+`2026-08-06 01:25:04 UTC`; the container remains healthy.
+
+Sentry issue
+[DOFEK-SERVER-3B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-3B)
+has one event in the last hour, at `2026-08-06 00:58:51 UTC`, matching the
+inactive-slot interval during the snapshot. No later event was returned after
+the mirror and slot became healthy.
+
+### Remaining Risk
+
+The current `cdc-health` freshness list checks `sleep_session` but not
+`activity`, so this selective failure can report healthy while activity reads
+are stale. Add an activity freshness check and alert on per-table normalization
+checkpoint divergence. During recovery the monitor also recorded an exit-137
+check failure under its existing 200 MiB container limit; the service remained
+healthy under its one-failure tolerance, but the memory cause should be
+investigated separately before changing the limit or retry policy. The
+provider authorization/API errors listed above remain separate follow-ups.
 ## 2026-08-05: Node 26.7 exposed an incomplete HTTP test double
 
 ### Symptoms
