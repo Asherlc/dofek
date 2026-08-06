@@ -7,7 +7,7 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
-## 2026-08-05: npm versioning retries tags from a rejected release
+## 2026-08-05: npm versioning blocked by stale tags from a rejected release
 
 ### Symptoms
 
@@ -36,14 +36,21 @@ contains only version `0.1.0` for
 
 The previous release workflow allowed Lerna's non-atomic fallback to publish
 release tags after the protected `main` ref was rejected, leaving remote tags
-that do not represent a merged or published release.
+that do not represent a merged or published release. Lerna's `version` command
+creates the version commit and Git tags before publishing from Git ([Lerna
+version and publish documentation](https://lerna.js.org/docs/features/version-and-publish));
+the [preceding release run](https://github.com/Asherlc/dofek/actions/runs/30205750284)
+provides the direct evidence for this repository's rejected push and tag-only
+fallback.
 
 ### Fix or Mitigation
 
-The version workflow now explicitly fetches tags before its in-flight-release
-guard and Lerna comparison in
-[`version-npm.yml`](../.github/workflows/version-npm.yml). This prevents the
-workflow from making decisions from an incomplete tag set. The fifteen stale
+The version workflow relies on its full-history checkout (`fetch-depth: 0`) for
+the tags used by its in-flight-release guard and Lerna comparison in
+[`version-npm.yml`](../.github/workflows/version-npm.yml). The
+[`actions/checkout` documentation](https://github.com/actions/checkout#fetch-all-history-for-all-tags-and-branches)
+specifies that this setting fetches all history for all branches and tags, so
+the redundant `fetch-tags` setting was removed. The fifteen stale
 `@dofek/*@0.1.1` tags still require an explicit operator cleanup before the
 version workflow can produce the missing `0.1.1` release.
 
@@ -58,6 +65,14 @@ all fifteen `0.1.1` tags exist while the npm registry has no `0.1.1` entry.
 Until the stale tags are removed, the next version workflow remains blocked by
 the tag collision. Do not force-move or delete release tags without recording
 the operator action and verifying the corresponding npm versions first.
+
+### Follow-up Work
+
+- After explicit operator approval, remove the fifteen stale
+  `@dofek/*@0.1.1` tags only after verifying that the npm registry still has no
+  `0.1.1` releases, then record the cleanup action here.
+- Rerun the version workflow and verify the generated pull request, release
+  tags, and npm versions before publishing the next package release.
 
 ## 2026-08-04: Stale ClickHouse views broke activity reads after the canonical type rename
 
