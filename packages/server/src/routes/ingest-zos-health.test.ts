@@ -1,6 +1,7 @@
 import type { IncomingHttpHeaders } from "node:http";
-import { ServerResponse } from "node:http";
-import { Duplex, Readable } from "node:stream";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
+import { Duplex } from "node:stream";
 import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -116,13 +117,13 @@ class InProcessSocket extends Duplex {
   }
 }
 
-class InProcessRequest extends Readable {
-  headers: IncomingHttpHeaders;
-  method: string;
-  url: string;
+class InProcessRequest extends IncomingMessage {
+  override headers: IncomingHttpHeaders;
+  override method: string;
+  override url: string;
 
-  constructor(payload: string, headers: IncomingHttpHeaders) {
-    super();
+  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders) {
+    super(socket);
     this.headers = headers;
     this.method = "POST";
     this.url = "/api/ingest/zos-health";
@@ -140,7 +141,7 @@ async function post(
 ): Promise<{ status: number; body: unknown }> {
   const payload = JSON.stringify(body);
   const socket = new InProcessSocket();
-  const request = new InProcessRequest(payload, {
+  const request = new InProcessRequest(new Socket(), payload, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload).toString(),
     ...headers,

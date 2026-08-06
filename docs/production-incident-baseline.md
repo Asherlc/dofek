@@ -109,6 +109,123 @@ check failure under its existing 200 MiB container limit; the service remained
 healthy under its one-failure tolerance, but the memory cause should be
 investigated separately before changing the limit or retry policy. The
 provider authorization/API errors listed above remain separate follow-ups.
+## 2026-08-05: Node 26.7 exposed an incomplete HTTP test double
+
+### Symptoms
+
+The [Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/31070810907/job/92518327828)
+failed 16 tests in `ingest-zos-health.test.ts` with
+`TypeError: Cannot read properties of undefined (reading 'removeListener')`.
+
+### User Impact
+
+The pull-request CI gate was blocked. There was no production impact because
+the failure was confined to the in-process HTTP test harness.
+
+### Evidence
+
+The job passed 935 unit test files and failed only the 17-test
+`ingest-zos-health.test.ts` file. The same focused test passed on Node 26.5.0
+and reproduced on Node 26.7.0 before the test-double fix.
+
+### Root Cause
+
+Node 26.7 added an abort-signal cleanup call to the HTTP server response-finish
+path ([`_http_server.js`](https://github.com/nodejs/node/blob/v26.7.0/lib/_http_server.js#L1117-L1142))
+and implemented that lifecycle on [`IncomingMessage`](https://github.com/nodejs/node/blob/v26.7.0/lib/_http_incoming.js#L203-L235).
+The test supplied a plain `Readable` as the request, so it did not model the
+request object expected by the supported Node runtime.
+
+### Fix or Mitigation
+
+The test request now extends Node's `IncomingMessage` and receives a real
+in-process `net.Socket`; the response continues to use its separate writable
+test socket. This keeps the test harness aligned with the HTTP object contract
+without changing production code.
+
+### Validation
+
+The focused test passes on Node 26.7.0 with the normal Vitest retry settings.
+The CI-equivalent unit command passes with 936 test files and 15,251 tests
+passing (two files and 21 tests skipped); the server package typecheck and
+Biome check also pass.
+
+### Remaining Risk
+
+No production behavior changed. Future Node HTTP lifecycle changes may require
+the test double to track the corresponding public request/response types.
+
+### Follow-up Work
+
+- Keep in-process HTTP tests based on `node:http` request and response types so
+  runtime lifecycle changes fail at the test boundary rather than in production.
+
+## 2026-08-05: npm versioning blocked by stale tags from a rejected release
+
+### Symptoms
+
+The [Version npm Packages job](https://github.com/Asherlc/dofek/actions/runs/31022885280/job/92363845519)
+failed while opening the version pull request. Lerna attempted to create
+`@dofek/eight-sleep@0.1.1`, but that tag already existed. The same failure
+affected the other fourteen public packages.
+
+### User Impact
+
+Automatic npm version pull requests were blocked. The public npm registry still
+reports only `0.1.0` for the affected packages, so no `0.1.1` package release
+was available to consumers.
+
+### Evidence
+
+The first fatal line was `fatal: tag '@dofek/eight-sleep@0.1.1' already exists`.
+The preceding release run shows that its atomic push was rejected because eight
+required checks were expected, while the non-atomic fallback still pushed the
+fifteen package tags. The tags point to the rejected release commit rather than
+to `main`; the current package manifests remain at `0.1.0`. The npm registry
+contains only version `0.1.0` for
+[`@dofek/eight-sleep`](https://registry.npmjs.org/@dofek%2Feight-sleep).
+
+### Root Cause
+
+The previous release workflow allowed Lerna's non-atomic fallback to publish
+release tags after the protected `main` ref was rejected, leaving remote tags
+that do not represent a merged or published release. Lerna's `version` command
+creates the version commit and Git tags before publishing from Git ([Lerna
+version and publish documentation](https://lerna.js.org/docs/features/version-and-publish));
+the [preceding release run](https://github.com/Asherlc/dofek/actions/runs/30205750284)
+provides the direct evidence for this repository's rejected push and tag-only
+fallback.
+
+### Fix or Mitigation
+
+The version workflow relies on its full-history checkout (`fetch-depth: 0`) for
+the tags used by its in-flight-release guard and Lerna comparison in
+[`version-npm.yml`](../.github/workflows/version-npm.yml). The
+[`actions/checkout` documentation](https://github.com/actions/checkout#fetch-all-history-for-all-tags-and-branches)
+specifies that this setting fetches all history for all branches and tags, so
+the redundant `fetch-tags` setting was removed. The fifteen stale
+`@dofek/*@0.1.1` tags still require an explicit operator cleanup before the
+version workflow can produce the missing `0.1.1` release.
+
+### Validation
+
+The current workspace reproduces the linked job's package set with
+`pnpm exec lerna changed --json --loglevel silent`. Remote inspection confirms
+all fifteen `0.1.1` tags exist while the npm registry has no `0.1.1` entry.
+
+### Remaining Risk
+
+Until the stale tags are removed, the next version workflow remains blocked by
+the tag collision. Do not force-move or delete release tags without recording
+the operator action and verifying the corresponding npm versions first.
+
+### Follow-up Work
+
+- After explicit operator approval, remove the fifteen stale
+  `@dofek/*@0.1.1` tags only after verifying that the npm registry still has no
+  `0.1.1` releases, then record the cleanup action here.
+- Rerun the version workflow and verify the generated pull request, release
+  tags, and npm versions before publishing the next package release.
 
 ## 2026-08-04: Stale ClickHouse views broke activity reads after the canonical type rename
 
