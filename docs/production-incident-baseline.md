@@ -7,6 +7,58 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-05: npm versioning retries tags from a rejected release
+
+### Symptoms
+
+The [Version npm Packages job](https://github.com/Asherlc/dofek/actions/runs/31022885280/job/92363845519)
+failed while opening the version pull request. Lerna attempted to create
+`@dofek/eight-sleep@0.1.1`, but that tag already existed. The same failure
+affected the other fourteen public packages.
+
+### User Impact
+
+Automatic npm version pull requests were blocked. The public npm registry still
+reports only `0.1.0` for the affected packages, so no `0.1.1` package release
+was available to consumers.
+
+### Evidence
+
+The first fatal line was `fatal: tag '@dofek/eight-sleep@0.1.1' already exists`.
+The preceding release run shows that its atomic push was rejected because eight
+required checks were expected, while the non-atomic fallback still pushed the
+fifteen package tags. The tags point to the rejected release commit rather than
+to `main`; the current package manifests remain at `0.1.0`. The npm registry
+contains only version `0.1.0` for
+[`@dofek/eight-sleep`](https://registry.npmjs.org/@dofek%2Feight-sleep).
+
+### Root Cause
+
+The previous release workflow allowed Lerna's non-atomic fallback to publish
+release tags after the protected `main` ref was rejected, leaving remote tags
+that do not represent a merged or published release.
+
+### Fix or Mitigation
+
+The version workflow now explicitly fetches tags before its in-flight-release
+guard and Lerna comparison in
+[`version-npm.yml`](../.github/workflows/version-npm.yml). This prevents the
+workflow from making decisions from an incomplete tag set. The fifteen stale
+`@dofek/*@0.1.1` tags still require an explicit operator cleanup before the
+version workflow can produce the missing `0.1.1` release.
+
+### Validation
+
+The current workspace reproduces the linked job's package set with
+`pnpm exec lerna changed --json --loglevel silent`. Remote inspection confirms
+all fifteen `0.1.1` tags exist while the npm registry has no `0.1.1` entry.
+
+### Remaining Risk
+
+Until the stale tags are removed, the next version workflow remains blocked by
+the tag collision. Do not force-move or delete release tags without recording
+the operator action and verifying the corresponding npm versions first.
+
 ## 2026-08-04: Stale ClickHouse views broke activity reads after the canonical type rename
 
 ### Symptoms
