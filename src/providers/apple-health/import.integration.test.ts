@@ -704,6 +704,19 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </WorkoutRoute>
  </Workout>
 
+ <Workout workoutActivityType="HKWorkoutActivityTypeFunctionalStrengthTraining"
+  duration="10" durationUnit="min"
+  sourceName="Hang Ten"
+  startDate="2026-08-07 07:00:00 -0700"
+  endDate="2026-08-07 07:10:00 -0700">
+  <MetadataEntry key="HKMetadataKeyWorkoutBrandName" value="Hang Ten"/>
+  <MetadataEntry key="HangTen.PlanName" value="7/3 Repeaters"/>
+  <MetadataEntry key="HangTen.SessionID" value="11111111-1111-4111-8111-111111111111"/>
+  <MetadataEntry key="HangTen.BoardID" value="metolius-compact-ii"/>
+  <MetadataEntry key="HangTen.BoardName" value="Metolius Compact II"/>
+  <MetadataEntry key="HangTen.ActivitySegments" value="{&quot;segments&quot;:[{&quot;stepID&quot;:&quot;step-1&quot;,&quot;stepNumber&quot;:1,&quot;kind&quot;:&quot;work&quot;,&quot;holdIDs&quot;:[&quot;edge-19&quot;],&quot;holdType&quot;:&quot;edge&quot;,&quot;sizeMillimeters&quot;:19,&quot;durationSeconds&quot;:7},{&quot;stepID&quot;:&quot;step-1-rest&quot;,&quot;stepNumber&quot;:1,&quot;kind&quot;:&quot;rest&quot;,&quot;holdIDs&quot;:[],&quot;durationSeconds&quot;:3}],&quot;version&quot;:1}"/>
+ </Workout>
+
  <ActivitySummary dateComponents="2024-03-01"
   activeEnergyBurned="523.4"
   activeEnergyBurnedGoal="600"
@@ -856,6 +869,31 @@ describe("importAppleHealthFile — full DB integration", () => {
     );
     const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");
     expect(speedRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 3.5) < 0.1)).toBe(true);
+  });
+
+  it("imports Hang Ten workouts with their activity intervals", async () => {
+    const activities = await ctx.db.select().from(schema.activity);
+    const hangboard = activities.find(
+      (activityRow) => activityRow.externalId === "ah:workout:11111111-1111-4111-8111-111111111111",
+    );
+    const intervals = await ctx.db.select().from(schema.activityInterval);
+
+    expect(hangboard?.activityType).toBe("hangboard");
+    expect(hangboard?.name).toBe("7/3 Repeaters");
+    expect(hangboard?.sourceName).toBe("Hang Ten");
+    expect(hangboard?.externalId).toBe("ah:workout:11111111-1111-4111-8111-111111111111");
+    expect(hangboard?.raw).toMatchObject({
+      hangTen: {
+        planName: "7/3 Repeaters",
+        boardId: "metolius-compact-ii",
+        boardName: "Metolius Compact II",
+      },
+    });
+    expect(
+      intervals
+        .filter((interval) => interval.activityId === hangboard?.id)
+        .map((interval) => interval.label),
+    ).toEqual(["Step 1: 19 mm edge", "Step 1: Rest"]);
   });
 
   it("creates health_event rows for category records (mindful session)", async () => {

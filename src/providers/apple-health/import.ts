@@ -54,6 +54,7 @@ import {
 import type { HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
+import type { HealthWorkout } from "./workouts.ts";
 
 /**
  * Extract export.xml from an Apple Health export ZIP file.
@@ -115,6 +116,21 @@ export function defaultConsoleProgress(info: ProgressInfo): void {
   if (info.percentage >= 100) {
     process.stderr.write("\n");
   }
+}
+
+function collectWorkoutImportErrors(workouts: HealthWorkout[]): SyncError[] {
+  return workouts.flatMap((workout) => {
+    const message = workout.hangTen?.activitySegmentsError;
+    if (!message) return [];
+    return [
+      {
+        message,
+        externalId: workout.hangTen?.sessionId
+          ? `ah:workout:${workout.hangTen.sessionId}`
+          : `ah:workout:${workout.startDate.toISOString()}`,
+      },
+    ];
+  });
 }
 
 // ============================================================
@@ -203,6 +219,7 @@ export async function runImport(
       onWorkoutBatch: async (workouts) => {
         const workoutCount = await upsertWorkoutBatch(db, providerId, workouts);
         recordsSynced += workoutCount;
+        errors.push(...collectWorkoutImportErrors(workouts));
       },
       onCategoryBatch: async (records) => {
         // Insert category records into health_event table
