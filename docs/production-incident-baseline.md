@@ -7,6 +7,89 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-06: Sleep heart-rate analytics builds saturated ClickHouse
+
+### Status
+
+Root cause identified; the compact-source fix is implemented in this
+workspace, but deployment and production validation are still pending.
+
+### Symptoms
+
+The analytics worker reported
+[`DOFEK-SERVER-5Y`](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Y)
+after `sleep_heart_rate_sample` exceeded ClickHouse's four-minute execution
+limit. The issue had two Sentry events, at `2026-08-06 01:44 UTC` and
+`2026-08-06 01:55 UTC`, with no directly affected Sentry users.
+
+### User Impact
+
+The analytics cycle was marked failed, so downstream analytics freshness and
+cache warming could remain behind until a later cycle completed. This was a
+background analytics failure rather than a direct request error.
+
+### Evidence
+
+The read-only production `system.query_log` records three
+`ExceptionWhileProcessing` entries for the same dbt model at `01:35:40`,
+`01:43:21`, and `01:54:15 UTC`. Each returned ClickHouse error 159 at
+`240007–240088 ms`, after reading only `3,795,229–3,828,029` rows and
+`200.25–201.39 MiB`, with approximately `99 MiB` peak memory. The query's
+`ProfileEvents` CPU-wait field reported `153–173 seconds`, while
+the same SQL completed successfully in `49,907 ms` at `02:02:36 UTC` and in
+`57–62 seconds` during later cycles. ClickHouse documents
+[`system.query_log`](https://clickhouse.com/docs/operations/system-tables/query_log)
+as the query-history source and
+[`max_execution_time`](https://clickhouse.com/docs/operations/settings/settings#max_execution_time)
+as the elapsed execution limit.
+
+During the failing window, concurrent production work included repeated
+`analytics.v_sleep` requests reading up to `2.43 GiB` per five-minute bucket,
+`activity_sensor_summary_rows` builds reading about `1.1–1.2 GiB`, and other
+serial dbt models. The deployed ClickHouse service is limited to one CPU, and
+the failed SQL explicitly ended with `SETTINGS max_threads=1,
+join_use_nulls=1, enable_materialized_cte=1`. The July sleep-model date
+pruning is present in the deployed source; the failure was not caused by that
+optimization being absent.
+
+### Root Cause
+
+The single-CPU ClickHouse service was CPU-contended by overlapping interactive
+sleep reads and analytics read-model builds. The bounded sleep query itself
+read a modest amount of data, but spent most of its wall-clock time waiting
+for CPU and therefore crossed the existing four-minute ceiling. The later
+successful runs at the same row counts when contention eased rule out a
+deterministic malformed-data or authentication failure.
+
+### Fix or Mitigation
+
+The analytics consumers in `daily_recovery_inputs` and `weekly_healthspan`,
+along with post-sync personalization refits, now read the existing compact
+`analytics.daily_sleep` table with `FINAL` and tombstone filtering instead of
+re-running the recursive `analytics.v_sleep` view. This removes repeated
+all-user sleep deduplication from those paths without changing the execution
+limit, retry policy, or ClickHouse allocation. Do not raise the execution
+limit or add retries as the primary fix. Production deployment and query-log
+observation remain outstanding.
+
+### Validation
+
+Sentry issue and event data, Swarm service/task state, analytics-worker logs,
+ClickHouse `system.query_log`, `system.processes`, and active settings were
+inspected read-only. The query-log history shows the three timeout fingerprints
+and subsequent successful executions; no production mutation was performed.
+The compact-source change passed focused unit tests, TypeScript checks,
+analytics policy checks, and real-ClickHouse daily sleep and daily recovery
+integration tests.
+
+### Remaining Risk
+
+The current four-minute ceiling and one-CPU ClickHouse allocation leave little
+headroom until this change is deployed and production query logs confirm that
+the recursive view is no longer used by these paths. Other direct
+`analytics.v_sleep` consumers may still recreate contention if they are not
+covered by the compact read models.
+
 ## 2026-08-05: Activity CDC normalization stalled after the canonical type migration
 
 ### Symptoms

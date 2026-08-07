@@ -39,8 +39,8 @@ sleep_by_week AS (
                 toHour(started_at) * 60 + toMinute(started_at)
             )
         ) AS bedtime_stddev_min
-    FROM analytics.v_sleep
-    WHERE is_nap = false
+    FROM {{ ref('daily_sleep') }} FINAL
+    WHERE is_deleted = 0
     GROUP BY user_id, toMonday(toDate(started_at))
 ),
 

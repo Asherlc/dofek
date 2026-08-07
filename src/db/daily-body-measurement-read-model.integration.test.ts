@@ -16,6 +16,7 @@ const measurementRowSchema = z.object({
 });
 const weeklyWeightRowSchema = z.object({
   weight_kg: z.coerce.number().nullable(),
+  avg_sleep_min: z.coerce.number().nullable(),
 });
 
 describe("daily_body_measurement read-model lifecycle", () => {
@@ -47,7 +48,7 @@ describe("daily_body_measurement read-model lifecycle", () => {
       { weight_kg: 80 },
     ]);
     await expect(readWeeklyWeight(activeClient, targetSchema)).resolves.toEqual([
-      { weight_kg: 80 },
+      { weight_kg: 80, avg_sleep_min: 480 },
     ]);
 
     await appendHistoricalVersion(activeClient, targetSchema, 75, false, 2, "2026-02-01 00:00:00");
@@ -58,7 +59,7 @@ describe("daily_body_measurement read-model lifecycle", () => {
       { weight_kg: 75 },
     ]);
     await expect(readWeeklyWeight(activeClient, targetSchema)).resolves.toEqual([
-      { weight_kg: 75 },
+      { weight_kg: 75, avg_sleep_min: 480 },
     ]);
 
     await appendHistoricalVersion(activeClient, targetSchema, 75, true, 3, "2026-02-02 00:00:00");
@@ -68,7 +69,7 @@ describe("daily_body_measurement read-model lifecycle", () => {
     await expect(readHistoricalMeasurement(activeClient, targetSchema)).resolves.toEqual([]);
     await expect(readHistoricalTombstone(activeClient, targetSchema)).resolves.toBe(1);
     await expect(readWeeklyWeight(activeClient, targetSchema)).resolves.toEqual([
-      { weight_kg: null },
+      { weight_kg: null, avg_sleep_min: 480 },
     ]);
   }, 180_000);
 
@@ -151,7 +152,7 @@ function renderWeeklyHealthspanSelectSql(targetSchema: string, isIncremental: bo
         isIncremental ? incrementalSql : (initialSql ?? ""),
     )
     .replaceAll("{{ this }}", `${targetSchema}.weekly_healthspan`)
-    .replaceAll("analytics.v_sleep", `${targetSchema}.v_sleep`)
+    .replaceAll("{{ ref('daily_sleep') }}", `${targetSchema}.daily_sleep`)
     .replaceAll("analytics.v_daily_metrics", `${targetSchema}.v_daily_metrics`)
     .replaceAll(
       "{{ ref('resting_heart_rate_sleep_window') }}",
@@ -247,7 +248,9 @@ async function readWeeklyWeight(
   targetSchema: string,
 ): Promise<z.infer<typeof weeklyWeightRowSchema>[]> {
   const result = await client.query({
-    query: `SELECT weight_kg
+    query: `SELECT
+        weight_kg,
+        avg_sleep_min
       FROM ${targetSchema}.weekly_healthspan FINAL
       WHERE user_id = {userId:UUID}
         AND week_start = toMonday(toDate('2026-01-01'))`,
@@ -267,6 +270,12 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     createWeeklyHealthspanTableSql(targetSchema),
   ]);
   await appendHistoricalVersion(client, targetSchema, 80, false, 1, "2026-01-02 00:00:00");
+  await client.command({
+    query: `INSERT INTO ${targetSchema}.daily_sleep VALUES
+      ('${testUserId}', toDate('2026-01-01'), toDateTime64('2026-01-01 08:00:00', 6, 'UTC'), 480, 0, 1),
+      ('${testUserId}', toDate('2026-01-02'), toDateTime64('2026-01-02 08:00:00', 6, 'UTC'), 60, 0, 2),
+      ('${testUserId}', toDate('2026-01-02'), toDateTime64('2026-01-02 08:00:00', 6, 'UTC'), 120, 1, 3)`,
+  });
   await client.command({
     query: `INSERT INTO ${targetSchema}.body_measurement VALUES (
       '${recentMeasurementId}',
@@ -364,12 +373,14 @@ function createDailyBodyTableSql(targetSchema: string): string {
 
 function createWeeklyHealthspanDependencyTablesSql(targetSchema: string): string[] {
   return [
-    `CREATE TABLE ${targetSchema}.v_sleep (
+    `CREATE TABLE ${targetSchema}.daily_sleep (
       user_id UUID,
+      date Date,
       started_at DateTime64(6, 'UTC'),
-      duration_minutes Float64,
-      is_nap Bool
-    ) ENGINE = MergeTree ORDER BY (user_id, started_at)`,
+      duration_minutes Nullable(Int32),
+      is_deleted UInt8,
+      refresh_version UInt64
+    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, date)`,
     `CREATE TABLE ${targetSchema}.resting_heart_rate_sleep_window (
       user_id UUID,
       ended_at Nullable(DateTime64(6, 'UTC')),

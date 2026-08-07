@@ -111,6 +111,15 @@ describe("refitAllParams", () => {
     expect(trainingImpulseQuery).toContain("asum.normalized_power");
     expect(trainingImpulseQuery).not.toContain("analytics.deduped_sensor");
     expect(trainingImpulseQuery).not.toContain("rolling_power");
+
+    const sleepQueries = sensorStore.query.mock.calls
+      .map(([, query]) => query)
+      .filter((query) => query.includes("analytics.daily_sleep"));
+    expect(sleepQueries).toHaveLength(2);
+    expect(sleepQueries.every((query) => query.includes("FINAL"))).toBe(true);
+    expect(
+      sensorStore.query.mock.calls.some(([, query]) => query.includes("analytics.v_sleep")),
+    ).toBe(false);
   });
 
   it("handles individual fitter errors gracefully", async () => {
