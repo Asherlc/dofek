@@ -1152,6 +1152,114 @@ describe("upsertWorkoutBatch", () => {
     });
   });
 
+  it("uses Hang Ten session metadata for hangboard activity rows", async () => {
+    const start = new Date("2026-08-07T14:00:00Z");
+    const { db, capture } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: "hangboard",
+        sourceName: "Hang Ten",
+        startDate: start,
+        hangTen: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          planName: "7/3 Repeaters",
+          boardId: "metolius-compact-ii",
+          boardName: "Metolius Compact II",
+          rawActivitySegments: '{"segments":[],"version":1}',
+          activitySegments: [],
+        },
+      }),
+    ]);
+
+    expect(capture.values[0]?.[0]).toMatchObject({
+      providerId: "apple_health",
+      externalId: "ah:workout:11111111-1111-4111-8111-111111111111",
+      activityType: "hangboard",
+      name: "7/3 Repeaters",
+      sourceName: "Hang Ten",
+      raw: {
+        durationSeconds: 1800,
+        hangTen: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          planName: "7/3 Repeaters",
+          boardId: "metolius-compact-ii",
+          boardName: "Metolius Compact II",
+          rawActivitySegments: '{"segments":[],"version":1}',
+          activitySegments: [],
+        },
+      },
+    });
+  });
+
+  it("builds Hang Ten intervals with labels and cumulative times", async () => {
+    const start = new Date("2026-08-07T14:00:00Z");
+    const { db, capture } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: "hangboard",
+        sourceName: "Hang Ten",
+        startDate: start,
+        endDate: new Date("2026-08-07T14:01:00Z"),
+        hangTen: {
+          planName: "Repeaters",
+          activitySegments: [
+            {
+              stepID: "step-1",
+              stepNumber: 1,
+              kind: "work",
+              holdIDs: ["edge-19"],
+              holdType: "edge",
+              sizeMillimeters: 19,
+              durationSeconds: 7,
+            },
+            {
+              stepID: "step-1-rest",
+              stepNumber: 1,
+              kind: "rest",
+              holdIDs: [],
+              durationSeconds: 3,
+            },
+            {
+              stepID: "step-2",
+              stepNumber: 2,
+              kind: "work",
+              holdIDs: ["jug"],
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(capture.values[1]).toEqual([
+      expect.objectContaining({
+        activityId: "act-1",
+        intervalIndex: 0,
+        label: "Step 1: 19 mm edge",
+        intervalType: "work",
+        startedAt: start,
+        endedAt: new Date("2026-08-07T14:00:07Z"),
+      }),
+      expect.objectContaining({
+        activityId: "act-1",
+        intervalIndex: 1,
+        label: "Step 1: Rest",
+        intervalType: "rest",
+        startedAt: new Date("2026-08-07T14:00:07Z"),
+        endedAt: new Date("2026-08-07T14:00:10Z"),
+      }),
+      expect.objectContaining({
+        activityId: "act-1",
+        intervalIndex: 2,
+        label: "Step 2: Work",
+        intervalType: "work",
+        startedAt: new Date("2026-08-07T14:00:10Z"),
+        endedAt: undefined,
+      }),
+    ]);
+  });
+
   it("inserts GPS route locations for workouts", async () => {
     const { db, capture } = createMockDb([{ id: "act-1" }]);
     const loc = {

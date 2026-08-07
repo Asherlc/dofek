@@ -100,6 +100,60 @@ describe("db-insertion deduplication (integration)", () => {
       // 2 unique workouts (the two running dupes collapse into 1, plus the cycling)
       expect(count).toBe(2);
     });
+
+    it("replaces Hang Ten intervals on reimport", async () => {
+      const start = new Date("2026-08-07T14:00:00Z");
+      const workout: HealthWorkout = {
+        activityType: "hangboard",
+        sourceName: "Hang Ten",
+        durationSeconds: 10,
+        startDate: start,
+        endDate: new Date("2026-08-07T14:00:10Z"),
+        hangTen: {
+          sessionId: "22222222-2222-4222-8222-222222222222",
+          planName: "Repeaters",
+          activitySegments: [
+            {
+              stepID: "step-1",
+              stepNumber: 1,
+              kind: "work",
+              holdIDs: ["edge-19"],
+              holdType: "edge",
+              sizeMillimeters: 19,
+              durationSeconds: 7,
+            },
+            {
+              stepID: "step-1-rest",
+              stepNumber: 1,
+              kind: "rest",
+              holdIDs: [],
+              durationSeconds: 3,
+            },
+          ],
+        },
+      };
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:22222222-2222-4222-8222-222222222222"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id));
+
+      expect(intervals).toHaveLength(2);
+      expect(intervals.map((interval) => interval.label)).toEqual([
+        "Step 1: 19 mm edge",
+        "Step 1: Rest",
+      ]);
+    });
   });
 
   describe("insertWithDuplicateDiag — safety net dedup", () => {
