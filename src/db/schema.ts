@@ -185,6 +185,7 @@ export const activityTypeEnum = fitness.enum("activity_type", [
   "golf",
   "disc_golf",
   "climbing",
+  "hangboard",
   "rock_climbing",
   "dance",
   "dancing",

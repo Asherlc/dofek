@@ -38,6 +38,7 @@ describe("CANONICAL_ACTIVITY_TYPES", () => {
 
   it("includes strength and fitness types", () => {
     expect(CANONICAL_ACTIVITY_TYPES).toContain("strength");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("yoga");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("pilates");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("elliptical");
@@ -274,6 +275,7 @@ describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
 describe("formatActivityTypeLabel", () => {
   it("maps known activity types to human-readable names", () => {
     expect(formatActivityTypeLabel("functional_strength")).toBe("Functional Strength");
+    expect(formatActivityTypeLabel("hangboard")).toBe("Hangboard");
     expect(formatActivityTypeLabel("strength_training")).toBe("Strength Training");
   });
 
