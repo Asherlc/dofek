@@ -75,11 +75,10 @@ resting_by_date AS (
 sleep_by_date AS (
     SELECT
         user_id,
-        toDate(started_at - INTERVAL 6 HOUR) AS date,
-        argMax(efficiency_pct, tuple(duration_minutes, started_at)) AS efficiency_pct
-    FROM analytics.v_sleep
-    WHERE is_nap = FALSE
-    GROUP BY user_id, date
+        date,
+        efficiency_pct
+    FROM {{ ref('daily_sleep') }} FINAL
+    WHERE is_deleted = 0
 ),
 
 input_dates AS (

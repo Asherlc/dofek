@@ -762,8 +762,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("dirty_keys AS");
     expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
-    expect(sql).toContain("analytics.v_sleep");
-    expect(sql).toContain("argMax(efficiency_pct, tuple(duration_minutes, started_at))");
+    expect(sql).toContain("ref('daily_sleep')");
+    expect(sql).toContain("is_deleted = 0");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("hrv_mean_60d");
     expect(sql).toContain("rhr_mean_60d");
@@ -791,8 +791,17 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("avgOrNull(respiratory_rate) OVER");
     expect(sql).toContain("avgOrNull(efficiency_pct) OVER");
     expect(sql).toContain("if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).not.toContain("analytics.v_sleep");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes weekly healthspan from compact daily sleep rows", () => {
+    const sql = readModel("weekly_healthspan");
+
+    expect(sql).toContain("ref('daily_sleep')");
+    expect(sql).toContain("FINAL");
+    expect(sql).not.toContain("analytics.v_sleep");
   });
 
   it("materializes the daily recovery model from daily recovery inputs", () => {
@@ -905,6 +914,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_weeks AS");
+    expect(sql).toContain("sleep_week_keys AS");
+    expect(sql).toContain("changed_sleep_weeks AS");
+    expect(sql).toContain("FROM sleep_week_keys");
+    expect(sql).toContain("FROM changed_sleep_weeks");
     expect(normalizedSql).toContain("existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK");
     expect(sql).toContain("ref('healthspan_activity_zone_minutes')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");

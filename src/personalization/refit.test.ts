@@ -111,6 +111,19 @@ describe("refitAllParams", () => {
     expect(trainingImpulseQuery).toContain("asum.normalized_power");
     expect(trainingImpulseQuery).not.toContain("analytics.deduped_sensor");
     expect(trainingImpulseQuery).not.toContain("rolling_power");
+
+    const sleepQueries = sensorStore.query.mock.calls
+      .map(([, query]) => query)
+      .filter((query) => query.includes("analytics.daily_sleep"));
+    expect(sleepQueries).toHaveLength(2);
+    expect(sleepQueries.every((query) => query.includes("FINAL"))).toBe(true);
+    expect(sleepQueries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("sleep.date >= toDate(now() - INTERVAL 425 DAY)"),
+        expect.stringContaining("sleep.date >= toDate(now() - INTERVAL 365 DAY)"),
+      ]),
+    );
+    expect(sleepQueries.every((query) => !query.includes("sleep.started_at > now()"))).toBe(true);
   });
 
   it("handles individual fitter errors gracefully", async () => {

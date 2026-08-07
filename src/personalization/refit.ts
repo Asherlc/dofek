@@ -322,23 +322,12 @@ async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, u
         efficiency_pct: z.coerce.number().nullable(),
       }),
       `SELECT
-        toString(toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)) AS date,
-        efficiency_pct
-      FROM (
-        SELECT
-          started_at,
-          efficiency_pct,
-          duration_minutes,
-          row_number() OVER (
-            PARTITION BY toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)
-            ORDER BY duration_minutes DESC NULLS LAST
-          ) AS row_number
-        FROM analytics.v_sleep
-        WHERE user_id = {userId:UUID}
-          AND is_nap = false
-          AND started_at > now() - INTERVAL 425 DAY
-      )
-      WHERE row_number = 1`,
+        toString(sleep.date) AS date,
+        sleep.efficiency_pct AS efficiency_pct
+      FROM analytics.daily_sleep AS sleep FINAL
+      WHERE sleep.user_id = {userId:UUID}
+        AND sleep.is_deleted = 0
+        AND sleep.date >= toDate(now() - INTERVAL 425 DAY)`,
       { userId },
     ),
   ]);
@@ -412,22 +401,12 @@ export async function fitSleepFromDb(
             duration_minutes: z.coerce.number().nullable(),
           }),
           `SELECT
-        date,
-        duration_minutes
-      FROM (
-        SELECT
-          toString(toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)) AS date,
-          duration_minutes,
-          row_number() OVER (
-            PARTITION BY toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)
-            ORDER BY duration_minutes DESC NULLS LAST
-          ) AS row_number
-        FROM analytics.v_sleep
-        WHERE user_id = {userId:UUID}
-          AND is_nap = false
-          AND started_at > now() - INTERVAL 365 DAY
-      )
-      WHERE row_number = 1
+        toString(sleep.date) AS date,
+        sleep.duration_minutes AS duration_minutes
+      FROM analytics.daily_sleep AS sleep FINAL
+      WHERE sleep.user_id = {userId:UUID}
+        AND sleep.is_deleted = 0
+        AND sleep.date >= toDate(now() - INTERVAL 365 DAY)
       ORDER BY date ASC`,
           { userId },
         ),

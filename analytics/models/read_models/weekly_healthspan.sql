@@ -27,6 +27,13 @@ existing_weeks AS (
 ),
 {% endif %}
 
+sleep_week_keys AS (
+    SELECT DISTINCT
+        user_id,
+        toMonday(toDate(started_at)) AS week_start
+    FROM {{ ref('daily_sleep') }} FINAL
+),
+
 sleep_by_week AS (
     SELECT
         user_id,
@@ -39,8 +46,8 @@ sleep_by_week AS (
                 toHour(started_at) * 60 + toMinute(started_at)
             )
         ) AS bedtime_stddev_min
-    FROM analytics.v_sleep
-    WHERE is_nap = false
+    FROM {{ ref('daily_sleep') }} FINAL
+    WHERE is_deleted = 0
     GROUP BY user_id, toMonday(toDate(started_at))
 ),
 
@@ -111,6 +118,14 @@ body_by_week AS (
 ),
 
 {% if is_incremental() %}
+changed_sleep_weeks AS (
+    SELECT DISTINCT
+        user_id,
+        toMonday(toDate(started_at)) AS week_start
+    FROM {{ ref('daily_sleep') }} FINAL
+    WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+
 changed_body_weeks AS (
     SELECT DISTINCT
         user_id,
@@ -124,7 +139,7 @@ week_keys AS (
     SELECT
         user_id,
         week_start
-    FROM sleep_by_week
+    FROM sleep_week_keys
     UNION DISTINCT
     SELECT
         user_id,
@@ -172,6 +187,11 @@ week_keys_to_materialize AS (
         changed_body_weeks.user_id AS user_id,
         changed_body_weeks.week_start AS week_start
     FROM changed_body_weeks
+    UNION DISTINCT
+    SELECT
+        changed_sleep_weeks.user_id AS user_id,
+        changed_sleep_weeks.week_start AS week_start
+    FROM changed_sleep_weeks
     {% endif %}
 ),
 

@@ -212,12 +212,12 @@ function renderModelSelectSql(
     )
     .replaceAll("{{ this }}", `${targetSchema}.${modelName}`)
     .replaceAll("{{ ref('daily_recovery_inputs') }}", `${targetSchema}.daily_recovery_inputs`)
+    .replaceAll("{{ ref('daily_sleep') }}", `${targetSchema}.daily_sleep`)
     .replaceAll(
       "{{ ref('resting_heart_rate_sleep_window') }}",
       `${targetSchema}.resting_heart_rate_sleep_window`,
     )
     .replaceAll("analytics.v_daily_metrics", `${targetSchema}.v_daily_metrics`)
-    .replaceAll("analytics.v_sleep", `${targetSchema}.v_sleep`)
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
 }
 
@@ -400,7 +400,6 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     `CREATE DATABASE ${targetSchema}`,
     createDailyMetricsTableSql(targetSchema),
     createRestingHeartRateTableSql(targetSchema),
-    createSleepViewTableSql(targetSchema),
     createRecoveryInputsTableSql(targetSchema),
     createRecoveryTableSql(targetSchema),
     createDailyStrainTableSql(targetSchema),
@@ -420,7 +419,6 @@ async function seedBaselineFixture(client: ClickHouseClient, targetSchema: strin
     `CREATE DATABASE ${targetSchema}`,
     createDailyMetricsTableSql(targetSchema),
     createRestingHeartRateTableSql(targetSchema),
-    createSleepViewTableSql(targetSchema),
     createRecoveryInputsTableSql(targetSchema),
     createRecoveryTableSql(targetSchema),
     createDailyStrainTableSql(targetSchema),
@@ -430,11 +428,11 @@ async function seedBaselineFixture(client: ClickHouseClient, targetSchema: strin
       ('${testUserId}', toDate('2025-12-30'), 60, 14),
       ('${testUserId}', toDate('2025-12-31'), 80, 16),
       ('${testUserId}', toDate('${recoveryDate}'), 100, 18)`,
-    `INSERT INTO ${targetSchema}.v_sleep VALUES
-      ('${testUserId}', toDateTime64('2025-12-02 08:00:00', 6, 'UTC'), 480, 70, false),
-      ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 80, false),
-      ('${testUserId}', toDateTime64('2025-12-31 08:00:00', 6, 'UTC'), 480, 90, false),
-      ('${testUserId}', toDateTime64('${recoveryDate} 08:00:00', 6, 'UTC'), 480, 100, false)`,
+    `INSERT INTO ${targetSchema}.daily_sleep VALUES
+      ('${testUserId}', toDate('2025-12-02'), 480, NULL, NULL, NULL, NULL, 70, false, 0, 1),
+      ('${testUserId}', toDate('2025-12-30'), 480, NULL, NULL, NULL, NULL, 80, false, 0, 1),
+      ('${testUserId}', toDate('2025-12-31'), 480, NULL, NULL, NULL, NULL, 90, false, 0, 1),
+      ('${testUserId}', toDate('${recoveryDate}'), 480, NULL, NULL, NULL, NULL, 100, false, 0, 1)`,
     `INSERT INTO ${targetSchema}.resting_heart_rate_sleep_window VALUES
       ('${testUserId}', toDateTime64('2025-12-02 08:00:00', 6, 'UTC'), 480, 54, 0, 1),
       ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 52, 0, 1),
@@ -479,18 +477,6 @@ function createRestingHeartRateTableSql(targetSchema: string): string {
   )
   ENGINE = ReplacingMergeTree(refresh_version)
   ORDER BY user_id`;
-}
-
-function createSleepViewTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.v_sleep (
-    user_id UUID,
-    started_at DateTime64(6, 'UTC'),
-    duration_minutes Nullable(Int32),
-    efficiency_pct Nullable(Float64),
-    is_nap Bool
-  )
-  ENGINE = MergeTree
-  ORDER BY (user_id, started_at)`;
 }
 
 function createRecoveryInputsTableSql(targetSchema: string): string {
@@ -610,6 +596,7 @@ function createDailySleepTableSql(targetSchema: string): string {
     rem_minutes Nullable(Int32),
     light_minutes Nullable(Int32),
     awake_minutes Nullable(Int32),
+    efficiency_pct Nullable(Float64),
     staging_available Bool,
     is_deleted UInt8,
     refresh_version UInt64
