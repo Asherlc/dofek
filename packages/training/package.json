@@ -1,6 +1,6 @@
 {
   "name": "@dofek/training",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Training-science calculations for power, load, performance, and workout planning",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,24 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/training#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["training", "cycling", "running", "power", "tss", "trimp", "fitness"],
+  "keywords": [
+    "training",
+    "cycling",
+    "running",
+    "power",
+    "tss",
+    "trimp",
+    "fitness"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     "./*": "./src/*.ts"
   },

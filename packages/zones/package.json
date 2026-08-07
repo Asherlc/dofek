@@ -1,6 +1,6 @@
 {
   "name": "@dofek/zones",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Heart-rate and cycling-power zone calculations and classification",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,22 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/zones#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["heart-rate", "power", "cycling", "training-zones", "fitness"],
+  "keywords": [
+    "heart-rate",
+    "power",
+    "cycling",
+    "training-zones",
+    "fitness"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/zones.ts",
     "./zones": "./src/zones.ts"

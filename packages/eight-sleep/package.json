@@ -1,6 +1,6 @@
 {
   "name": "@dofek/eight-sleep",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial Eight Sleep API client using reverse-engineered authentication",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,22 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/eight-sleep#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["eight-sleep", "sleep", "api-client", "unofficial", "typescript"],
+  "keywords": [
+    "eight-sleep",
+    "sleep",
+    "api-client",
+    "unofficial",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/client.ts",
     "./*": "./src/*.ts"
