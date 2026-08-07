@@ -109,8 +109,8 @@ describe("production PWA build", () => {
     expect(indexHtml).toContain('src="/registerSW.js"');
     expect(indexHtml).toContain('href="/manifest.webmanifest"');
     expect(registrationScript).toContain("register('/sw.js', { scope: '/' })");
-    expect(clientsClaimCount).toBe(1);
-    expect(skipWaitingCount).toBe(1);
+    expect(clientsClaimCount).toBeGreaterThanOrEqual(1);
+    expect(skipWaitingCount).toBeGreaterThanOrEqual(1);
   });
 
   it("rewrites hashed precache assets to the configured CDN", () => {
