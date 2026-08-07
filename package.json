@@ -145,7 +145,6 @@
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
     "release:npm:build": "lerna run build --stream",
     "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/garmin-connect packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/velohero-client packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client",
-    "release:npm:version": "lerna version patch --yes",
     "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm lint:sandbox && pnpm lint:analytics-sql",

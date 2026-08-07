@@ -62,19 +62,28 @@ jobs:
         id: changed
         run: |
           # A merged version bump reaches main before "Release npm Packages" has
-          # published and tagged it. Both workflows start from the same CI run, so
-          # without this guard `lerna changed` would still be comparing against the
-          # previous tag and would open a second bump on top of the first.
+          # published it. Both workflows start from the same CI run, so without
+          # this guard `lerna changed` could open a second bump on top of the first.
+          # The registry is the publication source of truth: a tag can exist while
+          # pointing at an unmerged commit or while its version is absent from npm.
           PENDING=$(
             pnpm exec lerna list --json --loglevel silent |
               jq -r '.[] | "\(.name)@\(.version)"' |
-              while read -r TAG; do
-                git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || echo "$TAG"
+              while read -r PACKAGE_VERSION; do
+                if NPM_OUTPUT=$(npm view "$PACKAGE_VERSION" version --registry=https://registry.npmjs.org/ 2>&1); then
+                  continue
+                elif grep -q 'E404' <<< "$NPM_OUTPUT"; then
+                  echo "$PACKAGE_VERSION"
+                else
+                  echo "Unable to verify $PACKAGE_VERSION in the npm registry:" >&2
+                  echo "$NPM_OUTPUT" >&2
+                  exit 1
+                fi
               done
           )
           if [ -n "$PENDING" ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "A release is already in flight; these versions are not published yet:"
+            echo "A release is already in flight; these versions are not published on npm yet:"
             echo "$PENDING"
             exit 0
           fi
@@ -89,29 +98,82 @@ jobs:
             jq -r '.[].name' <<< "$CHANGED_PACKAGES"
           fi
 
-      - name: Open the version pull request
+      - name: Check version branch
         if: >
           steps.current.outputs.should_version == 'true' &&
           steps.changed.outputs.has_changes == 'true'
-        env:
-          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        id: branch
         run: |
           BRANCH="release/npm-$(git rev-parse --short HEAD)"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
             echo "$BRANCH already exists; its pull request is still open."
-            exit 0
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Version package manifests
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.branch.outputs.exists != 'true'
+        run: pnpm exec lerna version patch --yes --no-git-tag-version --no-push
+
+      - name: Commit version manifests
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Version on main so lerna's allowBranch check passes, then publish the
-          # resulting commit as a branch. Tags are created after the pull request
-          # merges, so an abandoned pull request never leaves stray release tags.
-          pnpm exec lerna version patch --yes --no-push
+          # Stage only package manifests and the workspace lockfile changed by
+          # versioning; unrelated worktree files must not enter the release PR.
+          git add --update -- \
+            'package.json' \
+            ':(glob)packages/**/package.json' \
+            'pnpm-lock.yaml'
+          if git diff --cached --quiet; then
+            echo "Lerna did not update a package manifest or workspace lockfile."
+            exit 1
+          fi
+          git commit -m "chore(release): version npm packages"
           git branch "$BRANCH"
-          git push origin "$BRANCH"
+
+      - name: Push version branch
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: git push origin "$BRANCH"
+
+      - name: Open the version pull request
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        run: |
           gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore(release): version npm packages" \
             --body "Automated version bump for the npm packages changed since the last release. Publishing happens on main once this merges."
+
+      - name: Enable version pull request auto-merge
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        run: |
           gh pr merge "$BRANCH" --auto --squash
