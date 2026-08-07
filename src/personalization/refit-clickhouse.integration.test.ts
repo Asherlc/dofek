@@ -58,6 +58,7 @@ describe("personalization refit ClickHouse sleep inputs", () => {
     });
     expect(executedQuery).toContain("analytics.daily_sleep AS sleep FINAL");
     expect(executedQuery).toContain("sleep.is_deleted = 0");
+    expect(executedQuery).toContain("sleep.date >= toDate(now() - INTERVAL 365 DAY)");
     expect(executedQuery).not.toContain("analytics.v_sleep");
   }, 180_000);
 
@@ -69,11 +70,13 @@ describe("personalization refit ClickHouse sleep inputs", () => {
     await seedFixture(activeClient, targetSchema, sleepDates, tombstonedDate);
 
     const dailySleepRows: unknown[][] = [];
+    const dailySleepQueries: string[] = [];
     const sensorStore = createRefitSensorStore({
       query: async (args) => {
         if (!args.query.includes("analytics.daily_sleep")) {
           return { json: async () => [] };
         }
+        dailySleepQueries.push(args.query);
 
         const result = await activeClient.query({
           query: args.query.replaceAll("analytics.daily_sleep", `${targetSchema}.daily_sleep`),
@@ -98,6 +101,12 @@ describe("personalization refit ClickHouse sleep inputs", () => {
 
     expect(result.readinessWeights).toMatchObject({ sampleCount: metricDates.length });
     expect(dailySleepRows).toHaveLength(2);
+    expect(dailySleepQueries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("sleep.date >= toDate(now() - INTERVAL 425 DAY)"),
+        expect.stringContaining("sleep.date >= toDate(now() - INTERVAL 365 DAY)"),
+      ]),
+    );
     expect(dailySleepRows.flat()).toContainEqual(expect.objectContaining({ date: sleepDates[0] }));
     expect(dailySleepRows.flat()).not.toContainEqual(
       expect.objectContaining({ date: tombstonedDate }),

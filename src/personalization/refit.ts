@@ -327,7 +327,7 @@ async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, u
       FROM analytics.daily_sleep AS sleep FINAL
       WHERE sleep.user_id = {userId:UUID}
         AND sleep.is_deleted = 0
-        AND sleep.started_at > now() - INTERVAL 425 DAY`,
+        AND sleep.date >= toDate(now() - INTERVAL 425 DAY)`,
       { userId },
     ),
   ]);
@@ -406,7 +406,7 @@ export async function fitSleepFromDb(
       FROM analytics.daily_sleep AS sleep FINAL
       WHERE sleep.user_id = {userId:UUID}
         AND sleep.is_deleted = 0
-        AND sleep.started_at > now() - INTERVAL 365 DAY
+        AND sleep.date >= toDate(now() - INTERVAL 365 DAY)
       ORDER BY date ASC`,
           { userId },
         ),
