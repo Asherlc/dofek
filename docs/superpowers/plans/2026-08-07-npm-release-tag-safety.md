@@ -1,10 +1,8 @@
 # npm Release Tag Safety Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Prevent the npm version workflow from creating local release tags before a reviewed pull request is merged, so stale or rejected-release tags cannot block future version PRs.
 
-**Architecture:** Lerna will update package manifests without committing or tagging by using `--no-git-tag-version --no-push`. The workflow will explicitly commit those manifest changes and push only the release branch; the existing post-publish workflow remains the sole tag writer. Documentation will record the invariant and recovery behavior.
+**Architecture:** Lerna will update package manifests without committing or tagging by using `--no-git-tag-version --no-push` ([Lerna version and publish](https://lerna.js.org/docs/features/version-and-publish)). The workflow will explicitly commit those manifest changes and push only the release branch; the existing post-publish workflow remains the sole tag writer. The in-flight guard will use exact npm registry versions as its publication source of truth ([npm view](https://docs.npmjs.com/cli/v11/commands/npm-view)). Documentation will record the invariant and recovery behavior.
 
 **Tech Stack:** GitHub Actions YAML, Lerna 9.0.7, pnpm, Git, Markdown documentation.
 
@@ -30,18 +28,20 @@
 
 - [ ] **Step 1: Update the Lerna invocation and explicit commit**
 
-Replace the current version command and branch creation sequence with:
+Split version-PR preparation into explicitly named steps for branch detection,
+manifest versioning, manifest commit, branch push, pull-request creation, and
+auto-merge. The versioning and commit steps must use:
 
 ```yaml
-          # Lerna's --no-push still creates its local version commit and tags.
-          # Disable both so release tags are created only after publishing.
           pnpm exec lerna version patch --yes --no-git-tag-version --no-push
-          git add --all
+          git add --update -- package.json ':(glob)packages/**/package.json' pnpm-lock.yaml
           git commit -m "chore(release): version npm packages"
           git branch "$BRANCH"
 ```
 
-Keep the existing `git push`, pull request creation, and auto-merge commands unchanged. The checkout is clean and the `has_changes` gate ensures the explicit commit has version changes to capture.
+The allowlisted staging paths include package manifests and the workspace lockfile; unrelated worktree files must not enter the release pull request. The checkout is clean and the `has_changes` gate ensures the explicit commit has version changes to capture.
+Remove the unused `release:npm:version` package script so no alternate
+tag-creating version entry point remains; verify it has no repository callers.
 
 - [ ] **Step 2: Review the workflow diff for scope**
 
@@ -52,7 +52,7 @@ rtk git diff -- .github/workflows/version-npm.yml
 rtk git diff --check
 ```
 
-Expected: only the Lerna flags, explanatory comment, `git add --all`, and explicit `git commit` are added or changed; no tag deletion, force push, or release-workflow change appears.
+Expected: the registry publication guard, explicitly named version/commit/push/PR steps, allowlisted staging, and explicit commit are present; no tag deletion, force push, or release-workflow change appears.
 
 ### Task 2: Align release documentation and incident record
 
@@ -66,7 +66,7 @@ Expected: only the Lerna flags, explanatory comment, `git add --all`, and explic
 
 - [ ] **Step 1: Update the npm architecture sequence**
 
-Change the version-workflow step to name both flags and the explicit commit. State that Lerna updates manifests only, then the workflow commits and pushes the release branch. Retain the official [Lerna version and publish](https://lerna.js.org/docs/features/version-and-publish) citation.
+Change the version-workflow step to name both flags and the explicit commit. State that the in-flight guard checks exact package versions in the npm registry with `npm view`, that Lerna updates manifests only, and that the workflow commits and pushes the release branch. Retain adjacent official [Lerna version and publish](https://lerna.js.org/docs/features/version-and-publish) and [npm view](https://docs.npmjs.com/cli/v11/commands/npm-view) citations.
 
 - [ ] **Step 2: Update the incident baseline**
 
@@ -96,16 +96,23 @@ Expected: both active docs describe the same workflow behavior and retain links 
 
 - [ ] **Step 1: Validate workflow syntax with available repository tooling**
 
-Run the repository's focused workflow/configuration validation available in the workspace. If no dedicated workflow validator exists, use YAML parsing or the repository lint command that covers workflow files; do not add a static-config unit test.
+Run the dedicated workflow validator:
+
+```bash
+rtk actionlint -shellcheck= .github/workflows/version-npm.yml
+```
+
+If `actionlint` is unavailable, use the repository's workflow lint policy and
+YAML validation instead; do not add a static-config unit test.
 
 - [ ] **Step 2: Run an isolated executable Lerna reproduction**
 
 Use a disposable copy or worktree outside the repository's active worktree with a clean git repository, one public package at version `0.1.0`, and an existing `@example/package@0.1.1` tag. Capture the matching tag list before running the command. Run:
 
 ```bash
-pnpm exec lerna version patch --yes --no-git-tag-version --no-push
-git add --all
-git commit -m "chore(release): version npm packages"
+rtk pnpm exec lerna version patch --yes --no-git-tag-version --no-push
+rtk git add --update -- package.json ':(glob)packages/**/package.json' pnpm-lock.yaml
+rtk git commit -m "chore(release): version npm packages"
 ```
 
 Verify that the package manifest is `0.1.1`, the explicit commit exists, and the matching tag list is unchanged after the command: the existing tag remains, but no new tag is created. Remove the disposable copy after verification; do not touch repository or remote tags.
@@ -117,10 +124,17 @@ Run:
 ```bash
 rtk git diff --check
 rtk pnpm lint
+rtk pnpm test
+rtk pnpm run typecheck
+rtk pnpm -r --if-present run typecheck
 rtk git status --short
 ```
 
-Expected: no whitespace errors, lint exits successfully, and only the intended workflow/documentation changes remain uncommitted before the final commit.
+The unit tier is the Docker-free `pnpm test` suite documented in
+[`docs/testing.md`](../../testing.md). Run the root and every workspace
+`typecheck` script to match the CI typecheck matrix. Expected: no whitespace
+errors, lint/tests/typechecks exit successfully, and only the intended
+workflow/documentation changes remain uncommitted before the final commit.
 
 - [ ] **Step 4: Commit the implementation**
 
@@ -129,6 +143,7 @@ Run:
 ```bash
 rtk git add .github/workflows/version-npm.yml docs/package-publishing.md docs/production-incident-baseline.md
 rtk git commit -m "fix(ci): keep npm versioning tag-free"
+rtk git push -u origin HEAD
 ```
 
-Report the commit, validation output, and the remaining operational requirement: the next successful `CI` run should create the version PR, after which the release workflow should publish and verify the package versions.
+Report the commit, push result, validation output, and the remaining operational requirement: the next successful `CI` run should create the version PR, after which the release workflow should publish and verify the package versions.

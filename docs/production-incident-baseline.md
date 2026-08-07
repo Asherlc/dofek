@@ -298,18 +298,21 @@ The version workflow now invokes Lerna with
 creates its local version commit and tags; disabling git tag versioning and
 committing the manifest changes explicitly keeps tag creation out of the
 reviewed version-pull-request phase ([Lerna version and publish](https://lerna.js.org/docs/features/version-and-publish)).
+The in-flight guard now checks exact package versions in the npm registry with
+`npm view` rather than treating a tag name as proof of publication
+([npm view](https://docs.npmjs.com/cli/v11/commands/npm-view)).
 The post-publish workflow remains the sole tag writer and skips tags that are
-already present, so the existing stale tags do not require destructive cleanup
-for the workflow to recover.
+already present, so the workflow can complete without destructive cleanup; it
+does not repair an existing tag target ([release-npm.yml](../.github/workflows/release-npm.yml)).
 
 The version workflow relies on its full-history checkout (`fetch-depth: 0`) for
-the tags used by its in-flight-release guard and Lerna comparison in
+the tags used by its Lerna comparison in
 [`version-npm.yml`](../.github/workflows/version-npm.yml). The
 [`actions/checkout` documentation](https://github.com/actions/checkout#fetch-all-history-for-all-tags-and-branches)
 specifies that this setting fetches all history for all branches and tags, so
 the redundant `fetch-tags` setting was removed. The fifteen stale
-`@dofek/*@0.1.1` tags still require an explicit operator cleanup before the
-version workflow can produce the missing `0.1.1` release.
+`@dofek/*@0.1.1` tags remain historical mismatches; the registry-based guard
+no longer treats them as proof that `0.1.1` was published.
 
 ### Validation
 
@@ -319,16 +322,17 @@ all fifteen `0.1.1` tags exist while the npm registry has no `0.1.1` entry.
 
 ### Remaining Risk
 
-The existing stale tags remain a historical mismatch until the next successful
-version and publish cycle reconciles the package manifests and npm registry.
-Do not force-move or delete release tags without recording the operator action
-and verifying the corresponding npm versions first.
+Existing stale tags remain a historical mismatch. A later cycle does not
+rewrite existing tags. Do not force-move or delete release tags without
+recording the operator action and verifying the corresponding npm versions
+first.
 
 ### Follow-up Work
 
-- Rerun the version workflow after this prevention fix and verify the generated
-  pull request, release tags, and npm versions before publishing the next
-  package release.
+- Rerun the version workflow and verify the generated pull request before
+  merging it.
+- After publishing, verify release artifacts, npm versions, and release-tag
+  targets.
 - Keep the stale tags unchanged unless a separate, explicitly approved tag
   cleanup is needed after verifying the corresponding npm versions.
 

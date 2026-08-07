@@ -9,8 +9,10 @@ only after the `CI` workflow succeeds for the current `main` commit.
 pnpm remains the workspace and publishing package manager. Lerna 9 is used only
 for the part pnpm does not provide: detecting changed release packages,
 independently patch-versioning them, updating workspace dependency versions,
-and creating release commits and tags. Lerna recommends letting the package
-manager own workspace installation and supports independent versions
+and updating the package manifests. The version workflow commits those
+manifest changes, and `release-npm.yml` creates and pushes release tags after
+successful publication. Lerna recommends letting the package manager own
+workspace installation and supports independent versions
 ([Lerna workspace guidance](https://lerna.js.org/docs/getting-started#adding-lerna-to-an-existing-repo),
 [version and publish](https://lerna.js.org/docs/features/version-and-publish)).
 pnpm rewrites supported `publishConfig` fields when packing, which lets local
@@ -23,8 +25,10 @@ The automatic path is:
 1. `.github/workflows/version-npm.yml` receives a successful `CI`
    `workflow_run` for `main`.
 2. The workflow mints a short-lived GitHub App installation token, verifies
-   that the tested commit is still current, and skips when any package version
-   is still untagged (a release already in flight).
+   that the tested commit is still current, and skips when any current package
+   version is absent from the npm registry (a release is already in flight).
+   The guard queries exact package versions with `npm view`, which is the npm
+   CLI's registry-inspection command ([npm view](https://docs.npmjs.com/cli/v11/commands/npm-view)).
 3. `lerna version patch --yes --no-git-tag-version --no-push` independently
    patch-bumps only changed packages and updates internal package references
    without creating a local version commit or tag. The workflow stages and
@@ -32,7 +36,7 @@ The automatic path is:
    branch; it opens a squash pull request and enables auto-merge so required
    checks run before the bump lands on `main`. Tags are not created here, so an
    abandoned pull request or a stale remote tag cannot block version-PR
-   preparation.
+   preparation ([Lerna version and publish](https://lerna.js.org/docs/features/version-and-publish)).
 4. After the version pull request merges and `CI` succeeds again,
    `.github/workflows/release-npm.yml` builds every package in `lerna.json`,
    runs the public-package unit suite, and publishes with
@@ -50,7 +54,9 @@ requires a package to exist before its trusted publisher can be configured
 
 A failed registry upload is recoverable with `workflow_dispatch` on
 `release-npm.yml`: pnpm publishes workspace versions that are not yet in the
-registry, and the tagging step is a no-op for versions already tagged.
+registry, and the tagging step is a no-op for versions already tagged. It does
+not rewrite an existing tag target, so verify release artifacts, npm versions,
+and release-tag targets after publishing.
 
 ### Adding another npm package
 
