@@ -1,6 +1,6 @@
 {
   "name": "@dofek/garmin-connect",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial Garmin Connect API client using the internal SSO + OAuth authentication flow",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,22 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/garmin-connect#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["garmin", "garmin-connect", "fitness", "api-client", "unofficial"],
+  "keywords": [
+    "garmin",
+    "garmin-connect",
+    "fitness",
+    "api-client",
+    "unofficial"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/client.ts",
     "./*": "./src/*.ts"

@@ -1,6 +1,6 @@
 {
   "name": "@dofek/peloton",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial Peloton API client with reverse-engineered Auth0 authentication",
   "type": "module",
   "license": "MIT",
@@ -24,7 +24,11 @@
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/client.ts",
     "./*": "./src/*.ts"

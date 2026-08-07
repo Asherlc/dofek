@@ -1,6 +1,6 @@
 {
   "name": "@dofek/provider-http",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Rate-limit-aware Fetch utilities and typed provider HTTP errors",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,22 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/provider-http#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["fetch", "http", "rate-limit", "retry-after", "typescript"],
+  "keywords": [
+    "fetch",
+    "http",
+    "rate-limit",
+    "retry-after",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/rate-limit.ts",
     "./rate-limit": "./src/rate-limit.ts",
