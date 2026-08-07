@@ -16,6 +16,8 @@ let outputDirectory: string | null = null;
 let precacheEntries: PrecacheEntry[] = [];
 let navigationDenylist: RegExp[] = [];
 let runtimeRouteCount = 0;
+let clientsClaimCount = 0;
+let skipWaitingCount = 0;
 let indexHtml = "";
 let registrationScript = "";
 
@@ -66,6 +68,9 @@ beforeAll(async () => {
 
   const workbox = {
     cleanupOutdatedCaches: () => undefined,
+    clientsClaim: () => {
+      clientsClaimCount += 1;
+    },
     createHandlerBoundToURL: (url: string) => url,
     NavigationRoute,
     precacheAndRoute: (entries: PrecacheEntry[]) => {
@@ -82,7 +87,9 @@ beforeAll(async () => {
   const serviceWorkerGlobal = {
     addEventListener: () => undefined,
     define,
-    skipWaiting: () => undefined,
+    skipWaiting: () => {
+      skipWaitingCount += 1;
+    },
   };
 
   vm.runInNewContext(serviceWorker, {
@@ -102,6 +109,8 @@ describe("production PWA build", () => {
     expect(indexHtml).toContain('src="/registerSW.js"');
     expect(indexHtml).toContain('href="/manifest.webmanifest"');
     expect(registrationScript).toContain("register('/sw.js', { scope: '/' })");
+    expect(clientsClaimCount).toBe(1);
+    expect(skipWaitingCount).toBe(1);
   });
 
   it("rewrites hashed precache assets to the configured CDN", () => {
