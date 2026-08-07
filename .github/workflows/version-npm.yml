@@ -103,10 +103,11 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Version on main so lerna's allowBranch check passes, then publish the
-          # resulting commit as a branch. Tags are created after the pull request
-          # merges, so an abandoned pull request never leaves stray release tags.
-          pnpm exec lerna version patch --yes --no-push
+          # Lerna's --no-push still creates its local version commit and tags.
+          # Disable both so release tags are created only after publishing.
+          pnpm exec lerna version patch --yes --no-git-tag-version --no-push
+          git add --all
+          git commit -m "chore(release): version npm packages"
           git branch "$BRANCH"
           git push origin "$BRANCH"
           gh pr create \

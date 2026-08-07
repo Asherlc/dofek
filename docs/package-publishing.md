@@ -25,12 +25,14 @@ The automatic path is:
 2. The workflow mints a short-lived GitHub App installation token, verifies
    that the tested commit is still current, and skips when any package version
    is still untagged (a release already in flight).
-3. `lerna version patch --yes --no-push` independently patch-bumps only changed
-   packages and updates internal package references. The resulting commit is
-   pushed on a `release/npm-*` branch; the workflow opens a squash pull request
-   and enables auto-merge so required checks run before the bump lands on
-   `main`. Tags are not created here, so an abandoned pull request leaves no
-   stray release tags.
+3. `lerna version patch --yes --no-git-tag-version --no-push` independently
+   patch-bumps only changed packages and updates internal package references
+   without creating a local version commit or tag. The workflow stages and
+   commits those changes, then pushes the resulting commit on a `release/npm-*`
+   branch; it opens a squash pull request and enables auto-merge so required
+   checks run before the bump lands on `main`. Tags are not created here, so an
+   abandoned pull request or a stale remote tag cannot block version-PR
+   preparation.
 4. After the version pull request merges and `CI` succeeds again,
    `.github/workflows/release-npm.yml` builds every package in `lerna.json`,
    runs the public-package unit suite, and publishes with

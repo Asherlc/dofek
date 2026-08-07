@@ -293,6 +293,15 @@ fallback.
 
 ### Fix or Mitigation
 
+The version workflow now invokes Lerna with
+`--no-git-tag-version --no-push`. Lerna's `--no-push` option alone still
+creates its local version commit and tags; disabling git tag versioning and
+committing the manifest changes explicitly keeps tag creation out of the
+reviewed version-pull-request phase ([Lerna version and publish](https://lerna.js.org/docs/features/version-and-publish)).
+The post-publish workflow remains the sole tag writer and skips tags that are
+already present, so the existing stale tags do not require destructive cleanup
+for the workflow to recover.
+
 The version workflow relies on its full-history checkout (`fetch-depth: 0`) for
 the tags used by its in-flight-release guard and Lerna comparison in
 [`version-npm.yml`](../.github/workflows/version-npm.yml). The
@@ -310,17 +319,18 @@ all fifteen `0.1.1` tags exist while the npm registry has no `0.1.1` entry.
 
 ### Remaining Risk
 
-Until the stale tags are removed, the next version workflow remains blocked by
-the tag collision. Do not force-move or delete release tags without recording
-the operator action and verifying the corresponding npm versions first.
+The existing stale tags remain a historical mismatch until the next successful
+version and publish cycle reconciles the package manifests and npm registry.
+Do not force-move or delete release tags without recording the operator action
+and verifying the corresponding npm versions first.
 
 ### Follow-up Work
 
-- After explicit operator approval, remove the fifteen stale
-  `@dofek/*@0.1.1` tags only after verifying that the npm registry still has no
-  `0.1.1` releases, then record the cleanup action here.
-- Rerun the version workflow and verify the generated pull request, release
-  tags, and npm versions before publishing the next package release.
+- Rerun the version workflow after this prevention fix and verify the generated
+  pull request, release tags, and npm versions before publishing the next
+  package release.
+- Keep the stale tags unchanged unless a separate, explicitly approved tag
+  cleanup is needed after verifying the corresponding npm versions.
 
 ## 2026-08-04: Stale ClickHouse views broke activity reads after the canonical type rename
 
