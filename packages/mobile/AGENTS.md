@@ -13,6 +13,7 @@
 - **Storybook**: Every component MUST have a `.stories.tsx` file (lives in `.storybook` and `.rnstorybook`).
 - **Charts**: Use `react-native-svg` for all chart implementations.
 - **Navigation**: Uses Expo Router. Screen paths map to `app/`.
+- **Expo Router route hygiene**: Never colocate tests, stories, fixtures, or helper-only files under `packages/mobile/app/`. Expo Router treats files in `app/` as route candidates, which can create extra iOS tabs/screens. Put route tests under `packages/mobile/app-tests/` and route stories under `packages/mobile/app-stories/`. If a file under `app/` is not a real route/layout/special Expo Router file, move it out instead of hiding it with `href: null`.
 - **Query state handling**: Treat loading, error, and empty as separate UI states. Do not use `query.data ?? []` or similar fallbacks when `query.error` exists. Use `components/QueryStatePanel.tsx` for explicit error/empty/loading states on screens and cards.
 
 ### Native Config Consistency

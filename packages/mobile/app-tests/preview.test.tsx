@@ -33,7 +33,7 @@ describe("PreviewScreen", () => {
   it("shows loading state with PR number", async () => {
     mockCheckAndApply.mockImplementation(() => new Promise(() => {}));
 
-    const { default: PreviewScreen } = await import("./preview");
+    const { default: PreviewScreen } = await import("../app/preview");
 
     render(<PreviewScreen />);
 
@@ -43,7 +43,7 @@ describe("PreviewScreen", () => {
   it("triggers update check on mount", async () => {
     mockCheckAndApply.mockResolvedValue({ status: "reloading" });
 
-    const { default: PreviewScreen } = await import("./preview");
+    const { default: PreviewScreen } = await import("../app/preview");
 
     render(<PreviewScreen />);
 
@@ -58,7 +58,7 @@ describe("PreviewScreen", () => {
       message: "Network error",
     });
 
-    const { default: PreviewScreen } = await import("./preview");
+    const { default: PreviewScreen } = await import("../app/preview");
 
     render(<PreviewScreen />);
 
@@ -70,7 +70,7 @@ describe("PreviewScreen", () => {
   it("shows no-update message when already up to date", async () => {
     mockCheckAndApply.mockResolvedValue({ status: "no-update" });
 
-    const { default: PreviewScreen } = await import("./preview");
+    const { default: PreviewScreen } = await import("../app/preview");
 
     render(<PreviewScreen />);
 

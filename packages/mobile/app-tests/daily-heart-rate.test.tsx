@@ -72,13 +72,13 @@ vi.mock("../theme", () => ({
   },
 }));
 
-vi.mock("./_layout", () => ({
+vi.mock("../app/_layout", () => ({
   rootStackScreenOptions: {},
 }));
 
 describe("DailyHeartRateScreen", () => {
   it("renders with date navigator and empty state", async () => {
-    const { default: DailyHeartRateScreen } = await import("./daily-heart-rate");
+    const { default: DailyHeartRateScreen } = await import("../app/daily-heart-rate");
 
     render(<DailyHeartRateScreen />);
 

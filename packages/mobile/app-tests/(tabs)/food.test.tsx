@@ -65,7 +65,7 @@ describe("FoodScreen AI meal confirmation", () => {
   });
 
   it("waits for confirmation before creating AI parsed food entries", async () => {
-    const { default: FoodScreen } = await import("./food");
+    const { default: FoodScreen } = await import("../../app/(tabs)/food");
 
     render(<FoodScreen />);
 

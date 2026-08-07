@@ -141,7 +141,7 @@ vi.mock("../theme", () => ({
   },
 }));
 
-vi.mock("./_layout", () => ({
+vi.mock("../app/_layout", () => ({
   rootStackScreenOptions: {},
 }));
 
@@ -159,7 +159,7 @@ describe("InertialMeasurementUnitScreen", () => {
   it("updates permission status when app returns to foreground", async () => {
     // Start with notDetermined
     const { unmount } = render(
-      React.createElement((await import("./inertial-measurement-unit")).default),
+      React.createElement((await import("../app/inertial-measurement-unit")).default),
     );
 
     expect(screen.getByText("notDetermined")).toBeTruthy();
@@ -179,7 +179,7 @@ describe("InertialMeasurementUnitScreen", () => {
 
   it("requests permission on mount when status is notDetermined", async () => {
     const { unmount } = render(
-      React.createElement((await import("./inertial-measurement-unit")).default),
+      React.createElement((await import("../app/inertial-measurement-unit")).default),
     );
 
     expect(mockRequestMotionPermission).toHaveBeenCalled();
@@ -192,7 +192,7 @@ describe("InertialMeasurementUnitScreen", () => {
     mockGetConnectionState.mockReturnValue("scanning");
 
     const { unmount } = render(
-      React.createElement((await import("./inertial-measurement-unit")).default),
+      React.createElement((await import("../app/inertial-measurement-unit")).default),
     );
 
     // Warning should appear in both the error banner and the inline warning
@@ -217,7 +217,7 @@ describe("InertialMeasurementUnitScreen", () => {
     });
 
     const { unmount } = render(
-      React.createElement((await import("./inertial-measurement-unit")).default),
+      React.createElement((await import("../app/inertial-measurement-unit")).default),
     );
 
     // Watch shows "No" for Paired and App Installed

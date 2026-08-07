@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View } from "react-native";
-import ActivitiesScreen from "./activities";
+import ActivitiesScreen from "../app/activities";
 
 function createSeededProviders() {
   const queryClient = new QueryClient({

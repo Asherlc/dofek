@@ -108,7 +108,7 @@ vi.mock("../modules/whoop-ble", () => ({
   stopImuStreaming: vi.fn(),
 }));
 
-vi.mock("./login", () => ({
+vi.mock("../app/login", () => ({
   default: () => null,
 }));
 
@@ -127,7 +127,7 @@ mockCreateClient.mockImplementation(() => ({
   },
 }));
 
-import RootLayout from "./_layout";
+import RootLayout from "../app/_layout";
 
 describe("RootLayout background cleanup", () => {
   it("tears down background HealthKit sync on unmount", async () => {

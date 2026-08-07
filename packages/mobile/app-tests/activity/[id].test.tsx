@@ -77,7 +77,7 @@ vi.mock("../../components/RouteMap", () => ({
   RouteMap: () => null,
 }));
 
-vi.mock("./useChartScrub", () => ({
+vi.mock("../../app/activity/useChartScrub", () => ({
   useChartScrub: () => ({
     touchIndex: null,
     panResponder: { panHandlers: {} },
@@ -220,13 +220,13 @@ beforeEach(() => {
 
 describe("ActivityDetailScreen", () => {
   it("renders without crashing when stream has heart rate and power data", async () => {
-    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
   });
 
   it("renders heart rate and power chart labels for cycling with stream data", async () => {
-    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Heart Rate")).toBeTruthy();
     expect(screen.getByText("Power")).toBeTruthy();
@@ -243,7 +243,7 @@ describe("ActivityDetailScreen", () => {
       isLoading: false,
     });
 
-    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByText("Zone 1")).toBeTruthy();
@@ -263,7 +263,7 @@ describe("ActivityDetailScreen", () => {
       isLoading: false,
     });
 
-    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByText("Zone 1")).toBeTruthy();
@@ -292,7 +292,7 @@ describe("ActivityDetailScreen", () => {
       isLoading: false,
     });
 
-    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Yoga Session")).toBeTruthy();
     expect(screen.getByText("Heart Rate")).toBeTruthy();
@@ -312,7 +312,7 @@ describe("ActivityDetailScreen", () => {
       error: null,
     });
 
-    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();

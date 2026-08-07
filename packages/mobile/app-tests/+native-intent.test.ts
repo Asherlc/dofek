@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redirectSystemPath } from "./+native-intent";
+import { redirectSystemPath } from "../app/+native-intent";
 
 describe("redirectSystemPath", () => {
   it("routes shared files to providers import flow", () => {

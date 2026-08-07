@@ -4,9 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
+import TodayScreen from "../../app/(tabs)/index";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
-import TodayScreen from "./index";
 
 function localDateString(dayOffset = 0): string {
   const date = new Date();

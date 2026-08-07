@@ -12,7 +12,7 @@ vi.mock("../lib/telemetry", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { rootStackScreenOptions } from "./_layout";
+import { rootStackScreenOptions } from "../app/_layout";
 
 describe("rootStackScreenOptions", () => {
   it("uses a minimal back button so route-group names are never shown", () => {

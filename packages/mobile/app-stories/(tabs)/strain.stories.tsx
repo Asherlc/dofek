@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View } from "react-native";
-import StrainScreen from "./strain";
+import StrainScreen from "../../app/(tabs)/strain";
 
 const mockWorkloadData = {
   displayedStrain: 12.5,

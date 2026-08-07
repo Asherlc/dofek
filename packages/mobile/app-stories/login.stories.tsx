@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import LoginScreen from "./login";
+import LoginScreen from "../app/login";
 
 const meta = {
   title: "Pages/Login",

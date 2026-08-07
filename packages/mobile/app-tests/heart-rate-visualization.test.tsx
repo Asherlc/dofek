@@ -73,13 +73,15 @@ vi.mock("../theme", () => ({
   },
 }));
 
-vi.mock("./_layout", () => ({
+vi.mock("../app/_layout", () => ({
   rootStackScreenOptions: {},
 }));
 
 describe("HeartRateVisualizationScreen", () => {
   it("renders initial state and auto-connects", async () => {
-    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    const { default: HeartRateVisualizationScreen } = await import(
+      "../app/heart-rate-visualization"
+    );
 
     render(<HeartRateVisualizationScreen />);
 
@@ -91,7 +93,9 @@ describe("HeartRateVisualizationScreen", () => {
   });
 
   it("shows connecting placeholder before data arrives", async () => {
-    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    const { default: HeartRateVisualizationScreen } = await import(
+      "../app/heart-rate-visualization"
+    );
 
     render(<HeartRateVisualizationScreen />);
 
@@ -102,7 +106,9 @@ describe("HeartRateVisualizationScreen", () => {
     const whoopBle = await import("../modules/whoop-ble");
     vi.spyOn(whoopBle, "getConnectionState").mockReturnValue("streaming");
 
-    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    const { default: HeartRateVisualizationScreen } = await import(
+      "../app/heart-rate-visualization"
+    );
 
     render(<HeartRateVisualizationScreen />);
 
@@ -139,7 +145,9 @@ describe("HeartRateVisualizationScreen", () => {
     ];
     const peekSpy = vi.spyOn(whoopBle, "peekBufferedRealtimeData").mockResolvedValue(samples);
 
-    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    const { default: HeartRateVisualizationScreen } = await import(
+      "../app/heart-rate-visualization"
+    );
     await act(() => render(<HeartRateVisualizationScreen />));
 
     // Flush the async ensureConnected() so startPolling() runs
@@ -190,7 +198,9 @@ describe("HeartRateVisualizationScreen", () => {
       },
     ]);
 
-    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    const { default: HeartRateVisualizationScreen } = await import(
+      "../app/heart-rate-visualization"
+    );
     await act(() => render(<HeartRateVisualizationScreen />));
     await act(() => vi.advanceTimersByTimeAsync(0));
     await act(() => vi.advanceTimersByTimeAsync(1000));

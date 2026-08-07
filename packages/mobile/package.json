@@ -12,7 +12,7 @@
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "prebuild": "expo prebuild --platform ios --clean",
-    "lint": "biome check .",
+    "lint": "biome check . && cd ../.. && tsx scripts/check-mobile-app-route-files.ts",
     "lint:fix": "biome check --write ."
   },
   "dependencies": {

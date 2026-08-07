@@ -37,7 +37,7 @@ vi.mock("../components/ProviderLogo", () => ({
   ProviderLogo: () => null,
 }));
 
-const { default: LoginScreen } = await import("./login");
+const { default: LoginScreen } = await import("../app/login");
 
 describe("LoginScreen", () => {
   beforeEach(() => {

@@ -20,7 +20,7 @@ describe("app bootstrap telemetry guard", () => {
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     }));
 
-    await expect(import("./_layout")).resolves.toBeDefined();
+    await expect(import("../app/_layout")).resolves.toBeDefined();
     expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
       source: "bootstrap-telemetry-init",
     });

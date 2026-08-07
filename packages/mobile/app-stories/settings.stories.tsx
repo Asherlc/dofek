@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View } from "react-native";
-import SettingsScreen from "./settings";
+import SettingsScreen from "../app/settings";
 
 function createSeededProviders() {
   const queryClient = new QueryClient({

@@ -90,7 +90,7 @@ describe("StrainScreen recent activity navigation", () => {
       },
     ];
 
-    const { default: StrainScreen } = await import("./strain");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     fireEvent.click(screen.getByText("Morning Ride"));
@@ -107,7 +107,7 @@ describe("StrainScreen recent activity navigation", () => {
       explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
     };
 
-    const { default: StrainScreen } = await import("./strain");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Daily Strain Target")).toBeTruthy();
@@ -119,7 +119,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("does not render strain target card when no target data", async () => {
     mockStrainTargetData = undefined;
 
-    const { default: StrainScreen } = await import("./strain");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     expect(screen.queryByText("Daily Strain Target")).toBeNull();
@@ -141,7 +141,7 @@ describe("StrainScreen recent activity navigation", () => {
       },
     ];
 
-    const { default: StrainScreen } = await import("./strain");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     fireEvent.click(screen.getByText("View all"));
@@ -152,7 +152,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("shows empty state and View all link when no activities exist", async () => {
     mockActivities = [];
 
-    const { default: StrainScreen } = await import("./strain");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Recent Activities")).toBeTruthy();
@@ -163,7 +163,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("navigates to activities list from View all when no activities exist", async () => {
     mockActivities = [];
 
-    const { default: StrainScreen } = await import("./strain");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     fireEvent.click(screen.getByText("View all"));

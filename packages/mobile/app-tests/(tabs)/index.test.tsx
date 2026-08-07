@@ -136,7 +136,7 @@ describe("TodayScreen independent loading states", () => {
   it("shows skeleton placeholder for recovery ring while readiness is loading", async () => {
     mockDashboardLoading = true;
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     // In the consolidated query, everything loads together
@@ -146,7 +146,7 @@ describe("TodayScreen independent loading states", () => {
   it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
     mockDashboardLoading = true;
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
@@ -155,7 +155,7 @@ describe("TodayScreen independent loading states", () => {
   it("hides sleep summary section while sleep analytics is loading", async () => {
     mockDashboardLoading = true;
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     expect(screen.queryByText("LAST NIGHT")).toBeNull();
@@ -174,14 +174,14 @@ describe("TodayScreen independent loading states", () => {
       awakePct: 10,
     };
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
   it("renders all rings when no queries are loading", async () => {
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
@@ -193,7 +193,7 @@ describe("TodayScreen independent loading states", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 21, 15, 30));
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     fireEvent.click(screen.getByText("Log Food"));
@@ -204,7 +204,7 @@ describe("TodayScreen independent loading states", () => {
   it("shows a recovery error panel when the readiness query fails", async () => {
     mockDashboardError = new Error("Dashboard failed");
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     expect(screen.getByText("Dashboard failed")).toBeTruthy();
@@ -214,7 +214,7 @@ describe("TodayScreen independent loading states", () => {
     // In consolidated approach, they share the same error state
     mockDashboardError = new Error("Dashboard failed");
 
-    const { default: TodayScreen } = await import("./index");
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
     expect(screen.getByText("Dashboard failed")).toBeTruthy();

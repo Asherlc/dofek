@@ -304,7 +304,7 @@ describe("ProviderDetailScreen", () => {
 
   describe("Actions", () => {
     it("renders Sync and Full sync actions for connected providers", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Sync")).toBeTruthy();
@@ -316,7 +316,7 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "strava" });
       mockProvidersQuery.mockReturnValue({ data: [unauthorizedProvider], isLoading: false });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Connect")).toBeTruthy();
@@ -328,7 +328,7 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "strong-csv" });
       mockProvidersQuery.mockReturnValue({ data: [importOnlyProvider], isLoading: false });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.queryByText("Connect")).toBeNull();
@@ -342,7 +342,7 @@ describe("ProviderDetailScreen", () => {
         isLoading: false,
       });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Re-authorize")).toBeTruthy();
@@ -356,7 +356,7 @@ describe("ProviderDetailScreen", () => {
         providers: { wahoo: { status: "done", message: "Done" } },
       });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Sync"));
@@ -377,7 +377,7 @@ describe("ProviderDetailScreen", () => {
         providers: { wahoo: { status: "done", message: "Done" } },
       });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Full sync"));
@@ -394,7 +394,7 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "strava" });
       mockProvidersQuery.mockReturnValue({ data: [unauthorizedProvider], isLoading: false });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       await waitFor(() => {
@@ -416,7 +416,7 @@ describe("ProviderDetailScreen", () => {
       mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
       mockSyncHealthKit.mockResolvedValue({ inserted: 12, errors: [] });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       await waitFor(() => {
@@ -438,7 +438,7 @@ describe("ProviderDetailScreen", () => {
       mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
       mockSyncHealthKit.mockResolvedValue({ inserted: 12, errors: [] });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       await waitFor(() => {
@@ -460,7 +460,7 @@ describe("ProviderDetailScreen", () => {
       mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
       mockHasEverAuthorized.mockReturnValue(false);
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       await waitFor(() => {
@@ -475,7 +475,7 @@ describe("ProviderDetailScreen", () => {
       mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
       mockHasEverAuthorized.mockReturnValue(false);
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       await waitFor(() => {
@@ -492,7 +492,7 @@ describe("ProviderDetailScreen", () => {
 
   describe("Disconnect", () => {
     it("renders disconnect button when provider is authorized", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Disconnect Provider")).toBeTruthy();
@@ -502,14 +502,14 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "strava" });
       mockProvidersQuery.mockReturnValue({ data: [unauthorizedProvider], isLoading: false });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.queryByText("Disconnect Provider")).toBeNull();
     });
 
     it("shows Alert.alert with correct title when disconnect button is clicked", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Disconnect Provider"));
@@ -527,7 +527,7 @@ describe("ProviderDetailScreen", () => {
     it("calls disconnect mutation and navigates back when confirmed", async () => {
       mockDisconnectMutateAsync.mockResolvedValue({});
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Disconnect Provider"));
@@ -554,7 +554,7 @@ describe("ProviderDetailScreen", () => {
     it("invalidates providers and providerStats after successful disconnect", async () => {
       mockDisconnectMutateAsync.mockResolvedValue({});
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Disconnect Provider"));
@@ -602,7 +602,7 @@ describe("ProviderDetailScreen", () => {
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wear Location")).toBeTruthy();
@@ -612,7 +612,7 @@ describe("ProviderDetailScreen", () => {
     });
 
     it("renders all five wear location options", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wrist")).toBeTruthy();
@@ -626,14 +626,14 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
       mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
 
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.queryByText("Wear Location")).toBeNull();
     });
 
     it("calls the settings mutation when a location is clicked", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Bicep / Upper Arm"));
@@ -645,7 +645,7 @@ describe("ProviderDetailScreen", () => {
     });
 
     it("optimistically updates the cache when a location is clicked", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       fireEvent.click(screen.getByText("Chest / Torso"));

@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
+import { ProviderCard } from "../../app/providers/provider-card.tsx";
 import { AuthProvider } from "../../lib/auth-context";
-import { ProviderCard } from "./provider-card.tsx";
 
 // ── ProviderCard ──
 // AuthProvider is resolved to .storybook/mocks/auth-context in web Storybook

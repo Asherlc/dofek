@@ -95,7 +95,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_spo2: 97 };
     mockDailyMetricsData = [{ spo2_avg: 96 }, { spo2_avg: 97 }];
 
-    const { default: RecoveryScreen } = await import("./recovery");
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Blood Oxygen")).toBeTruthy();
@@ -107,7 +107,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_skin_temp: 36.8 };
     mockDailyMetricsData = [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }];
 
-    const { default: RecoveryScreen } = await import("./recovery");
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Skin Temperature")).toBeTruthy();
@@ -117,7 +117,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_spo2: null };
     mockDailyMetricsData = [];
 
-    const { default: RecoveryScreen } = await import("./recovery");
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Blood Oxygen")).toBeNull();
@@ -127,7 +127,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockTrendsData = { latest_skin_temp: null };
     mockDailyMetricsData = [];
 
-    const { default: RecoveryScreen } = await import("./recovery");
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Skin Temperature")).toBeNull();
@@ -159,7 +159,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       },
     ];
 
-    const { default: RecoveryScreen } = await import("./recovery");
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
     // Breakdown weight labels should not be visible initially
@@ -202,7 +202,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       },
     ];
 
-    const { default: RecoveryScreen } = await import("./recovery");
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
     const readinessSparklineCall = sparkLinePropsCalls.find((sparkLineProps) => {

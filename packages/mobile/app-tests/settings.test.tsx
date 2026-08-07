@@ -157,7 +157,7 @@ beforeEach(() => {
 
 describe("SettingsScreen data sources", () => {
   it("renders Data Sources section with connected count", async () => {
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -166,7 +166,7 @@ describe("SettingsScreen data sources", () => {
   });
 
   it("renders provider logos for connected providers only", async () => {
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -176,7 +176,7 @@ describe("SettingsScreen data sources", () => {
   });
 
   it("navigates to providers screen when tapped", async () => {
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -188,7 +188,7 @@ describe("SettingsScreen data sources", () => {
 
 describe("SettingsScreen billing", () => {
   it("renders signup-week limited access notice", async () => {
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -198,7 +198,7 @@ describe("SettingsScreen billing", () => {
   });
 
   it("starts checkout when the upgrade button is pressed", async () => {
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -219,7 +219,7 @@ describe("SettingsScreen billing", () => {
       canManageBilling: true,
     };
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -232,7 +232,7 @@ describe("SettingsScreen billing", () => {
 
 describe("SettingsScreen export UI rendering", () => {
   it("renders the Start Export button", async () => {
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -245,7 +245,7 @@ describe("SettingsScreen export UI rendering", () => {
       vi.fn().mockImplementation(() => new Promise(() => {})),
     );
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -266,7 +266,7 @@ describe("SettingsScreen OTA debug details", () => {
     const otaCreatedAt = new Date("2026-03-31T18:22:00.000Z");
     updatesModule.createdAt = otaCreatedAt;
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -312,7 +312,7 @@ describe("SettingsScreen export flow", () => {
 
     vi.stubGlobal("fetch", mockFetch);
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -355,7 +355,7 @@ describe("SettingsScreen export flow", () => {
 
     vi.stubGlobal("fetch", mockFetch);
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -382,7 +382,7 @@ describe("SettingsScreen export flow", () => {
         }),
     );
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
@@ -433,7 +433,7 @@ describe("SettingsScreen export flow", () => {
 
     vi.stubGlobal("fetch", mockFetch);
 
-    const { default: SettingsScreen } = await import("./settings");
+    const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
