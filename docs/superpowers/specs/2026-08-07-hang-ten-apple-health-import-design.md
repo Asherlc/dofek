@@ -7,7 +7,7 @@ Health export flow without adding a separate direct Hang Ten sync provider.
 Hang Ten already saves completed routines as Apple Health functional strength
 workouts with app-specific metadata. Dofek should preserve that metadata,
 surface the workout with a readable Hang Ten name, classify it as
-`hangboarding`, and expose the ordered work/rest segments as activity
+`hangboard`, and expose the ordered work/rest segments as activity
 intervals.
 
 ## Current State
@@ -37,7 +37,7 @@ size in millimeters, and optional duration.
 Extend the Apple Health import path rather than creating a new provider ID for
 this first version. Imported rows keep `provider_id = apple_health`; Hang Ten is
 represented as the activity source and preserved raw metadata. Add
-`hangboarding` as a first-class canonical activity type in the shared training
+`hangboard` as a first-class canonical activity type in the shared training
 package and the database enum so Hang Ten sessions are not flattened into
 generic functional strength training.
 
@@ -57,7 +57,7 @@ Recognized Hang Ten workouts will use:
 - `sourceName = Hang Ten`
 - `externalId = ah:workout:<HangTen.SessionID>` when a session ID exists,
   otherwise the existing start-date-based Apple Health external ID
-- `activityType = hangboarding`
+- `activityType = hangboard`
 
 The raw activity payload will include the existing workout summary fields plus
 the Hang Ten metadata: session ID, plan name, board ID, board name, and parsed
